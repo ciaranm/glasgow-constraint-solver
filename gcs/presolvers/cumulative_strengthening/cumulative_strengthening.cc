@@ -183,19 +183,18 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             if (active_tasks.empty())
                 return nullopt;
 
-            // The same windowing install_derived_cumulative resolves, and the
-            // same windowing the donor encoded: a task can be active from its
-            // earliest start to its latest finish, which for a variable
-            // duration is the largest one still allowed. This is the paper's
-            // `t in [est_j, lct_j)`. Local to the assessment: what comes out of
-            // it is the time points, which is where the windows have already
-            // been applied, so nothing downstream asks about them again.
+            // The same windowing install_derived_cumulative resolves, and by
+            // the same function: this is the paper's `t in [est_j, lct_j)`, and
+            // a window disagreeing with the donor's would simply find no flags.
+            // Local to the assessment: what comes out of it is the time points,
+            // which is where the windows have already been applied, so nothing
+            // downstream asks about them again.
             Assessment assessment;
             vector<Integer> t_lo(n, 0_i), t_hi(n, 0_i);
             for (auto i : active_tasks) {
-                auto [s_lo, s_hi] = state.bounds(starts[i]);
-                t_lo[i] = s_lo;
-                t_hi[i] = s_hi + state.upper_bound(candidate.lengths[i]) - 1_i;
+                auto window = cumulative_task_window(state, starts[i], candidate.lengths[i]);
+                t_lo[i] = window.lo;
+                t_hi[i] = window.hi;
             }
 
             // A height above the capacity means the donor is infeasible on its

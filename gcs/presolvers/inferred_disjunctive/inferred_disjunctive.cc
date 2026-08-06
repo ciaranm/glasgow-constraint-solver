@@ -2,6 +2,7 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
 #include <gcs/constraints/cumulative/donor_view.hh>
+#include <gcs/constraints/cumulative/propagate.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/proofs/am1_from_pairs.hh>
 #include <gcs/innards/proofs/am1_from_row.hh>
@@ -222,10 +223,9 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         for (auto i : view->usable) {
             auto found = task_of_start.find(starts[i]);
             if (found == task_of_start.end()) {
-                auto [s_lo, s_hi] = state.bounds(starts[i]);
-                auto [l_lo, l_hi] = state.bounds(lengths[i]);
+                auto window = cumulative_task_window(state, starts[i], lengths[i]);
                 found = task_of_start.emplace(starts[i], tasks.size()).first;
-                tasks.push_back(Task{starts[i], lengths[i], l_lo, s_lo, s_hi + l_hi - 1_i, {}});
+                tasks.push_back(Task{starts[i], lengths[i], state.lower_bound(lengths[i]), window.lo, window.hi, {}});
             }
             else if (tasks[found->second].length != lengths[i]) {
                 // Two resources disagreeing about a duration is not something

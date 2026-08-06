@@ -81,30 +81,30 @@ auto gcs::innards::install_derived_cumulative(
         inputs->heights.push_back(constant_variable(task.height));
     }
 
-    // The same windowing a posted Cumulative resolves in prepare(): a task can
-    // be active from its earliest start to its latest finish, so the window
-    // takes the *largest* duration still allowed, and one whose length or
-    // height can only be zero, or which can never be present at all, never
-    // raises the profile. Reading the length's bound rather than a number is
-    // what makes this the donor's own window for a variable-duration task: the
-    // donor windowed with ub(l) too, and only the same window finds the same
-    // flags.
+    // The same windowing a posted Cumulative resolves in prepare(), and by the
+    // same function: only the same window finds the same flags, and a window
+    // that disagreed would decline this constraint rather than fail loudly. A
+    // task whose length or height can only be zero, or which can never be
+    // present at all, never raises the profile and is not in it.
     inputs->per_task_t_lo.assign(n, 0_i);
     vector<Integer> per_task_t_hi(n, 0_i);
     for (size_t i = 0; i < n; ++i) {
-        auto length_ub = initial_state.upper_bound(spec.tasks[i].length);
-        if (length_ub <= 0_i || spec.tasks[i].height <= 0_i || never_present[i])
+        if (initial_state.upper_bound(spec.tasks[i].length) <= 0_i || spec.tasks[i].height <= 0_i || never_present[i])
             continue;
         inputs->active_tasks.push_back(i);
-        auto [s_lo, s_hi] = initial_state.bounds(spec.tasks[i].start);
-        inputs->per_task_t_lo[i] = s_lo;
-        per_task_t_hi[i] = s_hi + length_ub - 1_i;
+        auto window = cumulative_task_window(initial_state, spec.tasks[i].start, spec.tasks[i].length);
+        inputs->per_task_t_lo[i] = window.lo;
+        per_task_t_hi[i] = window.hi;
     }
 
     if (inputs->active_tasks.empty())
         return false;
 
-    if (spec.rules.overload) {
+    // Also when the overload rule is off but a makespan was asked for: which
+    // tasks can carry energy is the window-energy lemma's question either way,
+    // and a constraint posted for its energy alone should not go without a
+    // bound for want of asking.
+    if (spec.rules.overload || spec.makespan) {
         auto overload_data = prepare_cumulative_overload_check(
             inputs->starts, inputs->lengths, inputs->heights, inputs->active_tasks, inputs->per_task_t_lo, per_task_t_hi, initial_state);
         inputs->overload_tasks = move(overload_data.overload_tasks);
@@ -225,18 +225,6 @@ auto gcs::innards::install_derived_cumulative(
     // rather than in the propagator: nothing it reads changes below the root
     // that would let it say more.
     if (spec.makespan) {
-        // Which tasks can carry energy is the window-energy lemma's question,
-        // and prepare_cumulative_overload_check is where it is answered. A
-        // constraint posted for its energy alone runs with the overload rule
-        // off, so ask anyway rather than going without a bound.
-        if (! spec.rules.overload) {
-            auto overload_data = prepare_cumulative_overload_check(
-                inputs->starts, inputs->lengths, inputs->heights, inputs->active_tasks, inputs->per_task_t_lo, per_task_t_hi, initial_state);
-            inputs->overload_tasks = move(overload_data.overload_tasks);
-            inputs->time_slot_prefix = move(overload_data.time_slot_prefix);
-            inputs->time_slot_lo = overload_data.time_slot_lo;
-        }
-
         // Everything but the start bounds is settled now: the flag vectors live
         // in `inputs`, which the initialiser holds a share of, and the windows
         // are the ones its rows were derived over.

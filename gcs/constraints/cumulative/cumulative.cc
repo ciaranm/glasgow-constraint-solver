@@ -222,14 +222,15 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     if (_active_tasks.empty())
         return false;
 
-    // The possible-active window of task i is [lb(s_i), ub(s_i)+ub(l_i)-1]; the
-    // per-(i,t) flags span it, so it must use the largest possible duration.
+    // The per-(i,t) flags span the possible-active window, so this is the
+    // windowing everything downstream --- a derived constraint, a presolver ---
+    // has to agree with, and is why it is not written out here.
     _per_task_t_lo.assign(n, 0_i);
     _per_task_t_hi.assign(n, 0_i);
     for (auto i : _active_tasks) {
-        auto [s_lo, s_hi] = initial_state.bounds(_starts[i]);
-        _per_task_t_lo[i] = s_lo;
-        _per_task_t_hi[i] = s_hi + _length_ub[i] - 1_i;
+        auto window = cumulative_task_window(initial_state, _starts[i], _lengths[i]);
+        _per_task_t_lo[i] = window.lo;
+        _per_task_t_hi[i] = window.hi;
     }
 
     if (_rules.overload) {
@@ -241,6 +242,13 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     }
 
     return true;
+}
+
+auto gcs::innards::cumulative_task_window(const State & initial_state, const IntegerVariableID & start, const IntegerVariableID & length)
+    -> CumulativeTaskWindow
+{
+    auto [s_lo, s_hi] = initial_state.bounds(start);
+    return CumulativeTaskWindow{s_lo, s_hi + initial_state.upper_bound(length) - 1_i};
 }
 
 auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariableID> & starts, const vector<IntegerVariableID> & lengths,

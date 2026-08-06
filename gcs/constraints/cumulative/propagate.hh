@@ -132,6 +132,42 @@ namespace gcs::innards
     };
 
     /**
+     * \brief The time points one of a Cumulative's tasks could possibly be
+     * active at, inclusive at both ends.
+     *
+     * \sa cumulative_task_window
+     *
+     * \ingroup Innards
+     */
+    struct CumulativeTaskWindow
+    {
+        Integer lo, hi;
+    };
+
+    /**
+     * \brief Where a task's per-time flags run from and to: `[lb(start),
+     * ub(start) + ub(length) - 1]`.
+     *
+     * A task can be active from its earliest start to its latest finish, so the
+     * window takes the *largest* duration still allowed --- which for a variable
+     * length means its upper bound, not the number it will turn out to be.
+     *
+     * Shared rather than written out per caller because every caller has to
+     * agree with the donor, and the failure mode when one does not is silence:
+     * install_derived_cumulative looks a donor's flags up by `(position, t)` and
+     * declines when they are not there, so a window that disagrees by one costs
+     * a presolver its inference without anything saying so.
+     *
+     * `initial_state` because these are resolved once, before the search: the
+     * flags exist over this window for the whole of it, whatever the bounds do
+     * later.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto cumulative_task_window(const State & initial_state, const IntegerVariableID & start, const IntegerVariableID & length)
+        -> CumulativeTaskWindow;
+
+    /**
      * \brief What the overload check needs resolving once, before the search
      * starts: which tasks its window-energy lemma can speak about, and where a
      * capacity row exists to be cited.

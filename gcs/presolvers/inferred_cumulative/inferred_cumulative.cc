@@ -2,6 +2,7 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
 #include <gcs/constraints/cumulative/donor_view.hh>
+#include <gcs/constraints/cumulative/propagate.hh>
 #include <gcs/innards/proofs/flag_bridge.hh>
 #include <gcs/innards/proofs/lifted_cover_cut.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -533,9 +534,8 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 continue;
             }
 
-            auto [s_lo, s_hi] = state.bounds(starts[i]);
-            auto [l_lo, l_hi] = state.bounds(length);
-            Task task{starts[i], length, l_lo, s_lo, s_hi + l_hi - 1_i, vector<Integer>(donors.size(), 0_i),
+            auto window = cumulative_task_window(state, starts[i], length);
+            Task task{starts[i], length, state.lower_bound(length), window.lo, window.hi, vector<Integer>(donors.size(), 0_i),
                 vector<optional<size_t>>(donors.size(), std::nullopt), which};
             task.demands[which] = demand;
             task.positions[which] = i;
