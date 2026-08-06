@@ -620,8 +620,16 @@ auto main(int argc, char * argv[]) -> int
         std::mt19937 rand(*get_seed());
         std::uniform_int_distribution<> n_dist(3, 5), cap_dist(4, 12), len_dist(1, 3), tall_dist(0, 2), pin_dist(0, 2);
 
+        // The three "it actually fired" assertions below are the only ones with
+        // any power over a presolver --- doing nothing preserves every solution
+        // and verifies every proof --- but over a fixed draw they are assertions
+        // about the *draw*: seed 905208 posts no non-unit cut in sixty
+        // instances, and CI eventually meets such a seed. So draw until they
+        // fire, up to a cap, which leaves the common case at sixty and turns the
+        // assertion into "the generator cannot produce one in 240 goes".
         std::size_t posted = 0, non_unit = 0, steps = 0, restricted = 0;
-        for (int k = 0; k < 60; ++k) {
+        int drawn = 0;
+        for (; drawn < 240 && (drawn < 60 || 0 == posted || 0 == non_unit || 0 == steps); ++drawn) {
             auto capacity = cap_dist(rand);
             Instance instance{{}, {}, Integer{capacity}, 0};
             std::uniform_int_distribution<> tall(capacity / 2 + 1, capacity), rest(1, capacity / 2);
@@ -656,17 +664,18 @@ auto main(int argc, char * argv[]) -> int
         }
 
         if (posted == 0)
-            fail("the presolver posted nothing across the random corpus, so it checked nothing");
+            fail("the presolver posted nothing across " + to_string(drawn) + " random instances, so it checked nothing");
         if (non_unit == 0)
-            fail("no cut in the random corpus had a coefficient above one, so the lifting checked nothing");
+            fail("no cut across " + to_string(drawn) + " random instances had a coefficient above one, so the lifting checked nothing");
         if (steps == 0)
-            fail("no lifting subproblem was solved across the random corpus");
+            fail("no lifting subproblem was solved across " + to_string(drawn) + " random instances");
         // Not asserted here: with proofs off the recipe never runs, so no row
         // is derived and nothing is restricted whatever the windows do. That
         // belongs to the verified sweep below.
         if (restricted != 0)
             fail("rows were derived with proofs off, which means work is being done that nothing will check");
-        println(cerr, "solution preservation: {} cuts over 60 random instances ({} non-unit), {} lifting subproblems", posted, non_unit, steps);
+        println(
+            cerr, "solution preservation: {} cuts over {} random instances ({} non-unit), {} lifting subproblems", posted, drawn, non_unit, steps);
     }
 
     // An optional-task donor is declined loudly rather than mis-derived.
