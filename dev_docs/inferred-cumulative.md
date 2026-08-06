@@ -297,15 +297,15 @@ asserts a non-zero restriction count so it cannot quietly stop covering them.
 ## Proof size, which is what decided the design
 
 Measured, since the estimate that nearly sank this was out by two orders of
-magnitude. Over a single resource one derived row costs about **fifteen lines per
-state**, and the states are `members × (π₀ + 1)`:
+magnitude. Over a single resource one derived row costs about **twelve and a half
+lines per state**, and the states are `members × (π₀ + 1)`:
 
 | members | capacity | `π₀` | states | lines | bytes |
 |--------:|---------:|-----:|-------:|------:|------:|
-| 4 | 5 | 2 | 12 | 175 | 11 K |
-| 6 | 10…80 | 3 | 23 | 331 | 23 K |
-| 8 | 10…80 | 3 | 31 | 457 | 33 K |
-| 12 | 10…80 | 3 | 47 | 697 | 59 K |
+| 4 | 15 | 2 | 12 | 147 | 10 K |
+| 6 | 20 | 3 | 22 | 272 | 21 K |
+| 8 | 20 | 3 | 30 | 374 | 30 K |
+| 12 | 20 | 3 | 46 | 578 | 54 K |
 
 **The capacity does not appear.** Issue #675 budgeted `O(|S|² · C)` per time
 point — around `10⁶` lines per constraint at `|S| = 10`, `C = 20`, horizon 1000 —
@@ -324,20 +324,98 @@ eight members and a capacity of twenty:
 
 | rows | lines | bytes | veripb | peak RSS |
 |-----:|------:|------:|-------:|---------:|
-| 200 | 91 K | 6.9 MB | 0.19 s | 49 MB |
-| 1000 | 457 K | 35 MB | 0.99 s | 164 MB |
+| 200 | 75 K | 7.1 MB | 0.10 s | 19 MB |
+| 1000 | 375 K | 36 MB | 0.53 s | 65 MB |
 
-Linear, and a second of checking for a horizon of a thousand. Scaffolding is
+Linear, and half a second of checking for a horizon of a thousand. Scaffolding is
 emitted one proof level deeper than the caller's and forgotten on the way out —
 extension variables included, since deleting a variable's two defining
-constraints deletes the variable — so **only one line per time point survives**.
-That is what keeps the checking cheap as well as the memory: live constraints tax
-every later unhinted RUP, and there are 456 of them per time point that do not
-outlive the row they establish.
+constraints deletes the variable — so **only one line per time point survives**,
+and the other 373 do not outlive the row they establish. That is what keeps the
+checker's memory down, and it is also why a scale harness like this *understates*
+what hinting is worth: against a model this bare, even a hint-free step has
+little to propagate over. See below.
 
 The rule agreed with this design still stands: **take the replay, and look for
 something shorter only once proof size or checking time is demonstrably a
 problem.** On these numbers it is not.
+
+### Hints, and what they are actually worth
+
+Every RUP the replay emits names the lines it needs (issue #676). A hinted step
+propagates over the cited constraints alone; a hint-free one propagates over the
+whole live database, so its cost is set by everything else the proof is standing
+in — which, at the root of a real model, is the whole model.
+
+What each step cites follows from what it is:
+
+- A **transition** `¬S_prev ∨ <other branch> ∨ S_succ` cites the source's forward
+  reification, which puts its halves in hand; the `pol` per half, each of which
+  carries one bound from source to successor once the branch literal is fixed;
+  and the successor's reverse reification, which turns the halves back into a
+  state. The clause naming each half used to be emitted — one line per half per
+  transition — and is now the hint instead, because that step was the only thing
+  that ever wanted it. That is where the size saving comes from: **94 of a
+  single-resource row's 468 lines**, so about a fifth.
+- A **source's at-least-one over its successors** cites its two transitions, or,
+  where a capacity rules the member out, the surviving transition together with
+  the source's forward reification and the `pol` that does the ruling out.
+  Unit propagation often reaches that conclusion through the rows in the database
+  instead, but a hinted step is only allowed what it names.
+- A **layer's at-least-one** cites the layer before's and every one of that
+  layer's successor steps, which is the resolution it is doing.
+- The **conclusion** cites the last layer's at-least-one and the per-state
+  clauses contradicting the cut flag.
+
+Measured over the same eight-member, capacity-twenty rows as above, in one
+sitting, minimum of five, one verify at a time — as a two-by-two, since dropping
+the half-clauses and hinting the steps are separable:
+
+| horizon 1000 | lines | bytes | veripb | peak RSS |
+|---|------:|------:|-------:|---------:|
+| clauses, hint-free (as it was) | 469 K | 42 MB | 0.84 s | 196 MB |
+| clauses, hinted | 469 K | 44 MB | 0.63 s | 69 MB |
+| no clauses, hint-free | 375 K | 35 MB | 0.71 s | 195 MB |
+| no clauses, hinted (as it is) | 375 K | 36 MB | 0.53 s | 65 MB |
+
+So on a bare model the hints buy 25 % of the checking time and two thirds of the
+checker's memory, and dropping the clauses buys 15 % more — worth having, and not
+obviously worth the trouble.
+
+**On a real model it is an order of magnitude.** The same comparison over the
+root-refutation certificates the #672 sweep produces, where the standing database
+is an entire RCPSP model rather than one row per time point:
+
+| instance | before | after | bytes before | bytes after |
+|---|-------:|------:|-------------:|------------:|
+| `pack008` | 3.84 s | 0.59 s | 48 MB | 42 MB |
+| `pack012` | 3.68 s | 0.54 s | 43 MB | 38 MB |
+| `pack018` | 12.10 s | 1.34 s | 112 MB | 100 MB |
+| `pack025` | 16.27 s | 1.48 s | 124 MB | 111 MB |
+| `pack039` | 6.05 s | 0.74 s | 57 MB | 50 MB |
+| `pack043` | 17.69 s | 1.24 s | 98 MB | 84 MB |
+
+**Six to fourteen times faster to check, for a proof 12 % smaller.** The size is
+not what did it: the hint-free replay was paying the model's whole constraint
+database on every one of its RUPs, and the deletion that keeps the *scaffolding*
+from accumulating cannot do anything about the model underneath it. Peak memory
+is unchanged here, because on these instances it is the model that sets it.
+
+`pack043` is the shape of it: 292,117 hint-free RUP steps became 94,022 hinted
+ones, and the whole certificate is left with **419** steps that propagate over
+the database, none of them the replay's. What remains is 287 K `red` lines
+defining extension variables and 262 K `pol` lines, and neither of those ever
+looks at anything it does not name.
+
+The lesson generalises past this constraint: **the value of hinting is set by how
+much is standing, not by how much is being emitted.** A derivation measured in
+isolation and found not to need hints may well need them once it is running
+inside a real proof.
+
+Nothing checks the hints beyond veripb itself, and nothing needs to: a hint set
+that misses a line its step needs is a step that does not check, so the existing
+cases fail. Dropping the source's forward reification from the transition hints
+makes the first fixture in `lifted_cover_cut_test` reject.
 
 ### One step that is not what makes it sound
 

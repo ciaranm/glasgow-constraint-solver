@@ -209,6 +209,28 @@ the no-`--all` bench at `n=22` produced shallow-search numbers that
 mislead about Bacchus's per-call value; the `--all` bench at `n=4..6`
 showed the per-call shape clearly (and reversed the proof-size verdict).
 
+### The bare-model trap, for anything about hints
+
+A hint-free `rup` propagates over the whole live constraint database, so
+what it costs depends on what else is standing — and a harness built to
+exercise one derivation deliberately has nothing else standing. Measure
+a hinting change that way and you will conclude it is not worth doing.
+
+Worked example (issue #676): hinting the lifted cover cut replay was
+worth 25 % of checking time against a model that was one capacity row
+per time point, and **six to fourteen times** against real RCPSP
+models, where the standing database is the whole model. Same code, same
+proof shape, two orders of magnitude apart in how the answer reads. The
+checker's peak memory went the other way — two thirds off on the bare
+model, nothing on the real one, where the model sets it.
+
+So for any change to hints, or to what lives at `ProofLevel::Top`,
+**bench against a real instance as well as a harness**, and report both.
+A root refutation is the cheap way to get one: it is a proof of the
+derivation and nothing else, with no search in it to confound the
+reading (`examples/rcpsp --deadline <bound-1> --prove`, and see
+`dev_docs/certified-makespan-bounds.md`).
+
 ### What size to pick
 
 For `--all` mode, scale `n` down until a single trial finishes in

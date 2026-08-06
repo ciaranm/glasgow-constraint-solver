@@ -269,7 +269,7 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, const vector<Pr
     // several means the sharing is worth having.
     vector<vector<map<Integer, Reified>>> at_least(rows, vector<map<Integer, Reified>>(members + 1));
     vector<map<Integer, Reified>> at_most(members + 1);
-    vector<map<LiftedCoverCutState, ProofFlag>> reached(members + 1);
+    vector<map<LiftedCoverCutState, Reified>> reached(members + 1);
 
     for (size_t layer = 0; layer <= members; ++layer)
         for (const auto & state : cut.layers[layer]) {
@@ -296,14 +296,21 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, const vector<Pr
                 name += format("_{}", weight.raw_value);
             auto [state_flag, state_forward, state_reverse] =
                 logger.create_proof_flag_reifying(move(conjuncts) >= Integer{static_cast<long long>(rows) + 1}, name, ProofLevel::Temporary);
-            reached[layer].emplace(state, state_flag);
-            (void)state_forward;
-            (void)state_reverse;
+            reached[layer].emplace(state, Reified{state_flag, state_forward, state_reverse});
         }
 
     // The empty prefix takes nothing and carries nothing, so every half of its
-    // one state is true of every point and the reifications force the flag.
-    logger.emit_rup_proof_line(WPBSum{} + 1_i * reached[0].at(cut.layers[0].front()) >= 1_i, ProofLevel::Temporary);
+    // one state is true of every point --- each half is a bound on an empty sum,
+    // so its own reverse reification is a unit --- and the state's reverse
+    // reification then forces the flag.
+    const auto & empty_prefix = cut.layers[0].front();
+    vector<ProofLine> start_hints;
+    for (size_t row = 0; row < rows; ++row)
+        start_hints.push_back(at_least[row][0].at(empty_prefix.weights[row]).reverse);
+    start_hints.push_back(at_most[0].at(empty_prefix.profit).reverse);
+    start_hints.push_back(reached[0].at(empty_prefix).reverse);
+    auto at_least_one_state =
+        logger.emit(RUPProofRule{move(start_hints)}, WPBSum{} + 1_i * reached[0].at(empty_prefix).flag >= 1_i, ProofLevel::Temporary);
 
     // The state a layer kept in place of one a transition lands on: it takes no
     // more of any resource and allows no less, so an implication into what was
@@ -316,34 +323,47 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, const vector<Pr
     };
 
     // One transition: whether or not the layer's member is taken, a point in
-    // `from` is a point in `to`. Each half is a `pol` leaving its clause one
-    // unit propagation away, exactly as knapsack_upfront's forward chains do,
-    // and the state follows from the halves through the conjunction.
-    auto link = [&](size_t layer, const LiftedCoverCutState & from, const LiftedCoverCutState & to, bool taking) {
+    // `from` is a point in `to`. Each half is a `pol` carrying the source's
+    // bound onto the successor's, exactly as knapsack_upfront's forward chains
+    // do, and the state follows from the halves through the conjunction.
+    //
+    // Each of those `pol`s leaves a clause one unit propagation away, and that
+    // clause used to be emitted --- but the only thing that ever wanted it was
+    // the state step below, so it is a hint on that step instead. Every half a
+    // transition has is cited, along with the source's forward reification,
+    // which is what puts the halves in hand, and the successor's reverse, which
+    // is what turns them back into a state. Restricting propagation to those is
+    // also what keeps a step's cost independent of how much else is standing.
+    auto link = [&](size_t layer, const LiftedCoverCutState & from, const LiftedCoverCutState & to, bool taking) -> ProofLine {
         auto other_branch = taking ? ! flags[layer - 1] : flags[layer - 1];
 
+        vector<ProofLine> hints{reached[layer - 1].at(from).forward};
         auto half = [&](const Reified & from_half, const Reified & to_half) {
-            PolBuilder{}.add(to_half.reverse).add(from_half.forward).saturate().emit(logger, ProofLevel::Temporary);
-            logger.emit_rup_proof_line(WPBSum{} + 1_i * ! from_half.flag + 1_i * other_branch + 1_i * to_half.flag >= 1_i, ProofLevel::Temporary);
+            hints.push_back(PolBuilder{}.add(to_half.reverse).add(from_half.forward).saturate().emit(logger, ProofLevel::Temporary));
         };
 
         for (size_t row = 0; row < rows; ++row)
             half(at_least[row][layer - 1].at(from.weights[row]), at_least[row][layer].at(to.weights[row]));
         half(at_most[layer - 1].at(from.profit), at_most[layer].at(to.profit));
+        hints.push_back(reached[layer].at(to).reverse);
 
-        logger.emit_rup_proof_line(
-            WPBSum{} + 1_i * ! reached[layer - 1].at(from) + 1_i * other_branch + 1_i * reached[layer].at(to) >= 1_i, ProofLevel::Temporary);
+        return logger.emit(RUPProofRule{move(hints)},
+            WPBSum{} + 1_i * ! reached[layer - 1].at(from).flag + 1_i * other_branch + 1_i * reached[layer].at(to).flag >= 1_i,
+            ProofLevel::Temporary);
     };
 
     for (size_t layer = 1; layer <= members; ++layer) {
         auto member = layer - 1;
+        // What the layer's own at-least-one will resolve over: the layer before
+        // it was complete, and each of its states has a successor here.
+        vector<ProofLine> layer_hints{at_least_one_state};
         for (const auto & from : cut.layers[layer - 1]) {
             const auto & left_out = covering(layer, from);
-            link(layer, from, left_out, false);
+            vector<ProofLine> successor_hints{link(layer, from, left_out, false)};
 
             WPBSum successors;
-            successors += 1_i * ! reached[layer - 1].at(from);
-            successors += 1_i * reached[layer].at(left_out);
+            successors += 1_i * ! reached[layer - 1].at(from).flag;
+            successors += 1_i * reached[layer].at(left_out).flag;
 
             // Which resource, if any, the member overruns from here. Several
             // may; one is a proof.
@@ -357,11 +377,11 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, const vector<Pr
 
             if (! overrun) {
                 const auto & taken = covering(layer, LiftedCoverCutState{move(weights), from.profit + cut.coefficients[member]});
-                link(layer, from, taken, true);
+                successor_hints.push_back(link(layer, from, taken, true));
                 // One state can cover both branches, once there is more than one
                 // resource for it to be slack in.
                 if (taken != left_out)
-                    successors += 1_i * reached[layer].at(taken);
+                    successors += 1_i * reached[layer].at(taken).flag;
             }
             else {
                 // That row rules the member out from here. Weaken it down to
@@ -384,18 +404,26 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, const vector<Pr
                     pol.weaken(flags[later], tracker);
                 for (const auto & flag : weaken_out[*overrun])
                     pol.weaken(flag, tracker);
-                pol.saturate().divide_by(weights[*overrun] - cut.capacities[*overrun]).emit(logger, ProofLevel::Temporary);
+                // Reaching the source and then taking the member is what that
+                // lands on being impossible, so both are cited: the state's
+                // forward reification for the weight bound the step consumes,
+                // and the step itself for what it rules out. Unit propagation
+                // often gets there through the rows in the database instead,
+                // but a hinted step is only allowed what it names.
+                successor_hints.push_back(reached[layer - 1].at(from).forward);
+                successor_hints.push_back(pol.saturate().divide_by(weights[*overrun] - cut.capacities[*overrun]).emit(logger, ProofLevel::Temporary));
             }
 
-            logger.emit_rup_proof_line(move(successors) >= 1_i, ProofLevel::Temporary);
+            layer_hints.push_back(logger.emit(RUPProofRule{move(successor_hints)}, move(successors) >= 1_i, ProofLevel::Temporary));
         }
 
         // The layer is complete: whatever the members so far did, one of its
-        // states covers it. This resolves over the layer before's.
+        // states covers it. This resolves over the layer before's, which is why
+        // that and every one of this layer's successor steps are cited.
         WPBSum complete;
         for (const auto & state : cut.layers[layer])
-            complete += 1_i * reached[layer].at(state);
-        logger.emit_rup_proof_line(move(complete) >= 1_i, ProofLevel::Temporary);
+            complete += 1_i * reached[layer].at(state).flag;
+        at_least_one_state = logger.emit(RUPProofRule{move(layer_hints)}, move(complete) >= 1_i, ProofLevel::Temporary);
     }
 
     // One flag for the cut itself, so that a final state contradicting it is a
@@ -405,12 +433,14 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, const vector<Pr
     // leaves the flag true.
     auto [holds, holds_forward, holds_reverse] = logger.create_proof_flag_reifying(cut_prefix[members] <= cut.rhs, "lcccut", ProofLevel::Temporary);
 
+    vector<ProofLine> holds_hints{at_least_one_state};
     for (const auto & state : cut.layers[members]) {
-        PolBuilder{}.add(holds_reverse).add(at_most[members].at(state.profit).forward).saturate().emit(logger, ProofLevel::Temporary);
-        logger.emit_rup_proof_line(WPBSum{} + 1_i * holds + 1_i * ! reached[members].at(state) >= 1_i, ProofLevel::Temporary);
+        auto against = PolBuilder{}.add(holds_reverse).add(at_most[members].at(state.profit).forward).saturate().emit(logger, ProofLevel::Temporary);
+        holds_hints.push_back(logger.emit(RUPProofRule{vector<ProofLine>{reached[members].at(state).forward, against}},
+            WPBSum{} + 1_i * holds + 1_i * ! reached[members].at(state).flag >= 1_i, ProofLevel::Temporary));
     }
 
-    auto established = logger.emit_rup_proof_line(WPBSum{} + 1_i * holds >= 1_i, ProofLevel::Temporary);
+    auto established = logger.emit(RUPProofRule{move(holds_hints)}, WPBSum{} + 1_i * holds >= 1_i, ProofLevel::Temporary);
     auto derived = PolBuilder{}.add(holds_forward).add(established, total - cut.rhs).emit(logger, ProofLevel::Temporary);
 
     // Restore the caller's level and pin there, while the scaffolding is still
