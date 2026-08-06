@@ -49,13 +49,17 @@ namespace gcs
         /**
          * \name Why a donor was passed over.
          *
-         * Broken out because they mean different things to a caller: the first
-         * two are the v1 restrictions, the third is a proof-size budget that a
+         * Broken out because they mean different things to a caller: the
+         * first is the v1 restriction, the next two are proof-size budgets a
          * caller may want to raise, and the last is the honest and common
          * answer that the capacity was already the largest reachable load.
+         *
+         * Optional tasks are not among them. The strengthening argues about
+         * the donor's capacity rows, which an optional task's presence does not
+         * change the shape of --- it is a conjunct of the activity flag, not a
+         * term beside it.
          */
         ///@{
-        std::size_t declined_optional = 0;
         std::size_t declined_variable_arguments = 0;
         std::size_t declined_over_budget = 0;
         std::size_t declined_over_raise_budget = 0;

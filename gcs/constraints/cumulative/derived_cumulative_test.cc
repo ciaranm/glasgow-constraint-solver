@@ -108,7 +108,14 @@ namespace
         MakespanOmitRow,
         /// The same, deriving the tasks' window energy without the deadline
         /// that confines them to the window. VeriPB must reject.
-        MakespanForgetDeadline
+        MakespanForgetDeadline,
+        /// The same over an optional donor, but with the donor's presences left
+        /// off the spec, so the derived constraint treats every task as
+        /// unconditionally present. It then counts the energy of tasks that
+        /// need not be scheduled at all, and gives reasons with nothing in them
+        /// to cancel the window-energy lemma's presence terms against. VeriPB
+        /// must reject.
+        MakespanForgetPresence
     };
 
     struct DerivedDemoPresolver : Presolver
@@ -144,7 +151,8 @@ namespace
                         divisor = Integer{std::gcd(divisor.raw_value, heights[i].raw_value)};
 
                 auto donor_id = donor.constraint_id();
-                DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, donor.starts(), lengths, heights),
+                auto presences = demo == Demo::MakespanForgetPresence ? vector<IntegerVariableID>{} : donor.presences();
+                DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, donor.starts(), lengths, heights, presences),
                     .capacity = capacity,
                     .row_donors = {donor_id},
                     .recipe = {},
@@ -213,6 +221,7 @@ namespace
                 case Demo::MakespanClaimHigher:
                 case Demo::MakespanOmitRow:
                 case Demo::MakespanForgetDeadline:
+                case Demo::MakespanForgetPresence:
                     if (! makespan)
                         fail("a makespan demo was run on a model with no makespan variable");
                     spec.makespan = makespan;
@@ -278,22 +287,31 @@ namespace
         /// --- which is the entailment the makespan bound's derivation rests
         /// on, and the only thing that makes those demos legal.
         optional<int> makespan_horizon = nullopt;
+        /// When non-empty, one per task: the domain that task's presence
+        /// variable is declared over, and the constraint is posted with the
+        /// optional-task constructor. A solution then carries every presence
+        /// after every start.
+        vector<pair<int, int>> presence_ranges = {};
     };
 
-    auto is_satisfying(const Instance & inst, const vector<int> & starts) -> bool
+    /// Over an assignment that is every start, followed by every presence if
+    /// the instance has any.
+    auto is_satisfying(const Instance & inst, const vector<int> & assignment) -> bool
     {
         auto n = inst.start_ranges.size();
+        auto present = [&](size_t i) { return inst.presence_ranges.empty() || assignment[n + i] != 0; };
+
         int t_lo = INT_MAX, t_hi = INT_MIN;
         for (size_t i = 0; i < n; ++i) {
-            if (inst.lengths[i] == 0 || inst.heights[i] == 0)
+            if (inst.lengths[i] == 0 || inst.heights[i] == 0 || ! present(i))
                 continue;
-            t_lo = min(t_lo, starts[i]);
-            t_hi = max(t_hi, starts[i] + inst.lengths[i] - 1);
+            t_lo = min(t_lo, assignment[i]);
+            t_hi = max(t_hi, assignment[i] + inst.lengths[i] - 1);
         }
         for (int t = t_lo; t <= t_hi; ++t) {
             int load = 0;
             for (size_t i = 0; i < n; ++i)
-                if (starts[i] <= t && t < starts[i] + inst.lengths[i])
+                if (present(i) && assignment[i] <= t && t < assignment[i] + inst.lengths[i])
                     load += inst.heights[i];
             if (load > inst.capacity)
                 return false;
@@ -301,9 +319,20 @@ namespace
         return true;
     }
 
+    /// The ranges build_expected has to enumerate to produce what is_satisfying
+    /// and the solution callback both expect.
+    auto assignment_ranges(const Instance & inst) -> vector<pair<int, int>>
+    {
+        auto ranges = inst.start_ranges;
+        ranges.insert(ranges.end(), inst.presence_ranges.begin(), inst.presence_ranges.end());
+        return ranges;
+    }
+
     struct Posted
     {
         vector<IntegerVariableID> starts;
+        /// Empty unless the instance asked for optional tasks.
+        vector<IntegerVariableID> presences;
         optional<IntegerVariableID> makespan;
         /// The demo presolver's record of what its derived constraint's
         /// initialiser inferred, if anything.
@@ -329,11 +358,25 @@ namespace
                 p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * *makespan + -1_i * starts[i], lengths[i]});
         }
 
-        p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(donor_rules));
+        vector<IntegerVariableID> presences;
+        for (auto & [lo, hi] : inst.presence_ranges)
+            presences.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}, "present" + std::to_string(presences.size())));
+
+        if (presences.empty())
+            p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(donor_rules));
+        else {
+            vector<IntegerVariableID> length_vars, height_vars;
+            for (auto l : lengths)
+                length_vars.push_back(constant_variable(l));
+            for (auto h : heights)
+                height_vars.push_back(constant_variable(h));
+            p.post(Cumulative{starts, length_vars, height_vars, presences, constant_variable(Integer{inst.capacity})}.with_rules(donor_rules));
+        }
+
         auto presolver = DerivedDemoPresolver{demo.value_or(Demo::Duplicate), makespan};
         if (demo)
             p.add_presolver(presolver);
-        return Posted{move(starts), makespan, presolver.bound_reached};
+        return Posted{move(starts), move(presences), makespan, presolver.bound_reached};
     }
 
     struct Outcome
@@ -359,6 +402,8 @@ namespace
                                found_a_solution = true;
                                vector<int> solution;
                                for (const auto & v : starts)
+                                   solution.push_back(s(v).raw_value);
+                               for (const auto & v : posted.presences)
                                    solution.push_back(s(v).raw_value);
                                outcome.solutions.insert(move(solution));
                                return true;
@@ -437,7 +482,7 @@ auto main(int argc, char * argv[]) -> int
 
         set<vector<int>> expected;
         build_expected(
-            expected, [&](const vector<int> & starts) { return is_satisfying(duplicate_instance, starts); }, duplicate_instance.start_ranges);
+            expected, [&](const vector<int> & starts) { return is_satisfying(duplicate_instance, starts); }, assignment_ranges(duplicate_instance));
         if (expected != with_derived.solutions)
             fail("duplicate demo: solutions do not match brute force");
     }
@@ -483,7 +528,7 @@ auto main(int argc, char * argv[]) -> int
 
         set<vector<int>> expected;
         build_expected(
-            expected, [&](const vector<int> & starts) { return is_satisfying(duplicate_instance, starts); }, duplicate_instance.start_ranges);
+            expected, [&](const vector<int> & starts) { return is_satisfying(duplicate_instance, starts); }, assignment_ranges(duplicate_instance));
         if (derived_working.solutions != expected)
             fail("carrying demo: solutions do not match brute force with the donor silent");
         if (derived_working.recursions >= donor_silent.recursions)
@@ -514,7 +559,7 @@ auto main(int argc, char * argv[]) -> int
 
         set<vector<int>> expected;
         build_expected(
-            expected, [&](const vector<int> & starts) { return is_satisfying(makespan_instance, starts); }, makespan_instance.start_ranges);
+            expected, [&](const vector<int> & starts) { return is_satisfying(makespan_instance, starts); }, assignment_ranges(makespan_instance));
         if (expected != with_bound.solutions)
             fail("makespan demo: solutions do not match brute force");
 
@@ -525,10 +570,61 @@ auto main(int argc, char * argv[]) -> int
             fail("makespan demo: the bound differs with proofs off");
     }
 
+    // The same three tasks, made optional. What a derived constraint over an
+    // optional donor has to get right is not the rows --- an optional task's
+    // presence is a conjunct of its activity flag, so the rows are the same
+    // shape --- but which tasks it may speak for, and with what in the reason.
+    //
+    // The energy argument is where that bites hardest, because an absent task
+    // does no work: count one whose presence is undecided and the bound claims
+    // time the schedule need not need.
+    {
+        auto optional_makespan = makespan_instance;
+        optional_makespan.presence_ranges = vector<pair<int, int>>(3, {1, 1});
+
+        // Declared present, so the argument is the one above, unchanged --- but
+        // now every activity it pins carries a presence conjunct.
+        auto all_present =
+            solve_it(optional_makespan, make_optional(Demo::Makespan), proofs ? make_optional("derived_cumulative_makespan_present") : nullopt);
+        if (all_present.makespan_bound != make_optional(6_i))
+            fail("optional makespan demo: a donor whose tasks are all declared present lost its bound");
+
+        set<vector<int>> expected;
+        build_expected(expected, [&](const vector<int> & a) { return is_satisfying(optional_makespan, a); }, assignment_ranges(optional_makespan));
+        if (expected != all_present.solutions)
+            fail("optional makespan demo: solutions do not match brute force, all present");
+
+        // Undecided, so no task carries guaranteed energy and there is no bound
+        // to reach. Inferring one anyway would be unsound, and the proof says so
+        // --- the window-energy lemma's presence terms have nothing to cancel
+        // against without a `presence = 1` in the reason, so the wrapping RUP
+        // cannot close and VeriPB rejects. This is the fixture that would catch
+        // it.
+        optional_makespan.presence_ranges = vector<pair<int, int>>(3, {0, 1});
+        auto undecided =
+            solve_it(optional_makespan, make_optional(Demo::Makespan), proofs ? make_optional("derived_cumulative_makespan_optional") : nullopt);
+        if (undecided.makespan_bound)
+            fail("optional makespan demo: a bound of " + std::to_string(undecided.makespan_bound->raw_value) +
+                " was inferred from tasks that need not be scheduled at all");
+
+        expected.clear();
+        build_expected(expected, [&](const vector<int> & a) { return is_satisfying(optional_makespan, a); }, assignment_ranges(optional_makespan));
+        if (expected != undecided.solutions)
+            fail("optional makespan demo: solutions do not match brute force, presences undecided");
+    }
+
     // Nothing above may have reached the OPB.
     check_opb_unaffected("duplicate", duplicate_instance, Demo::Duplicate);
     check_opb_unaffected("strengthened", strengthened_instance, Demo::Strengthened);
     check_opb_unaffected("makespan", makespan_instance, Demo::Makespan);
+    {
+        // Including over an optional donor, where the derived constraint now
+        // has a presence to carry: carrying one is a thing to say in a reason,
+        // never a row to add.
+        auto optional_makespan = makespan_instance;
+        optional_makespan.presence_ranges = vector<pair<int, int>>(3, {0, 1});
+        check_opb_unaffected("optional makespan", optional_makespan, Demo::Makespan);
+    }
 
     // A derived constraint is implied, so it must not cost solutions. Random
     // instances, against brute force, with the duplicate recipe (which keeps
@@ -551,7 +647,7 @@ auto main(int argc, char * argv[]) -> int
             inst.capacity = cap_dist(rand);
 
             set<vector<int>> expected;
-            build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(inst, starts); }, inst.start_ranges);
+            build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(inst, starts); }, assignment_ranges(inst));
 
             for (auto demo : {Demo::Duplicate, Demo::Strengthened}) {
                 auto outcome = solve_it(inst, make_optional(demo), nullopt);
@@ -607,10 +703,15 @@ auto main(int argc, char * argv[]) -> int
     // verifies whatever it concludes, so only a refusal says this one is tight.
     for (auto [demo, what] : {pair{Demo::MakespanClaimHigher, "a makespan one larger than the energy supports"},
              pair{Demo::MakespanOmitRow, "a makespan bound counting the window one capacity row short"},
-             pair{Demo::MakespanForgetDeadline, "a makespan bound whose window energy forgets the deadline"}}) {
+             pair{Demo::MakespanForgetDeadline, "a makespan bound whose window energy forgets the deadline"},
+             pair{Demo::MakespanForgetPresence, "a makespan bound over optional tasks that forgets they are optional"}}) {
         const string name = "derived_cumulative_makespan_mutation";
+        auto instance = makespan_instance;
+        if (demo == Demo::MakespanForgetPresence)
+            instance.presence_ranges = vector<pair<int, int>>(3, {0, 1});
+
         Problem p;
-        post(p, makespan_instance, make_optional(demo));
+        post(p, instance, make_optional(demo));
         solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(ProofFileNames{name}));
 
         if (run_veripb(name + ".opb", name + ".pbp"))
@@ -630,7 +731,7 @@ auto main(int argc, char * argv[]) -> int
             fail("backtracking soak: the instance did not search, so it soaked nothing");
 
         set<vector<int>> expected;
-        build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(soak, starts); }, soak.start_ranges);
+        build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(soak, starts); }, assignment_ranges(soak));
         if (expected != outcome.solutions)
             fail("backtracking soak: solutions do not match brute force");
     }

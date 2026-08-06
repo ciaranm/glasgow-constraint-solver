@@ -1,6 +1,7 @@
 #include <gcs/constraint_id.hh>
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
+#include <gcs/constraints/cumulative/propagate.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/proofs/am1_from_row.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -26,6 +27,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_optional;
 using std::make_unique;
 using std::map;
 using std::max;
@@ -46,15 +48,20 @@ namespace
     /// with a variable height the donor's row is over bit-linearised
     /// contribution flags rather than `height * active`, so a subset sum of the
     /// heights is not what the row's coefficients are.
+    ///
+    /// A presence is not one of those: it is not a coefficient at all, so the
+    /// only thing that has to be read off it here is which tasks the donor
+    /// dropped for being constantly absent.
     struct ConstantTaskData
     {
         vector<Integer> lengths, heights;
+        vector<bool> never_present;
         Integer capacity;
     };
 
     [[nodiscard]] auto constant_task_data(const Cumulative & donor) -> optional<ConstantTaskData>
     {
-        ConstantTaskData data{{}, {}, 0_i};
+        ConstantTaskData data{{}, {}, {}, 0_i};
 
         auto value_of = [](const IntegerVariableID & v) -> optional<Integer> {
             if (! is_constant_variable(v))
@@ -80,6 +87,10 @@ namespace
                 return std::nullopt;
             data.heights.push_back(*height);
         }
+
+        for (size_t i = 0; i < donor.starts().size(); ++i)
+            data.never_present.push_back(
+                cumulative_task_presence(donor.presences().empty() ? std::nullopt : make_optional(donor.presences()[i])).never_present);
 
         return data;
     }
@@ -183,17 +194,6 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
     for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
         bump(&CumulativeStrengtheningStats::donors_seen);
 
-        // A derived Cumulative over an optional donor would need the donor's
-        // presence literals in every reason it gives, which DerivedCumulativeSpec
-        // says it does not have. Loudly, because a model that turned optional
-        // would otherwise just quietly stop being strengthened.
-        if (! donor.presences().empty()) {
-            bump(&CumulativeStrengtheningStats::declined_optional);
-            if (logger)
-                logger->emit_proof_comment("presolve cumulative: declining " + as_string(donor.constraint_id()) + ", optional tasks");
-            continue;
-        }
-
         auto data = constant_task_data(donor);
         if (! data) {
             bump(&CumulativeStrengtheningStats::declined_variable_arguments);
@@ -209,10 +209,21 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // The same windowing install_derived_cumulative resolves, and the same
         // windowing the donor encoded: a task can be active from its earliest
         // start to its latest finish. This is the paper's `t in [est_j, lct_j)`.
+        //
+        // Optional tasks need nothing further here. The whole strengthening is
+        // an argument about the donor's rows `Σ h_i·active_{i,t} ≤ C`, and an
+        // optional task's presence lives *inside* its active flag rather than
+        // beside it, so those rows are the same shape either way and every
+        // subset sum, at-most-one and raise below reads them the same. What the
+        // presence does change is the reasons the derived propagator gives,
+        // which install_derived_cumulative handles from the arguments passed to
+        // derived_cumulative_tasks_from below.
         vector<Integer> t_lo(n, 0_i), t_hi(n, 0_i);
         vector<size_t> active_tasks;
         for (size_t i = 0; i < n; ++i) {
-            if (data->lengths[i] <= 0_i || data->heights[i] <= 0_i)
+            // A constantly absent task is one the donor dropped outright, so it
+            // has no flags and no term in any row to argue over.
+            if (data->lengths[i] <= 0_i || data->heights[i] <= 0_i || data->never_present[i])
                 continue;
             active_tasks.push_back(i);
             auto [s_lo, s_hi] = state.bounds(starts[i]);
@@ -390,7 +401,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             _mutation);
         auto raise_too_fast = std::holds_alternative<cumulative_strengthening_mutation::RaiseTooFast>(_mutation);
 
-        DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, starts, data->lengths, derived_heights),
+        DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, starts, data->lengths, derived_heights, donor.presences()),
             .capacity = kappa,
             .row_donors = {donor_id},
             .recipe = [donor_id, heights, capacity, kappa, by_time, stats, subset_sum_corruption, raise_too_fast, unentitled_raise](

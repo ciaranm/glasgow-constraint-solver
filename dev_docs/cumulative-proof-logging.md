@@ -733,12 +733,60 @@ at the point of use.
 Falsifying a presence *by* an energy argument, rather than by the
 profile, is issue 09's extension and is not here.
 
-A *derived* Cumulative (issue 04) declines the whole question: it fills
-its `presence` with nullopts, and `DerivedCumulativeSpec` says the donor
-must not be optional. Deriving over an optional donor would need the
-donor's presence literals in every reason the derived constraint gives,
-which is future work --- and the presolvers of issues 06-08 are specified
-to bail out on optional Cumulatives for v1 anyway.
+### Deriving over an optional donor
+
+A *derived* Cumulative (issue 04) works over an optional donor, and the
+striking thing is how little it takes. The rows are the argument, and an
+optional task's presence is a conjunct *inside* its activity flag rather
+than a term beside it, so `Σ h_i·active_{i,t} ≤ C` is the same row either
+way. Every recipe built on one — subset sums, at-most-ones, coefficient
+raising, cover cuts — reads it identically, and none of them changes at
+all.
+
+What does change is what the derived propagator may *say*. Pinning
+`active_{i,t} = 1` now needs `presences[i] = 1` too, so
+`DerivedCumulativeTask` carries the donor's presence argument and
+`install_derived_cumulative` resolves it through
+`cumulative_task_presence` — the same function `Cumulative::prepare`
+resolves its own with, shared precisely so that the two cannot come to
+different verdicts about which flags carry a literal. From there
+`propagate_cumulative` is the code that already knew how to do this, and
+`reason_with_presence()` supplies the literals.
+
+The window-energy lemma then comes out right without being asked. Its
+per-time step adds `active`'s `[f]` half, which for an optional task *is*
+`active ∨ ¬before ∨ ¬after ∨ ¬p`, so summing the window's worth of them
+gives
+
+```
+Σ_{t∈[a,b)} active_{i,t}  +  activity·¬p_i  ≥  activity
+```
+
+— the conditional form, for free. That leftover `activity·¬p` rides
+through the consuming `pol`, which therefore does not reach a
+contradiction on its own; the wrapping RUP disposes of it, because
+`p_i = 1` is in the reason. Which is exactly why the rule may only speak
+for tasks that are *known* present, and why both consumers filter on
+`is_present` before counting anything.
+
+At the root usually nothing is known present, so a presolver's energy
+bound counts an optional task as absent. That is weaker, not wrong. What
+it gives up is the conditional bound
+
+```
+capacity × window  ≥  Σ_i energy_i · p_i
+```
+
+which is an implied linear constraint over the presences rather than
+anything a makespan variable's lower bound can hold, and so belongs with
+the conditional-bounds follow-up below rather than here.
+
+The multi-donor case is *not* covered, and that is where the remaining
+work is: `recover_conjunction_flag_bridge` cancels two donors' conjuncts
+against each other, and a presence conjunct cancels only when both donors
+carry the same literal. Mixed arities change the degree arithmetic
+outright. The presolvers of issues 07 and 08 bridge between donors, so
+they still decline an optional one; issue 06's does not, and does not.
 
 `constraint_type()` is `cumulative_optional` for the optional form, so
 the verified-encoding chain does not silently match it against

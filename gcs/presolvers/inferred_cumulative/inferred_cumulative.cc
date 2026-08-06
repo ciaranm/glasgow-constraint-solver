@@ -456,6 +456,14 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
     for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
         bump(&InferredCumulativeStats::donors_seen);
 
+        // The mechanism no longer minds an optional donor --- a presence is a
+        // conjunct of the activity flag, so the rows this argues over are the
+        // same shape, and install_derived_cumulative carries the literal into
+        // the reasons. What is still open here is the *cross-donor* half: this
+        // presolver draws tasks from several Cumulatives and bridges one
+        // donor's flags to another's, and two donors' activity flags cancel
+        // against each other only if their presence conjuncts do too. Declined
+        // until that has a rule of its own rather than a hopeful `pol`.
         if (! donor.presences().empty()) {
             bump(&InferredCumulativeStats::declined_optional);
             if (logger)

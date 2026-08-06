@@ -117,6 +117,47 @@ namespace
         return true;
     }
 
+    /// An instance whose tasks are optional. Deliberately not folded into
+    /// Instance: a solution then carries a presence per task as well as a
+    /// start, which every other fixture in this file would have to account for
+    /// and none of them cares about.
+    struct OptionalInstance
+    {
+        vector<pair<int, int>> start_ranges;
+        vector<int> lengths;
+        vector<int> heights;
+        /// Per task, the domain its presence variable is declared over.
+        vector<pair<int, int>> presence_ranges;
+        int capacity;
+    };
+
+    /// Over an assignment that is every start followed by every presence, which
+    /// is the shape build_expected produces and the shape the solution callback
+    /// records.
+    auto is_satisfying(const OptionalInstance & inst, const vector<int> & assignment) -> bool
+    {
+        auto n = inst.start_ranges.size();
+        auto start = [&](size_t i) { return assignment[i]; };
+        auto present = [&](size_t i) { return assignment[n + i] != 0; };
+
+        int t_lo = INT_MAX, t_hi = INT_MIN;
+        for (size_t i = 0; i < n; ++i) {
+            if (inst.lengths[i] == 0 || inst.heights[i] == 0 || ! present(i))
+                continue;
+            t_lo = min(t_lo, start(i));
+            t_hi = max(t_hi, start(i) + inst.lengths[i] - 1);
+        }
+        for (int t = t_lo; t <= t_hi; ++t) {
+            int load = 0;
+            for (size_t i = 0; i < n; ++i)
+                if (present(i) && start(i) <= t && t < start(i) + inst.lengths[i])
+                    load += inst.heights[i];
+            if (load > inst.capacity)
+                return false;
+        }
+        return true;
+    }
+
     /// How a solve was set up: whether the presolver ran, with which rules on
     /// both sides, and with what corruption.
     struct Setup
@@ -190,6 +231,50 @@ namespace
         outcome.refuted_at_root = ! reached_a_node && ! found_a_solution;
 
         if (proof_name && verify)
+            verify_proof_and_clean_up(*proof_name);
+        return outcome;
+    }
+
+    /// Solve an optional instance, collecting the same (starts, presences)
+    /// tuples brute force produces.
+    auto solve_optional(const OptionalInstance & inst, const shared_ptr<CumulativeStrengtheningStats> & stats, const optional<string> & proof_name)
+        -> Outcome
+    {
+        Problem p;
+        vector<IntegerVariableID> starts, presences, lengths, heights;
+        for (size_t i = 0; i < inst.start_ranges.size(); ++i) {
+            starts.push_back(p.create_integer_variable(Integer{inst.start_ranges[i].first}, Integer{inst.start_ranges[i].second}));
+            presences.push_back(p.create_integer_variable(Integer{inst.presence_ranges[i].first}, Integer{inst.presence_ranges[i].second}));
+            lengths.push_back(constant_variable(Integer{inst.lengths[i]}));
+            heights.push_back(constant_variable(Integer{inst.heights[i]}));
+        }
+
+        p.post(Cumulative{starts, lengths, heights, presences, constant_variable(Integer{inst.capacity})});
+        if (stats)
+            p.add_presolver(CumulativeStrengthening{stats});
+
+        Outcome outcome;
+        bool reached_a_node = false, found_a_solution = false;
+        solve_with(p,
+            SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                               found_a_solution = true;
+                               vector<int> solution;
+                               for (const auto & v : starts)
+                                   solution.push_back(s(v).raw_value);
+                               for (const auto & v : presences)
+                                   solution.push_back(s(v).raw_value);
+                               outcome.solutions.insert(move(solution));
+                               return true;
+                           },
+                .trace = [&](const CurrentState &) -> bool {
+                    reached_a_node = true;
+                    return true;
+                }},
+            proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+
+        outcome.refuted_at_root = ! reached_a_node && ! found_a_solution;
+
+        if (proof_name)
             verify_proof_and_clean_up(*proof_name);
         return outcome;
     }
@@ -592,28 +677,64 @@ auto main(int argc, char * argv[]) -> int
             fail("negative control: solutions do not match brute force");
     }
 
-    // v1 restrictions, each declined loudly rather than quietly mis-derived.
-    {
+    // Optional donors, which are not a restriction: the presence is a conjunct
+    // of the activity flag rather than a term beside it, so the rows this
+    // presolver argues over are the same shape either way.
+    //
+    // Two of them, because they exercise different halves. With presences
+    // declared over {1, 1} every rule fires exactly where it would with no
+    // presences at all --- and every flag still carries a presence conjunct
+    // that every reason has to carry too, so this is the fixture that would
+    // catch a pin emitted without one. With them over {0, 1} the rules mostly
+    // hold off until the search decides a presence, and what is checked is that
+    // no solution was lost on the way.
+    //
+    // Five tasks of height three and length two, over a window four time points
+    // wide. Eight units of capacity supply thirty-two there, and the
+    // strengthened six supply twenty-four, which is short of the thirty the
+    // tasks need --- the energy gap that rounding a capacity by integrality
+    // opens up, and one the donor cannot reach for itself. So the refutation
+    // below is exclusively the derived constraint's, drawn over the donor's
+    // flags, and every activity it pins has to name a presence.
+    //
+    // The starts span three values rather than two on purpose: a {0, 1} domain
+    // is direct-only encoded, and prepare_cumulative_overload_check leaves such
+    // a task out of the energy set for want of order literals.
+    for (const auto & [what, presence_range] : {pair<string, pair<int, int>>{"present", {1, 1}}, {"undecided", {0, 1}}}) {
         auto stats = make_shared<CumulativeStrengtheningStats>();
+        const OptionalInstance inst{
+            {{0, 2}, {0, 2}, {0, 2}, {0, 2}, {0, 2}}, {2, 2, 2, 2, 2}, {3, 3, 3, 3, 3}, vector<pair<int, int>>(5, presence_range), 8};
 
-        Problem p;
-        vector<IntegerVariableID> starts, presences;
-        for (int i = 0; i < 3; ++i) {
-            starts.push_back(p.create_integer_variable(0_i, 3_i));
-            presences.push_back(p.create_integer_variable(0_i, 1_i));
+        auto outcome = solve_optional(inst, stats, proofs ? make_optional("cumulative_strengthening_optional_" + what) : nullopt);
+
+        // The donor's heights are all multiples of three and its capacity is
+        // not, so the subset sum rounds eight down to six. Assert it: a fixture
+        // that quietly stopped strengthening would pass everything else here.
+        if (stats->donors_strengthened != 1)
+            fail("an optional-task donor was not strengthened, on " + what);
+        if (stats->capacity_units_removed != 2_i)
+            fail("an optional-task donor was strengthened by the wrong amount, on " + what);
+
+        set<vector<int>> expected;
+        auto ranges = inst.start_ranges;
+        ranges.insert(ranges.end(), inst.presence_ranges.begin(), inst.presence_ranges.end());
+        build_expected(expected, [&](const vector<int> & assignment) { return is_satisfying(inst, assignment); }, ranges);
+        if (expected != outcome.solutions)
+            fail("optional-task solutions do not match brute force, on " + what);
+
+        // With every task present the energy argument runs at the root and
+        // refutes there --- and the donor on its own does not, which is what
+        // says the derived constraint did the work rather than merely riding
+        // along behind it.
+        if (what == "present") {
+            if (! outcome.refuted_at_root)
+                fail("the strengthened energy check did not refute the all-present instance at the root");
+            if (solve_optional(inst, nullptr, nullopt).refuted_at_root)
+                fail("the donor alone refuted at the root, so the fixture proves nothing");
         }
-        vector<IntegerVariableID> lengths{constant_variable(2_i), constant_variable(2_i), constant_variable(2_i)},
-            heights{constant_variable(6_i), constant_variable(10_i), constant_variable(15_i)};
-        p.post(Cumulative{starts, lengths, heights, presences, constant_variable(14_i)});
-        p.add_presolver(CumulativeStrengthening{stats});
-        solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }}, nullopt);
-
-        if (stats->declined_optional != 1)
-            fail("an optional-task donor was not declined");
-        if (stats->donors_strengthened != 0)
-            fail("an optional-task donor was strengthened anyway");
     }
 
+    // v1 restrictions, each declined loudly rather than quietly mis-derived.
     {
         auto stats = make_shared<CumulativeStrengtheningStats>();
 

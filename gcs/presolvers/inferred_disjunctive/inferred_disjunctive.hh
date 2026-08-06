@@ -94,6 +94,11 @@ namespace gcs
          * \name Why a candidate or a donor was passed over.
          */
         ///@{
+        /// Donors passed over for having optional tasks. Not because a derived
+        /// Cumulative cannot reason over them --- it can, see
+        /// install_derived_cumulative --- but because this presolver bridges
+        /// flags between donors, and a presence conjunct has to cancel across
+        /// that bridge before it may.
         std::size_t declined_optional = 0;
         std::size_t declined_variable_arguments = 0;
         std::size_t dropped_too_small = 0;

@@ -55,6 +55,15 @@ namespace gcs::innards
         /// contribution rather than as `height x active`, and a derived row
         /// would have to speak about those bits too.
         Integer length, height;
+
+        /// The presence argument the donor was posted with at `position`, or
+        /// nullopt when the donor is not an optional-task Cumulative. As
+        /// posted, not as resolved: install_derived_cumulative puts it through
+        /// cumulative_task_presence, exactly as the donor did, so that the
+        /// reasons this constraint gives carry the presence literal its
+        /// donor's active flag was reified on --- and so that a task the donor
+        /// dropped as constantly absent is dropped here too.
+        std::optional<IntegerVariableID> presence = std::nullopt;
     };
 
     /**
@@ -85,11 +94,8 @@ namespace gcs::innards
     struct DerivedCumulativeSpec
     {
         /// The derived constraint's tasks, each pointing at the donor that
-        /// encoded it. No donor may be an optional-task Cumulative: its active
-        /// flags would carry a presence conjunct, and a derived constraint
-        /// reasoning over them would need that donor's presence literals in
-        /// every reason it gives. A caller building one of these should decline
-        /// when a donor's presences() is non-empty.
+        /// encoded it, and carrying that donor's presence argument for it if
+        /// there is one.
         std::vector<DerivedCumulativeTask> tasks;
 
         Integer capacity;
@@ -135,6 +141,13 @@ namespace gcs::innards
          * The bound is found from the task geometry and the links' bounds
          * alone, so it is the same with proofs off; only the certificate needs
          * a logger.
+         *
+         * An optional task carries no guaranteed energy until its presence is
+         * known, and at the root it usually is not, so the bound simply counts
+         * those tasks as absent. That is weaker rather than wrong: what it
+         * gives up is the conditional bound `capacity x window >= Σ energy_i
+         * x present_i`, which is an implied linear constraint over the
+         * presences rather than anything this variable's lower bound can hold.
          */
         std::optional<IntegerVariableID> makespan = std::nullopt;
 
@@ -163,10 +176,14 @@ namespace gcs::innards
      * \brief Build the task list for the common case of a derived Cumulative
      * over all of one donor's tasks, in the donor's order.
      *
+     * `presences` is the donor's own presences(), which is empty unless it was
+     * posted with the optional-task constructor.
+     *
      * \ingroup Innards
      */
     [[nodiscard]] auto derived_cumulative_tasks_from(const ConstraintID & donor, const std::vector<IntegerVariableID> & starts,
-        const std::vector<Integer> & lengths, const std::vector<Integer> & heights) -> std::vector<DerivedCumulativeTask>;
+        const std::vector<Integer> & lengths, const std::vector<Integer> & heights, const std::vector<IntegerVariableID> & presences = {})
+        -> std::vector<DerivedCumulativeTask>;
 
     /**
      * \brief Install a derived Cumulative's propagator.

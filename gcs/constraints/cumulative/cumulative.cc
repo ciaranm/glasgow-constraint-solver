@@ -33,11 +33,13 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_optional;
 using std::make_shared;
 using std::make_unique;
 using std::max;
 using std::min;
 using std::move;
+using std::optional;
 using std::pair;
 using std::size_t;
 using std::string;
@@ -143,6 +145,22 @@ auto Cumulative::clone() const -> unique_ptr<Constraint>
     return result;
 }
 
+auto gcs::innards::cumulative_task_presence(const optional<IntegerVariableID> & posted) -> CumulativeTaskPresence
+{
+    if (! posted)
+        return CumulativeTaskPresence{};
+
+    if (! is_constant_variable(*posted))
+        return CumulativeTaskPresence{*posted, false};
+
+    auto value = const_value_of(*posted);
+    if (value == 1_i)
+        return CumulativeTaskPresence{};
+    if (value == 0_i)
+        return CumulativeTaskPresence{*posted, true};
+    throw InvalidProblemDefinitionException{"Cumulative: presences must be within {0, 1}"};
+}
+
 auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     auto n = _starts.size();
@@ -161,25 +179,23 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
         throw InvalidProblemDefinitionException{"Cumulative: capacity must be non-negative"};
 
     // Resolve each task's presence to the variable that has to appear in its
-    // active flag, or nullopt when the task is unconditionally present. Only a
-    // constant argument resolves away: a *variable* presence keeps its conjunct
-    // even if it is already fixed, because the encoding has to say what it means
-    // without appealing to a domain the OPB does not record.
+    // active flag, or nullopt when the task is unconditionally present ---
+    // by the same rule anything pinning these flags has to apply, which is why
+    // cumulative_task_presence is shared rather than open-coded here.
     _presence.assign(n, std::nullopt);
+    vector<bool> never_present(n, false);
     for (size_t i = 0; i < n; ++i) {
-        if (_presences.empty())
-            continue;
-        const auto & p = _presences[i];
-        if (is_constant_variable(p)) {
-            if (const_value_of(p) == 1_i)
-                continue;
-        }
-        else {
-            auto [lo, hi] = initial_state.bounds(p);
+        auto resolved = cumulative_task_presence(_presences.empty() ? std::nullopt : make_optional(_presences[i]));
+        _presence[i] = resolved.literal;
+        never_present[i] = resolved.never_present;
+
+        // Only now are the domains available, which is why a variable
+        // presence is range-checked here rather than in the constructor.
+        if (resolved.literal && ! is_constant_variable(*resolved.literal)) {
+            auto [lo, hi] = initial_state.bounds(*resolved.literal);
             if (lo < 0_i || hi > 1_i)
                 throw InvalidProblemDefinitionException{"Cumulative: presences must be within {0, 1}"};
         }
-        _presence[i] = p;
     }
 
     // Resolve snapshots used by define_proof_model and the propagator. For a
@@ -212,12 +228,9 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
 
     // Tasks whose length can only ever be 0, or whose height can only ever be 0,
     // or which are constantly absent, never raise the load profile.
-    auto constantly_absent = [&](size_t i) {
-        return _presence[i].has_value() && is_constant_variable(*_presence[i]) && const_value_of(*_presence[i]) == 0_i;
-    };
     _active_tasks.reserve(n);
     for (size_t i = 0; i < n; ++i)
-        if (_length_ub[i] > 0_i && _height_ub[i] > 0_i && ! constantly_absent(i))
+        if (_length_ub[i] > 0_i && _height_ub[i] > 0_i && ! never_present[i])
             _active_tasks.push_back(i);
 
     if (_active_tasks.empty())

@@ -311,10 +311,18 @@ Each is declined rather than worked around, and counted in
 `CumulativeStrengtheningStats` so that a model drifting into one does not simply
 stop being strengthened in silence:
 
-- **Optional tasks.** A derived `Cumulative` over an optional donor would need
-  the donor's presence literals in every reason it gives; `DerivedCumulativeSpec`
-  says the donor's `presences()` must be empty. This is the v1 bail-out issues
-  #547–#549 are all specified to take.
+Optional tasks are deliberately **not** on this list. The whole strengthening is
+an argument about the donor's per-time rows, and an optional task's presence is a
+conjunct inside its activity flag rather than a term beside it, so those rows are
+the same shape either way and every subset sum, at-most-one and raise reads them
+identically. What the presence changes is the reasons the derived constraint's
+propagator gives, which `install_derived_cumulative` handles once it is told the
+donor's presence arguments — see
+[cumulative-proof-logging.md](cumulative-proof-logging.md). `InferredDisjunctive`
+and `InferredCumulative` still decline, for a reason that is theirs rather than
+this one's: they bridge flags between donors, and a presence conjunct has to
+cancel across that bridge first.
+
 - **Variable lengths, heights or capacity.** With a variable height the donor's
   row is over bit-linearised contribution flags rather than `height × active`, so
   a subset sum of the heights is not a subset sum of the row's coefficients.

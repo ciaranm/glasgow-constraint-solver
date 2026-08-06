@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
@@ -20,6 +21,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_optional;
 using std::make_shared;
 using std::move;
 using std::size_t;
@@ -28,15 +30,18 @@ using std::to_string;
 using std::vector;
 
 auto gcs::innards::derived_cumulative_tasks_from(const ConstraintID & donor, const vector<IntegerVariableID> & starts,
-    const vector<Integer> & lengths, const vector<Integer> & heights) -> vector<DerivedCumulativeTask>
+    const vector<Integer> & lengths, const vector<Integer> & heights, const vector<IntegerVariableID> & presences) -> vector<DerivedCumulativeTask>
 {
     if (starts.size() != lengths.size() || starts.size() != heights.size())
         throw InvalidProblemDefinitionException{"derived Cumulative: starts, lengths, heights must have the same size"};
+    if (! presences.empty() && starts.size() != presences.size())
+        throw InvalidProblemDefinitionException{"derived Cumulative: starts and presences must have the same size"};
 
     vector<DerivedCumulativeTask> tasks;
     tasks.reserve(starts.size());
     for (size_t i = 0; i < starts.size(); ++i)
-        tasks.push_back(DerivedCumulativeTask{donor, i, starts[i], lengths[i], heights[i]});
+        tasks.push_back(
+            DerivedCumulativeTask{donor, i, starts[i], lengths[i], heights[i], presences.empty() ? std::nullopt : make_optional(presences[i])});
     return tasks;
 }
 
@@ -56,11 +61,19 @@ auto gcs::innards::install_derived_cumulative(
     inputs->owner = CurrentlyUnnamedConstraint{};
     inputs->capacity = constant_variable(spec.capacity);
     inputs->rules = spec.rules;
-    // Every task unconditionally present: a derived Cumulative over an optional
-    // donor would have to carry that donor's presence literals into its own
-    // reasons, which is future work rather than something to get wrong quietly.
-    // See DerivedCumulativeSpec, which says no donor may be optional.
-    inputs->presence.assign(n, std::nullopt);
+
+    // Each donor's own verdict on the task's presence, reached by the rule the
+    // donor applied: the flags this constraint pins carry the literal that says
+    // yes, so a reason of ours that left it out would be claiming a load the
+    // task need not be carrying.
+    vector<bool> never_present(n, false);
+    inputs->presence.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        auto resolved = cumulative_task_presence(spec.tasks[i].presence);
+        inputs->presence.push_back(resolved.literal);
+        never_present[i] = resolved.never_present;
+    }
+
     for (const auto & task : spec.tasks) {
         inputs->starts.push_back(task.start);
         inputs->lengths.push_back(constant_variable(task.length));
@@ -69,11 +82,12 @@ auto gcs::innards::install_derived_cumulative(
 
     // The same windowing a posted Cumulative resolves in prepare(): a task can
     // be active from its earliest start to its latest finish, and one whose
-    // length or height is zero never raises the profile at all.
+    // length or height is zero, or which can never be present at all, never
+    // raises the profile.
     inputs->per_task_t_lo.assign(n, 0_i);
     vector<Integer> per_task_t_hi(n, 0_i);
     for (size_t i = 0; i < n; ++i) {
-        if (spec.tasks[i].length <= 0_i || spec.tasks[i].height <= 0_i)
+        if (spec.tasks[i].length <= 0_i || spec.tasks[i].height <= 0_i || never_present[i])
             continue;
         inputs->active_tasks.push_back(i);
         auto [s_lo, s_hi] = initial_state.bounds(spec.tasks[i].start);
@@ -199,8 +213,9 @@ auto gcs::innards::install_derived_cumulative(
         // in `inputs`, which the initialiser holds a share of, and the windows
         // are the ones its rows were derived over.
         vector<makespan_energy::EnergyTask> energy_tasks;
-        vector<IntegerVariableID> scope;
+        vector<std::optional<IntegerVariableID>> energy_presences;
         for (auto i : inputs->overload_tasks) {
+            energy_presences.push_back(inputs->presence[i]);
             energy_tasks.push_back(makespan_energy::EnergyTask{.start = std::get<SimpleIntegerVariableID>(spec.tasks[i].start),
                 .length = spec.tasks[i].length,
                 .height = spec.tasks[i].height,
@@ -212,17 +227,36 @@ auto gcs::innards::install_derived_cumulative(
                 .before = logger ? &inputs->before_flags[i] : nullptr,
                 .after = logger ? &inputs->after_flags[i] : nullptr,
                 .active = logger ? &inputs->active_flags[i] : nullptr});
-            scope.push_back(spec.tasks[i].start);
         }
 
         propagators.install_initialiser(
-            [inputs, energy_tasks, scope, makespan = *spec.makespan, capacity = spec.capacity, mutation = spec.makespan_mutation,
-                reached = spec.makespan_bound_reached](const State & state, auto & inference, ProofLogger * const logger) mutable -> void {
-                for (auto & task : energy_tasks) {
+            [inputs, energy_tasks, energy_presences, makespan = *spec.makespan, capacity = spec.capacity, mutation = spec.makespan_mutation,
+                reached = spec.makespan_bound_reached](const State & state, auto & inference, ProofLogger * const logger) -> void {
+                // An optional task's length x height is guaranteed work only
+                // once it is known present, and at the root it usually is not.
+                // Counting one that is undecided would claim energy the
+                // schedule need not contain; leaving it out is a weaker bound
+                // rather than a wrong one. Every task that is counted puts its
+                // presence literal in the reason, which is what lets the
+                // window-energy lemma's own presence terms go away.
+                vector<makespan_energy::EnergyTask> counted;
+                vector<IntegerVariableID> scope;
+                ReasonLiterals presence_lits;
+                for (size_t i = 0; i < energy_tasks.size(); ++i) {
+                    if (energy_presences[i]) {
+                        if (state.lower_bound(*energy_presences[i]) < 1_i)
+                            continue;
+                        presence_lits.push_back(*energy_presences[i] == 1_i);
+                    }
+                    auto & task = counted.emplace_back(energy_tasks[i]);
                     auto [s_lo, s_hi] = state.bounds(task.start);
                     task.start_lb = s_lo;
                     task.start_ub = s_hi;
+                    scope.push_back(task.start);
                 }
+
+                if (counted.empty())
+                    return;
 
                 // What the model already says the makespan is, which an energy
                 // argument has to beat to be worth making. The link rows give
@@ -234,12 +268,12 @@ auto gcs::innards::install_derived_cumulative(
                 // is a weaker number than the constraint deserves.
                 auto [makespan_lo, makespan_hi] = state.bounds(makespan);
                 auto known = makespan_lo;
-                for (const auto & task : energy_tasks)
+                for (const auto & task : counted)
                     if (task.link)
                         known = std::max(known, task.start_lb + task.link->bound);
 
-                auto bound = makespan_energy::makespan_energy_bound(
-                    energy_tasks, capacity, inputs->time_slot_prefix, inputs->time_slot_lo, known, makespan_hi);
+                auto bound =
+                    makespan_energy::makespan_energy_bound(counted, capacity, inputs->time_slot_prefix, inputs->time_slot_lo, known, makespan_hi);
                 if (! bound)
                     return;
 
@@ -255,11 +289,12 @@ auto gcs::innards::install_derived_cumulative(
                 auto justify = [&](const ReasonLiterals & reason) -> void {
                     if (logger)
                         makespan_energy::derive_makespan_bound(
-                            *logger, reason, makespan, energy_tasks, inputs->capacity_lines, *bound, mutation, ProofLevel::Temporary);
+                            *logger, reason, makespan, counted, inputs->capacity_lines, *bound, mutation, ProofLevel::Temporary);
                 };
 
                 inference.infer_greater_than_or_equal(logger, makespan, claimed,
-                    JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeMakespan{inputs->owner}}, bounds_reason(scope));
+                    JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeMakespan{inputs->owner}},
+                    with_extra(bounds_reason(scope), presence_lits));
             },
             InitialiserPriority::Expensive);
     }
