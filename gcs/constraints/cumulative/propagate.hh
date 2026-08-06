@@ -107,11 +107,13 @@ namespace gcs::innards
         std::vector<std::vector<std::vector<ProofFlag>>> contrib_flags;
         std::vector<Integer> per_task_t_lo;
 
-        /// The proof-only `end = start + length` proxy for a task whose start
-        /// and length both vary, and the `{end >= s + l, end <= s + l}` lines
-        /// its initialiser cached. Shared, so the cache survives across calls.
-        std::vector<std::optional<ProofOnlySimpleIntegerVariableID>> ends;
-        std::shared_ptr<std::vector<std::optional<std::pair<ProofLine, ProofLine>>>> end_lines;
+        /// Per task, the `end >= start + length` line for the proof-only end
+        /// proxy a task whose start and length both vary is pinned through, and
+        /// nullopt for every other task. Shared, because a posted Cumulative's
+        /// install initialiser derives it after these inputs are built; a
+        /// derived Cumulative fills in its own, from what each donor published
+        /// under ConstraintProofModelData<Cumulative>::end_lower_bound_role.
+        std::shared_ptr<std::vector<std::optional<ProofLine>>> end_ge_lines;
 
         /// t -> the row saying the load at t is within the capacity. A posted
         /// constraint's are OPB rows; a derived constraint's are derived from

@@ -196,6 +196,13 @@ struct NamesAndIDsTracker::Imp
     // emitted_constraint_row_labels, and for the same reason.
     map<string, optional<ProofFlag>> constraint_keyed_flags;
 
+    // Every line an install initialiser published for someone else to cite, by
+    // (id, role); see publish_derived_line. Unlike the two above this holds
+    // proof line numbers, so it is per-solve state rather than a set derived
+    // from names --- the same story as the boundary pins a few fields down, and
+    // written at the same point in the solve, before the search starts.
+    map<string, ProofLine> published_derived_lines;
+
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
     // Indexed by variable index (variables are allocated with sequential
     // indices, so these stay dense), one per id kind.
@@ -1682,6 +1689,33 @@ auto NamesAndIDsTracker::find_proof_flag_values(const ConstraintID & id, const P
     // (id, values, annotation) rather than a lookup into per-solve state.
     auto found = _imp->constraint_keyed_flags.find(bracketed_flag_name('v', id, key.values, key.annotation));
     if (found == _imp->constraint_keyed_flags.end())
+        return nullopt;
+    return found->second;
+}
+
+namespace
+{
+    [[nodiscard]] auto derived_line_key(const ConstraintID & id, const string & role) -> string
+    {
+        return as_string(id) + "[" + role + "]";
+    }
+}
+
+auto NamesAndIDsTracker::publish_derived_line(const ConstraintID & id, const string & role, ProofLine line) -> void
+{
+    // Two lines under one role is the row-label defect (#613) in the namespace
+    // next door: a citer asking for the role gets one of them and has no way of
+    // knowing which, so the role does not name everything the emitting loop
+    // varies over. A hard error, for the same reason it is one there.
+    if (! _imp->published_derived_lines.emplace(derived_line_key(id, role), line).second)
+        throw ProofError{"two proof lines published under the role '" + derived_line_key(id, role) +
+            "': a role must name everything that varies, so that each line can be cited unambiguously"};
+}
+
+auto NamesAndIDsTracker::find_derived_line(const ConstraintID & id, const string & role) const -> optional<ProofLine>
+{
+    auto found = _imp->published_derived_lines.find(derived_line_key(id, role));
+    if (found == _imp->published_derived_lines.end())
         return nullopt;
     return found->second;
 }

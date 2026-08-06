@@ -486,13 +486,15 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         if (_presence[i] && ! is_constant_variable(*_presence[i]))
             triggers.on_instantiated.emplace_back(*_presence[i]);
 
-    // Per variable-duration task, the in-proof end = s + l definition lines
-    // {end_ge, end_le}, filled by the initialiser and read by the propagator's
-    // materialise_after_sum. Shared so the cache survives across propagator calls.
-    auto end_lines = make_shared<vector<std::optional<std::pair<ProofLine, ProofLine>>>>(_starts.size());
+    // Per variable-duration task, the in-proof `end ≥ s + l` line, filled by the
+    // initialiser and read by the propagator's materialise_after_sum. Shared so
+    // the cache survives across propagator calls --- and so that the
+    // propagator, whose inputs are built here and now, gets a line the
+    // initialiser has not derived yet.
+    auto end_ge_lines = make_shared<vector<std::optional<ProofLine>>>(_starts.size());
 
-    propagators.install_initialiser([starts = _starts, lengths = _lengths, ends = _end, active_tasks = _active_tasks, after_flags = _after_flags,
-                                        end_lines](State &, auto &, ProofLogger * const logger) -> void {
+    propagators.install_initialiser([id = constraint_id(), starts = _starts, lengths = _lengths, ends = _end, active_tasks = _active_tasks,
+                                        after_flags = _after_flags, end_ge_lines](State &, auto &, ProofLogger * const logger) -> void {
         if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
             return;
         auto & tracker = logger->names_and_ids_tracker();
@@ -500,23 +502,37 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         // extension FIRST (introduce_bits_of needs end's bits fresh for its
         // witnesses), caching end's {end_ge, end_le}. cake has no end variable,
         // so this lives entirely in the proof --- nothing in the OPB to match.
+        //
+        // end_ge is published, because a derived Cumulative over this task pins
+        // its `after` flags the same way and through the same line; end_le is
+        // the bridge lemma's business alone, and stays here.
+        vector<std::optional<ProofLine>> end_le(starts.size());
         for (auto i : active_tasks)
-            if (ends[i].has_value())
-                (*end_lines)[i] = logger->introduce_bits_of(WPBSum{} + 1_i * starts[i] + 1_i * lengths[i], *ends[i], ProofLevel::Top);
+            if (ends[i].has_value()) {
+                auto lines = logger->introduce_bits_of(WPBSum{} + 1_i * starts[i] + 1_i * lengths[i], *ends[i], ProofLevel::Top);
+                (*end_ge_lines)[i] = lines.first;
+                end_le[i] = lines.second;
+                tracker.publish_derived_line(id, ConstraintProofModelData<Cumulative>::end_lower_bound_role(i), lines.first);
+            }
         // Then, per (i, t), emit the bridge lemma `end ≥ t+1 → after`:
         //   pol( @v[id][i_t][ca][f] : ¬after → s+l ≤ t )  +  ( end ≤ s+l )
         //   = ( M·after − end + t ≥ 0 ).
         // The s+l bits cancel exactly, leaving a single-variable-in-end handle
         // that makes the propagator's after pin RUP-closable even though after
         // is reified on the two-variable s+l. end_le is the cancelling term.
+        //
+        // These need no publishing at all: they go out at ProofLevel::Top over
+        // exactly the (i, t) pairs this constraint gave the task a window for,
+        // so unit propagation finds them for whoever pins one of those flags,
+        // and a citer that could ask about a wider window would already have
+        // been turned away by the flag lookup.
         for (auto i : active_tasks) {
             if (! ends[i].has_value())
                 continue;
-            auto end_le = (*end_lines)[i]->second;
             for (const auto & after : after_flags[i]) {
                 PolBuilder lemma;
                 lemma.add(ProofLineLabel{tracker.name_of(after) + "[f]"});
-                lemma.add(end_le);
+                lemma.add(*end_le[i]);
                 lemma.emit(*logger, ProofLevel::Top);
             }
         }
@@ -534,8 +550,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .active_flags = move(_active_flags),
         .contrib_flags = move(_contrib_flags),
         .per_task_t_lo = move(_per_task_t_lo),
-        .ends = move(_end),
-        .end_lines = end_lines,
+        .end_ge_lines = end_ge_lines,
         .capacity_lines = move(_capacity_lines),
         .rules = _rules,
         .proof_mutation = _proof_mutation,
@@ -568,7 +583,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     const auto & active_flags = inputs.active_flags;
     const auto & contrib_flags = inputs.contrib_flags;
     const auto & per_task_t_lo = inputs.per_task_t_lo;
-    const auto & end_lines = inputs.end_lines;
+    const auto & end_ge_lines = inputs.end_ge_lines;
     const auto & capacity_lines = inputs.capacity_lines;
     const auto & rules = inputs.rules;
     const auto & mutation = inputs.proof_mutation;
@@ -625,7 +640,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         if (! (l_is_var(i) && s_is_var(i)))
             return;
         PolBuilder sp;
-        sp.add((*end_lines)[i]->first);
+        sp.add(*(*end_ge_lines)[i]);
         sp.add_for_literal(logger->names_and_ids_tracker(), starts[i] >= s_lo);
         sp.add_for_literal(logger->names_and_ids_tracker(), lengths_var[i] >= llb(i));
         sp.emit(*logger, ProofLevel::Temporary);
@@ -1272,6 +1287,12 @@ auto ConstraintProofModelData<Cumulative>::active_flag_key(size_t task, Integer 
 auto ConstraintProofModelData<Cumulative>::contribution_flag_key(size_t task, Integer t, Integer bit) -> ProofFlagKey
 {
     return ProofFlagKey{{static_cast<long long>(task), t.raw_value, bit.raw_value}, "cc"};
+}
+
+auto ConstraintProofModelData<Cumulative>::end_lower_bound_role(size_t task) -> string
+{
+    // Must stay the string install_propagators' initialiser publishes under.
+    return "end_ge_" + std::to_string(task);
 }
 
 auto Cumulative::constraint_type() const -> std::string

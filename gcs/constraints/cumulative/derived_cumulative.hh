@@ -50,11 +50,20 @@ namespace gcs::innards
         /// would silently mean something else.
         IntegerVariableID start;
 
+        /// The length as the donor was posted with it at `position`, which may
+        /// be a variable: nothing about a length appears in a capacity row, so
+        /// a derived row is the same row either way. What a variable one costs
+        /// is the `after` pin, which is then reified on `start + length` and no
+        /// longer single-variable --- so such a task is only usable where its
+        /// donor published the `end >= start + length` line the propagator pins
+        /// through, which is what install_derived_cumulative goes looking for.
+        IntegerVariableID length;
+
         /// Constant by type, which is the v1 restriction made structural: a
         /// variable height enters a donor's capacity row as a bit-linearised
         /// contribution rather than as `height x active`, and a derived row
         /// would have to speak about those bits too.
-        Integer length, height;
+        Integer height;
 
         /// The presence argument the donor was posted with at `position`, or
         /// nullopt when the donor is not an optional-task Cumulative. As
@@ -182,7 +191,7 @@ namespace gcs::innards
      * \ingroup Innards
      */
     [[nodiscard]] auto derived_cumulative_tasks_from(const ConstraintID & donor, const std::vector<IntegerVariableID> & starts,
-        const std::vector<Integer> & lengths, const std::vector<Integer> & heights, const std::vector<IntegerVariableID> & presences = {})
+        const std::vector<IntegerVariableID> & lengths, const std::vector<Integer> & heights, const std::vector<IntegerVariableID> & presences = {})
         -> std::vector<DerivedCumulativeTask>;
 
     /**

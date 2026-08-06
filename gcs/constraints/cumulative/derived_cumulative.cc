@@ -30,7 +30,8 @@ using std::to_string;
 using std::vector;
 
 auto gcs::innards::derived_cumulative_tasks_from(const ConstraintID & donor, const vector<IntegerVariableID> & starts,
-    const vector<Integer> & lengths, const vector<Integer> & heights, const vector<IntegerVariableID> & presences) -> vector<DerivedCumulativeTask>
+    const vector<IntegerVariableID> & lengths, const vector<Integer> & heights, const vector<IntegerVariableID> & presences)
+    -> vector<DerivedCumulativeTask>
 {
     if (starts.size() != lengths.size() || starts.size() != heights.size())
         throw InvalidProblemDefinitionException{"derived Cumulative: starts, lengths, heights must have the same size"};
@@ -52,7 +53,7 @@ auto gcs::innards::install_derived_cumulative(
     if (spec.capacity < 0_i)
         throw InvalidProblemDefinitionException{"derived Cumulative: capacity must be non-negative"};
     for (const auto & task : spec.tasks)
-        if (task.length < 0_i || task.height < 0_i)
+        if (initial_state.lower_bound(task.length) < 0_i || task.height < 0_i)
             throw InvalidProblemDefinitionException{"derived Cumulative: lengths and heights must be non-negative"};
     if (! spec.recipe)
         throw InvalidProblemDefinitionException{"derived Cumulative: no recipe for deriving the capacity rows"};
@@ -76,23 +77,28 @@ auto gcs::innards::install_derived_cumulative(
 
     for (const auto & task : spec.tasks) {
         inputs->starts.push_back(task.start);
-        inputs->lengths.push_back(constant_variable(task.length));
+        inputs->lengths.push_back(task.length);
         inputs->heights.push_back(constant_variable(task.height));
     }
 
     // The same windowing a posted Cumulative resolves in prepare(): a task can
-    // be active from its earliest start to its latest finish, and one whose
-    // length or height is zero, or which can never be present at all, never
-    // raises the profile.
+    // be active from its earliest start to its latest finish, so the window
+    // takes the *largest* duration still allowed, and one whose length or
+    // height can only be zero, or which can never be present at all, never
+    // raises the profile. Reading the length's bound rather than a number is
+    // what makes this the donor's own window for a variable-duration task: the
+    // donor windowed with ub(l) too, and only the same window finds the same
+    // flags.
     inputs->per_task_t_lo.assign(n, 0_i);
     vector<Integer> per_task_t_hi(n, 0_i);
     for (size_t i = 0; i < n; ++i) {
-        if (spec.tasks[i].length <= 0_i || spec.tasks[i].height <= 0_i || never_present[i])
+        auto length_ub = initial_state.upper_bound(spec.tasks[i].length);
+        if (length_ub <= 0_i || spec.tasks[i].height <= 0_i || never_present[i])
             continue;
         inputs->active_tasks.push_back(i);
         auto [s_lo, s_hi] = initial_state.bounds(spec.tasks[i].start);
         inputs->per_task_t_lo[i] = s_lo;
-        per_task_t_hi[i] = s_hi + spec.tasks[i].length - 1_i;
+        per_task_t_hi[i] = s_hi + length_ub - 1_i;
     }
 
     if (inputs->active_tasks.empty())
@@ -118,12 +124,34 @@ auto gcs::innards::install_derived_cumulative(
         inputs->after_flags.assign(n, {});
         inputs->active_flags.assign(n, {});
         inputs->contrib_flags.assign(n, {});
-        inputs->ends.assign(n, std::nullopt);
-        inputs->end_lines = make_shared<vector<std::optional<std::pair<ProofLine, ProofLine>>>>(n);
+        inputs->end_ge_lines = make_shared<vector<std::optional<ProofLine>>>(n);
 
         for (auto i : inputs->active_tasks) {
             const auto & task = spec.tasks[i];
             auto position = task.position;
+
+            // A task whose start and length both vary has its `after` reified
+            // on the two-variable `start + length`, so pinning one goes through
+            // the donor's proof-only end proxy --- and through the line giving
+            // that proxy its lower bound, which is the donor's to publish and
+            // ours only to cite. Missing means the donor derived none: it has a
+            // constant somewhere after all, or the proof is being written with
+            // assertions on, which omits definitions. Either way there is
+            // nothing to pin `after` with, so decline rather than reach for a
+            // RUP that cannot close.
+            //
+            // The bridge lemmas that make the pin land, `end >= t+1 -> after`,
+            // need no such lookup: the donor emitted one at ProofLevel::Top for
+            // every (i, t) it gave the task a window for, unit propagation
+            // finds them, and the flag lookups below have already established
+            // that this constraint's window is inside that one.
+            if (! is_constant_variable(task.start) && ! is_constant_variable(task.length)) {
+                auto end_ge = tracker.find_derived_line(task.donor, ConstraintProofModelData<Cumulative>::end_lower_bound_role(position));
+                if (! end_ge)
+                    return false;
+                (*inputs->end_ge_lines)[i] = *end_ge;
+            }
+
             for (Integer t = inputs->per_task_t_lo[i]; t <= per_task_t_hi[i]; ++t) {
                 auto before = tracker.find_proof_flag_values(task.donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
                 auto after = tracker.find_proof_flag_values(task.donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
@@ -216,8 +244,13 @@ auto gcs::innards::install_derived_cumulative(
         vector<std::optional<IntegerVariableID>> energy_presences;
         for (auto i : inputs->overload_tasks) {
             energy_presences.push_back(inputs->presence[i]);
+            // A constant, and by construction: prepare_cumulative_overload_check
+            // keeps only tasks whose length and height are, the window-energy
+            // lemma needing a task's energy to be a number before it can count
+            // it. So a variable-duration task takes part in the time-tabling
+            // and in the rows, and stays out of the energy argument.
             energy_tasks.push_back(makespan_energy::EnergyTask{.start = std::get<SimpleIntegerVariableID>(spec.tasks[i].start),
-                .length = spec.tasks[i].length,
+                .length = std::get<ConstantIntegerVariableID>(spec.tasks[i].length).const_value,
                 .height = spec.tasks[i].height,
                 .t_lo = inputs->per_task_t_lo[i],
                 .t_hi = per_task_t_hi[i],

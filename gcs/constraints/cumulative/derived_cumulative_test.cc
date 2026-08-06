@@ -135,9 +135,8 @@ namespace
         [[nodiscard]] auto run(Problem & problem, Propagators & propagators, State & state, ProofLogger * const logger) -> bool override
         {
             for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
-                vector<Integer> lengths, heights;
-                for (const auto & l : donor.lengths())
-                    lengths.push_back(constant_value_of(l));
+                const auto & lengths = donor.lengths();
+                vector<Integer> heights;
                 for (const auto & h : donor.heights())
                     heights.push_back(constant_value_of(h));
                 auto capacity = constant_value_of(donor.capacity());
@@ -147,7 +146,7 @@ namespace
                 // loads has no term in the row to divide.
                 auto divisor = 0_i;
                 for (size_t i = 0; i < heights.size(); ++i)
-                    if (lengths[i] > 0_i && heights[i] > 0_i)
+                    if (state.upper_bound(lengths[i]) > 0_i && heights[i] > 0_i)
                         divisor = Integer{std::gcd(divisor.raw_value, heights[i].raw_value)};
 
                 auto donor_id = donor.constraint_id();
@@ -191,12 +190,15 @@ namespace
                     // contract.
                     auto starts = donor.starts();
                     auto claim_one_lower = (demo == Demo::ClaimOneLower);
-                    spec.recipe = [starts, heights, lengths, capacity, donor_id, claim_one_lower, row_of, &state](
+                    vector<Integer> length_ubs;
+                    for (const auto & l : lengths)
+                        length_ubs.push_back(state.upper_bound(l));
+                    spec.recipe = [starts, heights, length_ubs, capacity, donor_id, claim_one_lower, row_of, &state](
                                       ProofLogger & logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
                         auto donor_row = row_of(rows);
                         vector<SubsetSumItem> items;
                         for (size_t i = 0; i < starts.size(); ++i) {
-                            if (lengths[i] <= 0_i || heights[i] <= 0_i)
+                            if (length_ubs[i] <= 0_i || heights[i] <= 0_i)
                                 continue;
                             auto active = logger.names_and_ids_tracker().find_proof_flag_values(
                                 donor_id, ConstraintProofModelData<Cumulative>::active_flag_key(i, t));
@@ -253,7 +255,7 @@ namespace
                     // constraint's last time point is one the donor never
                     // encoded a flag for.
                     for (auto & task : spec.tasks)
-                        task.length += 1_i;
+                        task.length = constant_variable(constant_value_of(task.length) + 1_i);
                     spec.recipe = [row_of](ProofLogger & logger, const DerivedCumulativeRows & rows, Integer) -> optional<ProofLine> {
                         PolBuilder copy;
                         copy.add(row_of(rows));
@@ -272,6 +274,67 @@ namespace
             auto result = make_unique<DerivedDemoPresolver>(demo, makespan);
             result->installed = installed;
             result->bound_reached = bound_reached;
+            return result;
+        }
+    };
+
+    /// Duplicates each donor's rows and each donor's tasks, lengths included ---
+    /// so where a donor was posted with a variable duration, so is this, and
+    /// every pin of that task's `after` has to go through the proof-only end
+    /// proxy the donor published.
+    ///
+    /// Kept apart from DerivedDemoPresolver, whose Instance says what a length
+    /// is with an `int`, and which therefore cannot express the thing being
+    /// tested here.
+    struct DerivedVariableLengthPresolver : Presolver
+    {
+        /// A length to substitute for every task's, for the fixture that names
+        /// a variable where its donor had a constant: there is then no proxy
+        /// for the pins to go through, and installing must be declined rather
+        /// than left to fail at the first inference.
+        optional<IntegerVariableID> length_override;
+
+        /// Set by run(), read by the test: whether anything was installed.
+        std::shared_ptr<bool> installed = std::make_shared<bool>(false);
+
+        explicit DerivedVariableLengthPresolver(optional<IntegerVariableID> o = nullopt) : length_override(o)
+        {
+        }
+
+        [[nodiscard]] auto run(Problem & problem, Propagators & propagators, State & state, ProofLogger * const logger) -> bool override
+        {
+            for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
+                auto lengths = donor.lengths();
+                if (length_override)
+                    lengths.assign(lengths.size(), *length_override);
+
+                vector<Integer> heights;
+                for (const auto & h : donor.heights())
+                    heights.push_back(constant_value_of(h));
+
+                auto donor_id = donor.constraint_id();
+                DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, donor.starts(), lengths, heights),
+                    .capacity = constant_value_of(donor.capacity()),
+                    .row_donors = {donor_id},
+                    .recipe = [donor_id](ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer) -> optional<ProofLine> {
+                        auto at = rows.find(donor_id);
+                        if (at == rows.end())
+                            fail("the donor had no capacity row where the derived constraint has one");
+                        PolBuilder copy;
+                        copy.add(at->second);
+                        return copy.emit(recipe_logger, ProofLevel::Top);
+                    },
+                    .rules = CumulativeRules{}};
+
+                *installed = install_derived_cumulative(propagators, state, logger, move(spec));
+            }
+            return true;
+        }
+
+        [[nodiscard]] auto clone() const -> unique_ptr<Presolver> override
+        {
+            auto result = make_unique<DerivedVariableLengthPresolver>(length_override);
+            result->installed = installed;
             return result;
         }
     };
@@ -677,6 +740,128 @@ auto main(int argc, char * argv[]) -> int
             if (*installed)
                 fail("a derived constraint reaching past the donor's windows was installed anyway");
             dispose_of_proof_files("derived_cumulative_beyond_window");
+        }
+    }
+
+    /* A donor with variable durations, which the derived constraint takes as
+     * they are. Nothing about a length appears in a capacity row, so the
+     * duplicate recipe is the same one line as ever; what changes is every
+     * *pin*, `after` being reified on the two-variable `start + length`, which
+     * no RUP reaches from the operands' bounds. The propagator goes through the
+     * donor's proof-only `end = start + length` instead, and the line handing
+     * that proxy its lower bound is what the donor publishes and this cites.
+     *
+     * All three lengths are variables, so there is no pin here that does *not*
+     * go that way. The donor has every rule turned off, so every inference in
+     * the proof is the derived constraint's --- and the three tasks each demand
+     * two of a capacity of three, so they may not overlap and there is plenty to
+     * infer: at length two apiece over starts in [0, 4] the only schedules left
+     * are the permutations of {0, 2, 4}, and the first task's shorter option
+     * opens up a handful more.
+     */
+    {
+        const vector<pair<int, int>> length_ranges{{1, 2}, {2, 2}, {2, 2}};
+
+        auto solve_variable_lengths = [&](bool derive, const optional<string> & proof_name) {
+            Problem p;
+            vector<IntegerVariableID> starts, lengths;
+            for (size_t i = 0; i < length_ranges.size(); ++i) {
+                starts.push_back(p.create_integer_variable(0_i, 4_i, "start" + std::to_string(i)));
+                lengths.push_back(
+                    p.create_integer_variable(Integer{length_ranges[i].first}, Integer{length_ranges[i].second}, "length" + std::to_string(i)));
+            }
+            vector<IntegerVariableID> heights(length_ranges.size(), constant_variable(2_i));
+
+            p.post(Cumulative{starts, lengths, heights, constant_variable(3_i)}.with_rules(
+                CumulativeRules{.time_table = false, .overload = false, .profile_overload = false}));
+
+            DerivedVariableLengthPresolver presolver;
+            auto installed = presolver.installed;
+            if (derive)
+                p.add_presolver(presolver);
+
+            set<vector<int>> solutions;
+            solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                vector<int> solution;
+                for (const auto & v : starts)
+                    solution.push_back(s(v).raw_value);
+                for (const auto & v : lengths)
+                    solution.push_back(s(v).raw_value);
+                solutions.insert(move(solution));
+                return true;
+            }},
+                proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+            return pair{move(solutions), installed};
+        };
+
+        auto [with_derived, installed] = solve_variable_lengths(true, proofs ? make_optional("derived_cumulative_variable_lengths") : nullopt);
+        if (proofs) {
+            if (! *installed)
+                fail("a derived constraint over a variable-duration donor was not installed");
+            verify_proof_and_clean_up("derived_cumulative_variable_lengths");
+        }
+
+        // Against brute force rather than against the donor: with every rule
+        // off the donor is not even a checker, so what the derived constraint
+        // has to agree with is the model, not it.
+        set<vector<int>> expected;
+        vector<pair<int, int>> ranges{{0, 4}, {0, 4}, {0, 4}};
+        ranges.insert(ranges.end(), length_ranges.begin(), length_ranges.end());
+        build_expected(
+            expected,
+            [&](const vector<int> & assignment) {
+                for (int t = 0; t <= 6; ++t) {
+                    int load = 0;
+                    for (size_t i = 0; i < 3; ++i)
+                        if (assignment[i] <= t && t < assignment[i] + assignment[i + 3])
+                            load += 2;
+                    if (load > 3)
+                        return false;
+                }
+                return true;
+            },
+            ranges);
+        if (with_derived != expected)
+            fail("a derived constraint over a variable-duration donor does not agree with brute force");
+
+        // Not a no-op: with every rule off the donor prunes nothing, so every
+        // node the search did not have to visit is the derived constraint's
+        // doing, and its pins are what wrote the proof above.
+        auto without_derived = solve_variable_lengths(false, nullopt).first;
+        if (without_derived.size() <= with_derived.size())
+            fail("the donor rejected as much as the derived constraint did, so the fixture proves nothing");
+    }
+
+    /* And the caller error the publication makes catchable: a derived task that
+     * claims a variable length where its donor was posted with a constant one.
+     * The donor introduced no end proxy for such a task and published no line,
+     * so there is nothing for a pin of its `after` to be built on --- and
+     * installing anyway would mean a propagator whose first inference has no
+     * justification to write. Declined, exactly as a task reaching past the
+     * donor's windows is.
+     */
+    {
+        Problem p;
+        vector<IntegerVariableID> starts;
+        for (int i = 0; i < 3; ++i)
+            starts.push_back(p.create_integer_variable(0_i, 4_i, "start" + std::to_string(i)));
+        // Only a variable is one, whatever its domain: a length of exactly two
+        // says the same thing the donor's constant two does, so what the
+        // decline is about is unmistakably the missing proxy.
+        auto length = p.create_integer_variable(2_i, 2_i, "length");
+        vector<IntegerVariableID> lengths(3, constant_variable(2_i)), heights(3, constant_variable(2_i));
+
+        p.post(Cumulative{starts, lengths, heights, constant_variable(3_i)});
+        DerivedVariableLengthPresolver presolver{make_optional(length)};
+        auto installed = presolver.installed;
+        p.add_presolver(presolver);
+
+        solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{"derived_cumulative_length_without_proxy"}) : nullopt);
+        if (proofs) {
+            if (*installed)
+                fail("a derived task claiming a variable length its donor never gave a proxy was installed anyway");
+            dispose_of_proof_files("derived_cumulative_length_without_proxy");
         }
     }
 

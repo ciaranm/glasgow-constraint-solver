@@ -297,6 +297,28 @@ namespace gcs
          * none at all.
          */
         [[nodiscard]] static auto contribution_flag_key(std::size_t task, Integer t, Integer bit) -> innards::ProofFlagKey;
+
+        /**
+         * \brief The role of the line saying the proof-only end proxy for this
+         * task is at least its start plus its length.
+         *
+         * This is the one publication here that is not about the OPB: a task
+         * whose start and length both vary has its `after` flag reified on the
+         * two-variable `start + length`, which no RUP reaches from the
+         * operands' bounds, so the propagator goes through a proof-only
+         * `end = start + length` instead --- and the line handing it that
+         * variable's lower bound is what any pin of `after` has to be built on.
+         * The install initialiser derives it, so ask
+         * NamesAndIDsTracker::find_derived_line rather than
+         * constraint_row_label.
+         *
+         * Nullopt from there means the same thing it means for a flag: there is
+         * nothing to cite, so do not do the thing that would need citing. A
+         * constant length or a constant start needs no proxy and publishes
+         * none; nor does a proof written with assertions on, which omits the
+         * definition along with everything else it asserts.
+         */
+        [[nodiscard]] static auto end_lower_bound_role(std::size_t task) -> std::string;
     };
 }
 
