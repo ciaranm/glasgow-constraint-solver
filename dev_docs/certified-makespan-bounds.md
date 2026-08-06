@@ -178,7 +178,9 @@ stage — 227 runs, no failures — 92 of the 110 instances get a certified boun
 every one of them beating the critical path, and **29 are closed**: the bound
 equals the best makespan anybody found, so no search is needed at all. The
 paper's §5.1 claims "no less than twelve". The largest is 3050; the median
-`.pbp` is 28 MB and the largest 504 MB, and `veripb` takes 45 s on that one.
+`.pbp` is 28 MB and the largest 504 MB, and `veripb` took 45 s on that one *at
+the time* --- see the note below, which the checking figure needs even more than
+the bounds do.
 
 Some instances fall short of Sidorov's `L`, and on every one of them it is this
 presolver's *own* `L` that falls short while the derivation reaches it exactly:
@@ -193,6 +195,11 @@ to their best known makespan, so closing the gap closes them.
 **These numbers predate that change and have not been rerun.** They are the
 single-resource lifting's, and the artefact's `run.bash` is what regenerates
 them.
+
+The *checking times* above are staler still, and for a second reason: hinting the
+replay's RUPs made verification six to fourteen times faster on exactly these
+certificates (see [inferred-cumulative.md](inferred-cumulative.md)), so the 45 s
+is an upper bound on an upper bound. Rerunning the artefact fixes both at once.
 
 Note the makespan rows have to be there to be cited: `--variant=global` puts the
 whole temporal network into one `DifferenceConstraints` propagator, so there is

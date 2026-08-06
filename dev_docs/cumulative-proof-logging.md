@@ -1027,6 +1027,13 @@ anything out of it. Both then weaken over the donor's **usable** positions
 only, since a set-aside task's terms went out with the reduction and `w`
 on a variable the constraint no longer mentions is refused.
 
+A variable **height** they take by converting it, not by setting it aside:
+its bits become `lb(h) x active` before anything is lifted or recovered,
+so the task keeps a column in the matrix and an edge in the conflict
+graph. Neither presolver has a choice to make about it --- a converted
+task can only add one of those --- which is what separates them from
+issue 06's, whose argument is a subset sum and can be made worse by one.
+
 A variable duration they take too, and it costs them nothing but a choice
 of bound. A window takes `ub(l)`, which is what the donor encoded its
 flags over and so the only thing that finds them; an energy sum or a
