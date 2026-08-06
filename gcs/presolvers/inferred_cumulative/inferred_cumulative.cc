@@ -487,7 +487,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         // works over a row no length appears in.
         auto view = cumulative_donor_view(donor, state, logger);
         if (! view) {
-            bump(&InferredCumulativeStats::declined_variable_arguments);
+            bump(&InferredCumulativeStats::declined_irreducible_capacity);
             if (logger)
                 logger->emit_proof_comment("presolve lifted cover: declining " + as_string(donor.constraint_id()) + ", capacity is not reducible");
             continue;

@@ -156,7 +156,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // flag rather than a term beside it.
         auto view = cumulative_donor_view(donor, state, logger);
         if (! view) {
-            bump(&CumulativeStrengtheningStats::declined_variable_arguments);
+            bump(&CumulativeStrengtheningStats::declined_irreducible_capacity);
             if (logger)
                 logger->emit_proof_comment("presolve cumulative: declining " + as_string(donor.constraint_id()) + ", capacity is not reducible");
             continue;

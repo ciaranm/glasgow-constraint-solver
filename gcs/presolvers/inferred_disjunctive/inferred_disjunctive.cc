@@ -202,7 +202,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         // rows say nothing about how long anything runs for.
         auto view = cumulative_donor_view(donor, state, logger);
         if (! view) {
-            bump(&InferredDisjunctiveStats::declined_variable_arguments);
+            bump(&InferredDisjunctiveStats::declined_irreducible_capacity);
             if (logger)
                 logger->emit_proof_comment("presolve disjunctive: declining " + as_string(donor.constraint_id()) + ", capacity is not reducible");
             continue;

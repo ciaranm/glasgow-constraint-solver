@@ -1009,7 +1009,7 @@ auto main(int argc, char * argv[]) -> int
         p.add_presolver(CumulativeStrengthening{stats});
         solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }}, nullopt);
 
-        if (stats->declined_variable_arguments != 1)
+        if (stats->declined_irreducible_capacity != 1)
             fail("a view-capacity donor was not declined");
         if (stats->donors_strengthened != 0)
             fail("a view-capacity donor was strengthened anyway");

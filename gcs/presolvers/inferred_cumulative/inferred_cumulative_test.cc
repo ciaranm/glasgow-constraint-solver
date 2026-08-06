@@ -547,7 +547,7 @@ auto main(int argc, char * argv[]) -> int
             fail("variable arguments: the variable-height task was not converted to its guaranteed demand");
         if (stats->donors_with_set_aside_tasks != 0)
             fail("variable arguments: a variable height set its task aside, rather than being converted");
-        if (stats->declined_variable_arguments != 0)
+        if (stats->declined_irreducible_capacity != 0)
             fail("variable arguments: the donor was declined rather than reduced");
 
         set<vector<int>> expected;

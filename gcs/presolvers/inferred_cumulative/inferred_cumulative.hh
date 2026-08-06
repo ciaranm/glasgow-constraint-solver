@@ -144,7 +144,12 @@ namespace gcs
         /// flags between donors, and a presence conjunct has to cancel across
         /// that bridge before it may.
         std::size_t declined_optional = 0;
-        std::size_t declined_variable_arguments = 0;
+        /// Donors whose capacity could not be reduced to a number to argue
+        /// against, which today means a view capacity. Named for the condition
+        /// rather than for today's only instance of it: a variable height and a
+        /// variable length cost a task its column, not a donor its row --- see
+        /// cumulative_donor_view.
+        std::size_t declined_irreducible_capacity = 0;
 
         /// Donors that could only be lifted out of in part, because a task
         /// could not be argued about at all: a height that is a view, or one

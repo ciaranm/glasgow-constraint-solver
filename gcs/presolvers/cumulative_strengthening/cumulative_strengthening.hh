@@ -73,20 +73,28 @@ namespace gcs
         /**
          * \name Why a donor was passed over.
          *
-         * Broken out because they mean different things to a caller: the
-         * first is the v1 restriction, the next two are proof-size budgets a
-         * caller may want to raise, and the last is the honest and common
-         * answer that the capacity was already the largest reachable load.
+         * Broken out because they mean different things to a caller: an
+         * argument this presolver cannot reduce, a proof-size budget a caller
+         * may want to raise, the honest and common answer that there was
+         * nothing to say, and a bug.
          *
-         * Optional tasks are not among them. The strengthening argues about
-         * the donor's capacity rows, which an optional task's presence does not
-         * change the shape of --- it is a conjunct of the activity flag, not a
-         * term beside it.
+         * What is *not* among them is anything about a task. A variable
+         * height, a variable length and an optional task each cost at most the
+         * task itself --- its term is weakened out, or converted, and the donor
+         * keeps its strengthening. The capacity is the one argument still able
+         * to turn a whole donor away.
          */
         ///@{
-        std::size_t declined_variable_arguments = 0;
+        /// Donors whose capacity could not be reduced to a number to argue
+        /// against, which today means a view capacity: its reification is over
+        /// its own bit vector, so the bound rows do not cancel against the
+        /// row's. Named for the condition rather than for today's only instance
+        /// of it --- see cumulative_donor_view.
+        std::size_t declined_irreducible_capacity = 0;
         std::size_t declined_over_budget = 0;
         std::size_t declined_over_raise_budget = 0;
+        /// The capacity was already the largest load the tasks can reach, and
+        /// no height moved either, so there was nothing to strengthen.
         std::size_t declined_nothing_to_gain = 0;
         /// Declined by install_derived_cumulative itself, which is a bug rather
         /// than a restriction: the presolver derives its rows over the donor's

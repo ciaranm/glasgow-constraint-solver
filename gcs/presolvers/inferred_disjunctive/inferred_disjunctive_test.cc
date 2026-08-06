@@ -467,7 +467,7 @@ auto main(int argc, char * argv[]) -> int
             fail("the variable-height task was not converted on every resource");
         if (stats->resources_with_set_aside_tasks != 0)
             fail("a variable height set its task aside, rather than being converted to its guaranteed demand");
-        if (stats->declined_variable_arguments != 0)
+        if (stats->declined_irreducible_capacity != 0)
             fail("a resource was declined for a task's variable height, which is now a conversion");
 
         // Brute force over the same model: the fourth task takes part or not
