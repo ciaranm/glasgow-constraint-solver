@@ -733,6 +733,65 @@ at the point of use.
 Falsifying a presence *by* an energy argument, rather than by the
 profile, is issue 09's extension and is not here.
 
+### Deriving over a donor that is not all constants
+
+Everything a derived constraint's recipe does is an argument about rows of the
+form `Σ h_i·active_{i,t} ≤ C`, and a donor only writes those when its arguments
+are constants. `CumulativeDonorView`
+([`donor_view.hh`](../gcs/constraints/cumulative/donor_view.hh)) is what reduces
+a donor to the part of itself that is, and the reduction is per **task**: one
+task with a variable length no longer costs a whole donor its strengthening, it
+costs that task its term.
+
+`recover_constant_argument_row` does the proof half, and it is one `pol`:
+
+- **A set-aside task** — variable length or variable height — is weakened out of
+  the row with `w`. For a constant height that is one `w` on its activity flag;
+  for a variable height the row's terms for it are the bits of the linearised
+  contribution, so every one of them goes, which is what
+  `ConstraintProofModelData<Cumulative>::contribution_flag_key` is published for.
+  How many bits there are is not published: ask for bit zero, one, two and so on
+  until the tracker has none, the same "is it there?" question a citer asks of
+  every other key.
+
+  Only the variable-height half is a tripwire. Remove the constant-height `w` and
+  every proof still verifies, because a recipe pins what it returns with an `ia`
+  and dropping a non-negative term from the left of a `≤` is a valid implication
+  — the pin weakens it away for free. It is written anyway so that the row a
+  recipe argues over is the row it claims. **Do not delete it as untested.**
+
+- **A variable capacity** is replaced by a number. The row has `− capacity` on
+  its left, so the bits have to cancel against something, and the something is
+  the *order literal* for the bound the capacity has now:
+  `need_pol_item_defining_literal` hands back the definition of
+  `[capacity ≥ b+1]`, whose bits cancel exactly and which leaves the atom behind
+  with a coefficient of its own. Going through the literal rather than citing the
+  capacity's OPB bound row is what lets this use the bound the capacity has *now*
+  — a presolver reads a live `State`, and the declared bound is a weaker number
+  the moment anything has tightened it.
+
+  What is left is paid off in the same `pol`, by the unit line saying the atom is
+  false, added as many times as its coefficient. That coefficient is
+  `(everything the encoding could reach) − b`, worked out with
+  `get_bits_encoding_coeffs` over the range `tracked_bounds` says the variable
+  was encoded over — the same primitive the encoding is built with, rather than
+  anything this file assumes about its shape. Get it wrong and the recipe's `ia`
+  refuses the row immediately, which is what
+  `cumulative_strengthening_var_capacity` checks.
+
+  The unit line holds *permanently*: the bound it denies is the one the capacity
+  had before the search started. So what comes back is an unconditional row, not
+  one carrying a condition into every reason — which it has to be, since the
+  propagator's `pol`s cancel against it term by term.
+
+With nothing to do — the all-constant case, and so the common one — the row is
+handed back untouched: no `pol`, no line, and a proof byte-identical to the one
+written before any of this existed.
+
+What stays declined is a capacity that is a **view**, whose bits are not the ones
+the row mentions, so there is no order literal whose definition would cancel
+them.
+
 ### Deriving over an optional donor
 
 A *derived* Cumulative (issue 04) works over an optional donor, and the
@@ -787,6 +846,10 @@ against each other, and a presence conjunct cancels only when both donors
 carry the same literal. Mixed arities change the degree arithmetic
 outright. The presolvers of issues 07 and 08 bridge between donors, so
 they still decline an optional one; issue 06's does not, and does not.
+
+The same two are the ones still declining a donor with variable arguments,
+which is a wiring gap rather than anything unsolved: `CumulativeDonorView`
+and `recover_constant_argument_row` are theirs to call too.
 
 `constraint_type()` is `cumulative_optional` for the optional form, so
 the verified-encoding chain does not silently match it against

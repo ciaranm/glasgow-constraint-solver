@@ -184,6 +184,11 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
             continue;
         }
 
+        // Variable arguments are the same story, and the same wiring gap:
+        // CumulativeDonorView reduces a donor to the tasks a derived constraint
+        // can speak about and recover_constant_argument_row weakens the rest
+        // out of every row, which is what CumulativeStrengthening now uses.
+        // Nothing here needs anything more than being pointed at them.
         auto capacity = constant_value_of(donor.capacity());
         if (! capacity) {
             bump(&InferredDisjunctiveStats::declined_variable_arguments);

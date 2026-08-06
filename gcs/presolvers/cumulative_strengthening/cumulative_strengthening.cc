@@ -1,6 +1,7 @@
 #include <gcs/constraint_id.hh>
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
+#include <gcs/constraints/cumulative/donor_view.hh>
 #include <gcs/constraints/cumulative/propagate.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/proofs/am1_from_row.hh>
@@ -43,58 +44,6 @@ using std::vector;
 
 namespace
 {
-    /// The donor's arguments, once every one of them has been confirmed
-    /// constant. A variable length, height or capacity is a v1 restriction:
-    /// with a variable height the donor's row is over bit-linearised
-    /// contribution flags rather than `height * active`, so a subset sum of the
-    /// heights is not what the row's coefficients are.
-    ///
-    /// A presence is not one of those: it is not a coefficient at all, so the
-    /// only thing that has to be read off it here is which tasks the donor
-    /// dropped for being constantly absent.
-    struct ConstantTaskData
-    {
-        vector<Integer> lengths, heights;
-        vector<bool> never_present;
-        Integer capacity;
-    };
-
-    [[nodiscard]] auto constant_task_data(const Cumulative & donor) -> optional<ConstantTaskData>
-    {
-        ConstantTaskData data{{}, {}, {}, 0_i};
-
-        auto value_of = [](const IntegerVariableID & v) -> optional<Integer> {
-            if (! is_constant_variable(v))
-                return std::nullopt;
-            return std::get<ConstantIntegerVariableID>(v).const_value;
-        };
-
-        auto capacity = value_of(donor.capacity());
-        if (! capacity)
-            return std::nullopt;
-        data.capacity = *capacity;
-
-        for (const auto & l : donor.lengths()) {
-            auto length = value_of(l);
-            if (! length)
-                return std::nullopt;
-            data.lengths.push_back(*length);
-        }
-
-        for (const auto & h : donor.heights()) {
-            auto height = value_of(h);
-            if (! height)
-                return std::nullopt;
-            data.heights.push_back(*height);
-        }
-
-        for (size_t i = 0; i < donor.starts().size(); ++i)
-            data.never_present.push_back(
-                cumulative_task_presence(donor.presences().empty() ? std::nullopt : make_optional(donor.presences()[i])).never_present);
-
-        return data;
-    }
-
     /// What the presolver worked out for one time point: the tasks that can be
     /// running then, split into the ones that fill the resource on their own
     /// and the ones that do not, and the largest load the latter can actually
@@ -194,41 +143,37 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
     for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
         bump(&CumulativeStrengtheningStats::donors_seen);
 
-        auto data = constant_task_data(donor);
-        if (! data) {
+        // Everything below is an argument about the donor's per-time rows
+        // `Σ h_i·active_{i,t} ≤ C`, which only says that when every argument is
+        // a constant --- so this is where a donor that is not all constants
+        // gets reduced to the part of itself that is. The reduction is per
+        // *task*: one variable length no longer costs a whole donor its
+        // strengthening, it costs that task its term. Optional tasks need
+        // nothing at all, their presence being a conjunct inside the activity
+        // flag rather than a term beside it.
+        auto view = cumulative_donor_view(donor, state);
+        if (! view) {
             bump(&CumulativeStrengtheningStats::declined_variable_arguments);
             if (logger)
-                logger->emit_proof_comment("presolve cumulative: declining " + as_string(donor.constraint_id()) + ", non-constant arguments");
+                logger->emit_proof_comment("presolve cumulative: declining " + as_string(donor.constraint_id()) + ", capacity is not reducible");
             continue;
         }
+        if (! view->set_aside.empty())
+            bump(&CumulativeStrengtheningStats::donors_with_set_aside_tasks);
 
         const auto & starts = donor.starts();
         auto n = starts.size();
-        auto capacity = data->capacity;
+        auto capacity = view->capacity;
 
         // The same windowing install_derived_cumulative resolves, and the same
         // windowing the donor encoded: a task can be active from its earliest
         // start to its latest finish. This is the paper's `t in [est_j, lct_j)`.
-        //
-        // Optional tasks need nothing further here. The whole strengthening is
-        // an argument about the donor's rows `Σ h_i·active_{i,t} ≤ C`, and an
-        // optional task's presence lives *inside* its active flag rather than
-        // beside it, so those rows are the same shape either way and every
-        // subset sum, at-most-one and raise below reads them the same. What the
-        // presence does change is the reasons the derived propagator gives,
-        // which install_derived_cumulative handles from the arguments passed to
-        // derived_cumulative_tasks_from below.
         vector<Integer> t_lo(n, 0_i), t_hi(n, 0_i);
-        vector<size_t> active_tasks;
-        for (size_t i = 0; i < n; ++i) {
-            // A constantly absent task is one the donor dropped outright, so it
-            // has no flags and no term in any row to argue over.
-            if (data->lengths[i] <= 0_i || data->heights[i] <= 0_i || data->never_present[i])
-                continue;
-            active_tasks.push_back(i);
+        const auto & active_tasks = view->usable;
+        for (auto i : active_tasks) {
             auto [s_lo, s_hi] = state.bounds(starts[i]);
             t_lo[i] = s_lo;
-            t_hi[i] = s_hi + data->lengths[i] - 1_i;
+            t_hi[i] = s_hi + view->lengths[i] - 1_i;
         }
 
         if (active_tasks.empty()) {
@@ -239,7 +184,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // A height above the capacity means the donor is infeasible on its own,
         // which is the donor's business to detect and not something to build a
         // subset sum over.
-        if (std::any_of(active_tasks.begin(), active_tasks.end(), [&](size_t i) { return data->heights[i] > capacity; })) {
+        if (std::any_of(active_tasks.begin(), active_tasks.end(), [&](size_t i) { return view->heights[i] > capacity; })) {
             bump(&CumulativeStrengtheningStats::declined_nothing_to_gain);
             continue;
         }
@@ -266,7 +211,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         vector<size_t> full_tasks, other_tasks;
         for (auto i : active_tasks) {
             auto conflicts_with_everything = std::all_of(active_tasks.begin(), active_tasks.end(),
-                [&](size_t j) { return i == j || t_hi[i] < t_lo[j] || t_hi[j] < t_lo[i] || data->heights[i] + data->heights[j] > capacity; });
+                [&](size_t j) { return i == j || t_hi[i] < t_lo[j] || t_hi[j] < t_lo[i] || view->heights[i] + view->heights[j] > capacity; });
             (conflicts_with_everything ? full_tasks : other_tasks).push_back(i);
         }
 
@@ -277,7 +222,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         auto unentitled_raise = std::holds_alternative<cumulative_strengthening_mutation::RaiseUnentitled>(_mutation);
         if (unentitled_raise && ! other_tasks.empty()) {
             auto tallest =
-                std::max_element(other_tasks.begin(), other_tasks.end(), [&](size_t a, size_t b) { return data->heights[a] < data->heights[b]; });
+                std::max_element(other_tasks.begin(), other_tasks.end(), [&](size_t a, size_t b) { return view->heights[a] < view->heights[b]; });
             full_tasks.push_back(*tallest);
             other_tasks.erase(tallest);
             std::sort(full_tasks.begin(), full_tasks.end());
@@ -296,7 +241,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             for (auto i : other_tasks)
                 if (t >= t_lo[i] && t <= t_hi[i]) {
                     point.tasks.push_back(i);
-                    point.heights.push_back(data->heights[i]);
+                    point.heights.push_back(view->heights[i]);
                 }
             for (auto i : full_tasks)
                 if (t >= t_lo[i] && t <= t_hi[i])
@@ -332,7 +277,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // capacity really is. If that is the capacity already, and no task's
         // height changes either, the donor was posted with the numbers it
         // deserved and there is nothing here.
-        auto raises_a_height = std::any_of(full_tasks.begin(), full_tasks.end(), [&](size_t i) { return data->heights[i] != kappa; });
+        auto raises_a_height = std::any_of(full_tasks.begin(), full_tasks.end(), [&](size_t i) { return view->heights[i] != kappa; });
         if (kappa >= capacity && ! raises_a_height) {
             bump(&CumulativeStrengtheningStats::declined_nothing_to_gain);
             continue;
@@ -383,7 +328,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             by_time.emplace(point.t, move(point));
 
         auto donor_id = donor.constraint_id();
-        auto heights = data->heights;
+        auto heights = view->heights;
         auto stats = _stats;
 
         // The raised tasks occupy the whole of the strengthened resource, which
@@ -401,10 +346,10 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             _mutation);
         auto raise_too_fast = std::holds_alternative<cumulative_strengthening_mutation::RaiseTooFast>(_mutation);
 
-        DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, starts, data->lengths, derived_heights, donor.presences()),
+        DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, starts, view->lengths, derived_heights, view->presences),
             .capacity = kappa,
             .row_donors = {donor_id},
-            .recipe = [donor_id, heights, capacity, kappa, by_time, stats, subset_sum_corruption, raise_too_fast, unentitled_raise](
+            .recipe = [donor_id, view = *view, heights, capacity, kappa, by_time, stats, subset_sum_corruption, raise_too_fast, unentitled_raise](
                           ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
                 auto point = by_time.find(t);
                 if (point == by_time.end())
@@ -416,7 +361,6 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 if (donor_row_at == rows.end())
                     throw ProofError{"cumulative strengthening: the donor has no capacity row at time " + to_string(t.raw_value) +
                         ", which cannot happen for a constraint derived over all of its tasks"};
-                auto donor_row = donor_row_at->second;
 
                 auto & tracker = recipe_logger.names_and_ids_tracker();
                 auto flag_for = [&](size_t i) -> ProofFlag {
@@ -454,6 +398,16 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                     recipe_logger.forget_proof_level(saved_level + 2);
                     return line;
                 };
+
+                // The row everything below argues from, reduced to the
+                // constant-argument form it reads it as: the set-aside tasks'
+                // terms weakened away, and a variable capacity replaced by the
+                // number `capacity` already holds. Working like the rest, so it
+                // goes inside the level that gets forgotten.
+                auto reduced_row = recover_constant_argument_row(recipe_logger, view, donor_id, donor_row_at->second, t, ProofLevel::Temporary);
+                if (! reduced_row)
+                    return give_back(std::nullopt);
+                auto donor_row = *reduced_row;
 
                 auto strengthen_to_kappa = [&](ProofLine source) -> ProofLine {
                     recipe_logger.emit_proof_comment(point->second.by_division ? "presolve cumulative gcd" : "presolve cumulative kappa");

@@ -283,6 +283,20 @@ namespace gcs
         [[nodiscard]] static auto after_flag_key(std::size_t task, Integer t) -> innards::ProofFlagKey;
         [[nodiscard]] static auto active_flag_key(std::size_t task, Integer t) -> innards::ProofFlagKey;
         ///@}
+
+        /**
+         * \brief The key of one bit of a variable-height task's linearised load
+         * contribution at time `t`: the row's terms for such a task are
+         * `2^bit` times these, rather than `height x active`.
+         *
+         * How many bits there are is a fact about the height's initial upper
+         * bound, and is not published separately: ask
+         * NamesAndIDsTracker::find_proof_flag_values for bit zero, one, two and
+         * so on until it has none, which is the same "is it there?" question a
+         * citer asks about every other key here. A constant-height task has
+         * none at all.
+         */
+        [[nodiscard]] static auto contribution_flag_key(std::size_t task, Integer t, Integer bit) -> innards::ProofFlagKey;
     };
 }
 

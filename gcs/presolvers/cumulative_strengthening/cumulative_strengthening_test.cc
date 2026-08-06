@@ -117,42 +117,88 @@ namespace
         return true;
     }
 
-    /// An instance whose tasks are optional. Deliberately not folded into
-    /// Instance: a solution then carries a presence per task as well as a
-    /// start, which every other fixture in this file would have to account for
-    /// and none of them cares about.
-    struct OptionalInstance
+    /// An instance whose arguments a plain Instance cannot express: optional
+    /// tasks, and lengths, heights or a capacity that are variables rather than
+    /// constants. Kept apart from Instance because a solution then carries a
+    /// value for each of those as well as a start, which every other fixture in
+    /// this file would have to account for and none of them cares about.
+    struct GeneralInstance
     {
         vector<pair<int, int>> start_ranges;
-        vector<int> lengths;
-        vector<int> heights;
-        /// Per task, the domain its presence variable is declared over.
+        /// Per task. A range of one value posts the constant, exactly as the
+        /// plain fixtures do, so a variable only appears where one is wanted.
+        vector<pair<int, int>> length_ranges, height_ranges;
+        /// Empty for the non-optional constructor. Otherwise per task, and
+        /// always a *variable*, even for the range {1, 1}: only a constant
+        /// presence resolves away, so this is how a fixture gets a flag that
+        /// carries a presence conjunct while every rule still fires.
         vector<pair<int, int>> presence_ranges;
-        int capacity;
+        /// A range of one value posts the constant.
+        pair<int, int> capacity_range;
     };
 
-    /// Over an assignment that is every start followed by every presence, which
-    /// is the shape build_expected produces and the shape the solution callback
-    /// records.
-    auto is_satisfying(const OptionalInstance & inst, const vector<int> & assignment) -> bool
+    [[nodiscard]] auto varies(const pair<int, int> & range) -> bool
     {
+        return range.first != range.second;
+    }
+
+    /// Where each of an instance's decision variables sits in an assignment
+    /// tuple. build_expected and the solution callback both go through this, so
+    /// they cannot come to disagree about the layout.
+    struct Layout
+    {
+        vector<pair<int, int>> ranges;
+        vector<size_t> start_at;
+        vector<optional<size_t>> length_at, height_at, presence_at;
+        optional<size_t> capacity_at;
+    };
+
+    auto layout_of(const GeneralInstance & inst) -> Layout
+    {
+        Layout layout;
+        auto place = [&](const pair<int, int> & range) {
+            layout.ranges.push_back(range);
+            return layout.ranges.size() - 1;
+        };
+
+        for (const auto & range : inst.start_ranges)
+            layout.start_at.push_back(place(range));
+        for (const auto & range : inst.length_ranges)
+            layout.length_at.push_back(varies(range) ? make_optional(place(range)) : nullopt);
+        for (const auto & range : inst.height_ranges)
+            layout.height_at.push_back(varies(range) ? make_optional(place(range)) : nullopt);
+        for (const auto & range : inst.presence_ranges)
+            layout.presence_at.push_back(make_optional(place(range)));
+        if (varies(inst.capacity_range))
+            layout.capacity_at = place(inst.capacity_range);
+        return layout;
+    }
+
+    auto is_satisfying(const GeneralInstance & inst, const vector<int> & assignment) -> bool
+    {
+        auto layout = layout_of(inst);
         auto n = inst.start_ranges.size();
-        auto start = [&](size_t i) { return assignment[i]; };
-        auto present = [&](size_t i) { return assignment[n + i] != 0; };
+
+        auto at = [&](const optional<size_t> & where, const pair<int, int> & range) { return where ? assignment[*where] : range.first; };
+        auto start = [&](size_t i) { return assignment[layout.start_at[i]]; };
+        auto length = [&](size_t i) { return at(layout.length_at[i], inst.length_ranges[i]); };
+        auto height = [&](size_t i) { return at(layout.height_at[i], inst.height_ranges[i]); };
+        auto present = [&](size_t i) { return layout.presence_at.empty() || assignment[*layout.presence_at[i]] != 0; };
+        auto capacity = at(layout.capacity_at, inst.capacity_range);
 
         int t_lo = INT_MAX, t_hi = INT_MIN;
         for (size_t i = 0; i < n; ++i) {
-            if (inst.lengths[i] == 0 || inst.heights[i] == 0 || ! present(i))
+            if (length(i) == 0 || height(i) == 0 || ! present(i))
                 continue;
             t_lo = min(t_lo, start(i));
-            t_hi = max(t_hi, start(i) + inst.lengths[i] - 1);
+            t_hi = max(t_hi, start(i) + length(i) - 1);
         }
         for (int t = t_lo; t <= t_hi; ++t) {
             int load = 0;
             for (size_t i = 0; i < n; ++i)
-                if (present(i) && start(i) <= t && t < start(i) + inst.lengths[i])
-                    load += inst.heights[i];
-            if (load > inst.capacity)
+                if (present(i) && start(i) <= t && t < start(i) + length(i))
+                    load += height(i);
+            if (load > capacity)
                 return false;
         }
         return true;
@@ -235,21 +281,47 @@ namespace
         return outcome;
     }
 
-    /// Solve an optional instance, collecting the same (starts, presences)
-    /// tuples brute force produces.
-    auto solve_optional(const OptionalInstance & inst, const shared_ptr<CumulativeStrengtheningStats> & stats, const optional<string> & proof_name)
+    /// Solve a general instance, collecting the same tuples brute force
+    /// produces. A null `stats` leaves the presolver off, which is how a
+    /// fixture asks what the donor manages on its own.
+    auto solve_general(const GeneralInstance & inst, const shared_ptr<CumulativeStrengtheningStats> & stats, const optional<string> & proof_name)
         -> Outcome
     {
-        Problem p;
-        vector<IntegerVariableID> starts, presences, lengths, heights;
-        for (size_t i = 0; i < inst.start_ranges.size(); ++i) {
-            starts.push_back(p.create_integer_variable(Integer{inst.start_ranges[i].first}, Integer{inst.start_ranges[i].second}));
-            presences.push_back(p.create_integer_variable(Integer{inst.presence_ranges[i].first}, Integer{inst.presence_ranges[i].second}));
-            lengths.push_back(constant_variable(Integer{inst.lengths[i]}));
-            heights.push_back(constant_variable(Integer{inst.heights[i]}));
-        }
+        auto layout = layout_of(inst);
 
-        p.post(Cumulative{starts, lengths, heights, presences, constant_variable(Integer{inst.capacity})});
+        Problem p;
+        vector<IntegerVariableID> starts, lengths, heights, presences;
+        // In the same order layout_of places them, so that the tuples recorded
+        // below line up with the ones build_expected produces.
+        vector<IntegerVariableID> recorded;
+
+        for (const auto & [lo, hi] : inst.start_ranges)
+            starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        recorded = starts;
+
+        auto argument = [&](const pair<int, int> & range) -> IntegerVariableID {
+            if (! varies(range))
+                return constant_variable(Integer{range.first});
+            auto v = p.create_integer_variable(Integer{range.first}, Integer{range.second});
+            recorded.push_back(v);
+            return v;
+        };
+
+        for (const auto & range : inst.length_ranges)
+            lengths.push_back(argument(range));
+        for (const auto & range : inst.height_ranges)
+            heights.push_back(argument(range));
+        // A presence is always a variable: only a constant one resolves away,
+        // and a fixture asking for presences wants the conjunct.
+        for (const auto & [lo, hi] : inst.presence_ranges)
+            presences.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        recorded.insert(recorded.end(), presences.begin(), presences.end());
+        auto capacity = argument(inst.capacity_range);
+
+        if (presences.empty())
+            p.post(Cumulative{starts, lengths, heights, capacity});
+        else
+            p.post(Cumulative{starts, lengths, heights, presences, capacity});
         if (stats)
             p.add_presolver(CumulativeStrengthening{stats});
 
@@ -259,9 +331,7 @@ namespace
             SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
                                found_a_solution = true;
                                vector<int> solution;
-                               for (const auto & v : starts)
-                                   solution.push_back(s(v).raw_value);
-                               for (const auto & v : presences)
+                               for (const auto & v : recorded)
                                    solution.push_back(s(v).raw_value);
                                outcome.solutions.insert(move(solution));
                                return true;
@@ -277,6 +347,16 @@ namespace
         if (proof_name)
             verify_proof_and_clean_up(*proof_name);
         return outcome;
+    }
+
+    /// Everything a general fixture checks that is not specific to it: the
+    /// proof verified (solve_general did that), and no solution was lost.
+    auto check_solutions(const string & what, const GeneralInstance & inst, const Outcome & outcome) -> void
+    {
+        set<vector<int>> expected;
+        build_expected(expected, [&](const vector<int> & assignment) { return is_satisfying(inst, assignment); }, layout_of(inst).ranges);
+        if (expected != outcome.solutions)
+            fail("solutions do not match brute force, on " + what);
     }
 
     auto read_file(const string & name) -> string
@@ -702,10 +782,10 @@ auto main(int argc, char * argv[]) -> int
     // a task out of the energy set for want of order literals.
     for (const auto & [what, presence_range] : {pair<string, pair<int, int>>{"present", {1, 1}}, {"undecided", {0, 1}}}) {
         auto stats = make_shared<CumulativeStrengtheningStats>();
-        const OptionalInstance inst{
-            {{0, 2}, {0, 2}, {0, 2}, {0, 2}, {0, 2}}, {2, 2, 2, 2, 2}, {3, 3, 3, 3, 3}, vector<pair<int, int>>(5, presence_range), 8};
+        const GeneralInstance inst{{{0, 2}, {0, 2}, {0, 2}, {0, 2}, {0, 2}}, vector<pair<int, int>>(5, {2, 2}), vector<pair<int, int>>(5, {3, 3}),
+            vector<pair<int, int>>(5, presence_range), {8, 8}};
 
-        auto outcome = solve_optional(inst, stats, proofs ? make_optional("cumulative_strengthening_optional_" + what) : nullopt);
+        auto outcome = solve_general(inst, stats, proofs ? make_optional("cumulative_strengthening_optional_" + what) : nullopt);
 
         // The donor's heights are all multiples of three and its capacity is
         // not, so the subset sum rounds eight down to six. Assert it: a fixture
@@ -715,12 +795,7 @@ auto main(int argc, char * argv[]) -> int
         if (stats->capacity_units_removed != 2_i)
             fail("an optional-task donor was strengthened by the wrong amount, on " + what);
 
-        set<vector<int>> expected;
-        auto ranges = inst.start_ranges;
-        ranges.insert(ranges.end(), inst.presence_ranges.begin(), inst.presence_ranges.end());
-        build_expected(expected, [&](const vector<int> & assignment) { return is_satisfying(inst, assignment); }, ranges);
-        if (expected != outcome.solutions)
-            fail("optional-task solutions do not match brute force, on " + what);
+        check_solutions("optional tasks, " + what, inst, outcome);
 
         // With every task present the energy argument runs at the root and
         // refutes there --- and the donor on its own does not, which is what
@@ -729,12 +804,103 @@ auto main(int argc, char * argv[]) -> int
         if (what == "present") {
             if (! outcome.refuted_at_root)
                 fail("the strengthened energy check did not refute the all-present instance at the root");
-            if (solve_optional(inst, nullptr, nullopt).refuted_at_root)
+            if (solve_general(inst, nullptr, nullopt).refuted_at_root)
                 fail("the donor alone refuted at the root, so the fixture proves nothing");
         }
     }
 
-    // v1 restrictions, each declined loudly rather than quietly mis-derived.
+    // Variable arguments, which are a restriction on a *task* rather than on a
+    // donor. A task whose length or height is a variable has no constant term
+    // in the rows the argument is made over, so it is set aside and weakened
+    // out of them; the rest of the donor is strengthened as usual. A variable
+    // capacity is not a task at all: the whole row is reduced against the bound
+    // the capacity has at presolve time, which every inference then carries as
+    // a condition.
+    //
+    // The base is the same five-task energy gap as above, so the strengthening
+    // still bites; the fifth task is what each fixture varies.
+    {
+        auto base = [](pair<int, int> fifth_length, pair<int, int> fifth_height, pair<int, int> capacity) {
+            return GeneralInstance{{{0, 2}, {0, 2}, {0, 2}, {0, 2}, {0, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}, fifth_length},
+                {{3, 3}, {3, 3}, {3, 3}, {3, 3}, fifth_height}, {}, capacity};
+        };
+
+        // A variable capacity, with every task constant. The rows are reduced
+        // against eight, which is the bound it has when the presolver looks,
+        // and the subset sum then rounds that down to six exactly as it would
+        // for a posted eight. Nothing is set aside.
+        {
+            auto stats = make_shared<CumulativeStrengtheningStats>();
+            const auto inst = base({2, 2}, {3, 3}, {6, 8});
+            auto outcome = solve_general(inst, stats, proofs ? make_optional("cumulative_strengthening_var_capacity") : nullopt);
+
+            if (stats->donors_strengthened != 1)
+                fail("a variable-capacity donor was not strengthened");
+            if (stats->capacity_units_removed != 2_i)
+                fail("a variable-capacity donor was strengthened by the wrong amount");
+            if (stats->donors_with_set_aside_tasks != 0)
+                fail("a variable capacity set a task aside, which is not what it is");
+
+            check_solutions("variable capacity", inst, outcome);
+
+            // The donor's own overload check is off for a variable capacity ---
+            // it would leave a `(b - a) * capacity` term for the wrapping RUP
+            // to dispose of over the capacity's bits --- so every energy
+            // inference here is the derived constraint's, made over a row that
+            // only holds under the condition it carries.
+            if (! outcome.refuted_at_root)
+                fail("the strengthened energy check did not refute the variable-capacity instance at the root");
+            if (solve_general(inst, nullptr, nullopt).refuted_at_root)
+                fail("the donor alone refuted the variable-capacity instance at the root");
+        }
+
+        // A variable height on the fifth task, which is the sharper of the two
+        // set-asides: its terms in the donor's rows are the bits of a
+        // linearised contribution rather than `height x active`, so all of them
+        // have to be weakened away and the published contribution key is what
+        // finds them.
+        //
+        // Four tasks of energy six need twenty-four in a window four wide,
+        // which six supplies exactly and so does not refute --- the fifth task
+        // is what tipped it over, and it no longer counts. The check here is
+        // that the donor is still strengthened over the other four, and that
+        // nothing is lost.
+        {
+            auto stats = make_shared<CumulativeStrengtheningStats>();
+            const auto inst = base({2, 2}, {1, 3}, {8, 8});
+            auto outcome = solve_general(inst, stats, proofs ? make_optional("cumulative_strengthening_var_height") : nullopt);
+
+            if (stats->donors_strengthened != 1)
+                fail("a donor with one variable height was not strengthened over the rest of itself");
+            if (stats->donors_with_set_aside_tasks != 1)
+                fail("a variable height did not set its task aside");
+
+            check_solutions("variable height", inst, outcome);
+        }
+
+        // A variable length, which leaves the rows alone --- lengths are not in
+        // them --- and breaks the pins instead, `after` being reified on
+        // `start + length` and no longer single-variable. Set aside for that,
+        // and weakened out by its one activity flag rather than by any bits.
+        {
+            auto stats = make_shared<CumulativeStrengtheningStats>();
+            const auto inst = base({1, 2}, {3, 3}, {8, 8});
+            auto outcome = solve_general(inst, stats, proofs ? make_optional("cumulative_strengthening_var_length") : nullopt);
+
+            if (stats->donors_strengthened != 1)
+                fail("a donor with one variable length was not strengthened over the rest of itself");
+            if (stats->donors_with_set_aside_tasks != 1)
+                fail("a variable length did not set its task aside");
+
+            check_solutions("variable length", inst, outcome);
+        }
+    }
+
+    // What is still declined outright: a capacity that is a *view*, whose bits
+    // are not the ones the donor's rows mention, so there is no order literal
+    // whose definition would cancel them and nothing to reduce the row against.
+    // Loudly, because a model drifting into this would otherwise just quietly
+    // stop being strengthened.
     {
         auto stats = make_shared<CumulativeStrengtheningStats>();
 
@@ -742,17 +908,16 @@ auto main(int argc, char * argv[]) -> int
         vector<IntegerVariableID> starts;
         for (int i = 0; i < 3; ++i)
             starts.push_back(p.create_integer_variable(0_i, 3_i));
-        auto varying_height = p.create_integer_variable(1_i, 6_i);
         vector<IntegerVariableID> lengths{constant_variable(2_i), constant_variable(2_i), constant_variable(2_i)},
-            heights{varying_height, constant_variable(10_i), constant_variable(15_i)};
-        p.post(Cumulative{starts, lengths, heights, constant_variable(14_i)});
+            heights{constant_variable(3_i), constant_variable(3_i), constant_variable(3_i)};
+        p.post(Cumulative{starts, lengths, heights, p.create_integer_variable(4_i, 7_i) + 1_i});
         p.add_presolver(CumulativeStrengthening{stats});
         solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }}, nullopt);
 
         if (stats->declined_variable_arguments != 1)
-            fail("a variable-height donor was not declined");
+            fail("a view-capacity donor was not declined");
         if (stats->donors_strengthened != 0)
-            fail("a variable-height donor was strengthened anyway");
+            fail("a view-capacity donor was strengthened anyway");
     }
 
     // The budget. Set to zero, the dynamic programming path is unaffordable and

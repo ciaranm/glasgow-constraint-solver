@@ -311,6 +311,15 @@ Each is declined rather than worked around, and counted in
 `CumulativeStrengtheningStats` so that a model drifting into one does not simply
 stop being strengthened in silence:
 
+Variable lengths and heights are deliberately **not** on this list either, and
+nor is a variable capacity. `CumulativeDonorView`
+([`donor_view.hh`](../gcs/constraints/cumulative/donor_view.hh)) reduces a donor
+to the part of itself the argument can be made over, per *task*: one task with a
+variable length or height is set aside and weakened out of every row, and the
+rest of the donor is strengthened exactly as before. `donors_with_set_aside_tasks`
+counts the donors that happened to, because one strengthened over four of its
+five tasks otherwise looks just like one strengthened in full.
+
 Optional tasks are deliberately **not** on this list. The whole strengthening is
 an argument about the donor's per-time rows, and an optional task's presence is a
 conjunct inside its activity flag rather than a term beside it, so those rows are
@@ -323,9 +332,10 @@ and `InferredCumulative` still decline, for a reason that is theirs rather than
 this one's: they bridge flags between donors, and a presence conjunct has to
 cancel across that bridge first.
 
-- **Variable lengths, heights or capacity.** With a variable height the donor's
-  row is over bit-linearised contribution flags rather than `height × active`, so
-  a subset sum of the heights is not a subset sum of the row's coefficients.
+- **A capacity that is a view.** Its bits are not the ones the donor's rows
+  mention, so there is no order literal whose definition would cancel them, and
+  nothing to reduce a row against. A *variable* capacity is fine, and a variable
+  length or height costs its own task rather than the donor — see below.
 - **A height above the capacity**, as above.
 - **Every task full**, which makes `kappa` zero: a disjunctive rather than a
   strengthening, and `InferredDisjunctive`'s to find.

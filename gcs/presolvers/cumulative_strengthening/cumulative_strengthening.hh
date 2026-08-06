@@ -40,6 +40,14 @@ namespace gcs
         /// off each", which are different claims about the fixture.
         Integer capacity_units_removed = 0_i;
 
+        /// Donors that were strengthened over only part of themselves, because
+        /// a task's length or height is a variable and so has no constant term
+        /// in the rows the argument is made over. Its terms are weakened away
+        /// and it takes no part; what that costs is a weaker strengthening,
+        /// never a wrong one. Counted because a donor drifting into this looks
+        /// exactly like one that was strengthened in full.
+        std::size_t donors_with_set_aside_tasks = 0;
+
         /// Tasks whose height was raised to the strengthened capacity, over
         /// those donors: the other half of what the presolver does, and the
         /// only record that it happened, since a raise can leave the capacity

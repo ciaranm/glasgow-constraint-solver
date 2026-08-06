@@ -1269,6 +1269,11 @@ auto ConstraintProofModelData<Cumulative>::active_flag_key(size_t task, Integer 
     return ProofFlagKey{{static_cast<long long>(task), t.raw_value}, "cact"};
 }
 
+auto ConstraintProofModelData<Cumulative>::contribution_flag_key(size_t task, Integer t, Integer bit) -> ProofFlagKey
+{
+    return ProofFlagKey{{static_cast<long long>(task), t.raw_value, bit.raw_value}, "cc"};
+}
+
 auto Cumulative::constraint_type() const -> std::string
 {
     // The optional form is a different constraint, not a variant of this one:
