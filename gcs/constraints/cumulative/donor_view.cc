@@ -253,8 +253,8 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
             hints = vector<ProofLine>{ProofLine{*contribution_row}, *line, *holds};
 
         WPBSum guaranteed;
-        for (Integer k = 0_i; k.raw_value < static_cast<long long>(cc.size()); ++k)
-            guaranteed += power2(k) * cc[k.raw_value];
+        for (size_t k = 0; k < cc.size(); ++k)
+            guaranteed += power2(Integer(static_cast<long long>(k))) * cc[k];
         guaranteed += view.heights[i] * ! *active;
         reduced.add(logger.emit(RUPProofRule{hints}, move(guaranteed) >= view.heights[i], ProofLevel::Temporary));
     }

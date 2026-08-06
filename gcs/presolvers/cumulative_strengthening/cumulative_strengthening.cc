@@ -43,6 +43,10 @@ using std::size_t;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::all_of;
+using std::ranges::any_of;
+using std::ranges::max_element;
+using std::ranges::sort;
 
 namespace
 {
@@ -80,26 +84,46 @@ namespace
     /// the capacity raises in a single step; one that overshoots by half gets
     /// steps of one and pays a `pol` per unit of `kappa`, which is why the
     /// caller budgets this. Predicting it is arithmetic and needs no proof, so
-    /// the budget and the derivation call the same function --- a prediction
-    /// that disagreed would decline the wrong donors.
-    [[nodiscard]] auto raise_steps(Integer total, Integer kappa) -> vector<Integer>
+    /// the budget and the derivation walk the same steps --- a prediction that
+    /// disagreed would decline the wrong donors.
+    template <typename Step_>
+    auto for_each_raise_step(Integer total, Integer kappa, Step_ && each_step) -> void
     {
         // Everything else fits alongside, so the at-most-ones alone say it:
         // summed, they give the whole row in one `pol`, and there is no
         // division to survive.
-        if (total <= kappa)
-            return {kappa};
+        if (total <= kappa) {
+            each_step(kappa);
+            return;
+        }
 
         auto overshoot = total - kappa;
-        vector<Integer> steps;
         for (auto c = 0_i; c < kappa;) {
             // ceil((total - c) / overshoot) - 1, which is at least one while
             // `c < kappa`, so this terminates.
             auto step = min(kappa - c, (total - c + overshoot - 1_i) / overshoot - 1_i);
-            steps.push_back(step);
+            each_step(step);
             c += step;
         }
+    }
+
+    /// \ref for_each_raise_step, as the steps themselves.
+    [[nodiscard]] auto raise_steps(Integer total, Integer kappa) -> vector<Integer>
+    {
+        vector<Integer> steps;
+        for_each_raise_step(total, kappa, [&](Integer step) { steps.push_back(step); });
         return steps;
+    }
+
+    /// \ref for_each_raise_step, as how many there are --- which is all the
+    /// budget wants, and it wants it once per raised task per time point, on
+    /// the path whose whole purpose is to decide cheaply whether the expensive
+    /// one is affordable.
+    [[nodiscard]] auto raise_step_count(Integer total, Integer kappa) -> long long
+    {
+        long long count = 0;
+        for_each_raise_step(total, kappa, [&](Integer) { ++count; });
+        return count;
     }
 }
 
@@ -201,7 +225,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             // A height above the capacity means the donor is infeasible on its
             // own, which is the donor's business to detect and not something to
             // build a subset sum over.
-            if (std::any_of(active_tasks.begin(), active_tasks.end(), [&](size_t i) { return candidate.heights[i] > capacity; }))
+            if (any_of(active_tasks, [&](size_t i) { return candidate.heights[i] > capacity; }))
                 return nullopt;
 
             // Schulz's coefficient raising, as the set of tasks it applies to.
@@ -226,7 +250,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             auto & full_tasks = assessment.full_tasks;
             vector<size_t> other_tasks;
             for (auto i : active_tasks) {
-                auto conflicts_with_everything = std::all_of(active_tasks.begin(), active_tasks.end(), [&](size_t j) {
+                auto conflicts_with_everything = all_of(active_tasks, [&](size_t j) {
                     return i == j || t_hi[i] < t_lo[j] || t_hi[j] < t_lo[i] || candidate.heights[i] + candidate.heights[j] > capacity;
                 });
                 (conflicts_with_everything ? full_tasks : other_tasks).push_back(i);
@@ -237,11 +261,10 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             // anyway. Everything downstream then runs honestly on a set that is
             // wrong, and the row it lands on is a row the donor does not imply.
             if (unentitled_raise && ! other_tasks.empty()) {
-                auto tallest = std::max_element(
-                    other_tasks.begin(), other_tasks.end(), [&](size_t a, size_t b) { return candidate.heights[a] < candidate.heights[b]; });
+                auto tallest = max_element(other_tasks, [&](size_t a, size_t b) { return candidate.heights[a] < candidate.heights[b]; });
                 full_tasks.push_back(*tallest);
                 other_tasks.erase(tallest);
-                std::sort(full_tasks.begin(), full_tasks.end());
+                sort(full_tasks);
             }
 
             auto global_lo = t_lo[active_tasks.front()], global_hi = t_hi[active_tasks.front()];
@@ -290,8 +313,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             // capacity really is. If that is the capacity already, and no
             // task's height changes either, the donor was posted with the
             // numbers it deserved and there is nothing here.
-            auto raises_a_height =
-                std::any_of(full_tasks.begin(), full_tasks.end(), [&](size_t i) { return candidate.heights[i] != assessment.kappa; });
+            auto raises_a_height = any_of(full_tasks, [&](size_t i) { return candidate.heights[i] != assessment.kappa; });
             if (assessment.kappa >= capacity && ! raises_a_height)
                 return nullopt;
 
@@ -313,7 +335,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // Neither direction dominates and both are arithmetic, so work out both
         // and keep the bigger reduction rather than assuming. A tie goes to the
         // converted one, which says the same about the capacity over more tasks.
-        if (std::any_of(view->height_bounded_by.begin(), view->height_bounded_by.end(), [](const auto & h) { return h.has_value(); })) {
+        if (any_of(view->height_bounded_by, [](const auto & h) { return h.has_value(); })) {
             auto without = view->with_converted_heights_set_aside();
             if (auto set_aside_instead = assess(without); set_aside_instead && (! assessed || set_aside_instead->kappa < assessed->kappa)) {
                 bump(&CumulativeStrengtheningStats::donors_better_off_setting_heights_aside);
@@ -351,9 +373,13 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 if (! point.by_division)
                     states += static_cast<long long>(point.heights.size()) * (capacity.raw_value + 1);
 
+                // A repeat count rather than an index: each raised task is
+                // raised out of the row the one before it left behind, which is
+                // a kappa heavier, so what varies between the rounds is `total`
+                // and not which task it is.
                 auto total = std::accumulate(point.heights.begin(), point.heights.end(), 0_i);
-                for (size_t taken = 0; taken < point.full_tasks.size(); ++taken) {
-                    raise_lines += static_cast<long long>(raise_steps(total, kappa).size());
+                for (size_t rounds = point.full_tasks.size(); rounds > 0; --rounds) {
+                    raise_lines += raise_step_count(total, kappa);
                     total += kappa;
                 }
             }
@@ -394,12 +420,12 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             derived_heights[i] = kappa;
 
         // Fixed for the whole donor, so worked out once rather than per row.
-        SubsetSumMutation subset_sum_corruption = std::visit(
-            overloaded{//
-                [](const cumulative_strengthening_mutation::ClaimOneBetter &) -> SubsetSumMutation { return subset_sum_mutation::ClaimOneBetter{}; },
-                [](const cumulative_strengthening_mutation::BogusDivisor &) -> SubsetSumMutation { return subset_sum_mutation::BogusDivisor{}; },
-                [](const auto &) -> SubsetSumMutation { return subset_sum_mutation::None{}; }},
-            _mutation);
+        SubsetSumMutation subset_sum_corruption = overloaded{//
+            [](const cumulative_strengthening_mutation::ClaimOneBetter &) -> SubsetSumMutation { return subset_sum_mutation::ClaimOneBetter{}; },
+            [](const cumulative_strengthening_mutation::BogusDivisor &) -> SubsetSumMutation { return subset_sum_mutation::BogusDivisor{}; },
+            [](const auto &) -> SubsetSumMutation {
+                return subset_sum_mutation::None{};
+            }}.visit(_mutation);
         auto raise_too_fast = std::holds_alternative<cumulative_strengthening_mutation::RaiseTooFast>(_mutation);
 
         DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, starts, view->lengths, derived_heights, view->presences),

@@ -723,8 +723,11 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             const auto & task = tasks[cut.support[k]];
             auto link = makespan_links.find(task.start);
             links.push_back(link == makespan_links.end() ? std::nullopt : optional<makespan_energy::MakespanLink>{link->second});
-            derived_tasks.push_back(DerivedCumulativeTask{
-                donors[task.canonical_donor].id, *task.positions[task.canonical_donor], task.start, task.length, cut.coefficients[k]});
+            derived_tasks.push_back(DerivedCumulativeTask{.donor = donors[task.canonical_donor].id,
+                .position = *task.positions[task.canonical_donor],
+                .start = task.start,
+                .length = task.length,
+                .height = cut.coefficients[k]});
             recipe.members.push_back(RecipeMember{task.canonical_donor, *task.positions[task.canonical_donor], task.demands, task.positions,
                 cut.coefficients[k], task.t_lo, task.t_hi});
         }

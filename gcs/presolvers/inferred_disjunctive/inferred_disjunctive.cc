@@ -41,6 +41,9 @@ using std::size_t;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::find;
+using std::ranges::includes;
+using std::ranges::sort;
 
 namespace
 {
@@ -290,7 +293,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
             if (w != u && w != v && conflict[u][w] && conflict[v][w])
                 candidates.push_back(w);
 
-        std::sort(candidates.begin(), candidates.end(), [&](size_t a, size_t b) {
+        sort(candidates, [&](size_t a, size_t b) {
             if (tasks[a].least_length != tasks[b].least_length)
                 return tasks[a].least_length > tasks[b].least_length;
             return a < b;
@@ -307,7 +310,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                 clique.push_back(w);
         }
 
-        std::sort(clique.begin(), clique.end());
+        sort(clique);
         return clique;
     };
 
@@ -342,7 +345,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     if (include_non_conflicting && ! found.empty()) {
         auto & clique = found.front();
         for (size_t w = 0; w < tasks.size(); ++w) {
-            if (std::find(clique.begin(), clique.end(), w) != clique.end())
+            if (find(clique, w) != clique.end())
                 continue;
 
             // Every member has to at least share a resource with it, or there
@@ -355,15 +358,20 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                     continue;
                 }
                 optional<Conflict> shared;
-                for (const auto & aw : tasks[w].appearances)
+                for (const auto & aw : tasks[w].appearances) {
                     for (const auto & am : tasks[member].appearances)
-                        if (aw.donor == am.donor && ! shared)
+                        if (aw.donor == am.donor) {
                             // Demands that overshoot by exactly one: a lie,
                             // and the same lie the mutation is about, since
                             // what it fabricates is a conflict that is not
                             // there. Recovering the at-most-one then runs
                             // honestly on numbers that are wrong.
                             shared = Conflict{aw.donor, am.position, aw.position, capacity_of.at(aw.donor), 1_i, capacity_of.at(aw.donor)};
+                            break;
+                        }
+                    if (shared)
+                        break;
+                }
                 if (! shared) {
                     usable = false;
                     break;
@@ -379,7 +387,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                     conflict[w][member] = Conflict{c.witness, c.witness_position_v, c.witness_position_u, c.demand_v, c.demand_u, c.capacity};
                 }
             clique.push_back(w);
-            std::sort(clique.begin(), clique.end());
+            sort(clique);
             break;
         }
     }
@@ -400,7 +408,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     };
 
     // Rank by that, and drop any clique contained in one already accepted.
-    std::sort(found.begin(), found.end(), [&](const vector<size_t> & a, const vector<size_t> & b) {
+    sort(found, [&](const vector<size_t> & a, const vector<size_t> & b) {
         auto ta = capacity_bound(a), tb = capacity_bound(b);
         if (ta != tb)
             return ta > tb;
@@ -418,7 +426,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
 
         bool subsumed = false;
         for (const auto & already : accepted)
-            if (std::includes(already.begin(), already.end(), clique.begin(), clique.end())) {
+            if (includes(already, clique)) {
                 subsumed = true;
                 break;
             }
@@ -440,7 +448,8 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
             const auto & home = tasks[i].appearances.front();
             auto link = makespan_links.find(tasks[i].start);
             links.push_back(link == makespan_links.end() ? std::nullopt : optional<makespan_energy::MakespanLink>{link->second});
-            derived_tasks.push_back(DerivedCumulativeTask{home.donor, home.position, tasks[i].start, tasks[i].length, 1_i});
+            derived_tasks.push_back(DerivedCumulativeTask{
+                .donor = home.donor, .position = home.position, .start = tasks[i].start, .length = tasks[i].length, .height = 1_i});
         }
         for (size_t a = 0; a < clique.size(); ++a)
             for (size_t b = a + 1; b < clique.size(); ++b)
@@ -572,9 +581,15 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         // a clique's members share a witness, recovering their
                         // sub-clique in one step instead is what issue #666
                         // is about.
+                        // The bound it returns is not checked because it
+                        // cannot be anything else: two demands that overshoot
+                        // give a margin at most the larger of them, so the
+                        // divisor is that margin and |K| - ceil(Delta / d) is
+                        // one. build_am1_from_row's own paragraph is the
+                        // argument, and it is why a caller wanting the pairwise
+                        // case need not special-case anything.
                         PolBuilder pair_amo;
-                        [[maybe_unused]] auto at_most =
-                            build_am1_from_row(pair_amo, *reduced, {c.demand_u, c.demand_v}, weaken_out, c.capacity, tracker);
+                        build_am1_from_row(pair_amo, *reduced, {c.demand_u, c.demand_v}, weaken_out, c.capacity, tracker);
 
                         // Bridging a task onto the *other* task's flags leaves
                         // its own term uncancelled, so what is merged is not the

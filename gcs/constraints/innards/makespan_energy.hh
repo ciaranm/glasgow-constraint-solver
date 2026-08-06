@@ -168,9 +168,6 @@ namespace gcs::innards::makespan_energy
         /// `bound - 1`: the largest makespan the argument refutes.
         Integer lo, hi;
 
-        /// What the tasks need inside it, and what it supplies.
-        Integer energy, supply;
-
         /// Whether a window one time point wider would have a capacity row to
         /// go with it. False when the window already reaches the last row ---
         /// which is only of interest to \ref makespan_energy_mutation::ClaimHigherBound,

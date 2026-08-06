@@ -79,8 +79,10 @@ auto gcs::innards::makespan_energy::makespan_energy_bound(const vector<EnergyTas
 
         auto supply = capacity * slots_within(time_slot_prefix, lo, lo, mu);
         if (energy > supply)
-            best = MakespanBound{
-                mu + 1_i, lo, mu, energy, supply, slots_within(time_slot_prefix, lo, lo, mu + 1_i) > slots_within(time_slot_prefix, lo, lo, mu)};
+            best = MakespanBound{.bound = mu + 1_i,
+                .lo = lo,
+                .hi = mu,
+                .wider_supplies_more = slots_within(time_slot_prefix, lo, lo, mu + 1_i) > slots_within(time_slot_prefix, lo, lo, mu)};
     }
 
     return best;
