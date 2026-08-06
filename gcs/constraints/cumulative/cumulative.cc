@@ -418,10 +418,21 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
                 for (Integer k = 0_i; k <= highest_bit_shift; ++k)
                     cc.push_back(model.names_and_ids_tracker().create_proof_flag_values(
                         _constraint_id, std::vector<long long>{static_cast<long long>(i), t.raw_value, k.raw_value}, "cc"));
+                // Labelled, with cake's own names for them: it emits all three
+                // under @c[id][i_t_cge] / [_cle] / [_cz], with the coefficients
+                // we do, so these are the labels a citer of ours resolves
+                // against cake's OPB as well as our own. The `cge` half is what
+                // converts a variable height into a constant one for a derived
+                // constraint (recover_constant_argument_row); the other two are
+                // labelled to keep the family whole rather than because
+                // anything cites them yet.
                 auto contrib = contrib_sum_of(cc);
-                model.add_constraint(contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{active});
-                model.add_constraint(contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{active});
-                model.add_constraint(contrib <= 0_i, HalfReifyOnConjunctionOf{! active});
+                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t),
+                    contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{active});
+                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_le_row_role(i, t),
+                    contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{active});
+                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_zero_row_role(i, t), contrib <= 0_i,
+                    HalfReifyOnConjunctionOf{! active});
                 _contrib_flags[i].push_back(move(cc));
             }
         }
@@ -1287,6 +1298,23 @@ auto ConstraintProofModelData<Cumulative>::active_flag_key(size_t task, Integer 
 auto ConstraintProofModelData<Cumulative>::contribution_flag_key(size_t task, Integer t, Integer bit) -> ProofFlagKey
 {
     return ProofFlagKey{{static_cast<long long>(task), t.raw_value, bit.raw_value}, "cc"};
+}
+
+auto ConstraintProofModelData<Cumulative>::contribution_ge_row_role(size_t task, Integer t) -> string
+{
+    // cake_pb_cp's own name for this row. Must stay the string
+    // define_proof_model labels it with, and must stay cake's.
+    return std::to_string(task) + "_" + std::to_string(t.raw_value) + "_cge";
+}
+
+auto ConstraintProofModelData<Cumulative>::contribution_le_row_role(size_t task, Integer t) -> string
+{
+    return std::to_string(task) + "_" + std::to_string(t.raw_value) + "_cle";
+}
+
+auto ConstraintProofModelData<Cumulative>::contribution_zero_row_role(size_t task, Integer t) -> string
+{
+    return std::to_string(task) + "_" + std::to_string(t.raw_value) + "_cz";
 }
 
 auto ConstraintProofModelData<Cumulative>::end_lower_bound_role(size_t task) -> string

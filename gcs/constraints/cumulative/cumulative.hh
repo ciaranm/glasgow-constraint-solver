@@ -299,6 +299,34 @@ namespace gcs
         [[nodiscard]] static auto contribution_flag_key(std::size_t task, Integer t, Integer bit) -> innards::ProofFlagKey;
 
         /**
+         * \name The rows defining a variable-height task's linearised load
+         * contribution at time `t`.
+         *
+         * Three halves of one statement: `ge` and `le` say the contribution
+         * *is* the height while the task is active, and `zero` says it is
+         * nothing while it is not. The `ge` one is what converts such a task's
+         * bit terms back into `lb(height) x active` for a constraint derived
+         * over this one, which is all anything cites today; the other two are
+         * published because they are the same family, in the way `before` and
+         * `after` are published beside `active`.
+         *
+         * These are `cake_pb_cp`'s own names for the rows, as
+         * \ref capacity_row_role is: cake emits all three under the same
+         * labels, over the same terms, so a proof citing one resolves against
+         * its re-derived OPB as well as against ours. Renaming them is
+         * therefore a cross-tool break rather than an internal one.
+         *
+         * A constant-height task has none. Ask
+         * NamesAndIDsTracker::constraint_row_label, which is how a citer
+         * discovers that.
+         */
+        ///@{
+        [[nodiscard]] static auto contribution_ge_row_role(std::size_t task, Integer t) -> std::string;
+        [[nodiscard]] static auto contribution_le_row_role(std::size_t task, Integer t) -> std::string;
+        [[nodiscard]] static auto contribution_zero_row_role(std::size_t task, Integer t) -> std::string;
+        ///@}
+
+        /**
          * \brief The role of the line saying the proof-only end proxy for this
          * task is at least its start plus its length.
          *
