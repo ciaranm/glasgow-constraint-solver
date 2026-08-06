@@ -1,6 +1,7 @@
 #include <gcs/constraint_id.hh>
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
+#include <gcs/constraints/cumulative/donor_view.hh>
 #include <gcs/innards/proofs/flag_bridge.hh>
 #include <gcs/innards/proofs/lifted_cover_cut.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -48,6 +49,10 @@ namespace
         ConstraintID id;
         size_t size;
         Integer capacity;
+        /// What of this donor can be argued over: which of its tasks have a
+        /// constant term in its rows, and what its capacity comes to. A recipe
+        /// needs it to reduce those rows before lifting anything out of them.
+        CumulativeDonorView view;
     };
 
     /// One task, as it appears across every donor.
@@ -471,32 +476,26 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             continue;
         }
 
-        // Variable arguments are the same story, and the same wiring gap:
-        // CumulativeDonorView reduces a donor to the tasks a derived constraint
-        // can speak about and recover_constant_argument_row weakens the rest
-        // out of every row, which is what CumulativeStrengthening now uses.
-        // Nothing here needs anything more than being pointed at them.
-        auto capacity = constant_value_of(donor.capacity());
-        if (! capacity) {
+        // What of this donor a cut can be lifted out of: its capacity as a
+        // number, and the tasks whose length and height are the constants its
+        // rows put on them. A task with a variable one is set aside rather than
+        // costing the whole donor its column in the matrix --- it takes no part
+        // in any cover, and its terms come out of every row first.
+        auto view = cumulative_donor_view(donor, state);
+        if (! view) {
             bump(&InferredCumulativeStats::declined_variable_arguments);
             if (logger)
-                logger->emit_proof_comment("presolve lifted cover: declining " + as_string(donor.constraint_id()) + ", variable capacity");
+                logger->emit_proof_comment("presolve lifted cover: declining " + as_string(donor.constraint_id()) + ", capacity is not reducible");
             continue;
         }
+        if (! view->set_aside.empty())
+            bump(&InferredCumulativeStats::donors_with_set_aside_tasks);
 
         const auto & starts = donor.starts();
-        auto constant = true;
-        for (size_t i = 0; i < starts.size() && constant; ++i)
-            constant = is_constant_variable(donor.lengths()[i]) && is_constant_variable(donor.heights()[i]);
-        if (! constant) {
-            bump(&InferredCumulativeStats::declined_variable_arguments);
-            if (logger)
-                logger->emit_proof_comment("presolve lifted cover: declining " + as_string(donor.constraint_id()) + ", variable lengths or heights");
-            continue;
-        }
+        auto capacity = view->capacity;
 
         auto which = donors.size();
-        donors.push_back(Donor{donor.constraint_id(), starts.size(), *capacity});
+        donors.push_back(Donor{donor.constraint_id(), starts.size(), capacity, *view});
 
         // Every task already found needs a slot for the donor just added,
         // whether or not it turns out to appear in it --- and before the loop
@@ -506,15 +505,14 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             task.positions.resize(donors.size(), std::nullopt);
         }
 
-        for (size_t i = 0; i < starts.size(); ++i) {
-            auto length = *constant_value_of(donor.lengths()[i]);
-            auto demand = *constant_value_of(donor.heights()[i]);
-            // A task with nothing to contribute has no term in this donor's row
-            // and no flags there, and one that alone exceeds the capacity can
-            // never run at all --- the donor's own row says so, and including it
-            // would pad every cover it touched. Either way it is this *donor*
-            // that has nothing to say about it, and another may still have.
-            if (length <= 0_i || demand <= 0_i || demand > *capacity)
+        for (auto i : view->usable) {
+            auto length = view->lengths[i];
+            auto demand = view->heights[i];
+            // A task that alone exceeds the capacity can never run at all --- the
+            // donor's own row says so, and including it would pad every cover it
+            // touched. That is this *donor* having nothing to say about it, and
+            // another may still have.
+            if (demand > capacity)
                 continue;
 
             // Matched across donors by start and length, and a donor's second
@@ -832,8 +830,18 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 auto give_up = false;
                 for (auto row : programme->row_indices) {
                     const auto & donor = recipe.donors[row];
-                    auto line = rows.find(donor.id);
-                    if (line == rows.end()) {
+                    auto found_row = rows.find(donor.id);
+                    if (found_row == rows.end()) {
+                        give_up = true;
+                        break;
+                    }
+
+                    // Reduced to the constant-argument form everything below
+                    // lifts out of: this donor's set-aside tasks weakened away,
+                    // and a variable capacity replaced by the number
+                    // `donor.capacity` already holds.
+                    auto line = recover_constant_argument_row(recipe_logger, donor.view, donor.id, found_row->second, t, ProofLevel::Temporary);
+                    if (! line) {
                         give_up = true;
                         break;
                     }
@@ -896,7 +904,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                     // neither a term nor a flag, and stopping there would leave
                     // the later tasks' terms in.
                     vector<ProofFlag> weaken_out;
-                    for (size_t position = 0; position < donor.size; ++position) {
+                    for (auto position : donor.view.usable) {
                         if (in_the_row.contains(position))
                             continue;
                         if (auto flag = active_flag_for(tracker, donor.id, position, t))
@@ -905,12 +913,11 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
 
                     auto bridged = any_of(terms, [](const BridgedRowTerm & term) { return term.implies_row_flag.has_value(); });
                     if (! bridged) {
-                        kept_rows.push_back(line->second);
+                        kept_rows.push_back(*line);
                         kept_weaken_out.push_back(move(weaken_out));
                     }
                     else {
-                        kept_rows.push_back(
-                            recover_bridged_row(recipe_logger, line->second, terms, weaken_out, donor.capacity, ProofLevel::Temporary));
+                        kept_rows.push_back(recover_bridged_row(recipe_logger, *line, terms, weaken_out, donor.capacity, ProofLevel::Temporary));
                         kept_weaken_out.emplace_back();
                     }
                 }

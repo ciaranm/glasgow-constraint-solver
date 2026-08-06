@@ -1,6 +1,7 @@
 #include <gcs/constraint_id.hh>
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
+#include <gcs/constraints/cumulative/donor_view.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/proofs/am1_from_pairs.hh>
 #include <gcs/innards/proofs/am1_from_row.hh>
@@ -69,6 +70,11 @@ namespace
         /// sweep has to go: positions with no flags are simply skipped.
         size_t size;
     };
+
+    /// The witness resources' views, by donor, as a recipe needs them: to
+    /// reduce a row to the constant-argument form build_am1_from_row reads, and
+    /// to know which of that resource's positions still have a term in it.
+    using DonorViews = map<ConstraintID, CumulativeDonorView>;
 
     /// Why a pair conflicts: the resource that cannot hold both, and the
     /// numbers saying it cannot. The demands and the capacity rather than the
@@ -165,6 +171,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     vector<Task> tasks;
     map<IntegerVariableID, size_t> task_of_start;
     vector<Resource> resources;
+    DonorViews views;
 
     for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
         bump(&InferredDisjunctiveStats::donors_seen);
@@ -184,47 +191,29 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
             continue;
         }
 
-        // Variable arguments are the same story, and the same wiring gap:
-        // CumulativeDonorView reduces a donor to the tasks a derived constraint
-        // can speak about and recover_constant_argument_row weakens the rest
-        // out of every row, which is what CumulativeStrengthening now uses.
-        // Nothing here needs anything more than being pointed at them.
-        auto capacity = constant_value_of(donor.capacity());
-        if (! capacity) {
+        // What of this donor an inferred constraint can argue over: its
+        // capacity as a number, and the tasks whose length and height are the
+        // constants its rows put on them. A task with a variable one is set
+        // aside rather than costing the whole resource its place in the
+        // conflict graph --- it simply cannot be a clique member, and every row
+        // this resource witnesses is weakened over it first.
+        auto view = cumulative_donor_view(donor, state);
+        if (! view) {
             bump(&InferredDisjunctiveStats::declined_variable_arguments);
             if (logger)
-                logger->emit_proof_comment("presolve disjunctive: declining " + as_string(donor.constraint_id()) + ", variable capacity");
+                logger->emit_proof_comment("presolve disjunctive: declining " + as_string(donor.constraint_id()) + ", capacity is not reducible");
             continue;
         }
-
-        vector<Integer> lengths, heights;
-        bool constant = true;
-        for (const auto & l : donor.lengths()) {
-            auto value = constant_value_of(l);
-            constant = constant && value.has_value();
-            lengths.push_back(value.value_or(0_i));
-        }
-        for (const auto & h : donor.heights()) {
-            auto value = constant_value_of(h);
-            constant = constant && value.has_value();
-            heights.push_back(value.value_or(0_i));
-        }
-        if (! constant) {
-            bump(&InferredDisjunctiveStats::declined_variable_arguments);
-            if (logger)
-                logger->emit_proof_comment("presolve disjunctive: declining " + as_string(donor.constraint_id()) + ", variable lengths or heights");
-            continue;
-        }
+        if (! view->set_aside.empty())
+            bump(&InferredDisjunctiveStats::resources_with_set_aside_tasks);
 
         const auto & starts = donor.starts();
-        resources.push_back(Resource{donor.constraint_id(), *capacity, starts.size()});
+        resources.push_back(Resource{donor.constraint_id(), view->capacity, starts.size()});
+        const auto & lengths = view->lengths;
+        const auto & heights = view->heights;
+        views.emplace(donor.constraint_id(), *view);
 
-        for (size_t i = 0; i < starts.size(); ++i) {
-            // A task that cannot load this resource has no flags on it, so it
-            // is not reachable through it even if it is listed.
-            if (lengths[i] <= 0_i || heights[i] <= 0_i)
-                continue;
-
+        for (auto i : view->usable) {
             auto found = task_of_start.find(starts[i]);
             if (found == task_of_start.end()) {
                 auto [s_lo, s_hi] = state.bounds(starts[i]);
@@ -250,11 +239,8 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     // both; the first such resource found is the witness the certificate will
     // use, since any of them proves the same at-most-one.
     map<ConstraintID, Integer> capacity_of;
-    map<ConstraintID, size_t> resource_size;
-    for (const auto & resource : resources) {
+    for (const auto & resource : resources)
         capacity_of.emplace(resource.id, resource.capacity);
-        resource_size.emplace(resource.id, resource.size);
-    }
 
     vector<vector<optional<Conflict>>> conflict(tasks.size(), vector<optional<Conflict>>(tasks.size()));
     vector<pair<size_t, size_t>> candidate_pairs;
@@ -458,7 +444,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         DerivedCumulativeSpec spec{.tasks = derived_tasks,
             .capacity = 1_i,
             .row_donors = vector<ConstraintID>{row_donors.begin(), row_donors.end()},
-            .recipe = [members, task_data, conflicts, resource_size, stats, claim_rhs_zero, bridge_wrong_task](
+            .recipe = [members, task_data, conflicts, views, stats, claim_rhs_zero, bridge_wrong_task](
                           ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
                 auto & tracker = recipe_logger.names_and_ids_tracker();
 
@@ -544,19 +530,30 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         if (row == rows.end())
                             return give_back(std::nullopt);
 
+                        // Reduced to the constant-argument form the at-most-one
+                        // program reads it as: the witness's set-aside tasks
+                        // weakened away, and a variable capacity replaced by the
+                        // number `c.capacity` already holds.
+                        const auto & witness_view = views.at(c.witness);
+                        auto reduced = recover_constant_argument_row(recipe_logger, witness_view, c.witness, row->second, t, ProofLevel::Temporary);
+                        if (! reduced)
+                            return give_back(std::nullopt);
+
                         auto u_flags = flags_for(tracker, c.witness, c.witness_position_u, t);
                         auto v_flags = flags_for(tracker, c.witness, c.witness_position_v, t);
                         if (! u_flags || ! v_flags)
                             return give_back(std::nullopt);
 
                         // Everything else on that resource that could be running
-                        // now has to come out of the row first. Over every
-                        // position, not up to the first one without flags: a
-                        // task that demands nothing of this resource has no
-                        // term in the row and no flags either, and stopping
-                        // there would leave the later tasks' terms in.
+                        // now has to come out of the row first. Over the
+                        // witness's *usable* positions: a task that demands
+                        // nothing of this resource has no term in the row and no
+                        // flags either, and one that was set aside had its terms
+                        // taken out by the reduction above --- weakening either
+                        // again would be `w` on a variable the constraint does
+                        // not mention, which VeriPB refuses.
                         vector<ProofFlag> weaken_out;
-                        for (size_t other = 0; other < resource_size.at(c.witness); ++other) {
+                        for (auto other : witness_view.usable) {
                             if (other == c.witness_position_u || other == c.witness_position_v)
                                 continue;
                             auto other_flags = flags_for(tracker, c.witness, other, t);
@@ -573,7 +570,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         // is about.
                         PolBuilder pair_amo;
                         [[maybe_unused]] auto at_most =
-                            build_am1_from_row(pair_amo, row->second, {c.demand_u, c.demand_v}, weaken_out, c.capacity, tracker);
+                            build_am1_from_row(pair_amo, *reduced, {c.demand_u, c.demand_v}, weaken_out, c.capacity, tracker);
 
                         // Bridging a task onto the *other* task's flags leaves
                         // its own term uncancelled, so what is merged is not the

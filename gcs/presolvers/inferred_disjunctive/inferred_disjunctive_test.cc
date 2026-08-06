@@ -23,6 +23,7 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -396,6 +397,110 @@ auto main(int argc, char * argv[]) -> int
             fail("an optional-task donor was used anyway");
     }
     println(cerr, "an optional-task donor is declined");
+
+    /* Variable arguments, which are a restriction on a *task* rather than on a
+     * resource. Three tasks of length two, pairwise conflicting on three
+     * resources exactly as the family above, but with two things that family
+     * cannot say: the capacity is one shared variable over [3, 5] rather than a
+     * posted constant, and a fourth task carries a variable height.
+     *
+     * Both are the derived side of the same reduction. The capacity's rows are
+     * argued against five, the weakest it can be, which every witness's
+     * at-most-one is recovered from --- and five is not one less than a power of
+     * two, so the order atom really does come back with a coefficient to pay
+     * off. The fourth task's terms in those rows are the bits of a linearised
+     * contribution rather than `height x active`, so the reduction has to take
+     * all of them out before the at-most-one program weakens over what is left.
+     *
+     * A demand of three conflicts with another three at any capacity up to five,
+     * so the clique is the same one; the fourth task demands one, which does not
+     * conflict with three at five but does at three, so it stays a decision the
+     * search makes rather than one the presolver has taken.
+     */
+    {
+        const int k = 3, length = 2, horizon = 6, latest = horizon - length;
+        auto stats = make_shared<InferredDisjunctiveStats>();
+
+        Problem p;
+        vector<IntegerVariableID> starts;
+        for (int i = 0; i <= k; ++i)
+            starts.push_back(p.create_integer_variable(0_i, Integer{latest}, "s" + to_string(i)));
+        auto capacity = p.create_integer_variable(3_i, 5_i, "capacity");
+        auto varying = p.create_integer_variable(1_i, 1_i, "h3");
+
+        vector<IntegerVariableID> lengths(static_cast<size_t>(k) + 1, constant_variable(Integer{length}));
+        for (int r = 0; r < k; ++r) {
+            vector<IntegerVariableID> heights(static_cast<size_t>(k) + 1, constant_variable(0_i));
+            for (int i = 0; i < k; ++i)
+                for (int j = i + 1; j < k; ++j)
+                    if ((i + j) % k == r) {
+                        heights[static_cast<size_t>(i)] = constant_variable(3_i);
+                        heights[static_cast<size_t>(j)] = constant_variable(3_i);
+                    }
+            heights[static_cast<size_t>(k)] = varying;
+            p.post(Cumulative{starts, lengths, heights, capacity});
+        }
+        p.add_presolver(InferredDisjunctive{stats});
+
+        set<vector<int>> solutions;
+        solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+            vector<int> solution;
+            for (const auto & v : starts)
+                solution.push_back(s(v).raw_value);
+            solution.push_back(s(capacity).raw_value);
+            solutions.insert(move(solution));
+            return true;
+        }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{"inferred_disjunctive_variable_arguments"}) : nullopt);
+        if (proofs)
+            verify_proof_and_clean_up("inferred_disjunctive_variable_arguments");
+
+        if (stats->cliques_posted != 1)
+            fail("a clique was not posted over resources with variable arguments");
+        if (stats->resources_with_set_aside_tasks != static_cast<size_t>(k))
+            fail("the variable-height task was not set aside on every resource");
+        if (stats->declined_variable_arguments != 0)
+            fail("a resource was declined for a task's variable height, which is now a set-aside");
+
+        // Brute force over the same model: the fourth task takes part or not
+        // depending on the capacity, which is why it is in the tuple.
+        set<vector<int>> expected;
+        vector<int> assignment(static_cast<size_t>(k) + 2, 0);
+        std::function<auto(size_t)->void> enumerate = [&](size_t at) {
+            if (at == assignment.size()) {
+                for (int r = 0; r < k; ++r)
+                    for (int t = 0; t < horizon; ++t) {
+                        int load = 0;
+                        for (int i = 0; i <= k; ++i) {
+                            if (assignment[static_cast<size_t>(i)] > t || t >= assignment[static_cast<size_t>(i)] + length)
+                                continue;
+                            if (i == k)
+                                load += 1;
+                            else
+                                for (int a = 0; a < k; ++a)
+                                    for (int b = a + 1; b < k; ++b)
+                                        if ((a + b) % k == r && (i == a || i == b))
+                                            load += 3;
+                        }
+                        if (load > assignment.back())
+                            return;
+                    }
+                expected.insert(assignment);
+                return;
+            }
+            auto lo = at == assignment.size() - 1 ? 3 : 0;
+            auto hi = at == assignment.size() - 1 ? 5 : latest;
+            for (auto v = lo; v <= hi; ++v) {
+                assignment[at] = v;
+                enumerate(at + 1);
+            }
+        };
+        enumerate(0);
+
+        if (expected != solutions)
+            fail("variable-argument solutions do not match brute force");
+        println(cerr, "variable arguments: clique posted, {} solutions", solutions.size());
+    }
 
     if (! proofs) {
         println(cerr, "veripb is not available, so the proof-level checks are skipped");

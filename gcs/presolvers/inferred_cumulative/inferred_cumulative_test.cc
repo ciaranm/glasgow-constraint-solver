@@ -53,6 +53,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -495,6 +496,84 @@ auto main(int argc, char * argv[]) -> int
         if (stats->largest_capacity_bound != 5_i)
             fail("cardinality: reported a bound of " + to_string(stats->largest_capacity_bound.raw_value) + ", not five");
         println(cerr, "cardinality cut: posted over three mutually compatible tasks, bound 5");
+    }
+
+    /* The same cardinality cut, over a donor that is not all constants: the
+     * capacity is a variable over [9, 10] rather than a posted ten, and a
+     * fourth task carries a variable height.
+     *
+     * The cut is argued against ten, the weakest the capacity can be, and ten
+     * is not one less than a power of two --- so the order atom the reduction
+     * resolves really does come back with a coefficient to pay off. The fourth
+     * task's terms in the row are the bits of a linearised contribution rather
+     * than `height x active`, so all of them have to come out before anything
+     * is lifted out of what is left; it takes no part in the cover, and the
+     * three demand-four tasks still fit in twos and not in threes at either
+     * capacity, so the cut is the same one.
+     */
+    {
+        const int horizon = 7, length = 3, latest = horizon - length;
+        auto stats = make_shared<InferredCumulativeStats>();
+
+        Problem p;
+        vector<IntegerVariableID> starts;
+        for (int i = 0; i < 4; ++i)
+            starts.push_back(p.create_integer_variable(0_i, Integer{latest}, "s" + to_string(i)));
+        auto capacity = p.create_integer_variable(9_i, 10_i, "capacity");
+        auto varying = p.create_integer_variable(1_i, 1_i, "h3");
+
+        vector<IntegerVariableID> lengths(4, constant_variable(Integer{length})),
+            heights{constant_variable(4_i), constant_variable(4_i), constant_variable(4_i), varying};
+        p.post(Cumulative{starts, lengths, heights, capacity});
+        p.add_presolver(InferredCumulative{stats});
+
+        set<vector<int>> solutions;
+        solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+            vector<int> solution;
+            for (const auto & v : starts)
+                solution.push_back(s(v).raw_value);
+            solution.push_back(s(capacity).raw_value);
+            solutions.insert(move(solution));
+            return true;
+        }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{"inferred_cumulative_variable_arguments"}) : nullopt);
+        if (proofs)
+            verify_proof_and_clean_up("inferred_cumulative_variable_arguments");
+
+        if (stats->cuts_posted != 1)
+            fail("variable arguments: posted " + to_string(stats->cuts_posted) + " cuts, not the one over the three constant tasks");
+        if (stats->donors_with_set_aside_tasks != 1)
+            fail("variable arguments: the variable-height task was not set aside");
+        if (stats->declined_variable_arguments != 0)
+            fail("variable arguments: the donor was declined rather than reduced");
+
+        set<vector<int>> expected;
+        vector<int> assignment(5, 0);
+        std::function<auto(std::size_t)->void> enumerate = [&](std::size_t at) {
+            if (at == assignment.size()) {
+                for (int t = 0; t < horizon; ++t) {
+                    int load = 0;
+                    for (int i = 0; i < 4; ++i)
+                        if (assignment[static_cast<std::size_t>(i)] <= t && t < assignment[static_cast<std::size_t>(i)] + length)
+                            load += (i == 3 ? 1 : 4);
+                    if (load > assignment.back())
+                        return;
+                }
+                expected.insert(assignment);
+                return;
+            }
+            auto lo = at == assignment.size() - 1 ? 9 : 0;
+            auto hi = at == assignment.size() - 1 ? 10 : latest;
+            for (auto v = lo; v <= hi; ++v) {
+                assignment[at] = v;
+                enumerate(at + 1);
+            }
+        };
+        enumerate(0);
+
+        if (expected != solutions)
+            fail("variable arguments: solutions do not match brute force");
+        println(cerr, "variable arguments: cut posted over a variable capacity, one task set aside, {} solutions", solutions.size());
     }
 
     // The window edges, which is the only place a programme is built over

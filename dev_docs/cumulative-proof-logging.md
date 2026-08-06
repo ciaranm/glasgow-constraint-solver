@@ -847,9 +847,13 @@ carry the same literal. Mixed arities change the degree arithmetic
 outright. The presolvers of issues 07 and 08 bridge between donors, so
 they still decline an optional one; issue 06's does not, and does not.
 
-The same two are the ones still declining a donor with variable arguments,
-which is a wiring gap rather than anything unsolved: `CumulativeDonorView`
-and `recover_constant_argument_row` are theirs to call too.
+Variable arguments they *do* take, by the same route: each reduces the row
+it is about to argue over before doing so --- `InferredDisjunctive` its
+witness's, before recovering the pairwise at-most-one from it;
+`InferredCumulative` each row of the lifting programme, before lifting
+anything out of it. Both then weaken over the donor's **usable** positions
+only, since a set-aside task's terms went out with the reduction and `w`
+on a variable the constraint no longer mentions is refused.
 
 `constraint_type()` is `cumulative_optional` for the optional form, so
 the verified-encoding chain does not silently match it against

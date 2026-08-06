@@ -86,6 +86,14 @@ namespace gcs
          */
         Integer certified_makespan_bound{0};
 
+        /// Resources that could only be argued over in part, because a task's
+        /// length or height is a variable and so has no constant term in their
+        /// rows. Such a task takes no part in the conflict graph and its terms
+        /// are weakened out of every row the resource witnesses; what that
+        /// costs is a smaller graph, never a wrong one. Counted because a
+        /// resource drifting into it looks exactly like one used in full.
+        std::size_t resources_with_set_aside_tasks = 0;
+
         /// Flag bridges emitted, one per (task, time) that had to be carried
         /// from a witnessing resource to the one holding the task's flags.
         std::size_t bridges_derived = 0;
