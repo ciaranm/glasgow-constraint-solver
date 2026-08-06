@@ -47,6 +47,49 @@ namespace dzn
             throw std::runtime_error{"'" + _path + "': " + name + " " + why};
         }
 
+        /// What is between the outermost brackets, which is where an array's
+        /// contents are however it was written: a bare `[...]` and an
+        /// `array1d(1..5, [...])` wrapper both come back the same, the index
+        /// set having no brackets of its own.
+        [[nodiscard]] auto _bracketed(const std::string & name, const std::string & text) const -> std::string
+        {
+            auto open = text.find('[');
+            auto close = text.rfind(']');
+            if (open == std::string::npos || close == std::string::npos || close < open)
+                _bad(name, "is not an array: '" + text + "'");
+            return text.substr(open + 1, close - open - 1);
+        }
+
+        /// Every integer in a comma-separated list, with anything that is
+        /// neither an integer nor a separator an error rather than a place to
+        /// stop.
+        ///
+        /// Whitespace separates as well as commas do, which is what makes
+        /// integers() able to read a two-dimensional literal flat: with the row
+        /// bars turned into spaces, the `2 3` spanning a row boundary is two
+        /// entries. Splitting on commas alone made it one --- the 2 was read
+        /// and the 3 silently dropped, which is the failure this reader exists
+        /// to refuse.
+        [[nodiscard]] auto _integers_in(const std::string & name, const std::string & text, const std::string & what) const -> std::vector<long long>
+        {
+            auto separated = text;
+            for (auto & c : separated)
+                if (c == ',')
+                    c = ' ';
+
+            std::vector<long long> result;
+            std::istringstream in{separated};
+            long long value = 0;
+            while (in >> value)
+                result.push_back(value);
+            // Reading to the end sets eofbit as well as failbit; stopping on
+            // something else sets only failbit, and that something else is what
+            // has to be complained about rather than ignored.
+            if (! in.eof())
+                _bad(name, "has a non-integer " + what + ": '" + text + "'");
+            return result;
+        }
+
     public:
         Data(std::string path, std::map<std::string, std::string> values) : _path(std::move(path)), _values(std::move(values))
         {
@@ -83,32 +126,13 @@ namespace dzn
         [[nodiscard]] auto integers(const std::string & name) const -> std::vector<long long>
         {
             const auto & text = _raw(name);
-            auto open = text.find('[');
-            auto close = text.rfind(']');
-            if (open == std::string::npos || close == std::string::npos || close < open)
-                _bad(name, "is not an array: '" + text + "'");
-
-            auto body = text.substr(open + 1, close - open - 1);
+            auto body = _bracketed(name, text);
             // A 2-D literal is `[| a, b | c, d |]`; read flat, the row
             // separators are just more whitespace.
             for (auto & c : body)
                 if (c == '|')
                     c = ' ';
-
-            std::vector<long long> result;
-            std::istringstream in{body};
-            std::string item;
-            while (std::getline(in, item, ',')) {
-                std::istringstream one{item};
-                long long value = 0;
-                if (! (one >> value)) {
-                    if (item.find_first_not_of(" \t\r\n") == std::string::npos)
-                        continue;
-                    _bad(name, "has a non-integer entry: '" + item + "'");
-                }
-                result.push_back(value);
-            }
-            return result;
+            return _integers_in(name, body, "entry");
         }
 
         /// A two-dimensional integer array written `[| a, b | c, d |]`, as
@@ -118,12 +142,7 @@ namespace dzn
         [[nodiscard]] auto matrix(const std::string & name) const -> std::vector<std::vector<long long>>
         {
             const auto & text = _raw(name);
-            auto open = text.find('[');
-            auto close = text.rfind(']');
-            if (open == std::string::npos || close == std::string::npos || close < open)
-                _bad(name, "is not an array: '" + text + "'");
-
-            auto body = text.substr(open + 1, close - open - 1);
+            auto body = _bracketed(name, text);
             auto first = body.find_first_not_of(" \t\r\n");
             if (first == std::string::npos || body[first] != '|')
                 _bad(name, "is not a two-dimensional array literal: '" + text + "'");
@@ -136,20 +155,7 @@ namespace dzn
             while (std::getline(in, row, '|')) {
                 if (row.find_first_not_of(" \t\r\n") == std::string::npos)
                     continue;
-                std::vector<long long> entries;
-                std::istringstream cells{row};
-                std::string item;
-                while (std::getline(cells, item, ',')) {
-                    std::istringstream one{item};
-                    long long value = 0;
-                    if (! (one >> value)) {
-                        if (item.find_first_not_of(" \t\r\n") == std::string::npos)
-                            continue;
-                        _bad(name, "has a non-integer entry: '" + item + "'");
-                    }
-                    entries.push_back(value);
-                }
-                rows.push_back(std::move(entries));
+                rows.push_back(_integers_in(name, row, "entry"));
             }
 
             for (const auto & r : rows)
@@ -165,13 +171,9 @@ namespace dzn
         [[nodiscard]] auto sets(const std::string & name) const -> std::vector<std::vector<long long>>
         {
             const auto & text = _raw(name);
-            auto open = text.find('[');
-            auto close = text.rfind(']');
-            if (open == std::string::npos || close == std::string::npos || close < open)
-                _bad(name, "is not an array: '" + text + "'");
+            auto body = _bracketed(name, text);
 
             std::vector<std::vector<long long>> result;
-            auto body = text.substr(open + 1, close - open - 1);
             std::size_t at = 0;
             while (true) {
                 auto brace = body.find('{', at);
@@ -180,31 +182,26 @@ namespace dzn
                 auto end = body.find('}', brace);
                 if (end == std::string::npos)
                     _bad(name, "has a set that is never closed");
-
-                std::vector<long long> members;
-                std::istringstream in{body.substr(brace + 1, end - brace - 1)};
-                std::string item;
-                while (std::getline(in, item, ',')) {
-                    std::istringstream one{item};
-                    long long value = 0;
-                    if (! (one >> value)) {
-                        if (item.find_first_not_of(" \t\r\n") == std::string::npos)
-                            continue;
-                        _bad(name, "has a non-integer set member: '" + item + "'");
-                    }
-                    members.push_back(value);
-                }
-                result.push_back(std::move(members));
+                result.push_back(_integers_in(name, body.substr(brace + 1, end - brace - 1), "set member"));
                 at = end + 1;
             }
 
             // Anything outside the braces other than separators means this is
             // not an array of sets, and reading it as one would quietly drop it.
-            for (std::size_t i = 0, brace_depth = 0; i != body.size(); ++i) {
+            // A closing brace with nothing open is its own complaint, and has to
+            // be: with an unsigned counter it took the depth to SIZE_MAX, after
+            // which the outside-the-braces test never fired again and the rest
+            // of the string was accepted --- so the loop passed exactly the
+            // input it is here to catch.
+            long long brace_depth = 0;
+            for (std::size_t i = 0; i != body.size(); ++i) {
                 if (body[i] == '{')
                     ++brace_depth;
-                else if (body[i] == '}')
+                else if (body[i] == '}') {
+                    if (0 == brace_depth)
+                        _bad(name, "closes a set that was never opened: '" + text + "'");
                     --brace_depth;
+                }
                 else if (0 == brace_depth && ',' != body[i] && ! std::isspace(static_cast<unsigned char>(body[i])))
                     _bad(name, "is not an array of sets: '" + text + "'");
             }
