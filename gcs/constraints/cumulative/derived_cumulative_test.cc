@@ -36,6 +36,7 @@
 
 using std::cerr;
 using std::flush;
+using std::getline;
 using std::ifstream;
 using std::make_optional;
 using std::make_unique;
@@ -47,6 +48,7 @@ using std::optional;
 using std::pair;
 using std::set;
 using std::string;
+using std::to_string;
 using std::tuple;
 using std::unique_ptr;
 using std::vector;
@@ -92,6 +94,12 @@ namespace
         /// asks about (task, time) pairs the donor never encoded. The install
         /// must decline.
         BeyondDonorWindow,
+        /// A recipe that derives the first time point's row and then declines,
+        /// which is what a cut spanning several donors does when it reaches a
+        /// time point one of them wrote no row for. The install must decline
+        /// --- and the rows it had already put at Top must be deleted, since
+        /// nothing will ever cite them and Top is never forgotten.
+        DeclineMidway,
         /// C'_t := C_t, plus a certified lower bound on the makespan from the
         /// tasks' energy.
         Makespan,
@@ -122,6 +130,9 @@ namespace
         std::shared_ptr<bool> installed = std::make_shared<bool>(false);
         // Set by the derived constraint's initialiser: the bound it reached.
         std::shared_ptr<optional<Integer>> bound_reached = std::make_shared<optional<Integer>>();
+        // How many rows the DeclineMidway recipe derived before giving up,
+        // which is how many deletions the proof owes.
+        std::shared_ptr<size_t> rows_before_declining = std::make_shared<size_t>(0);
 
         explicit DerivedDemoPresolver(Demo d, optional<IntegerVariableID> m = nullopt) : demo(d), makespan(m)
         {
@@ -257,6 +268,19 @@ namespace
                         return copy.emit(logger, ProofLevel::Top);
                     };
                     break;
+
+                case Demo::DeclineMidway:
+                    *rows_before_declining = 0;
+                    spec.recipe = [row_of, derived = rows_before_declining](
+                                      ProofLogger & logger, const DerivedCumulativeRows & rows, Integer) -> optional<ProofLine> {
+                        if (*derived > 0)
+                            return std::nullopt;
+                        PolBuilder copy;
+                        copy.add(row_of(rows));
+                        ++*derived;
+                        return copy.emit(logger, ProofLevel::Top);
+                    };
+                    break;
                 }
 
                 *installed = install_derived_cumulative(propagators, state, logger, move(spec));
@@ -269,6 +293,7 @@ namespace
             auto result = make_unique<DerivedDemoPresolver>(demo, makespan);
             result->installed = installed;
             result->bound_reached = bound_reached;
+            result->rows_before_declining = rows_before_declining;
             return result;
         }
     };
@@ -735,6 +760,59 @@ auto main(int argc, char * argv[]) -> int
             if (*installed)
                 fail("a derived constraint reaching past the donor's windows was installed anyway");
             dispose_of_proof_files("derived_cumulative_beyond_window");
+        }
+    }
+
+    // A recipe that declines part way through has already put rows at Top, and
+    // nothing will ever cite them: the constraint is not installed, so its
+    // propagator does not exist. Top is never forgotten, so those rows would
+    // otherwise stay live for the rest of the proof and tax every later
+    // unhinted RUP, which is issue #666 on the decline path.
+    //
+    // veripb verifying is not the check here --- it verified before this was
+    // fixed, and would verify if the deletions went missing again. What is
+    // asserted is that the proof says so: one deletion per row derived.
+    {
+        auto presolver = DerivedDemoPresolver{Demo::DeclineMidway};
+        auto installed = presolver.installed;
+        auto derived = presolver.rows_before_declining;
+        Problem p;
+        post(p, duplicate_instance, nullopt);
+        p.add_presolver(presolver);
+        solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{"derived_cumulative_decline_midway"}) : nullopt);
+        if (proofs) {
+            if (*installed)
+                fail("a derived constraint whose recipe declined was installed anyway");
+            if (0 == *derived)
+                fail("the declining recipe derived nothing, so there was no orphaned row to drop and this fixture proves nothing");
+
+            std::ifstream proof{"derived_cumulative_decline_midway.pbp"};
+            string line;
+            auto found_the_comment = false, counting = false;
+            size_t deletions = 0;
+            while (getline(proof, line)) {
+                if (line.contains("declined at time")) {
+                    found_the_comment = counting = true;
+                    continue;
+                }
+                if (counting) {
+                    if (line.contains("del id"))
+                        ++deletions;
+                    else
+                        counting = false;
+                }
+            }
+            if (! found_the_comment)
+                fail("the proof does not say the derived constraint declined, so nothing dropped its orphaned rows");
+            else if (deletions != *derived)
+                fail("the proof drops " + to_string(deletions) + " rows where the recipe derived " + to_string(*derived));
+            proof.close();
+
+            // And the deletions have to be legal, which is the other half: the
+            // rows go, nothing cites them afterwards, and the rest of the proof
+            // still checks.
+            verify_proof_and_clean_up("derived_cumulative_decline_midway");
         }
     }
 

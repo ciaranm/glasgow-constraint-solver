@@ -105,8 +105,8 @@ namespace gcs::innards
      * certificate.
      *
      * Returns no cut exactly when the cut is *false* --- when some 0/1 point
-     * the rows jointly allow breaks it --- or when its programme would be larger
-     * than `state_budget` states. Barring that budget there is no third answer:
+     * the rows jointly allow breaks it --- or when its programme would build
+     * more than `state_budget` states. Barring that budget there is no third answer:
      * every valid cut gets a dynamic programme and every dynamic programme
      * becomes a proof, which is the whole point of doing it this way. The
      * earlier design searched for a short cutting-planes derivation and refused

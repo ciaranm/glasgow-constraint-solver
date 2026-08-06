@@ -540,7 +540,16 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 vector<optional<size_t>>(donors.size(), std::nullopt), which};
             task.demands[which] = demand;
             task.positions[which] = i;
-            task_of.emplace(key, tasks.size());
+            // Only the first column with this key is findable, and that is the
+            // whole of what keeps a donor's duplicate tasks apart: the second
+            // one gets a column of its own, and the map goes on pointing at the
+            // first. What it costs is that a later donor's copy of that second
+            // task matches nothing and starts a third column, so cross-donor
+            // matching degrades where a donor has duplicates --- a weaker cut,
+            // never a wrong one. Written out because `emplace` doing nothing is
+            // load-bearing here, and `insert_or_assign` would quietly undo it.
+            if (found == task_of.end())
+                task_of.emplace(key, tasks.size());
             tasks.push_back(move(task));
         }
     }

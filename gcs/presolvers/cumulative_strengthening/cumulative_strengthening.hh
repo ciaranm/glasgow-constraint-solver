@@ -91,6 +91,13 @@ namespace gcs
         /// row's. Named for the condition rather than for today's only instance
         /// of it --- see cumulative_donor_view.
         std::size_t declined_irreducible_capacity = 0;
+        /// Donors with a task whose guaranteed demand exceeds the capacity, so
+        /// the donor is infeasible on its own and its own propagator will say
+        /// so. Not a decline this presolver should be pleased about, and so not
+        /// counted with the ones it should --- a fixture that accidentally
+        /// builds an infeasible donor would otherwise read as a correct
+        /// "nothing to gain".
+        std::size_t declined_infeasible_donor = 0;
         std::size_t declined_over_budget = 0;
         std::size_t declined_over_raise_budget = 0;
         /// The capacity was already the largest load the tasks can reach, and

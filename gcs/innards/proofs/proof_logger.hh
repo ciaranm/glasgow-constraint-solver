@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace gcs::innards
 {
@@ -363,6 +364,22 @@ namespace gcs::innards
          * NB: This uses half-open range semantics, so "from" is included but "up_to" is excluded.
          */
         auto delete_range(ProofLine from, ProofLine up_to) -> void;
+
+        /**
+         * \brief Delete these lines, wherever they were recorded.
+         *
+         * For a caller that emitted something at ProofLevel::Top and then found
+         * it had nothing to cite it with. Top is never forgotten, so a line
+         * abandoned there stays live for the rest of the proof and taxes every
+         * later unhinted RUP --- which is what issue #666 was, and what
+         * \ref forget_proof_level does for every other level.
+         *
+         * One `del id` each rather than a range, the lines needing neither to be
+         * contiguous nor to be all of anything. So they must not already have
+         * been deleted: `del id` errors on a deleted id where `del range` skips
+         * it, which is why forget_proof_level uses ranges and this does not.
+         */
+        auto delete_proof_lines(const std::vector<ProofLine> &) -> void;
 
         /**
          * Write a number of spaces equal to current_indent.

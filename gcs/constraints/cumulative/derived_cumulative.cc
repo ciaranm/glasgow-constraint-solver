@@ -214,8 +214,26 @@ auto gcs::innards::install_derived_cumulative(
             "derived cumulative: " + to_string(rows_by_time.size()) + " capacity rows over " + to_string(spec.row_donors.size()) + " donors");
         for (const auto & [t, rows] : rows_by_time) {
             auto derived = spec.recipe(*logger, rows, t);
-            if (! derived)
+            if (! derived) {
+                // The rows for the earlier time points are already at Top, and
+                // nothing will ever cite them: this constraint is not being
+                // installed, so its propagator does not exist. Top is never
+                // forgotten, so leaving them there is #666 again --- live
+                // constraints for the rest of the proof, taxing every later
+                // unhinted RUP --- on the decline path this time rather than
+                // the success one. A recipe declining is not an error and not
+                // rare: a cut spanning several donors reaches time points one
+                // of them wrote no row for.
+                vector<ProofLine> orphans;
+                for (const auto & [_, line] : inputs->capacity_lines)
+                    orphans.push_back(line);
+                if (! orphans.empty()) {
+                    logger->emit_proof_comment("derived cumulative: declined at time " + to_string(t.raw_value) + ", dropping " +
+                        to_string(orphans.size()) + " rows already derived");
+                    logger->delete_proof_lines(orphans);
+                }
                 return false;
+            }
             inputs->capacity_lines.emplace(t, *derived);
         }
     }
@@ -231,14 +249,24 @@ auto gcs::innards::install_derived_cumulative(
         vector<makespan_energy::EnergyTask> energy_tasks;
         vector<std::optional<IntegerVariableID>> energy_presences;
         for (auto i : inputs->overload_tasks) {
+            // A plain variable and a constant, and by construction:
+            // prepare_cumulative_overload_check keeps only such tasks, the
+            // window-energy lemma needing a task's energy to be a number before
+            // it can count it. So a variable-duration task takes part in the
+            // time-tabling and in the rows, and stays out of the energy
+            // argument.
+            //
+            // Checked rather than assumed, because the invariant lives in
+            // another file and loosening that filter is a thing somebody will
+            // want to do: what would arrive here otherwise is a
+            // std::bad_variant_access from inside an install initialiser, and
+            // what should arrive is nothing at all.
+            if (! std::holds_alternative<SimpleIntegerVariableID>(spec.tasks[i].start) || ! is_constant_variable(spec.tasks[i].length))
+                continue;
+
             energy_presences.push_back(inputs->presence[i]);
-            // A constant, and by construction: prepare_cumulative_overload_check
-            // keeps only tasks whose length and height are, the window-energy
-            // lemma needing a task's energy to be a number before it can count
-            // it. So a variable-duration task takes part in the time-tabling
-            // and in the rows, and stays out of the energy argument.
             energy_tasks.push_back(makespan_energy::EnergyTask{.start = std::get<SimpleIntegerVariableID>(spec.tasks[i].start),
-                .length = std::get<ConstantIntegerVariableID>(spec.tasks[i].length).const_value,
+                .length = constant_value_of(spec.tasks[i].length),
                 .height = spec.tasks[i].height,
                 .t_lo = inputs->per_task_t_lo[i],
                 .t_hi = per_task_t_hi[i],

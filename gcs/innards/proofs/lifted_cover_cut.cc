@@ -133,12 +133,23 @@ namespace
                     next.push_back(LiftedCoverCutState{move(weights), state.profit + coefficients[member]});
             }
 
-            reduce_to_frontier(next);
+            // Counted and checked *before* the frontier sweep, which is
+            // all-pairs over the layer: a layer large enough to blow the budget
+            // would otherwise pay the whole quadratic cost first and only then
+            // be turned away, which is the guard costing more than the thing it
+            // guards. So the budget counts the states the programme built
+            // rather than the ones that survived --- which is what the sweep
+            // actually costs, and is what the programme actually holds at the
+            // moment it holds the most. Nothing real comes near either count:
+            // the paper's own programmes are a few hundred states against a
+            // budget of a hundred thousand.
             states += next.size();
             if (states > state_budget) {
                 programme.over_budget = true;
                 return programme;
             }
+
+            reduce_to_frontier(next);
 
             programme.reached_ceiling = any_of(next, [&](const LiftedCoverCutState & state) { return state.profit >= profit_ceiling; });
             programme.layers.push_back(move(next));

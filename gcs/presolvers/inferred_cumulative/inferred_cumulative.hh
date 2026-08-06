@@ -280,8 +280,13 @@ namespace gcs
         auto with_lifting_call_budget(std::size_t calls) -> InferredCumulative &;
 
         /**
-         * \brief How many states a cut's dynamic programme may hold before it
+         * \brief How many states a cut's dynamic programme may build before it
          * is dropped uncertified.
+         *
+         * Built rather than kept: the frontier sweep that reduces a layer to
+         * the states worth keeping is all-pairs over the layer, so a budget
+         * counting only survivors would be checked after the cost it is there
+         * to bound.
          *
          * Nothing the published procedure produces comes close, and on the
          * paper's own instances no programme exceeds a few hundred states, so

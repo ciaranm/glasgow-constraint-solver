@@ -986,6 +986,16 @@ auto ProofLogger::delete_range(ProofLine from, ProofLine up_to) -> void
                 << ";\n";
 }
 
+auto ProofLogger::delete_proof_lines(const vector<ProofLine> & lines) -> void
+{
+    // Every offset against the same `current`, deletions not advancing the line
+    // number, exactly as forget_proof_level does it.
+    for (const auto & line : lines) {
+        write_indent();
+        _imp->proof << "del id " << relative_proof_line(line, _imp->proof_line.number) << ";\n";
+    }
+}
+
 auto ProofLogger::write_indent() -> void
 {
     for (auto _ = _imp->current_indent; _--;) {

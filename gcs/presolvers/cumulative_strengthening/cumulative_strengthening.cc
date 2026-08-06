@@ -191,6 +191,23 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         auto capacity = view->capacity;
         auto unentitled_raise = std::holds_alternative<cumulative_strengthening_mutation::RaiseUnentitled>(_mutation);
 
+        // A task whose *guaranteed* demand is above the capacity means the
+        // donor is infeasible on its own, which is the donor's business to
+        // detect and not something to build a subset sum over. Asked here
+        // rather than inside the assessment, and counted on its own: setting
+        // such a task aside takes its height to zero and hides the
+        // infeasibility, so an assessment of the set-aside candidate would go
+        // on to strengthen around it and report an ordinary decline --- and
+        // this stats block exists precisely because a presolver doing nothing
+        // passes every other check.
+        if (any_of(view->usable, [&](size_t i) { return view->heights[i] > capacity; })) {
+            bump(&CumulativeStrengtheningStats::declined_infeasible_donor);
+            if (logger)
+                logger->emit_proof_comment(
+                    "presolve cumulative: declining " + as_string(donor.constraint_id()) + ", a task demands more than the capacity");
+            continue;
+        }
+
         // Everything about a candidate view that decides whether it is worth
         // strengthening over, and what the strengthening would be. A candidate
         // rather than *the* view, because a donor with a variable height has
@@ -221,12 +238,6 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 t_lo[i] = window.lo;
                 t_hi[i] = window.hi;
             }
-
-            // A height above the capacity means the donor is infeasible on its
-            // own, which is the donor's business to detect and not something to
-            // build a subset sum over.
-            if (any_of(active_tasks, [&](size_t i) { return candidate.heights[i] > capacity; }))
-                return nullopt;
 
             // Schulz's coefficient raising, as the set of tasks it applies to.
             // A task that cannot run beside any *other* task that consumes
