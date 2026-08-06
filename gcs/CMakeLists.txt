@@ -599,10 +599,14 @@ if(GCS_BUILD_TESTS)
 
     add_executable(flag_bridge_test innards/proofs/flag_bridge_test.cc)
     target_link_libraries(flag_bridge_test PRIVATE glasgow_constraint_solver)
+    # Verifies (and deliberately fails to verify) its own proofs internally, so
+    # it needs no wrapper.
     add_test(NAME flag_bridge_test COMMAND $<TARGET_FILE:flag_bridge_test>)
 
     add_executable(am1_from_pairs_test innards/proofs/am1_from_pairs_test.cc)
     target_link_libraries(am1_from_pairs_test PRIVATE glasgow_constraint_solver)
+    # Verifies (and deliberately fails to verify) its own proofs internally, so
+    # it needs no wrapper.
     add_test(NAME am1_from_pairs_test COMMAND $<TARGET_FILE:am1_from_pairs_test>)
 
     add_executable(am1_from_row_test innards/proofs/am1_from_row_test.cc)

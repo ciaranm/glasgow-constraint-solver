@@ -6,11 +6,11 @@
 /**
  * \file
  *
- * Deliberate corruptions of `CumulativeStrengthening`'s proof steps, which exist so that a test can
- * show the honest derivation is tight to what it claims. They live here, in the
- * innards, rather than beside the presolver they corrupt: the header a user
- * includes to run it should not also advertise a way to make the solver emit
- * deliberately wrong proofs. Issue #669; see
+ * Deliberate corruptions of `CumulativeStrengthening`'s proof steps, which
+ * exist so that a test can show the honest derivation is tight to what it
+ * claims. They live here, in the innards, rather than beside the presolver they
+ * corrupt: the header a user includes to run it should not also advertise a way
+ * to make the solver emit deliberately wrong proofs. Issue #669; see
  * gcs/constraints/innards/cumulative_mutations.hh for why compiling them out of
  * release builds was rejected.
  */
