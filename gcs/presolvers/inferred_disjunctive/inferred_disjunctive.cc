@@ -650,13 +650,22 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         // a clique's members share a witness, recovering their
                         // sub-clique in one step instead is what issue #666
                         // is about.
-                        // The bound it returns is not checked because it
-                        // cannot be anything else: two demands that overshoot
-                        // give a margin at most the larger of them, so the
-                        // divisor is that margin and |K| - ceil(Delta / d) is
-                        // one. build_am1_from_row's own paragraph is the
-                        // argument, and it is why a caller wanting the pairwise
-                        // case need not special-case anything.
+                        // The bound it returns is not checked, and the reason
+                        // is not quite the obvious one. Where the smaller
+                        // demand fits under the capacity the margin is at most
+                        // the larger of the two, so the divisor is the margin
+                        // and |K| - ceil(Delta / d) is one --- the at-most-one
+                        // this is named for. Where *both* demands exceed the
+                        // capacity the margin is bigger than either, so the
+                        // divisor is the larger demand instead and the bound
+                        // comes back as zero: neither task may run, which is
+                        // true (neither can) and is a strictly stronger line.
+                        // What carries that through is that the coefficients
+                        // are units either way, so the induction below still
+                        // advances --- with degree to spare rather than
+                        // exactly enough --- and the pin it ends on is an
+                        // implication check, which a stronger line passes.
+                        // `pair_both_over` in the test file is the fixture.
                         PolBuilder pair_amo;
                         build_am1_from_row(pair_amo, *reduced, {c.demand_u, c.demand_v}, weaken_out, c.capacity, tracker);
 

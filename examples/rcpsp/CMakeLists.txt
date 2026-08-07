@@ -47,15 +47,28 @@ add_test(NAME rcpsp_sch COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_ver
 add_test(NAME rcpsp_dzn COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_dzn
     $<TARGET_FILE:rcpsp> --dzn ${CMAKE_CURRENT_SOURCE_DIR}/sample.dzn)
 
-# The same instance with the InferredDisjunctive presolver, whose derived
-# capacity-one Cumulative is proved rather than asserted --- so this is the
-# end-to-end proof check for that certificate on a model read from a file, as
-# opposed to the presolver's own fixtures. sample.dzn is built so that each
-# conflicting pair is witnessed by a different resource, which is the case no
-# single posted Cumulative can reach; the presolver reports a capacity bound of
-# 6, and the optimum is 6.
+# The same instance with both inferring presolvers, whose derived Cumulatives
+# are proved rather than asserted --- so this is the end-to-end proof check for
+# those certificates on a model read from a file, as opposed to the presolvers'
+# own fixtures. sample.dzn is built so that each conflicting pair is witnessed
+# by a different resource, which is the case no single posted Cumulative can
+# reach; both presolvers report a capacity bound of 6, and the optimum is 6.
 add_test(NAME rcpsp_dzn_inferred COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_dzn_inferred
-    $<TARGET_FILE:rcpsp> --dzn ${CMAKE_CURRENT_SOURCE_DIR}/sample.dzn --infer-disjunctive)
+    $<TARGET_FILE:rcpsp> --dzn ${CMAKE_CURRENT_SOURCE_DIR}/sample.dzn --infer-cumulative --infer-disjunctive)
+
+# The same, with each presolver's makespan bound corrupted by one. What this
+# covers that the presolvers' own mutation fixtures do not is the *forwarding*:
+# the spec field, the stats callback and the flag that reaches them all live
+# here rather than in a presolver, and a forward that bit-rotted would leave an
+# honest proof behind and nothing to say so --- the shape a no-op presolver
+# passing every check has, one layer out. Both lanes, because the two presolvers
+# forward it separately.
+add_test(NAME rcpsp_dzn_inferred_disjunctive_mutated COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_expect_verify_failure.bash
+    --basename rcpsp_dzn_inferred_disjunctive_mutated
+    $<TARGET_FILE:rcpsp> --dzn ${CMAKE_CURRENT_SOURCE_DIR}/sample.dzn --infer-disjunctive --mutate-makespan-bound)
+add_test(NAME rcpsp_dzn_inferred_cumulative_mutated COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_expect_verify_failure.bash
+    --basename rcpsp_dzn_inferred_cumulative_mutated
+    $<TARGET_FILE:rcpsp> --dzn ${CMAKE_CURRENT_SOURCE_DIR}/sample.dzn --infer-cumulative --mutate-makespan-bound)
 
 # Enumeration rather than optimisation, so this one reaches the COMPLETE
 # ENUMERATION conclusion, which none of the others do.

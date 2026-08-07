@@ -991,6 +991,71 @@ auto main(int argc, char * argv[]) -> int
             fail("the donor alone refuted the all-variable-height instance at the root");
     }
 
+    /* Raising a height against each of the three things a donor may now be,
+     * which every raising fixture above leaves untried: they are all constant
+     * and all mandatory, the optional fixtures' heights make no task full, and
+     * the sweeps draw neither presences nor variable lengths. The raise
+     * consumes recover_am1_from_row on the donor's row, so it meets a presence
+     * conjunct inside a flag, a converted height's `cc` bits and a
+     * two-variable `after` for the first time here.
+     *
+     * The analytical argument that each is fine is not the point --- it is that
+     * two individually-correct changes composing is a claim, and this stack's
+     * standard is that a firing path gets a fixture rather than an argument.
+     *
+     * One shape throughout: heights {6, 3, 3} under a capacity of eight. Six
+     * plus three overshoots, so the first task cannot run beside either other
+     * one and is raised; three plus three does not, so the other two are what
+     * kappa is the subset sum of, and eight comes down to six.
+     */
+    for (const auto & what : {string{"optional"}, string{"converted height"}, string{"variable length"}}) {
+        auto stats = make_shared<CumulativeStrengtheningStats>();
+
+        const vector<pair<int, int>> starts{{0, 2}, {0, 2}, {0, 2}};
+        auto lengths = vector<pair<int, int>>(3, {2, 2});
+        auto heights = vector<pair<int, int>>{{6, 6}, {3, 3}, {3, 3}};
+        vector<pair<int, int>> presences;
+
+        if (what == "optional")
+            presences.assign(3, {0, 1});
+        else if (what == "converted height")
+            // The raised task's own height, so that what the raise argues over
+            // is a term recover_constant_argument_row put there rather than one
+            // the donor posted. Its guaranteed demand is the six above, and the
+            // conversion is worth keeping: setting it aside would leave kappa
+            // over {3, 3} unchanged but lose the task, and a tie goes to the
+            // conversion.
+            heights[0] = {6, 7};
+        else
+            // The *raised* task again, so the pin that goes through the end
+            // proxy is the one on a flag the raise put a coefficient on. Its
+            // window widens with the upper bound, which is what makes the last
+            // time point one only this task can occupy --- the alone branch of
+            // the raise, which nothing else here reaches.
+            lengths[0] = {2, 3};
+
+        const GeneralInstance inst{starts, lengths, heights, presences, {8, 8}};
+        auto name = what;
+        std::replace(name.begin(), name.end(), ' ', '_');
+        auto outcome = solve_general(inst, stats, proofs ? make_optional("cumulative_strengthening_raise_" + name) : nullopt);
+
+        if (stats->donors_strengthened != 1)
+            fail("a donor was not strengthened, raising against " + what);
+        if (stats->tasks_raised != 1)
+            fail("raised " + std::to_string(stats->tasks_raised) + " heights, not the one, against " + what);
+        if (stats->capacity_units_removed != 2_i)
+            fail("took " + std::to_string(stats->capacity_units_removed.raw_value) + " units off the capacity, not two, against " + what);
+        if (proofs && stats->rows_with_a_raise == 0)
+            fail("no row raised anything in the proof, against " + what);
+        if (what == "converted height" && stats->converted_heights != 1)
+            fail("the raised task's variable height was not converted");
+        if (what != "converted height" && stats->donors_with_set_aside_tasks != 0)
+            fail("a task was set aside, against " + what);
+
+        check_solutions("raising against " + what, inst, outcome);
+        println(cerr, "raising against {}: {} pol steps over {} raised rows", what, stats->raise_lines_emitted, stats->rows_with_a_raise);
+    }
+
     // What is still declined outright: a capacity that is a *view*, whose bits
     // are not the ones the donor's rows mention, so there is no order literal
     // whose definition would cancel them and nothing to reduce the row against.

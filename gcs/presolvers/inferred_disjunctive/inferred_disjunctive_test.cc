@@ -126,6 +126,7 @@ namespace
         if (setup.presolve) {
             auto presolver = InferredDisjunctive{setup.stats};
             presolver.with_budgets(setup.max_candidates, setup.max_posted).with_minimum_clique_size(setup.min_clique_size);
+            presolver.with_proof_mutation(setup.mutation);
             if (setup.inferred_rules)
                 presolver.with_rules(*setup.inferred_rules);
             if (makespan)
@@ -284,6 +285,24 @@ auto main(int argc, char * argv[]) -> int
             fail("certified bound: the bound differs with proofs off");
 
         println(cerr, "certified makespan bound: derived {} over {} nodes", stats->certified_makespan_bound.raw_value, certified.recursions);
+
+        // And one more than the clique carries must be refused. The energy
+        // argument itself is mutation-tested where it lives, in
+        // makespan_energy; what this covers is *this* presolver's forwarding of
+        // it --- the spec field, the links it fills in and the flag that
+        // selects the corruption. A bound with slack in it verifies whatever it
+        // concludes, so an honest derivation reaching a number the geometry
+        // does not support would look exactly like this one. Six is the
+        // optimum, so seven is infeasible and the margin is the required one.
+        if (proofs) {
+            const string name = "inferred_disjunctive_makespan_mutation";
+            solve_family(3, 2, 8, Setup{.mutation = inferred_disjunctive_mutation::ClaimHigherMakespanBound{}, .minimise_makespan = true},
+                make_optional(name), false);
+            if (run_veripb(name + ".opb", name + ".pbp"))
+                fail("veripb accepted a makespan bound one above what the clique carries");
+            dispose_of_proof_files(name);
+            println(cerr, "veripb rejected the higher-makespan mutation, as expected");
+        }
     }
 
     // The sharp twin: one more unit of horizon and the three tasks fit exactly.
@@ -693,6 +712,56 @@ auto main(int argc, char * argv[]) -> int
         if (expected != solutions)
             fail("variable-duration solutions do not match brute force");
         println(cerr, "variable duration: a clique of {} tasks, {} solutions", stats->clique_members_posted, solutions.size());
+    }
+
+    /* A witnessing pair *both* of whose demands strictly exceed the capacity,
+     * which is the one case where recovering the at-most-one does not land on
+     * an at-most-one. The margin is then bigger than either demand, so the
+     * divisor is the larger demand rather than the margin, and the bound comes
+     * back as zero: a line saying neither task may run rather than that at most
+     * one may. Stronger, so the induction that folds the pairs still advances
+     * and the syntactic pin still accepts --- but for a different reason than
+     * the one written beside the call, which is why this is worth a fixture.
+     *
+     * It can only be an infeasible model, and that is not a fixture design
+     * choice: a task demanding more than a resource has can never be active at
+     * any time point, and a mandatory task of non-zero length must be active
+     * somewhere. So what this checks is the arithmetic and the pin --- `pol`
+     * steps are checked exactly whatever the model says, and an implication
+     * check is syntactic --- and *not* the enumeration, which an unsatisfiable
+     * model would agree with however the derivation had gone.
+     */
+    {
+        auto stats = make_shared<InferredDisjunctiveStats>();
+        Problem p;
+        vector<IntegerVariableID> starts;
+        for (int i = 0; i < 3; ++i)
+            starts.push_back(p.create_integer_variable(0_i, 3_i, "s" + to_string(i)));
+        const vector<Integer> lengths(3, 2_i);
+
+        // Three over two, so the margin is four and the larger demand is three.
+        p.post(Cumulative{starts, lengths, vector<Integer>{3_i, 3_i, 0_i}, 2_i});
+        // And the other two pairs witnessed ordinarily, so that the clique is
+        // of three and the fold has something to fold.
+        p.post(Cumulative{starts, lengths, vector<Integer>{1_i, 0_i, 1_i}, 1_i});
+        p.post(Cumulative{starts, lengths, vector<Integer>{0_i, 1_i, 1_i}, 1_i});
+        p.add_presolver(InferredDisjunctive{stats});
+
+        bool any_solution = false;
+        solve_with(p, SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+            any_solution = true;
+            return true;
+        }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{"inferred_disjunctive_pair_both_over"}) : nullopt);
+        if (proofs)
+            verify_proof_and_clean_up("inferred_disjunctive_pair_both_over");
+
+        if (any_solution)
+            fail("both demands over the capacity: a task that cannot run anywhere was scheduled");
+        if (stats->cliques_posted != 1 || stats->clique_members_posted != 3)
+            fail("both demands over the capacity: posted " + to_string(stats->cliques_posted) + " cliques over " +
+                to_string(stats->clique_members_posted) + " members, not the one clique of three");
+        println(cerr, "both demands over the capacity: the clique is still recovered and the pin still accepts");
     }
 
     if (! proofs) {

@@ -423,7 +423,10 @@ auto main(int argc, char * argv[]) -> int
     // feasible makespan would be a bug, and this fixture knows its optimum. The
     // margin-of-one fixture that says the arithmetic is tight, and the
     // mutations that say so by being refused, are in
-    // derived_cumulative_test.cc.
+    // derived_cumulative_test.cc. What is left over is this presolver's
+    // *forwarding* of the mutation flag, which needs a tight bound to bite and
+    // so has no fixture here; the `rcpsp_dzn_inferred_cumulative_mutated` lane
+    // covers it end to end, on an instance whose bound is the optimum.
     {
         auto stats = make_shared<InferredCumulativeStats>();
         auto certified = solve_instance(
