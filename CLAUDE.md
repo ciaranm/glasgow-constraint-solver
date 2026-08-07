@@ -127,20 +127,30 @@ MSVC availability (CI is the backstop there).
 ### `using` declarations
 
 The `using` declarations block near the top of each `.cc` file is sorted **alphabetically
-by the full qualified name**. `std::ranges::` names sort under 'r', so they fall between
-`std::pair` and `std::string`. Example:
+by name**, with the `std::ranges::` names in a group of their own **after** all the plain
+`std::` ones, themselves alphabetical. Example:
 
 ```cpp
 using std::pair;
-using std::ranges::sort;   // 'r' < 's'
 using std::string;
+using std::vector;
+using std::ranges::any_of;
+using std::ranges::sort;
 ```
+
+Every one of the 48 files that names a `std::ranges::` algorithm does it this way, so
+follow it rather than sorting `std::ranges::sort` under 'r' between `std::pair` and
+`std::string` — which is what this section used to say and what nothing in the tree does.
+
+The `#if defined(__cpp_lib_print)` block that picks `std::print`/`fmt::print` is a
+separate block and stays where it is, below.
 
 ### Ranges algorithms
 
 When replacing a classic algorithm with its `std::ranges::` equivalent:
 - Remove `using std::foo;`
-- Add `using std::ranges::foo;` in the correct sorted position
+- Add `using std::ranges::foo;` to the `std::ranges::` group below the plain `std::` ones,
+  in alphabetical order within that group (see `using` declarations, above)
 - Leave the call site **unqualified** — do not write `std::ranges::sort(v)` at the call site
 
 ### `using enum`
