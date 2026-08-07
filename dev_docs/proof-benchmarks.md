@@ -47,21 +47,39 @@ local SSD. `veripb` 3.0.2.
 | `freqsq6_gac` | `frequency_square 6 --all --stats --consistency gac` | enum, 53 220 | 105 825 | 44 KB | 205 MB | 0.90 s | ×2.0 | **83.6 s** |
 | `freqsq6_bc` | `frequency_square 6 --all --stats --consistency bc` | enum, 53 220 | 105 825 | 44 KB | 80 MB | 1.10 s | ×1.3 | **81.2 s** |
 | `pdisp10_tuple` | `p_dispersion --grid 10 -p 4 --variant tuple --stats` | optimal | 1 037 | 12.6 MB | 158 MB | 0.10 s | ×4.0 | **88.8 s** |
-| `hitori` | `hitori --size 5 --seed 1 --quiet --stats` | optimal | 72 361 | — | 937 MB | — | — | **260.5 s** |
-| `table_layout` | `table_layout --size 15 --seed 1 --stats` | optimal | 17 768 | — | 146 MB | — | — | **102.6 s** |
+| `hitori` | `hitori --size 5 --seed 1 --quiet --stats` | optimal | 72 361 | 1.0 MB | 937 MB | — | — | **260.5 s** |
+| `table_layout` | `table_layout --size 15 --seed 1 --stats` | optimal | 17 768 | 1.8 MB | 146 MB | — | — | **102.6 s** |
 | `seat_moving` | `seat_moving --dzn sm-10-12-00.dzn --quiet --stats` | first solution | 15 610 | 2.4 MB | 645 MB | — | — | **119.5 s** |
 
 `solve` is wall time with proof logging off; `+proof` is the multiplier when it
 is on. Note how far that varies — from ×1.2 on `colour46`, whose search dominates,
-to ×9.0 on `odb_cumulative8`. One pass over group A costs about 55 minutes.
+to ×9.0 on `odb_cumulative8`. One pass over group A costs about 50 minutes.
 
-The last three rows are the native ports from issues #633–#636; they carry no
-`solve`/`+proof` column yet because they were measured after the pinned pass.
+The three `odb_*` rows drive `order_deletion_bench`, which is **not on `main`**:
+it is added by the order-encoding-deletion branch. They are kept because they
+are the set's only synthetic knob on domain size and branching order, and
+because `odb_split2000` holds the expensive end of the cost-per-byte range
+below; skip them where that binary is not built.
+
+The last three rows are three of the four native ports from issues #633–#636 —
+the fourth is `rcpsp`, which is `rcpsp_dl21` above — and they carry no
+`solve`/`+proof` column because they were measured after the pinned pass.
 `hitori` and `seat_moving` replaced `fzn-glasgow` entries and were validated
-against them — **recursion counts match exactly** (113 671 and 15 610), so they
-reproduce the search rather than merely the answer. `table_layout` gives `Table`
-a size where proof shape is measurable at all; `examples/tables` is 10
-recursions.
+against them on the *same* instance, read through `--dzn`: **recursion counts
+match exactly**, 113 671 for `hitori --dzn h5-1.dzn` against the flattened
+`hitori.fzn`, and 15 610 for `seat_moving --dzn sm-10-12-00.dzn`. The ports
+reproduce the search, not merely the answer.
+
+Only one of those two rows is that validated run, and it is worth being clear
+which. `seat_moving` above **is** the `--dzn` run, because generated
+`seat_moving` instances are still unusable (see "Known gaps"). `hitori` above is
+**not**: it is the self-contained generated instance, `--size 5 --seed 1`, whose
+72 361 recursions are a different and smaller search than the 113 671 of the
+Challenge puzzle the port was validated against. Prefer it for exactly that
+reason — it needs no external data.
+
+`table_layout` gives `Table` a size where proof shape is measurable at all;
+`examples/tables` is 10 recursions.
 
 `langford11` at 11.0 minutes sits just outside the nominal ceiling. It is kept
 deliberately as the largest entry; with `langford10` at 60.4 s the pair brackets
@@ -91,9 +109,8 @@ Pairs that differ in one controlled way, for attributing a difference.
 | pair | what it controls for |
 |---|---|
 | `frequency_square 6 --all --consistency gac` vs `bc` | **Identical search** — 105 825 recursions and 53 220 solutions both ways — with the GAC proof **2.6× larger** (204.6 MB against 80.2 MB) and **the same verify time** (83.6 s against 81.2 s). The cleanest same-search pair in the set, and a SIZE≠TIME case on its own. |
-| `knapsack_bench --instance 1` vs `--instance 1 --upfront` | Identical search — 907 recursions, 454 solutions — with `--upfront` writing a **5.9× smaller** proof (20.7 MB against 121.3 MB) that takes **3.5× longer** to check (7.0 s against 2.0 s). One flag, and the two axes move in opposite directions. |
-| `knapsack_bench --instance 1` vs `--instance 1 --upfront` | **The clearest SIZE≠TIME demonstration in the set.** Identical search — 907 recursions, 454 solutions both ways — but `--upfront` writes a **5.9× smaller** proof (20.7 MB against 121.3 MB) that takes **4.5× longer** to check (9.9 s against 2.2 s). One flag, one instance, and the two axes move in opposite directions. |
-| `p_dispersion --grid 8 -p 4 --variant tuple` vs `--variant min-distance-ps` | Identical search — 551 recursions, 7 solutions — through a decomposition and through the global propagator: **42.9 MB / 9.7 s against 0.8 MB / 0.7 s**. At `--grid 10` the proof-size gap widens to 93×, and at `--grid 12` the decomposition stops verifying inside 1200 s while the global takes 15 s. |
+| `knapsack_bench --instance 1` vs `--instance 1 --upfront` | **The clearest SIZE≠TIME demonstration in the set.** Identical search — 907 recursions, 454 solutions both ways — but `--upfront` writes a **5.9× smaller** proof (20.7 MB against 121.3 MB) that takes **3.5× longer** to check (7.0 s against 2.0 s). One flag, one instance, and the two axes move in opposite directions. |
+| `p_dispersion --grid 8 -p 4 --variant tuple` vs `--variant min-distance-ps` | Identical search — 551 recursions, 7 solutions — through a decomposition and through the global propagator: **42.9 MB / 9.7 s against 0.8 MB / 0.7 s**. At `--grid 10` the proof-size gap widens to 91×, and at `--grid 12` the decomposition stops verifying inside 1200 s while the global takes 15 s. |
 | `langford --size=11` vs `--size=10` | Enumeration against UNSAT refutation on one model, and the pair brackets the whole target band: 662.9 s and 60.4 s. |
 | `magic_square --size=4 --all-different gac` vs `vc` | **Not** a same-search pair, despite looking like one: GAC searches 77 983 recursions against VC's 87 377. Listed so nobody mistakes it for one — `--all-different` defaults to `vc`, so comparing the default against explicit `vc` gives a spurious match. |
 
@@ -153,25 +170,28 @@ produces is 12.6 MB.
 Two derived ratios separate proofs far better than any qualitative label, and
 the set is chosen to span both.
 
-**Verify seconds per megabyte of `.pbp`** ranges over about 190× within the
-chosen set, and 1700× across everything screened. `odb_split1000` writes 6 MB
-and spends 10.2 s checking it (1.61 s/MB); `knapsack_bench --instance 2` writes
-138 MB and checks in 2.4 s (0.017 s/MB). High values mean the checker is working
-through long RUP chains over a wide resident database; low values mean it is
-streaming a large but individually-trivial derivation.
+**Verify seconds per megabyte of `.pbp`** ranges over about **360×** within the
+chosen set: `odb_split2000` writes 17 MB and spends 106.1 s checking it
+(6.2 s/MB), while `knapsack_bench --instance 2` writes 138 MB and checks in
+2.4 s (0.017 s/MB). Across everything screened it is wider still — over 1200×,
+since the `regular_random` candidates exceed 21 s/MB (see "Known gaps"). High
+values mean the checker is working through long RUP chains over a wide resident
+database; low values mean it is streaming a large but individually-trivial
+derivation.
 
-**Kilobytes of `.pbp` per recursion** ranges over roughly 1500×, from under
-1 KB (`frequency_square`, `n_queens`, `colour46`) to 1.3 MB (`n_fractions`,
-which writes 146 MB from 112 recursions). This is the wide-versus-deep axis:
-high values mean the proof is dominated by upfront definitional material rather
-than by search.
+**Kilobytes of `.pbp` per recursion** ranges over roughly **1700×**, from about
+0.8 KB (`odb_eq1000`, `freqsq6_bc`, `nqueens12`) to 1.3 MB (`nfractions`, which
+writes 146 MB from 112 recursions). This is the wide-versus-deep axis: high
+values mean the proof is dominated by upfront definitional material rather than
+by search. Note that it separates the two `frequency_square` rows, which are the
+same search: 0.8 KB under BC against 1.9 KB under GAC.
 
 Beyond those two, the set spans:
 
 - **proof outcome** — UNSAT refutation, complete enumeration, and proved
   optimality all produce differently-shaped proofs, and a change can help one
   and hurt another;
-- **model versus derivation** — `.opb` from a few tens of kilobytes to 2.5 GB;
+- **model versus derivation** — `.opb` from about ten kilobytes to 2.5 GB;
 - **propagator cost** — from `n_queens`, which posts nothing but `NotEquals`, to
   `Knapsack`, `GlobalCardinality`, `MinDistance`, `Cumulative` and chained
   `Multiply`;
@@ -246,8 +266,12 @@ solo, pinned, minimum of three each, all in one sitting:
 | proof | SSD | tmpfs | difference |
 |---|--:|--:|--:|
 | `odb_split2000`, 17 MB | 110.52 s | 110.72 s | +0.2 % |
-| `pdisp10_tuple`, 151 MB | 82.26 s | 82.41 s | +0.2 % |
-| `qap10`, 481 MB | 276.05 s | 286.59 s | +3.8 % |
+| `pdisp10_tuple`, 158 MB | 82.26 s | 82.41 s | +0.2 % |
+| `qap10`, 504 MB | 276.05 s | 286.59 s | +3.8 % |
+
+These six numbers are their own sitting, so read only along the rows: the
+absolute times are not the group A ones and are not meant to be, by the rule
+directly above.
 
 tmpfs is never faster and is slightly *slower* at every size. So write the
 proofs wherever is convenient. The advice elsewhere to put timed proof I/O on
@@ -270,7 +294,7 @@ repeated.
 |---|---|
 | `ortho_latin --size=6 --all` | cap; `--size=5` is 6 MB, and there is no size in between |
 | `tsp` (fixed default instance) | cap at 4 GB, and there is no size knob |
-| `qap --size=12` | cap; `--size=11` verifies but takes over 900 s |
+| `qap --size=12` | cap; `--size=11` stays under it, at 2.0 GB, but does not finish verifying inside 900 s |
 | `regular_random -n 9 --all`, `-n 10 --all` | cap |
 | `regular_random -n 7 --all` | 172–282 MB, but **over an hour** to verify, with `--bacchus` as well as without; `-n 6` is under a second |
 | `skeleton_puzzle` at 4×3, 4×4, 5×3, 5×4, 6×3 and the default 7×5 | cap or over 1200 s at every shape tried, with `--seed` and without |
@@ -282,7 +306,7 @@ repeated.
 | `order_deletion_bench --problem cumulative --size 10 --domain 500` | cap |
 | Challenge `atsp`, `triangular`, `chessboard`, `tiny-cvrp`, `table-layout` | cap or over 1200 s, despite each solving in under 12 s with proofs off |
 | `nonogram --random N --all` | no search — 17 recursions at the size `benchmarking.md` suggests |
-| `multiply_random` at any `-n` | 3 recursions and under 1 MB even at `-n 1000000000` |
+| `multiply_random` at any `-n` | 3 recursions and about 1 MB even at `-n 1000000000` |
 | `sudoku`, `regex`, `tables`, `auto_table`, `rostering`, `money`, `cake`, `crystal_maze`, `knapsack`, `circuit_random`, `smart_table_*` | verify in well under a second; smoke tests, not measurements |
 | `examples/cumulative` | a fixed five-task toy |
 
@@ -358,9 +382,23 @@ fzn-glasgow -s -a model.fzn --prove --proof-files-basename proof
 
 Each of these models uses only constraints that already exist in the solver, so
 porting them to `examples/` is model-writing rather than propagator work, and
-would make the set self-contained. A port must reproduce the proof *shape* —
-`.opb` size, `.pbp` size and recursion count — against the `fzn-glasgow` run,
-not merely the answer, or it is not a substitute for the instance it replaces.
+would make the set self-contained. The bar for a port is that it reproduces the
+**search** — identical recursion counts against the `fzn-glasgow` run on the
+same instance, not merely the same answer. Anything weaker is not a substitute
+for the instance it replaces.
+
+Proof and model *sizes* do not come out equal, and should not be expected to:
+the flattened model posts a different set of constraints, so the encoding
+differs even where the search does not.
+
+| instance | native `--dzn` | via `fzn-glasgow` |
+|---|--:|--:|
+| `hitori` h5-1 | 1.0 MB `.opb`, 815 MB `.pbp` | 1.2 MB, 1 000 MB |
+| `seat_moving` sm-10-12-00 | 2.4 MB `.opb`, 645 MB `.pbp` | 3.1 MB, 629 MB |
+
+Both ports write a smaller `.opb`; the `.pbp` falls 19 % for `hitori` and rises
+2 % for `seat_moving`. The recursion counts are exact matches either way, which
+is the part that had to hold.
 
 Four such ports were done, as issues #633–#636 and PRs #638–#641:
 `examples/rcpsp`, `examples/hitori`, `examples/seat_moving` and
