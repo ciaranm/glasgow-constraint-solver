@@ -6,13 +6,16 @@
 //
 // This handles the fragment of dzn the examples' data files actually use: a
 // sequence of `name = value;` statements, `%` line comments, integer scalars,
-// integer arrays in one and two dimensions, and arrays of integer sets. It is
-// not a MiniZinc parser and does not try to be --- there are no expressions, no
-// floats, no strings, no enums and no output items.
+// integer and Boolean arrays in one and two dimensions, and arrays of integer
+// sets. It is not a MiniZinc parser and does not try to be --- there are no
+// expressions, no floats, no strings, no enums and no output items.
 //
-// Four examples (table_layout, seat_moving, nonogram, hitori) still carry their
-// own readers, written before this existed and diverged in what they accept.
-// Issue #664 tracks migrating them onto this; new examples should start here.
+// This is the only dzn reader in examples/. It used to be one of five: rcpsp,
+// table_layout, seat_moving, nonogram and hitori each had their own, and they
+// had diverged on what dzn they would accept, so which subset of the language
+// you got depended on which example you happened to be in. Issue #664 moved the
+// other four onto this one; new examples should start here rather than write a
+// sixth.
 
 #include <cctype>
 #include <cstddef>
@@ -135,6 +138,36 @@ namespace dzn
             return _integers_in(name, body, "entry");
         }
 
+        /// A one-dimensional array of Booleans, `[true, false, true]`.
+        ///
+        /// `1` and `0` are accepted as well as `true` and `false`. MiniZinc
+        /// itself writes only the words, and would reject the digits in a
+        /// `bool` array, but the reader this replaced in seat_moving took
+        /// both, and a migration that quietly stopped reading a file it used
+        /// to read would be a worse bargain than a reader that is one step
+        /// more generous than the language.
+        [[nodiscard]] auto bools(const std::string & name) const -> std::vector<bool>
+        {
+            const auto & text = _raw(name);
+            auto body = _bracketed(name, text);
+            for (auto & c : body)
+                if (c == ',')
+                    c = ' ';
+
+            std::vector<bool> result;
+            std::istringstream in{body};
+            std::string token;
+            while (in >> token) {
+                if ("true" == token || "1" == token)
+                    result.push_back(true);
+                else if ("false" == token || "0" == token)
+                    result.push_back(false);
+                else
+                    _bad(name, "has an entry that is not a Boolean: '" + text + "'");
+            }
+            return result;
+        }
+
         /// A two-dimensional integer array written `[| a, b | c, d |]`, as
         /// `rows` rows of equal length. The row count is taken from the `|`
         /// separators rather than supplied, so a ragged literal is an error
@@ -213,6 +246,12 @@ namespace dzn
     /// into `name = value;` statements. A statement without an `=` is ignored
     /// rather than rejected, so a data file carrying an `output` item or a
     /// bare `;` still reads.
+    ///
+    /// The last statement in the file need not be terminated. MiniZinc accepts
+    /// that, and the Challenge's `2025/hitori/h20-2.dzn` needs it: its `clue`
+    /// matrix simply runs off the end of the file. Requiring the semicolon
+    /// dropped the statement silently, which then read as "the file does not
+    /// define clue" --- true of the map, and nonsense about the file.
     [[nodiscard]] inline auto read(const std::string & path) -> Data
     {
         std::ifstream infile{path};
@@ -235,12 +274,10 @@ namespace dzn
 
         std::map<std::string, std::string> values;
         std::size_t pos = 0;
-        while (true) {
+        while (pos != text.size()) {
             auto end = text.find(';', pos);
-            if (end == std::string::npos)
-                break;
-            auto statement = text.substr(pos, end - pos);
-            pos = end + 1;
+            auto statement = text.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+            pos = (end == std::string::npos ? text.size() : end + 1);
 
             auto eq = statement.find('=');
             if (eq == std::string::npos)

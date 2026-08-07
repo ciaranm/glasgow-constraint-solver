@@ -39,6 +39,14 @@ namespace
         return s + " }";
     }
 
+    /// So that a Boolean array can be checked by the same expect() as an
+    /// integer one, rather than growing a second one that prints `{ 1 0 1 }`
+    /// anyway.
+    auto as_integers(const vector<bool> & v) -> vector<long long>
+    {
+        return {v.begin(), v.end()};
+    }
+
     auto expect(const string & what, const vector<long long> & got, const vector<long long> & want) -> void
     {
         if (got != want)
@@ -76,11 +84,16 @@ auto main(int, char *[]) -> int
         data << "grid = [| 1, 2, 3 | 4, 5, 6 |];\n";
         data << "grid_ragged = [| 1, 2 | 3 |];\n";
         data << "grid_junk = [| 1, 2x | 3, 4 |];\n";
+        data << "flags = [true, false, true];\n";
+        data << "flags_as_digits = [1, 0, 1];\n";
+        data << "flags_junk = [true, maybe];\n";
         data << "groups = [ {1, 2}, {}, {3} ];\n";
         data << "groups_junk = [ {1, x} ];\n";
         data << "groups_outside = [ {1} 7 ];\n";
         data << "groups_stray_close = [ {1, 2} } 99 ];\n";
         data << "groups_unclosed = [ {1, 2 ];\n";
+        // Last, because it is deliberately not terminated.
+        data << "unterminated = [9, 8, 7]\n";
         if (! data)
             fail("could not write the test data file");
     }
@@ -112,6 +125,14 @@ auto main(int, char *[]) -> int
             expect("matrix row 1", grid[1], {4, 5, 6});
         }
 
+        // MiniZinc lets the last statement in a file go unterminated, and the
+        // Challenge's 2025/hitori/h20-2.dzn does exactly that with its clue
+        // matrix. Requiring the semicolon dropped the statement without a word.
+        expect("a last statement with no terminating semicolon", d.integers("unterminated"), {9, 8, 7});
+
+        expect("a Boolean array", as_integers(d.bools("flags")), {1, 0, 1});
+        expect("a Boolean array written with digits", as_integers(d.bools("flags_as_digits")), {1, 0, 1});
+
         auto groups = d.sets("groups");
         if (groups.size() != 3)
             fail("an array of sets' count");
@@ -123,6 +144,7 @@ auto main(int, char *[]) -> int
 
         expect_rejected("a non-integer entry", [&] { return d.integers("flat_junk"); });
         expect_rejected("a non-integer matrix entry", [&] { return d.matrix("grid_junk"); });
+        expect_rejected("a non-Boolean entry", [&] { return d.bools("flags_junk"); });
         expect_rejected("a non-integer set member", [&] { return d.sets("groups_junk"); });
         expect_rejected("matrix rows of differing lengths", [&] { return d.matrix("grid_ragged"); });
         expect_rejected("something outside the braces", [&] { return d.sets("groups_outside"); });
