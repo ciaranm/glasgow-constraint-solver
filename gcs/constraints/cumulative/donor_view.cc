@@ -77,9 +77,9 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
         }
 
         // A task that can never load the resource, or that was posted as
-        // constantly absent, has no flags and no term in any row: nothing to
-        // set aside, because there is nothing there. Asked before the length
-        // test below, and that is not an ordering nicety: the donor gave such a
+        // constantly absent, usually has no flags and no term in any row.
+        // Asked before the length test below, and that is not an ordering
+        // nicety: the donor gave such a
         // task no window, so it published no end proxy for it either, and
         // asking would come back with the same nullopt a genuinely unusable
         // duration does. The largest duration still allowed is what says
@@ -88,6 +88,24 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
         auto presence = cumulative_task_presence(view.presences.empty() ? nullopt : make_optional(view.presences[i]));
         if (state.upper_bound(length) <= 0_i || height_value <= 0_i || presence.never_present) {
             view.height_bounded_by[i] = nullopt;
+            // Usually there is nothing here to set aside, because the donor
+            // gave such a task no window and so no flags and no term. But these
+            // are *today's* bounds against a donor that resolved its windows at
+            // prepare() time, and a length whose upper bound has collapsed to
+            // zero since is a task the donor did encode --- one whose terms
+            // would then be left in every reduced row, which is a row not
+            // saying what the recipe using it claims. Ask rather than assume.
+            //
+            // Asking at `lb(start)` is enough: bounds only tighten, so today's
+            // is inside the window the donor windowed with, whatever has
+            // happened to the length. A task the donor never encoded has no
+            // flag there and stays out of `set_aside`, which matters --- a
+            // posted zero height is not a donor being used in part, and the
+            // counters that say so would stop meaning anything.
+            if (logger &&
+                logger->names_and_ids_tracker().find_proof_flag_values(
+                    donor.constraint_id(), ConstraintProofModelData<Cumulative>::active_flag_key(i, state.lower_bound(donor.starts()[i]))))
+                view.set_aside.push_back(i);
             continue;
         }
 
@@ -250,6 +268,16 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
         // and the unit saying the atom holds is what makes the row
         // unconditional --- permanently, the bound having been reached before
         // the search started.
+        //
+        // The fallback below --- the RUP where no pin was written down --- has
+        // no fixture, because every in-tree model reaches this bound by the
+        // declared one, which need_gevar has already pinned. What makes it
+        // sound is that a tightening that got the bound here was *proof
+        // logged*: the RUP then closes against the line that logged it. A root
+        // tightening of a donor's height taken with NoJustificationNeeded would
+        // leave nothing to close against and this would fail at check time, not
+        // here --- which is a dependency on the rest of the solver rather than
+        // on anything in this file, and so is written down rather than tested.
         auto at_least = height >= view.heights[i];
         auto definition = tracker.need_pol_item_defining_literal(at_least);
         auto holds = tracker.boundary_pin_line(height, view.heights[i]);
@@ -303,7 +331,9 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
         // Anywhere else the fact is still permanent, the bound having been
         // reached before the search started, but nothing has written it down:
         // a unit RUP does, as working, and so at Temporary whatever level the
-        // caller wants the row itself at.
+        // caller wants the row itself at. Untested for the same reason as the
+        // height's fallback above, and resting on the same dependency: the RUP
+        // closes because whatever tightened the capacity logged doing so.
         auto capacity_variable = std::get<SimpleIntegerVariableID>(*view.capacity_bounded_by);
         auto atom_is_false = tracker.boundary_pin_line(capacity_variable, view.capacity + 1_i);
         if (! atom_is_false)

@@ -25,9 +25,47 @@ Three is the floor because a two-task "clique" is just a conflicting pair, which
 the resource witnessing it already rules out — posting one adds a propagator that
 cannot infer anything new.
 
-Both budgets (`N_cover`, `N_out` in the paper) count what they drop.
-A budget that quietly swallowed every candidate is indistinguishable, from the
-outside, from a conflict graph with nothing in it.
+That is a **divergence from Sidorov's pipeline, and a deliberate one**: his
+binary covers are exactly two-task cliques, and he keeps them. Where a
+conflicting pair has no common neighbour, its `L = d_u + d_v` can top the
+ranking and be the constraint his `L` is reported from, and ours would have
+nothing there. It costs nothing on the twenty cross-check targets, whose cliques
+run to ten members and more, and `with_minimum_clique_size(2)` turns it off — but
+whether two is worth posting *in general* is a measurement question, and the
+measurement is the artefact rerun that has not happened. Filed rather than
+guessed at.
+
+Cliques are also dropped when one posted capacity-one resource already contains
+every member: that constraint is the resource's own, and reporting its bound as
+`largest_capacity_bound` would report a number the model already had. It is the
+unit-coefficient case of the `pi <= d` dominance test `InferredCumulative` runs,
+and of Sidorov's L4. Only *exact* domination drops a clique — cliques here are
+maximal, so one reaching past the resource keeps a member the resource has no
+term for.
+
+Both budgets (`N_cover`, `N_out` in the paper) count what they drop, separately:
+they bound different costs in different units, and one counter for both is one
+no accounting identity can be written against. A budget that quietly swallowed
+every candidate is indistinguishable, from the outside, from a conflict graph
+with nothing in it.
+
+A task demanding **more than a resource has** is kept here, where
+`CumulativeStrengthening` declines the donor over it and `InferredCumulative`
+gives it no column on that row. Three answers to one question, and this is the
+lax one: such a task can never run at all, so every clique it pads is padded
+with a duration nothing will ever occupy, and `largest_capacity_bound` reads
+higher than it should. It only arises on a donor that cannot be satisfied — its
+own propagator says so at the root — so what is really going on is that the
+whole model is infeasible, and the number is being read off a run that has
+already lost. The discovery-side `c_j <= C` filter the other two have was never
+implemented here.
+
+Candidate pairs are ordered by their own `least_length` sum before the candidate
+budget takes a prefix, so what the budget keeps is the best pairs rather than the
+first ones by variable creation order. His `C2` filter retains the top ones by
+bound too. It matters more than it looks: forty of the hundred and ten Pack
+instances have more than a hundred conflicting pairs, so the cross-check below
+goes through that cap.
 
 ## Time-table neutrality, again
 
@@ -196,6 +234,8 @@ get wrong and neither is visible from the paper:
 
 ## Not done
 
+- Two-member cliques, as above: allowed by the knob, off by default, and the
+  default wants measuring rather than arguing about.
 - The general lifted case, with non-unit coefficients, is
   [`InferredCumulative`](inferred-cumulative.md), and it spans resources too ---
   by a weight per resource in its knapsack programme rather than by merging

@@ -714,6 +714,51 @@ auto main(int argc, char * argv[]) -> int
         println(cerr, "variable duration: a clique of {} tasks, {} solutions", stats->clique_members_posted, solutions.size());
     }
 
+    /* A clique one posted capacity-one resource already contains, which is that
+     * resource's own constraint and not an inference. Posting it would add a
+     * propagator that can say nothing the donor does not, and --- the part that
+     * matters --- reporting its total duration as `largest_capacity_bound`
+     * would report a number the model came with. Sidorov's L4 discards
+     * constraints a model row dominates, and this is that test at unit
+     * coefficients.
+     */
+    {
+        auto stats = make_shared<InferredDisjunctiveStats>();
+        Problem p;
+        vector<IntegerVariableID> starts;
+        for (int i = 0; i < 3; ++i)
+            starts.push_back(p.create_integer_variable(0_i, 5_i, "s" + to_string(i)));
+        p.post(Cumulative{starts, vector<Integer>(3, 2_i), vector<Integer>(3, 1_i), 1_i});
+        p.add_presolver(InferredDisjunctive{stats});
+
+        set<vector<int>> solutions;
+        solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+            vector<int> solution;
+            for (const auto & v : starts)
+                solution.push_back(s(v).raw_value);
+            solutions.insert(move(solution));
+            return true;
+        }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{"inferred_disjunctive_dominated"}) : nullopt);
+        if (proofs)
+            verify_proof_and_clean_up("inferred_disjunctive_dominated");
+
+        if (stats->conflicting_pairs != 3)
+            fail("dominated clique: " + to_string(stats->conflicting_pairs) + " conflicting pairs, not the three");
+        if (stats->cliques_found != 1)
+            fail("dominated clique: the clique was not even found, so the drop below means nothing");
+        if (stats->dropped_dominated != 1)
+            fail("dominated clique: " + to_string(stats->dropped_dominated) + " cliques dropped as dominated, not the one");
+        if (stats->cliques_posted != 0)
+            fail("dominated clique: a clique a posted resource already contains was posted anyway");
+        if (stats->largest_capacity_bound != 0_i)
+            fail("dominated clique: reported a capacity bound of " + to_string(stats->largest_capacity_bound.raw_value) +
+                ", which the model already contained");
+        if (solutions != expected_solutions(3, 2, 7))
+            fail("dominated clique: solutions do not match brute force");
+        println(cerr, "dominated clique: found and dropped, and no bound claimed for it");
+    }
+
     /* A witnessing pair *both* of whose demands strictly exceed the capacity,
      * which is the one case where recovering the at-most-one does not land on
      * an at-most-one. The margin is then bigger than either demand, so the

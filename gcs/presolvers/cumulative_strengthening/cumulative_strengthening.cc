@@ -281,6 +281,15 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             // would be larger for it: a Cumulative has one height per task, not
             // one per time point, so a task that only fills the resource at
             // some of them cannot be given a raised height at all.
+            //
+            // A *loner* --- a task whose window overlaps nobody's --- comes out
+            // full vacuously. That is correct as far as it goes, and it costs
+            // something: with every task a loner, `other_tasks` is empty, kappa
+            // is zero and the donor is declined, where plain subset-summing
+            // over all of them would have strengthened it. Rare enough to be
+            // written down rather than special-cased, and if scheduling
+            // competitiveness ever cares the answer is that a loner is an
+            // ordinary task, not a full one.
             auto & full_tasks = assessment.full_tasks;
             vector<size_t> other_tasks;
             for (auto i : active_tasks) {

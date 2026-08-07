@@ -85,8 +85,46 @@ same constraint (the paper's Example 12). Constraints a model row already
 dominates are discarded, and the best `N_out` by capacity bound are kept.
 
 Budgets are the paper's: `N_cover`, `N_out`, and `N_calls` against the lifting
-subproblems, which are the bottleneck. The defaults here are what its
-experiments used — 100, 5 and 2·10⁴, with the capacity cap effectively off.
+subproblems, which are the bottleneck. The defaults here are 100, 5 and 2·10⁴,
+with the capacity cap effectively off — but those are not one configuration of
+his. `N_cover = 100` and `N_out = 5` are the main experiments'
+(`gourd/scheduling.toml`), which run *unbudgeted* on calls; `N_calls = 2·10⁴` is
+Appendix C's termination variant. So our default is the main configuration's
+cover and output budgets under Appendix C's call budget, which is a combination
+his experiments did not run.
+
+That matters for one thing in particular, below.
+
+### The early stop we do not have
+
+`lifting.py` abandons a cover's remaining lifting calls when its *optimistic*
+elastic lower bound — what it would come to if every remaining task lifted in at
+coefficient one — cannot beat the worst bound already in a full pool. We have no
+counterpart, and which direction that costs depends on the budget:
+
+- **Unbudgeted on calls**, which is his main configuration, it makes us lift
+  covers he abandons. Those covers can only produce a constraint at least as
+  good as what he kept, so this is a second unattributed reason our `L`
+  sometimes *beats* his, beside the Algorithm 1 representative bug the notes
+  above do attribute.
+- **Under a call budget**, which is what our default has, it makes us spend
+  budget on hopeless covers and so possibly end *weaker* than he would.
+
+Implementing it verbatim would be wrong: the estimate is an upper bound only
+while the unlifted coefficients stay at most one, which holds at `π₀ = 1` and
+not in general — `lhs[next] = rhs - v*` can reach `rhs`. So a correctly gated
+version is future work rather than a line to copy, and the paper is silent on
+the rule, which is why nothing here has resolved the mismatch in either
+direction.
+
+### Zero-demand cover members
+
+Definition 6 and `collect_row_cover_sets` both admit a cover member demanding
+nothing of the row the cover is built from, and so do we. In his representation
+that is a zero entry of a dense `A`; in ours it is a task with no term in that
+donor's row, which is the same statement about the load. Such a member's own
+`z` cannot be zero-demand either way, since it has to exceed the room left,
+which is never negative.
 
 ### Every resource at once
 
@@ -446,8 +484,14 @@ member's flags — is `BridgeWrongTask`.
 
 ## What is not here
 
-- Optional tasks, variable durations or demands, and lifting during search
-  (a constraint lifted from a conflict does not propagate after backtracking, so
-  this is root-level only).
+- Optional tasks — not because a derived `Cumulative` cannot reason over them,
+  but because this presolver bridges flags between donors and a presence
+  conjunct has to cancel across that bridge before it may.
+- Lifting during search: a constraint lifted from a conflict does not propagate
+  after backtracking, so this is root-level only.
+- Variable durations and demands are **not** on this list. A demand enters a
+  column at the value the task is guaranteed to make and a duration at the one
+  it is guaranteed to occupy; what a variable one costs is at most that task's
+  place on that resource, never the donor. See `cumulative_donor_view`.
 - Nothing else: the lifting is Equation 4's, over every resource, and every
   constraint it produces is derived.

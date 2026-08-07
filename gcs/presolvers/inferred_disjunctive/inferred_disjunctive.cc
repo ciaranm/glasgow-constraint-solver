@@ -76,14 +76,14 @@ namespace
         vector<Appearance> appearances;
     };
 
-    /// A resource, once confirmed usable.
+    /// A resource, once confirmed usable. Only what an inference is decided
+    /// with: the recipe's weakening sweep runs over the donor *view's* usable
+    /// positions rather than over a task count, since a set-aside task's terms
+    /// went out with the reduction and weakening an absent variable is refused.
     struct Resource
     {
         ConstraintID id;
         Integer capacity;
-        /// How many tasks it was posted over, which is how far a weakening
-        /// sweep has to go: positions with no flags are simply skipped.
-        size_t size;
     };
 
     /// The witness resources' views, by donor, as a recipe needs them: to
@@ -221,7 +221,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                 bump(&InferredDisjunctiveStats::converted_heights);
 
         const auto & starts = donor.starts();
-        resources.push_back(Resource{donor.constraint_id(), view->capacity, starts.size()});
+        resources.push_back(Resource{donor.constraint_id(), view->capacity});
         const auto & lengths = view->lengths;
         const auto & heights = view->heights;
         views.emplace(donor.constraint_id(), *view);

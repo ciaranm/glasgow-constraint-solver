@@ -301,15 +301,53 @@ The deep gap this rule is usually illustrated with — heights `{6, 10, 15}` aga
 `C = 14`, overall gcd one, answer ten — is a subset-sum fixture and **cannot be a
 `Cumulative` fixture**: a task of height fifteen under a capacity of fourteen can
 never run at all, so the constraint is infeasible before any strengthening is
-considered. The presolver declines a donor with a height above the capacity for
-that reason, and the test keeps the arithmetic assertion without pretending it is
-an instance.
+considered. The presolver declines a donor with a *mandatory* task's height above
+the capacity for that reason, and the test keeps the arithmetic assertion without
+pretending it is an instance. An optional task of the same shape is a presence
+about to be falsified rather than a donor that cannot be satisfied, so it is set
+aside and the rest of the donor is strengthened as usual.
 
 ## Restrictions
 
 Each is declined rather than worked around, and counted in
 `CumulativeStrengtheningStats` so that a model drifting into one does not simply
 stop being strengthened in silence:
+
+- **An irreducible capacity**, which today means a capacity that is a *view*.
+  Its reification is over its own bit vector, so the capacity's bound rows have
+  nothing in the donor's row to cancel against and there is no order literal to
+  resolve. An ordinary variable capacity is fine: the row is reduced against the
+  bound the capacity has at presolve time, and that condition is discharged in
+  the same `pol`.
+- **A mandatory task whose guaranteed demand is above the capacity**, which
+  makes the donor infeasible on its own — its own propagator's business, and
+  not something to build a subset sum around. An *optional* task of the same
+  shape says only that its presence is false, and is set aside instead.
+- **A capacity too large to subset-sum over.** Unlike everything else here this
+  is not about proof size: `kappa` is found with a bitset over the capacity's
+  whole range, rebuilt at every time point, and that runs with proofs off too.
+  A resource measured in thousandths would spend hundreds of megabytes deciding
+  whether there was anything to be had. `with_subset_sum_capacity_limit` is the
+  knob.
+- **Every task full**, which makes `kappa` zero: a disjunctive rather than a
+  strengthening, and inferring those from conflict cliques is what
+  `InferredDisjunctive` does.
+- **Nothing to gain** — the capacity is already the largest load the tasks can
+  reach and no height moves either. The honest and common answer.
+- **The dynamic-programming budget**, and separately **the raise budget** —
+  different costs in different units, so a donor can want one and not the other.
+
+Optional tasks are deliberately **not** on this list. The whole strengthening is
+an argument about the donor's per-time rows, and an optional task's presence is a
+conjunct inside its activity flag rather than a term beside it, so those rows are
+the same shape either way and every subset sum, at-most-one and raise reads them
+identically. What the presence changes is the reasons the derived constraint's
+propagator gives, which `install_derived_cumulative` handles once it is told the
+donor's presence arguments — see
+[cumulative-proof-logging.md](cumulative-proof-logging.md). `InferredDisjunctive`
+and `InferredCumulative` still decline, for a reason that is theirs rather than
+this one's: they bridge flags between donors, and a presence conjunct has to
+cancel across that bridge first.
 
 Variable lengths and heights are deliberately **not** on this list either, and
 nor is a variable capacity. `CumulativeDonorView`
@@ -345,29 +383,6 @@ donor's proof-only end proxy is what that goes through, published for the purpos
 — which is what earns it a place here, this presolver running the energy rules
 alone and the (TTOC) profile term being the one that can count a task the
 window-energy lemma cannot.
-
-Optional tasks are deliberately **not** on this list. The whole strengthening is
-an argument about the donor's per-time rows, and an optional task's presence is a
-conjunct inside its activity flag rather than a term beside it, so those rows are
-the same shape either way and every subset sum, at-most-one and raise reads them
-identically. What the presence changes is the reasons the derived constraint's
-propagator gives, which `install_derived_cumulative` handles once it is told the
-donor's presence arguments — see
-[cumulative-proof-logging.md](cumulative-proof-logging.md). `InferredDisjunctive`
-and `InferredCumulative` still decline, for a reason that is theirs rather than
-this one's: they bridge flags between donors, and a presence conjunct has to
-cancel across that bridge first.
-
-- **A capacity that is a view.** Its bits are not the ones the donor's rows
-  mention, so there is no order literal whose definition would cancel them, and
-  nothing to reduce a row against. A *variable* capacity is fine, a variable
-  height is converted to the demand it guarantees, and a variable length costs
-  nothing — see below.
-- **A height above the capacity**, as above.
-- **Every task full**, which makes `kappa` zero: a disjunctive rather than a
-  strengthening, and `InferredDisjunctive`'s to find.
-- **The dynamic-programming budget**, and separately **the raise budget** —
-  different costs in different units, so a donor can want one and not the other.
 
 ## Testing it
 

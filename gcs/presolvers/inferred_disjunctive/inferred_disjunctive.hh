@@ -80,7 +80,11 @@ namespace gcs
          * that comes with a `.pbp`. It is usually the same number, and can be
          * larger: `L` assumes the tasks may start at time zero, while the
          * derivation argues over the window their earliest starts actually
-         * leave them.
+         * leave them. It can also be smaller, for the same reason its
+         * InferredCumulative twin can: a variable-duration member's
+         * `least_length` is in `L`, but the window-energy lemma cannot speak
+         * for a task whose energy is not a number, so the derivation goes
+         * without it.
          *
          * Zero when no makespan was given, or when nothing was posted.
          */
@@ -246,9 +250,14 @@ namespace gcs
          * nothing in the proof otherwise says. With a makespan given, the
          * argument is made in the proof and the bound is inferred.
          *
-         * The model must entail `start + length <= makespan` for every task of
-         * every donor. That is a promise, not something checkable from here;
-         * break it and VeriPB refuses the derivation.
+         * What makes the named variable a makespan is the model's own rows
+         * saying each task finishes by it, and those rows are summed into the
+         * derivation rather than taken on trust: find_makespan_links goes
+         * looking for them. So naming a variable that is not a makespan, or one
+         * whose rows are spelled in a form that function does not match, costs
+         * the tasks with no link their energy and makes the bound *weaker*. It
+         * is not a promise VeriPB is holding you to, and there is no shape of
+         * input here that produces a rejected derivation.
          */
         auto with_makespan(IntegerVariableID makespan) -> InferredDisjunctive &;
 

@@ -173,11 +173,28 @@ both collections through all three stages, verifies each honest proof, records
 each `+1`, and checks every bound against a makespan somebody has actually
 achieved.
 
+**Every number in this section is stale and none of them may be quoted until the
+artefact has been rerun** — see the note below, which says what has changed under
+them since. They are recorded rather than deleted because what they establish is
+the *shape* of the result, and that has not moved.
+
 Over the Pack collection in all three stages and Pack_d in the capacity-one
 stage — 227 runs, no failures — 92 of the 110 instances get a certified bound,
 every one of them beating the critical path, and **29 are closed**: the bound
-equals the best makespan anybody found, so no search is needed at all. The
-paper's §5.1 claims "no less than twelve". The largest is 3050; the median
+equals the best makespan anybody found, so no search is needed at all.
+
+The paper's §5.1 claims "no less than twelve", and the two numbers are **not
+measuring the same thing**, so do not put them side by side without saying so.
+His twelve counts instances whose *unrounded* elastic lower bound improves on
+the previously known lower bound; his own closure test, run over the same
+artefact, gives twenty, and taking the ceiling of the bound — which is the
+integral quantity a solver could actually use — gives thirty-six. Ours counts
+instances whose certified bound *equals the best known makespan*. Twenty-nine
+against thirty-six is the comparison closest to like-for-like, and it is a
+comparison of two different collections' worth of stages at that; see
+`~/claude/tmp/sidorov-548/RESUME.md` for the reproduction of all four numbers.
+
+The largest is 3050; the median
 `.pbp` is 28 MB and the largest 504 MB, and `veripb` took 45 s on that one *at
 the time* --- see the note below, which the checking figure needs even more than
 the bounds do.
@@ -195,6 +212,16 @@ to their best known makespan, so closing the gap closes them.
 **These numbers predate that change and have not been rerun.** They are the
 single-resource lifting's, and the artefact's `run.bash` is what regenerates
 them.
+
+Three later changes move them again, all in the direction of a better `L`:
+lifting now orders the remaining tasks by the duration they are guaranteed to
+occupy rather than by a variable's identity (which agrees on these instances,
+whose durations are all constants, but the ordering was not what it claimed);
+the candidate pairs the clique search grows are the best by bound rather than
+the first by scan order, which forty of the hundred and ten instances have
+enough conflicting pairs to notice; and a clique one posted capacity-one
+resource already contains is no longer posted, nor its bound reported. The
+twenty cross-check targets still match exactly under all three.
 
 The *checking times* above are staler still, and for a second reason: hinting the
 replay's RUPs made verification six to fourteen times faster on exactly these

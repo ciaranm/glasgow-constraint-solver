@@ -294,6 +294,12 @@ namespace
         vector<vector<Integer>> support_demands(capacities.size());
         for (size_t row = 0; row < capacities.size(); ++row) {
             residual.push_back(capacities[row] - demands[row][member]);
+            // A member that alone overshoots this row can never run, so nothing
+            // else can be in the knapsack beside it and the optimum is zero.
+            // Unreachable as the matrix is built --- a task is given no column
+            // entry on a resource it is too big for --- and kept for the day
+            // that changes, since a negative capacity would make the programme
+            // below meaningless rather than merely empty.
             if (residual.back() < 0_i)
                 return Subproblem{0_i, false};
             for (auto i : support)
@@ -660,6 +666,13 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         calls_left -= lifted.subproblems;
         bump(&InferredCumulativeStats::lifting_subproblems, lifted.subproblems);
         bump(&InferredCumulativeStats::lifting_subproblems_over_budget, lifted.over_budget);
+        // Neither of these can fire on a cover Algorithm 1 produces: the right
+        // hand side is `|C| - 1` and lifting never moves it, and every cover
+        // has at least two members and keeps their unit coefficients. They are
+        // here because what a cut is worth turns on both numbers --- a
+        // non-positive right hand side would make dividing by it nonsense, and
+        // a support of one is a bound on a single variable rather than a cut
+        // --- and because Algorithm 1 is the sort of thing that grows a family.
         if (lifted.rhs < 1_i)
             continue;
 

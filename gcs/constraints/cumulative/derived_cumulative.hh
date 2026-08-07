@@ -143,6 +143,15 @@ namespace gcs::innards
          *
          * A recipe is a derivation, never an axiom: it has a ProofLogger and no
          * ProofModel, so it cannot write to the OPB even by mistake.
+         *
+         * What it returns must be a line the recipe itself derived, and never a
+         * donor's own OPB row handed back unchanged --- even where the donor's
+         * row happens to say exactly the right thing. A later time point
+         * declining takes this constraint out, and taking it out deletes every
+         * row already derived for it; a model row among them would be a model
+         * row deleted, which is a different proof about a different problem.
+         * recover_constant_argument_row's all-constant fast path is the one
+         * place this is easy to reach by accident.
          */
         std::function<auto(ProofLogger &, const DerivedCumulativeRows &, Integer t)->std::optional<ProofLine>> recipe;
 

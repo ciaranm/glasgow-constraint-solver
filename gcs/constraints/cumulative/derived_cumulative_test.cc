@@ -787,6 +787,13 @@ auto main(int argc, char * argv[]) -> int
             if (0 == *derived)
                 fail("the declining recipe derived nothing, so there was no orphaned row to drop and this fixture proves nothing");
 
+            // Counting the `del id` lines that immediately follow the decline
+            // comment, which assumes they are contiguous --- true today,
+            // because delete_proof_lines is handed every orphan at once and
+            // writes them without pausing. An emitter that interleaved
+            // something between them would make this stop counting early and
+            // the fixture fail rather than pass, which is the safe direction,
+            // but the fix would be here rather than in the emitter.
             std::ifstream proof{"derived_cumulative_decline_midway.pbp"};
             string line;
             auto found_the_comment = false, counting = false;

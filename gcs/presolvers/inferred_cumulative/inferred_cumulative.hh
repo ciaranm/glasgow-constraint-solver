@@ -30,9 +30,12 @@ namespace gcs
         /// Posted Cumulatives the presolver looked at.
         std::size_t donors_seen = 0;
 
-        /// Tasks across all of them that could carry a cut: constant, with a
-        /// positive length and height, and not on their own bigger than the
-        /// resource.
+        /// Columns of the joint matrix: tasks across all the donors that could
+        /// carry a cut, at a positive guaranteed length and demand, and not on
+        /// their own bigger than every resource they appear on. A variable
+        /// length or height is no bar --- what a column carries is the demand
+        /// the task is guaranteed to make and the duration it is guaranteed to
+        /// occupy.
         std::size_t tasks = 0;
 
         /// Covers enumerated by Algorithm 1 and then offered to Algorithm 2.
@@ -217,8 +220,13 @@ namespace gcs
      * whole problem rather than one pass per posted constraint, and why the
      * budgets, the visited-cover rule and the output limit are all global.
      *
-     * Restricted, as its stage in the plan is, to constant lengths, heights and
-     * capacities, and to donors with no optional tasks.
+     * Restricted to donors with no optional tasks, and for this presolver's own
+     * reason rather than a general one: it draws a cut's members from several
+     * Cumulatives and bridges one donor's flags to another's, and two donors'
+     * activity flags cancel across that bridge only if their presence conjuncts
+     * do too. Variable lengths, heights and capacities are *not* restrictions;
+     * see cumulative_donor_view for what each costs, which is at most a task
+     * rather than a donor.
      *
      * Nothing reaches the OPB. Every row of every posted constraint is
      * *derived*, by \ref validate_lifted_cover_cut and
@@ -321,10 +329,14 @@ namespace gcs
          * argument is made in the proof and the bound is inferred, so the
          * search starts from it and a `.pbp` contains it.
          *
-         * The model must entail `start + length <= makespan` for every task of
-         * every donor, which is what a scheduling model's makespan is for. That
-         * is a promise, not something checkable from here; break it and VeriPB
-         * refuses the derivation.
+         * What makes the named variable a makespan is the model's own rows
+         * saying each task finishes by it, and those rows are summed into the
+         * derivation rather than taken on trust: find_makespan_links goes
+         * looking for them. So naming a variable that is not a makespan, or one
+         * whose rows are spelled in a form that function does not match, costs
+         * the tasks with no link their energy and makes the bound *weaker*. It
+         * is not a promise VeriPB is holding you to, and there is no shape of
+         * input here that produces a rejected derivation.
          */
         auto with_makespan(IntegerVariableID makespan) -> InferredCumulative &;
 

@@ -224,6 +224,12 @@ auto gcs::innards::install_derived_cumulative(
                 // the success one. A recipe declining is not an error and not
                 // rare: a cut spanning several donors reaches time points one
                 // of them wrote no row for.
+                //
+                // Only the declining *return* is cleaned up like this. A recipe
+                // that throws leaves its orphans behind, and deliberately: an
+                // exception out of here means the run is over, so there is no
+                // later proof for them to tax. The decline fixture does not
+                // cover that path, and nothing else does either.
                 vector<ProofLine> orphans;
                 for (const auto & [_, line] : inputs->capacity_lines)
                     orphans.push_back(line);

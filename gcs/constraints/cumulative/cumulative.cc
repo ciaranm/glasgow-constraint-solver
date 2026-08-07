@@ -548,6 +548,15 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                 continue;
             for (const auto & after : after_flags[i]) {
                 PolBuilder lemma;
+                // `name_of` and not `pb_file_string_for`, which is the other
+                // base a flag's reification halves can be labelled under: these
+                // flags come from create_proof_flag_values_fully_reifying, and
+                // that is the overload whose `[r]` / `[f]` labels are built off
+                // `name_of`. `pb_file_string_for` is the base
+                // add_two_way_reified_constraint uses, for flags with no
+                // ConstraintID to key them. Getting it the wrong way round is
+                // loud --- there is no such label --- but it is worth not
+                // having to find that out.
                 lemma.add(ProofLineLabel{tracker.name_of(after) + "[f]"});
                 lemma.add(*end_le[i]);
                 lemma.emit(*logger, ProofLevel::Top);
