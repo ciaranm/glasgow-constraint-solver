@@ -2,15 +2,16 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
-#include <cctype>
+#include <examples/dzn.hh>
+
 #include <cstdlib>
-#include <fstream>
+#include <exception>
 #include <iostream>
 #include <map>
 #include <optional>
 #include <random>
-#include <sstream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -31,7 +32,6 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
-using std::ifstream;
 using std::make_optional;
 using std::map;
 using std::mt19937;
@@ -39,7 +39,7 @@ using std::nullopt;
 using std::optional;
 using std::random_device;
 using std::string;
-using std::stringstream;
+using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
 
@@ -257,89 +257,15 @@ namespace
     // resulting cons strings drive `dfa_of_cons` directly.
     auto read_dzn(const string & path) -> optional<Puzzle>
     {
-        ifstream in(path);
-        if (! in) {
-            cerr << "Could not open dzn file: " << path << endl;
-            return nullopt;
-        }
-
-        stringstream buffer;
-        buffer << in.rdbuf();
-        auto text = buffer.str();
-
-        // Strip MiniZinc line comments so stray '%' text can't confuse the scan.
-        for (size_t i = 0; i < text.size(); ++i)
-            if (text[i] == '%')
-                while (i < text.size() && text[i] != '\n')
-                    text[i++] = ' ';
-
-        auto scalar = [&](const string & key) -> optional<int> {
-            auto at = text.find(key);
-            if (at == string::npos)
-                return nullopt;
-            at = text.find('=', at);
-            if (at == string::npos)
-                return nullopt;
-            auto end = text.find(';', at);
-            return std::stoi(text.substr(at + 1, end - at - 1));
-        };
-
-        // Pull every integer (including negatives) out of the assignment for a
-        // named array, i.e. the text between `key` and the next ';'.
-        auto integers = [&](const string & key) -> vector<int> {
-            vector<int> values;
-            auto at = text.find(key);
-            if (at == string::npos)
-                return values;
-            at = text.find('=', at);
-            auto end = text.find(';', at);
-            auto body = text.substr(at + 1, end - at - 1);
-            stringstream tokens(body);
-            string token;
-            auto is_int = [](const string & s) {
-                if (s.empty())
-                    return false;
-                size_t k = (s[0] == '-' || s[0] == '+') ? 1 : 0;
-                if (k == s.size())
-                    return false;
-                for (; k < s.size(); ++k)
-                    if (! std::isdigit(static_cast<unsigned char>(s[k])))
-                        return false;
-                return true;
-            };
-            // Split on the bracketing/separator characters MiniZinc matrices use.
-            for (char & c : body)
-                if (c == '[' || c == ']' || c == '|' || c == ',')
-                    c = ' ';
-            stringstream clean(body);
-            while (clean >> token)
-                if (is_int(token))
-                    values.push_back(std::stoi(token));
-            return values;
-        };
-
-        auto x = scalar("X"), y = scalar("Y"), maxlen = scalar("maxlen");
-        if (! x || ! y || ! maxlen) {
-            cerr << "dzn file missing X, Y or maxlen: " << path << endl;
-            return nullopt;
-        }
-
-        auto rows = integers("rows"), cols = integers("cols");
-        if (static_cast<int>(rows.size()) < *y * *maxlen || static_cast<int>(cols.size()) < *x * *maxlen) {
-            cerr << "dzn file has too few clue entries: " << path << endl;
-            return nullopt;
-        }
-
         // The .dzn already stores cons strings, but built-in puzzles carry run
         // lengths; keep the Puzzle uniform by recovering run lengths from each
         // cons string (a maximal run of 1s), which cons_of_clue re-expands.
-        auto clues_of = [&](const vector<int> & flat, int count, int stride) {
+        auto clues_of = [](const vector<vector<long long>> & lines) {
             vector<vector<int>> clues;
-            for (int i = 0; i < count; ++i) {
+            for (const auto & line : lines) {
                 vector<int> clue;
                 int run = 0;
-                for (int j = 0; j < stride; ++j) {
-                    auto v = flat[i * stride + j];
+                for (auto v : line) {
                     if (v < 0)
                         continue; // padding sentinel
                     if (v == 1) {
@@ -358,8 +284,33 @@ namespace
             return clues;
         };
 
-        Puzzle puzzle{path, clues_of(rows, *y, *maxlen), clues_of(cols, *x, *maxlen)};
-        return puzzle;
+        try {
+            auto data = dzn::read(path);
+            auto x = static_cast<int>(data.integer("X")), y = static_cast<int>(data.integer("Y"));
+            auto maxlen = static_cast<int>(data.integer("maxlen"));
+
+            // Reading the two clue arrays as matrices rather than flat is what
+            // makes these checks possible: a file whose arrays disagreed with X,
+            // Y and maxlen used to be chopped into *maxlen-wide lines anyway, so
+            // long as there were enough entries to go round.
+            auto rows = data.matrix("rows"), cols = data.matrix("cols");
+            for (const auto & [what, lines, count] : {tuple{"rows", &rows, y}, tuple{"cols", &cols, x}}) {
+                if (static_cast<int>(lines->size()) != count) {
+                    println(cerr, "dzn file gives {} lines of {}, expected {}: {}", lines->size(), what, count, path);
+                    return nullopt;
+                }
+                if (! lines->empty() && static_cast<int>(lines->front().size()) != maxlen) {
+                    println(cerr, "dzn file gives {} of width {}, not maxlen = {}: {}", what, lines->front().size(), maxlen, path);
+                    return nullopt;
+                }
+            }
+
+            return Puzzle{path, clues_of(rows), clues_of(cols)};
+        }
+        catch (const std::exception & e) {
+            println(cerr, "Error reading the instance: {}", e.what());
+            return nullopt;
+        }
     }
 
     auto solve_puzzle(const Puzzle & puzzle, bool all_solutions, bool legacy, bool bacchus, bool short_reasons, bool print_grid,

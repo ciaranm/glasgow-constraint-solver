@@ -16,15 +16,17 @@
 // explicitly, in legal_configurations() below, which is the single place that
 // knows about it.
 
+#include <examples/dzn.hh>
+
 #include <gcs/integer.hh>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
-#include <fstream>
 #include <random>
-#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace table_layout
@@ -141,86 +143,25 @@ namespace table_layout
         return inst;
     }
 
-    namespace detail
-    {
-        /// Everything between the first '[' and the last ']' of a .dzn
-        /// right-hand side, split on commas. Handles both a bare array literal
-        /// and the array3d(ROWS, COLS, CONFIGS, [...]) wrapper the Challenge
-        /// data uses, because the index-set arguments contain no brackets.
-        [[nodiscard]] inline auto parse_int_array(const std::string & rhs) -> std::vector<long>
-        {
-            auto open = rhs.find('[');
-            auto close = rhs.rfind(']');
-            if (open == std::string::npos || close == std::string::npos || close < open)
-                throw std::runtime_error{"expected an array literal in .dzn value '" + rhs + "'"};
-
-            std::vector<long> result;
-            std::stringstream body{rhs.substr(open + 1, close - open - 1)};
-            std::string item;
-            while (std::getline(body, item, ',')) {
-                auto first = item.find_first_not_of(" \t\r\n");
-                if (first == std::string::npos)
-                    continue;
-                result.push_back(std::stol(item.substr(first)));
-            }
-            return result;
-        }
-    }
-
     /// Read a TableLayout.mzn .dzn data file: the scalars pixelwidth, maxconfig,
     /// rows and cols, and the width and height arrays in row-major
-    /// (ROWS, COLS, CONFIGS) order. Percent comments are stripped; everything
-    /// else is parsed as `name = value;` statements, and any statement whose
-    /// name is not one of the six the model needs is ignored.
+    /// (ROWS, COLS, CONFIGS) order. The Challenge data writes the two arrays
+    /// through an `array3d(ROWS, COLS, CONFIGS, [...])` wrapper, which the
+    /// reader drops: the shape is given by the scalars, so it is checked
+    /// against them below rather than taken from the literal.
     [[nodiscard]] inline auto read_dzn(const std::string & path) -> Instance
     {
-        std::ifstream infile{path};
-        if (! infile)
-            throw std::runtime_error{"cannot read '" + path + "'"};
-
-        std::string text, line;
-        while (std::getline(infile, line)) {
-            auto comment = line.find('%');
-            text += (comment == std::string::npos ? line : line.substr(0, comment));
-            text += '\n';
-        }
+        auto data = dzn::read(path);
 
         Instance inst;
-        std::vector<long> flat_width, flat_height;
-        std::size_t pos = 0;
-        while (true) {
-            auto end = text.find(';', pos);
-            if (end == std::string::npos)
-                break;
-            auto statement = text.substr(pos, end - pos);
-            pos = end + 1;
-
-            auto eq = statement.find('=');
-            if (eq == std::string::npos)
-                continue;
-            auto name_first = statement.find_first_not_of(" \t\r\n");
-            auto name_last = statement.find_last_not_of(" \t\r\n", eq - 1);
-            if (name_first == std::string::npos || name_last == std::string::npos || name_last < name_first)
-                continue;
-            auto name = statement.substr(name_first, name_last - name_first + 1);
-            auto value = statement.substr(eq + 1);
-
-            if (name == "pixelwidth")
-                inst.pixelwidth = std::stol(value);
-            else if (name == "maxconfig")
-                inst.maxconfig = std::stoi(value);
-            else if (name == "rows")
-                inst.rows = std::stoi(value);
-            else if (name == "cols")
-                inst.cols = std::stoi(value);
-            else if (name == "width")
-                flat_width = detail::parse_int_array(value);
-            else if (name == "height")
-                flat_height = detail::parse_int_array(value);
-        }
+        inst.pixelwidth = static_cast<long>(data.integer("pixelwidth"));
+        inst.maxconfig = static_cast<int>(data.integer("maxconfig"));
+        inst.rows = static_cast<int>(data.integer("rows"));
+        inst.cols = static_cast<int>(data.integer("cols"));
+        auto flat_width = data.integers("width"), flat_height = data.integers("height");
 
         if (inst.rows < 1 || inst.cols < 1 || inst.maxconfig < 1)
-            throw std::runtime_error{"'" + path + "' does not define positive rows, cols and maxconfig"};
+            throw std::runtime_error{"'" + path + "' does not give positive rows, cols and maxconfig"};
         auto expected = static_cast<std::size_t>(inst.rows) * inst.cols * inst.maxconfig;
         if (flat_width.size() != expected || flat_height.size() != expected)
             throw std::runtime_error{"'" + path + "' has width/height arrays of size " + std::to_string(flat_width.size()) + "/" +
@@ -232,8 +173,8 @@ namespace table_layout
         for (int r = 0; r < inst.rows; ++r)
             for (int c = 0; c < inst.cols; ++c)
                 for (int l = 0; l < inst.maxconfig; ++l, ++at) {
-                    inst.width[r][c][l] = flat_width[at];
-                    inst.height[r][c][l] = flat_height[at];
+                    inst.width[r][c][l] = static_cast<long>(flat_width[at]);
+                    inst.height[r][c][l] = static_cast<long>(flat_height[at]);
                 }
 
         inst.description = "dzn " + path + " rows=" + std::to_string(inst.rows) + " cols=" + std::to_string(inst.cols) +

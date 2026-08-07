@@ -10,15 +10,13 @@
 #include <gcs/solve.hh>
 
 #include <algorithm>
-#include <cctype>
 #include <cstdlib>
-#include <fstream>
+#include <exception>
 #include <iostream>
 #include <map>
 #include <numeric>
 #include <optional>
 #include <random>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,6 +24,7 @@
 #include <cxxopts.hpp>
 
 #include <examples/benchmark_cli.hh>
+#include <examples/dzn.hh>
 
 #include <version>
 
@@ -42,7 +41,6 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
-using std::ifstream;
 using std::make_optional;
 using std::map;
 using std::mt19937;
@@ -50,7 +48,6 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
-using std::stringstream;
 using std::vector;
 using std::ranges::shuffle;
 
@@ -210,118 +207,31 @@ namespace
     }
 
     // Read a MiniZinc Challenge 2018 seat-moving data file, which assigns S, P,
-    // Start, Goal and Can_swap. Deliberately forgiving about layout, like the
-    // nonogram example's reader.
+    // Start, Goal and Can_swap. Everything the file says about sizes is checked
+    // by validate(), not here, so a short Start is a complaint about the
+    // instance rather than about the file.
     [[nodiscard]] auto read_dzn(const string & path) -> optional<Instance>
     {
-        ifstream in(path);
-        if (! in) {
-            println(cerr, "Could not open dzn file: {}", path);
+        try {
+            auto data = dzn::read(path);
+
+            Instance instance{path, 0, 0, {}, {}, {}};
+            instance.seats = static_cast<int>(data.integer("S"));
+            instance.people = static_cast<int>(data.integer("P"));
+
+            for (const auto & [name, into] : {pair{"Start", &instance.start}, pair{"Goal", &instance.goal}})
+                for (auto seat : data.integers(name))
+                    into->push_back(static_cast<int>(seat));
+
+            for (auto swaps : data.bools("Can_swap"))
+                instance.can_swap.push_back(swaps ? 1 : 0);
+
+            return instance;
+        }
+        catch (const std::exception & e) {
+            println(cerr, "Error reading the instance: {}", e.what());
             return nullopt;
         }
-
-        stringstream buffer;
-        buffer << in.rdbuf();
-        auto text = buffer.str();
-
-        // Blank out MiniZinc line comments so stray text cannot confuse the scan.
-        for (size_t i = 0; i < text.size(); ++i)
-            if (text[i] == '%')
-                while (i < text.size() && text[i] != '\n')
-                    text[i++] = ' ';
-
-        auto is_ident_char = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
-
-        // The text between `name =` and the next ';', for `name` appearing as a
-        // whole identifier (so looking for "S" does not match "Start").
-        auto body_of = [&](const string & name) -> optional<string> {
-            for (auto at = text.find(name); at != string::npos; at = text.find(name, at + 1)) {
-                if (at > 0 && is_ident_char(text[at - 1]))
-                    continue;
-                auto after = at + name.size();
-                if (after < text.size() && is_ident_char(text[after]))
-                    continue;
-                auto eq = text.find_first_not_of(" \t\r\n", after);
-                if (eq == string::npos || text[eq] != '=')
-                    continue;
-                auto end = text.find(';', eq);
-                return text.substr(eq + 1, end == string::npos ? string::npos : end - eq - 1);
-            }
-            return nullopt;
-        };
-
-        // Split a body on MiniZinc's array punctuation and hand back the tokens.
-        auto tokens_of = [](string body) -> vector<string> {
-            for (auto & c : body)
-                if (c == '[' || c == ']' || c == '|' || c == ',')
-                    c = ' ';
-            vector<string> tokens;
-            stringstream stream(body);
-            string token;
-            while (stream >> token)
-                tokens.push_back(token);
-            return tokens;
-        };
-
-        Instance instance{path, 0, 0, {}, {}, {}};
-
-        auto scalar = [&](const string & name) -> optional<int> {
-            auto body = body_of(name);
-            if (! body)
-                return nullopt;
-            auto tokens = tokens_of(*body);
-            if (1 != tokens.size())
-                return nullopt;
-            try {
-                return std::stoi(tokens[0]);
-            }
-            catch (const std::exception &) {
-                return nullopt;
-            }
-        };
-
-        auto seats = scalar("S"), people = scalar("P");
-        if (! seats || ! people) {
-            println(cerr, "dzn file is missing S or P: {}", path);
-            return nullopt;
-        }
-        instance.seats = *seats;
-        instance.people = *people;
-
-        for (const auto & [name, into] : {pair{"Start", &instance.start}, pair{"Goal", &instance.goal}}) {
-            auto body = body_of(name);
-            if (! body) {
-                println(cerr, "dzn file is missing {}: {}", name, path);
-                return nullopt;
-            }
-            for (const auto & token : tokens_of(*body)) {
-                try {
-                    into->push_back(std::stoi(token));
-                }
-                catch (const std::exception &) {
-                    println(cerr, "could not read '{}' as an integer in {}: {}", token, name, path);
-                    return nullopt;
-                }
-            }
-        }
-
-        auto can_swap = body_of("Can_swap");
-        if (! can_swap) {
-            println(cerr, "dzn file is missing Can_swap: {}", path);
-            return nullopt;
-        }
-        for (const auto & token : tokens_of(*can_swap)) {
-            if (token == "true" || token == "1")
-                instance.can_swap.push_back(1);
-            else if (token == "false" || token == "0")
-                instance.can_swap.push_back(0);
-            else {
-                println(cerr, "could not read '{}' as a bool in Can_swap: {}", token, path);
-                return nullopt;
-            }
-        }
-
-        return instance;
     }
 
     // A random instance: seat the people in a random subset of the seats, twice
