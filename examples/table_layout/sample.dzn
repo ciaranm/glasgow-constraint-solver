@@ -1,0 +1,31 @@
+% A small table-layout instance in the format of the MiniZinc Challenge
+% TableLayout.mzn data files, for the --dzn reader. Written here rather than
+% taken from the Challenge set, so it is small enough to prove quickly and there
+% is no licence question about redistributing it.
+%
+% Two things it exercises that a generated instance does not. The arrays come
+% through the `array3d(ROWS, COLS, CONFIGS, [...])` wrapper the Challenge data
+% uses, whose index-set arguments are not entries; and cells (1,2), (2,1) and
+% (2,2) have fewer than maxconfig configurations, so their surplus entries are
+% the negative padding, and reading that padding as a configuration is what a
+% reader that did not know about the convention would do.
+%
+% Cell (r,c) configuration l is (width[r,c,l], height[r,c,l]):
+%
+%   (1,1)  (10,1) (5,2) (2,4)      (1,2)  (8,1) (4,3)
+%   (2,1)  (6,2)  (3,5)            (2,2)  (9,1)
+%
+% Column 2 is 9 wide whatever happens, because (2,2) has only the one
+% configuration, so the pixelwidth budget of 14 leaves column 1 at most 5. That
+% rules out (1,1)'s 10-wide configuration and (2,1)'s 6-wide one, which forces
+% (2,1) to (3,5) and makes row 2 five high; row 1 is then 2, from (1,1) at (5,2)
+% and (1,2) at (8,1). The optimum is a total height of 7. The budget is what
+% makes that interesting: raise pixelwidth and the answer is 3.
+
+pixelwidth = 14;
+maxconfig = 3;
+rows = 2;
+cols = 2;
+
+width = array3d(ROWS, COLS, CONFIGS, [10, 5, 2, 8, 4, -1, 6, 3, -1, 9, -1, -1]);
+height = array3d(ROWS, COLS, CONFIGS, [1, 2, 4, 1, 3, -1, 2, 5, -1, 1, -1, -1]);

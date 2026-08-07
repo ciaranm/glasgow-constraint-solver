@@ -1,0 +1,15 @@
+% A small hitori instance in the format of the MiniZinc Challenge 2025 data
+% files, for the --dzn reader. Written here rather than taken from the Challenge
+% set, so it is small enough to prove quickly and there is no licence question
+% about redistributing it.
+%
+% This is exactly the grid `--size 4 --seed 0` generates, so the --dzn lane and
+% the built-in generator must reach the same optimum of 13. That is the point of
+% the file: it makes the reader's answer checkable against something other than
+% itself.
+
+n = 4;
+clue = [| 1, 1, 4, 4
+        | 4, 3, 1, 2
+        | 1, 4, 4, 1
+        | 1, 2, 4, 3 |];
