@@ -34,6 +34,7 @@ add_library(glasgow_constraint_solver
         constraints/count/count.cc
         constraints/cumulative/cumulative.cc
         constraints/cumulative/derived_cumulative.cc
+        constraints/cumulative/donor_view.cc
         constraints/difference/difference_constraints.cc
         constraints/difference/difference_graph.cc
         constraints/difference/difference_incremental.cc
@@ -52,6 +53,7 @@ add_library(glasgow_constraint_solver
         constraints/increasing/increasing.cc
         constraints/innards/cake_truthiness.cc
         constraints/innards/linear_stages.cc
+        constraints/innards/makespan_energy.cc
         constraints/innards/product_encoding.cc
         constraints/innards/product_justify.cc
         constraints/innards/justify_not_in_range.cc
@@ -99,15 +101,20 @@ add_library(glasgow_constraint_solver
         innards/integer_overflow.cc
         innards/literal.cc
         innards/power.cc
+        innards/proofs/am1_from_pairs.cc
+        innards/proofs/am1_from_row.cc
         innards/proofs/bits_encoding.cc
         innards/proofs/constraint_proof_model_data.cc
         innards/proofs/emit_inequality_to.cc
+        innards/proofs/flag_bridge.cc
+        innards/proofs/lifted_cover_cut.cc
         innards/proofs/names_and_ids_tracker.cc
         innards/proofs/pol_builder.cc
         innards/proofs/proof_error.cc
         innards/proofs/proof_logger.cc
         innards/proofs/proof_model.cc
         innards/proofs/proof_only_variables.cc
+        innards/proofs/proof_scaffolding_scope.cc
         innards/proofs/scp_writer.cc
         innards/proofs/simplify_literal.cc
         innards/proofs/subset_sum_strengthening.cc
@@ -117,7 +124,11 @@ add_library(glasgow_constraint_solver
         innards/state.cc
         innards/variable_id_utils.cc
         presolvers/auto_table/auto_table.cc
+        presolvers/cumulative_strengthening/cumulative_strengthening.cc
         presolvers/difference_logic/difference_logic.cc
+        presolvers/inferred_cumulative/inferred_cumulative.cc
+        presolvers/inferred_disjunctive/inferred_disjunctive.cc
+        presolvers/innards/makespan_links.cc
 )
 
 # The repo root contains both gcs/ and util/, so it must be on the include path.
@@ -194,6 +205,21 @@ if(GCS_BUILD_TESTS)
     endforeach()
     add_test(NAME difference_logic_presolver_proofs
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:difference_logic_presolver_test> proofs)
+
+    add_executable(inferred_cumulative_presolver_test presolvers/inferred_cumulative/inferred_cumulative_test.cc)
+    target_link_libraries(inferred_cumulative_presolver_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME inferred_cumulative_presolver
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_cumulative_presolver_test>)
+
+    add_executable(inferred_disjunctive_presolver_test presolvers/inferred_disjunctive/inferred_disjunctive_test.cc)
+    target_link_libraries(inferred_disjunctive_presolver_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME inferred_disjunctive_presolver
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_disjunctive_presolver_test>)
+
+    add_executable(cumulative_strengthening_presolver_test presolvers/cumulative_strengthening/cumulative_strengthening_test.cc)
+    target_link_libraries(cumulative_strengthening_presolver_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME cumulative_strengthening_presolver
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_strengthening_presolver_test>)
 
     add_executable(constraint_enumeration_test constraint_enumeration_test.cc)
     target_link_libraries(constraint_enumeration_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
@@ -571,6 +597,30 @@ if(GCS_BUILD_TESTS)
     add_executable(eqvar_polarity_test innards/proofs/eqvar_polarity_test.cc)
     target_link_libraries(eqvar_polarity_test PRIVATE glasgow_constraint_solver)
     add_test(NAME eqvar_polarity_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:eqvar_polarity_test>)
+
+    add_executable(flag_bridge_test innards/proofs/flag_bridge_test.cc)
+    target_link_libraries(flag_bridge_test PRIVATE glasgow_constraint_solver)
+    # Verifies (and deliberately fails to verify) its own proofs internally, so
+    # it needs no wrapper.
+    add_test(NAME flag_bridge_test COMMAND $<TARGET_FILE:flag_bridge_test>)
+
+    add_executable(am1_from_pairs_test innards/proofs/am1_from_pairs_test.cc)
+    target_link_libraries(am1_from_pairs_test PRIVATE glasgow_constraint_solver)
+    # Verifies (and deliberately fails to verify) its own proofs internally, so
+    # it needs no wrapper.
+    add_test(NAME am1_from_pairs_test COMMAND $<TARGET_FILE:am1_from_pairs_test>)
+
+    add_executable(am1_from_row_test innards/proofs/am1_from_row_test.cc)
+    target_link_libraries(am1_from_row_test PRIVATE glasgow_constraint_solver)
+    # Verifies (and deliberately fails to verify) its own proofs internally, so
+    # it needs no wrapper.
+    add_test(NAME am1_from_row_test COMMAND $<TARGET_FILE:am1_from_row_test>)
+
+    add_executable(lifted_cover_cut_test innards/proofs/lifted_cover_cut_test.cc)
+    target_link_libraries(lifted_cover_cut_test PRIVATE glasgow_constraint_solver)
+    # Verifies (and deliberately fails to verify) its own proofs internally, so
+    # it needs no wrapper.
+    add_test(NAME lifted_cover_cut_test COMMAND $<TARGET_FILE:lifted_cover_cut_test>)
 
     add_executable(subset_sum_strengthening_test innards/proofs/subset_sum_strengthening_test.cc)
     target_link_libraries(subset_sum_strengthening_test PRIVATE glasgow_constraint_solver)

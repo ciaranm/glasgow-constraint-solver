@@ -1,0 +1,6 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_INFERRED_DISJUNCTIVE_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_INFERRED_DISJUNCTIVE_HH
+
+#include <gcs/presolvers/inferred_disjunctive/inferred_disjunctive.hh>
+
+#endif

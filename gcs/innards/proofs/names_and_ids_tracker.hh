@@ -301,6 +301,28 @@ namespace gcs::innards
         [[nodiscard]] auto need_pol_item_defining_literal(const IntegerVariableCondition &) -> std::variant<ProofLine, XLiteral>;
 
         /**
+         * The line pinning the order atom `id >= v` to the value the variable's
+         * declared bounds already force, if there is one.
+         *
+         * need_gevar pins the boundary atoms --- `id >= v` for a `v` at or
+         * below the declared lower bound, `!(id >= v)` for a `v` above the
+         * declared upper --- once, as a persistent top-of-proof line, precisely
+         * so that a step wanting the fact can cite it. Ask for it rather than
+         * emitting the same unit again: a `pol` that needs it needs it once per
+         * use, and re-deriving it per use is what the pin exists to avoid.
+         *
+         * Nullopt when there is no such fact (a `v` strictly inside the
+         * declared bounds), when the pin was suppressed (see
+         * note_bounds_not_trivially_derivable), when assertions are on above
+         * AssertionLevel::Links, and while the pin is still queued for proof
+         * start --- so a caller during model building gets nothing and must
+         * derive the fact itself. Call this after whatever made the atom
+         * exist, since a pin for an atom nobody has asked for has not been
+         * emitted.
+         */
+        [[nodiscard]] auto boundary_pin_line(const SimpleOrProofOnlyIntegerVariableID & id, Integer v) const -> std::optional<ProofLine>;
+
+        /**
          * Set things up internally as if the specified variable was a real
          * variable, so that proof_name() etc will work with it.
          */
@@ -563,6 +585,55 @@ namespace gcs::innards
          * look up.
          */
         [[nodiscard]] auto find_proof_flag_values(const ConstraintID & id, const ProofFlagKey & key) const -> std::optional<ProofFlag>;
+
+        /**
+         * \brief Record a line this constraint established *inside the proof*,
+         * under a role, so that another constraint may build on it.
+         *
+         * The third kind of citable thing, beside a labelled OPB row
+         * (\ref constraint_row_label) and a flag (\ref find_proof_flag_values),
+         * and the one neither of those can express: a line an install
+         * initialiser derived, which has no OPB row to label and no reification
+         * to key. Cumulative's proof-only `end >= start + length` is the
+         * motivating case.
+         *
+         * A line number rather than a label, because there is no label: what
+         * comes back is a position in one particular proof file, so unlike the
+         * other two this is per-solve state --- the same state
+         * \ref boundary_pin_line already keeps, and kept for the same reason,
+         * that a caller wanting the fact should cite the line rather than derive
+         * it again.
+         *
+         * The role is in a namespace of its own, so it neither collides with a
+         * `c[id][role]` label nor makes one; that a constraint uses the same
+         * word for both is the constraint's business.
+         *
+         * \throws ProofError if this `(id, role)` has already published a line,
+         * which means a role that does not name everything the emitting loop
+         * varies over (#613, one namespace over).
+         */
+        auto publish_derived_line(const ConstraintID & id, const std::string & role, ProofLine line) -> void;
+
+        /**
+         * \brief The line a constraint published under this role, if it
+         * published one.
+         *
+         * The same "may I cite this?" answer \ref constraint_row_label and
+         * \ref find_proof_flag_values give, and nullopt means the same thing it
+         * means there: the constraint was never installed, or proofs are off,
+         * or it had nothing to publish under that role --- and in each case
+         * there is nothing to cite, so do not do the thing that would need
+         * citing.
+         *
+         * The one extra way of getting nullopt is *timing*: this is filled in by
+         * an install initialiser, so a caller running before initialisers do
+         * gets nothing. Presolvers run after (#658), which is what makes this
+         * reachable for them at all.
+         *
+         * Pair it with innards::ConstraintProofModelData, which is how a
+         * constraint publishes which role names the line a citer wants.
+         */
+        [[nodiscard]] auto find_derived_line(const ConstraintID & id, const std::string & role) const -> std::optional<ProofLine>;
 
         /**
          * Create a proof flag with a new identifier, named `f[index][stem]`.

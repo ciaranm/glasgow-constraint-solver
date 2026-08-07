@@ -34,23 +34,6 @@ using std::size_t;
 using std::unique_ptr;
 using std::vector;
 
-namespace
-{
-    auto const_value_of(const IntegerVariableID & v) -> Integer
-    {
-        return get<ConstantIntegerVariableID>(v).const_value;
-    }
-
-    auto as_constant_var_ids(const vector<Integer> & vals) -> vector<IntegerVariableID>
-    {
-        vector<IntegerVariableID> result;
-        result.reserve(vals.size());
-        for (const auto & v : vals)
-            result.push_back(constant_variable(v));
-        return result;
-    }
-}
-
 Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariableID> ys, vector<IntegerVariableID> widths,
     vector<IntegerVariableID> heights) : _xs(move(xs)), _ys(move(ys)), _widths(move(widths)), _heights(move(heights))
 {
@@ -59,15 +42,15 @@ Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariabl
     // Constant non-negativity is checked here; variable sizes are checked in
     // prepare(), where their domains first become available.
     for (const auto & w : _widths)
-        if (is_constant_variable(w) && const_value_of(w) < 0_i)
+        if (is_constant_variable(w) && constant_value_of(w) < 0_i)
             throw InvalidProblemDefinitionException{"Disjunctive2D: widths must be non-negative"};
     for (const auto & h : _heights)
-        if (is_constant_variable(h) && const_value_of(h) < 0_i)
+        if (is_constant_variable(h) && constant_value_of(h) < 0_i)
             throw InvalidProblemDefinitionException{"Disjunctive2D: heights must be non-negative"};
 }
 
 Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariableID> ys, vector<Integer> widths, vector<Integer> heights) :
-    Disjunctive2D(move(xs), move(ys), as_constant_var_ids(widths), as_constant_var_ids(heights))
+    Disjunctive2D(move(xs), move(ys), as_constant_variables(widths), as_constant_variables(heights))
 {
 }
 
@@ -114,9 +97,9 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     width_ub.reserve(n);
     height_ub.reserve(n);
     for (size_t i = 0; i < n; ++i) {
-        _width_vals.push_back(is_constant_variable(_widths[i]) ? const_value_of(_widths[i]) : 0_i);
+        _width_vals.push_back(is_constant_variable(_widths[i]) ? constant_value_of(_widths[i]) : 0_i);
         width_ub.push_back(initial_state.upper_bound(_widths[i]));
-        _height_vals.push_back(is_constant_variable(_heights[i]) ? const_value_of(_heights[i]) : 0_i);
+        _height_vals.push_back(is_constant_variable(_heights[i]) ? constant_value_of(_heights[i]) : 0_i);
         height_ub.push_back(initial_state.upper_bound(_heights[i]));
     }
 

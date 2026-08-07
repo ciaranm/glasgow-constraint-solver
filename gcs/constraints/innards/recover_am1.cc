@@ -2,6 +2,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
+#include <gcs/innards/proofs/proof_scaffolding_scope.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 
 #include <gcs/proof.hh>
@@ -115,20 +116,15 @@ template <typename Literal_>
     // inside recover_am1 deletes the framework's just-emitted lines
     // mid-justification.)
     //
-    // To isolate, we increase active_proof_level by one before emitting
-    // pair_ne lines. They then record at the new active+1, one deeper
-    // than the caller's Temporary depth, and forgetting that deeper depth
-    // on exit cleans up only our own intermediates.
-    //
-    // The result itself is emitted *after* restoring the caller's level, so
-    // it records at the level the caller asked for: Top callers (in
-    // initialisers, caching the line for reuse) get depth 0 as before;
-    // Temporary callers (e.g. inside a JustifyExplicitly{…, ThenRUP::Yes} that folds
-    // the result into a further pol) get the caller's Temporary depth, so
-    // the line survives our own deeper cleanup and is reclaimed when the
-    // caller's scope is forgotten.
-    auto saved_level = logger.proof_level();
-    logger.enter_proof_level(saved_level + 1);
+    // ProofScaffoldingScope is the isolation: the pair_ne lines record one
+    // deeper than the caller's Temporary depth, and only that depth is
+    // forgotten. The result is emitted *after* restoring, so it records at the
+    // level the caller asked for --- Top callers (in initialisers, caching the
+    // line for reuse) get depth 0 as before; Temporary callers (e.g. inside a
+    // JustifyExplicitly{…, ThenRUP::Yes} that folds the result into a further
+    // pol) get the caller's Temporary depth, so the line survives our own
+    // cleanup and is reclaimed when the caller's scope is forgotten.
+    ProofScaffoldingScope scaffolding{logger};
 
     // Build the at-most-one via PolBuilder rather than a hand-written pol
     // string: PolBuilder defers stringifying the pair_ne line references to
@@ -176,15 +172,11 @@ template <typename Literal_>
         }
     }
 
-    // Restore the caller's level, then emit the result there (its level is
-    // resolved at emit time) while the pair_ne lines are still alive — VeriPB
-    // resolves the line-number references during this emit. Finally forget the
-    // inner scope, which removes only our deeper pair_ne intermediates and
-    // leaves the result (at the caller's level) intact.
-    logger.enter_proof_level(saved_level);
-    auto result = am1.emit(logger, level);
-    logger.forget_proof_level(saved_level + 2);
-    return result;
+    // Back at the caller's level to emit the result (its level is resolved at
+    // emit time), while the pair_ne lines are still alive — VeriPB resolves the
+    // line-number references during this emit — and only then forgotten.
+    scaffolding.restore();
+    return am1.emit(logger, level);
 }
 
 template auto gcs::innards::recover_am1<IntegerVariableCondition>(ProofLogger &, ProofLevel, const vector<IntegerVariableCondition> &,

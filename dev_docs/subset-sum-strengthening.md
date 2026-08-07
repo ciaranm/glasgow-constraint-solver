@@ -19,7 +19,7 @@ that matters as soon as the line is added to another one: `Σ c_i x_i ≤ B` plu
 `Σ c_i x_i ≥ B′ + 1` is perfectly consistent over the rationals, while the
 strengthened form contradicts it in one `pol` step. That is the shape all three
 consumers need — the knapsack-augmented overload check's availability bound
-(#550), Schulz's capacity reduction (#547), and single-resource lifting
+(#550), Schulz's capacity reduction (#547), and cover lifting
 certificates (#549).
 
 ## The two derivations

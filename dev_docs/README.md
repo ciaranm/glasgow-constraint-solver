@@ -141,6 +141,43 @@ library. For an introduction to *using* the solver, start with the top-level
   the same strength, the clause resolution that stands in for the case split
   unit propagation cannot do, and why a satisfiable test model and an `ia`
   content check are both needed to test it.
+- [Strengthening a `Cumulative` by integrality](cumulative-strengthening.md) —
+  Schulz's pre-solving rules as the `CumulativeStrengthening` presolver, posting
+  the strengthened constraint in derived mode. Covers why the largest reachable
+  load is the real capacity, why the tasks that fill the resource on their own
+  have to be set aside from that sum and given the capacity as their height
+  instead (which is both of Schulz's height rules arriving at the same place),
+  why raising a coefficient in cutting planes is a loop rather than one
+  division, why the rules are *time-table neutral* and how that turns into a
+  node-for-node soundness tripwire, the `ia` step that pins every row to the
+  declared capacity (and is the only thing that catches a sound derivation of
+  the wrong line), and why the deep-gap fixture everyone quotes cannot be a
+  `Cumulative` instance.
+- [Inferring `Disjunctive` constraints across resources](inferred-disjunctive.md) —
+  the `InferredDisjunctive` presolver: conflict cliques spanning several posted
+  Cumulatives, posted in derived mode. Covers why the cross-resource case is an
+  inference no single Cumulative can make, the three-piece certificate (pairwise
+  at-most-one out of a witnessing row, flag bridge, clique merge), why two-task
+  cliques are never worth posting, the camouflage fixture the mutations need, and
+  the measured proof size — which is the thing to fix before pointing this at a
+  real instance.
+- [Inferring `Cumulative` constraints by lifting cover inequalities](inferred-cumulative.md) —
+  the `InferredCumulative` presolver: cover inequalities over one posted
+  Cumulative's rows, lifted to non-unit coefficients and posted in derived mode.
+  Covers why energy is the only thing a valid cut can buy (and why that makes it
+  time-table neutral for a one-line reason), why lifting is run *forward* —
+  arithmetic first, cut second — rather than by computing the largest valid
+  coefficient and hunting for a derivation of it, the three shapes of `pol` the
+  certificate takes and why non-unit coefficients need the third, how a cut is
+  restricted to the tasks present at one time point when its heights cannot move,
+  and the differential fixture that separates this from the capacity-one stage.
+- [Certified makespan lower bounds from a `Cumulative`'s energy](certified-makespan-bounds.md) —
+  turning the `L` those two presolvers report into a number the proof contains.
+  Covers the window-energy argument under the objective's order literal, the two
+  places the derived bound is *not* `L`, why the deadline step has to be a `pol`
+  and cannot be a RUP (and so why a makespan is a variable with rows around it
+  rather than a kind of variable), the three mutations VeriPB refuses and the
+  fourth that cannot be caught, and the RCPSP bounds artefact.
 - [Restarts, nogoods, and dom/wdeg weighting](restarts-nogoods-weighting.md) —
   the search-side machinery from issue #315: the restart loop and its
   `SearchResult` unwind signal, `RestartSchedule`, the `ConflictObserver`

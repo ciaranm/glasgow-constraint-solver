@@ -1,0 +1,31 @@
+% A small plain-RCPSP instance in the MiniZinc data format that goes with the
+% standard rcpsp.mzn, for the --dzn reader. Written by hand rather than taken
+% from a benchmark set, so it is small enough to prove quickly and there is no
+% licence question about redistributing it.
+%
+% Tasks 1, 2 and 3 are pairwise incompatible, but each pair is witnessed by a
+% *different* resource: (1,3) by resource 1, (2,3) by resource 2, (1,2) by
+% resource 3. No single resource sees more than one of the three pairs, so no
+% single Cumulative can tell that all three must be serialised --- only the
+% clique across all of them says so. That is exactly the cross-resource shape
+% the InferredDisjunctive presolver is for, and --infer-disjunctive on this file
+% derives a capacity bound of 6, which is also the optimal makespan.
+%
+% Task 4 uses a resource without conflicting with anything, and is a successor
+% of task 1, so `suc` is not uniformly empty and the demand matrix has a row
+% that is not part of any conflict.
+
+n_res = 3;
+rc = [ 10, 10, 10 ];
+
+n_tasks = 4;
+d = [ 2, 2, 2, 1 ];
+
+rr = [| 6, 0, 6, 1
+      | 0, 6, 6, 0
+      | 6, 6, 0, 1 |];
+
+suc = [ { 4 },
+        {  },
+        {  },
+        {  } ];

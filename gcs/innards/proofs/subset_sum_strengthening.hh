@@ -105,7 +105,7 @@ namespace gcs::innards
      * deriving: it is what later cutting-planes arithmetic can use. This is the
      * integrality argument behind a knapsack-augmented overload check's
      * availability bound (issue #550), Schulz's capacity reduction (#547) and
-     * single-resource lifting certificates (#549).
+     * lifted cover cut certificates (#549).
      *
      * Two derivations, chosen automatically:
      *

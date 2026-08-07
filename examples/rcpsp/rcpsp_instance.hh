@@ -29,6 +29,8 @@
 // this example is part of the proof benchmark set (issues #632, #633), and the
 // default instance family, horizon and posting order have to stay put.
 
+#include <examples/dzn.hh>
+
 #include <gcs/integer.hh>
 
 #include <algorithm>
@@ -161,16 +163,16 @@ namespace rcpsp
                 succ[static_cast<std::size_t>(i)].emplace_back(j, inst.durations[static_cast<std::size_t>(i)].raw_value);
 
             std::vector<std::vector<long long>> lp(n, std::vector<long long>(n, unreachable));
-            for (int i = inst.n_tasks - 1; i >= 0; --i) {
-                auto ui = static_cast<std::size_t>(i);
+            for (auto ui = n; ui-- > 0;) {
                 lp[ui][ui] = 0;
-                for (const auto & [j, w] : succ[ui])
-                    for (int t = j; t < inst.n_tasks; ++t) {
-                        auto ut = static_cast<std::size_t>(t);
-                        auto via = lp[static_cast<std::size_t>(j)][ut];
+                for (const auto & [j, w] : succ[ui]) {
+                    auto uj = static_cast<std::size_t>(j);
+                    for (auto ut = uj; ut < n; ++ut) {
+                        auto via = lp[uj][ut];
                         if (via != unreachable && w + via > lp[ui][ut])
                             lp[ui][ut] = w + via;
                     }
+                }
             }
             return lp;
         }
@@ -282,14 +284,14 @@ namespace rcpsp
     /// resources can only push a task later.
     [[nodiscard]] inline auto earliest_starts(const Instance & inst) -> std::vector<long long>
     {
-        std::vector<std::vector<int>> preds(inst.n_tasks);
+        std::vector<std::vector<int>> preds(static_cast<std::size_t>(inst.n_tasks));
         for (const auto & [i, j] : inst.precedences)
-            preds[j].push_back(i);
+            preds[static_cast<std::size_t>(j)].push_back(i);
 
-        std::vector<long long> est(inst.n_tasks, 0);
-        for (int j = 0; j < inst.n_tasks; ++j)
+        std::vector<long long> est(static_cast<std::size_t>(inst.n_tasks), 0);
+        for (std::size_t j = 0; j < est.size(); ++j)
             for (auto & i : preds[j])
-                est[j] = std::max(est[j], est[i] + inst.durations[i].raw_value);
+                est[j] = std::max(est[j], est[static_cast<std::size_t>(i)] + inst.durations[static_cast<std::size_t>(i)].raw_value);
         return est;
     }
 
@@ -298,14 +300,16 @@ namespace rcpsp
     /// any schedule of makespan H, task i cannot start after H - d_i - tail_i.
     [[nodiscard]] inline auto tails(const Instance & inst) -> std::vector<long long>
     {
-        std::vector<std::vector<int>> succs(inst.n_tasks);
+        std::vector<std::vector<int>> succs(static_cast<std::size_t>(inst.n_tasks));
         for (const auto & [i, j] : inst.precedences)
-            succs[i].push_back(j);
+            succs[static_cast<std::size_t>(i)].push_back(j);
 
-        std::vector<long long> tail(inst.n_tasks, 0);
-        for (int i = inst.n_tasks - 1; i >= 0; --i)
-            for (auto & j : succs[i])
-                tail[i] = std::max(tail[i], inst.durations[j].raw_value + tail[j]);
+        std::vector<long long> tail(static_cast<std::size_t>(inst.n_tasks), 0);
+        for (auto i = tail.size(); i-- > 0;)
+            for (auto & j : succs[i]) {
+                auto uj = static_cast<std::size_t>(j);
+                tail[i] = std::max(tail[i], inst.durations[uj].raw_value + tail[uj]);
+            }
         return tail;
     }
 
@@ -316,7 +320,7 @@ namespace rcpsp
         auto est = earliest_starts(inst);
         auto tail = tails(inst);
         long long cp = 0;
-        for (int i = 0; i < inst.n_tasks; ++i)
+        for (std::size_t i = 0; i < est.size(); ++i)
             cp = std::max(cp, est[i] + inst.durations[i].raw_value + tail[i]);
         return cp;
     }
@@ -332,15 +336,17 @@ namespace rcpsp
             return false;
 
         long long horizon = 0;
-        for (int i = 0; i < inst.n_tasks; ++i) {
+        for (std::size_t i = 0; i < starts.size(); ++i) {
             if (starts[i] < 0)
                 return false;
             horizon = std::max(horizon, starts[i] + inst.durations[i].raw_value);
         }
 
-        for (const auto & [i, j] : inst.precedences)
-            if (starts[i] + inst.durations[i].raw_value > starts[j])
+        for (const auto & [i, j] : inst.precedences) {
+            auto ui = static_cast<std::size_t>(i);
+            if (starts[ui] + inst.durations[ui].raw_value > starts[static_cast<std::size_t>(j)])
                 return false;
+        }
 
         // The generalised lags too, minimum and maximum alike. This is what lets
         // the caller keep using a heuristic schedule's makespan as the horizon on
@@ -355,7 +361,7 @@ namespace rcpsp
 
         for (std::size_t r = 0; r < inst.capacities.size(); ++r) {
             std::vector<long long> load(horizon, 0);
-            for (int i = 0; i < inst.n_tasks; ++i)
+            for (std::size_t i = 0; i < starts.size(); ++i)
                 for (auto t = starts[i]; t < starts[i] + inst.durations[i].raw_value; ++t)
                     load[t] += inst.demands[r][i].raw_value;
             for (auto & l : load)
@@ -364,10 +370,12 @@ namespace rcpsp
         }
 
         std::vector<int> busy(horizon, 0);
-        for (auto & i : inst.machine_tasks)
+        for (auto & m : inst.machine_tasks) {
+            auto i = static_cast<std::size_t>(m);
             for (auto t = starts[i]; t < starts[i] + inst.durations[i].raw_value; ++t)
                 if (busy[t]++)
                     return false;
+        }
 
         return true;
     }
@@ -390,20 +398,22 @@ namespace rcpsp
 
         std::vector<std::vector<long long>> load(inst.capacities.size(), std::vector<long long>(total, 0));
         std::vector<int> busy(total, 0);
-        std::vector<char> needs_machine(inst.n_tasks, 0);
+        std::vector<char> needs_machine(static_cast<std::size_t>(inst.n_tasks), 0);
         for (auto & i : inst.machine_tasks)
-            needs_machine[i] = 1;
+            needs_machine[static_cast<std::size_t>(i)] = 1;
 
-        std::vector<std::vector<int>> preds(inst.n_tasks);
+        std::vector<std::vector<int>> preds(static_cast<std::size_t>(inst.n_tasks));
         for (const auto & [i, j] : inst.precedences)
-            preds[j].push_back(i);
+            preds[static_cast<std::size_t>(j)].push_back(i);
 
-        std::vector<long long> start(inst.n_tasks, 0);
-        for (int i = 0; i < inst.n_tasks; ++i) {
+        std::vector<long long> start(static_cast<std::size_t>(inst.n_tasks), 0);
+        for (std::size_t i = 0; i < start.size(); ++i) {
             auto len = inst.durations[i].raw_value;
             long long t = 0;
-            for (auto & p : preds[i])
-                t = std::max(t, start[p] + inst.durations[p].raw_value);
+            for (auto & p : preds[i]) {
+                auto up = static_cast<std::size_t>(p);
+                t = std::max(t, start[up] + inst.durations[up].raw_value);
+            }
 
             for (;; ++t) {
                 if (t + len > total)
@@ -441,7 +451,7 @@ namespace rcpsp
     [[nodiscard]] inline auto makespan_of(const Instance & inst, const std::vector<long long> & starts) -> long long
     {
         long long m = 0;
-        for (int i = 0; i < inst.n_tasks; ++i)
+        for (std::size_t i = 0; i < starts.size(); ++i)
             m = std::max(m, starts[i] + inst.durations[i].raw_value);
         return m;
     }
@@ -463,8 +473,8 @@ namespace rcpsp
     [[nodiscard]] inline auto default_horizon(const Instance & inst) -> long long
     {
         std::vector<long long> per_task(static_cast<std::size_t>(inst.n_tasks), 0);
-        for (int i = 0; i < inst.n_tasks; ++i)
-            per_task[static_cast<std::size_t>(i)] = inst.durations[static_cast<std::size_t>(i)].raw_value;
+        for (std::size_t i = 0; i < per_task.size(); ++i)
+            per_task[i] = inst.durations[i].raw_value;
 
         // A precedence's own weight is the tail's duration, so it never raises
         // the term above; only a generalised minimum lag can.
@@ -623,6 +633,94 @@ namespace rcpsp
         if (! in)
             throw std::runtime_error{"could not open instance file: " + path};
         return read_sch_stream(in, "file " + path);
+    }
+
+    /// Read a plain RCPSP instance in the MiniZinc data format that goes with
+    /// the standard `rcpsp.mzn` model, as distributed in the MiniZinc
+    /// benchmarks: the Pack, Pack_d, PSPLib (j30/j60/j120), la_x, ksd15_d and
+    /// bl collections.
+    ///
+    /// The file defines `n_res`, the capacities `rc`, `n_tasks`, the durations
+    /// `d`, the demands `rr` as a `[Res, Tasks]` matrix, and the successors
+    /// `suc` as an array of sets of one-based task indices. RCPSP/max data files
+    /// name the same things `rcap`, `dur` and `dcons` instead and carry time
+    /// lags rather than precedences; those are a different format and belong in
+    /// read_sch_stream, not here.
+    ///
+    /// This is plain RCPSP, so the instance comes back with no time lags, no
+    /// machine tasks and no pinned source: `suc` is finish-to-start throughout.
+    ///
+    /// \warning Only the resource and precedence structure is read. The
+    /// redundant pairwise non-overlap constraints that `rcpsp.mzn` itself posts
+    /// are deliberately **not** reproduced --- they are a modelling choice of
+    /// that file, not part of the instance, and posting them changes what a
+    /// presolver looking for cross-resource conflicts has left to find.
+    [[nodiscard]] inline auto read_dzn_file(const std::string & path) -> Instance
+    {
+        auto data = dzn::read(path);
+
+        Instance inst;
+        inst.n_tasks = static_cast<int>(data.integer("n_tasks"));
+        auto n_res = static_cast<std::size_t>(data.integer("n_res"));
+        if (inst.n_tasks < 1)
+            throw std::runtime_error{"'" + path + "' has no tasks"};
+
+        for (auto & c : data.integers("rc"))
+            inst.capacities.push_back(gcs::Integer{c});
+        if (inst.capacities.size() != n_res)
+            throw std::runtime_error{
+                "'" + path + "' gives " + std::to_string(inst.capacities.size()) + " capacities for " + std::to_string(n_res) + " resources"};
+
+        for (auto & p : data.integers("d")) {
+            if (p < 1)
+                throw std::runtime_error{
+                    "'" + path + "' has a task of duration " + std::to_string(p) + "; this model needs every duration to be at least one"};
+            inst.durations.push_back(gcs::Integer{p});
+        }
+        if (static_cast<int>(inst.durations.size()) != inst.n_tasks)
+            throw std::runtime_error{
+                "'" + path + "' gives " + std::to_string(inst.durations.size()) + " durations for " + std::to_string(inst.n_tasks) + " tasks"};
+
+        auto rr = data.matrix("rr");
+        if (rr.size() != n_res)
+            throw std::runtime_error{"'" + path + "' gives demands for " + std::to_string(rr.size()) + " resources, not " + std::to_string(n_res)};
+        inst.demands.assign(n_res, std::vector<gcs::Integer>(static_cast<std::size_t>(inst.n_tasks), gcs::Integer{0}));
+        for (std::size_t r = 0; r != n_res; ++r) {
+            if (static_cast<int>(rr[r].size()) != inst.n_tasks)
+                throw std::runtime_error{"'" + path + "' gives " + std::to_string(rr[r].size()) + " demands for resource " + std::to_string(r) +
+                    ", not " + std::to_string(inst.n_tasks)};
+            for (std::size_t i = 0; i != rr[r].size(); ++i) {
+                if (rr[r][i] < 0)
+                    throw std::runtime_error{"'" + path + "' has a negative demand"};
+                inst.demands[r][i] = gcs::Integer{rr[r][i]};
+            }
+        }
+
+        // `suc` is one-based, and every collection in the MiniZinc benchmarks
+        // lists it in topological order. earliest_starts(), tails() and
+        // longest_paths() all walk the tasks in index order and rely on that, so
+        // a file that broke it would give silently wrong bounds rather than an
+        // error --- hence the check rather than a sort.
+        auto suc = data.sets("suc");
+        if (static_cast<int>(suc.size()) != inst.n_tasks)
+            throw std::runtime_error{
+                "'" + path + "' gives successors for " + std::to_string(suc.size()) + " tasks, not " + std::to_string(inst.n_tasks)};
+        for (std::size_t at = 0; at != suc.size(); ++at) {
+            auto i = static_cast<int>(at);
+            for (auto & one_based : suc[at]) {
+                auto j = static_cast<int>(one_based) - 1;
+                if (j < 0 || j >= inst.n_tasks)
+                    throw std::runtime_error{"'" + path + "' has a precedence to a nonexistent task"};
+                if (j <= i)
+                    throw std::runtime_error{"'" + path + "' lists task " + std::to_string(one_based) + " as a successor of task " +
+                        std::to_string(i + 1) + ", so the tasks are not in topological order; this reader needs them to be"};
+                inst.precedences.emplace_back(i, j);
+            }
+        }
+
+        inst.description = "dzn " + path + " n=" + std::to_string(inst.n_tasks) + " resources=" + std::to_string(n_res) +
+            " precedences=" + std::to_string(inst.precedences.size());
+        return inst;
     }
 }
 

@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_CUMULATIVE_CUMULATIVE_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/innards/cumulative_mutations.hh>
 #include <gcs/innards/proofs/constraint_proof_model_data.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_only_variables-fwd.hh>
@@ -43,113 +44,6 @@ namespace gcs
         /// effect unless \ref overload is also set.
         bool profile_overload = true;
     };
-
-    /**
-     * \brief Deliberate corruptions of the overload check's derivation, for
-     * testing only.
-     *
-     * A proof that verifies is necessary but not sufficient: if the honest
-     * derivation has slack in it, a wrong one verifies too, and the rule's
-     * arithmetic is then not being checked by anything. Each of these breaks
-     * one step of the emitted derivation in a way that must make VeriPB
-     * *reject* the proof; a mutation that still verifies is a finding about the
-     * honest derivation, not about the mutation.
-     *
-     * These change nothing but the proof: the same conflicts are found, the
-     * same solutions reported, and the OPB is untouched.
-     *
-     * \ingroup Constraints
-     */
-    namespace cumulative_proof_mutation
-    {
-        /// Emit the honest derivation.
-        struct None
-        {
-        };
-
-        /// Claim one more unit of activity than the window-energy lemma
-        /// derived, for the first task in the window.
-        struct OverstateWindowEnergy
-        {
-        };
-
-        /// Leave the last time point's capacity line out of the conflict's
-        /// pol, so the window appears to supply one time point less than the
-        /// energy argument was told.
-        struct OmitCapacityLine
-        {
-        };
-
-        /// Derive each task's window energy over a window one time point
-        /// short, which is honest but weaker than the conflict needs.
-        struct ShrinkLemmaWindow
-        {
-        };
-    }
-
-    using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
-        cumulative_proof_mutation::OmitCapacityLine, cumulative_proof_mutation::ShrinkLemmaWindow>;
-
-    /**
-     * \brief Deliberate corruptions of the presence-falsification derivation,
-     * for testing only. VeriPB must reject each of them.
-     *
-     * A proof that verifies is necessary but not sufficient, so something has
-     * to check that the derivation is doing work. What that something can be is
-     * narrower here than for a bound push, and worth understanding before
-     * adding to this list: presence falsification is a *conflict-shaped* rule,
-     * whose content is "this task cannot be here at all". Once the chain has
-     * narrowed the start domain far enough, the reason context extended with
-     * "the task is present" is contradictory, and every RUP under it is
-     * vacuously valid. A mutation that merely shortens the chain therefore
-     * produces a shorter but still *sound* derivation, and VeriPB is right to
-     * accept it. Corrupting the route is not a test; corrupt the destination.
-     *
-     * So the two that bite are \ref cumulative_presence_mutation::WrongTask,
-     * which argues about a task nothing has cornered, and \ref
-     * cumulative_presence_mutation::ClaimOneTooFar, which draws the conclusion
-     * where it is false. \ref cumulative_presence_mutation::EmitNothing is the
-     * control that says the chain is required at all.
-     *
-     * All but ClaimOneTooFar change nothing except the proof: the same
-     * presences are falsified, the same solutions reported, and the OPB is
-     * untouched. ClaimOneTooFar necessarily changes the inference, since making
-     * the conclusion wrong is the whole point of it.
-     *
-     * \ingroup Constraints
-     */
-    namespace cumulative_presence_mutation
-    {
-        /// Emit the honest derivation.
-        struct None
-        {
-        };
-
-        /// Carry some other optional task's presence literal through the chain,
-        /// so the derivation argues about a task that is not the one being
-        /// falsified.
-        struct WrongTask
-        {
-        };
-
-        /// Fire on an instance where exactly one placement still fits, claiming
-        /// the task is absent when it is not. The "bound + 1 must fail" check
-        /// for this rule: it corrupts the conclusion rather than the route to
-        /// it, which is what a margin of exactly one unit is there to expose.
-        struct ClaimOneTooFar
-        {
-        };
-
-        /// Emit no chain at all, leaving the inference to the framework's
-        /// wrapping RUP. Not a corruption but a control: if VeriPB accepts
-        /// this, the chain is decoration and no mutation of it can be caught.
-        struct EmitNothing
-        {
-        };
-    }
-
-    using CumulativePresenceMutation = std::variant<cumulative_presence_mutation::None, cumulative_presence_mutation::WrongTask,
-        cumulative_presence_mutation::ClaimOneTooFar, cumulative_presence_mutation::EmitNothing>;
 
     /**
      * \brief Cumulative constraint: tasks with start times, durations, and
@@ -227,12 +121,12 @@ namespace gcs
         // conjunct, because the OPB has to stand on its own and it is the OPB,
         // not the initial State, that a checker reads.
         std::vector<std::optional<IntegerVariableID>> _presence;
-        CumulativePresenceMutation _presence_mutation = cumulative_presence_mutation::None{};
+        innards::CumulativePresenceMutation _presence_mutation = innards::cumulative_presence_mutation::None{};
         std::vector<std::size_t> _active_tasks;
         std::vector<Integer> _per_task_t_lo;
         std::vector<Integer> _per_task_t_hi;
         CumulativeRules _rules;
-        CumulativeProofMutation _proof_mutation = cumulative_proof_mutation::None{};
+        innards::CumulativeProofMutation _proof_mutation = innards::cumulative_proof_mutation::None{};
         // Overload checking, resolved in prepare(). _overload_tasks lists the
         // tasks the window-energy lemma can speak about (constant length and
         // height, and a start whose order literals the lemma can bridge to);
@@ -309,13 +203,13 @@ namespace gcs
 
         /// Corrupt one step of the overload check's derivation. For tests
         /// only, which assert that VeriPB rejects the result; see
-        /// CumulativeProofMutation.
-        auto with_proof_mutation(CumulativeProofMutation mutation) -> Cumulative &;
+        /// innards::CumulativeProofMutation.
+        auto with_proof_mutation(innards::CumulativeProofMutation mutation) -> Cumulative &;
 
         /// Corrupt one step of the presence-falsification derivation. For tests
         /// only, which assert that VeriPB rejects the result; see
-        /// CumulativePresenceMutation.
-        auto with_presence_mutation(CumulativePresenceMutation mutation) -> Cumulative &;
+        /// innards::CumulativePresenceMutation.
+        auto with_presence_mutation(innards::CumulativePresenceMutation mutation) -> Cumulative &;
 
         /**
          * \name The arguments this constraint was posted with.
@@ -330,8 +224,9 @@ namespace gcs
         [[nodiscard]] auto lengths() const -> const std::vector<IntegerVariableID> &;
         [[nodiscard]] auto heights() const -> const std::vector<IntegerVariableID> &;
         /// Empty for the non-optional constructors, which is how a caller asks
-        /// "is this an optional-task Cumulative?" --- DerivedCumulativeSpec
-        /// requires a donor for which this is empty.
+        /// "is this an optional-task Cumulative?" --- and what a deriver hands
+        /// straight to derived_cumulative_tasks_from, whose default argument
+        /// says the same thing.
         [[nodiscard]] auto presences() const -> const std::vector<IntegerVariableID> &;
         [[nodiscard]] auto capacity() const -> IntegerVariableID;
         ///@}
@@ -389,6 +284,70 @@ namespace gcs
         [[nodiscard]] static auto after_flag_key(std::size_t task, Integer t) -> innards::ProofFlagKey;
         [[nodiscard]] static auto active_flag_key(std::size_t task, Integer t) -> innards::ProofFlagKey;
         ///@}
+
+        /**
+         * \brief The key of one bit of a variable-height task's linearised load
+         * contribution at time `t`: the row's terms for such a task are
+         * `2^bit` times these, rather than `height x active`.
+         *
+         * How many bits there are is a fact about the height's initial upper
+         * bound, and is not published separately: ask
+         * NamesAndIDsTracker::find_proof_flag_values for bit zero, one, two and
+         * so on until it has none, which is the same "is it there?" question a
+         * citer asks about every other key here. A constant-height task has
+         * none at all.
+         */
+        [[nodiscard]] static auto contribution_flag_key(std::size_t task, Integer t, Integer bit) -> innards::ProofFlagKey;
+
+        /**
+         * \name The rows defining a variable-height task's linearised load
+         * contribution at time `t`.
+         *
+         * Three halves of one statement: `ge` and `le` say the contribution
+         * *is* the height while the task is active, and `zero` says it is
+         * nothing while it is not. The `ge` one is what converts such a task's
+         * bit terms back into `lb(height) x active` for a constraint derived
+         * over this one, which is all anything cites today; the other two are
+         * published because they are the same family, in the way `before` and
+         * `after` are published beside `active`.
+         *
+         * These are `cake_pb_cp`'s own names for the rows, as
+         * \ref capacity_row_role is: cake emits all three under the same
+         * labels, over the same terms, so a proof citing one resolves against
+         * its re-derived OPB as well as against ours. Renaming them is
+         * therefore a cross-tool break rather than an internal one.
+         *
+         * A constant-height task has none. Ask
+         * NamesAndIDsTracker::constraint_row_label, which is how a citer
+         * discovers that.
+         */
+        ///@{
+        [[nodiscard]] static auto contribution_ge_row_role(std::size_t task, Integer t) -> std::string;
+        [[nodiscard]] static auto contribution_le_row_role(std::size_t task, Integer t) -> std::string;
+        [[nodiscard]] static auto contribution_zero_row_role(std::size_t task, Integer t) -> std::string;
+        ///@}
+
+        /**
+         * \brief The role of the line saying the proof-only end proxy for this
+         * task is at least its start plus its length.
+         *
+         * This is the one publication here that is not about the OPB: a task
+         * whose start and length both vary has its `after` flag reified on the
+         * two-variable `start + length`, which no RUP reaches from the
+         * operands' bounds, so the propagator goes through a proof-only
+         * `end = start + length` instead --- and the line handing it that
+         * variable's lower bound is what any pin of `after` has to be built on.
+         * The install initialiser derives it, so ask
+         * NamesAndIDsTracker::find_derived_line rather than
+         * constraint_row_label.
+         *
+         * Nullopt from there means the same thing it means for a flag: there is
+         * nothing to cite, so do not do the thing that would need citing. A
+         * constant length or a constant start needs no proxy and publishes
+         * none; nor does a proof written with assertions on, which omits the
+         * definition along with everything else it asserts.
+         */
+        [[nodiscard]] static auto end_lower_bound_role(std::size_t task) -> std::string;
     };
 }
 

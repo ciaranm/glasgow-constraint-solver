@@ -1,0 +1,6 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_INFERRED_CUMULATIVE_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_INFERRED_CUMULATIVE_HH
+
+#include <gcs/presolvers/inferred_cumulative/inferred_cumulative.hh>
+
+#endif

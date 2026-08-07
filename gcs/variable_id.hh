@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <variant>
+#include <vector>
 
 namespace gcs
 {
@@ -114,6 +115,23 @@ namespace gcs
     }
 
     /**
+     * \brief The value a constant IntegerVariableID stands for.
+     *
+     * Throws `std::bad_variant_access` when it is not a constant, so ask
+     * gcs::is_constant_variable() first --- or do not, where the caller already
+     * knows: a constraint that resolved its arguments once and kept the answer
+     * is entitled to say so, and a throw beats a wrong number.
+     *
+     * \sa IntegerVariableID
+     * \sa gcs::is_constant_variable()
+     * \ingroup Core
+     */
+    [[nodiscard]] constexpr inline auto constant_value_of(const IntegerVariableID & v) -> Integer
+    {
+        return std::get<ConstantIntegerVariableID>(v).const_value;
+    }
+
+    /**
      * \brief Create an IntegerVariableID for a constant value.
      *
      * \sa IntegerVariableID
@@ -123,6 +141,23 @@ namespace gcs
     [[nodiscard]] constexpr inline auto constant_variable(const Integer x) -> IntegerVariableID
     {
         return ConstantIntegerVariableID{x};
+    }
+
+    /**
+     * \brief gcs::constant_variable() over a whole vector, for a constraint
+     * whose variable-argument constructor is the one that does the work.
+     *
+     * \sa IntegerVariableID
+     * \sa gcs::constant_variable()
+     * \ingroup Core
+     */
+    [[nodiscard]] inline auto as_constant_variables(const std::vector<Integer> & values) -> std::vector<IntegerVariableID>
+    {
+        std::vector<IntegerVariableID> result;
+        result.reserve(values.size());
+        for (const auto & v : values)
+            result.push_back(constant_variable(v));
+        return result;
     }
 
     /**

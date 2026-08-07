@@ -116,6 +116,11 @@ namespace
         // variable's values). Value-keyed like the literal tables.
         std::unordered_map<long long, AtomDefs> eq_defs;
         std::unordered_map<long long, AtomDefs> ge_defs;
+        // The line pinning a boundary ge atom to the value the variable's
+        // declared bounds force, for the atoms that got one (see fix_bound in
+        // need_gevar). Filled when the pin is actually emitted, which for an
+        // atom needed during model building is at proof start rather than here.
+        std::unordered_map<long long, ProofLine> ge_pins;
     };
 
     struct HashView
@@ -190,6 +195,13 @@ struct NamesAndIDsTracker::Imp
     // during model definition, read-only afterwards story as
     // emitted_constraint_row_labels, and for the same reason.
     map<string, optional<ProofFlag>> constraint_keyed_flags;
+
+    // Every line an install initialiser published for someone else to cite, by
+    // (id, role); see publish_derived_line. Unlike the two above this holds
+    // proof line numbers, so it is per-solve state rather than a set derived
+    // from names --- the same story as the boundary pins a few fields down, and
+    // written at the same point in the solve, before the search starts.
+    map<string, ProofLine> published_derived_lines;
 
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
     // Indexed by variable index (variables are allocated with sequential
@@ -476,6 +488,17 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
         } //
     }
         .visit(var);
+}
+
+auto NamesAndIDsTracker::boundary_pin_line(const SimpleOrProofOnlyIntegerVariableID & id, Integer v) const -> optional<ProofLine>
+{
+    auto atoms = _imp->find_atoms(id);
+    if (! atoms)
+        return nullopt;
+    auto pin = atoms->ge_pins.find(v.raw_value);
+    if (pin == atoms->ge_pins.end())
+        return nullopt;
+    return pin->second;
 }
 
 auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, XLiteral>
@@ -945,17 +968,21 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         // throughout both enumeration and refutation. emit_proof_line_now_or_at_start
         // queues it to proof start when the logger is not yet attached (model
         // building) and emits it immediately otherwise.
-        emit_proof_line_now_or_at_start([id, v, negated](ProofLogger * const logger) {
+        emit_proof_line_now_or_at_start([this, id, v, negated](ProofLogger * const logger) {
             if (logger->get_assertion_level() > AssertionLevel::Links)
                 return;
             ProofRule assert_or_rup =
                 logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
             auto annotation = AssertionAnnotation{.hint_name = hints::InitialBound::hint_name};
-            visit(
+            auto line = visit(
                 [&](auto vid) {
-                    logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::Top, annotation);
+                    return logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::Top, annotation);
                 },
                 id);
+            // Remembered so that a step wanting this fact can cite it instead of
+            // emitting the same unit again --- which is what the pin being a
+            // persistent top-of-proof line is for.
+            _imp->atoms_for(id).ge_pins.insert_or_assign(v.raw_value, line);
         });
     };
 
@@ -1662,6 +1689,33 @@ auto NamesAndIDsTracker::find_proof_flag_values(const ConstraintID & id, const P
     // (id, values, annotation) rather than a lookup into per-solve state.
     auto found = _imp->constraint_keyed_flags.find(bracketed_flag_name('v', id, key.values, key.annotation));
     if (found == _imp->constraint_keyed_flags.end())
+        return nullopt;
+    return found->second;
+}
+
+namespace
+{
+    [[nodiscard]] auto derived_line_key(const ConstraintID & id, const string & role) -> string
+    {
+        return as_string(id) + "[" + role + "]";
+    }
+}
+
+auto NamesAndIDsTracker::publish_derived_line(const ConstraintID & id, const string & role, ProofLine line) -> void
+{
+    // Two lines under one role is the row-label defect (#613) in the namespace
+    // next door: a citer asking for the role gets one of them and has no way of
+    // knowing which, so the role does not name everything the emitting loop
+    // varies over. A hard error, for the same reason it is one there.
+    if (! _imp->published_derived_lines.emplace(derived_line_key(id, role), line).second)
+        throw ProofError{"two proof lines published under the role '" + derived_line_key(id, role) +
+            "': a role must name everything that varies, so that each line can be cited unambiguously"};
+}
+
+auto NamesAndIDsTracker::find_derived_line(const ConstraintID & id, const string & role) const -> optional<ProofLine>
+{
+    auto found = _imp->published_derived_lines.find(derived_line_key(id, role));
+    if (found == _imp->published_derived_lines.end())
         return nullopt;
     return found->second;
 }

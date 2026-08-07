@@ -12,8 +12,8 @@
 namespace gcs::innards
 {
     /**
-     * \brief How a constraint publishes the parts of its OPB output that other
-     * code is allowed to build proof steps on.
+     * \brief How a constraint publishes the parts of its proof output that
+     * other code is allowed to build proof steps on.
      *
      * Every labelled row a define_proof_model emits is, today, implicitly public
      * API: anything can construct the label `c[id][role]` and cite it. That is
@@ -39,8 +39,21 @@ namespace gcs::innards
      * NamesAndIDsTracker::constraint_row_label is the other half, and returns
      * nullopt in exactly that case.
      *
+     * Three kinds of thing get published this way, and they differ only in
+     * which half of the tracker answers. A **row** is named by a role and found
+     * by NamesAndIDsTracker::constraint_row_label. A **flag** is named by a
+     * ProofFlagKey and found by NamesAndIDsTracker::find_proof_flag_values. And
+     * a **line the constraint derived inside the proof** --- an install
+     * initialiser's work, which has no OPB row to label and no reification to
+     * key --- is named by a role and found by
+     * NamesAndIDsTracker::find_derived_line. Only the third hands back a line
+     * number, because only the third has nothing else to hand back; what is
+     * published is a role either way.
+     *
      * \ingroup Innards
      * \sa NamesAndIDsTracker::constraint_row_label
+     * \sa NamesAndIDsTracker::find_proof_flag_values
+     * \sa NamesAndIDsTracker::find_derived_line
      * \sa Problem::each_constraint_of_type_with_proof_data
      */
     template <typename Constraint_>

@@ -33,11 +33,13 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_optional;
 using std::make_shared;
 using std::make_unique;
 using std::max;
 using std::min;
 using std::move;
+using std::optional;
 using std::pair;
 using std::size_t;
 using std::string;
@@ -54,20 +56,6 @@ using fmt::print;
 
 namespace
 {
-    auto const_value_of(const IntegerVariableID & v) -> Integer
-    {
-        return std::get<ConstantIntegerVariableID>(v).const_value;
-    }
-
-    auto as_constant_var_ids(const vector<Integer> & vals) -> vector<IntegerVariableID>
-    {
-        vector<IntegerVariableID> result;
-        result.reserve(vals.size());
-        for (const auto & v : vals)
-            result.push_back(constant_variable(v));
-        return result;
-    }
-
     // The variable-height contribution h_i·active is linearised over cake's
     // per-bit contribution flags cc_k (weight 2^k): contrib = Σ 2^k · cc_k.
     auto contrib_sum_of(const vector<ProofFlag> & cc) -> WPBSum
@@ -87,18 +75,18 @@ Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<IntegerVariableI
     // Constant non-negativity is checked here; variable lengths/heights/
     // capacity are checked in prepare(), where their domains first become
     // available.
-    if (is_constant_variable(_capacity) && const_value_of(_capacity) < 0_i)
+    if (is_constant_variable(_capacity) && constant_value_of(_capacity) < 0_i)
         throw InvalidProblemDefinitionException{"Cumulative: capacity must be non-negative"};
     for (const auto & l : _lengths)
-        if (is_constant_variable(l) && const_value_of(l) < 0_i)
+        if (is_constant_variable(l) && constant_value_of(l) < 0_i)
             throw InvalidProblemDefinitionException{"Cumulative: lengths must be non-negative"};
     for (const auto & h : _heights)
-        if (is_constant_variable(h) && const_value_of(h) < 0_i)
+        if (is_constant_variable(h) && constant_value_of(h) < 0_i)
             throw InvalidProblemDefinitionException{"Cumulative: heights must be non-negative"};
 }
 
 Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<Integer> lengths, vector<Integer> heights, Integer capacity) :
-    Cumulative(move(starts), as_constant_var_ids(lengths), as_constant_var_ids(heights), constant_variable(capacity))
+    Cumulative(move(starts), as_constant_variables(lengths), as_constant_variables(heights), constant_variable(capacity))
 {
 }
 
@@ -111,7 +99,7 @@ Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<IntegerVariableI
     // A constant presence is checked here; a variable one is checked in
     // prepare(), where its domain first becomes available.
     for (const auto & p : _presences)
-        if (is_constant_variable(p) && const_value_of(p) != 0_i && const_value_of(p) != 1_i)
+        if (is_constant_variable(p) && constant_value_of(p) != 0_i && constant_value_of(p) != 1_i)
             throw InvalidProblemDefinitionException{"Cumulative: presences must be within {0, 1}"};
 }
 
@@ -143,6 +131,22 @@ auto Cumulative::clone() const -> unique_ptr<Constraint>
     return result;
 }
 
+auto gcs::innards::cumulative_task_presence(const optional<IntegerVariableID> & posted) -> CumulativeTaskPresence
+{
+    if (! posted)
+        return CumulativeTaskPresence{};
+
+    if (! is_constant_variable(*posted))
+        return CumulativeTaskPresence{*posted, false};
+
+    auto value = constant_value_of(*posted);
+    if (value == 1_i)
+        return CumulativeTaskPresence{};
+    if (value == 0_i)
+        return CumulativeTaskPresence{*posted, true};
+    throw InvalidProblemDefinitionException{"Cumulative: presences must be within {0, 1}"};
+}
+
 auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     auto n = _starts.size();
@@ -161,25 +165,23 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
         throw InvalidProblemDefinitionException{"Cumulative: capacity must be non-negative"};
 
     // Resolve each task's presence to the variable that has to appear in its
-    // active flag, or nullopt when the task is unconditionally present. Only a
-    // constant argument resolves away: a *variable* presence keeps its conjunct
-    // even if it is already fixed, because the encoding has to say what it means
-    // without appealing to a domain the OPB does not record.
+    // active flag, or nullopt when the task is unconditionally present ---
+    // by the same rule anything pinning these flags has to apply, which is why
+    // cumulative_task_presence is shared rather than open-coded here.
     _presence.assign(n, std::nullopt);
+    vector<bool> never_present(n, false);
     for (size_t i = 0; i < n; ++i) {
-        if (_presences.empty())
-            continue;
-        const auto & p = _presences[i];
-        if (is_constant_variable(p)) {
-            if (const_value_of(p) == 1_i)
-                continue;
-        }
-        else {
-            auto [lo, hi] = initial_state.bounds(p);
+        auto resolved = cumulative_task_presence(_presences.empty() ? std::nullopt : make_optional(_presences[i]));
+        _presence[i] = resolved.literal;
+        never_present[i] = resolved.never_present;
+
+        // Only now are the domains available, which is why a variable
+        // presence is range-checked here rather than in the constructor.
+        if (resolved.literal && ! is_constant_variable(*resolved.literal)) {
+            auto [lo, hi] = initial_state.bounds(*resolved.literal);
             if (lo < 0_i || hi > 1_i)
                 throw InvalidProblemDefinitionException{"Cumulative: presences must be within {0, 1}"};
         }
-        _presence[i] = p;
     }
 
     // Resolve snapshots used by define_proof_model and the propagator. For a
@@ -199,38 +201,36 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     _height_vals.reserve(n);
     _height_ub.reserve(n);
     for (const auto & l : _lengths) {
-        _length_vals.push_back(is_constant_variable(l) ? const_value_of(l) : 0_i);
+        _length_vals.push_back(is_constant_variable(l) ? constant_value_of(l) : 0_i);
         _length_lb.push_back(initial_state.lower_bound(l));
         _length_ub.push_back(initial_state.upper_bound(l));
     }
     for (const auto & h : _heights) {
-        _height_vals.push_back(is_constant_variable(h) ? const_value_of(h) : 0_i);
+        _height_vals.push_back(is_constant_variable(h) ? constant_value_of(h) : 0_i);
         _height_ub.push_back(initial_state.upper_bound(h));
     }
     if (is_constant_variable(_capacity))
-        _capacity_val = const_value_of(_capacity);
+        _capacity_val = constant_value_of(_capacity);
 
     // Tasks whose length can only ever be 0, or whose height can only ever be 0,
     // or which are constantly absent, never raise the load profile.
-    auto constantly_absent = [&](size_t i) {
-        return _presence[i].has_value() && is_constant_variable(*_presence[i]) && const_value_of(*_presence[i]) == 0_i;
-    };
     _active_tasks.reserve(n);
     for (size_t i = 0; i < n; ++i)
-        if (_length_ub[i] > 0_i && _height_ub[i] > 0_i && ! constantly_absent(i))
+        if (_length_ub[i] > 0_i && _height_ub[i] > 0_i && ! never_present[i])
             _active_tasks.push_back(i);
 
     if (_active_tasks.empty())
         return false;
 
-    // The possible-active window of task i is [lb(s_i), ub(s_i)+ub(l_i)-1]; the
-    // per-(i,t) flags span it, so it must use the largest possible duration.
+    // The per-(i,t) flags span the possible-active window, so this is the
+    // windowing everything downstream --- a derived constraint, a presolver ---
+    // has to agree with, and is why it is not written out here.
     _per_task_t_lo.assign(n, 0_i);
     _per_task_t_hi.assign(n, 0_i);
     for (auto i : _active_tasks) {
-        auto [s_lo, s_hi] = initial_state.bounds(_starts[i]);
-        _per_task_t_lo[i] = s_lo;
-        _per_task_t_hi[i] = s_hi + _length_ub[i] - 1_i;
+        auto window = cumulative_task_window(initial_state, _starts[i], _lengths[i]);
+        _per_task_t_lo[i] = window.lo;
+        _per_task_t_hi[i] = window.hi;
     }
 
     if (_rules.overload) {
@@ -242,6 +242,13 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     }
 
     return true;
+}
+
+auto gcs::innards::cumulative_task_window(const State & initial_state, const IntegerVariableID & start, const IntegerVariableID & length)
+    -> CumulativeTaskWindow
+{
+    auto [s_lo, s_hi] = initial_state.bounds(start);
+    return CumulativeTaskWindow{s_lo, s_hi + initial_state.upper_bound(length) - 1_i};
 }
 
 auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariableID> & starts, const vector<IntegerVariableID> & lengths,
@@ -257,15 +264,27 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
     // eligible is not lost to the check: whatever it must occupy still counts,
     // through the profile term of the (TTOC) strengthening.
     //
-    // Seam for optional tasks (#543): once a task can be absent, only one
-    // whose presence is fixed true may join the energy set or the profile, and
-    // its presence literal joins the reason. Nothing here consults a presence
-    // variable yet because there is not one to consult.
+    // The height half is looser than it reads. A *derived* Cumulative's tasks
+    // carry constant heights by construction, so one whose donor height was a
+    // variable arrives here already converted to the demand it guarantees and
+    // passes --- which is how an all-variable-height donor's energy gets
+    // counted at all. A posted constraint's variable height is still turned
+    // away, and need not be: the same conversion would serve. The length half
+    // is the one that genuinely binds, and #689 is what it would take.
+    //
+    // Presence is not among the tests, and deliberately so. What is asked here
+    // is whether the lemma could *ever* speak about a task, which is a question
+    // about how it was posted and is settled once; whether it may speak about
+    // it now is a question about the search, and is asked at every node, where
+    // the propagator skips a task not yet known present and carries the
+    // presence literals of the ones it did use into the reason. A task that can
+    // never be present at all is gone before this is called, `active_tasks`
+    // having dropped it.
     result.overload_tasks.clear();
     for (auto i : active_tasks) {
         if (! is_constant_variable(lengths[i]) || ! is_constant_variable(heights[i]))
             continue;
-        if (const_value_of(lengths[i]) <= 0_i || const_value_of(heights[i]) <= 0_i)
+        if (constant_value_of(lengths[i]) <= 0_i || constant_value_of(heights[i]) <= 0_i)
             continue;
         if (! std::holds_alternative<SimpleIntegerVariableID>(starts[i]))
             continue;
@@ -405,10 +424,21 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
                 for (Integer k = 0_i; k <= highest_bit_shift; ++k)
                     cc.push_back(model.names_and_ids_tracker().create_proof_flag_values(
                         _constraint_id, std::vector<long long>{static_cast<long long>(i), t.raw_value, k.raw_value}, "cc"));
+                // Labelled, with cake's own names for them: it emits all three
+                // under @c[id][i_t_cge] / [_cle] / [_cz], with the coefficients
+                // we do, so these are the labels a citer of ours resolves
+                // against cake's OPB as well as our own. The `cge` half is what
+                // converts a variable height into a constant one for a derived
+                // constraint (recover_constant_argument_row); the other two are
+                // labelled to keep the family whole rather than because
+                // anything cites them yet.
                 auto contrib = contrib_sum_of(cc);
-                model.add_constraint(contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{active});
-                model.add_constraint(contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{active});
-                model.add_constraint(contrib <= 0_i, HalfReifyOnConjunctionOf{! active});
+                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t),
+                    contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{active});
+                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_le_row_role(i, t),
+                    contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{active});
+                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_zero_row_role(i, t), contrib <= 0_i,
+                    HalfReifyOnConjunctionOf{! active});
                 _contrib_flags[i].push_back(move(cc));
             }
         }
@@ -473,13 +503,15 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         if (_presence[i] && ! is_constant_variable(*_presence[i]))
             triggers.on_instantiated.emplace_back(*_presence[i]);
 
-    // Per variable-duration task, the in-proof end = s + l definition lines
-    // {end_ge, end_le}, filled by the initialiser and read by the propagator's
-    // materialise_after_sum. Shared so the cache survives across propagator calls.
-    auto end_lines = make_shared<vector<std::optional<std::pair<ProofLine, ProofLine>>>>(_starts.size());
+    // Per variable-duration task, the in-proof `end ≥ s + l` line, filled by the
+    // initialiser and read by the propagator's materialise_after_sum. Shared so
+    // the cache survives across propagator calls --- and so that the
+    // propagator, whose inputs are built here and now, gets a line the
+    // initialiser has not derived yet.
+    auto end_ge_lines = make_shared<vector<std::optional<ProofLine>>>(_starts.size());
 
-    propagators.install_initialiser([starts = _starts, lengths = _lengths, ends = _end, active_tasks = _active_tasks, after_flags = _after_flags,
-                                        end_lines](State &, auto &, ProofLogger * const logger) -> void {
+    propagators.install_initialiser([id = constraint_id(), starts = _starts, lengths = _lengths, ends = _end, active_tasks = _active_tasks,
+                                        after_flags = _after_flags, end_ge_lines](State &, auto &, ProofLogger * const logger) -> void {
         if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
             return;
         auto & tracker = logger->names_and_ids_tracker();
@@ -487,23 +519,46 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         // extension FIRST (introduce_bits_of needs end's bits fresh for its
         // witnesses), caching end's {end_ge, end_le}. cake has no end variable,
         // so this lives entirely in the proof --- nothing in the OPB to match.
+        //
+        // end_ge is published, because a derived Cumulative over this task pins
+        // its `after` flags the same way and through the same line; end_le is
+        // the bridge lemma's business alone, and stays here.
+        vector<std::optional<ProofLine>> end_le(starts.size());
         for (auto i : active_tasks)
-            if (ends[i].has_value())
-                (*end_lines)[i] = logger->introduce_bits_of(WPBSum{} + 1_i * starts[i] + 1_i * lengths[i], *ends[i], ProofLevel::Top);
+            if (ends[i].has_value()) {
+                auto lines = logger->introduce_bits_of(WPBSum{} + 1_i * starts[i] + 1_i * lengths[i], *ends[i], ProofLevel::Top);
+                (*end_ge_lines)[i] = lines.first;
+                end_le[i] = lines.second;
+                tracker.publish_derived_line(id, ConstraintProofModelData<Cumulative>::end_lower_bound_role(i), lines.first);
+            }
         // Then, per (i, t), emit the bridge lemma `end ≥ t+1 → after`:
         //   pol( @v[id][i_t][ca][f] : ¬after → s+l ≤ t )  +  ( end ≤ s+l )
         //   = ( M·after − end + t ≥ 0 ).
         // The s+l bits cancel exactly, leaving a single-variable-in-end handle
         // that makes the propagator's after pin RUP-closable even though after
         // is reified on the two-variable s+l. end_le is the cancelling term.
+        //
+        // These need no publishing at all: they go out at ProofLevel::Top over
+        // exactly the (i, t) pairs this constraint gave the task a window for,
+        // so unit propagation finds them for whoever pins one of those flags,
+        // and a citer that could ask about a wider window would already have
+        // been turned away by the flag lookup.
         for (auto i : active_tasks) {
             if (! ends[i].has_value())
                 continue;
-            auto end_le = (*end_lines)[i]->second;
             for (const auto & after : after_flags[i]) {
                 PolBuilder lemma;
+                // `name_of` and not `pb_file_string_for`, which is the other
+                // base a flag's reification halves can be labelled under: these
+                // flags come from create_proof_flag_values_fully_reifying, and
+                // that is the overload whose `[r]` / `[f]` labels are built off
+                // `name_of`. `pb_file_string_for` is the base
+                // add_two_way_reified_constraint uses, for flags with no
+                // ConstraintID to key them. Getting it the wrong way round is
+                // loud --- there is no such label --- but it is worth not
+                // having to find that out.
                 lemma.add(ProofLineLabel{tracker.name_of(after) + "[f]"});
-                lemma.add(end_le);
+                lemma.add(*end_le[i]);
                 lemma.emit(*logger, ProofLevel::Top);
             }
         }
@@ -521,8 +576,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .active_flags = move(_active_flags),
         .contrib_flags = move(_contrib_flags),
         .per_task_t_lo = move(_per_task_t_lo),
-        .ends = move(_end),
-        .end_lines = end_lines,
+        .end_ge_lines = end_ge_lines,
         .capacity_lines = move(_capacity_lines),
         .rules = _rules,
         .proof_mutation = _proof_mutation,
@@ -555,7 +609,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     const auto & active_flags = inputs.active_flags;
     const auto & contrib_flags = inputs.contrib_flags;
     const auto & per_task_t_lo = inputs.per_task_t_lo;
-    const auto & end_lines = inputs.end_lines;
+    const auto & end_ge_lines = inputs.end_ge_lines;
     const auto & capacity_lines = inputs.capacity_lines;
     const auto & rules = inputs.rules;
     const auto & mutation = inputs.proof_mutation;
@@ -612,7 +666,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         if (! (l_is_var(i) && s_is_var(i)))
             return;
         PolBuilder sp;
-        sp.add((*end_lines)[i]->first);
+        sp.add(*(*end_ge_lines)[i]);
         sp.add_for_literal(logger->names_and_ids_tracker(), starts[i] >= s_lo);
         sp.add_for_literal(logger->names_and_ids_tracker(), lengths_var[i] >= llb(i));
         sp.emit(*logger, ProofLevel::Temporary);
@@ -1254,6 +1308,34 @@ auto ConstraintProofModelData<Cumulative>::after_flag_key(size_t task, Integer t
 auto ConstraintProofModelData<Cumulative>::active_flag_key(size_t task, Integer t) -> ProofFlagKey
 {
     return ProofFlagKey{{static_cast<long long>(task), t.raw_value}, "cact"};
+}
+
+auto ConstraintProofModelData<Cumulative>::contribution_flag_key(size_t task, Integer t, Integer bit) -> ProofFlagKey
+{
+    return ProofFlagKey{{static_cast<long long>(task), t.raw_value, bit.raw_value}, "cc"};
+}
+
+auto ConstraintProofModelData<Cumulative>::contribution_ge_row_role(size_t task, Integer t) -> string
+{
+    // cake_pb_cp's own name for this row. Must stay the string
+    // define_proof_model labels it with, and must stay cake's.
+    return std::to_string(task) + "_" + std::to_string(t.raw_value) + "_cge";
+}
+
+auto ConstraintProofModelData<Cumulative>::contribution_le_row_role(size_t task, Integer t) -> string
+{
+    return std::to_string(task) + "_" + std::to_string(t.raw_value) + "_cle";
+}
+
+auto ConstraintProofModelData<Cumulative>::contribution_zero_row_role(size_t task, Integer t) -> string
+{
+    return std::to_string(task) + "_" + std::to_string(t.raw_value) + "_cz";
+}
+
+auto ConstraintProofModelData<Cumulative>::end_lower_bound_role(size_t task) -> string
+{
+    // Must stay the string install_propagators' initialiser publishes under.
+    return "end_ge_" + std::to_string(task);
 }
 
 auto Cumulative::constraint_type() const -> std::string

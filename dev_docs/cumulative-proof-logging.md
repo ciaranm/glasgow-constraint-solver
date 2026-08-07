@@ -11,6 +11,22 @@ time-table algorithm — read `gcs/constraints/cumulative/cumulative.{hh,cc}`. F
 the broader proof-logging framework (justifications, the OPB scaffold,
 `emit_rup_proof_line_under_reason`), read [`constraints.md`](constraints.md).
 
+## What is and is not covered
+
+Worth stating plainly, because "we can certify cumulative scheduling" is an
+easy thing to write and a wrong thing to claim. Certified here: **time-tabling**
+(the overflow check and both bound pushes), the **overload check** and the
+window-energy lemma under it, **derived-constraint inference** (capacity
+strengthening, conflict cliques, lifted cover cuts), and **makespan lower
+bounds** — over optional tasks and over variable durations, heights and
+capacities.
+
+Not here: **edge-finding**, **not-first / not-last**, and **TTEF / KAOC**
+(#550, #696). Those are the propagation rules a competitive cumulative solver
+also runs, so the claim to make is "a wide range of commonly used techniques",
+not completeness. The Open follow-ups section at the end says what each would
+take.
+
 ## What's hard about it
 
 The TT propagator on its own is textbook. The proof-logging is not: the
@@ -554,24 +570,67 @@ the capacity times its width, and that is not a multiple of three. Seven
 unit-length tasks of height three need 21 units in `[0, 3)`, which eight
 supplies and six does not.
 
-### Multi-donor, for later
+The real presolver built on that recipe is `CumulativeStrengthening` — see
+[cumulative-strengthening.md](cumulative-strengthening.md), which turns the
+invisibility above into an automated soundness tripwire rather than a caveat.
+
+### Multi-donor
 
 Issues #548 and #549 infer a Cumulative over tasks drawn from *several* donors,
-each with its own flag copies for the same `(task, time)` semantics. Two ways to
-make one derivation speak about all of them:
+each with its own flag copies for the same `(task, time)` semantics. Two things
+make that work, and both are now here.
 
-1. **Bridge lemmas.** Pick one donor's flags as canonical and derive
-   `active^{(r)}_{i,t} ↔ active^{(1)}_{i,t}` per `(i, t)`, by `pol` over the two
-   reification halves — the start variable's bits cancel, exactly as in the
-   window-energy bridges above. O(tasks × times) extra Top lines per extra
-   donor, and it needs no new API: both donors' rows are citable by name.
-2. **Rewrite each donor's row.** One `pol` pass per row, over the flag-defining
-   rows directly, landing on the canonical flags without ever stating the
-   bridge.
+**The spec is per task.** `DerivedCumulativeTask` names the donor and the
+position within it for each task separately, so a constraint whose members come
+from different donors needs nothing special — `derived_cumulative_tasks_from`
+builds the all-of-one-donor case, which is still the common one. `row_donors`
+is separate from the tasks' donors, because a pairwise conflict is witnessed by
+whichever resource cannot hold both tasks, and that need not be where either
+task's flags are taken from. The recipe is handed the rows those donors wrote
+for that time point, by donor, and may return nullopt to decline a time point it
+cannot derive — which declines the whole constraint, since the propagator cites
+a row at every time it covers.
 
-Neither is implemented here. The first is the safer starting point (each lemma
-is checkable on its own); the second is smaller if it works. Whichever lands
-should measure the proof size, since that is the whole difference between them.
+**The bridge is one `pol`.** `recover_flag_bridge`
+([`flag_bridge.hh`](../gcs/innards/proofs/flag_bridge.hh)) turns one donor's
+flag into another's. A fully reified flag emits `g → ineq` under `[r]` and
+`ineq → g` under `[f]`; adding one flag's `[r]` to another's `[f]` puts the two
+inequalities in with opposite signs, so their terms cancel — every bit of every
+variable they mention — and saturation leaves the two-literal clause. The
+sketch this replaces assumed order literals and bit reasoning would be needed;
+they are not.
+
+`active ⇔ before ∧ after` needs one more step, since two `active` flags are
+reified over *different* flags and so do not cancel against each other.
+`recover_conjunction_flag_bridge` bridges the conjuncts first, after which each
+appears with both signs and drops out. Three `pol`s per `(task, time, donor
+pair)`.
+
+What the derivation needs is not that the conditions match but that the
+constants leave something behind: for `e ≤ p` and `e ≤ q` the sum has degree
+`q − p + 1`, so it goes through exactly when the implication is true. Identical
+conditions are the case this is for; a weaker target also works, a stronger one
+correctly does not.
+
+Two traps, both guarded. The halves are labelled from the flag's **full PB
+rendering**, not `name_of`, whose plain-flag form is the bare stem — the
+window-energy bridges get away with `name_of` only because `Cumulative`'s flags
+are values-named. And a negated flag has no halves of its own, so bridging one
+is refused rather than silently naming the positive flag's rows.
+
+`recover_bridged_row` composes the bridges with the row itself, which is what
+[#549's lifted cover cuts](inferred-cumulative.md) need: weaken a donor's row
+down to the members of a cut, add each member's bridge as many times as its
+coefficient, and the same inequality comes back over another donor's flags. The
+result is pinned, since a bridge pointing the wrong way is otherwise a mistake
+that only shows up thousands of lines later.
+
+Proof size is the thing to watch: the bridges are O(tasks × times) lines per
+extra donor. #548's are emitted at `Top`, where none of them ever dies, which is
+[#666](https://github.com/ciaranm/glasgow-constraint-solver/issues/666). A recipe
+that raises the level around its own working before bridging does not have that
+problem --- `InferredCumulative`'s does, and only the row it hands back
+survives.
 ## Optional tasks (issue #543)
 
 The optional-task constructor gives each task a `{0, 1}` presence
@@ -690,12 +749,314 @@ at the point of use.
 Falsifying a presence *by* an energy argument, rather than by the
 profile, is issue 09's extension and is not here.
 
-A *derived* Cumulative (issue 04) declines the whole question: it fills
-its `presence` with nullopts, and `DerivedCumulativeSpec` says the donor
-must not be optional. Deriving over an optional donor would need the
-donor's presence literals in every reason the derived constraint gives,
-which is future work --- and the presolvers of issues 06-08 are specified
-to bail out on optional Cumulatives for v1 anyway.
+### Deriving over a donor that is not all constants
+
+Everything a derived constraint's recipe does is an argument about rows of the
+form `Σ h_i·active_{i,t} ≤ C`, and a donor only writes those when its arguments
+are constants. `CumulativeDonorView`
+([`donor_view.hh`](../gcs/constraints/cumulative/donor_view.hh)) is what reduces
+a donor to the part of itself that is, and the reduction is per **task**: one
+task with a variable height no longer costs a whole donor its strengthening, it
+costs that task its term.
+
+A variable **length** is not a reduction at all, and the difference is worth
+being clear about. No length appears in a capacity row, so the rows are the same
+rows and a recipe reads them identically. What a variable length costs is the
+`after` pin, and that is bought back rather than given up — see *A task whose
+length is a variable*, below.
+
+A variable **height** is a restriction, but a payable one — see *A task whose
+height is a variable*, below. What is left as a genuine set-aside is a height
+that cannot be argued about at all: a view, or one whose lower bound is zero.
+
+`recover_constant_argument_row` does the proof half, and it is one `pol`:
+
+- **A set-aside task** is weakened out of the row with `w`. For a constant
+  height that is one `w` on its activity flag; for a variable height the row's
+  terms for it are the bits of the linearised contribution, so every one of them
+  goes, which is what
+  `ConstraintProofModelData<Cumulative>::contribution_flag_key` is published for.
+  How many bits there are is not published: ask for bit zero, one, two and so on
+  until the tracker has none, the same "is it there?" question a citer asks of
+  every other key.
+
+  Only the variable-height half is a tripwire. Remove the constant-height `w` and
+  every proof still verifies, because a recipe pins what it returns with an `ia`
+  and dropping a non-negative term from the left of a `≤` is a valid implication
+  — the pin weakens it away for free. It is written anyway so that the row a
+  recipe argues over is the row it claims. **Do not delete it as untested.**
+
+- **A variable capacity** is replaced by a number. The row has `− capacity` on
+  its left, so the bits have to cancel against something, and the something is
+  the *order literal* for the bound the capacity has now:
+  `need_pol_item_defining_literal` hands back the definition of
+  `[capacity ≥ b+1]`, whose bits cancel exactly and which leaves the atom behind
+  with a coefficient of its own. Going through the literal rather than citing the
+  capacity's OPB bound row is what lets this use the bound the capacity has *now*
+  — a presolver reads a live `State`, and the declared bound is a weaker number
+  the moment anything has tightened it.
+
+  What is left is paid off in the same `pol`, by the unit line saying the atom is
+  false, added as many times as its coefficient. That coefficient is
+  `(everything the encoding could reach) − b`, worked out with
+  `get_bits_encoding_coeffs` over the range `tracked_bounds` says the variable
+  was encoded over — the same primitive the encoding is built with, rather than
+  anything this file assumes about its shape. Get it wrong and the recipe's `ia`
+  refuses the row immediately, which is what
+  `cumulative_strengthening_var_capacity` checks.
+
+  The unit line holds *permanently*: the bound it denies is the one the capacity
+  had before the search started. So what comes back is an unconditional row, not
+  one carrying a condition into every reason — which it has to be, since the
+  propagator's `pol`s cancel against it term by term.
+
+With nothing to do — the all-constant case, and so the common one — the row is
+handed back untouched: no `pol`, no line, and a proof byte-identical to the one
+written before any of this existed.
+
+What stays declined is a capacity that is a **view**, whose bits are not the ones
+the row mentions, so there is no order literal whose definition would cancel
+them.
+
+### A task whose length is a variable
+
+Nothing in a capacity row mentions a length, so a derived constraint over such a
+task derives exactly the row it would otherwise. What breaks is the pin.
+`after_{i,t}` for a constant length is `s_i ≥ t − l + 1`, single-variable and
+RUP-closable from the start's bounds; for a variable one it is reified on
+`s_i + l_i ≥ t+1`, which no RUP reaches from the operands' bounds separately —
+the VeriPB linear-combination limit.
+
+`Cumulative` already solves that for itself, with a proof-only
+`end = s_i + l_i` introduced by `ProofLogger::introduce_bits_of` and a
+per-`(i, t)` bridge lemma `end ≥ t+1 → after`. Almost all of it was already
+reachable by a citer:
+
+- **The bridge lemmas need no publishing.** They go out at `ProofLevel::Top` for
+  every `(i, t)` in the donor's window, unit propagation finds them, and a
+  derived constraint's flag lookups have already established that its window is
+  inside the donor's — `find_proof_flag_values` declines otherwise.
+- **`materialise_after_sum` reads one line**, `end ≥ s + l`, plus two order
+  literals any citer makes for itself. So the whole publication requirement is
+  **one `ProofLine` per task**.
+
+That line is a **third kind of citable thing**. A labelled OPB row is found by
+`NamesAndIDsTracker::constraint_row_label` and a flag by `find_proof_flag_values`;
+a line an install initialiser *derived* has no row to label and no reification to
+key. `publish_derived_line` / `find_derived_line` is the pair for it, under a
+role `ConstraintProofModelData<Cumulative>::end_lower_bound_role` publishes like
+any other, and it hands back a line number because that is all there is to hand
+back — per-solve state, exactly as `boundary_pin_line` already keeps.
+
+It could not have been a getter on `Cumulative`. A presolver sees the constraint
+`Problem` stored, and `create_propagators` installs a *clone*; the clone is what
+ran the initialiser and the clone is what the tracker heard from. Everything a
+citer reaches goes through the tracker keyed by `ConstraintID`, and this is no
+exception.
+
+What a citer then does:
+
+- widen the task's length to an `IntegerVariableID` and window with `ub(l)`, as
+  the donor did, or the flag lookups do not line up;
+- ask `find_derived_line` for a task whose start *and* length both vary, and
+  decline if it comes back empty. Empty means the donor had a constant somewhere
+  after all, or the proof is being written with assertions on, which omits
+  definitions. Either way there is no pin to be had.
+
+`CumulativeDonorView` sets such a task aside when the answer is empty, and keeps
+it otherwise. It asks "can this task load the resource at all?" *first*: a task
+the donor gave no window — a zero height on this resource — published no proxy
+either, and would otherwise be counted as set aside for the wrong reason.
+
+The energy rules need no thought. `prepare_cumulative_overload_check` keeps only
+constant-length tasks, a window-energy lemma needing a task's energy to be a
+number, so a variable-duration task takes part in the rows and the time-tabling
+and stays out of the lemma. Where it *does* earn its place in a presolver that
+runs the energy rules alone is the (TTOC) profile term, which counts a task's
+mandatory part whether or not the lemma can speak for it — and those pins are the
+ones that go through the proxy. `cumulative_strengthening_var_length` is that
+case: four tasks of energy six fill a window of four at the strengthened capacity
+exactly, and one compulsory time point of a fifth, variable-duration task is the
+whole of the overshoot.
+
+**A tripwire.** No fixture in the tree catches the *wrong* line being published.
+Publish `end ≤ s + l` in place of `end ≥ s + l` and every proof still verifies:
+VeriPB's unit propagation reaches these `after` pins without the `pol` at all,
+the reasons instantiating the lengths and an eq atom pinning the bits the
+reification row wants. That the `pol` is load-bearing in general is pinned by
+`cumulative`'s own `len_wide` case, which fails without it. What does catch a
+broken citation here is the install declining, and nothing else.
+
+### A task whose height is a variable
+
+A variable height is the one that touches the rows. A donor's capacity row does
+not contain `height × active` for such a task; it contains the bits of a
+linearised contribution:
+
+```
+C_t :   Σ_{i const} h_i·active_{i,t}  +  Σ_{i var} Σ_k 2^k·cc_{i,t,k}   ≤   capacity
+```
+
+so a subset sum of the heights is not a subset sum of the row's coefficients,
+and nothing a recipe says about that row is a statement about that task. What
+takes it back is the row saying the contribution is *at least* the height, which
+turns those bits into a coefficient on the activity flag again — at the height's
+lower bound, which is the demand the task is guaranteed to make.
+
+**The rows are citable, with cake's names.** `cake_pb_cp` already labels all
+three halves of the contribution definition, as `@c[id][<i>_<t>_cge]`,
+`[<i>_<t>_cle]` and `[<i>_<t>_cz]`, over the same terms and keyed by absolute
+`(task, time)` exactly as the flags are. Ours went out unlabelled, which is what
+made them uncitable; labelling them with cake's names is therefore a conformance
+improvement rather than a divergence, and
+`ConstraintProofModelData<Cumulative>::contribution_ge_row_role` and its two
+siblings publish them.
+
+**The conversion is one hinted RUP** per (variable-height task, time), with `L`
+the height's lower bound:
+
+```
+rup  Σ_k 2^k·cc_{i,t,k} + L·¬active_{i,t} >= L   :  @c[id][<i>_<t>_cge]  <the height's lower-bound line> ;
+```
+
+added to the capacity row with coefficient one, so the bits cancel exactly and
+what is left on that task is `L·active_{i,t}`.
+
+It closes for a reason, which is worth writing down because the alternative is
+believing a pass rate. Negating the target forces `¬active` to zero — its
+coefficient `L` exceeds the slack `L−1` — leaving
+`{Σ2^k·cc_k ≤ L−1, Σ2^k·cc_k ≥ Σ2^j·hb_j, Σ2^j·hb_j ≥ L}` over two
+power-of-two bit counters. Induct on the top bit `2^s`: if `L ≤ 2^s` the negated
+target zeroes `cc_s`, the `cge` row then zeroes `hb_s`, and the same system
+recurs one bit narrower; if `L > 2^s` the bound row forces `hb_s = 1`, `cge`
+forces `cc_s = 1`, and it recurs with `L' = L − 2^s`. Every step is
+single-constraint slack propagation, so any unit-propagation fixpoint finds it
+whatever the order — which is also why the hint order does not matter, and why
+the negated target does not need to be named in the hints.
+
+Swept over several thousand `(L, ub(h), bit width)` shapes before being believed,
+including contribution bits narrower than the height's, which is what happens
+when the install-time upper bound is tighter than the declared one. The negative
+controls fail: a target one stronger than justified is refused, and so is one
+with the bound line withheld from the hints.
+
+The `pol` this replaces is the `cge` row plus the bound, then a **saturate** to
+cap the reification constant down to the degree, then a literal axiom
+`(2^k − min(2^k, L))·cc_k ≥ 0` per bit to put the coefficients back. It works —
+and needs less than it looks, since `ia`'s implication check performs the
+saturate-and-restore itself, so `pol <cge> <lb> + ;` with an `ia` pin is enough.
+It is three times the code and O(bits) more addends than the RUP.
+
+**Which bound.** The one the height has *now*, through
+`need_pol_item_defining_literal`, exactly as the capacity's reduction does and
+for the same reason: the declared bound is a weaker number the moment anything
+has tightened it, and a declared zero would give the conversion up altogether on
+models that reach a height through an `Element` over a mode variable. The unit
+saying the atom holds is what makes the resulting row unconditional, permanently,
+the bound having been reached before the search started.
+
+**What stays set aside** is a height that cannot be argued about at all: a
+**view**, whose reification is emitted over its own bit vector so the height's
+bound rows have nothing to cancel against — and which `bound_rows` cannot even be
+asked about — or a lower bound of zero, which guarantees nothing.
+
+**Converting is not always a gain**, which is the one thing here that is
+arithmetic rather than proof. `kappa` is the largest subset sum of the heights
+the capacity allows, so adding a task can only push it up: heights `{3, 3}` under
+a capacity of eight give six, and converting a task at a guaranteed demand of two
+gives `{3, 3, 2}`, whose largest subset sum at most eight is eight — no
+strengthening where there used to be two units of one. Against that, the
+converted task's energy joins the overload check. `CumulativeStrengthening`
+therefore assesses the donor both ways and keeps the bigger reduction;
+`CumulativeDonorView::with_converted_heights_set_aside` is the other candidate.
+The two multi-donor presolvers need no such choice: a converted task can only add
+a conflict edge or a column.
+
+Unlike the end-proxy publication of the length half, this one has a tripwire. A
+recipe pins what `recover_constant_argument_row` returns with an `ia`, whose
+implication check is syntactic, so a conversion landing on the wrong row is
+refused immediately — which is what `cumulative_strengthening_var_capacity`
+already checks for the capacity half, and what two deliberate corruptions of the
+conversion (claiming one more than the demand, and using `ub(h)` in place of
+`lb(h)`) are caught by in all three presolvers' fixtures.
+
+### Deriving over an optional donor
+
+A *derived* Cumulative (issue 04) works over an optional donor, and the
+striking thing is how little it takes. The rows are the argument, and an
+optional task's presence is a conjunct *inside* its activity flag rather
+than a term beside it, so `Σ h_i·active_{i,t} ≤ C` is the same row either
+way. Every recipe built on one — subset sums, at-most-ones, coefficient
+raising, cover cuts — reads it identically, and none of them changes at
+all.
+
+What does change is what the derived propagator may *say*. Pinning
+`active_{i,t} = 1` now needs `presences[i] = 1` too, so
+`DerivedCumulativeTask` carries the donor's presence argument and
+`install_derived_cumulative` resolves it through
+`cumulative_task_presence` — the same function `Cumulative::prepare`
+resolves its own with, shared precisely so that the two cannot come to
+different verdicts about which flags carry a literal. From there
+`propagate_cumulative` is the code that already knew how to do this, and
+`reason_with_presence()` supplies the literals.
+
+The window-energy lemma then comes out right without being asked. Its
+per-time step adds `active`'s `[f]` half, which for an optional task *is*
+`active ∨ ¬before ∨ ¬after ∨ ¬p`, so summing the window's worth of them
+gives
+
+```
+Σ_{t∈[a,b)} active_{i,t}  +  activity·¬p_i  ≥  activity
+```
+
+— the conditional form, for free. That leftover `activity·¬p` rides
+through the consuming `pol`, which therefore does not reach a
+contradiction on its own; the wrapping RUP disposes of it, because
+`p_i = 1` is in the reason. Which is exactly why the rule may only speak
+for tasks that are *known* present, and why both consumers filter on
+`is_present` before counting anything.
+
+At the root usually nothing is known present, so a presolver's energy
+bound counts an optional task as absent. That is weaker, not wrong. What
+it gives up is the conditional bound
+
+```
+capacity × window  ≥  Σ_i energy_i · p_i
+```
+
+which is an implied linear constraint over the presences rather than
+anything a makespan variable's lower bound can hold, and so belongs with
+the conditional-bounds follow-up below rather than here.
+
+The multi-donor case is *not* covered, and that is where the remaining
+work is: `recover_conjunction_flag_bridge` cancels two donors' conjuncts
+against each other, and a presence conjunct cancels only when both donors
+carry the same literal. Mixed arities change the degree arithmetic
+outright. The presolvers of issues 07 and 08 bridge between donors, so
+they still decline an optional one; issue 06's does not, and does not.
+
+Variable arguments they *do* take, by the same route: each reduces the row
+it is about to argue over before doing so --- `InferredDisjunctive` its
+witness's, before recovering the pairwise at-most-one from it;
+`InferredCumulative` each row of the lifting programme, before lifting
+anything out of it. Both then weaken over the donor's **usable** positions
+only, since a set-aside task's terms went out with the reduction and `w`
+on a variable the constraint no longer mentions is refused.
+
+A variable **height** they take by converting it, not by setting it aside:
+its bits become `lb(h) x active` before anything is lifted or recovered,
+so the task keeps a column in the matrix and an edge in the conflict
+graph. Neither presolver has a choice to make about it --- a converted
+task can only add one of those --- which is what separates them from
+issue 06's, whose argument is a subset sum and can be made worse by one.
+
+A variable duration they take too, and it costs them nothing but a choice
+of bound. A window takes `ub(l)`, which is what the donor encoded its
+flags over and so the only thing that finds them; an energy sum or a
+ranking takes `lb(l)`, which is the work every solution has to contain.
+Tasks are matched across donors by the length *variable*, since the same
+variable is the same duration whatever its bounds come to, and two
+different ones are not even where their bounds agree today.
 
 `constraint_type()` is `cumulative_optional` for the optional form, so
 the verified-encoding chain does not silently match it against
@@ -712,8 +1073,19 @@ that gap is now named rather than hidden.
   piece of it: horizontally elastic and knapsack-augmented checking
   (#550) build on the clipped form, and the lifted-constraint
   presolvers (#549) on the contained one.
-- **Variable lengths, heights and capacity in the energy set.** Staged
-  deliberately; the extensions are sketched in #542.
+- **A variable duration in the energy set (#689).** The window-energy
+  lemma's eligibility filter turns away a task whose length or height is
+  not a constant, and those two halves are now in different states. The
+  **height** one has resolved itself: a task #686 converted arrives at the
+  filter as a constant and passes, which
+  `cumulative_strengthening_all_var_heights` demonstrates by refuting at
+  the root through the energy check. The **length** one still binds, since
+  #685 passes a length through as the variable it was posted with — so a
+  multi-mode RCPSP task gets its demand counted and its energy discarded,
+  and it is the duration that discards it. Loosening it is not free: the
+  lemma telescopes order literals over ranges fixed by a constant length,
+  and a variable-duration task's `after` is reified on `start + length`
+  instead. #689 has the sketch. The rest of #542's staging is unchanged.
 - **Conditional bounds for optional tasks.** An undecided task's start
   bounds are never pruned, because there is no conditional-bounds store
   and an unconditional prune would be unsound if the task turns out

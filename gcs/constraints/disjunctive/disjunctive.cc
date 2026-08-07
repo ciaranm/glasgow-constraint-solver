@@ -33,23 +33,6 @@ using std::size_t;
 using std::unique_ptr;
 using std::vector;
 
-namespace
-{
-    auto const_value_of(const IntegerVariableID & v) -> Integer
-    {
-        return std::get<ConstantIntegerVariableID>(v).const_value;
-    }
-
-    auto as_constant_var_ids(const vector<Integer> & vals) -> vector<IntegerVariableID>
-    {
-        vector<IntegerVariableID> result;
-        result.reserve(vals.size());
-        for (const auto & v : vals)
-            result.push_back(constant_variable(v));
-        return result;
-    }
-}
-
 Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<IntegerVariableID> lengths) : _starts(move(starts)), _lengths(move(lengths))
 {
     if (_starts.size() != _lengths.size())
@@ -57,11 +40,11 @@ Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<IntegerVariabl
     // Constant durations are checked here; variable durations are checked
     // against their root lower bound in prepare().
     for (const auto & l : _lengths)
-        if (is_constant_variable(l) && const_value_of(l) < 0_i)
+        if (is_constant_variable(l) && constant_value_of(l) < 0_i)
             throw InvalidProblemDefinitionException{"Disjunctive: lengths must be non-negative"};
 }
 
-Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<Integer> lengths) : Disjunctive(move(starts), as_constant_var_ids(lengths))
+Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<Integer> lengths) : Disjunctive(move(starts), as_constant_variables(lengths))
 {
 }
 
@@ -87,7 +70,7 @@ auto Disjunctive::prepare(Propagators &, State & initial_state, ProofModel * con
     _length_vals.assign(n, 0_i);
     for (size_t i = 0; i < n; ++i) {
         if (is_constant_variable(_lengths[i]))
-            _length_vals[i] = const_value_of(_lengths[i]);
+            _length_vals[i] = constant_value_of(_lengths[i]);
         else if (initial_state.lower_bound(_lengths[i]) < 0_i)
             throw InvalidProblemDefinitionException{"Disjunctive: lengths must be non-negative"};
     }
@@ -609,7 +592,7 @@ auto Disjunctive::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & v : _starts)
         starts.push_back(tracker.s_expr_term_of(v));
     for (const auto & l : _lengths)
-        lengths.push_back(is_constant_variable(l) ? SExpr::atom(const_value_of(l).to_string()) : tracker.s_expr_term_of(l));
+        lengths.push_back(is_constant_variable(l) ? SExpr::atom(constant_value_of(l).to_string()) : tracker.s_expr_term_of(l));
     return SExpr::list(
         {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(starts)), SExpr::list(std::move(lengths))});
 }
