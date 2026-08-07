@@ -11,6 +11,22 @@ time-table algorithm — read `gcs/constraints/cumulative/cumulative.{hh,cc}`. F
 the broader proof-logging framework (justifications, the OPB scaffold,
 `emit_rup_proof_line_under_reason`), read [`constraints.md`](constraints.md).
 
+## What is and is not covered
+
+Worth stating plainly, because "we can certify cumulative scheduling" is an
+easy thing to write and a wrong thing to claim. Certified here: **time-tabling**
+(the overflow check and both bound pushes), the **overload check** and the
+window-energy lemma under it, **derived-constraint inference** (capacity
+strengthening, conflict cliques, lifted cover cuts), and **makespan lower
+bounds** — over optional tasks and over variable durations, heights and
+capacities.
+
+Not here: **edge-finding**, **not-first / not-last**, and **TTEF / KAOC**
+(#550, #696). Those are the propagation rules a competitive cumulative solver
+also runs, so the claim to make is "a wide range of commonly used techniques",
+not completeness. The Open follow-ups section at the end says what each would
+take.
+
 ## What's hard about it
 
 The TT propagator on its own is textbook. The proof-logging is not: the

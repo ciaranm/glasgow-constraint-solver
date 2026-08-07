@@ -174,8 +174,8 @@ each `+1`, and checks every bound against a makespan somebody has actually
 achieved.
 
 **Every number in this section is stale and none of them may be quoted until the
-artefact has been rerun** — see the note below, which says what has changed under
-them since. They are recorded rather than deleted because what they establish is
+artefact has been rerun** (issue #708) — see the note below, which says what has
+changed under them since. They are recorded rather than deleted because what they establish is
 the *shape* of the result, and that has not moved.
 
 Over the Pack collection in all three stages and Pack_d in the capacity-one
