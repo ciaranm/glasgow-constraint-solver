@@ -66,7 +66,7 @@ only fills the resource at some of them cannot be given a raised height at all.
 When *every* task is full, `kappa` is a subset sum over nothing and comes out at
 zero. That is not a strengthening but a disjunctive, and the donor is declined:
 inferring those from conflict cliques is
-[`InferredDisjunctive`](cumulative-proof-logging.md)'s job.
+[`InferredDisjunctive`](inferred-disjunctive.md)'s job.
 
 ## Why `kappa` is the right number, and why the max is the max
 

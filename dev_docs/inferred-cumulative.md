@@ -333,9 +333,10 @@ asserts a non-zero restriction count so it cannot quietly stop covering them.
 
 ## Proof size, which is what decided the design
 
-Measured, since the estimate that nearly sank this was out by two orders of
-magnitude. Over a single resource one derived row costs about **twelve and a half
-lines per state**, and the states are `members × (π₀ + 1)`:
+Measured, because the estimate that nearly sank this was wrong in both directions
+and the two errors very nearly cancelled. Over a single resource one derived row
+costs about **twelve and a half lines per state**, and the states are
+`members × (π₀ + 1)`:
 
 | members | capacity | `π₀` | states | lines | bytes |
 |--------:|---------:|-----:|-------:|------:|------:|
@@ -344,11 +345,22 @@ lines per state**, and the states are `members × (π₀ + 1)`:
 | 8 | 20 | 3 | 30 | 374 | 30 K |
 | 12 | 20 | 3 | 46 | 578 | 54 K |
 
-**The capacity does not appear.** Issue #675 budgeted `O(|S|² · C)` per time
-point — around `10⁶` lines per constraint at `|S| = 10`, `C = 20`, horizon 1000 —
-because it assumed a programme per lifting step, indexed by residual capacity.
-Neither is needed: one programme certifies the finished cut, and the frontier is
-indexed by profit, which is bounded by the right-hand side.
+**The capacity does not appear.** Issue #675 budgeted `O(|S|² · C)` states per
+time point — two thousand of them at `|S| = 10`, `C = 20`, and so around `10⁶`
+lines per constraint over a horizon of 1000 — because it assumed a programme per
+lifting step, indexed by residual capacity. Neither is needed: one programme
+certifies the finished cut, and the frontier is indexed by profit, which is
+bounded by the right-hand side.
+
+**The state count is where that estimate was wrong, and it is the number to
+quote.** A row at those parameters builds about forty states rather than two
+thousand — fifty times out, and the state count is what says whether the shape of
+the design works at all. Its *line* figure was out by much less, because it
+costed a state at about half a line where the table above measures twelve and a
+half: `10⁶` against the 375 K the horizon table below measures is a factor of
+under three. That is fifty times one way against twenty-five the other, so the
+line figure is two large errors cancelling and not a margin anything was decided
+on.
 
 Each further resource adds a weight variable per state — two more lines to define
 it and two more per transition — and however many states the Pareto frontier
