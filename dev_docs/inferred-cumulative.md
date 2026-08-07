@@ -113,9 +113,8 @@ counterpart, and which direction that costs depends on the budget:
 Implementing it verbatim would be wrong: the estimate is an upper bound only
 while the unlifted coefficients stay at most one, which holds at `π₀ = 1` and
 not in general — `lhs[next] = rhs - v*` can reach `rhs`. So a correctly gated
-version is future work rather than a line to copy, and the paper is silent on
-the rule, which is why nothing here has resolved the mismatch in either
-direction.
+version is issue #703 rather than a line to copy, and the paper is silent on the
+rule, which is why nothing here has resolved the mismatch in either direction.
 
 ### Zero-demand cover members
 

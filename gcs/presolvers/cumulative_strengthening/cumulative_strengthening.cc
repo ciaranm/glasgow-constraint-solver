@@ -289,7 +289,8 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             // over all of them would have strengthened it. Rare enough to be
             // written down rather than special-cased, and if scheduling
             // competitiveness ever cares the answer is that a loner is an
-            // ordinary task, not a full one.
+            // ordinary task, not a full one. See also #702, which is the other
+            // thing this presolver leaves on the table.
             auto & full_tasks = assessment.full_tasks;
             vector<size_t> other_tasks;
             for (auto i : active_tasks) {

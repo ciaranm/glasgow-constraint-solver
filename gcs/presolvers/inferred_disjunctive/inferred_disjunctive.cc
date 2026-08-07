@@ -461,8 +461,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     // model that does post such a resource.
     //
     // What a decline gives up is that clique's *makespan* bound, which the
-    // posted resource does not derive for itself; a posted Cumulative deriving
-    // its own is filed rather than done here.
+    // posted resource does not derive for itself; that is issue #702.
     auto already_posted = [&](const vector<size_t> & c) {
         return any_of(resources, [&](const Resource & resource) {
             return resource.capacity <= 1_i && all_of(c, [&](size_t i) {

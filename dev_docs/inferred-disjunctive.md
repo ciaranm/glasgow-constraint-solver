@@ -32,8 +32,8 @@ ranking and be the constraint his `L` is reported from, and ours would have
 nothing there. It costs nothing on the twenty cross-check targets, whose cliques
 run to ten members and more, and `with_minimum_clique_size(2)` turns it off — but
 whether two is worth posting *in general* is a measurement question, and the
-measurement is the artefact rerun that has not happened. Filed rather than
-guessed at.
+measurement is the artefact rerun that has not happened. That is issue #707,
+rather than something guessed at here.
 
 Cliques are also dropped when one posted capacity-one resource already contains
 every member: that constraint is the resource's own, and reporting its bound as
@@ -235,7 +235,7 @@ get wrong and neither is visible from the paper:
 ## Not done
 
 - Two-member cliques, as above: allowed by the knob, off by default, and the
-  default wants measuring rather than arguing about.
+  default wants measuring rather than arguing about (#707).
 - The general lifted case, with non-unit coefficients, is
   [`InferredCumulative`](inferred-cumulative.md), and it spans resources too ---
   by a weight per resource in its knapsack programme rather than by merging
