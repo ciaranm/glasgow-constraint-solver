@@ -91,6 +91,19 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
             continue;
         }
 
+        // An *optional* task whose guaranteed demand alone exceeds the capacity
+        // is one the donor's own propagator will falsify the presence of; it is
+        // not a donor that cannot be satisfied. Set it aside, so that a caller
+        // asking "is any usable task over the capacity" gets the question it
+        // means to ask --- a donor that really is infeasible on its own ---
+        // rather than an optional task that has simply not been decided yet,
+        // and so that the rest of the donor keeps whatever it was going to get.
+        if (presence.literal && height_value > view.capacity) {
+            view.height_bounded_by[i] = nullopt;
+            view.set_aside.push_back(i);
+            continue;
+        }
+
         // A variable length is not a set-aside. It leaves the row untouched ---
         // no length appears in one --- and costs the *pins* instead: `after` is
         // then reified on the two-variable `start + length`, which no RUP
@@ -271,7 +284,12 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
         auto [shift, highest_bit, negative_bit] = get_bits_encoding_coeffs(lo, hi);
         if (0_i != negative_bit)
             return nullopt; // a signed capacity, which Cumulative rejects anyway
-        auto atom_coefficient = 2_i * highest_bit - 1_i - view.capacity;
+        // Written as two additions rather than as `2 * highest_bit - 1 -
+        // capacity`, which is the same number by a route that overflows: a
+        // capacity encoded up to bit 62 makes the doubling the first thing that
+        // does not fit, where the sum below reaches at most the largest value
+        // the encoding can express and so at most what a bit vector holds.
+        auto atom_coefficient = (highest_bit - 1_i - view.capacity) + highest_bit;
 
         // The definition, which is what brings the capacity's bits over to
         // cancel against the row's, and what leaves the atom behind.

@@ -194,8 +194,20 @@ namespace
         if (cover_cardinality >= 3)
             for (size_t x = 0; x < n; ++x)
                 for (size_t y = x + 1; y < n; ++y) {
-                    if (demands[x] <= 0_i || demands[y] <= 0_i)
-                        continue;
+                    // A member that demands nothing of *this* row is one
+                    // Definition 6 admits and the reference implementation
+                    // enumerates --- its `A` matrix is dense, and a task with
+                    // no term in a row is a zero entry there exactly as it is a
+                    // task with no term here. The cover is a real one: its
+                    // demands still overshoot, so not all of it can run, and
+                    // the free member simply makes the inequality it starts
+                    // from one wider. What it changes is where lifting begins,
+                    // which is sequence-dependent, so it is not the same cut by
+                    // another route.
+                    //
+                    // `z` is the one member that cannot demand nothing, and
+                    // cannot: it has to exceed the room, which is never
+                    // negative.
                     auto room = capacity - demands[x] - demands[y];
                     if (room < 0_i)
                         continue;
@@ -326,9 +338,16 @@ namespace
         for (size_t i = 0; i < tasks.size(); ++i)
             if (std::find(cover.begin(), cover.end(), i) == cover.end())
                 remaining.push_back(i);
+        // By `least_length`, as every other ranking in this file is, and not by
+        // `length`: that is an IntegerVariableID, so comparing two of them
+        // orders by the variant's alternative before it looks at anything a
+        // scheduler would call a duration. All-constant lengths make the two
+        // agree, which is why the Pack corpus never noticed --- and a
+        // multi-mode instance, which is what variable lengths are here for, is
+        // exactly where the order below stops being the documented one.
         std::sort(remaining.begin(), remaining.end(), [&](size_t a, size_t b) {
-            if (tasks[a].length != tasks[b].length)
-                return tasks[a].length > tasks[b].length;
+            if (tasks[a].least_length != tasks[b].least_length)
+                return tasks[a].least_length > tasks[b].least_length;
             return a < b;
         });
 

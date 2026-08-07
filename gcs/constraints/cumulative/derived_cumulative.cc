@@ -348,9 +348,23 @@ auto gcs::innards::install_derived_cumulative(
             InitialiserPriority::Expensive);
     }
 
+    // The same trigger set a posted Cumulative installs, minus the two a
+    // derived one cannot have: its capacity is an Integer and its heights are
+    // Integers by the time a task is built, so neither can move. Lengths and
+    // presences can, and the arguments for waking on them are the posted
+    // constraint's verbatim --- a rise in a length's lower bound extends a
+    // mandatory part, and a presence fixed to 1 puts a task into the load
+    // profile. Missing them costs the derived constraint pruning it is entitled
+    // to, silently and with no test able to see it, since late is still sound.
     Triggers triggers;
     for (auto i : inputs->active_tasks)
         triggers.on_bounds.emplace_back(spec.tasks[i].start);
+    for (auto i : inputs->active_tasks)
+        if (! is_constant_variable(spec.tasks[i].length))
+            triggers.on_bounds.emplace_back(spec.tasks[i].length);
+    for (auto i : inputs->active_tasks)
+        if (inputs->presence[i] && ! is_constant_variable(*inputs->presence[i]))
+            triggers.on_instantiated.emplace_back(*inputs->presence[i]);
 
     propagators.install(
         inputs->owner,

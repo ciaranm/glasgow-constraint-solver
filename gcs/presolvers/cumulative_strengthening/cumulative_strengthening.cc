@@ -128,7 +128,7 @@ namespace
 }
 
 CumulativeStrengthening::CumulativeStrengthening(shared_ptr<CumulativeStrengtheningStats> stats) :
-    _stats(move(stats)), _max_dynamic_programming_states(20000), _max_raise_lines(5000),
+    _stats(move(stats)), _max_dynamic_programming_states(20000), _max_raise_lines(5000), _max_subset_sum_capacity(1000000),
     // Energy rules only: see with_rules(). A derived constraint's time-tabling
     // cannot infer anything its donor's has not, so running it is pure cost.
     _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true}), _mutation(cumulative_strengthening_mutation::None{})
@@ -144,6 +144,12 @@ auto CumulativeStrengthening::with_dynamic_programming_budget(long long states) 
 auto CumulativeStrengthening::with_raise_budget(long long lines) -> CumulativeStrengthening &
 {
     _max_raise_lines = lines;
+    return *this;
+}
+
+auto CumulativeStrengthening::with_subset_sum_capacity_limit(long long capacity) -> CumulativeStrengthening &
+{
+    _max_subset_sum_capacity = capacity;
     return *this;
 }
 
@@ -190,6 +196,23 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         auto n = starts.size();
         auto capacity = view->capacity;
         auto unentitled_raise = std::holds_alternative<cumulative_strengthening_mutation::RaiseUnentitled>(_mutation);
+
+        // The assessment below subset-sums the heights at every time point, and
+        // that is a bitset of `capacity` bits built from scratch each time. It
+        // runs before any of the proof budgets, and with proofs off none of
+        // them ever runs at all --- so a donor posted in scaled units, with a
+        // capacity in the billions, spends hundreds of megabytes and a sweep of
+        // the whole horizon before anything has decided whether there was a
+        // strengthening to be had. Magnitude is the wrong thing to find that
+        // out with, so decline on it first. It is also what keeps the state
+        // count and the raise arithmetic below inside a `long long`.
+        if (capacity > Integer{_max_subset_sum_capacity}) {
+            bump(&CumulativeStrengtheningStats::declined_capacity_too_large);
+            if (logger)
+                logger->emit_proof_comment("presolve cumulative: declining " + as_string(donor.constraint_id()) + ", capacity " +
+                    to_string(capacity.raw_value) + " is beyond the subset-sum limit of " + to_string(_max_subset_sum_capacity));
+            continue;
+        }
 
         // A task whose *guaranteed* demand is above the capacity means the
         // donor is infeasible on its own, which is the donor's business to
@@ -497,14 +520,29 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 auto donor_row = *reduced_row;
 
                 auto strengthen_to_kappa = [&](ProofLine source) -> ProofLine {
-                    recipe_logger.emit_proof_comment(point->second.by_division ? "presolve cumulative gcd" : "presolve cumulative kappa");
                     auto strengthened =
                         derive_subset_sum_strengthening(recipe_logger, items, source, capacity, ProofLevel::Temporary, subset_sum_corruption);
-                    if (stats) {
-                        if (strengthened.by_division)
-                            ++stats->rows_by_division;
-                        else
-                            ++stats->rows_by_dynamic_programming;
+                    // After the call rather than before it, and off what came
+                    // back rather than off the assessment's prediction: the
+                    // marker and the counter then agree with each other and
+                    // with the line, where predicting has them disagree on
+                    // every point the arithmetic settles differently.
+                    //
+                    // A line that came back unchanged is neither derivation ---
+                    // the bound was already a reachable sum, so there was
+                    // nothing to derive --- and counting it as a dynamic
+                    // programme would say the expensive path ran when no line
+                    // was written at all.
+                    if (strengthened.line == source)
+                        recipe_logger.emit_proof_comment("presolve cumulative kappa already reached");
+                    else {
+                        recipe_logger.emit_proof_comment(strengthened.by_division ? "presolve cumulative gcd" : "presolve cumulative kappa");
+                        if (stats) {
+                            if (strengthened.by_division)
+                                ++stats->rows_by_division;
+                            else
+                                ++stats->rows_by_dynamic_programming;
+                        }
                     }
                     return strengthened.line;
                 };
@@ -558,6 +596,19 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
 
                     auto recovered =
                         recover_am1_from_row(recipe_logger, donor_row, {demand_a, heights[b]}, weaken_out, capacity, ProofLevel::Temporary);
+                    // An at-most-one is what the raise arithmetic below assumes
+                    // it has --- it weights these lines by the other task's
+                    // coefficient and divides --- and a cardinality bound of
+                    // anything else would make it argue about a line that says
+                    // something different. It cannot be anything else: the
+                    // pairwise case gives a bound of one whenever the smaller
+                    // demand fits under the capacity, and a donor with a task
+                    // over the capacity was declined 350 lines ago. Checked
+                    // rather than assumed, because that is a long way to have
+                    // to look for the reason.
+                    if (recovered.at_most != 1_i)
+                        throw ProofError{"cumulative strengthening: recovering the at-most-one between tasks " + to_string(a) + " and " +
+                            to_string(b) + " gave a bound of " + to_string(recovered.at_most.raw_value) + " rather than one"};
                     at_most_ones.emplace(key, recovered.line);
                     return recovered.line;
                 };
@@ -659,6 +710,13 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                             // at-most-one weighted by its task's coefficient in
                             // that row, scaled so that the division comes out
                             // whole on every term but the degree.
+                            //
+                            // `e * weight` is a product of two quantities each
+                            // bounded by the capacity, so it is the capacity
+                            // limit at the top of run() that keeps this inside
+                            // a `long long` --- an unbounded capacity would
+                            // reach it a good deal sooner than anything here
+                            // looks like it could.
                             auto rest = total - raised_to - step;
                             auto common = Integer{std::gcd(step.raw_value, rest.raw_value)};
                             auto e = step / common, lambda = rest / common;
@@ -714,6 +772,7 @@ auto CumulativeStrengthening::clone() const -> unique_ptr<Presolver>
     auto result = make_unique<CumulativeStrengthening>(_stats);
     result->with_dynamic_programming_budget(_max_dynamic_programming_states);
     result->with_raise_budget(_max_raise_lines);
+    result->with_subset_sum_capacity_limit(_max_subset_sum_capacity);
     result->with_rules(_rules);
     result->with_proof_mutation(_mutation);
     return result;

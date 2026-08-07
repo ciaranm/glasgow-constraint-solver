@@ -341,8 +341,10 @@ auto main(int argc, char * argv[]) -> int
         solve_family(3, 2, 6, Setup{.max_candidates = 0, .stats = stats}, nullopt);
         if (stats->cliques_posted != 0)
             fail("a zero candidate budget still posted a clique");
-        if (stats->dropped_over_budget == 0)
+        if (stats->dropped_over_candidate_budget == 0)
             fail("a zero candidate budget dropped candidates without counting them");
+        if (stats->dropped_over_posting_budget != 0)
+            fail("a zero candidate budget charged its drops to the posting budget");
         // Nothing posted has to mean no bound claimed: a stale capacity bound
         // would be a lower bound nobody derived.
         if (stats->largest_capacity_bound != 0_i)
@@ -608,10 +610,17 @@ auto main(int argc, char * argv[]) -> int
      * its place in the conflict graph now costs it nothing, provided its donor
      * published the line a pin of its `after` goes through.
      *
-     * Four tasks, pairwise conflicting on the four resources `(i + j) mod 4`
-     * covers between them, and the last one's duration a variable. The clique
-     * is a clique of *four*: three is what it would be with that task set
-     * aside, and the difference is the whole point.
+     * Four tasks, pairwise conflicting, one capacity-one resource per pair, and
+     * the last one's duration a variable. The clique is a clique of *four*:
+     * three is what it would be with that task set aside, and the difference is
+     * the whole point.
+     *
+     * A resource per pair rather than the four this used to share the six pairs
+     * out between, because any such sharing puts two disjoint pairs on one
+     * resource --- and a capacity-one resource holding every member of the
+     * clique *is* the clique, which the presolver now declines to infer again
+     * rather than reporting as its own. This fixture was measuring that decline
+     * without saying so.
      */
     {
         const int k = 4, length = 2, horizon = 9, latest = horizon - length;
@@ -628,16 +637,13 @@ auto main(int argc, char * argv[]) -> int
 
         vector<IntegerVariableID> lengths(static_cast<size_t>(k), constant_variable(Integer{length}));
         lengths.back() = varying;
-        for (int r = 0; r < k; ++r) {
-            vector<IntegerVariableID> heights(static_cast<size_t>(k), constant_variable(0_i));
-            for (int i = 0; i < k; ++i)
-                for (int j = i + 1; j < k; ++j)
-                    if ((i + j) % k == r) {
-                        heights[static_cast<size_t>(i)] = constant_variable(1_i);
-                        heights[static_cast<size_t>(j)] = constant_variable(1_i);
-                    }
-            p.post(Cumulative{starts, lengths, heights, constant_variable(1_i)});
-        }
+        for (int i = 0; i < k; ++i)
+            for (int j = i + 1; j < k; ++j) {
+                vector<IntegerVariableID> heights(static_cast<size_t>(k), constant_variable(0_i));
+                heights[static_cast<size_t>(i)] = constant_variable(1_i);
+                heights[static_cast<size_t>(j)] = constant_variable(1_i);
+                p.post(Cumulative{starts, lengths, heights, constant_variable(1_i)});
+            }
         p.add_presolver(InferredDisjunctive{stats});
 
         set<vector<int>> solutions;

@@ -54,6 +54,13 @@ namespace gcs::innards
      * over its own bit vector, so the height's bound rows do not cancel against
      * it), or one whose lower bound is zero, which guarantees nothing.
      *
+     * One more task is set aside: an *optional* one whose guaranteed demand
+     * alone exceeds the capacity. Its presence is going to be falsified by the
+     * donor's own propagator, so there is nothing here to argue over --- and
+     * more to the point, it must not be mistaken for the mandatory version of
+     * the same shape, which says the donor cannot be satisfied at all and is
+     * something a caller wants to hear about rather than work around.
+     *
      * \ingroup Innards
      */
     struct CumulativeDonorView

@@ -41,6 +41,8 @@ using std::size_t;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::all_of;
+using std::ranges::any_of;
 using std::ranges::find;
 using std::ranges::includes;
 using std::ranges::sort;
@@ -237,6 +239,24 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                 // and no bridge between them exists. The same variable is the
                 // same duration, whatever its bounds come to; two different
                 // ones are not, even where their bounds agree today.
+                bump(&InferredDisjunctiveStats::dropped_disagreeing_length);
+                continue;
+            }
+            else if (any_of(tasks[found->second].appearances, [&](const Appearance & a) { return a.donor == donor.constraint_id(); })) {
+                // A donor posting one (start, length) pair twice --- a height-2
+                // task split into two height-1 rows, say --- is a legal model,
+                // and the second row is a second appearance of the same node.
+                // Keeping it would break the invariant everything below rests
+                // on: a clique's flags are its members' *first* appearances, and
+                // a conflict witnessed by the donor those come from is assumed
+                // to be at the same position, so that no bridge is needed. The
+                // conflict scan would naturally record the later appearance, the
+                // at-most-one would land on its flags, the syntactic `ia` pin
+                // would sum the first one's, and VeriPB would refuse an
+                // otherwise honest proof. One appearance per (task, donor)
+                // restores the invariant; what it costs is a conflict this
+                // resource could have witnessed through the dropped row.
+                bump(&InferredDisjunctiveStats::dropped_duplicate_appearance);
                 continue;
             }
 
@@ -282,6 +302,22 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     if (candidate_pairs.empty())
         return true;
 
+    // Best first, by the same quantity a finished clique is ranked by: the
+    // durations its members are guaranteed to occupy. `_max_candidates` keeps a
+    // prefix of this list, so the order is what decides which pairs are grown
+    // at all, and (u, v) scan order would make that decision by variable
+    // creation order. The reference implementation's filter keeps the top ones
+    // by bound too; ours agreed with it on the cross-check targets because the
+    // pairs reaching the maximal clique there happen to come early, which is
+    // luck rather than a property.
+    sort(candidate_pairs, [&](const pair<size_t, size_t> & a, const pair<size_t, size_t> & b) {
+        auto la = tasks[a.first].least_length + tasks[a.second].least_length;
+        auto lb = tasks[b.first].least_length + tasks[b.second].least_length;
+        if (la != lb)
+            return la > lb;
+        return a < b;
+    });
+
     // Grow each candidate pair into a maximal clique, taking the longest task
     // first --- the unit-coefficient reading of Sidorov's lifting order, and
     // the one that maximises the energy the resulting constraint can argue
@@ -319,7 +355,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     size_t considered = 0;
     for (const auto & [u, v] : candidate_pairs) {
         if (considered >= _max_candidates) {
-            bump(&InferredDisjunctiveStats::dropped_over_budget, candidate_pairs.size() - considered);
+            bump(&InferredDisjunctiveStats::dropped_over_candidate_budget, candidate_pairs.size() - considered);
             if (logger)
                 logger->emit_proof_comment("presolve disjunctive: " + to_string(candidate_pairs.size() - considered) +
                     " candidate pairs left ungrown, against a budget of " + to_string(_max_candidates));
@@ -407,6 +443,34 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         return sum;
     };
 
+    // Dominance, which is Sidorov's L4 and the counterpart of the `pi <= d`
+    // test InferredCumulative runs: a clique every one of whose members
+    // consumes something from one posted capacity-one resource is that
+    // resource's own constraint, discovered again. Posting it costs a derived
+    // constraint that can prune nothing, and --- the reason it is here rather
+    // than in the "harmless" pile --- reporting its bound as
+    // `largest_capacity_bound` reports a number the model already contained as
+    // though this presolver had inferred it. Live on our own harness, where
+    // `rcpsp --machine-variant=cumulative` posts exactly such a resource.
+    // The test is the same one term by term: this constraint's right hand side
+    // is one and its coefficients are all one, so a row dominates it when its
+    // capacity is at most one and every member demands at least one of it.
+    // Only an exactly-dominated clique is declined --- `grow` returns maximal
+    // cliques, so one that reaches past the resource keeps a member the
+    // resource has no term for and is kept, which is the common case even on a
+    // model that does post such a resource.
+    //
+    // What a decline gives up is that clique's *makespan* bound, which the
+    // posted resource does not derive for itself; a posted Cumulative deriving
+    // its own is filed rather than done here.
+    auto already_posted = [&](const vector<size_t> & c) {
+        return any_of(resources, [&](const Resource & resource) {
+            return resource.capacity <= 1_i && all_of(c, [&](size_t i) {
+                return any_of(tasks[i].appearances, [&](const Appearance & a) { return a.donor == resource.id && a.height >= 1_i; });
+            });
+        });
+    };
+
     // Rank by that, and drop any clique contained in one already accepted.
     sort(found, [&](const vector<size_t> & a, const vector<size_t> & b) {
         auto ta = capacity_bound(a), tb = capacity_bound(b);
@@ -417,8 +481,13 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
 
     vector<vector<size_t>> accepted;
     for (auto & clique : found) {
+        if (already_posted(clique)) {
+            bump(&InferredDisjunctiveStats::dropped_dominated);
+            continue;
+        }
+
         if (accepted.size() >= _max_posted) {
-            bump(&InferredDisjunctiveStats::dropped_over_budget);
+            bump(&InferredDisjunctiveStats::dropped_over_posting_budget);
             if (logger)
                 logger->emit_proof_comment("presolve disjunctive: a clique beyond the output budget of " + to_string(_max_posted) + " was dropped");
             continue;

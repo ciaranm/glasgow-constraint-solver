@@ -91,13 +91,22 @@ namespace gcs
         /// row's. Named for the condition rather than for today's only instance
         /// of it --- see cumulative_donor_view.
         std::size_t declined_irreducible_capacity = 0;
-        /// Donors with a task whose guaranteed demand exceeds the capacity, so
-        /// the donor is infeasible on its own and its own propagator will say
-        /// so. Not a decline this presolver should be pleased about, and so not
-        /// counted with the ones it should --- a fixture that accidentally
-        /// builds an infeasible donor would otherwise read as a correct
-        /// "nothing to gain".
+        /// Donors with a *mandatory* task whose guaranteed demand exceeds the
+        /// capacity, so the donor is infeasible on its own and its own
+        /// propagator will say so. Not a decline this presolver should be
+        /// pleased about, and so not counted with the ones it should --- a
+        /// fixture that accidentally builds an infeasible donor would otherwise
+        /// read as a correct "nothing to gain". An *optional* task of that
+        /// shape says only that its presence is false, and cumulative_donor_view
+        /// sets it aside instead, so the rest of the donor is still
+        /// strengthened.
         std::size_t declined_infeasible_donor = 0;
+        /// Donors whose capacity is too large to subset-sum over. Unlike the
+        /// two below it this one is not about proof size: the assessment itself
+        /// is a bitset of `capacity` bits rebuilt at every time point, so it
+        /// costs whether or not proofs are on, and the cost is the capacity's
+        /// magnitude rather than anything the model says about the tasks.
+        std::size_t declined_capacity_too_large = 0;
         std::size_t declined_over_budget = 0;
         std::size_t declined_over_raise_budget = 0;
         /// The capacity was already the largest load the tasks can reach, and
@@ -127,9 +136,12 @@ namespace gcs
         /**
          * \name What the raising cost, in the proof.
          *
-         * Zero when proofs are off. `rows_with_a_raise` counts time points
-         * whose row needed at-most-one reasoning at all; `raise_lines_emitted`
-         * counts the steps that took, which is not one per raised task --- how
+         * Zero when proofs are off. `rows_with_a_raise` counts time points at
+         * which some task's height was raised, whatever that took --- including
+         * the degenerate case where a raised task is the only one that can run
+         * then, and the row is a bare `active <= 1` with no at-most-one behind
+         * it. `raise_lines_emitted` counts the steps that took, which is not
+         * one per raised task --- how
          * many a raise takes depends on how far the rest of the row overshoots
          * the capacity, and is the sequence
          * CumulativeStrengthening::with_raise_budget caps. It does not count
@@ -201,6 +213,7 @@ namespace gcs
         std::shared_ptr<CumulativeStrengtheningStats> _stats;
         long long _max_dynamic_programming_states;
         long long _max_raise_lines;
+        long long _max_subset_sum_capacity;
         CumulativeRules _rules;
         innards::CumulativeStrengtheningMutation _mutation;
 
@@ -246,6 +259,25 @@ namespace gcs
          * only its own half disappear.
          */
         auto with_raise_budget(long long lines) -> CumulativeStrengthening &;
+
+        /**
+         * \brief Cap the capacity this presolver will subset-sum over, and so
+         * decline any donor posted with a larger one.
+         *
+         * Not a proof budget: the two above bound what a derivation costs, and
+         * this bounds what deciding whether to make one costs. `kappa` is found
+         * with a word-parallel bitset over the capacity's whole range, rebuilt
+         * at every time point of every donor, and that runs with proofs off
+         * too. A capacity in scaled units --- a resource measured in
+         * thousandths, say --- makes the assessment alone hundreds of megabytes
+         * of allocation and a horizon's worth of sweeps, for a strengthening
+         * nothing has yet said is worth having.
+         *
+         * The default is meant to be left alone; it exists as a knob so that a
+         * test can set it low and watch the decline appear. A donor over it is
+         * counted in CumulativeStrengtheningStats::declined_capacity_too_large.
+         */
+        auto with_subset_sum_capacity_limit(long long capacity) -> CumulativeStrengthening &;
 
         /**
          * \brief Select which propagation rules the derived constraints run.

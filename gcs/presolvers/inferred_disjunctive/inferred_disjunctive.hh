@@ -124,7 +124,34 @@ namespace gcs
         std::size_t declined_irreducible_capacity = 0;
         std::size_t dropped_too_small = 0;
         std::size_t dropped_subset = 0;
-        std::size_t dropped_over_budget = 0;
+        /// Cliques every member of which consumes something from one posted
+        /// capacity-one resource, so the constraint is that resource's own and
+        /// this presolver inferred nothing. Dropped rather than posted, which
+        /// is what keeps \ref largest_capacity_bound a number this presolver
+        /// derived rather than one the model already contained.
+        std::size_t dropped_dominated = 0;
+        /// Candidate pairs never grown into a clique, because the candidate
+        /// budget ran out first.
+        std::size_t dropped_over_candidate_budget = 0;
+        /// Grown cliques never posted, because the output budget was already
+        /// full. Separate from the pair budget: they are different units
+        /// bounding different costs, and one counter for both is one an
+        /// accounting identity cannot be written against.
+        std::size_t dropped_over_posting_budget = 0;
+        /// Appearances of an already-known task on a further resource that were
+        /// not merged into its node, because that resource gives the same start
+        /// variable a different duration variable. Sound --- the node keeps the
+        /// resources that agree --- but it is a resource silently not
+        /// witnessing conflicts, which is worth being able to see.
+        std::size_t dropped_disagreeing_length = 0;
+        /// Second and later appearances of a task on the *same* resource, which
+        /// a donor posting one (start, length) pair at two positions produces.
+        /// Only the first is kept; see the comment at the merge for why the
+        /// certificate needs that. InferredCumulative takes the opposite policy
+        /// on the same input, giving the duplicate a column of its own, and can
+        /// afford to: its members' flags and its rows come from the same
+        /// position by construction, so there is no bridge to get wrong.
+        std::size_t dropped_duplicate_appearance = 0;
         std::size_t declined_by_install = 0;
         ///@}
     };
