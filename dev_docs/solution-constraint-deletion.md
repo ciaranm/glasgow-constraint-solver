@@ -54,6 +54,39 @@ line, the constraint ID and the proof goal is on the branch
 `claude/deletion-message-line-numbers` in the local VeriPB checkout; it is
 worth upstreaming.
 
+## Why the solution is stated in bits
+
+`ProofLogger::solution` writes the assignment handed to `solx` / `soli` as bit
+literals --- `i[x][b0] ~i[x][b1] i[x][b2]` --- rather than as the direct
+encoding's `i[x][eq5]`. Both work: the rule propagates whatever it is given to
+a full assignment before doing anything with it, and unit propagation crosses
+between the two vocabularies through the same reifications either way. The
+reason to prefer the bits is that they are the variables the OPB is written
+over. That makes the logged solution a solution to the *formula*, in the
+formula's own terms, and it makes the preserved set --- and so the projection
+the `ENUMERATION_COMPLETE` conclusion is about --- the model's variables rather
+than a set of atoms the proof introduced along the way. A trimmer then has to
+keep the model alive to make sense of a solution line, which it must do
+regardless, instead of the encoding definitions for whichever atoms the search
+happened to create.
+
+It costs proof size, because a variable is one eq atom but several bits.
+Measured against `d3c9e58b`, on the enumeration instances where solution lines
+are a real share of the file:
+
+| instance | solutions | size before | size after | check before | check after |
+| --- | --- | --- | --- | --- | --- |
+| `frequency_square --all --size 6 --lambda 2` | 53220 | 205546954 | 224919034 | 12.37 12.37 12.50 | 12.64 12.62 12.70 |
+| `regular_random --all --seed=1` | 32985 | 13947925 | 18870069 | 2.03 2.03 2.03 | 2.09 2.11 2.11 |
+| `langford --all` | 52 | 978761 | 1024105 | 0.26 0.26 0.26 | 0.26 0.26 0.27 |
+
+So 9%, 35% and 5% on size and 2--4% on checking time; peak RSS is unmoved on
+`frequency_square` (644.8 MB against 644.7 MB). `regular_random` is the shape
+that pays most, and it shows what the cost actually is: six variables, so a
+solution line goes from six literals to eighteen, against a proof that is
+otherwise small per solution. All three verify to the same conclusion before
+and after.
+
 ## Optimisation
 
 Branch and bound only ever logs a strictly better solution than the last, so
@@ -121,7 +154,9 @@ Three of them.
 **1. The lazily-introduced encoding definitions have to go to core.** This is
 the real obstacle, and a direct consequence of `only_core`. The deletion goal
 is `core /\ ~blocking(sigma) |- false`. Negating the blocking constraint fixes
-every *preserved bit* to its value in sigma. The backtrack clause is written
+every *preserved variable* to its value in sigma --- the bits, since those are
+what the OPB is written over and what `solution` now states a solution in (see
+"Why the solution is stated in bits" below). The backtrack clause is written
 in *atoms* --- `i[x][eq0]`, `i[x][ge3]`, `~i[x][ge3]`, range literals. Getting
 from one to the other needs the reifications that define those atoms:
 
@@ -148,6 +183,29 @@ become checked and fail. So the tracker marks its own lines, with
 `DefinitionRecordingScope`, and they are batched into `core id` steps issued
 lazily --- the first time a deletion actually needs them, and never at all in
 a proof that deletes nothing.
+
+It is *all* of them, and not just the ones the deletion goal reads. That is
+worth knowing because the narrower rule is the obvious one to try and it looks
+right on small proofs. The goal needs the definitional closure of the atoms in
+the discharging clause: an order atom's two halves, an eq atom's two halves
+plus the two order cuts it is stated over, a range literal's likewise --- and
+not the order chain linking neighbouring cuts, since the bits settle each cut
+on its own. Promoting exactly that closure and nothing else takes `abs_test`'s
+first batch from 26 lines to 10, and it verifies. It does not survive contact
+with a real instance: `skyscrapers 5` and `ortho_latin 5` then fail, not at a
+deletion but at the root `rup >= 1`, with no unchecked-deletion warning
+anywhere before it. `--unchecked-deletion` makes the failure go away, which
+places it in the checked-deletion path; and the two lines that turn out to be
+missing (`grid2_2`'s `eq5` reification, `w_how_many_hidden[3][2]`'s `eq0`) are
+definitions of atoms that appear in *no* backtrack clause in the proof, so no
+rule phrased in terms of what the goals read can reach them. VeriPB's
+propagation engine keeps a persistent root-level trail and disables the derived
+propagation sets for the duration of an `only_core` episode
+(`propagation_engine.rs`, `init_trail`); the shape of the failure is
+root-level propagation through *derived* constraints not surviving that. A
+minimal hand-written reproduction has so far resisted: a single checked
+deletion over a derived clause, or a derived general PB constraint, both
+re-propagate correctly. Until that is understood, promote the lot.
 
 **2. Promotion cascades to the root.** Once a frame has promoted its clause,
 its parent's `forget_proof_level` will delete that clause, and *that* is a
@@ -226,10 +284,13 @@ Times are seconds, size is the `.pbp` in bytes, and the ratio uses medians.
 
 | instance | solutions | size before | size after | time before | time after | speedup |
 | --- | --- | --- | --- | --- | --- | --- |
-| `frequency_square --all --size 6 --lambda 2` | 53220 | 204569673 | 205546954 | 117.83 113.07 113.23 113.24 | 11.91 11.87 11.85 11.79 | 9.5x |
-| `regular_random --all --seed=1` | 32985 | 14231970 | 13947925 | 21.54 21.46 21.42 21.41 21.25 | 1.99 1.97 1.98 1.98 1.98 | 10.8x |
-| `langford --all` | 52 | 964583 | 978761 | 0.23 0.23 0.23 0.23 0.23 | 0.26 0.25 0.26 0.26 0.25 | 0.88x |
-| `talent` (optimisation) | 23 | 6592428 | 6593004 | 1.11 1.10 1.11 1.11 1.11 | 1.10 1.10 1.10 1.10 1.11 | 1.01x |
+| `frequency_square --all --size 6 --lambda 2` | 53220 | 204569673 | 224919034 | 117.83 113.07 113.23 113.24 | 12.64 12.62 12.70 | 9.0x |
+| `regular_random --all --seed=1` | 32985 | 14231970 | 18870069 | 21.54 21.46 21.42 21.41 21.25 | 2.09 2.11 2.11 2.12 2.17 | 10.1x |
+| `langford --all` | 52 | 964583 | 1024105 | 0.23 0.23 0.23 0.23 0.23 | 0.26 0.26 0.27 0.27 0.27 | 0.85x |
+| `talent` (optimisation) | 23 | 6592428 | 6669941 | 1.11 1.10 1.11 1.11 1.11 | 1.13 1.13 1.13 1.12 1.12 | 0.98x |
+
+The "after" side includes stating solutions in bits, which is what the size
+column mostly moved on; the section above separates the two changes.
 
 The first `frequency_square` "before" run is a cold-cache outlier, which is
 why the ratios are medians rather than means: the median is 113.235 either way,
@@ -248,14 +309,15 @@ core are indexed differently there. `regular_random` is flat (48608 KB to
 The shape to take from this: **the win is enumeration with many solutions, and
 it is an order of magnitude.** Optimisation is free but not a speedup on
 anything we have. `talent` is the longest improvement chain in the examples, at
-23 logged solutions, and deleting 22 of them changes the proof by 576 bytes and
-the checking time by nothing measurable --- an objective-improving constraint
-is one short PB row over the objective terms, so it is not what the checker's
-time goes on. Take the optimisation half as tidiness (and as the thing that
-stops a long-running branch and bound accumulating rows without limit) rather
-than as a number. Small enumerations lose slightly (`langford`, 52 solutions,
-13 per cent slower and 1.5 per cent bigger) because the one-off promotion of
-the encoding to core is not paid back.
+23 logged solutions, and deleting 22 of them moves the checking time by nothing
+measurable --- an objective-improving constraint is one short PB row over the
+objective terms, so it is not what the checker's time goes on; the 77 kB it
+gains is the bit-form `soli` lines, not the deletions. Take the optimisation
+half as tidiness (and as the thing that stops a long-running branch and bound
+accumulating rows without limit) rather than as a number. Small enumerations
+lose slightly (`langford`, 52 solutions, 15 per cent slower and 6 per cent
+bigger) because the one-off promotion of the encoding to core is not paid back
+at that scale.
 
 These figures replace an earlier set taken while the checker was being swapped
 underneath them. They came out the same to within noise, so the earlier

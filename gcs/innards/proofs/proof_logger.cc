@@ -299,32 +299,31 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
     WPBSum blocking_sum{};
 
+    // The assignment handed to the rule is stated in bits, at every assertion
+    // level. The bits are the variables the OPB is written over, so this is a
+    // solution to the formula in the formula's own terms: what VeriPB then
+    // preserves, and what the trimmer has to keep alive to make sense of the
+    // line, is the model rather than a set of atoms the proof introduced along
+    // the way. Stating it in eq atoms also works --- unit propagation gets from
+    // one to the other either way, through the same reifications -- but it
+    // leaves the enumeration projected onto extension variables.
     for (const auto & [var, val] : all_variables_and_values) {
         if (! optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
             blocking_sum += 1_i * (var != val);
 
         overloaded{
-            [&](const ConstantIntegerVariableID &) {}, //
-            [&](const SimpleIntegerVariableID & var) {
-                if (_imp->assertion_level > AssertionLevel::Definitions)
-                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(var, val);
-                else
-                    _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(var == val);
-            }, //
+            [&](const ConstantIntegerVariableID &) {},                                                                                       //
+            [&](const SimpleIntegerVariableID & var) { _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(var, val); }, //
             [&](const ViewOfIntegerVariableID & var) {
-                if (_imp->assertion_level > AssertionLevel::Definitions) {
-                    // An unregistered view (e.g. an objective too wide to
-                    // host its own bit vector) is witnessed through the
-                    // underlying's bits at the deviewed value instead.
-                    if (auto v_id = names_and_ids_tracker().find_view(var))
-                        _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*v_id, val);
-                    else
-                        _imp->proof << " "
-                                    << names_and_ids_tracker().bit_assignment_string_for(
-                                           var.actual_variable, var.negate_first ? var.then_add - val : val - var.then_add);
-                }
+                // An unregistered view (e.g. an objective too wide to host its
+                // own bit vector) is witnessed through the underlying's bits at
+                // the deviewed value instead.
+                if (auto v_id = names_and_ids_tracker().find_view(var))
+                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*v_id, val);
                 else
-                    _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(deview(var == val));
+                    _imp->proof << " "
+                                << names_and_ids_tracker().bit_assignment_string_for(
+                                       var.actual_variable, var.negate_first ? var.then_add - val : val - var.then_add);
             } //
         }
             .visit(var);
@@ -463,11 +462,9 @@ auto ProofLogger::record_solution_constraint(ProofLineNumber line) -> void
     // want: nothing above ever refutes it.
     //
     // Doing it this way rather than deleting the constraint next to the clause
-    // that subsumes it also means the constraint outlives the clause derivation
-    // it took part in. VeriPB's unit propagation loses the conflict for a later
-    // rup if a checked deletion lands between the constraint's last use and that
-    // rup, even though the resulting database is identical either way; see
-    // dev_docs/solution-constraint-deletion.md.
+    // that subsumes it costs one fewer `core id` step and one fewer checked
+    // deletion per solution, the range that forget_proof_level already emits
+    // doing the work; see dev_docs/solution-constraint-deletion.md.
     auto level = std::max(_imp->active_proof_level - 1, 0);
     if (cmp_less_equal(_imp->proof_lines_by_level.size(), level))
         _imp->proof_lines_by_level.resize(level + 1);
