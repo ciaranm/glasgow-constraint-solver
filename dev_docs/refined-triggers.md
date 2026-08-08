@@ -10,7 +10,8 @@ weighting](restarts-nogoods-weighting.md)), which subscribed to *every* variable
 and rescanned its whole store on every domain change.
 
 **Refined triggers** let a propagator instead arm watches on individual literals
-(`x = v`, `x != v`, `x >= k`, `x < k`): it is woken only when one of *those*
+(`x = v`, `x != v`, `x >= k`, `x < k`, `x in [lo, hi]`, `x not in [lo, hi]`): it
+is woken only when one of *those*
 literals becomes entailed, and is told exactly which fired. This document covers
 the engine mechanism (`gcs/innards/propagators.{hh,cc}`) and its first real
 client, the two-watched-literal `Nogoods` propagator
@@ -120,7 +121,22 @@ coarse trigger masks:
 | `x == v`     | `x` becoming single-valued       | `{Instantiated}`              |
 | `x >= k`     | a lower-bound rise               | `{BoundsChanged, Instantiated}` |
 | `x < k`      | an upper-bound drop              | `{BoundsChanged, Instantiated}` |
+| `x in [lo, hi]` | both bounds moving inside the interval | `{BoundsChanged, Instantiated}` |
 | `x != v`     | any value removal                | all change kinds              |
+| `x not in [lo, hi]` | any value removal         | all change kinds              |
+
+The two range rows follow from `State::test_literal`. `x in [lo, hi]` is
+`DefinitelyTrue` only when `lower_bound >= lo && upper_bound <= hi` — both
+conditions are about bounds, so removing an interior value cannot newly entail
+it. `x not in [lo, hi]` becomes true when the domain stops intersecting the
+interval, which a removal from the *interior* can do, so it needs the full
+mask — the same one it would get from the conservative default.
+
+Nothing arms a watch on a range literal today: every `ctx.watch(...)` in the
+tree passes `>=`, `<=`, `<`, `==`, or a nogood literal, and a `Nogood` is a
+`vector<IntegerVariableCondition>` of decision literals. Those two rows are
+forward-looking, and this table is where a future caller would come to find out
+what they do.
 
 `refined_watch_trigger_mask(literal)` derives this from the operator at arm time.
 The firing loop tests `test_literal` only when `inf` is in the mask, so e.g. an
