@@ -214,7 +214,8 @@ namespace gcs
          * \brief Create the propagators for a search over this Problem,
          * returned by value.
          */
-        [[nodiscard]] auto create_propagators(innards::State &, innards::ProofModel * const) const -> innards::Propagators;
+        [[nodiscard]] auto create_propagators(innards::State &, Stats & GCS_LIFETIME_BOUND, innards::ProofModel * const) const
+            -> innards::Propagators;
 
         /**
          * \warning The yielded references alias objects owned by this Problem,

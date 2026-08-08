@@ -64,7 +64,9 @@ TEST_CASE("Conflict observer attributes a wipeout to the failing constraint, not
     auto x = state.allocate_integer_variable_with_state(0_i, 1_i);
     auto y = state.allocate_integer_variable_with_state(0_i, 1_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     // Constraint _1: innocent, triggers on x only. Dense constraint index 0.
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {x}});
     // Constraint _2: explicitly contradicts, with a non-empty reason. It is
@@ -103,7 +105,9 @@ TEST_CASE("Conflict observer fires for an inference-driven wipeout")
     State state;
     auto x = state.allocate_integer_variable_with_state(0_i, 1_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     // The contradiction here comes not from an explicit contradiction() call but
     // from an inference that empties x's domain (the Contradiction case inside
     // the tracker), exercising the other reason-stash path.
@@ -145,7 +149,9 @@ TEST_CASE("Conflict observer fires for a non-throwing (_or_stop) wipeout")
     State state;
     auto x = state.allocate_integer_variable_with_state(0_i, 1_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     propagators.install(
         NumberedConstraint{9},
         [x](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
@@ -179,7 +185,9 @@ TEST_CASE("Propagation without a conflict observer still detects the wipeout")
     State state;
     auto x = state.allocate_integer_variable_with_state(0_i, 1_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     propagators.install(
         NumberedConstraint{1},
         [](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
@@ -198,7 +206,9 @@ TEST_CASE("Every attached conflict observer is notified of a wipeout")
     State state;
     auto x = state.allocate_integer_variable_with_state(0_i, 1_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     propagators.install(
         NumberedConstraint{3},
         [x](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
@@ -227,7 +237,9 @@ TEST_CASE("Propagator scope and variable-to-constraint adjacency")
     auto y = state.allocate_integer_variable_with_state(0_i, 10_i);
     auto z = state.allocate_integer_variable_with_state(0_i, 10_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     // Constraint index 0, propagator 0: over x and y (with a duplicate and a
     // view of y to check deduplication / view resolution).
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {x, y}, .on_bounds = {y, -y}});

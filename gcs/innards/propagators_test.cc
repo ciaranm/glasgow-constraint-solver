@@ -36,7 +36,8 @@ namespace
 TEST_CASE("Claiming propagator is not re-woken by its own inference")
 {
     State state;
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
 
     int runs = 0;
@@ -52,7 +53,8 @@ TEST_CASE("Claiming propagator is not re-woken by its own inference")
 TEST_CASE("Without a claim, a propagator is re-woken by its own inference")
 {
     State state;
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
 
     int runs = 0;
@@ -68,7 +70,8 @@ TEST_CASE("Without a claim, a propagator is re-woken by its own inference")
 TEST_CASE("A claimant's inference wakes a sharing propagator, whose inference re-wakes the claimant")
 {
     State state;
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
     auto y = state.allocate_integer_variable_with_state(0_i, 10_i);
 
@@ -120,7 +123,8 @@ TEST_CASE("A claimant's inference wakes a sharing propagator, whose inference re
 TEST_CASE("A claimant is not re-woken by a foreign inference it had already seen")
 {
     State state;
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
     auto y = state.allocate_integer_variable_with_state(0_i, 10_i);
 
@@ -169,7 +173,8 @@ TEST_CASE("A claimant is not re-woken by a foreign inference it had already seen
 TEST_CASE("A claimant is re-woken by a foreign inference recorded after its run ended")
 {
     State state;
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
     auto y = state.allocate_integer_variable_with_state(0_i, 10_i);
 
@@ -218,7 +223,8 @@ TEST_CASE("A claimant is re-woken by a foreign inference recorded after its run 
 TEST_CASE("A repeated trigger variable downgrades the claim")
 {
     State state;
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
 
     int runs = 0;
@@ -236,7 +242,8 @@ TEST_CASE("A repeated trigger variable downgrades the claim")
 TEST_CASE("A view aliasing another trigger variable downgrades the claim")
 {
     State state;
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
 
     int runs = 0;
@@ -252,7 +259,8 @@ TEST_CASE("A view aliasing another trigger variable downgrades the claim")
 TEST_CASE("A view of a distinct variable does not downgrade the claim")
 {
     State state;
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
     auto y = state.allocate_integer_variable_with_state(0_i, 10_i);
 

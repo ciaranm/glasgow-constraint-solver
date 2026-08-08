@@ -11,7 +11,9 @@
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/lifetime.hh>
 #include <gcs/problem.hh>
+#include <gcs/stats.hh>
 
 #include <atomic>
 #include <cstddef>
@@ -419,7 +421,16 @@ namespace gcs::innards
          * \name Constructors, destructors, etc.
          */
         ///@{
-        explicit Propagators();
+        /**
+         * \brief Construct over the Stats a search will fill in.
+         *
+         * The reference is the diagnostic bus: a component reports a decision
+         * through \ref report at the moment it makes it, rather than leaving
+         * something to be drained at teardown, which is what makes
+         * SolveCallbacks::stats_report worth having. The Stats must outlive
+         * this; gcs::solve_with() constructs it first for exactly that reason.
+         */
+        explicit Propagators(Stats & stats GCS_LIFETIME_BOUND);
         ~Propagators();
 
         Propagators(const Propagators &) = delete;
@@ -589,6 +600,23 @@ namespace gcs::innards
          * \sa Stats
          */
         auto fill_in_constraint_stats(Stats &) const -> void;
+
+        /**
+         * \brief Register a component's stats block with the search's Stats.
+         *
+         * For a Presolver, or a constraint installed by one, that keeps a block
+         * of its own: this is what puts it into Stats::components() so that it
+         * is reported. Registering the same block twice does nothing, so a
+         * constraint installed many times contributes one entry.
+         */
+        auto add_component_stats(std::shared_ptr<const ComponentStats>) -> void;
+
+        /**
+         * \brief Report one decision to the search's Stats, now.
+         *
+         * \sa StatsNote
+         */
+        auto report(StatsNote) -> void;
 
         ///@}
 

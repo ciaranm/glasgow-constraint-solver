@@ -100,7 +100,8 @@ namespace gcs
     /**
      * \brief Callbacks for gcs::solve_with().
      *
-     * Every callback is optional.
+     * Every callback is optional, and unset means "do nothing" --- with the one
+     * documented exception of \ref stats_report.
      *
      * \ingroup SolveCallbacks
      */
@@ -111,6 +112,23 @@ namespace gcs
         BranchHeuristic branch = BranchHeuristic{};
         AfterProofStartedCallback after_proof_started = AfterProofStartedCallback{};
         CompletedCallback completed = CompletedCallback{};
+
+        /**
+         * \brief Where a component's decisions go, as they are decided.
+         *
+         * \warning The one callback whose unset behaviour is not silence: unset
+         * gets gcs::default_stats_report(), which writes StatsLevel::Important
+         * notes to `cerr`. A silent default is what this channel exists to fix,
+         * so silence is asked for with gcs::silent_stats_report() rather than
+         * by leaving this alone. Set it to route notes into a frontend's or a
+         * client library's own idiom instead of having `cerr` forced on it.
+         *
+         * Every note is accumulated on the returned Stats either way, so a
+         * caller that only wants them at the end can read Stats::notes().
+         *
+         * \sa StatsReportCallback
+         */
+        StatsReportCallback stats_report = StatsReportCallback{};
 
         /**
          * \brief If set, search restarts on a growing sequence of conflict

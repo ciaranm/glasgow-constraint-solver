@@ -153,6 +153,11 @@ namespace
 
 struct Propagators::Imp : RefinedWatchSink
 {
+    // The search's Stats, which is where a component's decisions are reported
+    // as they happen. A pointer rather than a reference so that Propagators
+    // stays movable, which create_propagators returning one by value needs.
+    Stats * stats = nullptr;
+
     vector<PropagationFunction> propagation_functions;
     std::array<vector<InitialisationFunction>, number_of_initialiser_priorities> initialisation_functions_by_priority;
     // How many of each bucket initialise() has already run. A presolver can
@@ -353,8 +358,9 @@ struct Propagators::Imp : RefinedWatchSink
     }
 };
 
-Propagators::Propagators() : _imp(make_unique<Imp>())
+Propagators::Propagators(Stats & stats) : _imp(make_unique<Imp>())
 {
+    _imp->stats = &stats;
 }
 
 Propagators::~Propagators() = default;
@@ -926,6 +932,16 @@ auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void
     stats.contradicting_propagations += _imp->contradicting_propagations;
     for (const auto & ignored : _imp->idempotence_claims_ignored)
         stats.idempotence_downgrades += ignored;
+}
+
+auto Propagators::add_component_stats(std::shared_ptr<const ComponentStats> component) -> void
+{
+    _imp->stats->add_component(move(component));
+}
+
+auto Propagators::report(StatsNote note) -> void
+{
+    _imp->stats->report(move(note));
 }
 
 auto Propagators::trigger_on_change(IntegerVariableID var, int t) -> void
