@@ -200,9 +200,9 @@ auto Problem::add_presolver(const Presolver & p) -> void
     _imp->presolvers.push_back(p.clone());
 }
 
-auto Problem::create_propagators(State & state, ProofModel * const optional_proof_model) const -> Propagators
+auto Problem::create_propagators(State & state, Stats & stats, ProofModel * const optional_proof_model) const -> Propagators
 {
-    Propagators result;
+    Propagators result{stats};
     for (auto & c : _imp->constraints) {
         auto cc = c->clone();
         // clone() is deliberately id-agnostic; each post/install site sets the id.

@@ -210,8 +210,6 @@ auto gcs::innards::install_derived_cumulative(
     // still the option of not installing a propagator whose inferences could
     // not be justified.
     if (logger) {
-        logger->emit_proof_comment(
-            "derived cumulative: " + to_string(rows_by_time.size()) + " capacity rows over " + to_string(spec.row_donors.size()) + " donors");
         for (const auto & [t, rows] : rows_by_time) {
             auto derived = spec.recipe(*logger, rows, t);
             if (! derived) {
@@ -286,7 +284,8 @@ auto gcs::innards::install_derived_cumulative(
 
         propagators.install_initialiser(
             [inputs, energy_tasks, energy_presences, makespan = *spec.makespan, capacity = spec.capacity, mutation = spec.makespan_mutation,
-                reached = spec.makespan_bound_reached](const State & state, auto & inference, ProofLogger * const logger) -> void {
+                reached = spec.makespan_bound_reached,
+                derived_stats = spec.stats](const State & state, auto & inference, ProofLogger * const logger) -> void {
                 // An optional task's length x height is guaranteed work only
                 // once it is known present, and at the root it usually is not.
                 // Counting one that is undecided would claim energy the
@@ -335,6 +334,9 @@ auto gcs::innards::install_derived_cumulative(
                 if (reached)
                     reached(bound->bound);
 
+                if (derived_stats)
+                    ++derived_stats->makespan_bounds_posted;
+
                 // Tests only: claiming one more than the argument reaches must
                 // be refused, since a derivation with slack in it verifies
                 // whatever it concludes.
@@ -378,6 +380,16 @@ auto gcs::innards::install_derived_cumulative(
             return propagate_cumulative(*inputs, state, inference, logger);
         },
         triggers);
+
+    // Only here, on the success path: every decline above returns without
+    // installing anything, and a block saying a constraint was derived when it
+    // was not is worse than one saying nothing. The caller's aggregate, not a
+    // component of this constraint's own --- see DerivedCumulativeSpec::stats.
+    if (spec.stats) {
+        ++spec.stats->constraints;
+        spec.stats->donors += spec.row_donors.size();
+        spec.stats->capacity_rows += inputs->capacity_lines.size();
+    }
 
     return true;
 }

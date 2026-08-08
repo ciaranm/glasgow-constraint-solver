@@ -34,6 +34,7 @@ add_library(glasgow_constraint_solver
         constraints/count/count.cc
         constraints/cumulative/cumulative.cc
         constraints/cumulative/derived_cumulative.cc
+        constraints/cumulative/derived_cumulative_stats.cc
         constraints/cumulative/donor_view.cc
         constraints/difference/difference_constraints.cc
         constraints/difference/difference_graph.cc

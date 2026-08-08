@@ -68,6 +68,7 @@ using std::pair;
 using std::set;
 using std::shared_ptr;
 using std::string;
+using std::to_string;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -279,6 +280,69 @@ namespace
         if (proof_name && verify)
             verify_proof_and_clean_up(*proof_name);
         return outcome;
+    }
+
+    /// What a solve reported, alongside what it came to.
+    struct Recorded
+    {
+        Stats stats;
+        vector<StatsNote> notes;
+    };
+
+    [[nodiscard]] auto notes_at(const Recorded & recorded, StatsLevel level) -> vector<StatsNote>
+    {
+        vector<StatsNote> result;
+        for (const auto & note : recorded.notes)
+            if (note.level == level)
+                result.push_back(note);
+        return result;
+    }
+
+    [[nodiscard]] auto strengthening_component(const Stats & stats) -> shared_ptr<const ComponentStats>
+    {
+        for (const auto & component : stats.components())
+            if (component->component_name() == "cumulative_strengthening")
+                return component;
+        return nullptr;
+    }
+
+    /// The number of fields in a stats block, worked out from its size.
+    ///
+    /// Every field of this block is eight bytes wide --- a `std::size_t`, an
+    /// `Integer`, or the four-`std::size_t` sub-block --- and the only other
+    /// thing in the object is the vtable pointer ComponentStats brings. So
+    /// `sizeof` counts the fields, and a field added without a matching
+    /// `entries()` line moves one side of the comparison and not the other.
+    template <typename Block_>
+    [[nodiscard]] auto field_count() -> size_t
+    {
+        static_assert(0 == (sizeof(Block_) - sizeof(void *)) % sizeof(size_t),
+            "this block has a field that is not eight bytes wide, so counting "
+            "its fields needs doing another way");
+        return (sizeof(Block_) - sizeof(void *)) / sizeof(size_t);
+    }
+
+    /// Solve, recording every note the solver reported as it reported it.
+    ///
+    /// A recording callback rather than a parse of rendered output, because a
+    /// note's *level* is exactly what rendering throws away: a note drifting
+    /// from Important or General down to Detailed would still appear in a dump
+    /// and would still say the right words, and nothing but this would notice.
+    auto solve_recording(const Instance & inst, const Setup & setup, const optional<string> & proof_name) -> Recorded
+    {
+        Problem p;
+        post(p, inst, setup);
+
+        auto notes = make_shared<vector<StatsNote>>();
+        auto stats = solve_with(p,
+            SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; },
+                .stats_report = [notes](const StatsNote & note) -> void { notes->push_back(note); }},
+            proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+
+        if (proof_name)
+            verify_proof_and_clean_up(*proof_name);
+
+        return Recorded{move(stats), move(*notes)};
     }
 
     /// Solve a general instance, collecting the same tuples brute force
@@ -1078,6 +1142,114 @@ auto main(int argc, char * argv[]) -> int
             fail("a view-capacity donor was not declined");
         if (stats->donors_strengthened != 0)
             fail("a view-capacity donor was strengthened anyway");
+    }
+
+    // #662's diagnostic channel. Three assertions, each of which is a way a
+    // feature like this gets added and then never fires again.
+    {
+        // One: a *default-constructed* presolver --- one nobody passed a block
+        // to --- reaches Stats::components() with something to say. That is the
+        // always-allocate path, which is the whole of the fix and the part with
+        // no other observable effect: every other check this presolver has to
+        // pass is passed just as well while its block is invisible.
+        auto recorded = solve_recording(pack, Setup{}, nullopt);
+        auto component = strengthening_component(recorded.stats);
+        if (! component)
+            fail("a default-constructed presolver did not register a stats block");
+        if (component->summary().empty())
+            fail("the registered block had nothing to say");
+
+        // And that it has the figures in it, rather than being a block that was
+        // allocated and then left behind.
+        if (string::npos == component->summary().find("1 of 1 posted Cumulatives strengthened"))
+            fail("the registered block was not the one the presolver filled in: " + component->summary());
+
+        // Separately: a block the *caller* supplied is the block that gets
+        // registered, by identity. Problem::add_presolver stores a clone and
+        // run() happens on that, so a clone allocating its own would leave the
+        // caller's handle reading zero --- while everything above carried on
+        // passing, since what reaches Stats::components() is whatever the clone
+        // holds.
+        auto block = make_shared<CumulativeStrengtheningStats>();
+        auto shared = solve_recording(pack, Setup{.stats = block}, nullopt);
+        if (strengthening_component(shared.stats).get() != static_cast<const ComponentStats *>(block.get()))
+            fail("the caller's stats block is not the one that was registered");
+        if (block->donors_strengthened != 1)
+            fail("the caller's stats block was not the one that was filled in");
+
+        // Two: every field of the block reaches the flat view. A figure that is
+        // filled in and reaches nobody is what this design rots into, and
+        // nothing else would catch it.
+        if (component->entries().size() != field_count<CumulativeStrengtheningStats>())
+            fail("the flat view has " + to_string(component->entries().size()) + " entries for " +
+                to_string(field_count<CumulativeStrengtheningStats>()) + " fields");
+
+        println(cerr, "diagnostics: `{}`, {} entries", component->summary(), component->entries().size());
+    }
+
+    // Three: the level, asserted rather than the text. With proofs off, since
+    // that is the configuration the whole issue is about --- and the decline
+    // that reaches it is a view capacity, not a budget: both budget checks are
+    // estimates of *proof size* and are only made when there is a proof to
+    // size, so a proofs-off budget-decline fixture cannot exist.
+    {
+        auto notes = make_shared<vector<StatsNote>>();
+
+        Problem p;
+        vector<IntegerVariableID> starts;
+        for (int i = 0; i < 3; ++i)
+            starts.push_back(p.create_integer_variable(0_i, 3_i));
+        vector<IntegerVariableID> lengths{constant_variable(2_i), constant_variable(2_i), constant_variable(2_i)},
+            heights{constant_variable(3_i), constant_variable(3_i), constant_variable(3_i)};
+        p.post(Cumulative{starts, lengths, heights, p.create_integer_variable(4_i, 7_i) + 1_i});
+        p.add_presolver(CumulativeStrengthening{});
+        solve_with(p,
+            SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; },
+                .stats_report = [notes](const StatsNote & note) -> void { notes->push_back(note); }},
+            nullopt);
+
+        Recorded recorded{Stats{}, move(*notes)};
+        auto general = notes_at(recorded, StatsLevel::General);
+        if (general.size() != 1)
+            fail("a view-capacity decline reported " + to_string(general.size()) + " General notes with proofs off, not one");
+        if (! general[0].constraint)
+            fail("the note does not carry the constraint it is about, so nothing can filter on it");
+        if (general[0].component != "cumulative_strengthening")
+            fail("the note is not attributed to this presolver");
+        if (string::npos == general[0].text.find("view"))
+            fail("the note does not say what was wrong: " + general[0].text);
+
+        // Not Important: nothing was limited, and a capacity this presolver
+        // cannot argue about is not a configuration the caller can change. If
+        // everything is Important then nothing is.
+        if (! notes_at(recorded, StatsLevel::Important).empty())
+            fail("a view capacity raised an Important note");
+    }
+
+    // And the budget declines, which do carry a figure a caller would act on,
+    // reported at both levels: the figures at General, and what it means at
+    // Important. Proofs on, necessarily.
+    if (proofs) {
+        auto recorded = solve_recording(deep_gap, Setup{.budget = 0}, make_optional("cumulative_strengthening_note_budget"));
+
+        auto general = notes_at(recorded, StatsLevel::General);
+        auto has_figures = false;
+        for (const auto & note : general)
+            if (note.constraint && string::npos != note.text.find("dynamic programming states against a budget of 0") &&
+                string::npos == note.text.find("would need 0 dynamic"))
+                has_figures = true;
+        if (! has_figures)
+            fail("the budget decline's figures are not in any General note");
+
+        auto important = notes_at(recorded, StatsLevel::Important);
+        if (important.size() != 1)
+            fail("a budget decline raised " + to_string(important.size()) + " Important notes, not one");
+        if (important[0].constraint)
+            fail("the Important note names a constraint, which is not what it is for");
+        if (string::npos == important[0].text.find("1 of 1 constraints"))
+            fail("the Important note does not say how much was skipped: " + important[0].text);
+
+        println(cerr, "diagnostics: Important note is `{}`", important[0].text);
     }
 
     // The budget. Set to zero, the dynamic programming path is unaffordable and

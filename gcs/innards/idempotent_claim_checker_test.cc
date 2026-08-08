@@ -34,7 +34,8 @@ TEST_CASE("A lying idempotence claim is caught by the checker")
     enable_checker();
 
     State state;
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
 
     // Shaves one value off x per run, so an immediate re-run always infers
@@ -58,7 +59,8 @@ TEST_CASE("An honest idempotence claim passes the checker")
     enable_checker();
 
     State state;
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
 
     int runs = 0;
@@ -86,7 +88,8 @@ TEST_CASE("A downgraded claim is neither honoured nor checked")
     enable_checker();
 
     State state;
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
     auto x = state.allocate_integer_variable_with_state(0_i, 3_i);
 
     // The same liar as above, but with an aliased trigger scope: install()
