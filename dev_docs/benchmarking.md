@@ -10,6 +10,15 @@ The set was settled on while doing Phase 2 of issue #134. The intent is that
 future performance work re-uses it, so that results are comparable across
 PRs over time.
 
+**If the change under test is on the proof side**, use
+[proof-benchmarks.md](proof-benchmarks.md) instead: it curates a separate set
+of instances for measuring proof-writing cost, proof size and VeriPB checking
+time. The two sets are almost disjoint, because sizes that make a good solve
+benchmark are usually far too large to proof-log — `ortho_latin --size=6 --all`
+and `tsp` from the table below both write more than 4 GB of `.pbp`. The
+"Benchmarking proof-shape changes" section further down remains the methodology
+for that work; proof-benchmarks.md is the instance set to apply it to.
+
 ## What to run
 
 Eight benchmarks, picked to cover a mix of search-heavy / propagation-heavy
@@ -166,6 +175,13 @@ constraint variant, a refactor of how a propagator emits scaffolding,
 moving from per-call to upfront derivation — is a different kind of
 performance change with different signals and different traps.
 
+The rest of this section is the methodology. For the instances to apply it
+to, see [proof-benchmarks.md](proof-benchmarks.md), which curates a set sized
+so that VeriPB takes minutes rather than milliseconds, and which separates
+instances that stress proof *writing* from those that stress proof
+*checking* — the two are close to opposites, and a change that helps one
+routinely hurts the other.
+
 ### What to capture
 
 - **`solve` time** — usually goes up modestly (more proof I/O), but
@@ -263,6 +279,14 @@ instances of increasing size; `--random N` scales continuously without
 needing a data file. Enumerating all solutions (`--all`) of an
 under-clued or random instance is the proof-shape regime here, exactly
 as for `regular_random --all`.
+
+**`--random N` does not deliver that regime, though.** The generator
+builds the clues from a random picture, so the puzzle it poses is very
+nearly determined and `--all` barely searches: `--random 20 --seed 1
+--all` measures **17 recursions and 3 solutions**, which is inside the
+"tens of recursions means a no-search bench" band described two sections
+above. `--seed 3` gives 3 recursions. Use the `--dzn` instances, which
+are genuinely under-clued, and treat `--random` as a smoke test only.
 
 ### Cross-variant invariants
 

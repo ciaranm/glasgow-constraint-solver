@@ -46,6 +46,12 @@ library. For an introduction to *using* the solver, start with the top-level
   measuring the wall-time impact of a performance-sensitive change, the
   rationale for each pick, the harness pattern for comparing two builds,
   and what to capture. Use when quantifying a refactor's perf impact.
+- [Proof benchmarks](proof-benchmarks.md) — the counterpart set for when
+  the *proof* is what is being measured: proof-writing cost, proof size
+  and VeriPB checking time. Groups instances by whether they stress
+  writing or checking, records which candidates are too large to
+  proof-log at all, and lists the argument-shape traps. Use when
+  changing proof logging, scaffolding, encodings or hinting.
 - [Frontend support matrix](frontend-support-matrix.md) — single source of
   truth for which gcs propagators each frontend (MiniZinc, XCSP3, CPMpy)
   exposes, plus where the solver-side gaps are tracked. Update when adding
