@@ -1159,12 +1159,23 @@ auto main(int argc, char * argv[]) -> int
         if (component->summary().empty())
             fail("the registered block had nothing to say");
 
-        // And that it is the block the presolver filled in rather than a fresh
-        // one: Problem::add_presolver stores a *clone* and run() happens on
-        // that, so a clone allocating its own block would leave this reporting
-        // an idle presolver while the strengthening went ahead.
+        // And that it has the figures in it, rather than being a block that was
+        // allocated and then left behind.
         if (string::npos == component->summary().find("1 of 1 posted Cumulatives strengthened"))
-            fail("the registered block is not the one the presolver filled in: " + component->summary());
+            fail("the registered block was not the one the presolver filled in: " + component->summary());
+
+        // Separately: a block the *caller* supplied is the block that gets
+        // registered, by identity. Problem::add_presolver stores a clone and
+        // run() happens on that, so a clone allocating its own would leave the
+        // caller's handle reading zero --- while everything above carried on
+        // passing, since what reaches Stats::components() is whatever the clone
+        // holds.
+        auto block = make_shared<CumulativeStrengtheningStats>();
+        auto shared = solve_recording(pack, Setup{.stats = block}, nullopt);
+        if (strengthening_component(shared.stats).get() != static_cast<const ComponentStats *>(block.get()))
+            fail("the caller's stats block is not the one that was registered");
+        if (block->donors_strengthened != 1)
+            fail("the caller's stats block was not the one that was filled in");
 
         // Two: every field of the block reaches the flat view. A figure that is
         // filled in and reaches nobody is what this design rots into, and

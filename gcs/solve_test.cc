@@ -725,3 +725,26 @@ TEST_CASE("AutoTable reports what it did, with no stats block asked for")
     CHECK(by_name["tuples"] == 4); // a + b == 3, over 0..3
     CHECK(by_name["search_nodes"] > 0);
 }
+
+TEST_CASE("A caller's AutoTable stats block is the one that gets filled in and reported")
+{
+    // Problem::add_presolver stores a *clone*, and run() is called on that, so
+    // a clone allocating a fresh block instead of sharing this one would leave
+    // the caller's handle reading zero for ever --- while everything visible
+    // through Stats::components() carried on looking exactly right, since what
+    // is registered there is whatever the clone happens to hold. Pointer
+    // identity is what says the two are the same block.
+    auto block = std::make_shared<AutoTableStats>();
+
+    Problem p;
+    auto a = p.create_integer_variable(0_i, 3_i);
+    auto b = p.create_integer_variable(0_i, 3_i);
+    p.post(WeightedSum{} + 1_i * a + 1_i * b == 3_i);
+    p.add_presolver(AutoTable{vector<IntegerVariableID>{a, b}, block});
+
+    auto stats = solve(p, [](const CurrentState &) -> bool { return true; });
+
+    CHECK(block->ran);
+    CHECK(block->tuples == 4);
+    CHECK(component_named(stats, "auto_table").get() == static_cast<const ComponentStats *>(block.get()));
+}
