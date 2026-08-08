@@ -16,6 +16,7 @@
 #include <gcs/interval_set.hh>
 #include <gcs/proof.hh>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <deque>
@@ -39,8 +40,10 @@ using fmt::format;
 
 #include <util/overloaded.hh>
 
+using std::cmp_less;
 using std::cmp_less_equal;
 using std::deque;
+using std::erase_if;
 using std::flush;
 using std::fstream;
 using std::ios;
@@ -57,6 +60,7 @@ using std::tuple;
 using std::variant;
 using std::vector;
 using std::visit;
+using std::ranges::any_of;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -168,6 +172,14 @@ namespace
         }
             .visit(lit);
     }
+
+    // The lines a level holds that we promoted to core, if any. Levels only get
+    // an entry once something is promoted at them, so most proofs never grow
+    // this at all.
+    [[nodiscard]] auto core_lines_at(deque<IntervalSet<long long>> & levels, int depth) -> IntervalSet<long long> *
+    {
+        return cmp_less(depth, levels.size()) ? &levels.at(depth) : nullptr;
+    }
 }
 
 struct ProofLogger::Imp
@@ -186,6 +198,24 @@ struct ProofLogger::Imp
     // discard_superseded_objective_constraints.
     optional<ProofLine> previous_soli_constraint;
     optional<ProofLine> previous_objective_bound;
+
+    // Enumeration's half of the same idea, which is more involved because a
+    // blocking constraint is subsumed not by the next solution's but by the
+    // backtrack clause refuting the subtree it was found in.
+    //
+    // deleting_solution_constraints gates the whole thing;
+    // definitions_awaiting_core collects the encoding definitions a checked
+    // deletion will need to see in core (see begin_recording_definitions);
+    // solution_constraints pairs each blocking constraint with the proof level
+    // that was active when it was logged, so a backtrack knows which ones its
+    // clause covers; and core_lines_by_level mirrors proof_lines_by_level for
+    // just the lines we promoted, so a backtrack can tell whether a descendant
+    // already promoted something and its own clause has to follow.
+    bool deleting_solution_constraints = true;
+    unsigned long long recording_definitions = 0;
+    vector<long long> definitions_awaiting_core;
+    vector<pair<ProofLine, int>> solution_constraints;
+    deque<IntervalSet<long long>> core_lines_by_level;
 
     string proof_file;
     fstream proof;
@@ -346,6 +376,16 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         _imp->previous_soli_constraint = solution_constraint;
         _imp->previous_objective_bound = objective_bound;
     }
+    else if (_imp->deleting_solution_constraints && _imp->assertion_level <= AssertionLevel::Definitions) {
+        // Enumeration: the blocking constraint solx creates is subsumed by the
+        // backtrack clause of whichever frame eventually refutes the subtree
+        // this solution was found in, so hand it to backtrack() to delete, along
+        // with the level that says which frames those are. Above
+        // AssertionLevel::Definitions there is nothing to hand over: the atom
+        // definitions a checked deletion needs to see are asserted or omitted
+        // rather than derived, so the deletion goal could not be discharged.
+        _imp->solution_constraints.emplace_back(solution_constraint, _imp->active_proof_level);
+    }
 }
 
 auto ProofLogger::discard_superseded_objective_constraints() -> void
@@ -373,8 +413,91 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     for (const auto & guess : guesses)
         guesses_as_reason.emplace_back(ProofLiteral{guess});
     auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-    emit_under_reason(
+    auto clause = emit_under_reason(
         assert_or_rup, WPBSum{} >= 1_i, ProofLevel::Current, guesses_as_reason, AssertionAnnotation{.hint_name = hints::Backtrack::hint_name});
+    discharge_solution_constraints(clause);
+}
+
+auto ProofLogger::disable_solution_deletion() -> void
+{
+    _imp->deleting_solution_constraints = false;
+    _imp->definitions_awaiting_core.clear();
+    _imp->solution_constraints.clear();
+}
+
+auto ProofLogger::begin_recording_definitions() -> void
+{
+    ++_imp->recording_definitions;
+}
+
+auto ProofLogger::end_recording_definitions() -> void
+{
+    --_imp->recording_definitions;
+}
+
+auto ProofLogger::move_to_core(const vector<ProofLine> & lines) -> void
+{
+    if (lines.empty())
+        return;
+
+    write_indent();
+    _imp->proof << "core id";
+    for (const auto & line : lines)
+        _imp->proof << " " << relative_proof_line(line, _imp->proof_line.number);
+    _imp->proof << ";\n";
+}
+
+auto ProofLogger::promote_definitions_to_core() -> void
+{
+    // One `core id` step can take a list, and the first batch can be most of the
+    // encoding, so chunk it rather than writing a line megabytes wide.
+    const std::size_t per_line = 128;
+    for (std::size_t start = 0; start < _imp->definitions_awaiting_core.size(); start += per_line) {
+        write_indent();
+        _imp->proof << "core id";
+        for (auto n = start; n != std::min(start + per_line, _imp->definitions_awaiting_core.size()); ++n)
+            _imp->proof << " " << (_imp->definitions_awaiting_core[n] - _imp->proof_line.number - 1);
+        _imp->proof << ";\n";
+    }
+    _imp->definitions_awaiting_core.clear();
+}
+
+auto ProofLogger::discharge_solution_constraints(const ProofLine & backtrack_clause) -> void
+{
+    if (! _imp->deleting_solution_constraints)
+        return;
+
+    auto level = _imp->active_proof_level;
+
+    // Everything logged deeper than this frame is inside the subtree the clause
+    // has just refuted.
+    auto covered = [&](const pair<ProofLine, int> & s) { return s.second > level; };
+    auto any_solutions = any_of(_imp->solution_constraints, covered);
+
+    // Even with no solutions of our own left to delete, a descendant that
+    // deleted some had to put its own clause into core, and the forget that
+    // follows this backtrack will delete that clause. That is a checked
+    // deletion too, and ours is the constraint that discharges it.
+    auto below = core_lines_at(_imp->core_lines_by_level, level + 1);
+    auto any_core_below = below && ! below->empty();
+
+    if (! any_solutions && ! any_core_below)
+        return;
+
+    promote_definitions_to_core();
+    move_to_core({backtrack_clause});
+    if (cmp_less_equal(_imp->core_lines_by_level.size(), level))
+        _imp->core_lines_by_level.resize(level + 1);
+    _imp->core_lines_by_level.at(level).insert_at_end(std::get<ProofLineNumber>(backtrack_clause).number);
+
+    if (any_solutions) {
+        vector<ProofLine> to_delete;
+        for (const auto & s : _imp->solution_constraints)
+            if (covered(s))
+                to_delete.push_back(s.first);
+        erase_if(_imp->solution_constraints, covered);
+        delete_proof_lines(to_delete);
+    }
 }
 
 auto ProofLogger::emit_learned_nogood(const vector<Literal> & decisions) -> ProofLine
@@ -684,6 +807,12 @@ auto ProofLogger::enter_proof_level(int depth) -> void
 
 auto ProofLogger::forget_proof_level(int depth) -> void
 {
+    // Any clause we promoted at this level goes with it: it is a core deletion,
+    // discharged by the backtrack clause of the frame doing the forgetting,
+    // which discharge_solution_constraints has just put into core.
+    if (auto promoted = core_lines_at(_imp->core_lines_by_level, depth))
+        promoted->clear();
+
     auto & lines = _imp->proof_lines_by_level.at(depth);
     // Emit deletions as *relative* (negative) ids so a constraint-count
     // difference between the solver's OPB and cake_pb_cp's re-derived OPB
@@ -744,7 +873,11 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
 auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber
 {
     switch (level) {
-    case ProofLevel::Top: _imp->proof_lines_by_level.at(0).insert_at_end(line.number); break;
+    case ProofLevel::Top:
+        _imp->proof_lines_by_level.at(0).insert_at_end(line.number);
+        if (_imp->recording_definitions && _imp->deleting_solution_constraints)
+            _imp->definitions_awaiting_core.push_back(line.number);
+        break;
     case ProofLevel::Current: _imp->proof_lines_by_level.at(_imp->active_proof_level).insert_at_end(line.number); break;
     case ProofLevel::Temporary: _imp->proof_lines_by_level.at(_imp->active_proof_level + 1).insert_at_end(line.number); break;
     }

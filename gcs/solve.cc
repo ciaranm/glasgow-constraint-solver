@@ -314,6 +314,12 @@ auto gcs::solve_with(
     // adds land after the preamble, like every other constraint's.
     shared_ptr<NogoodStore> nogood_store;
     if (callbacks.restarts) {
+        // A restart unwinds without emitting the ancestor frames' backtrack
+        // clauses, so once a descendant has promoted its clause to core there is
+        // nothing to discharge that clause's own deletion with. See
+        // ProofLogger::disable_solution_deletion.
+        if (optional_proof)
+            optional_proof->logger()->disable_solution_deletion();
         nogood_store = make_shared<NogoodStore>();
         // Use refined per-literal watches for the learned-nogood store (issue #335,
         // stage C-2): the propagator wakes only when a learned clause loses a

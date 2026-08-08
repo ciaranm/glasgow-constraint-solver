@@ -98,6 +98,13 @@ library. For an introduction to *using* the solver, start with the top-level
   distinction that governs which linking clauses are load-bearing — with the
   W1–W5 witness suite as the regression defence against re-simplification.
   Read when touching range/interval reasons, branching, or `infer_not_in_range`.
+- [Deleting logged solutions from a proof](solution-constraint-deletion.md) — why
+  a solution's constraint can be deleted once it is superseded, and what has to
+  move into VeriPB's core set first for the checked deletion to discharge:
+  trivial for optimisation, and for enumeration the backtrack clause, every
+  clause on the path back to the root, and all of the lazily-introduced
+  encoding definitions. Read when touching `ProofLogger::solution`,
+  `ProofLogger::backtrack`, or proof levels.
 - [View proof logging](view-proof-logging.md) — how the proof layer handles
 - [arithmetic-proofs.md](arithmetic-proofs.md) — how Multiply/Divide/Modulus/Power propagate and justify against cake's encoding: the slot-keyed emitters, the ConditionalBound justification layer, the sign-case driver, and the hard-won RUP/pol rules.
 - [Decision-diagram proof strategies](decision-diagram-proof-strategies.md) — for
