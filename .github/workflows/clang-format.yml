@@ -7,6 +7,13 @@ on:
   # just onto main) are built and checked too.
   pull_request:
 
+# Cancel a run that a newer push to the same pull request has superseded: those
+# results are never read. Not on main, where every commit's build is wanted --
+# cancelling there would leave a gap over whichever commit broke something.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   format:
     name: clang-format

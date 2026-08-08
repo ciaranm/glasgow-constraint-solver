@@ -13,6 +13,13 @@ on:
     branches: [ "main" ]
   pull_request:
 
+# Cancel a run that a newer push to the same pull request has superseded: those
+# results are never read. Not on main, where every commit's build is wanted --
+# cancelling there would leave a gap over whichever commit broke something.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   msvc:
     name: windows-2022 / MSVC (library + ctest)
