@@ -12,6 +12,11 @@ Counting?) Problems in VeriPB", first if you have not: examples 3 and 4 there
 are the enumeration recipe implemented here, and section 3's account of core
 versus derived is the reason a naive `del` does not work.
 
+**These proofs need a VeriPB from 2026-06-22 or later**, i.e. one containing
+`veripb-dev` MR !193. An older checker rejects them at the root `rup >= 1`
+with what looks like a missing constraint. Finding 3 below has the details,
+including how to build a pre-fix checker and watch it happen.
+
 ## The obstacle: checked deletion only sees core
 
 VeriPB keeps two constraint sets, *core* and *derived*. The input formula is
@@ -153,42 +158,32 @@ only if the parent promoted as well. `ProofLogger` therefore keeps
 above reads it. At the root the clause is the empty one, `rup >= 1`, and
 deleting anything against a contradictory core is trivial.
 
-**3. VeriPB loses a later conflict if a checked deletion lands in the wrong
-place.** This one is not about GCS at all, and it is why solution constraints
-are deleted by the *level forget* rather than next to the clause that subsumes
-them, which is what the first cut did and what the paper's example looks like.
+**3. The checker has to be new enough.** The first cut of this work appeared to
+show that VeriPB lost a conflict when a checked deletion landed between a
+constraint's last use and a later `rup`: `scp_chain_multiply_square_sat` ---
+`--all` enumeration of `X * X = Z` over `X` in `-3..3`, seven solutions ---
+stopped verifying, with the root's `rup >= 1` rejected as not RUP.
 
-With the first cut, `scp_chain_multiply_square_sat` --- `--all` enumeration of
-`X * X = Z` over `X` in `-3..3`, seven solutions --- stopped verifying: the
-root's `rup >= 1` was rejected as not RUP. Moving the *single* deletion of the
-last solution's blocking constraint one rule later, from just before the
-parent frame's `rup 1 ~i[Z][eq9] >= 1` to just after it, makes the proof
-verify. Dumping VeriPB's live constraint database at the failing step in both
-variants (`-t`, replaying `ConstraintId` / `Deleting IDs` / `Checked deletion
-of ID` lines) gives **byte-identical sets of 226 constraints**, and the traces
-differ in exactly one place: which of the deletion and the addition comes
-first. So the checker reaches the same database and finds the conflict from
-one and not the other. Unit propagation to conflict is confluent, so this
-looks like state in the propagation engine that a checked deletion disturbs
---- `Database::delete_constraint` detaches from the propagator, and
-`update_unique_index` merges and detaches duplicates, both inside the
-`only_core` window that `DeletionChecker::compute` opens. It deserves an
-upstream report; a minimal reproducer is a proof of the shape
+That diagnosis was wrong, and an earlier version of this section proposed an
+upstream report that should not be filed. The failure is `veripb-dev` issue
+#192, fixed by MR !193 ("never reset trailhead to higher position than
+current", merged 2026-06-22); the checker installed on the machine at the time
+predated the fix while still reporting version 3.0.2. Deletion position has
+nothing to do with it. The *shipped* proof, with the deletion where this branch
+puts it, fails at the root `rup >= 1` on a pre-fix checker and verifies on a
+fixed one --- and so does every variant with the deletion moved earlier or
+later. Build `veripb-dev` at `dbc46fe0^` to see it for yourself.
 
-```
-solx ... ;      % a solution
-rup <leaf backtrack clause> ;
-core id -1 ;
-del id -2 ;     % <-- here fails, one rule later verifies
-rup <parent backtrack clause> ;
-...
-rup >= 1 ;      % rejected
-```
+What survives is a requirement rather than a design constraint: these proofs
+need a VeriPB from 2026-06-22 or later. An older checker rejects them at the
+root with an error that reads like a missing constraint rather than a checker
+bug, and `--unchecked-deletion` makes it go away, which is misleading --- there
+is nothing wrong with the deletions.
 
-Deleting through the level forget avoids it, because the blocking constraint
-then outlives every clause derivation it took part in. That is not a proof
-that the artefact cannot bite somewhere else, and it is the main reason to be
-careful when changing where these deletions are emitted.
+Deleting through the level forget is kept, but on its own merits rather than to
+dodge anything: it puts the blocking constraint at the level that actually
+refutes it, and it costs one fewer `core id` step and one fewer checked
+deletion per solution than deleting next to the subsuming clause does.
 
 **Restarts cannot have this.** A restart unwinds through
 `SearchResult::RestartCutoffHit`, which forgets each level *without* emitting
@@ -206,24 +201,31 @@ Assertion levels above `Definitions` are excluded for a related reason: at
 
 ## Measurements
 
-veripb 3.0.2, this VM, each pair timed back to back in one sitting; five runs
-each except `frequency_square`, which is four. Proof size is the `.pbp` in
-bytes. "before" is `d3c9e58b`.
+Checker **pinned** to `veripb-dev` f8c29244, built at
+`~/claude/tmp/veripb-pinned`, because `~/.cargo/bin/veripb` was replaced
+part-way through this work and both binaries report 3.0.2 (see finding 3).
+Anything timed against an unpinned `veripb` on this machine is not comparable.
+"before" is `d3c9e58b`; "after" is this branch. Each pair is timed
+*alternately* --- before, after, before, after --- so machine drift lands on
+both sides equally. Five runs each except `frequency_square`, which is four.
+Times are seconds, size is the `.pbp` in bytes, and the ratio uses medians.
 
-| instance | solutions | size before | size after | time before (s) | time after (s) | speedup |
+| instance | solutions | size before | size after | time before | time after | speedup |
 | --- | --- | --- | --- | --- | --- | --- |
-| `frequency_square --all --size 6 --lambda 2` | 53220 | 204569673 | 205546954 | 115.26 115.00 114.07 113.44 | 12.04 12.13 12.07 12.11 | 9.4x |
-| `regular_random --all --seed 1` | 32985 | 14231970 | 13947925 | 21.09 21.16 21.17 21.28 21.21 | 1.99 1.99 1.99 1.99 1.99 | 10.6x |
-| `langford --all` | 52 | 964583 | 978761 | 0.24 0.23 0.23 0.23 0.23 | 0.26 0.26 0.26 0.26 0.26 | 0.88x |
-| `nonogram --all` | 1 | 41287 | 42142 | 0.00 | 0.00 | --- |
-| `talent` (optimisation) | 23 | 6592428 | 6593004 | 1.11 1.12 1.11 1.13 1.11 | 1.11 1.10 1.11 1.11 1.10 | 1.00x |
-| `tour` (optimisation) | 4 | 3280786 | 3280868 | 0.47 0.48 0.48 0.47 0.47 | 0.48 0.48 0.48 0.48 0.48 | 0.98x |
-| `table_layout` (optimisation) | 3 | 5718477 | 5718529 | 0.24 0.25 0.24 0.24 0.25 | 0.25 0.24 0.25 0.24 0.24 | 1.00x |
-| `p_dispersion`, `colour`, `cumulative`, `circuit_random` | --- | --- | --- | 0.00 | 0.00 | --- |
+| `frequency_square --all --size 6 --lambda 2` | 53220 | 204569673 | 205546954 | 117.83 113.07 113.23 113.24 | 11.91 11.87 11.85 11.79 | 9.6x |
+| `regular_random --all --seed=1` | 32985 | 14231970 | 13947925 | 21.54 21.46 21.42 21.41 21.25 | 1.99 1.97 1.98 1.98 1.98 | 10.8x |
+| `langford --all` | 52 | 964583 | 978761 | 0.23 0.23 0.23 0.23 0.23 | 0.26 0.25 0.26 0.26 0.25 | 0.88x |
+| `talent` (optimisation) | 23 | 6592428 | 6593004 | 1.11 1.10 1.11 1.11 1.11 | 1.10 1.10 1.10 1.10 1.11 | 1.01x |
+
+The first `frequency_square` "before" run is a cold-cache outlier; the median
+ignores it. Both sides verify in every case, and the solution counts agree
+(`ENUMERATION_COMPLETE` of 53220, 32985 and 52; `BOUNDS 6 <= obj <= 6` for
+`talent`).
 
 Peak RSS moves the wrong way on the big enumeration case: `frequency_square`
-goes from 564 MB to 645 MB, because the encoding definitions promoted to core
-are indexed differently there. `regular_random` is flat (48.6 MB to 48.4 MB).
+goes from 564580 KB to 644752 KB, because the encoding definitions promoted to
+core are indexed differently there. `regular_random` is flat (48608 KB to
+48352 KB) and `langford` is near enough (13804 KB to 14072 KB).
 
 The shape to take from this: **the win is enumeration with many solutions, and
 it is an order of magnitude.** Optimisation is free but not a speedup on
@@ -234,8 +236,12 @@ is one short PB row over the objective terms, so it is not what the checker's
 time goes on. Take the optimisation half as tidiness (and as the thing that
 stops a long-running branch and bound accumulating rows without limit) rather
 than as a number. Small enumerations lose slightly (`langford`, 52 solutions,
-12 per cent slower and 1.5 per cent bigger) because the one-off promotion of
+13 per cent slower and 1.5 per cent bigger) because the one-off promotion of
 the encoding to core is not paid back.
+
+These figures replace an earlier set taken while the checker was being swapped
+underneath them. They came out the same to within noise, so the earlier
+conclusions stood up --- but they were not safe to quote at the time.
 
 ## What this does not do
 
