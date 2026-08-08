@@ -223,11 +223,30 @@ struct NamesAndIDsTracker::Imp
 
     [[nodiscard]] auto find_atoms(const SimpleOrProofOnlyIntegerVariableID & id) const -> const VariableAtoms *
     {
+        // GCC 15's -Wdangling-reference sees a call returning a reference whose
+        // argument list contains a temporary (the overloaded{...} visitor) and
+        // assumes the reference might point into that temporary. It does not:
+        // both lambdas return a reference to a member of *this, which outlives
+        // the visitor by a long way. atoms_for() a few lines up is the same
+        // construct and is not warned about -- only the const-qualified,
+        // const-reference-returning copy trips the heuristic -- which is itself
+        // a sign the diagnostic is guessing rather than analysing. Clang, whose
+        // lifetime analysis is stricter in general, is silent here.
+        // Cf. https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532 for the same
+        // shape: a reference into the parent object, reported as dangling
+        // because a temporary happened to be an argument.
+#if defined(__GNUC__) && ! defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-reference"
+#endif
         const auto & table =
             visit(overloaded{//
                       [&](const SimpleIntegerVariableID &) -> const vector<VariableAtoms> & { return simple_variable_atoms; },
                       [&](const ProofOnlySimpleIntegerVariableID &) -> const vector<VariableAtoms> & { return proof_only_variable_atoms; }},
                 id);
+#if defined(__GNUC__) && ! defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
         auto idx = visit([&](const auto & i) { return static_cast<vector<VariableAtoms>::size_type>(i.index); }, id);
         return idx < table.size() ? &table[idx] : nullptr;
     }

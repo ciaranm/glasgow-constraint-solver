@@ -143,6 +143,13 @@ namespace
                 case NotEqual: return on_change;
                 case GreaterEqual:
                 case Less: return on_bounds;
+                // State::test_literal calls `x in [lo, hi]` true exactly when both
+                // bounds have moved inside the interval, so only a bound move can
+                // newly entail it. `x not in [lo, hi]` becomes true when the domain
+                // stops intersecting the interval, which a removal from the interior
+                // can do, so that one needs the full on_change mask.
+                case InRange: return on_bounds;
+                case NotInRange: return on_change;
                 }
                 return on_change; // unreachable; conservative default
             },
@@ -583,7 +590,22 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
     // every honoured claim immediately and abort if it infers anything or
     // contradicts. Read once: the constraint test harness sets this before the
     // first solve in the process.
+    // GCC 15 false positive: this is read below, but only from inside the
+    // generic lambda `run`. A static local is not captured, so the read is not
+    // a capture; and the read that is there lives in a lambda body that is
+    // still an uninstantiated template when the enclosing function's scope
+    // pops, which is where -Wunused-but-set-variable is decided. Making the
+    // variable non-static, or making `run` non-generic, silences it either way
+    // -- neither of which is a change worth making for a diagnostic.
+    // Cf. https://gcc.gnu.org/bugzilla/show_bug.cgi?id=96400. Clang does not warn.
+#if defined(__GNUC__) && ! defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#endif
     static const bool check_idempotent_claims = nullptr != std::getenv("GCS_CHECK_IDEMPOTENT_CLAIMS");
+#if defined(__GNUC__) && ! defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
     auto enqueue_if_idle = [&](const int p) {
         if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {

@@ -42,6 +42,17 @@ namespace gcs::test_innards
     {
     }
 #else
+    // Every shell-out below is deliberately best effort: the probe recovers from
+    // a command that failed by inspecting what it did or did not write, and must
+    // never fail a test. std::system() is declared with glibc's warn_unused_result
+    // attribute, which -- unlike [[nodiscard]] -- a cast to void does not silence,
+    // so funnel the calls through one helper whose name records the decision
+    // rather than repeating an ignored return value at every site.
+    inline auto cake_run_ignoring_status(const std::string & cmd) -> void
+    {
+        [[maybe_unused]] auto status = std::system(cmd.c_str());
+    }
+
     inline auto cake_capture(const std::string & cmd) -> std::string
     {
         std::string out;
@@ -89,13 +100,9 @@ namespace gcs::test_innards
             line += "\n";
             std::fputs(line.c_str(), stderr);
         };
-        auto firstline = [](const std::string & s) {
-            auto n = s.find('\n');
-            return n == std::string::npos ? s : s.substr(0, n);
-        };
 
         // 1. cake_pb_cp re-derives its own OPB from the .scp.
-        std::system((cake + " " + scp + " > " + vopb + " 2>/dev/null").c_str());
+        cake_run_ignoring_status(cake + " " + scp + " > " + vopb + " 2>/dev/null");
         std::string opb = cake_capture("cat " + vopb);
         if (opb.find(">=") == std::string::npos && opb.find("<=") == std::string::npos) {
             log("SKIP_NO_OPB");
@@ -116,8 +123,8 @@ namespace gcs::test_innards
                 static int fail_seq = 0;
                 std::string dir{k}, sfx = std::to_string(++fail_seq);
                 for (auto ext : {".scp", ".pbp"})
-                    std::system(("mkdir -p " + dir + " && cp " + pn + ext + " " + dir + "/" + pn + "." + sfx + ext + " 2>/dev/null").c_str());
-                std::system(("cp " + vopb + " " + dir + "/" + pn + "." + sfx + ".cakeopb 2>/dev/null").c_str());
+                    cake_run_ignoring_status("mkdir -p " + dir + " && cp " + pn + ext + " " + dir + "/" + pn + "." + sfx + ext + " 2>/dev/null");
+                cake_run_ignoring_status("cp " + vopb + " " + dir + "/" + pn + "." + sfx + ".cakeopb 2>/dev/null");
             }
             std::remove(vopb.c_str());
             std::remove(core.c_str());

@@ -266,8 +266,14 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
         visit(
             [&, modifier = modifier](auto & sanitised_cv) {
                 TabulationVariables enum_vars;
+                // Registering each term variable in enum_vars is the point here;
+                // the position it comes back with is not wanted, because the
+                // sanitised terms have distinct variables, so nothing collapses
+                // and position always equals term index -- which is exactly what
+                // base_accept below assumes when it indexes current[] by term
+                // index.
                 for (auto & cv : sanitised_cv.terms)
-                    enum_vars.position_of(get_var(cv));
+                    (void)enum_vars.position_of(get_var(cv));
 
                 // the enumeration, in-proof selector introduction, and
                 // extensional wiring live in install_tabulation, and the

@@ -22,8 +22,8 @@ namespace gcs
          */
         [[nodiscard]] auto propagate_bounds_global_cardinality(const std::vector<IntegerVariableID> & vars, const ConstraintID & owner,
             const std::vector<Integer> & values, const std::vector<IntegerVariableID> & counts,
-            const std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & count_lines,
-            const std::vector<IntegerVariableID> & all_vars, const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState;
+            const std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & count_lines, const State & state, auto & inference,
+            ProofLogger * const logger) -> PropagatorState;
     }
 
 }

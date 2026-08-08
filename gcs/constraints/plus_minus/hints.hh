@@ -28,7 +28,10 @@ namespace gcs::innards::hints
     struct Plus
     {
         ConstraintID originator;
-        std::optional<ProofLine> pol_line;
+        // Defaulted so that a caller which has no sum line to offer -- the
+        // tabulated path builds its hints as Plus{owner} -- is not a
+        // -Wmissing-field-initializers site.
+        std::optional<ProofLine> pol_line = std::nullopt;
         static constexpr std::string_view hint_name = "plus";
     };
 
@@ -47,7 +50,8 @@ namespace gcs::innards::hints
     struct Minus
     {
         ConstraintID originator;
-        std::optional<ProofLine> pol_line;
+        // Defaulted for the same reason as Plus::pol_line, above.
+        std::optional<ProofLine> pol_line = std::nullopt;
         static constexpr std::string_view hint_name = "minus";
     };
 

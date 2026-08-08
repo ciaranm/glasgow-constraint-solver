@@ -69,6 +69,12 @@ namespace
         case NotEqual: return assignment[l.var] != l.value;
         case GreaterEqual: return assignment[l.var] >= l.value;
         case Less: return assignment[l.var] < l.value;
+        // A TestLit carries a single value rather than an interval, and random_op
+        // only ever picks the four scalar operators, so the range conditions
+        // cannot reach here; they fall through to the same never-taken default the
+        // switch already had.
+        case InRange:
+        case NotInRange: break;
         }
         return false;
     }
@@ -114,6 +120,9 @@ namespace
             if (s.lower_bound(v) >= val)
                 return Holds::False;
             return Holds::Undecided;
+        // Unreachable for the same reason as in literal_true_on, above.
+        case InRange:
+        case NotInRange: break;
         }
         return Holds::Undecided;
     }

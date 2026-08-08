@@ -6,6 +6,24 @@ FetchContent_Declare(xcsp3_cpp_parser
     EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(xcsp3_cpp_parser)
 
+# The top-level add_compile_options(-W -Wall) applies to every target in the
+# build, including this fetched one, so the parser's sources are compiled with
+# a warning set they were never written against: eleven warnings
+# (-Wsign-compare, -Wunused-parameter, -Wdeprecated-copy, and a deprecated
+# libxml2 entity call) that are not ours to fix and that we do not want between
+# us and our own. Turn warnings off for the parser's own compilation only;
+# nothing else in the build is affected, and headers it exposes to us are still
+# compiled with our warnings when we include them.
+foreach(_gcs_xcsp_target xcsp3parser xcsp3parser_dynamic)
+    if(TARGET ${_gcs_xcsp_target})
+        if(MSVC)
+            target_compile_options(${_gcs_xcsp_target} PRIVATE /w)
+        else()
+            target_compile_options(${_gcs_xcsp_target} PRIVATE -w)
+        endif()
+    endif()
+endforeach()
+
 find_package(LibXml2 REQUIRED)
 
 add_executable(xcsp_glasgow_constraint_solver xcsp_glasgow_constraint_solver.cc)

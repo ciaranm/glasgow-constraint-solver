@@ -39,9 +39,8 @@ namespace gcs
          */
         [[nodiscard]] auto propagate_gac_global_cardinality(const std::vector<IntegerVariableID> & vars, const ConstraintID & owner,
             const std::vector<Integer> & values, const std::vector<IntegerVariableID> & counts, bool closed,
-            const std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & count_lines,
-            const std::vector<IntegerVariableID> & all_vars, GacGlobalCardinalityScratch & scratch, const State & state, auto & inference,
-            ProofLogger * const logger) -> PropagatorState;
+            const std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & count_lines, GacGlobalCardinalityScratch & scratch,
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState;
     }
 
 }
