@@ -34,13 +34,16 @@ Measured solo, pinned to one core with ASLR off, minimum of three runs, on the
 local SSD. `veripb` 3.0.2. The `rcpsp_dl21` row is a later sitting than the rest
 — see "`rcpsp`'s options" below for why — so read its verify time as a size
 guide, not as a figure to compare against the others to within a few percent.
+It is also the one row measured seven times rather than three, and the spread
+across those seven was 139.2 s to 140.6 s: solo run-to-run noise here is about
+1 %, which is what makes the single-digit-percent claim above hold.
 
 | benchmark | command | outcome | recs | `.opb` | `.pbp` | solve | +proof | verify |
 |---|---|---|--:|--:|--:|--:|--:|--:|
 | `odb_eq1000` | `order_deletion_bench --problem pairwise --size 6 --domain 1000 --window 1000 --tightness 90 --unsat --value-order smallest` | UNSAT | 49 352 | 11 KB | 37 MB | 0.10 s | ×2.0 | **139.5 s** |
 | `odb_split2000` | `order_deletion_bench --problem pairwise --size 8 --domain 2000 --window 2000 --tightness 90 --unsat` | UNSAT | 6 979 | 20 KB | 17 MB | 0.10 s | ×1.0 | **106.1 s** |
 | `odb_cumulative8` | `order_deletion_bench --problem cumulative --size 8 --domain 250 --window 250 --tightness 90 --unsat` | UNSAT | 33 959 | 1.9 MB | 454 MB | 0.10 s | ×9.0 | **314.7 s** |
-| `rcpsp_dl21` | `rcpsp --size 20 --seed 1 --deadline 21 --stats` | UNSAT | 42 058 | 0.3 MB | 1 242 MB | 0.30 s | ×7.0 | **139.5 s** |
+| `rcpsp_dl21` | `rcpsp --size 20 --seed 1 --deadline 21 --stats` | UNSAT | 42 058 | 0.3 MB | 1 242 MB | 0.30 s | ×7.0 | **139.2 s** |
 | `qap10` | `qap --size=10` | optimal | 10 985 | 3.5 MB | 504 MB | 0.20 s | ×6.0 | **283.8 s** |
 | `colour46` | `colour --file <46-vertex random graph>` | optimal | 313 109 | 0.4 MB | 736 MB | 12.31 s | ×1.2 | **347.6 s** |
 | `nqueens12` | `n_queens --size=12 --all` | enum, 14 200 | 232 163 | 0.2 MB | 208 MB | 0.50 s | ×2.2 | **219.8 s** |
@@ -152,7 +155,7 @@ Measured across the options at `--size 20 --seed 1`:
 | `--variant global` | 171 423 | 4 134 MB | — | same |
 | `--variant presolved` | 171 423 | 4 118 MB | — | same |
 | `--value-order split` | 185 247 | 3 500 MB | — | same |
-| **`--deadline 21`** | 42 058 | **1 242 MB** | **139.5 s** | **UNSAT** |
+| **`--deadline 21`** | 42 058 | **1 242 MB** | **139.2 s** | **UNSAT** |
 | `--deadline 21 --value-order split` | 41 507 | 996 MB | 112.3 s | UNSAT |
 | `--infeasible` | **1** | 0.1 MB | — | UNSAT at the root |
 
@@ -326,14 +329,17 @@ below write tens of gigabytes before anyone notices.
 
 ## Instances that do not fit
 
-Every entry here was measured, not guessed. `cap` means it exceeded an 8 GB
-`ulimit -f` on the `.pbp` and was killed. Recorded so the screening does not get
-repeated.
+Every entry here was measured, not guessed. `cap` means the run blew the
+`ulimit -f` on its `.pbp` and was killed, so the figure is a floor and not a
+measurement. That limit was 8 GB for most of the screening, but earlier sittings
+ran at 3, 4 or 6 GB — `tsp` and some of the `rcpsp` and `seat_moving` rows below
+are those — so read a capped row as "out of reach", not as "exactly 8 GB".
+Recorded so the screening does not get repeated.
 
 | candidate | outcome |
 |---|---|
 | `ortho_latin --size=6 --all` | cap; `--size=5` is 6 MB, and there is no size in between |
-| `tsp` (fixed default instance) | cap at 4 GB, and there is no size knob |
+| `tsp` (fixed default instance) | cap — it passed the 4 GB limit that sitting was running, and there is no size knob |
 | `qap --size=12` | cap; `--size=11` stays under it, at 2.0 GB, but does not finish verifying inside 900 s |
 | `regular_random -n 9 --all`, `-n 10 --all` | cap |
 | `regular_random -n 7 --all` | 172–282 MB, but **over an hour** to verify, with `--bacchus` as well as without; `-n 6` is under a second |
