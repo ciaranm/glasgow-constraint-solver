@@ -185,7 +185,7 @@ dodge anything: it puts the blocking constraint at the level that actually
 refutes it, and it costs one fewer `core id` step and one fewer checked
 deletion per solution than deleting next to the subsuming clause does.
 
-**Restarts cannot have this.** A restart unwinds through
+**The enumeration half cannot have restarts.** A restart unwinds through
 `SearchResult::RestartCutoffHit`, which forgets each level *without* emitting
 the frame's backtrack clause. There is then nothing to discharge the core
 deletions in that level with. `solve_with` calls
@@ -198,6 +198,20 @@ this ever matters.
 Assertion levels above `Definitions` are excluded for a related reason: at
 `Links` and above the atom definitions are omitted from the proof entirely, so
 (1) has nothing to promote.
+
+**The optimisation half is unaffected by both.** This is worth stating
+separately, because "nothing is deleted under restarts" is the obvious thing to
+say and it is wrong. `discard_superseded_objective_constraints` is reached from
+`solution` whenever there is an objective (`proof_logger.cc:371`) and carries
+neither gate; `deleting_solution_constraints` and the `assertion_level` test are
+read only on the enumeration path (`proof_logger.cc:336`, `486`, `880`). Nothing
+here needs a backtrack clause: what discharges the deletion is the improving
+constraint the *new* `soli` puts in core, and `objective_value` is declared
+outside the restart loop (`solve.cc:381`), so each `soli` is still strictly
+better than the last across passes. `colour --restarts 1 --prove` duly deletes
+the previous solution's pair and concludes `s VERIFIED BOUNDS 2 <= obj <= 2`,
+which is exactly what gets rejected if the guarantee has been dropped.
+`solve_test.cc` covers both halves under restarts.
 
 ## Measurements
 
@@ -212,13 +226,17 @@ Times are seconds, size is the `.pbp` in bytes, and the ratio uses medians.
 
 | instance | solutions | size before | size after | time before | time after | speedup |
 | --- | --- | --- | --- | --- | --- | --- |
-| `frequency_square --all --size 6 --lambda 2` | 53220 | 204569673 | 205546954 | 117.83 113.07 113.23 113.24 | 11.91 11.87 11.85 11.79 | 9.6x |
+| `frequency_square --all --size 6 --lambda 2` | 53220 | 204569673 | 205546954 | 117.83 113.07 113.23 113.24 | 11.91 11.87 11.85 11.79 | 9.5x |
 | `regular_random --all --seed=1` | 32985 | 14231970 | 13947925 | 21.54 21.46 21.42 21.41 21.25 | 1.99 1.97 1.98 1.98 1.98 | 10.8x |
 | `langford --all` | 52 | 964583 | 978761 | 0.23 0.23 0.23 0.23 0.23 | 0.26 0.25 0.26 0.26 0.25 | 0.88x |
 | `talent` (optimisation) | 23 | 6592428 | 6593004 | 1.11 1.10 1.11 1.11 1.11 | 1.10 1.10 1.10 1.10 1.11 | 1.01x |
 
-The first `frequency_square` "before" run is a cold-cache outlier; the median
-ignores it. Both sides verify in every case, and the solution counts agree
+The first `frequency_square` "before" run is a cold-cache outlier, which is
+why the ratios are medians rather than means: the median is 113.235 either way,
+so dropping the run by hand would change nothing. (Taking the mean instead, and
+keeping the outlier, is what gives 9.6 --- which is how a wrong figure got into
+an earlier version of this table.) Both sides verify in every case, and the
+solution counts agree
 (`ENUMERATION_COMPLETE` of 53220, 32985 and 52; `BOUNDS 6 <= obj <= 6` for
 `talent`).
 
@@ -247,6 +265,9 @@ conclusions stood up --- but they were not safe to quote at the time.
 
 - The `solx` lines themselves stay. They have to: `num_excluded_solutions`
   counts them, and that is what `ENUMERATION_COMPLETE` checks against.
-- Nothing is deleted under restarts, or above `AssertionLevel::Definitions`.
+- No *blocking* constraint is deleted under restarts, or above
+  `AssertionLevel::Definitions`. Both restrictions are specific to the
+  enumeration half; the optimisation half deletes under restarts and at every
+  assertion level, as above.
 - Nothing is deleted for a solution found at the root, since no frame above it
   ever refutes it.
