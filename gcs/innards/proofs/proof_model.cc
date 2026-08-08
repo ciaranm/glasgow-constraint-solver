@@ -402,6 +402,10 @@ auto ProofModel::register_state_variable_bits_in_proof(
     // nothing to the OPB, and leave the caller to introduce its meaning in-proof. A
     // CakeBitNaming names the bits in cake's value-flag scheme (modulus's quotient).
     register_bits_variable_encoding(id, lower, upper, name, bit_naming);
+    // Under OrderEncodingDeletion::Literals this variable's ge order literals are named
+    // at ProofLevel::Top by the divide/modulus product-justification caches, so they must
+    // never be deleted on backtrack: keep the whole order encoding resident (defs at Top).
+    names_and_ids_tracker().note_order_encoding_stays_resident(id);
 }
 
 auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name)
