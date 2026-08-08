@@ -51,8 +51,8 @@ using fmt::print;
 
 auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVariableID> & vars, const ConstraintID & owner,
     const vector<Integer> & values, const vector<IntegerVariableID> & counts,
-    const vector<pair<optional<ProofLine>, optional<ProofLine>>> & count_lines, const vector<IntegerVariableID> & all_vars, const State & state,
-    auto & inference, ProofLogger * const logger) -> PropagatorState
+    const vector<pair<optional<ProofLine>, optional<ProofLine>>> & count_lines, const State & state, auto & inference, ProofLogger * const logger)
+    -> PropagatorState
 {
     auto m = values.size();
 
@@ -395,10 +395,10 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
 
 template auto gcs::innards::propagate_bounds_global_cardinality(const std::vector<IntegerVariableID> & vars, const ConstraintID & owner,
     const std::vector<Integer> & values, const std::vector<IntegerVariableID> & counts,
-    const std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & count_lines, const std::vector<IntegerVariableID> & all_vars,
-    const State & state, SimpleInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;
+    const std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & count_lines, const State & state,
+    SimpleInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;
 
 template auto gcs::innards::propagate_bounds_global_cardinality(const std::vector<IntegerVariableID> & vars, const ConstraintID & owner,
     const std::vector<Integer> & values, const std::vector<IntegerVariableID> & counts,
-    const std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & count_lines, const std::vector<IntegerVariableID> & all_vars,
-    const State & state, EagerProofLoggingInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;
+    const std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & count_lines, const State & state,
+    EagerProofLoggingInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;

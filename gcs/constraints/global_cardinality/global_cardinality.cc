@@ -111,15 +111,12 @@ auto GlobalCardinality::install_propagators(Propagators & propagators) -> void
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
     triggers.on_bounds.insert(triggers.on_bounds.end(), _counts.begin(), _counts.end());
 
-    vector<IntegerVariableID> all_vars = _vars;
-    all_vars.insert(all_vars.end(), _counts.begin(), _counts.end());
-
     overloaded{[&](const consistency::BC &) {
                    propagators.install(
                        constraint_id(),
-                       [vars = _vars, owner = constraint_id(), values = _values, counts = _counts, count_lines = _count_lines, all_vars = all_vars](
+                       [vars = _vars, owner = constraint_id(), values = _values, counts = _counts, count_lines = _count_lines](
                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                           return propagate_bounds_global_cardinality(vars, owner, values, counts, count_lines, all_vars, state, inference, logger);
+                           return propagate_bounds_global_cardinality(vars, owner, values, counts, count_lines, state, inference, logger);
                        },
                        triggers);
                },
@@ -127,10 +124,9 @@ auto GlobalCardinality::install_propagators(Propagators & propagators) -> void
             propagators.install(
                 constraint_id(),
                 [vars = _vars, owner = constraint_id(), values = _values, counts = _counts, closed = _closed, count_lines = _count_lines,
-                    all_vars = all_vars, scratch = make_gac_global_cardinality_scratch()](
+                    scratch = make_gac_global_cardinality_scratch()](
                     const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    return propagate_gac_global_cardinality(
-                        vars, owner, values, counts, closed, count_lines, all_vars, *scratch, state, inference, logger);
+                    return propagate_gac_global_cardinality(vars, owner, values, counts, closed, count_lines, *scratch, state, inference, logger);
                 },
                 triggers);
         }}

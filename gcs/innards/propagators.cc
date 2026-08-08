@@ -143,6 +143,13 @@ namespace
                 case NotEqual: return on_change;
                 case GreaterEqual:
                 case Less: return on_bounds;
+                // State::test_literal calls `x in [lo, hi]` true exactly when both
+                // bounds have moved inside the interval, so only a bound move can
+                // newly entail it. `x not in [lo, hi]` becomes true when the domain
+                // stops intersecting the interval, which a removal from the interior
+                // can do, so that one needs the full on_change mask.
+                case InRange: return on_bounds;
+                case NotInRange: return on_change;
                 }
                 return on_change; // unreachable; conservative default
             },
