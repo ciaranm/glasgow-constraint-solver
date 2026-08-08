@@ -338,7 +338,6 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         record_solution_constraint(solution_line);
     else
         record_proof_line(solution_line, ProofLevel::Top);
-    ProofLine solution_constraint = solution_line;
 
     optional<ProofLine> objective_bound;
 
@@ -376,7 +375,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         // have just written put there, which is strictly stronger. The
         // order-literal restatement is derived, and deleting it is free.
         discard_superseded_objective_constraints();
-        _imp->previous_soli_constraint = solution_constraint;
+        _imp->previous_soli_constraint = ProofLine{solution_line};
         _imp->previous_objective_bound = objective_bound;
     }
 }
