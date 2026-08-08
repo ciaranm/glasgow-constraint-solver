@@ -47,6 +47,7 @@ using std::ios;
 using std::ios_base;
 using std::make_unique;
 using std::map;
+using std::nullopt;
 using std::optional;
 using std::ostream;
 using std::pair;
@@ -177,6 +178,15 @@ struct ProofLogger::Imp
     int active_proof_level = 0;
     deque<IntervalSet<long long>> proof_lines_by_level;
 
+    // The constraints the previous `soli` left behind: the objective-improving
+    // constraint VeriPB itself creates for the rule (which lands in the *core*
+    // set), and the order-literal restatement of the same bound that we RUP
+    // afterwards (which is derived, at Top). Both are superseded the moment a
+    // strictly better solution is logged, so solution() deletes them then. See
+    // discard_superseded_objective_constraints.
+    optional<ProofLine> previous_soli_constraint;
+    optional<ProofLine> previous_objective_bound;
+
     string proof_file;
     fstream proof;
     // A proof is many short lines; the default stream buffer makes for a
@@ -295,14 +305,16 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
     }
 
     _imp->proof << ";\n";
-    record_proof_line(advance_proof_line_number(), ProofLevel::Top);
+    ProofLine solution_constraint = record_proof_line(advance_proof_line_number(), ProofLevel::Top);
+
+    optional<ProofLine> objective_bound;
 
     if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
         // soli and no links => have to assert the objective improving constraint
         visit(
             [&](const auto & id) {
-                emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top,
-                    AssertionAnnotation{.hint_name = hints::SoliImprove::hint_name});
+                objective_bound = emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i,
+                    ProofLevel::Top, AssertionAnnotation{.hint_name = hints::SoliImprove::hint_name});
             },
             optional_minimise_variable_and_value->first);
     else if (optional_minimise_variable_and_value)
@@ -313,7 +325,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
                 emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
                 _imp->proof << ":" << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
 
-                emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
+                objective_bound = emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
             },
             optional_minimise_variable_and_value->first);
     else if (_imp->assertion_level > AssertionLevel::Definitions) {
@@ -321,6 +333,32 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         emit(AssertProofRule{}, blocking_sum >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = hints::SolxBlock::hint_name});
     }
     // nothing needs done for solx below AssertionLevel::Links
+
+    if (optional_minimise_variable_and_value) {
+        // Branch and bound only ever logs a strictly better solution than the
+        // last, so everything the previous soli left behind is now subsumed and
+        // can go. The objective-improving constraint that VeriPB creates for the
+        // rule lives in the *core* set, so its deletion is a checked one: the
+        // goal is discharged by RUP against the improving constraint the soli we
+        // have just written put there, which is strictly stronger. The
+        // order-literal restatement is derived, and deleting it is free.
+        discard_superseded_objective_constraints();
+        _imp->previous_soli_constraint = solution_constraint;
+        _imp->previous_objective_bound = objective_bound;
+    }
+}
+
+auto ProofLogger::discard_superseded_objective_constraints() -> void
+{
+    vector<ProofLine> to_delete;
+    if (_imp->previous_soli_constraint)
+        to_delete.emplace_back(*_imp->previous_soli_constraint);
+    if (_imp->previous_objective_bound)
+        to_delete.emplace_back(*_imp->previous_objective_bound);
+    _imp->previous_soli_constraint = nullopt;
+    _imp->previous_objective_bound = nullopt;
+    if (! to_delete.empty())
+        delete_proof_lines(to_delete);
 }
 
 auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void

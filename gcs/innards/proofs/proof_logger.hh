@@ -60,6 +60,14 @@ namespace gcs::innards
 
         auto log_stacktrace() -> void;
 
+        /**
+         * Delete what the previous \c soli left behind, if anything: the
+         * objective-improving constraint VeriPB creates for the rule, and our
+         * own order-literal restatement of the same bound. Called from
+         * \ref solution when a strictly better solution supersedes them.
+         */
+        auto discard_superseded_objective_constraints() -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
