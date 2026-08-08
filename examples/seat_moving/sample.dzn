@@ -1,0 +1,16 @@
+% A small seat-moving instance in the format of the MiniZinc Challenge 2018 data
+% files, for the --dzn reader. Written here rather than taken from the Challenge
+% set, so it is small enough to prove quickly and there is no licence question
+% about redistributing it.
+%
+% This is the built-in `small` instance, so the --dzn lane and `--instance small`
+% must reach the same answer. That is the point of the file: it makes the
+% reader's answer checkable against something other than itself. It is also the
+% only data file in examples/ with a Boolean array in it, which is what
+% Can_swap is and what dzn.hh's bools() is for.
+
+S = 5;
+P = 3;
+Start = [1, 0, 2, 0, 3];
+Goal = [3, 2, 0, 1, 0];
+Can_swap = [true, false, true];

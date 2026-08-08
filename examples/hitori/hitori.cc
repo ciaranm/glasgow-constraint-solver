@@ -8,17 +8,16 @@
 #include <gcs/solve.hh>
 
 #include <examples/benchmark_cli.hh>
+#include <examples/dzn.hh>
 
 #include <algorithm>
-#include <cctype>
 #include <cstddef>
 #include <cstdlib>
-#include <fstream>
+#include <exception>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <random>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -43,7 +42,6 @@ using gcs::innards::TrueLiteral;
 using std::cerr;
 using std::cout;
 using std::endl;
-using std::ifstream;
 using std::make_optional;
 using std::make_shared;
 using std::mt19937;
@@ -53,7 +51,6 @@ using std::pair;
 using std::random_device;
 using std::size_t;
 using std::string;
-using std::stringstream;
 using std::swap;
 using std::uniform_int_distribution;
 using std::vector;
@@ -294,77 +291,41 @@ namespace
     // written in dzn's `[| a, b | c, d |]` form.
     auto read_dzn(const string & path) -> optional<Instance>
     {
-        ifstream in(path);
-        if (! in) {
-            cerr << "Could not open dzn file: " << path << endl;
-            return nullopt;
-        }
+        try {
+            auto data = dzn::read(path);
 
-        stringstream buffer;
-        buffer << in.rdbuf();
-        auto text = buffer.str();
-
-        // Strip MiniZinc line comments so stray '%' text can't confuse the scan.
-        for (size_t i = 0; i < text.size(); ++i)
-            if (text[i] == '%')
-                while (i < text.size() && text[i] != '\n')
-                    text[i++] = ' ';
-
-        // Find `key = `, taking `key` as a whole identifier so that looking for
-        // `n` does not stop at the n of some other parameter's name.
-        auto assignment_to = [&](const string & key) -> size_t {
-            auto is_name_char = [](char ch) { return std::isalnum(static_cast<unsigned char>(ch)) || ch == '_'; };
-            for (auto at = text.find(key); at != string::npos; at = text.find(key, at + 1)) {
-                if (at > 0 && is_name_char(text[at - 1]))
-                    continue;
-                auto after = at + key.size();
-                if (after < text.size() && is_name_char(text[after]))
-                    continue;
-                while (after < text.size() && std::isspace(static_cast<unsigned char>(text[after])))
-                    ++after;
-                if (after < text.size() && text[after] == '=')
-                    return after;
+            auto n = static_cast<int>(data.integer("n"));
+            if (n <= 0) {
+                cerr << "dzn file gives n = " << n << ", which is not a grid size: " << path << endl;
+                return nullopt;
             }
-            return string::npos;
-        };
 
-        // Pull every integer out of the assignment to a named parameter, i.e.
-        // out of the text between `key = ` and the next ';'.
-        auto integers = [&](const string & key) -> vector<int> {
-            vector<int> values;
-            auto at = assignment_to(key);
-            if (at == string::npos)
-                return values;
-            auto end = text.find(';', at);
-            auto body = text.substr(at + 1, end - at - 1);
-            for (char & ch : body)
-                if (! std::isdigit(static_cast<unsigned char>(ch)))
-                    ch = ' ';
-            stringstream tokens(body);
-            int value;
-            while (tokens >> value)
-                values.push_back(value);
-            return values;
-        };
+            // Reading the matrix as a matrix rather than flat is what makes the
+            // shape check below possible: a clue array of the wrong size used
+            // to be taken n * n entries at a time regardless.
+            auto rows = data.matrix("clue");
+            if (static_cast<int>(rows.size()) != n) {
+                cerr << "dzn file gives a clue grid of " << rows.size() << " rows for n = " << n << ": " << path << endl;
+                return nullopt;
+            }
 
-        auto sizes = integers("n");
-        auto values = integers("clue");
-        if (sizes.empty()) {
-            cerr << "dzn file does not give n: " << path << endl;
+            // One width check covers every row, because matrix() has already
+            // refused a literal whose rows are not all the same length.
+            if (static_cast<int>(rows.front().size()) != n) {
+                cerr << "dzn file gives " << rows.front().size() << " clues per row for n = " << n << ": " << path << endl;
+                return nullopt;
+            }
+
+            vector<vector<int>> clue(n, vector<int>(n, 0));
+            for (int r = 0; r < n; ++r)
+                for (int c = 0; c < n; ++c)
+                    clue[r][c] = static_cast<int>(rows[r][c]);
+            return Instance{path, n, clue};
+        }
+        catch (const std::exception & e) {
+            cerr << "Error reading the instance: " << e.what() << endl;
             return nullopt;
         }
-
-        auto n = sizes.front();
-        if (n <= 0 || static_cast<int>(values.size()) < n * n) {
-            cerr << "dzn file has too few clue entries: " << path << endl;
-            return nullopt;
-        }
-
-        vector<vector<int>> clue(n, vector<int>(n, 0));
-        for (int r = 0; r < n; ++r)
-            for (int c = 0; c < n; ++c)
-                clue[r][c] = values[r * n + c];
-        return Instance{path, n, clue};
     }
 
     // The model's implied and symmetry-breaking constraints. Every one of them

@@ -39,18 +39,33 @@ namespace
         return s + " }";
     }
 
+    /// So that a Boolean array can be checked by the same expect() as an
+    /// integer one, rather than growing a second one that prints `{ 1 0 1 }`
+    /// anyway.
+    auto as_integers(const vector<bool> & v) -> vector<long long>
+    {
+        return {v.begin(), v.end()};
+    }
+
     auto expect(const string & what, const vector<long long> & got, const vector<long long> & want) -> void
     {
         if (got != want)
             fail(what + ": got " + as_text(got) + " but wanted " + as_text(want));
     }
 
-    auto expect_rejected(const string & what, const auto & read_it) -> void
+    /// Rejected, and rejected with a message that names what was being read.
+    /// The naming is half the point: #664 asks for one diagnostic style across
+    /// the examples, and "stoi" --- which is what table_layout's reader used to
+    /// say, being std::stol's own exception --- tells a reader of a
+    /// thousand-line data file nothing about where to look.
+    auto expect_rejected(const string & what, const string & naming, const auto & read_it) -> void
     {
         try {
             read_it();
         }
-        catch (const std::exception &) {
+        catch (const std::exception & e) {
+            if (string{e.what()}.find(naming) == string::npos)
+                fail(what + ": rejected, but the message '" + e.what() + "' does not name '" + naming + "'");
             return;
         }
         fail(what + ": accepted, so it would have been read as something it is not");
@@ -68,6 +83,7 @@ auto main(int, char *[]) -> int
         data << "scalar = 7;\n";
         data << "flat = [1, 2, 3, 4];\n";
         data << "flat_wrapped = array1d(1..4, [5, 6, 7, 8]);\n";
+        data << "flat_wrapped_3d = array3d(ROWS, COLS, CONFIGS, [1, 2, 3, 4, 5, 6, 7, 8]);\n";
         data << "flat_2d = [| 1, 2 | 3, 4 |];\n";
         data << "flat_empty = [];\n";
         data << "flat_trailing_comma = [1, 2, ];\n";
@@ -76,11 +92,16 @@ auto main(int, char *[]) -> int
         data << "grid = [| 1, 2, 3 | 4, 5, 6 |];\n";
         data << "grid_ragged = [| 1, 2 | 3 |];\n";
         data << "grid_junk = [| 1, 2x | 3, 4 |];\n";
+        data << "flags = [true, false, true];\n";
+        data << "flags_as_digits = [1, 0, 1];\n";
+        data << "flags_junk = [true, maybe];\n";
         data << "groups = [ {1, 2}, {}, {3} ];\n";
         data << "groups_junk = [ {1, x} ];\n";
         data << "groups_outside = [ {1} 7 ];\n";
         data << "groups_stray_close = [ {1, 2} } 99 ];\n";
         data << "groups_unclosed = [ {1, 2 ];\n";
+        // Last, because it is deliberately not terminated.
+        data << "unterminated = [9, 8, 7]\n";
         if (! data)
             fail("could not write the test data file");
     }
@@ -95,6 +116,12 @@ auto main(int, char *[]) -> int
 
         expect("a flat array", d.integers("flat"), {1, 2, 3, 4});
         expect("an array1d wrapper, whose index set is not an entry", d.integers("flat_wrapped"), {5, 6, 7, 8});
+
+        // The wrapper the Challenge's TableLayout.mzn data files use for their
+        // width and height arrays, and the one feature only table_layout's own
+        // reader used to have. Its index sets are named rather than ranges, so
+        // they carry no digits and no brackets of their own.
+        expect("an array3d wrapper, read flat", d.integers("flat_wrapped_3d"), {1, 2, 3, 4, 5, 6, 7, 8});
         expect("negative entries", d.integers("flat_negative"), {-1, 2, -3});
         expect("an empty array", d.integers("flat_empty"), {});
         expect("a trailing comma, which is a separator with nothing after it", d.integers("flat_trailing_comma"), {1, 2});
@@ -112,6 +139,14 @@ auto main(int, char *[]) -> int
             expect("matrix row 1", grid[1], {4, 5, 6});
         }
 
+        // MiniZinc lets the last statement in a file go unterminated, and the
+        // Challenge's 2025/hitori/h20-2.dzn does exactly that with its clue
+        // matrix. Requiring the semicolon dropped the statement without a word.
+        expect("a last statement with no terminating semicolon", d.integers("unterminated"), {9, 8, 7});
+
+        expect("a Boolean array", as_integers(d.bools("flags")), {1, 0, 1});
+        expect("a Boolean array written with digits", as_integers(d.bools("flags_as_digits")), {1, 0, 1});
+
         auto groups = d.sets("groups");
         if (groups.size() != 3)
             fail("an array of sets' count");
@@ -121,26 +156,47 @@ auto main(int, char *[]) -> int
             expect("set 2", groups[2], {3});
         }
 
-        expect_rejected("a non-integer entry", [&] { return d.integers("flat_junk"); });
-        expect_rejected("a non-integer matrix entry", [&] { return d.matrix("grid_junk"); });
-        expect_rejected("a non-integer set member", [&] { return d.sets("groups_junk"); });
-        expect_rejected("matrix rows of differing lengths", [&] { return d.matrix("grid_ragged"); });
-        expect_rejected("something outside the braces", [&] { return d.sets("groups_outside"); });
-        expect_rejected("a set that is never closed", [&] { return d.sets("groups_unclosed"); });
+        expect_rejected("a non-integer entry", "flat_junk", [&] { return d.integers("flat_junk"); });
+        expect_rejected("a non-integer matrix entry", "grid_junk", [&] { return d.matrix("grid_junk"); });
+        expect_rejected("a non-Boolean entry", "flags_junk", [&] { return d.bools("flags_junk"); });
+        expect_rejected("a non-integer set member", "groups_junk", [&] { return d.sets("groups_junk"); });
+        expect_rejected("matrix rows of differing lengths", "grid_ragged", [&] { return d.matrix("grid_ragged"); });
+        expect_rejected("something outside the braces", "groups_outside", [&] { return d.sets("groups_outside"); });
+        expect_rejected("a set that is never closed", "groups_unclosed", [&] { return d.sets("groups_unclosed"); });
+
+        // hitori and nonogram read their clue grids with matrix() precisely so
+        // that a file whose array does not have the shape the scalars promise is
+        // a complaint. Reading a flat array as a matrix would otherwise be one
+        // row of everything, which is a shape no data file means.
+        expect_rejected("a flat array read as a matrix", "flat", [&] { return d.matrix("flat"); });
 
         // A `}` with nothing open took an unsigned brace counter to SIZE_MAX,
         // after which the outside-the-braces test never fired again and the
         // rest of the string was accepted --- so the check was switched off by
         // exactly the input it is there to catch.
-        expect_rejected("a closing brace with nothing open", [&] { return d.sets("groups_stray_close"); });
+        expect_rejected("a closing brace with nothing open", "groups_stray_close", [&] { return d.sets("groups_stray_close"); });
 
-        expect_rejected("a name the file does not define", [&] { return d.integer("absent"); });
-        expect_rejected("an integer scalar with trailing text", [&] { return d.integer("flat"); });
+        expect_rejected("a name the file does not define", "absent", [&] { return d.integer("absent"); });
+        expect_rejected("an integer scalar with trailing text", "flat", [&] { return d.integer("flat"); });
     }
     catch (const std::exception & e) {
         fail(string{"unexpected exception: "} + e.what());
     }
 
+    // A name defined twice, in a file of its own because it is the whole file
+    // that is refused rather than the one accessor. Three of the four readers
+    // #664 replaced took the first definition and said nothing, so a data file
+    // with a stale line left above a corrected one solved the wrong instance.
+    const string duplicate_path = "dzn_test_duplicate.dzn";
+    {
+        std::ofstream data{duplicate_path};
+        data << "twice = 1;\ntwice = 2;\n";
+        if (! data)
+            fail("could not write the duplicate-definition test data file");
+    }
+    expect_rejected("a name defined twice", "twice", [&] { return dzn::read(duplicate_path); });
+
+    std::filesystem::remove(duplicate_path);
     std::filesystem::remove(path);
 
     if (0 != failures) {

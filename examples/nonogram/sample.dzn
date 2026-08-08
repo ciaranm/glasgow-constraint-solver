@@ -1,0 +1,30 @@
+% A small nonogram in the format of the MiniZinc Challenge 2013 data files
+% (2013/nonogram/non.mzn), for the --dzn reader. Written here rather than taken
+% from the Challenge set, so it is small enough to prove quickly and there is no
+% licence question about redistributing it.
+%
+% Those files do not store run lengths: each line is already the "cons" string
+% the model's automaton runs over -- a 1 per filled cell of a run, a single 0
+% between runs -- right-padded to maxlen with -1. So a clue of [1] is
+% `1, -1, -1, -1, -1` and a clue of [5] is `1, 1, 1, 1, 1`, and reading the
+% padding as clue data is what a reader that ignored the sentinels would do.
+%
+% This is the built-in `plus` puzzle, so the --dzn lane and `--puzzle plus` must
+% draw the same picture. That is the point of the file: it makes the reader's
+% answer checkable against something other than itself.
+
+X = 5;
+Y = 5;
+maxlen = 5;
+
+rows = [| 1, -1, -1, -1, -1
+        | 1, -1, -1, -1, -1
+        | 1,  1,  1,  1,  1
+        | 1, -1, -1, -1, -1
+        | 1, -1, -1, -1, -1 |];
+
+cols = [| 1, -1, -1, -1, -1
+        | 1, -1, -1, -1, -1
+        | 1,  1,  1,  1,  1
+        | 1, -1, -1, -1, -1
+        | 1, -1, -1, -1, -1 |];
