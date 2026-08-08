@@ -216,9 +216,9 @@ bytes. "before" is `d3c9e58b`.
 | `regular_random --all --seed 1` | 32985 | 14231970 | 13947925 | 21.09 21.16 21.17 21.28 21.21 | 1.99 1.99 1.99 1.99 1.99 | 10.6x |
 | `langford --all` | 52 | 964583 | 978761 | 0.24 0.23 0.23 0.23 0.23 | 0.26 0.26 0.26 0.26 0.26 | 0.88x |
 | `nonogram --all` | 1 | 41287 | 42142 | 0.00 | 0.00 | --- |
-| `talent` (optimisation) | 3 | 6592428 | 6593004 | 1.11 1.12 1.11 1.13 1.11 | 1.11 1.10 1.11 1.11 1.10 | 1.00x |
-| `tour` (optimisation) | --- | 3280786 | 3280868 | 0.47 0.48 0.48 0.47 0.47 | 0.48 0.48 0.48 0.48 0.48 | 0.98x |
-| `table_layout` (optimisation) | --- | 5718477 | 5718529 | 0.24 0.25 0.24 0.24 0.25 | 0.25 0.24 0.25 0.24 0.24 | 1.00x |
+| `talent` (optimisation) | 23 | 6592428 | 6593004 | 1.11 1.12 1.11 1.13 1.11 | 1.11 1.10 1.11 1.11 1.10 | 1.00x |
+| `tour` (optimisation) | 4 | 3280786 | 3280868 | 0.47 0.48 0.48 0.47 0.47 | 0.48 0.48 0.48 0.48 0.48 | 0.98x |
+| `table_layout` (optimisation) | 3 | 5718477 | 5718529 | 0.24 0.25 0.24 0.24 0.25 | 0.25 0.24 0.25 0.24 0.24 | 1.00x |
 | `p_dispersion`, `colour`, `cumulative`, `circuit_random` | --- | --- | --- | 0.00 | 0.00 | --- |
 
 Peak RSS moves the wrong way on the big enumeration case: `frequency_square`
@@ -226,12 +226,16 @@ goes from 564 MB to 645 MB, because the encoding definitions promoted to core
 are indexed differently there. `regular_random` is flat (48.6 MB to 48.4 MB).
 
 The shape to take from this: **the win is enumeration with many solutions, and
-it is an order of magnitude.** Optimisation is free but unmeasurable here ---
-these instances log two or three improving solutions, so there is almost
-nothing to delete; an instance with a long chain of improvements would be the
-one to look at. Small enumerations lose slightly (`langford`, 52 solutions, 12
-per cent slower and 1.5 per cent bigger) because the one-off promotion of the
-encoding to core is not paid back.
+it is an order of magnitude.** Optimisation is free but not a speedup on
+anything we have. `talent` is the longest improvement chain in the examples, at
+23 logged solutions, and deleting 22 of them changes the proof by 576 bytes and
+the checking time by nothing measurable --- an objective-improving constraint
+is one short PB row over the objective terms, so it is not what the checker's
+time goes on. Take the optimisation half as tidiness (and as the thing that
+stops a long-running branch and bound accumulating rows without limit) rather
+than as a number. Small enumerations lose slightly (`langford`, 52 solutions,
+12 per cent slower and 1.5 per cent bigger) because the one-off promotion of
+the encoding to core is not paid back.
 
 ## What this does not do
 
