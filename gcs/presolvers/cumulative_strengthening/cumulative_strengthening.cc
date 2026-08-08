@@ -31,6 +31,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::make_optional;
+using std::make_shared;
 using std::make_unique;
 using std::map;
 using std::max;
@@ -133,7 +134,7 @@ CumulativeStrengthening::CumulativeStrengthening(shared_ptr<CumulativeStrengthen
     // Always a block, whether or not anyone asked for one: the default
     // experience was silent because nothing was allocated, not because the
     // channel was wrong.
-    _stats(stats ? move(stats) : std::make_shared<CumulativeStrengtheningStats>()), _max_dynamic_programming_states(20000), _max_raise_lines(5000),
+    _stats(stats ? move(stats) : make_shared<CumulativeStrengtheningStats>()), _max_dynamic_programming_states(20000), _max_raise_lines(5000),
     _max_subset_sum_capacity(1000000),
     // Energy rules only: see with_rules(). A derived constraint's time-tabling
     // cannot infer anything its donor's has not, so running it is pure cost.
@@ -187,10 +188,10 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
     // This run's own tally, rather than the block's: a block shared across two
     // solves would otherwise have the first solve's declines counted into the
     // second's summary note.
-    size_t donors_this_run = 0, limit_declines_this_run = 0;
+    auto donors_before = _stats->donors_seen;
+    size_t limit_declines_this_run = 0;
 
     for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
-        ++donors_this_run;
         bump(&CumulativeStrengtheningStats::donors_seen);
 
         // Everything below is an argument about the donor's per-time rows
@@ -815,7 +816,8 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
     // unreadable to the person it is for.
     if (0 != limit_declines_this_run)
         note(StatsLevel::Important, nullopt,
-            "Cumulative strengthening was skipped on " + to_string(limit_declines_this_run) + " of " + to_string(donors_this_run) +
+            "Cumulative strengthening was skipped on " + to_string(limit_declines_this_run) + " of " +
+                to_string(_stats->donors_seen - donors_before) +
                 " constraints because a size limit was reached; answers are still correct, but search may be slower");
 
     return true;

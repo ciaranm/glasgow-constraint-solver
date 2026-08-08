@@ -124,10 +124,15 @@ auto AutoTable::run(Problem & problem, Propagators & propagators, State & initia
     auto timestamp = initial_state.new_epoch(true);
     initial_state.guess(TrueLiteral{});
 
+    // A local rather than the block's field, so that a block shared across two
+    // solves reports this run's cost beside this run's tuples rather than one
+    // accumulated and the other overwritten.
+    size_t search_nodes = 0;
     auto selector_var_id = initial_state.what_variable_id_will_be_created_next();
-    solve_subproblem(0, tuples, _vars, propagators, initial_state, nullopt, branch_callback, logger, selector_var_id, _stats->search_nodes);
+    solve_subproblem(0, tuples, _vars, propagators, initial_state, nullopt, branch_callback, logger, selector_var_id, search_nodes);
 
     _stats->tuples = tuples.size();
+    _stats->search_nodes = search_nodes;
 
     initial_state.backtrack(timestamp);
 
