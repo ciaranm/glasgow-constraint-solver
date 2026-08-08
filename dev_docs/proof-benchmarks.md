@@ -114,7 +114,7 @@ Pairs that differ in one controlled way, for attributing a difference.
 | `knapsack_bench --instance 1` vs `--instance 1 --upfront` | **The clearest SIZE≠TIME demonstration in the set.** Identical search — 907 recursions, 454 solutions both ways — but `--upfront` writes a **5.9× smaller** proof (20.7 MB against 121.3 MB) that takes **3.5× longer** to check (7.0 s against 2.0 s). One flag, one instance, and the two axes move in opposite directions. |
 | `p_dispersion --grid 8 -p 4 --variant tuple` vs `--variant min-distance-ps` | Identical search — 551 recursions, 7 solutions — through a decomposition and through the global propagator: **42.9 MB / 9.7 s against 0.8 MB / 0.7 s**. At `--grid 10` the proof-size gap widens to 91×, and at `--grid 12` the decomposition stops verifying inside 1200 s while the global takes 15 s. |
 | `langford --size=11` vs `--size=10` | Enumeration against UNSAT refutation on one model, and the pair brackets the whole target band: 662.9 s and 60.4 s. |
-| `magic_square --size=4 --all-different gac` vs `vc` | **Not** a same-search pair, despite looking like one: GAC searches 77 983 recursions against VC's 87 377. Listed so nobody mistakes it for one — `--all-different` defaults to `vc`, so comparing the default against explicit `vc` gives a spurious match. |
+| `magic_square --size=4 --all-different gac` vs `vc` | **Not** a same-search pair, despite looking like one: GAC searches 77 983 recursions against VC's 87 377, for 169 MB / 29.1 s against 164 MB / 30.1 s. Listed so nobody mistakes it for one — `--all-different` defaults to `vc`, so comparing the default against explicit `vc` gives a spurious match. |
 
 ### Group D — opt-in, needs a big machine
 
@@ -262,16 +262,42 @@ are easy to get wrong:
 
 One refinement this set adds, and it is stronger than "small proofs degrade
 worse": **a verify time measured under load cannot be corrected, only
-discarded.** Measured against solo baselines on this set, the inflation under a
-three- or four-way load ran from **1.07×** (`colour` g40, 188 MB) to **2.99×**
-(`freqsq6_gac`, 205 MB) — two proofs of similar size at opposite ends of the
-range. Proof size does not predict it. Budget for running a sweep solo end to
-end; there is no shortcut that scales a parallel pass back down.
+discarded.** Every group A and B row except the four measured after the pilot
+was verified twice, once solo and once under the pilot's three- and four-way
+load, on byte-identical proofs — all fourteen of them, sorted by inflation:
 
-A worked example of why it matters: under pilot load `freqsq6_gac` and
-`freqsq6_bc` looked 27 % apart. Solo they are **3 % apart** (83.6 s against
-81.2 s) despite the GAC proof being 2.6× larger. The entire apparent difference
-was contention.
+| row | `.pbp` | solo | loaded | inflation |
+|---|--:|--:|--:|--:|
+| `odb_cumulative8` | 454 MB | 314.7 s | 331.1 s | **1.05×** |
+| `knapsack2` | 138 MB | 2.4 s | 2.7 s | 1.13× |
+| `colour46` | 736 MB | 347.6 s | 399.2 s | 1.15× |
+| `langford10` | 101 MB | 60.4 s | 72.0 s | 1.19× |
+| `nfractions` | 146 MB | 3.2 s | 4.2 s | 1.31× |
+| `qap10` | 504 MB | 283.8 s | 378.4 s | 1.33× |
+| `langford11` | 670 MB | 662.9 s | 891.4 s | 1.34× |
+| `pdisp10_tuple` | 158 MB | 88.8 s | 125.6 s | 1.42× |
+| `nqueens12` | 208 MB | 219.8 s | 312.5 s | 1.42× |
+| `polynomial10` | 426 MB | 26.0 s | 37.5 s | 1.44× |
+| `odb_eq1000` | 37 MB | 139.5 s | 238.8 s | 1.71× |
+| `odb_split2000` | 17 MB | 106.1 s | 186.7 s | 1.76× |
+| `freqsq6_bc` | 80 MB | 81.2 s | 195.7 s | 2.41× |
+| `freqsq6_gac` | 205 MB | 83.6 s | 249.6 s | **2.99×** |
+
+The table is sorted by inflation, and the size column reads 454, 138, 736, 101,
+146, 504, 670, 158, 208, 426, 37, 17, 80, 205. There is a weak inverse tendency
+in that — rank correlation −0.41, and the smallest two proofs are eleventh and
+twelfth — but it is nowhere near strong enough to correct with. `langford10` at
+101 MB inflates 1.19× and `freqsq6_bc` at 80 MB inflates 2.41×: two proofs of
+nearly the same size, at opposite ends of the range. And on the one pair where
+everything else is held fixed, the two `frequency_square` rows, it is the
+**smaller** proof that degrades less — the opposite of the rule this is
+refining. Budget for running a sweep solo end to end; there is no shortcut that
+scales a parallel pass back down.
+
+That last pair is also the worked example of why it matters. Under pilot load
+`freqsq6_gac` and `freqsq6_bc` looked 27 % apart. Solo they are **3 % apart**
+(83.6 s against 81.2 s) despite the GAC proof being 2.6× larger. The entire
+apparent difference was contention.
 
 **On filesystems: it does not matter, and tmpfs is mildly counterproductive.**
 Measured directly — the same proof verified from the local SSD and from tmpfs,
@@ -313,7 +339,7 @@ repeated.
 | `regular_random -n 7 --all` | 172–282 MB, but **over an hour** to verify, with `--bacchus` as well as without; `-n 6` is under a second |
 | `skeleton_puzzle` at 4×3, 4×4, 5×3, 5×4, 6×3 and the default 7×5 | cap or over 1200 s at every shape tried, with `--seed` and without |
 | `random_polynomial -n 12 -d 6` | cap; `-n 10 -d 5` is 426 MB |
-| `colour` on 42-vertex (50 % density) and 60-vertex graphs | cap — but a 46-vertex graph verifies in the band; see below |
+| `colour` on 42-vertex (50 % density) and 60-vertex graphs | cap — and a 45-vertex one writes 5.6 GB without verifying inside 1200 s; a 46-vertex graph verifies in the band, see below |
 | `rcpsp --size` 12–19 and 22–24, several seeds | either trivial (≤139 MB, under 10 s) or cap. Only `--size 20 --seed 1` lands, at 4.1 GB |
 | `seat_moving --seats` 20, 30, 60, 100 | cap in find-first mode; `--optimise` caps from 20 seats up. 16 seats is 11 MB |
 | `hitori --size` 6, 7, 8, and `--size 6 --density 0.2` | cap. `--size 5` is 937 MB, `--size 4` is 5.7 MB |
@@ -326,10 +352,14 @@ repeated.
 
 Two parameters turn out not to be parameters:
 
-- **`colour` is instance-dependent, not size-monotone.** A 41-vertex graph gives
-  16 MB, a 42-vertex one 120 MB, a 46-vertex one 736 MB, and a different
-  42-vertex one blows the cap. Pick and keep an instance; do not scale the
-  vertex count and expect the proof to follow.
+- **`colour` is instance-dependent, not size-monotone.** Across a series holding
+  the edge count roughly constant (383 to 445) and varying the vertices, the
+  proof is 16 MB at 41 vertices, 120 MB at 42, 869 MB at 44, **5.6 GB** at 45 —
+  which does not verify inside 1200 s — and back down to 657 MB at 48. Three
+  more vertices for the same edge budget cut both the proof and the search by a
+  factor of eight. At a fixed 50 % density, a 42-vertex graph blows the cap
+  while the 46-vertex `colour46` verifies inside the band. Pick and keep an
+  instance; do not scale the vertex count and expect the proof to follow.
 - **`regular_random` has no usable size.** n=6 checks in 0.6 s, n=7 takes over
   1200 s, and n=9 blows the cap. `Regular` is consequently not represented at
   scale anywhere in this set — see "Known gaps".
