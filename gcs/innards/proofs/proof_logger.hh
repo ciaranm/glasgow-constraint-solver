@@ -69,6 +69,11 @@ namespace gcs::innards
         auto discard_superseded_objective_constraints() -> void;
 
         /**
+         * Move the given already-emitted lines into the core set.
+         */
+        auto move_to_core(const std::vector<ProofLine> &) -> void;
+
+        /**
          * Move every definition recorded since the last call into the core set,
          * as one `core id` step per batch. See \ref begin_recording_definitions.
          */
@@ -166,11 +171,6 @@ namespace gcs::innards
          * Counterpart to \ref begin_recording_definitions.
          */
         auto end_recording_definitions() -> void;
-
-        /**
-         * Move the given already-emitted lines into the core set.
-         */
-        auto move_to_core(const std::vector<ProofLine> &) -> void;
 
         /**
          * Derive a learned nogood --- the clause forbidding the given conjunction

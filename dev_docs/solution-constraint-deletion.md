@@ -93,10 +93,11 @@ We do not write the `del` ourselves. `ProofLogger::solution` records the
 blocking constraint at a **proof level** --- one shallower than the active
 level, which is the level the finding frame's own backtrack clause is tagged
 at --- and `forget_proof_level` deletes it as part of the range it already
-emits, at the point that subtree is torn down. So a solution found at depth
-*d* is deleted by the frame at depth *d-2*, discharged by that frame's
-clause. At depth 0 the level is Top and the constraint stays for the whole
-proof, which is right: nothing above ever refutes it.
+emits, at the point that subtree is torn down. A frame at depth *d* forgets
+level *d+1*, so a solution found at depth *d* --- recorded at level *d* --- is
+deleted by its parent, at depth *d-1*, and discharged by that frame's clause.
+A solution found at depth 0 lands at Top and stays for the whole proof, which
+is right: there is no frame above it to refute it.
 
 Note that the blocking constraint is load-bearing for the clause that
 supersedes it: at a solution leaf the guesses fix every variable, so "at least

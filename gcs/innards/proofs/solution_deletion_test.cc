@@ -198,10 +198,10 @@ auto main() -> int
     }
 
     {
-        // An enumeration deep enough that every solution is found below a frame
-        // whose parent forgets the level it lives at. A solution reached at
-        // depth 1 would land at Top and stay, which is correct but would make
-        // the count below wrong, so there are three variables to branch on.
+        // An enumeration with enough to branch on that no solution is reached
+        // at depth 0, where the blocking constraint would land at Top and stay
+        // --- correct, since there is no frame above it to refute it, but it
+        // would make the count below wrong.
         Problem p;
         auto x = p.create_integer_variable(0_i, 2_i, "x");
         auto y = p.create_integer_variable(0_i, 2_i, "y");
