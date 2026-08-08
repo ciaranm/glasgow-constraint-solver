@@ -3,6 +3,7 @@
 
 #include <gcs/constraint_id.hh>
 #include <gcs/constraints/cumulative/cumulative.hh>
+#include <gcs/constraints/cumulative/derived_cumulative_stats.hh>
 #include <gcs/constraints/innards/makespan_energy.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
@@ -14,6 +15,7 @@
 #include <cstddef>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -199,6 +201,19 @@ namespace gcs::innards
         /// all of them: it gets the same time-tabling and overload checking a
         /// posted Cumulative does, over the donors' flags.
         CumulativeRules rules;
+
+        /**
+         * \brief Where to add what this install came to, if the caller keeps a
+         * block.
+         *
+         * An out-param rather than a component of its own: the caller installs
+         * one of these per donor and reports one aggregate, so the natural
+         * owner is a DerivedCumulativeStats sitting inside the caller's own
+         * block. A shared_ptr rather than a raw one because
+         * makespan_bounds_posted is bumped from an initialiser, which runs
+         * after this call has returned.
+         */
+        std::shared_ptr<DerivedCumulativeStats> stats = nullptr;
     };
 
     /**

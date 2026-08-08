@@ -2,13 +2,17 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_CUMULATIVE_STRENGTHENING_CUMULATIVE_STRENGTHENING_HH
 
 #include <gcs/constraints/cumulative/cumulative.hh>
+#include <gcs/constraints/cumulative/derived_cumulative_stats.hh>
 #include <gcs/integer.hh>
 #include <gcs/presolver.hh>
 #include <gcs/presolvers/innards/cumulative_strengthening_mutations.hh>
+#include <gcs/stats.hh>
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <variant>
+#include <vector>
 
 namespace gcs
 {
@@ -22,11 +26,17 @@ namespace gcs
      * unless energy reasoning is switched on. So every check that a presolver
      * normally has to pass is passed just as well by a presolver that did
      * nothing at all, and the counts below are how a test tells the two apart.
+     *
+     * The presolver allocates one of these whether or not a caller asked for
+     * one, so the block reaches Stats::components() and says what happened even
+     * when nobody was interested enough to pass a handle in --- which is the
+     * configuration in which "the presolver quietly stopped firing" used to be
+     * unobservable.
      * \sa CumulativeStrengthening
      *
      * \ingroup Presolvers
      */
-    struct CumulativeStrengtheningStats
+    struct CumulativeStrengtheningStats final : ComponentStats
     {
         /// Posted Cumulatives the presolver looked at.
         std::size_t donors_seen = 0;
@@ -112,10 +122,6 @@ namespace gcs
         /// The capacity was already the largest load the tasks can reach, and
         /// no height moved either, so there was nothing to strengthen.
         std::size_t declined_nothing_to_gain = 0;
-        /// Declined by install_derived_cumulative itself, which is a bug rather
-        /// than a restriction: the presolver derives its rows over the donor's
-        /// own windows, so the flags it asks for should always be there.
-        std::size_t declined_by_install = 0;
         ///@}
 
         /**
@@ -153,6 +159,16 @@ namespace gcs
         std::size_t rows_with_a_raise = 0;
         std::size_t raise_lines_emitted = 0;
         ///@}
+
+        /// What installing the strengthened constraints came to, summed over
+        /// every donor: one derived Cumulative is installed per strengthened
+        /// donor, and one component entry per derived constraint would be noise
+        /// where this is what a reader wants.
+        DerivedCumulativeStats derived;
+
+        [[nodiscard]] virtual auto component_name() const -> std::string override;
+        [[nodiscard]] virtual auto summary() const -> std::string override;
+        [[nodiscard]] virtual auto entries() const -> std::vector<StatsEntry> override;
     };
 
     /**
@@ -221,6 +237,11 @@ namespace gcs
         /**
          * \brief Construct the presolver, optionally sharing a stats block that
          * outlives the copy Problem takes.
+         *
+         * A caller that passes none still gets one: the block is allocated
+         * here, registered with the search's Stats when run() starts, and
+         * reported like any other. Silence used to be what a caller got for not
+         * asking, and silence is what #662 is about.
          */
         explicit CumulativeStrengthening(std::shared_ptr<CumulativeStrengtheningStats> stats = nullptr);
 
@@ -300,6 +321,15 @@ namespace gcs
         auto with_proof_mutation(innards::CumulativeStrengtheningMutation mutation) -> CumulativeStrengthening &;
 
         [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &, innards::ProofLogger * const) -> bool override;
+        /**
+         * Create a copy of the presolver, sharing its stats block rather than
+         * allocating a fresh one.
+         *
+         * Load-bearing, and easy to lose: Problem::add_presolver stores a
+         * clone, and run() is called on *that*, so a clone that allocated its
+         * own block would leave the caller's handle --- and the block anything
+         * else is holding --- reading zero for ever.
+         */
         [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Presolver> override;
     };
 }

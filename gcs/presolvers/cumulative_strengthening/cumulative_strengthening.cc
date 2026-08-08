@@ -11,6 +11,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_scaffolding_scope.hh>
 #include <gcs/innards/proofs/subset_sum_strengthening.hh>
+#include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/presolvers/cumulative_strengthening/cumulative_strengthening.hh>
 #include <gcs/problem.hh>
@@ -40,6 +41,7 @@ using std::optional;
 using std::pair;
 using std::shared_ptr;
 using std::size_t;
+using std::string;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
@@ -128,7 +130,11 @@ namespace
 }
 
 CumulativeStrengthening::CumulativeStrengthening(shared_ptr<CumulativeStrengtheningStats> stats) :
-    _stats(move(stats)), _max_dynamic_programming_states(20000), _max_raise_lines(5000), _max_subset_sum_capacity(1000000),
+    // Always a block, whether or not anyone asked for one: the default
+    // experience was silent because nothing was allocated, not because the
+    // channel was wrong.
+    _stats(stats ? move(stats) : std::make_shared<CumulativeStrengtheningStats>()), _max_dynamic_programming_states(20000), _max_raise_lines(5000),
+    _max_subset_sum_capacity(1000000),
     // Energy rules only: see with_rules(). A derived constraint's time-tabling
     // cannot infer anything its donor's has not, so running it is pure cost.
     _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true}), _mutation(cumulative_strengthening_mutation::None{})
@@ -167,12 +173,24 @@ auto CumulativeStrengthening::with_proof_mutation(CumulativeStrengtheningMutatio
 
 auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, State & state, ProofLogger * const logger) -> bool
 {
-    auto bump = [&](size_t CumulativeStrengtheningStats::* field) {
-        if (_stats)
-            ++((*_stats).*field);
+    // Before the loop, and unconditionally: a presolver that found nothing to
+    // look at is the case worth being able to see, and it is the one every
+    // other check passes without noticing.
+    propagators.add_component_stats(_stats);
+
+    auto bump = [&](size_t CumulativeStrengtheningStats::* field) { ++((*_stats).*field); };
+
+    auto note = [&](StatsLevel level, optional<ConstraintID> constraint, string text) {
+        propagators.report(StatsNote{.level = level, .component = _stats->component_name(), .constraint = move(constraint), .text = move(text)});
     };
 
+    // This run's own tally, rather than the block's: a block shared across two
+    // solves would otherwise have the first solve's declines counted into the
+    // second's summary note.
+    size_t donors_this_run = 0, limit_declines_this_run = 0;
+
     for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
+        ++donors_this_run;
         bump(&CumulativeStrengtheningStats::donors_seen);
 
         // Everything below is an argument about the donor's per-time rows
@@ -188,8 +206,8 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         auto view = cumulative_donor_view(donor, state, logger);
         if (! view) {
             bump(&CumulativeStrengtheningStats::declined_irreducible_capacity);
-            if (logger)
-                logger->emit_proof_comment("presolve cumulative: declining " + as_string(donor.constraint_id()) + ", capacity is not reducible");
+            note(StatsLevel::General, donor.constraint_id(),
+                "passed over: its capacity is a view, which cannot be reduced to a number to strengthen against");
             continue;
         }
         const auto & starts = donor.starts();
@@ -208,9 +226,10 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // count and the raise arithmetic below inside a `long long`.
         if (capacity > Integer{_max_subset_sum_capacity}) {
             bump(&CumulativeStrengtheningStats::declined_capacity_too_large);
-            if (logger)
-                logger->emit_proof_comment("presolve cumulative: declining " + as_string(donor.constraint_id()) + ", capacity " +
-                    to_string(capacity.raw_value) + " is beyond the subset-sum limit of " + to_string(_max_subset_sum_capacity));
+            ++limit_declines_this_run;
+            note(StatsLevel::General, donor.constraint_id(),
+                "passed over: its capacity of " + to_string(capacity.raw_value) + " is beyond the subset-sum limit of " +
+                    to_string(_max_subset_sum_capacity) + ", see with_subset_sum_capacity_limit");
             continue;
         }
 
@@ -225,9 +244,8 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // passes every other check.
         if (any_of(view->usable, [&](size_t i) { return view->heights[i] > capacity; })) {
             bump(&CumulativeStrengtheningStats::declined_infeasible_donor);
-            if (logger)
-                logger->emit_proof_comment(
-                    "presolve cumulative: declining " + as_string(donor.constraint_id()) + ", a task demands more than the capacity");
+            note(StatsLevel::General, donor.constraint_id(),
+                "passed over: a task's guaranteed demand is greater than the capacity, so the constraint is infeasible on its own");
             continue;
         }
 
@@ -390,6 +408,8 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
 
         if (! assessed) {
             bump(&CumulativeStrengtheningStats::declined_nothing_to_gain);
+            note(StatsLevel::Detailed, donor.constraint_id(),
+                "passed over: its capacity is already the largest load its tasks can reach, and no height moved either");
             continue;
         }
 
@@ -430,15 +450,19 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
 
             if (states > _max_dynamic_programming_states) {
                 bump(&CumulativeStrengtheningStats::declined_over_budget);
-                logger->emit_proof_comment("presolve cumulative: declining " + as_string(donor.constraint_id()) + ", derivation would need " +
-                    to_string(states) + " dynamic programming states against a budget of " + to_string(_max_dynamic_programming_states));
+                ++limit_declines_this_run;
+                note(StatsLevel::General, donor.constraint_id(),
+                    "passed over: the derivation would need " + to_string(states) + " dynamic programming states against a budget of " +
+                        to_string(_max_dynamic_programming_states) + ", see with_dynamic_programming_budget");
                 continue;
             }
 
             if (raise_lines > _max_raise_lines) {
                 bump(&CumulativeStrengtheningStats::declined_over_raise_budget);
-                logger->emit_proof_comment("presolve cumulative: declining " + as_string(donor.constraint_id()) + ", raising heights would need " +
-                    to_string(raise_lines) + " proof lines against a budget of " + to_string(_max_raise_lines));
+                ++limit_declines_this_run;
+                note(StatsLevel::General, donor.constraint_id(),
+                    "passed over: raising heights would need " + to_string(raise_lines) + " proof lines against a budget of " +
+                        to_string(_max_raise_lines) + ", see with_raise_budget");
                 continue;
             }
         }
@@ -547,12 +571,10 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                         recipe_logger.emit_proof_comment("presolve cumulative kappa already reached");
                     else {
                         recipe_logger.emit_proof_comment(strengthened.by_division ? "presolve cumulative gcd" : "presolve cumulative kappa");
-                        if (stats) {
-                            if (strengthened.by_division)
-                                ++stats->rows_by_division;
-                            else
-                                ++stats->rows_by_dynamic_programming;
-                        }
+                        if (strengthened.by_division)
+                            ++stats->rows_by_division;
+                        else
+                            ++stats->rows_by_dynamic_programming;
                     }
                     return strengthened.line;
                 };
@@ -677,8 +699,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                         WPBSum alone;
                         alone += kappa * flag_for(task);
                         row = recipe_logger.emit_rup_proof_line(move(alone) <= kappa, ProofLevel::Temporary);
-                        if (stats)
-                            ++stats->raise_lines_emitted;
+                        ++stats->raise_lines_emitted;
                     }
                     else if (total <= kappa) {
                         // Everything else fits alongside, so the at-most-ones
@@ -689,8 +710,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                         for (const auto & [other, weight] : running)
                             summed.add(at_most_one_between(task, other), weight);
                         row = summed.emit(recipe_logger, ProofLevel::Temporary);
-                        if (stats)
-                            ++stats->raise_lines_emitted;
+                        ++stats->raise_lines_emitted;
 
                         if (total < kappa) {
                             WPBSum raised;
@@ -737,8 +757,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                                 raise.add(at_most_one_between(task, other), e * weight);
                             raise.divide_by(lambda + e);
                             row = raise.emit(recipe_logger, ProofLevel::Temporary);
-                            if (stats)
-                                ++stats->raise_lines_emitted;
+                            ++stats->raise_lines_emitted;
 
                             raised_to += step;
                         }
@@ -747,19 +766,35 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                     running.emplace(task, kappa);
                 }
 
-                if (stats)
-                    ++stats->rows_with_a_raise;
+                ++stats->rows_with_a_raise;
 
                 return recipe_logger.emit(ImpliesProofRule{*row}, move(load) <= kappa, ProofLevel::Top);
             },
-            .rules = _rules};
+            .rules = _rules,
+            // A share of this block's own sub-block, so that every donor's
+            // install adds to one aggregate rather than registering a component
+            // apiece.
+            .stats = shared_ptr<DerivedCumulativeStats>{_stats, &_stats->derived}};
 
         // After the install rather than before it: a decline writes nothing at
         // all, and a proof saying a constraint was strengthened when it was not
         // is worse than one saying nothing.
         if (! install_derived_cumulative(propagators, state, logger, move(spec))) {
-            bump(&CumulativeStrengtheningStats::declined_by_install);
-            continue;
+            // A state that cannot happen, so it throws rather than being
+            // counted: the rows here are derived over the donor's *own*
+            // windows, so the flags install_derived_cumulative goes looking for
+            // are ones the donor published. A note for a bug is a note nobody
+            // reads.
+            //
+            // With one exception, which is a restriction rather than a bug: a
+            // proof written with assertions on omits definitions, so a task
+            // with both a variable start and a variable length has no
+            // end-of-task line to pin `after` through and the install declines
+            // for a reason this presolver cannot do anything about.
+            if (logger && logger->get_assertion_level() != AssertionLevel::Off)
+                continue;
+            throw UnexpectedException{"cumulative strengthening: install_derived_cumulative declined " + as_string(donor_id) +
+                ", whose rows were derived over the donor's own windows"};
         }
 
         if (logger)
@@ -768,11 +803,20 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 " heights to the capacity");
 
         bump(&CumulativeStrengtheningStats::donors_strengthened);
-        if (_stats) {
-            _stats->capacity_units_removed += capacity - kappa;
-            _stats->tasks_raised += full_tasks.size();
-        }
+        _stats->capacity_units_removed += capacity - kappa;
+        _stats->tasks_raised += full_tasks.size();
     }
+
+    // The model-level consequence, for a reader who does not know what this
+    // presolver is: a limit stopped it doing what it was asked to do, so the
+    // configuration being run is not the one that was asked for. The figures
+    // and the constraint each decline is about are in the General notes above;
+    // this one names neither, because naming them is what makes a message
+    // unreadable to the person it is for.
+    if (0 != limit_declines_this_run)
+        note(StatsLevel::Important, nullopt,
+            "Cumulative strengthening was skipped on " + to_string(limit_declines_this_run) + " of " + to_string(donors_this_run) +
+                " constraints because a size limit was reached; answers are still correct, but search may be slower");
 
     return true;
 }
@@ -785,5 +829,49 @@ auto CumulativeStrengthening::clone() const -> unique_ptr<Presolver>
     result->with_subset_sum_capacity_limit(_max_subset_sum_capacity);
     result->with_rules(_rules);
     result->with_proof_mutation(_mutation);
+    return result;
+}
+
+auto CumulativeStrengtheningStats::component_name() const -> std::string
+{
+    return "cumulative_strengthening";
+}
+
+auto CumulativeStrengtheningStats::summary() const -> std::string
+{
+    if (0 == donors_seen)
+        return "no posted Cumulative to look at";
+
+    if (0 == donors_strengthened)
+        return "nothing strengthened, of " + to_string(donors_seen) + " posted Cumulative" + (1 == donors_seen ? "" : "s") + " looked at";
+
+    return to_string(donors_strengthened) + " of " + to_string(donors_seen) + " posted Cumulatives strengthened, taking " +
+        to_string(capacity_units_removed.raw_value) + " off their capacities and raising " + to_string(tasks_raised) + " heights";
+}
+
+auto CumulativeStrengtheningStats::entries() const -> vector<StatsEntry>
+{
+    vector<StatsEntry> result;
+    auto add = [&](const char * name, size_t value) { result.push_back(StatsEntry{name, static_cast<long long>(value)}); };
+
+    add("donors_seen", donors_seen);
+    add("donors_strengthened", donors_strengthened);
+    result.push_back(StatsEntry{"capacity_units_removed", capacity_units_removed.raw_value});
+    add("donors_with_set_aside_tasks", donors_with_set_aside_tasks);
+    add("donors_better_off_setting_heights_aside", donors_better_off_setting_heights_aside);
+    add("converted_heights", converted_heights);
+    add("tasks_raised", tasks_raised);
+    add("declined_irreducible_capacity", declined_irreducible_capacity);
+    add("declined_infeasible_donor", declined_infeasible_donor);
+    add("declined_capacity_too_large", declined_capacity_too_large);
+    add("declined_over_budget", declined_over_budget);
+    add("declined_over_raise_budget", declined_over_raise_budget);
+    add("declined_nothing_to_gain", declined_nothing_to_gain);
+    add("rows_by_division", rows_by_division);
+    add("rows_by_dynamic_programming", rows_by_dynamic_programming);
+    add("rows_with_a_raise", rows_with_a_raise);
+    add("raise_lines_emitted", raise_lines_emitted);
+    derived.add_entries_to(result, "derived_");
+
     return result;
 }
