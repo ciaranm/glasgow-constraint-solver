@@ -75,9 +75,15 @@ namespace gcs::innards
         auto promote_definitions_to_core() -> void;
 
         /**
-         * Having just emitted the given backtrack clause, delete the blocking
-         * constraints of every solution found in the subtree it refutes. See
-         * \ref backtrack.
+         * Record a solution's blocking constraint at the proof level of the
+         * frame above the one that found it, so that frame's forget deletes it.
+         */
+        auto record_solution_constraint(ProofLineNumber line) -> void;
+
+        /**
+         * Having just emitted the given backtrack clause, move it to core if the
+         * level this frame is about to forget holds any core constraints, whose
+         * deletion is then checked against it. See \ref backtrack.
          */
         auto discharge_solution_constraints(const ProofLine & backtrack_clause) -> void;
 
@@ -114,10 +120,11 @@ namespace gcs::innards
         /**
          * Log that we are backtracking.
          *
-         * When solution deletion is on (see \ref disable_solution_deletion) and
-         * the refuted subtree contained solutions, this also moves the
-         * backtrack clause into the core set and deletes those solutions'
-         * blocking constraints, which the clause subsumes.
+         * When solution deletion is on (see \ref disable_solution_deletion),
+         * this also moves the backtrack clause into the core set if the level
+         * about to be forgotten holds solution blocking constraints (or a
+         * descendant's clause promoted for the same reason), since deleting
+         * those is checked and this clause is what subsumes them.
          */
         auto backtrack(const std::vector<Literal> & guesses) -> void;
 
