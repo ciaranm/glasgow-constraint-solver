@@ -16,6 +16,7 @@
 #include <gcs/interval_set.hh>
 #include <gcs/proof.hh>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <deque>
@@ -39,6 +40,7 @@ using fmt::format;
 
 #include <util/overloaded.hh>
 
+using std::cmp_less;
 using std::cmp_less_equal;
 using std::deque;
 using std::flush;
@@ -47,6 +49,7 @@ using std::ios;
 using std::ios_base;
 using std::make_unique;
 using std::map;
+using std::nullopt;
 using std::optional;
 using std::ostream;
 using std::pair;
@@ -167,6 +170,14 @@ namespace
         }
             .visit(lit);
     }
+
+    // The lines a level holds that we promoted to core, if any. Levels only get
+    // an entry once something is promoted at them, so most proofs never grow
+    // this at all.
+    [[nodiscard]] auto core_lines_at(deque<IntervalSet<long long>> & levels, int depth) -> IntervalSet<long long> *
+    {
+        return cmp_less(depth, levels.size()) ? &levels.at(depth) : nullptr;
+    }
 }
 
 struct ProofLogger::Imp
@@ -176,6 +187,31 @@ struct ProofLogger::Imp
     ProofLineNumber proof_line{0};
     int active_proof_level = 0;
     deque<IntervalSet<long long>> proof_lines_by_level;
+
+    // The constraints the previous `soli` left behind: the objective-improving
+    // constraint VeriPB itself creates for the rule (which lands in the *core*
+    // set), and the order-literal restatement of the same bound that we RUP
+    // afterwards (which is derived, at Top). Both are superseded the moment a
+    // strictly better solution is logged, so solution() deletes them then. See
+    // discard_superseded_objective_constraints.
+    optional<ProofLine> previous_soli_constraint;
+    optional<ProofLine> previous_objective_bound;
+
+    // Enumeration's half of the same idea, which is more involved because a
+    // blocking constraint is subsumed not by the next solution's but by the
+    // backtrack clause refuting the subtree it was found in.
+    //
+    // deleting_solution_constraints gates the whole thing;
+    // definitions_awaiting_core collects the encoding definitions a checked
+    // deletion will need to see in core (see begin_recording_definitions); and
+    // core_lines_by_level mirrors proof_lines_by_level for just the lines that
+    // are in core, so a backtrack can tell whether the level it is about to
+    // forget holds any, and its own clause therefore has to go to core to
+    // discharge their deletion.
+    bool deleting_solution_constraints = true;
+    unsigned long long recording_definitions = 0;
+    vector<long long> definitions_awaiting_core;
+    deque<IntervalSet<long long>> core_lines_by_level;
 
     string proof_file;
     fstream proof;
@@ -263,46 +299,53 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
     WPBSum blocking_sum{};
 
+    // The assignment handed to the rule is stated in bits, at every assertion
+    // level. The bits are the variables the OPB is written over, so this is a
+    // solution to the formula in the formula's own terms: what VeriPB then
+    // preserves, and what the trimmer has to keep alive to make sense of the
+    // line, is the model rather than a set of atoms the proof introduced along
+    // the way. Stating it in eq atoms also works --- unit propagation gets from
+    // one to the other either way, through the same reifications -- but it
+    // leaves the enumeration projected onto extension variables.
     for (const auto & [var, val] : all_variables_and_values) {
         if (! optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
             blocking_sum += 1_i * (var != val);
 
         overloaded{
-            [&](const ConstantIntegerVariableID &) {}, //
-            [&](const SimpleIntegerVariableID & var) {
-                if (_imp->assertion_level > AssertionLevel::Definitions)
-                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(var, val);
-                else
-                    _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(var == val);
-            }, //
+            [&](const ConstantIntegerVariableID &) {},                                                                                       //
+            [&](const SimpleIntegerVariableID & var) { _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(var, val); }, //
             [&](const ViewOfIntegerVariableID & var) {
-                if (_imp->assertion_level > AssertionLevel::Definitions) {
-                    // An unregistered view (e.g. an objective too wide to
-                    // host its own bit vector) is witnessed through the
-                    // underlying's bits at the deviewed value instead.
-                    if (auto v_id = names_and_ids_tracker().find_view(var))
-                        _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*v_id, val);
-                    else
-                        _imp->proof << " "
-                                    << names_and_ids_tracker().bit_assignment_string_for(
-                                           var.actual_variable, var.negate_first ? var.then_add - val : val - var.then_add);
-                }
+                // An unregistered view (e.g. an objective too wide to host its
+                // own bit vector) is witnessed through the underlying's bits at
+                // the deviewed value instead.
+                if (auto v_id = names_and_ids_tracker().find_view(var))
+                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*v_id, val);
                 else
-                    _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(deview(var == val));
+                    _imp->proof << " "
+                                << names_and_ids_tracker().bit_assignment_string_for(
+                                       var.actual_variable, var.negate_first ? var.then_add - val : val - var.then_add);
             } //
         }
             .visit(var);
     }
 
     _imp->proof << ";\n";
-    record_proof_line(advance_proof_line_number(), ProofLevel::Top);
+    auto solution_line = advance_proof_line_number();
+    auto delete_when_backtracking =
+        ! optional_minimise_variable_and_value && _imp->deleting_solution_constraints && _imp->assertion_level <= AssertionLevel::Definitions;
+    if (delete_when_backtracking)
+        record_solution_constraint(solution_line);
+    else
+        record_proof_line(solution_line, ProofLevel::Top);
+
+    optional<ProofLine> objective_bound;
 
     if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
         // soli and no links => have to assert the objective improving constraint
         visit(
             [&](const auto & id) {
-                emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top,
-                    AssertionAnnotation{.hint_name = hints::SoliImprove::hint_name});
+                objective_bound = emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i,
+                    ProofLevel::Top, AssertionAnnotation{.hint_name = hints::SoliImprove::hint_name});
             },
             optional_minimise_variable_and_value->first);
     else if (optional_minimise_variable_and_value)
@@ -313,7 +356,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
                 emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
                 _imp->proof << ":" << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
 
-                emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
+                objective_bound = emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
             },
             optional_minimise_variable_and_value->first);
     else if (_imp->assertion_level > AssertionLevel::Definitions) {
@@ -321,6 +364,32 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         emit(AssertProofRule{}, blocking_sum >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = hints::SolxBlock::hint_name});
     }
     // nothing needs done for solx below AssertionLevel::Links
+
+    if (optional_minimise_variable_and_value) {
+        // Branch and bound only ever logs a strictly better solution than the
+        // last, so everything the previous soli left behind is now subsumed and
+        // can go. The objective-improving constraint that VeriPB creates for the
+        // rule lives in the *core* set, so its deletion is a checked one: the
+        // goal is discharged by RUP against the improving constraint the soli we
+        // have just written put there, which is strictly stronger. The
+        // order-literal restatement is derived, and deleting it is free.
+        discard_superseded_objective_constraints();
+        _imp->previous_soli_constraint = ProofLine{solution_line};
+        _imp->previous_objective_bound = objective_bound;
+    }
+}
+
+auto ProofLogger::discard_superseded_objective_constraints() -> void
+{
+    vector<ProofLine> to_delete;
+    if (_imp->previous_soli_constraint)
+        to_delete.emplace_back(*_imp->previous_soli_constraint);
+    if (_imp->previous_objective_bound)
+        to_delete.emplace_back(*_imp->previous_objective_bound);
+    _imp->previous_soli_constraint = nullopt;
+    _imp->previous_objective_bound = nullopt;
+    if (! to_delete.empty())
+        delete_proof_lines(to_delete);
 }
 
 auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
@@ -335,8 +404,99 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     for (const auto & guess : guesses)
         guesses_as_reason.emplace_back(ProofLiteral{guess});
     auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-    emit_under_reason(
+    auto clause = emit_under_reason(
         assert_or_rup, WPBSum{} >= 1_i, ProofLevel::Current, guesses_as_reason, AssertionAnnotation{.hint_name = hints::Backtrack::hint_name});
+    discharge_solution_constraints(clause);
+}
+
+auto ProofLogger::disable_solution_deletion() -> void
+{
+    _imp->deleting_solution_constraints = false;
+    _imp->definitions_awaiting_core.clear();
+}
+
+auto ProofLogger::begin_recording_definitions() -> void
+{
+    ++_imp->recording_definitions;
+}
+
+auto ProofLogger::end_recording_definitions() -> void
+{
+    --_imp->recording_definitions;
+}
+
+auto ProofLogger::move_to_core(const vector<ProofLine> & lines) -> void
+{
+    if (lines.empty())
+        return;
+
+    write_indent();
+    _imp->proof << "core id";
+    for (const auto & line : lines)
+        _imp->proof << " " << relative_proof_line(line, _imp->proof_line.number);
+    _imp->proof << ";\n";
+}
+
+auto ProofLogger::promote_definitions_to_core() -> void
+{
+    // One `core id` step can take a list, and the first batch can be most of the
+    // encoding, so chunk it rather than writing a line megabytes wide.
+    const std::size_t per_line = 128;
+    for (std::size_t start = 0; start < _imp->definitions_awaiting_core.size(); start += per_line) {
+        write_indent();
+        _imp->proof << "core id";
+        for (auto n = start; n != std::min(start + per_line, _imp->definitions_awaiting_core.size()); ++n)
+            _imp->proof << " " << (_imp->definitions_awaiting_core[n] - _imp->proof_line.number - 1);
+        _imp->proof << ";\n";
+    }
+    _imp->definitions_awaiting_core.clear();
+}
+
+auto ProofLogger::record_solution_constraint(ProofLineNumber line) -> void
+{
+    // A solution found under this frame's guesses is excluded by the backtrack
+    // clause of the frame *above* it, so its blocking constraint belongs to the
+    // level that frame forgets --- one shallower than the active level, which is
+    // the level this frame's own clause will be tagged at. At depth 0 that is
+    // Top, and the constraint simply stays for the whole proof, which is what we
+    // want: nothing above ever refutes it.
+    //
+    // Doing it this way rather than deleting the constraint next to the clause
+    // that subsumes it costs one fewer `core id` step and one fewer checked
+    // deletion per solution, the range that forget_proof_level already emits
+    // doing the work; see dev_docs/solution-constraint-deletion.md.
+    auto level = std::max(_imp->active_proof_level - 1, 0);
+    if (cmp_less_equal(_imp->proof_lines_by_level.size(), level))
+        _imp->proof_lines_by_level.resize(level + 1);
+    _imp->proof_lines_by_level.at(level).insert_at_end(line.number);
+
+    // Solution rules put what they create into core, so the forget that
+    // eventually deletes this is a checked deletion, and the frame doing the
+    // forgetting has to have moved its clause to core first.
+    if (cmp_less_equal(_imp->core_lines_by_level.size(), level))
+        _imp->core_lines_by_level.resize(level + 1);
+    _imp->core_lines_by_level.at(level).insert_at_end(line.number);
+}
+
+auto ProofLogger::discharge_solution_constraints(const ProofLine & backtrack_clause) -> void
+{
+    if (! _imp->deleting_solution_constraints)
+        return;
+
+    // The forget that follows this backtrack will delete the level below, and if
+    // anything down there is core --- a solution's blocking constraint, or a
+    // descendant's clause that had to be promoted for the same reason --- those
+    // are checked deletions, and this clause is what discharges them.
+    auto level = _imp->active_proof_level;
+    auto below = core_lines_at(_imp->core_lines_by_level, level + 1);
+    if (! below || below->empty())
+        return;
+
+    promote_definitions_to_core();
+    move_to_core({backtrack_clause});
+    if (cmp_less_equal(_imp->core_lines_by_level.size(), level))
+        _imp->core_lines_by_level.resize(level + 1);
+    _imp->core_lines_by_level.at(level).insert_at_end(std::get<ProofLineNumber>(backtrack_clause).number);
 }
 
 auto ProofLogger::emit_learned_nogood(const vector<Literal> & decisions) -> ProofLine
@@ -646,6 +806,12 @@ auto ProofLogger::enter_proof_level(int depth) -> void
 
 auto ProofLogger::forget_proof_level(int depth) -> void
 {
+    // Any clause we promoted at this level goes with it: it is a core deletion,
+    // discharged by the backtrack clause of the frame doing the forgetting,
+    // which discharge_solution_constraints has just put into core.
+    if (auto promoted = core_lines_at(_imp->core_lines_by_level, depth))
+        promoted->clear();
+
     auto & lines = _imp->proof_lines_by_level.at(depth);
     // Emit deletions as *relative* (negative) ids so a constraint-count
     // difference between the solver's OPB and cake_pb_cp's re-derived OPB
@@ -706,7 +872,11 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
 auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber
 {
     switch (level) {
-    case ProofLevel::Top: _imp->proof_lines_by_level.at(0).insert_at_end(line.number); break;
+    case ProofLevel::Top:
+        _imp->proof_lines_by_level.at(0).insert_at_end(line.number);
+        if (_imp->recording_definitions && _imp->deleting_solution_constraints)
+            _imp->definitions_awaiting_core.push_back(line.number);
+        break;
     case ProofLevel::Current: _imp->proof_lines_by_level.at(_imp->active_proof_level).insert_at_end(line.number); break;
     case ProofLevel::Temporary: _imp->proof_lines_by_level.at(_imp->active_proof_level + 1).insert_at_end(line.number); break;
     }
