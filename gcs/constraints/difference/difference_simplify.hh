@@ -2,8 +2,10 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_DIFFERENCE_DIFFERENCE_SIMPLIFY_HH
 
 #include <gcs/integer.hh>
+#include <gcs/stats.hh>
 
 #include <cstddef>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -23,7 +25,7 @@ namespace gcs
      * \sa DifferenceConstraints::simplifying_at_root
      * \ingroup Constraints
      */
-    struct DifferenceSimplificationStats
+    struct DifferenceSimplificationStats final : ComponentStats
     {
         /// True if the stage actually ran. It runs once, from an initialiser,
         /// which is the root by construction (see
@@ -92,6 +94,31 @@ namespace gcs
         /// paid at the root, and the paper is explicit that it should be judged
         /// on its own.
         double seconds = 0.0;
+
+        /**
+         * \brief `difference_logic_simplify`, which is what a report has called
+         * this stage since before it was a ComponentStats.
+         *
+         * Not `difference_simplify` after the header, as the ComponentStats
+         * convention would otherwise have it. The names this feeds are already
+         * public --- `minizinc/CMakeLists.txt` pins
+         * `differenceLogicSimplifyRan` --- and a stage that reports under two
+         * different names across a version is worse than one whose identifier
+         * does not match its filename.
+         */
+        [[nodiscard]] auto component_name() const -> std::string override;
+        [[nodiscard]] auto summary() const -> std::string override;
+
+        /**
+         * \brief Every field, with \ref seconds rendered as whole milliseconds
+         * under the name `milliseconds`.
+         *
+         * A StatsEntry is an integer, and a duration is the one field here that
+         * is not. Milliseconds rather than truncated seconds because a stage
+         * that costs 900ms is worth telling apart from one that costs nothing,
+         * and `seconds=0` would not.
+         */
+        [[nodiscard]] auto entries() const -> std::vector<StatsEntry> override;
     };
 }
 

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <optional>
 #include <queue>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -18,6 +19,8 @@ using std::optional;
 using std::pair;
 using std::priority_queue;
 using std::size_t;
+using std::string;
+using std::to_string;
 using std::vector;
 using std::ranges::reverse;
 
@@ -265,4 +268,36 @@ auto gcs::innards::simplify_difference_graph(size_t n, const vector<DifferenceSi
     }
 
     return outcome;
+}
+
+auto DifferenceSimplificationStats::component_name() const -> string
+{
+    return "difference_logic_simplify";
+}
+
+auto DifferenceSimplificationStats::summary() const -> string
+{
+    if (! ran)
+        return "did not run";
+
+    if (base_negative_cycle)
+        return "stopped on a negative cycle in the base graph, leaving the refutation to the propagator";
+
+    return "removed " + to_string(redundant_edges_removed) + " redundant and " + to_string(dead_edges_removed) + " dead edges, fixed " +
+        to_string(conditions_fixed) + " conditions, over " + to_string(rounds) + " rounds of " + to_string(nodes) + " nodes and " + to_string(edges) +
+        " edges";
+}
+
+auto DifferenceSimplificationStats::entries() const -> vector<StatsEntry>
+{
+    return {StatsEntry{"ran", ran ? 1 : 0}, StatsEntry{"rounds", static_cast<long long>(rounds)}, StatsEntry{"nodes", static_cast<long long>(nodes)},
+        StatsEntry{"edges", static_cast<long long>(edges)}, StatsEntry{"conditional_edges", static_cast<long long>(conditional_edges)},
+        StatsEntry{"redundant_edges_removed", static_cast<long long>(redundant_edges_removed)},
+        StatsEntry{"redundant_conditional_edges_removed", static_cast<long long>(redundant_conditional_edges_removed)},
+        StatsEntry{"dead_edges_removed", static_cast<long long>(dead_edges_removed)},
+        StatsEntry{"conditions_fixed", static_cast<long long>(conditions_fixed)},
+        StatsEntry{"isolated_nodes_removed", static_cast<long long>(isolated_nodes_removed)},
+        StatsEntry{"zero_weight_cycles", static_cast<long long>(zero_weight_cycles)},
+        StatsEntry{"nodes_on_zero_weight_cycles", static_cast<long long>(nodes_on_zero_weight_cycles)},
+        StatsEntry{"base_negative_cycle", base_negative_cycle ? 1 : 0}, StatsEntry{"milliseconds", static_cast<long long>(seconds * 1000.0)}};
 }
