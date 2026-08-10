@@ -453,9 +453,9 @@ licensed as above, without any additional terms or conditions.
 Acknowledgements
 ================
 
-This work is supported by a Royal Academy of Engineering Research Fellowship. Part of this work was
-done while the author was participating in a program at the Simons Institute for the Theory of
-Computing.
+This work is supported by the Advanced Research + Invention Agency, and by a Royal Academy of
+Engineering Research Fellowship. Part of this work was done while the author was participating in a
+program at the Simons Institute for the Theory of Computing.
 
 <!-- vim: set tw=100 spell spelllang=en : -->
 
