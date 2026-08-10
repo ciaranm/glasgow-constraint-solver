@@ -1,0 +1,1 @@
+( (version 1) (variables (A 0 3) (W 3 3) (C 0 3)) (constraints (_1 in (W C) A)) (prob_type enumerate) )

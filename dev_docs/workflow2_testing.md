@@ -118,11 +118,33 @@ them; the gap is upstream.
 | `MinDistance` | `min_distance` | library only |
 | `Nogoods` (posted) | `nogoods` | library only |
 
-Also upstream: `notin` (no solver writer), views (affine operands), and `in`
-over a member list with **two or more variables** — that last one parses on both
-sides but fails at VeriPB, because the solver's `f[N][inlt/ingt/in]` flags are
-not cake's `x[id][i][ge/le/eq]` selectors (#487; one variable chains fine, which
-is why `in_var_sat` passes).
+Also upstream: `notin` (no solver writer) and views (affine operands).
+
+`in` used to be on that list — over a member list with two or more variables it
+parsed on both sides but failed at VeriPB, because the solver's
+`f[N][inlt/ingt/in]` flags were not cake's `x[id][i][ge/le/eq]` selectors
+(#487). It is conformed now, and byte-matches. Two things that made it cheap,
+both worth reaching for next time:
+
+- **cake's `cencode_in` is literally `cencode_count_aux`**, the helper `count`
+  uses, so the conform was the one already done for count in #354: the
+  position-indexed `create_proof_flag_fully_reifying(ConstraintID, indices,
+  annotation, ineq)` overload, `eq <=> ge & le` in place of `eq <=> ~lt & ~gt`,
+  and the disjunction labelled `@c[id][al1]`.
+- **The propagator needed no changes at all.** It only ever references the
+  equality flag, whose meaning is unchanged; `ge = ~gt` and `le = ~lt` exactly.
+  Check that property first — it is what separates a conform that is a rename
+  from one that is a rewrite of every justification.
+
+The other half was not a naming question. `In::prepare()` folded a candidate
+whose *domain* was a singleton into the constant list, but `s_expr()` runs on
+the stored constraint, before `prepare()`, so the `.scp` still named it as a
+variable and cake still gave it a flag triple — shifting every later
+candidate's index. `prepare()` now folds only *syntactically* constant
+candidates, which the `.scp` renders as integers, so both sides agree.
+`in_fixed_var_sat` is the regression test. Any constraint that normalises its
+arguments in `prepare()` has this hazard; the general rule is that `prepare()`
+may not rewrite anything the `.scp` distinguishes.
 
 Two complementary mechanisms:
 

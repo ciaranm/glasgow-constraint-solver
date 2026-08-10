@@ -84,9 +84,19 @@ auto GlobalCardinality::prepare(Propagators & propagators, State & initial_state
     // constraint's own count rows rather than following them. The OPB is a
     // conjunction, so that is a reordering and nothing more -- every line is
     // still cited by the number it was actually emitted with.
+    // Each child takes this constraint's identity, so its row is attributed to
+    // the constraint the user posted -- which means they need distinct roles.
+    // `<i>_al1` is cake's own label for exactly this row
+    // (cencode_global_cardinality_aux's cat_least_one, prefixed by the variable
+    // index), and matches the `<j>_le`/`<j>_ge` convention the count rows below
+    // already use.
     if (_closed)
-        for (const auto & var : _vars)
-            In{var, _values}.install(propagators, initial_state, optional_model);
+        for (const auto & [i, var] : enumerate(_vars)) {
+            auto child = In{var, _values};
+            child.set_constraint_id(constraint_id());
+            child.with_proof_role_prefix(std::to_string(i) + "_");
+            std::move(child).install(propagators, initial_state, optional_model);
+        }
 
     return true;
 }

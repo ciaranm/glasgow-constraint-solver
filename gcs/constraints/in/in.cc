@@ -64,18 +64,42 @@ In::In(IntegerVariableID var, vector<Integer> vals) : _var(var), _val_vals(move(
 {
 }
 
+auto In::with_proof_role_prefix(string prefix) -> In &
+{
+    _proof_role_prefix = move(prefix);
+    return *this;
+}
+
 auto In::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<In>(_var, _var_vals, _val_vals);
+    auto result = make_unique<In>(_var, _var_vals, _val_vals);
+    result->with_proof_role_prefix(_proof_role_prefix);
+    return result;
 }
 
 auto In::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
+    // Move members that are *syntactically* constant into the value list, but
+    // leave a variable alone even when its domain has collapsed to one value.
+    //
+    // The distinction is what keeps the flag indices agreeing with cake_pb_cp's.
+    // s_expr() runs on the stored constraint, before this, so the `.scp` lists
+    // the members as posted: a ConstantIntegerVariableID renders as its integer,
+    // which cake also reads as a constant, but a singleton-domain variable
+    // renders as its name, and cake gives it a per-position flag triple like any
+    // other variable. Folding it here would shift every later member's index and
+    // leave the two encodings naming different things -- for In{A, {W, C}} with
+    // W in [3,3], cake builds x[id][0][..] for W and x[id][1][..] for C while we
+    // would build one triple, for C, called index 0.
+    //
+    // The fixed member's own flag triple is then dead weight in the OPB, which is
+    // fine: cake carries exactly the same rows, and propagation is unaffected
+    // (the propagator reads domains, not this partition).
     erase_if(_var_vals, [&](const IntegerVariableID & v) -> bool {
-        auto const_val = initial_state.optional_single_value(v);
-        if (const_val)
-            _val_vals.push_back(*const_val);
-        return const_val.has_value();
+        if (! is_constant_variable(v))
+            return false;
+        _val_vals.push_back(*initial_state.optional_single_value(v));
+        return true;
     });
 
     sort(_val_vals);
@@ -100,22 +124,29 @@ auto In::define_proof_model(ProofModel & model, const State &) -> void
         if (! is_literally_false(_var == v))
             sum += 1_i * (_var == v);
 
-    // For each non-constant V_i, fully reify three flags:
-    //   lt_i ⇔ var < V_i
-    //   gt_i ⇔ var > V_i
-    //   sel_i ⇔ ¬lt_i ∧ ¬gt_i  (i.e. sel_i ⇔ var = V_i)
-    // Mirrors the encoding used by Count. Full reification of every
-    // proof flag is the project rule for new OPB encodings.
+    // For each non-constant V_i, fully reify three flags, named and oriented as
+    // cake_pb_cp's cencode_in does it -- which is literally cake's count helper
+    // (cencode_count_aux), so this is the same encoding Count was conformed to
+    // in #354:
+    //   x[id][i][ge] ⇔ V_i ≥ var
+    //   x[id][i][le] ⇔ V_i ≤ var
+    //   x[id][i][eq] ⇔ ge ∧ le   (i.e. V_i = var)
+    // The solver used to reify the strict complements (lt ⇔ var < V_i, gt ⇔ var
+    // > V_i, sel ⇔ ¬lt ∧ ¬gt); ge = ¬gt and le = ¬lt exactly, so the selector
+    // means what it always did, which is all the propagator ever references.
     for (const auto & [idx, V] : enumerate(_var_vals)) {
-        auto lt = model.create_proof_flag_fully_reifying(format("inlt{}", idx), WPBSum{} + 1_i * _var + -1_i * V <= -1_i);
-        auto gt = model.create_proof_flag_fully_reifying(format("ingt{}", idx), WPBSum{} + 1_i * _var + -1_i * V >= 1_i);
-        auto sel = model.create_proof_flag_fully_reifying(format("in{}", idx), WPBSum{} + 1_i * ! lt + 1_i * ! gt >= 2_i);
+        vector<long long> pos{static_cast<long long>(idx)};
+        auto ge = model.create_proof_flag_fully_reifying(_constraint_id, pos, "ge", WPBSum{} + 1_i * V + -1_i * _var >= 0_i);
+        auto le = model.create_proof_flag_fully_reifying(_constraint_id, pos, "le", WPBSum{} + 1_i * V + -1_i * _var <= 0_i);
+        auto sel = model.create_proof_flag_fully_reifying(_constraint_id, pos, "eq", WPBSum{} + 1_i * ge + 1_i * le >= 2_i);
         _selectors.push_back(sel);
 
         sum += 1_i * sel;
     }
 
-    model.add_constraint(sum >= 1_i);
+    // cake labels the disjunction c[id][al1] (cat_least_one), with the caller's
+    // prefix in front of the role when a parent installs several of us.
+    model.add_labelled_constraint(_constraint_id, _proof_role_prefix + "al1", sum >= 1_i);
 }
 
 auto In::install_propagators(Propagators & propagators) -> void
