@@ -322,6 +322,10 @@ auto main(int argc, char * argv[]) -> int
             ("infer-disjunctive-posted",                                                                 //
                 "Cap how many cliques are posted (Sidorov's N_out)",                                     //
                 cxxopts::value<std::size_t>()->default_value("5"))                                       //
+            ("infer-disjunctive-min-clique-size",                                                        //
+                "Smallest clique worth posting; two makes every conflicting pair a candidate, which "    //
+                "is what Sidorov's binary covers are",                                                   //
+                cxxopts::value<std::size_t>()->default_value("3"))                                       //
             ("infer-cumulative",                                                                         //
                 "Run the InferredCumulative presolver, which lifts cover inequalities over the "         //
                 "resources' capacity rows into implied Cumulatives with non-unit heights",               //
@@ -722,8 +726,10 @@ auto main(int argc, char * argv[]) -> int
     auto disjunctive_stats = std::make_shared<InferredDisjunctiveStats>();
     auto infer_disjunctive = options_vars["infer-disjunctive"].as<bool>();
     if (infer_disjunctive) {
-        auto presolver = InferredDisjunctive{disjunctive_stats}.with_budgets(
-            options_vars["infer-disjunctive-candidates"].as<std::size_t>(), options_vars["infer-disjunctive-posted"].as<std::size_t>());
+        auto presolver = InferredDisjunctive{disjunctive_stats}
+                             .with_budgets(options_vars["infer-disjunctive-candidates"].as<std::size_t>(),
+                                 options_vars["infer-disjunctive-posted"].as<std::size_t>())
+                             .with_minimum_clique_size(options_vars["infer-disjunctive-min-clique-size"].as<std::size_t>());
         if (infer_makespan_bound)
             presolver.with_makespan(makespan);
         if (mutate_makespan_bound)

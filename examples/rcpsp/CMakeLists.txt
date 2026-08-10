@@ -70,6 +70,26 @@ add_test(NAME rcpsp_dzn_inferred_cumulative_mutated COMMAND ${GCS_BASH} ${CMAKE_
     --basename rcpsp_dzn_inferred_cumulative_mutated
     $<TARGET_FILE:rcpsp> --dzn ${CMAKE_CURRENT_SOURCE_DIR}/sample.dzn --infer-cumulative --mutate-makespan-bound)
 
+# The minimum clique size, which the mutation is what makes testable at all.
+# A plain verify lane cannot see this flag: raising the minimum removes a
+# derived Cumulative, and a proof with one fewer honest derivation in it
+# verifies exactly as happily as one with it, so such a lane would pass with the
+# forward deleted --- the same shape as the paragraph above, one flag further
+# along. Running it against --mutate-makespan-bound inverts that, and the lane
+# is the sibling of rcpsp_dzn_inferred_disjunctive_mutated rather than a variant
+# of rcpsp_dzn_inferred: at the default of three, sample.dzn's one clique is
+# posted, its makespan bound derived, the mutation corrupts it and veripb
+# refuses, which is what that lane asserts. At five no clique survives, so no
+# bound is derived, the mutation has nothing to corrupt, and the honest proof
+# verifies --- which is what this lane asserts. So the two disagree on the same
+# instance under the same mutation, and disagree only because the flag arrives.
+# Five rather than two: sample.dzn's only clique has three members, so a lane at
+# two is byte-identical to the default and would pass with the flag deleted.
+add_test(NAME rcpsp_dzn_inferred_min_clique_size COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash
+    --basename rcpsp_dzn_inferred_min_clique_size
+    $<TARGET_FILE:rcpsp> --dzn ${CMAKE_CURRENT_SOURCE_DIR}/sample.dzn --infer-disjunctive --mutate-makespan-bound
+    --infer-disjunctive-min-clique-size 5)
+
 # Enumeration rather than optimisation, so this one reaches the COMPLETE
 # ENUMERATION conclusion, which none of the others do.
 add_test(NAME rcpsp_all COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_all
