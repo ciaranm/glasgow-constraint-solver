@@ -1381,3 +1381,78 @@ TEST_CASE("read_scp: a .scp whose variables are all anonymous reads back")
     read_scp(mixed_rebuilt, mixed_a);
     CHECK(prove_to_scp(mixed_rebuilt, "scp_reader_anon_mixed_b") == mixed_a);
 }
+
+TEST_CASE("read_scp: cumulative_optional enumerates correctly")
+{
+    // Four same-typed variable lists in a row -- starts, lengths, heights,
+    // presences -- so a re-ordering of the slots would still parse, still post,
+    // and still satisfy the writer/reader symmetry checks, which only ask
+    // whether the keyword resolves. These three counts pin each slot to its
+    // meaning rather than just to its type.
+    //
+    // Base: two present length-2 tasks of height 1 against capacity 1, so they
+    // cannot overlap and |S0 - S1| >= 2.
+    auto base = enumerate(R"(
+        (
+            (version 1)
+            (variables (S0 0 3) (S1 0 3) (L0 2 2) (L1 2 2) (H0 1 1) (H1 1 1) (P0 1 1) (P1 1 1) (C 1 1))
+            (constraints (_1 cumulative_optional (S0 S1) (L0 L1) (H0 H1) (P0 P1) C))
+            (prob_type enumerate)
+        ))");
+
+    CHECK(base.size() == 6);
+    for (const auto & s : base)
+        CHECK(std::abs(s.at("S0") - s.at("S1")) >= 2);
+
+    // Heights 2 against a capacity of 1: nothing fits, even alone. This is what
+    // distinguishes the heights slot from the lengths slot -- swapping them
+    // would leave the base case's count unchanged.
+    auto over_capacity = enumerate(R"(
+        (
+            (version 1)
+            (variables (S0 0 3) (S1 0 3) (L0 2 2) (L1 2 2) (H0 2 2) (H1 2 2) (P0 1 1) (P1 1 1) (C 1 1))
+            (constraints (_1 cumulative_optional (S0 S1) (L0 L1) (H0 H1) (P0 P1) C))
+            (prob_type enumerate)
+        ))");
+
+    CHECK(over_capacity.empty());
+
+    // Task 0 absent: it stops consuming the resource, so both starts range
+    // freely and every S0 x S1 pair is a solution. This is what pins the fourth
+    // list as presences.
+    auto one_absent = enumerate(R"(
+        (
+            (version 1)
+            (variables (S0 0 3) (S1 0 3) (L0 2 2) (L1 2 2) (H0 1 1) (H1 1 1) (P0 0 0) (P1 1 1) (C 1 1))
+            (constraints (_1 cumulative_optional (S0 S1) (L0 L1) (H0 H1) (P0 P1) C))
+            (prob_type enumerate)
+        ))");
+
+    CHECK(one_absent.size() == 16);
+}
+
+TEST_CASE("read_scp: cumulative_optional survives write -> read -> write unchanged")
+{
+    Problem original;
+    auto s0 = original.create_integer_variable(0_i, 3_i, "S0");
+    auto s1 = original.create_integer_variable(0_i, 3_i, "S1");
+    auto l0 = original.create_integer_variable(2_i, 2_i, "L0");
+    auto l1 = original.create_integer_variable(2_i, 2_i, "L1");
+    auto h0 = original.create_integer_variable(1_i, 1_i, "H0");
+    auto h1 = original.create_integer_variable(1_i, 1_i, "H1");
+    auto p0 = original.create_integer_variable(0_i, 1_i, "P0");
+    auto p1 = original.create_integer_variable(0_i, 1_i, "P1");
+    auto c = original.create_integer_variable(1_i, 1_i, "C");
+    original.post(Cumulative{std::vector<IntegerVariableID>{s0, s1}, std::vector<IntegerVariableID>{l0, l1}, std::vector<IntegerVariableID>{h0, h1},
+        std::vector<IntegerVariableID>{p0, p1}, c});
+    auto scp_a = prove_to_scp(original, "scp_reader_cumulative_optional_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_cumulative_optional_b");
+
+    CHECK(scp_a == scp_b);
+    // The slot order is what this is really guarding: the presences list sits
+    // between the heights and the capacity, where the FlatZinc builtin puts it.
+    CHECK(scp_a.contains("(S0 S1) (L0 L1) (H0 H1) (P0 P1) C"));
+}

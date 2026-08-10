@@ -51,7 +51,6 @@ namespace gcs
         // Sum_i (x_i == values[j]) == counts[j], stored as {LE-half, GE-half}.
         std::vector<std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>>> _count_lines;
 
-        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 

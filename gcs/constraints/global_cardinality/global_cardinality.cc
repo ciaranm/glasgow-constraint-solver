@@ -1,7 +1,6 @@
 #include <gcs/constraint.hh>
 #include <gcs/constraints/global_cardinality/global_cardinality.hh>
 #include <gcs/constraints/global_cardinality/hints.hh>
-#include <gcs/constraints/in.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -29,6 +28,7 @@ using std::move;
 using std::pair;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::binary_search;
 using std::ranges::sort;
 
 GlobalCardinality::GlobalCardinality(vector<IntegerVariableID> vars, vector<Integer> values, vector<IntegerVariableID> counts) :
@@ -75,24 +75,25 @@ auto GlobalCardinality::clone() const -> unique_ptr<Constraint>
     return cloned;
 }
 
-auto GlobalCardinality::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
-{
-    // The closed restriction (every variable takes a cover value) is delegated
-    // to a certified In constraint per variable. Installing a child needs all
-    // three of propagators, state and model at once, so prepare() is the only
-    // phase that can do it; the children's OPB rows therefore now precede this
-    // constraint's own count rows rather than following them. The OPB is a
-    // conjunction, so that is a reordering and nothing more -- every line is
-    // still cited by the number it was actually emitted with.
-    if (_closed)
-        for (const auto & var : _vars)
-            In{var, _values}.install(propagators, initial_state, optional_model);
-
-    return true;
-}
-
 auto GlobalCardinality::define_proof_model(ProofModel & model, const State &) -> void
 {
+    // The closed restriction: every variable takes one of the cover values.
+    // `<i>_al1` is cake_pb_cp's own label for this row
+    // (cencode_global_cardinality_aux's cat_least_one, prefixed by the variable
+    // index), matching the `<j>_le`/`<j>_ge` convention the count rows use.
+    //
+    // An empty sum here means the variable's domain and the cover are disjoint,
+    // so `0 >= 1` is the right row: the constraint is unsatisfiable, and saying
+    // so definitionally is better than needing a propagator to discover it.
+    if (_closed)
+        for (const auto & [i, var] : enumerate(_vars)) {
+            WPBSum sum;
+            for (const auto & value : _values)
+                if (! is_literally_false(var == value))
+                    sum += 1_i * (var == value);
+            model.add_labelled_constraint(constraint_id(), std::to_string(i) + "_al1", sum >= 1_i);
+        }
+
     for (const auto & [j, value] : enumerate(_values)) {
         WPBSum sum;
         for (const auto & var : _vars)
@@ -110,6 +111,44 @@ auto GlobalCardinality::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
     triggers.on_bounds.insert(triggers.on_bounds.end(), _counts.begin(), _counts.end());
+
+    // Closed: restrict every variable to the cover values. One propagator over
+    // all of them, and idempotent -- once a domain is inside the cover it stays
+    // there, since domains only shrink -- so this fires once and then finds
+    // nothing. Each contiguous run of uncovered values is one interval
+    // conclusion, RUP against that variable's `<i>_al1` row: asserting the
+    // variable is in [lo, hi] walks the order chain past every cover value into
+    // the disjunction. This is also what lets the GAC propagator hand it the
+    // no-cover-value-left case rather than raising an unjustified contradiction.
+    if (_closed) {
+        // sort_cover_values() only runs on the BC path, so sort a copy rather
+        // than assume _values is ordered.
+        auto sorted_cover = _values;
+        sort(sorted_cover);
+
+        Triggers closed_triggers;
+        closed_triggers.on_change.insert(closed_triggers.on_change.end(), _vars.begin(), _vars.end());
+        propagators.install(
+            constraint_id(),
+            [vars = _vars, cover = sorted_cover, owner = constraint_id()](
+                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                for (const auto & var : vars) {
+                    vector<pair<Integer, Integer>> runs;
+                    for (auto v : state.each_value_immutable(var)) {
+                        if (binary_search(cover, v))
+                            continue;
+                        if (! runs.empty() && runs.back().second + 1_i == v)
+                            runs.back().second = v;
+                        else
+                            runs.emplace_back(v, v);
+                    }
+                    for (const auto & [lo, hi] : runs)
+                        inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{hints::GlobalCardinality{owner}}, NoReason{});
+                }
+                return PropagatorState::Enable;
+            },
+            closed_triggers);
+    }
 
     overloaded{[&](const consistency::BC &) {
                    propagators.install(

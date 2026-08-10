@@ -215,16 +215,35 @@ add_scp_chain_test(parity_unsat  none)
 # and its clauses are unlabelled vs cake -- so no opbdiff byte-match yet.
 add_scp_chain_test(inverse_sat  none)
 
-# none (chain-only): `in` (membership). cake_pb_cp's parser takes the candidate
-# list first then the variable -- (id in (values...) var) -- and the solver now
-# emits that order (it previously emitted the variable first, which cake rejected
-# outright). A constant candidate contributes a fixed eq literal and a variable
-# candidate a reified selector, summed at-least-one; that's the same lean shape
-# cake uses, so it chain-verifies. Byte-match stays gated by the eq-literal
-# variable encoding (#358), as for the element / nvalue family. in_var exercises
-# a variable candidate (V == W) alongside a constant; in_unsat forces the domain
-# empty (Y in {5} with Y in 0..3).
-add_scp_chain_test(in_const_sat  none)
+# strict: `in` (membership). cake_pb_cp's parser takes the candidate list first
+# then the variable -- (id in (values...) var). A constant candidate contributes
+# the variable's own eq literal (which cake spells the same way); a variable
+# candidate now contributes cake's per-position flag triple x[id][i][ge|le|eq]
+# with eq <=> ge & le, summed under @c[id][al1]. That is the same conform count
+# had in #354 -- cake's cencode_in *is* cencode_count_aux -- and, as there, the
+# propagator needed no changes, because it only ever references the equality
+# flag, whose meaning is unchanged (the solver previously reified the strict
+# complements, eq <=> ~lt & ~gt).
+#
+# Two or more variable candidates were the shape that used to fail: the proof
+# cited f[N][in<i>] flags cake's OPB has no counterpart for. in_two_vars_* are
+# the regression tests for that, sat and unsat.
+#
+# in_fixed_var_sat guards the second half of the conform. In::prepare() folds a
+# *syntactically* constant candidate into the value list -- cake reads it as a
+# constant too, since it renders as an integer in the .scp -- but no longer folds
+# a variable whose domain happens to be a singleton, which the .scp still names
+# as a variable and cake still gives a flag triple. Folding that one shifted
+# every later candidate's index, so the two sides named different things.
+add_scp_chain_test(in_const_sat       strict)
+add_scp_chain_test(in_two_vars_sat    strict)
+add_scp_chain_test(in_two_vars_unsat  strict)
+add_scp_chain_test(in_mixed_sat       strict)
+add_scp_chain_test(in_fixed_var_sat   strict)
+# These two keep the eq-literal variable-encoding residue (#358, wontfix): every
+# `in` row matches, but a materialised ge0 boundary literal differs in its
+# coefficient (1 vs cake's 0). in_var_sat is one variable candidate alongside a
+# constant; in_unsat forces the domain empty (Y in {5} with Y in 0..3).
 add_scp_chain_test(in_var_sat    none)
 add_scp_chain_test(in_unsat      none)
 
@@ -292,6 +311,12 @@ add_scp_chain_test(lex_less_equal_iff_sat     none)
 # eq-literal ladder; it is enabled by the eager default (eq(v) <=> ge(v) & ~ge(v+1)
 # at the bounds too, with ge(lower)/ge(ub+1) pinned as persistent top-of-proof
 # lines), which previously was the lazy-vs-eager divergence that blocked it.
+#
+# The closed restriction -- every variable takes a cover value -- is one
+# @c[id][<i>_al1] row per variable, emitted by define_proof_model. That is cake's
+# own label for it, from cencode_global_cardinality_aux's cat_least_one prefixed
+# by the variable index, so the whole label set agrees with cake's; these stay
+# `none` only for the #358 @i[X][ge0][r] variable-encoding coefficient.
 add_scp_chain_test(global_cardinality_sat          none)
 add_scp_chain_test(global_cardinality_unsat        none)
 add_scp_chain_test(global_cardinality_closed_sat   none)

@@ -703,7 +703,7 @@ namespace
         else if (form == "capacities")
             post_constraint(problem, BinPacking{move(items), move(sizes), resolve_integer_list(terms[5], "the binpacking capacity list")}, label);
         else
-            throw ScpReadError{"binpacking's fourth argument must be the tag `loads` or `capacities`, not '" + form + "'"};
+            throw ScpReadError{"binpacking's third argument must be the tag `loads` or `capacities`, not '" + form + "'"};
     }
 
     // (label mdd (X1 ... Xn) (n0 n1 ... nn) ((layer-0-nodes) ...) (t1 ... tk)):
