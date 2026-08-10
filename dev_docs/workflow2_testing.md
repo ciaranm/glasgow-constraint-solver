@@ -184,11 +184,17 @@ Per-case `opbdiff` mode (3rd runner arg):
   to cake's and whose multiple identical-looking selectors defeat label matching
   (the deferred conform-the-solver item).
 
-**Domains are bits-encoded on purpose**, to dodge the direct-only-vs-bits
-divergence (a `[0,1]` variable is direct-encoded by the solver but bits-encoded
-by cake, so the OPB constraint *counts* differ and veripb rejects the chain).
-For the same reason the **reified forms are deferred** — their `(C = 1)`
-condition variable is `[0,1]`.
+**Most domains are kept off the `{0,1}` boundary**, but only to keep the
+`strict` cases byte-clean, *not* because a `{0,1}` variable breaks the chain. It
+used to: the solver named the single PB variable `i[v][eq1]` where cake names it
+`i[v][b0]`, and the differing OPB row counts mattered while VeriPB pinned them.
+Since `9678233f` (2026-06-17, relative proof-line references + dropping the `f`
+rule + the `b0` rename) the name agrees and the count does not matter. All that
+is left is that we emit one tautological row on `i[v][b0]` where cake emits
+labelled `lb` and `ub` rows, so `opbdiff` reports cake's extra `ub` line and the
+case cannot byte-match. `binary_less_equal_sat` and `binary_equals_unsat` are
+registered at `none` and cover exactly this; the reified forms, whose `(C = 1)`
+condition variable is `{0,1}`, chain for the same reason.
 
 Adding a constraint to the harness is: drop a `.scp` in `scp_cases/` and add one
 `add_scp_chain_test(<case> <mode>)` line.
@@ -230,24 +236,21 @@ enum class ProofCheck { None, SelfVerify, CakeChain };
 `SelfVerify` (or skips the cake step):
 1. **cake-encodable constraint** — abs, all_different, equals/not_equals,
    comparison, linear (the families cake knows). The other constraints opt out.
-2. **bits-encoded domains** — every variable's domain needs ≥ 2 bits, else the
-   direct-vs-bits divergence fails the chain on the constraint count. The random
-   generator frequently picks small domains, so this gate trims most instances
-   today.
+2. ~~**bits-encoded domains**~~ — this gate is **obsolete**. It existed because a
+   `{0,1}` variable was direct-encoded under a name cake did not use, and the
+   differing OPB row counts broke the chain; `9678233f` renamed the single PB
+   variable to cake's `i[v][b0]` and dropped the `f` rule, and `{0,1}` models
+   have chained ever since (`binary_less_equal_sat` / `binary_equals_unsat`
+   cover it). Do not reintroduce it.
 3. **tools present** — `cake_pb_cp` + veripb on PATH, else skip.
 
-### Why it's scaffolded-but-mostly-off until CakePB catches up
+### Why it is still scaffolding
 
 The whole point of Part A is the *edge cases* (small/awkward domains, views, dup
-variables). But gate (2) excludes exactly the small-domain instances, because of
-the **direct-only-vs-bits** divergence currently with the CakePB authors. So
-until that's resolved, `CakeChain` would be green only on the large-domain
-random instances. The plan:
-
-- Land the three-way enum + the `CakeChain` plumbing (gated to bits-domains), so
-  it's reviewed and ready and gives *some* coverage now.
-- When direct-vs-bits is fixed upstream, drop gate (2) and the random edge-case
-  coverage switches on broadly with one change.
+variables). The original blocker was gate (2), which no longer applies — so what
+remains is gate (1): the random generator will happily build instances of
+constraints cake has no rule for, and views, which nothing parses. A `CakeChain`
+arm would need to fall back per instance on those rather than fail.
 
 ### Hook points
 
