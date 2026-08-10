@@ -443,7 +443,16 @@ auto RegularBacchus::install_propagators(Propagators & propagators) -> void
 
 auto RegularBacchus::constraint_type() const -> std::string
 {
-    return "regular_bacchus";
+    // `regular` for the same reason as RegularLegacy: the keyword names the
+    // constraint, not the propagator. Note that unlike Regular and
+    // RegularLegacy, a proof *this* variant emits still does not check against
+    // cake's OPB: the upfront Bacchus encoding labels its own per-(i, q, v)
+    // transition-extension rows @c[id][fwd<i>q<q>v<v>], which cake's encoding
+    // has no counterpart for, so veripb rejects the first pol that cites one.
+    // Conforming that is a separate, real proof-logging change; the keyword is
+    // right regardless, and re-solving this .scp (as the chain harness does)
+    // picks the default propagator and chains.
+    return "regular";
 }
 
 auto RegularBacchus::s_expr(const ProofModel * const model) const -> SExpr

@@ -215,7 +215,7 @@ namespace
 
         auto constraint_type() const -> string override
         {
-            return "mini_linear_greater_equal";
+            return "test_mini_linear_greater_equal";
         }
     };
 
