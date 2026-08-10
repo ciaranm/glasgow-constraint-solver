@@ -394,6 +394,16 @@ if(GCS_ENABLE_EXECUTABLES)
     add_subdirectory(verified_encodings)
     add_subdirectory(scp)
     add_subdirectory(minicp_benchmarks)
+
+    # run_test_and_verify.bash reads a written .scp back with glasgow_scp_solver
+    # --parse-only, so an example that posts a constraint gcs::read_scp cannot
+    # rebuild fails there rather than much later in the chain harness. The path
+    # goes in a generated file beside the binaries rather than an ENVIRONMENT
+    # property on each test: the script already knows the build directory (it is
+    # the directory of the program it was handed), so this needs no change to
+    # any of the ~200 add_test registrations.
+    file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/scp_solver_path
+        CONTENT "$<TARGET_FILE:glasgow_scp_solver>")
 endif()
 
 if(GCS_ENABLE_DOXYGEN)

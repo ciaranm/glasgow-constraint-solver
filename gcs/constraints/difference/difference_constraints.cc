@@ -261,9 +261,14 @@ auto DifferenceConstraints::s_expr(const ProofModel * const model) const -> SExp
     for (const auto & e : _edges) {
         vector<SExpr> edge{tracker.s_expr_term_of(e.x), tracker.s_expr_term_of(e.y), SExpr::atom(e.d.to_string())};
         // A half-reified edge carries its condition as a fourth element, so
-        // that an unconditional system's s-expression is unchanged.
+        // that an unconditional system's s-expression is unchanged. It must be
+        // the full (variable op value) triple, the same spelling every other
+        // reified form writes: s_expr_term_of(Literal) renders a condition as
+        // the bare variable name, which silently drops the operator and value,
+        // so `C >= 2` and `C = 1` would come out identically as `C`.
         if (e.cond)
-            edge.push_back(tracker.s_expr_term_of(Literal{*e.cond}));
+            edge.push_back(SExpr::list(
+                {tracker.s_expr_term_of(e.cond->var), SExpr::atom(tracker.s_expr_name_of(e.cond->op)), SExpr::atom(e.cond->value.to_string())}));
         edges.push_back(SExpr::list(move(edge)));
     }
 

@@ -26,6 +26,34 @@ namespace gcs
     };
 
     /**
+     * \brief The specific ScpReadError for a constraint keyword this reader has
+     * no case for at all, as opposed to a keyword it knows whose arguments were
+     * malformed or use a shape it cannot rebuild.
+     *
+     * The distinction is what lets the constraint tests assert writer/reader
+     * *symmetry* — that every keyword Constraint::s_expr() can emit is one
+     * read_scp accepts — without also demanding that every instance round-trip
+     * (a view operand, say, renders as `(-X + 17)`, which is a known and
+     * separate reader limitation).
+     *
+     * \ingroup Core
+     */
+    class ScpUnsupportedConstraintError : public ScpReadError
+    {
+    private:
+        std::string _operator_name;
+
+    public:
+        explicit ScpUnsupportedConstraintError(const std::string & op);
+
+        /// The keyword that had no case, for a caller that wants to classify it.
+        [[nodiscard]] auto operator_name() const -> const std::string &
+        {
+            return _operator_name;
+        }
+    };
+
+    /**
      * \brief What read_scp recovered from a `.scp` beyond the Problem it built:
      * the variables by name, and the objective if the document had one.
      *
@@ -74,11 +102,19 @@ namespace gcs
      * harness does) could not. Call Problem::minimise() with
      * ScpModel::minimise_variable to honour it.
      *
-     * Only a subset of constraints is supported so far (`abs`, `all_different`,
-     * `in`, the comparisons, the linear forms, `equals`/`not_equals`, `element`
-     * and `count`); an unsupported operator raises ScpReadError rather than
-     * being silently dropped. Throws ScpReadError (or SExprParseError) on
-     * malformed input.
+     * The reader is expected to accept **every** keyword Constraint::s_expr()
+     * can write: the workflow-2 chain harness re-solves the `.scp` as its first
+     * step, so a keyword with no case here fails the chain before the verified
+     * encoder is reached. The constraint tests enforce that (see
+     * test_innards::check_scp_writer_reader_symmetry), so adding a constraint
+     * means adding its case below. An unknown keyword raises
+     * ScpUnsupportedConstraintError rather than being silently dropped.
+     *
+     * What the reader does *not* promise is that every *instance* round-trips.
+     * A view operand renders as an s-expression list (`(-X + 17)`), which this
+     * grammar does not parse, and a few constraints accept shapes their public
+     * constructors cannot rebuild (a non-deterministic automaton, say). Those
+     * raise a plain ScpReadError. Throws SExprParseError on malformed input.
      *
      * \returns The variables by name, and the objective if there was one.
      */

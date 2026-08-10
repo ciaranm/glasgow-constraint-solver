@@ -3,10 +3,12 @@
 #include <gcs/constraints/all_equal.hh>
 #include <gcs/constraints/among/among.hh>
 #include <gcs/constraints/at_most_one/at_most_one.hh>
+#include <gcs/constraints/bin_packing.hh>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/cumulative.hh>
+#include <gcs/constraints/difference/difference_constraints.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
 #include <gcs/constraints/divide.hh>
@@ -19,12 +21,17 @@
 #include <gcs/constraints/lex.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/logical.hh>
+#include <gcs/constraints/mdd.hh>
+#include <gcs/constraints/min_distance.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/modulus.hh>
 #include <gcs/constraints/multiply.hh>
+#include <gcs/constraints/nogoods/nogoods.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/power.hh>
 #include <gcs/constraints/regular/regular.hh>
+#include <gcs/constraints/regular/regular_bacchus.hh>
+#include <gcs/constraints/regular/regular_legacy.hh>
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
 #include <gcs/constraints/table/negative_table.hh>
@@ -1121,4 +1128,256 @@ TEST_CASE("read_scp: an objective survives write -> read -> write unchanged")
         CHECK(scp_a == scp_b);
         CHECK(scp_a.contains(maximise ? "(prob_type (maximize X))" : "(prob_type (minimize X))"));
     }
+}
+
+TEST_CASE("read_scp: binpacking enumerates correctly in both forms")
+{
+    // Two items of size 1 and 2 into two bins, so the four packings give loads
+    // (0,3), (2,1), (1,2), (3,0). The loads form pins them exactly; the
+    // capacities form only rules out the packings that overflow a bin of 2,
+    // which is the two that put both items together.
+    auto loads = enumerate(R"(
+        (
+            (version 1)
+            (variables (I0 0 1) (I1 0 1) (L0 0 3) (L1 0 3))
+            (constraints (_1 binpacking (I0 I1) (1 2) loads (L0 L1)))
+            (prob_type enumerate)
+        ))");
+
+    CHECK(loads ==
+        set<map<string, long long>>{
+            {{"I0", 0}, {"I1", 0}, {"L0", 3}, {"L1", 0}},
+            {{"I0", 0}, {"I1", 1}, {"L0", 1}, {"L1", 2}},
+            {{"I0", 1}, {"I1", 0}, {"L0", 2}, {"L1", 1}},
+            {{"I0", 1}, {"I1", 1}, {"L0", 0}, {"L1", 3}},
+        });
+
+    auto capacities = enumerate(R"(
+        (
+            (version 1)
+            (variables (I0 0 1) (I1 0 1))
+            (constraints (_1 binpacking (I0 I1) (1 2) capacities (2 2)))
+            (prob_type enumerate)
+        ))");
+
+    CHECK(capacities == set<map<string, long long>>{{{"I0", 0}, {"I1", 1}}, {{"I0", 1}, {"I1", 0}}});
+}
+
+TEST_CASE("read_scp: mdd enumerates correctly")
+{
+    // Three layers over two binary variables. Layer 0 is the root; the root
+    // splits on X0, and each layer-1 node accepts only the *other* value of X1,
+    // reaching node 0 (accepting) -- so exactly X0 != X1.
+    auto solutions = enumerate(R"(
+        (
+            (version 1)
+            (variables (X0 0 1) (X1 0 1))
+            (constraints (_1 mdd (X0 X1) (1 2 1) ((((0 0) (1 1))) (((1 0)) ((0 0)))) (0)))
+            (prob_type enumerate)
+        ))");
+
+    CHECK(solutions == set<map<string, long long>>{{{"X0", 0}, {"X1", 1}}, {{"X0", 1}, {"X1", 0}}});
+}
+
+TEST_CASE("read_scp: min_distance enumerates correctly, with and without requirements")
+{
+    // Three sites on a line at 0, 1, 3, so D = [[0,1,3],[1,0,2],[3,2,0]]. Z is
+    // the minimum pairwise distance between the two chosen sites, which for two
+    // positions is just D[X0][X1] (and 0 when they coincide).
+    static constexpr auto distances = "((0 1 3) (1 0 2) (3 2 0))";
+
+    auto solutions = enumerate(std::string{R"(
+        (
+            (version 1)
+            (variables (X0 0 2) (X1 0 2) (Z 0 3))
+            (constraints (_1 min_distance (X0 X1) Z )"} +
+        distances + R"())
+            (prob_type enumerate)
+        ))");
+
+    CHECK(solutions.size() == 9);
+    for (const auto & s : solutions) {
+        static constexpr long long d[3][3] = {{0, 1, 3}, {1, 0, 2}, {3, 2, 0}};
+        CHECK(s.at("Z") == d[s.at("X0")][s.at("X1")]);
+    }
+
+    // The requirements matrix additionally demands D[X0][X1] >= 3, which only
+    // the two site-0/site-2 orderings meet.
+    auto required = enumerate(std::string{R"(
+        (
+            (version 1)
+            (variables (X0 0 2) (X1 0 2) (Z 0 3))
+            (constraints (_1 min_distance (X0 X1) Z )"} +
+        distances + " ((0 3) (0 0))" + R"())
+            (prob_type enumerate)
+        ))");
+
+    CHECK(required == set<map<string, long long>>{{{"X0", 0}, {"X1", 2}, {"Z", 3}}, {{"X0", 2}, {"X1", 0}, {"Z", 3}}});
+}
+
+TEST_CASE("read_scp: nogoods enumerates correctly")
+{
+    // Two forbidden conjunctions over a 2x2 space, leaving the other two
+    // assignments. Written as the same (variable op value) triples the
+    // reification conditions use.
+    auto solutions = enumerate(R"(
+        (
+            (version 1)
+            (variables (A 0 1) (B 0 1))
+            (constraints (_1 nogoods (((A = 0) (B = 0)) ((A = 1) (B = 1)))))
+            (prob_type enumerate)
+        ))");
+
+    CHECK(solutions == set<map<string, long long>>{{{"A", 0}, {"B", 1}}, {{"A", 1}, {"B", 0}}});
+}
+
+TEST_CASE("read_scp: binpacking, mdd, min_distance and nogoods survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto i0 = original.create_integer_variable(0_i, 1_i, "I0");
+    auto i1 = original.create_integer_variable(0_i, 1_i, "I1");
+    auto l0 = original.create_integer_variable(0_i, 3_i, "L0");
+    auto l1 = original.create_integer_variable(0_i, 3_i, "L1");
+    auto x0 = original.create_integer_variable(0_i, 1_i, "X0");
+    auto x1 = original.create_integer_variable(0_i, 1_i, "X1");
+    auto s0 = original.create_integer_variable(0_i, 2_i, "S0");
+    auto s1 = original.create_integer_variable(0_i, 2_i, "S1");
+    auto z = original.create_integer_variable(0_i, 3_i, "Z");
+
+    original.post(BinPacking{std::vector<IntegerVariableID>{i0, i1}, std::vector<Integer>{1_i, 2_i}, std::vector<IntegerVariableID>{l0, l1}});
+    original.post(BinPacking{std::vector<IntegerVariableID>{i0, i1}, std::vector<Integer>{1_i, 2_i}, std::vector<Integer>{2_i, 2_i}});
+    original.post(MDD{std::vector<IntegerVariableID>{x0, x1},
+        std::vector<std::vector<std::unordered_map<Integer, long>>>{{{{0_i, 0}, {1_i, 1}}}, {{{1_i, 0}}, {{0_i, 0}}}}, std::vector<long>{1, 2, 1},
+        std::vector<long>{0}});
+    original.post(MinDistance{std::vector<IntegerVariableID>{s0, s1}, z, MinDistance::Matrix{{0_i, 1_i, 3_i}, {1_i, 0_i, 2_i}, {3_i, 2_i, 0_i}},
+        MinDistance::Matrix{{0_i, 1_i}, {0_i, 0_i}}});
+    original.post(Nogoods{std::vector<Nogood>{{x0 == 0_i, x1 == 0_i}}});
+
+    auto scp_a = prove_to_scp(original, "scp_reader_newglobals_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_newglobals_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: every regular propagator variant writes and reads back as `regular`")
+{
+    // The .scp names the constraint, not the propagator, so all three variants
+    // write the same `regular` term over the same automaton -- which is what
+    // lets a RegularLegacy or RegularBacchus proof be checked against a
+    // verified encoder that only knows `regular`.
+    auto automaton = []<typename Variant_>(const std::string & basename) {
+        Problem problem;
+        auto a = problem.create_integer_variable(0_i, 1_i, "A");
+        auto b = problem.create_integer_variable(0_i, 1_i, "B");
+        problem.post(Variant_{std::vector<IntegerVariableID>{a, b}, 2,
+            std::vector<std::unordered_map<Integer, long>>{{{0_i, 0}, {1_i, 1}}, {{0_i, 1}, {1_i, 0}}}, std::vector<long>{0}});
+        return prove_to_scp(problem, basename);
+    };
+
+    auto scp_plain = automaton.template operator()<Regular>("scp_reader_regvariant_plain");
+    auto scp_legacy = automaton.template operator()<RegularLegacy>("scp_reader_regvariant_legacy");
+    auto scp_bacchus = automaton.template operator()<RegularBacchus>("scp_reader_regvariant_bacchus");
+
+    CHECK(scp_legacy == scp_plain);
+    CHECK(scp_bacchus == scp_plain);
+    CHECK(scp_plain.contains("regular"));
+    CHECK_FALSE(scp_plain.contains("regular_legacy"));
+    CHECK_FALSE(scp_plain.contains("regular_bacchus"));
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_legacy);
+    CHECK(prove_to_scp(rebuilt, "scp_reader_regvariant_rebuilt") == scp_plain);
+}
+
+TEST_CASE("read_scp: difference enumerates correctly, unreified and half-reified")
+{
+    // A - B <= 0 and B - A <= 1, i.e. B - 1 <= A <= B over [0,2].
+    auto system = enumerate(R"(
+        (
+            (version 1)
+            (variables (A 0 2) (B 0 2))
+            (constraints (_1 difference ((A B 0) (B A 1))))
+            (prob_type enumerate)
+        ))");
+
+    CHECK(system ==
+        set<map<string, long long>>{{{"A", 0}, {"B", 0}}, {{"A", 0}, {"B", 1}}, {{"A", 1}, {"B", 1}}, {{"A", 1}, {"B", 2}}, {{"A", 2}, {"B", 2}}});
+
+    // The same first edge, now only in force when C = 1. C = 0 leaves A and B
+    // free, so the nine unconstrained pairs come back alongside the six that
+    // satisfy A - B <= 0.
+    auto reified = enumerate(R"(
+        (
+            (version 1)
+            (variables (A 0 2) (B 0 2) (C 0 1))
+            (constraints (_1 difference ((A B 0 (C = 1)))))
+            (prob_type enumerate)
+        ))");
+
+    CHECK(reified.size() == 9 + 6);
+    for (const auto & s : reified)
+        if (s.at("C") == 1)
+            CHECK(s.at("A") <= s.at("B"));
+}
+
+TEST_CASE("read_scp: difference survives write -> read -> write unchanged")
+{
+    Problem original;
+    auto a = original.create_integer_variable(0_i, 2_i, "A");
+    auto b = original.create_integer_variable(0_i, 2_i, "B");
+    auto c = original.create_integer_variable(0_i, 1_i, "C");
+    auto d = original.create_integer_variable(0_i, 3_i, "D");
+    original.post(DifferenceConstraints{std::vector<DifferenceEdge>{{a, b, 0_i}, {b, a, 1_i}, {a, b, 2_i, c == 1_i}, {b, a, 2_i, d >= 2_i}}});
+    auto scp_a = prove_to_scp(original, "scp_reader_difference_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_difference_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+
+    // A condition must be written as the full (variable op value) triple. The
+    // writer used to render it as a bare Literal, which for `C = 1` on a {0,1}
+    // variable collapses to just `C` -- so `D >= 2` came out as `D`, and the
+    // .scp described a *different* problem than the one solved.
+    CHECK(scp_a.contains("(C = 1)"));
+    CHECK(scp_a.contains("(D >= 2)"));
+}
+
+TEST_CASE("read_scp: a .scp whose variables are all anonymous reads back")
+{
+    // A variable created without a name is written `_N`, which is exactly what
+    // Problem::check_name() reserves and rejects -- so the reader has to
+    // recreate it anonymously rather than passing the name through, or every
+    // .scp from a model that did not name its variables is unreadable.
+    Problem original;
+    auto x = original.create_integer_variable(0_i, 3_i);
+    auto y = original.create_integer_variable(0_i, 3_i);
+    original.post(LessThan{x, y});
+    auto scp_a = prove_to_scp(original, "scp_reader_anon_a");
+    CHECK(scp_a.contains("(_1 0 3)"));
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_anon_b");
+    CHECK(scp_a == scp_b);
+
+    // Mixed named and anonymous: the anonymous ones are numbered among
+    // themselves, so a named declaration in between must not consume a number.
+    Problem mixed;
+    auto p = mixed.create_integer_variable(0_i, 3_i);
+    auto named = mixed.create_integer_variable(0_i, 3_i, "Named");
+    auto q = mixed.create_integer_variable(0_i, 3_i);
+    mixed.post(LessThan{p, named});
+    mixed.post(LessThan{named, q});
+    auto mixed_a = prove_to_scp(mixed, "scp_reader_anon_mixed_a");
+
+    Problem mixed_rebuilt;
+    read_scp(mixed_rebuilt, mixed_a);
+    CHECK(prove_to_scp(mixed_rebuilt, "scp_reader_anon_mixed_b") == mixed_a);
 }

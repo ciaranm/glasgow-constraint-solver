@@ -70,7 +70,12 @@ auto LexSmartTable::prepare(Propagators & propagators, State & initial_state, Pr
 
 auto LexSmartTable::constraint_type() const -> std::string
 {
-    return "lex";
+    // `lex_smart_table`, cake_pb_cp's spelling, not the bare `lex` this used to
+    // write --- which is not a keyword anything accepts, here or upstream, so
+    // the .scp of any model posting this constraint was unreadable. Note the
+    // keyword is all that lines up: this desugars through the full SmartTable
+    // encoding, several times the size of cake's rows, so it does not chain.
+    return "lex_smart_table";
 }
 
 auto LexSmartTable::s_expr(const innards::ProofModel * const model) const -> SExpr

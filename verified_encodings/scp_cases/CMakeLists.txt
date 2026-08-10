@@ -298,6 +298,20 @@ add_scp_chain_test(global_cardinality_closed_sat   none)
 add_scp_chain_test(global_cardinality_closed_unsat none)
 add_scp_chain_test(global_cardinality_gac_sat      none)
 add_scp_chain_test(global_cardinality_gac_unsat    none)
+# The fourth keyword, gacglobalcardinalityclosed: GAC and closed together. cake
+# maps all four keywords onto the same two-flag semantics, so the closed rows are
+# the same ones boundsglobalcardinalityclosed exercises -- but only this keyword
+# reaches them from the GAC propagator, which is a different set of proof steps.
+add_scp_chain_test(global_cardinality_gac_closed_sat none)
+
+# none (chain-only): the reified linear forms. cake reads the reification as a
+# leading (var op value) triple on lin_equals / lin_less_equal, exactly as the
+# writer emits it; these are the fully-reified (_iff) shapes, so both directions
+# of the biconditional are defined and enumeration exercises both. The unreified
+# lin_* cases above are strict; these stay none for the same eq-ladder reason as
+# the other reified families.
+add_scp_chain_test(lin_equals_iff_sat      none)
+add_scp_chain_test(lin_less_equal_iff_sat  none)
 
 # none (chain-only): regular (the sequence of variables is a word accepted by a
 # finite automaton). The writer emits cake's shape -- (vars...) nstates
@@ -341,6 +355,13 @@ add_scp_chain_test(disjunctive2d_sat      none)
 add_scp_chain_test(disjunctive2d_unsat    none)
 # Variable-size disjunctive2d: as disjunctive_var, per axis.
 add_scp_chain_test(disjunctive2d_var_sat  none)
+# The strict keywords, which keep zero-size tasks rather than dropping them (cake's
+# `strct`). Both cases put a zero-size task inside a wider one, which is the only
+# shape where strict and non-strict differ: 7 solutions here against 9 for
+# `disjunctive`, and 67 against 81 for `disjunctive2d`. A case with all-positive
+# sizes would exercise the keyword but assert nothing about the semantics.
+add_scp_chain_test(disjunctive_strict_sat   none)
+add_scp_chain_test(disjunctive2d_strict_sat none)
 
 # none (chain-only): cumulative. Tasks [start, start+length) each occupy `height`
 # of a shared resource; at every time point the total height of active tasks is at

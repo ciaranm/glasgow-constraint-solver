@@ -212,6 +212,16 @@ strategies). `s_expr` returns the constraint's `.scp` entry as a structured
 s-expression term `(name op args...)` (built with `innards::SExpr::list`/`atom`
 and `NamesAndIDsTracker::s_expr_term_of`); `innards::write_scp` serialises it.
 
+Whatever keyword `constraint_type` returns, **`gcs::read_scp` must have a case
+for it**: the writer and the reader are meant to be inverses, and the
+workflow-2 chain harness re-solves the `.scp` as its first step, so a keyword
+the reader does not know fails the chain before `cake_pb_cp` is reached. Your
+constraint's own test enforces this — `verify_proof_and_dispose` reads the
+`.scp` back and fails on an unknown keyword. See
+`dev_docs/workflow2_testing.md`. The keyword names the *constraint*, not the
+propagator: an alternative propagator for an existing constraint writes the
+existing keyword (all three `Regular` variants write `regular`).
+
 ## The three install phases
 
 `Constraint::install` is not virtual and is not yours to write. It is
@@ -901,7 +911,11 @@ that is a finding about the honest derivation.
 4. Add the `.cc` to the library and the test target to
    `gcs/CMakeLists.txt` (alphabetically), plus an `add_test` entry.
 5. Add the header to `gcs/gcs.hh` (alphabetically).
-6. Decide explicitly how the constraint behaves when the caller passes
+6. Add a `read_scp` case for the keyword `constraint_type` returns, in
+   `gcs/scp_reader.cc`, plus an `enumerate` and a write -> read -> write
+   test in `gcs/scp_reader_test.cc`. The writer and the reader are
+   inverses; the constraint tests fail if the keyword has no case.
+7. Decide explicitly how the constraint behaves when the caller passes
    the same `IntegerVariableID` (or a view that resolves to the same
    underlying variable) in two argument slots, or twice within an
    array argument. Pick one of three patterns and cover it with a test

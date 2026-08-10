@@ -542,7 +542,11 @@ auto RegularLegacy::install_propagators(Propagators & propagators) -> void
 
 auto RegularLegacy::constraint_type() const -> std::string
 {
-    return "regular_legacy";
+    // `regular`, not `regular_legacy`: the `.scp` describes the constraint, not
+    // which of the three propagators was chosen to enforce it, and every
+    // consumer (cake_pb_cp, gcs::read_scp) keys off the constraint. This
+    // variant's OPB is byte-identical to Regular's, so it chain-verifies.
+    return "regular";
 }
 
 auto RegularLegacy::s_expr(const ProofModel * const model) const -> SExpr
