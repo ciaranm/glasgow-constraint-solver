@@ -3,10 +3,12 @@
 #include <gcs/constraints/all_equal.hh>
 #include <gcs/constraints/among/among.hh>
 #include <gcs/constraints/at_most_one/at_most_one.hh>
+#include <gcs/constraints/bin_packing.hh>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/cumulative.hh>
+#include <gcs/constraints/difference/difference_constraints.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
 #include <gcs/constraints/divide.hh>
@@ -18,14 +20,18 @@
 #include <gcs/constraints/inverse.hh>
 #include <gcs/constraints/knapsack/knapsack.hh>
 #include <gcs/constraints/lex.hh>
+#include <gcs/constraints/lex_smart_table.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/logical.hh>
+#include <gcs/constraints/mdd.hh>
+#include <gcs/constraints/min_distance.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/minus.hh>
 #include <gcs/constraints/modulus.hh>
 #include <gcs/constraints/multiply.hh>
 #include <gcs/constraints/n_value.hh>
+#include <gcs/constraints/nogoods/nogoods.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/power.hh>
@@ -65,6 +71,11 @@ using namespace gcs;
 using namespace gcs::innards;
 
 ScpReadError::ScpReadError(const string & w) : MessageException("Error reading .scp: " + w)
+{
+}
+
+ScpUnsupportedConstraintError::ScpUnsupportedConstraintError(const string & op) :
+    ScpReadError("unsupported constraint operator '" + op + "'"), _operator_name(op)
 {
 }
 
@@ -572,15 +583,24 @@ namespace
         post_constraint(problem, SymmetricAllDifferent{move(vars), as_integer(terms[3])}, label);
     }
 
-    auto read_at_most_one(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
-        -> void
+    auto read_at_most_one(Problem & problem, const map<string, IntegerVariableID> & variables, const string & op, const vector<SExpr> & terms,
+        const string & label) -> void
     {
         // (label at_most_one (vars...) val): at most one of the variables takes the
-        // value val (itself a variable or a constant).
+        // value val (itself a variable or a constant). `at_most_one_smart_table`
+        // is the same constraint reached through a SmartTable decomposition; it
+        // keeps its own keyword (which is also cake's spelling) and rebuilds as
+        // the matching class, so the term round-trips. It does not chain: cake's
+        // rule wants an integer where this writes a variable, and the SmartTable
+        // desugaring is a much larger OPB than cake's rows.
         if (terms.size() != 4)
-            throw ScpReadError{"at_most_one is (label at_most_one (vars...) val)"};
-        auto vars = resolve_variable_list(variables, terms[2], "the at_most_one variable list");
-        post_constraint(problem, AtMostOne{move(vars), resolve_variable(variables, terms[3])}, label);
+            throw ScpReadError{op + " is (label " + op + " (vars...) val)"};
+        auto vars = resolve_variable_list(variables, terms[2], ("the " + op + " variable list").c_str());
+        auto val = resolve_variable(variables, terms[3]);
+        if (op == "at_most_one_smart_table")
+            post_constraint(problem, AtMostOneSmartTable{move(vars), val}, label);
+        else
+            post_constraint(problem, AtMostOne{move(vars), val}, label);
     }
 
     auto read_sort(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
@@ -636,6 +656,146 @@ namespace
         if (terms.size() != 3)
             throw ScpReadError{"seq_precede_chain is (label seq_precede_chain (vars...))"};
         post_constraint(problem, SeqPrecedeChain{resolve_variable_list(variables, terms[2], "the seq_precede_chain variable list")}, label);
+    }
+
+    auto read_difference(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
+        -> void
+    {
+        // (label difference ((x y d [(cond op value)]) ...)): one edge per
+        // difference constraint x - y <= d, propagated as a system rather than
+        // edge by edge. A half-reified edge carries its condition as a fourth
+        // element, which the writer omits entirely for an unconditional edge, so
+        // an unreified system's term is the three-element form throughout.
+        if (terms.size() != 3)
+            throw ScpReadError{"difference is (label difference ((x y d [cond]) ...))"};
+        vector<DifferenceEdge> edges;
+        for (const auto & edge_term : children_of(terms[2], "the difference edge list")) {
+            const auto & parts = children_of(edge_term, "a difference edge");
+            if (parts.size() != 3 && parts.size() != 4)
+                throw ScpReadError{"a difference edge must be (x y d) or (x y d cond)"};
+            DifferenceEdge edge{resolve_variable(variables, parts[0]), resolve_variable(variables, parts[1]), as_integer(parts[2]), nullopt};
+            if (parts.size() == 4)
+                edge.cond = resolve_condition(variables, parts[3]);
+            edges.push_back(move(edge));
+        }
+        post_constraint(problem, DifferenceConstraints{move(edges)}, label);
+    }
+
+    auto read_bin_packing(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
+        -> void
+    {
+        // (label binpacking (items...) (sizes...) loads (loads...)) or
+        // (label binpacking (items...) (sizes...) capacities (caps...)): item i
+        // has constant size sizes[i] and goes in bin items[i]. The tagged fifth
+        // term picks the form: `loads` gives one load *variable* per bin (each
+        // exactly the total size in that bin), `capacities` one constant upper
+        // bound per bin. cake_pb_cp has no binpacking rule, so this shape is
+        // ours; the tag is what keeps the two forms apart, since both trailing
+        // lists are per-bin and the same length.
+        if (terms.size() != 6)
+            throw ScpReadError{"binpacking is (label binpacking (items...) (sizes...) loads|capacities (per-bin...))"};
+        auto items = resolve_variable_list(variables, terms[2], "the binpacking item list");
+        auto sizes = resolve_integer_list(terms[3], "the binpacking size list");
+        const auto & form = terms[4].as_atom();
+        if (form == "loads")
+            post_constraint(
+                problem, BinPacking{move(items), move(sizes), resolve_variable_list(variables, terms[5], "the binpacking load list")}, label);
+        else if (form == "capacities")
+            post_constraint(problem, BinPacking{move(items), move(sizes), resolve_integer_list(terms[5], "the binpacking capacity list")}, label);
+        else
+            throw ScpReadError{"binpacking's fourth argument must be the tag `loads` or `capacities`, not '" + form + "'"};
+    }
+
+    // (label mdd (X1 ... Xn) (n0 n1 ... nn) ((layer-0-nodes) ...) (t1 ... tk)):
+    // a layered DAG read left to right, one layer per variable. `nodes_per_layer`
+    // has n + 1 entries (the node count at each layer boundary, layer 0 being the
+    // single-source root layer); layer i's entry lists, per source node in node
+    // order, that node's outgoing (symbol target) edges, where `target` indexes
+    // into layer i + 1; the trailing list is the accepting nodes of the final
+    // layer. Same edge spelling as regular, but per layer rather than shared, and
+    // the writer sorts each node's edges so the .scp is byte-stable.
+    auto read_mdd(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        if (terms.size() != 6)
+            throw ScpReadError{"mdd is (label mdd (vars...) (nodes-per-layer...) ((layer-edges)...) (accepting...))"};
+        auto vars = resolve_variable_list(variables, terms[2], "the mdd variable list");
+
+        vector<long> nodes_per_layer;
+        for (const auto & n : children_of(terms[3], "the mdd nodes-per-layer list"))
+            nodes_per_layer.push_back(static_cast<long>(as_integer(n).raw_value));
+
+        const auto & layers = children_of(terms[4], "the mdd layer list");
+        vector<vector<unordered_map<Integer, long>>> layer_transitions;
+        for (const auto & layer : layers) {
+            vector<unordered_map<Integer, long>> nodes;
+            for (const auto & node : children_of(layer, "an mdd layer's node list")) {
+                unordered_map<Integer, long> edges;
+                for (const auto & edge : children_of(node, "an mdd node's edge list")) {
+                    const auto & pair = children_of(edge, "an mdd edge");
+                    if (pair.size() != 2)
+                        throw ScpReadError{"an mdd edge must be (symbol target)"};
+                    if (! edges.emplace(as_integer(pair[0]), static_cast<long>(as_integer(pair[1]).raw_value)).second)
+                        throw ScpReadError{"an mdd node has two edges on the same symbol"};
+                }
+                nodes.push_back(move(edges));
+            }
+            layer_transitions.push_back(move(nodes));
+        }
+
+        vector<long> accepting;
+        for (const auto & t : children_of(terms[5], "the mdd accepting-node list"))
+            accepting.push_back(static_cast<long>(as_integer(t).raw_value));
+
+        post_constraint(problem, MDD{move(vars), move(layer_transitions), move(nodes_per_layer), move(accepting)}, label);
+    }
+
+    auto resolve_matrix(const SExpr & e, const char * what) -> MinDistance::Matrix
+    {
+        MinDistance::Matrix matrix;
+        for (const auto & row : children_of(e, what))
+            matrix.push_back(resolve_integer_list(row, what));
+        return matrix;
+    }
+
+    auto read_min_distance(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
+        -> void
+    {
+        // (label min_distance (X1 ... Xn) Z ((d...)...) [((r...)...)]): the Xi
+        // pick sites, Z is a lower bound on the pairwise distance between the
+        // chosen sites, and the square matrix gives the distance between each
+        // pair of sites. The optional trailing matrix is the per-pair minimum
+        // *requirement*. The propagation strategy is deliberately absent: like
+        // the regular variants, the .scp names the constraint, not the
+        // propagator, so this reads back at the default strategy.
+        if (terms.size() != 5 && terms.size() != 6)
+            throw ScpReadError{"min_distance is (label min_distance (vars...) z ((distances...)...) [((requirements...)...)])"};
+        auto xs = resolve_variable_list(variables, terms[2], "the min_distance variable list");
+        auto z = resolve_variable(variables, terms[3]);
+        auto distances = resolve_matrix(terms[4], "the min_distance distance matrix");
+        if (terms.size() == 6)
+            post_constraint(
+                problem, MinDistance{move(xs), z, move(distances), resolve_matrix(terms[5], "the min_distance requirement matrix")}, label);
+        else
+            post_constraint(problem, MinDistance{move(xs), z, move(distances)}, label);
+    }
+
+    auto read_nogoods(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label nogoods (((V op v) ...) ...)): each inner list is one forbidden
+        // conjunction of variable conditions, spelled as the reification triples
+        // resolve_condition reads. Only *posted* nogoods appear -- the engine's
+        // learned-nogood store is installed directly on the propagators and is
+        // empty when the .scp is written, so it contributes nothing here.
+        if (terms.size() != 3)
+            throw ScpReadError{"nogoods is (label nogoods (((var op value) ...) ...))"};
+        vector<Nogood> nogoods;
+        for (const auto & nogood_term : children_of(terms[2], "the nogood list")) {
+            Nogood nogood;
+            for (const auto & condition : children_of(nogood_term, "a nogood"))
+                nogood.push_back(resolve_condition(variables, condition));
+            nogoods.push_back(move(nogood));
+        }
+        post_constraint(problem, Nogoods{move(nogoods)}, label);
     }
 
     auto read_knapsack(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
@@ -758,13 +918,33 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
     map<string, IntegerVariableID> variables;
 
     // Variables: each declaration is (name lower upper).
+    //
+    // A variable created without a name is written as `_N`, which is exactly the
+    // spelling Problem::check_name() reserves and rejects -- so an anonymous
+    // variable has to be recreated anonymously, the same trick post_constraint
+    // uses for `_N` constraint labels. Problem numbers anonymous variables in
+    // creation order and the writer emits them in that order, so the k-th `_N`
+    // declaration must be `_k`; checking that keeps a hand-written document from
+    // quietly getting different variables than it names.
+    unsigned long long anonymous_so_far = 0;
     for (const auto & decl : section_items(sections[1], "variables")) {
         const auto & parts = children_of(decl, "a variable declaration");
         if (parts.size() != 3)
             throw ScpReadError{"a variable declaration must be (name lower upper)"};
         auto name = parts[0].as_atom();
-        auto var = problem.create_integer_variable(as_integer(parts[1]), as_integer(parts[2]), name);
-        if (! variables.emplace(name, var).second)
+        auto lower = as_integer(parts[1]), upper = as_integer(parts[2]);
+
+        optional<IntegerVariableID> var;
+        if (auto number = auto_number_of(name)) {
+            if (*number != ++anonymous_so_far)
+                throw ScpReadError{"anonymous variable '" + name + "' is declaration number " + std::to_string(anonymous_so_far) +
+                    " among the anonymous ones, so it would be created as '_" + std::to_string(anonymous_so_far) + "'"};
+            var = problem.create_integer_variable(lower, upper, nullopt);
+        }
+        else
+            var = problem.create_integer_variable(lower, upper, name);
+
+        if (! variables.emplace(name, *var).second)
             throw ScpReadError{"duplicate variable name '" + name + "'"};
     }
 
@@ -994,6 +1174,24 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
                     .with_strict(op.ends_with("_strict")),
                 label);
         }
+        else if (op == "cumulative_optional") {
+            // (label cumulative_optional (starts...) (lengths...) (heights...)
+            // (presences...) cap): cumulative over tasks that may be absent,
+            // presences[i] in {0,1} saying whether task i is scheduled at all.
+            // The presences list sits between the heights and the capacity,
+            // where the FlatZinc builtin puts it. Deliberately a keyword of its
+            // own rather than an optional argument to `cumulative`: the active
+            // flags carry a third conjunct, so re-deriving it as a plain
+            // cumulative would give a different, weaker encoding.
+            if (terms.size() != 7)
+                throw ScpReadError{"cumulative_optional is (label cumulative_optional (starts...) (lengths...) (heights...) (presences...) cap)"};
+            post_constraint(problem,
+                Cumulative{resolve_variable_list(variables, terms[2], "the cumulative_optional start list"),
+                    resolve_variable_list(variables, terms[3], "the cumulative_optional length list"),
+                    resolve_variable_list(variables, terms[4], "the cumulative_optional height list"),
+                    resolve_variable_list(variables, terms[5], "the cumulative_optional presence list"), resolve_variable(variables, terms[6])},
+                label);
+        }
         else if (op == "cumulative") {
             // (label cumulative (starts...) (lengths...) (heights...) cap): the
             // tasks [start, start + length) each occupy `height` of a shared
@@ -1026,8 +1224,8 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
         else if (op == "symmetric_all_different") {
             read_symmetric_all_different(problem, variables, terms, label);
         }
-        else if (op == "at_most_one") {
-            read_at_most_one(problem, variables, terms, label);
+        else if (op == "at_most_one" || op == "at_most_one_smart_table") {
+            read_at_most_one(problem, variables, op, terms, label);
         }
         else if (op == "among") {
             read_among(problem, variables, terms, label);
@@ -1041,8 +1239,35 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
         else if (op == "knapsack") {
             read_knapsack(problem, variables, terms, label);
         }
+        else if (op == "binpacking") {
+            read_bin_packing(problem, variables, terms, label);
+        }
+        else if (op == "difference") {
+            read_difference(problem, variables, terms, label);
+        }
+        else if (op == "mdd") {
+            read_mdd(problem, variables, terms, label);
+        }
+        else if (op == "min_distance") {
+            read_min_distance(problem, variables, terms, label);
+        }
+        else if (op == "nogoods") {
+            read_nogoods(problem, variables, terms, label);
+        }
         else if (op == "element_2d") {
             read_element_2d(problem, variables, terms, label);
+        }
+        else if (op == "lex_smart_table") {
+            // (label lex_smart_table (xs...) (ys...)): xs >_lex ys, enforced by a
+            // SmartTable decomposition rather than the LexGreaterThan propagator.
+            // Its own keyword, matching cake, because the encoding is a different
+            // (much larger) one, not just a different propagator.
+            if (terms.size() != 4)
+                throw ScpReadError{"lex_smart_table is (label lex_smart_table (xs...) (ys...))"};
+            post_constraint(problem,
+                LexSmartTable{resolve_variable_list(variables, terms[2], "the lex_smart_table first variable list"),
+                    resolve_variable_list(variables, terms[3], "the lex_smart_table second variable list")},
+                label);
         }
         else if (op.starts_with("lex_")) {
             read_lex(problem, variables, op, terms, label);
@@ -1057,7 +1282,7 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
             read_equals(problem, variables, op, terms, label);
         }
         else
-            throw ScpReadError{"unsupported constraint operator '" + op + "'"};
+            throw ScpUnsupportedConstraintError{op};
     }
 
     auto minimise_variable = objective.transform([&](const ObjectiveSpec & spec) { return resolve_objective(variables, spec); });
