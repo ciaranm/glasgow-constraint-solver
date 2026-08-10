@@ -1188,10 +1188,13 @@ auto main(int argc, char * argv[]) -> int
     }
 
     // Three: the level, asserted rather than the text. With proofs off, since
-    // that is the configuration the whole issue is about --- and the decline
-    // that reaches it is a view capacity, not a budget: both budget checks are
-    // estimates of *proof size* and are only made when there is a proof to
-    // size, so a proofs-off budget-decline fixture cannot exist.
+    // that is the configuration the whole issue is about. Two declines reach it
+    // there, and they sit on either side of the Important rung: a view
+    // capacity, which is not a limit and stays at General, and a capacity
+    // beyond the subset-sum limit, which is one. Neither *proof* budget can
+    // reach it --- both are estimates of proof size and are only made when
+    // there is a proof to size --- which is why the budget fixture below is
+    // proofs-on and this pair is not.
     {
         auto notes = make_shared<vector<StatsNote>>();
 
@@ -1224,6 +1227,43 @@ auto main(int argc, char * argv[]) -> int
         // everything is Important then nothing is.
         if (! notes_at(recorded, StatsLevel::Important).empty())
             fail("a view capacity raised an Important note");
+    }
+
+    // The other side of that rung, and the one path where an ordinary caller
+    // --- no proof, no stats_report --- has something written to `cerr`: a
+    // constant capacity beyond the subset-sum limit. It is reachable with
+    // proofs off because the check is deliberately made before any of the proof
+    // budgets, none of which runs without a proof; see the comment above it in
+    // cumulative_strengthening.cc. That makes this the fixture that pins the
+    // one behaviour visible to a caller who asked for none of this, so it
+    // asserts the *count* of Important notes rather than their presence: a
+    // second one here is a solver that has started talking over itself.
+    {
+        const Instance huge_capacity{{{0, 3}, {0, 3}, {0, 3}}, {2, 2, 2}, {3, 3, 3}, 2000000};
+        auto recorded = solve_recording(huge_capacity, Setup{}, nullopt);
+
+        auto general = notes_at(recorded, StatsLevel::General);
+        if (general.size() != 1)
+            fail("a capacity beyond the subset-sum limit reported " + to_string(general.size()) + " General notes with proofs off, not one");
+        if (! general[0].constraint)
+            fail("the note does not carry the constraint it is about, so nothing can filter on it");
+        if (general[0].component != "cumulative_strengthening")
+            fail("the note is not attributed to this presolver");
+        // The figures and the knob to turn, which is what separates this rung
+        // from the Important one saying the same thing to a different reader.
+        if (string::npos == general[0].text.find("subset-sum limit of 1000000") ||
+            string::npos == general[0].text.find("with_subset_sum_capacity_limit"))
+            fail("the note does not say which limit was reached, or which option raises it: " + general[0].text);
+
+        auto important = notes_at(recorded, StatsLevel::Important);
+        if (important.size() != 1)
+            fail("a capacity decline raised " + to_string(important.size()) + " Important notes with proofs off, not one");
+        if (important[0].constraint)
+            fail("the Important note names a constraint, which is not what it is for");
+        if (string::npos == important[0].text.find("1 of 1 constraints"))
+            fail("the Important note does not say how much was skipped: " + important[0].text);
+
+        println(cerr, "diagnostics: proofs-off Important note is `{}`", important[0].text);
     }
 
     // And the budget declines, which do carry a figure a caller would act on,
