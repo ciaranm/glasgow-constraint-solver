@@ -312,13 +312,11 @@ add_scp_chain_test(lex_less_equal_iff_sat     none)
 # at the bounds too, with ge(lower)/ge(ub+1) pinned as persistent top-of-proof
 # lines), which previously was the lazy-vs-eager divergence that blocked it.
 #
-# The closed restriction is one child In per variable. Each now takes this
-# constraint's identity and a `<i>_` role prefix, so its disjunction lands on
-# @c[id][<i>_al1] -- cake's own label for that row, from
-# cencode_global_cardinality_aux. (Before the In conform the row was unlabelled;
-# labelling it without the prefix made all n children collide, which ProofModel
-# rejects.) The whole label set now agrees with cake's; these stay `none` only
-# for the #358 @i[X][ge0][r] variable-encoding coefficient.
+# The closed restriction -- every variable takes a cover value -- is one
+# @c[id][<i>_al1] row per variable, emitted by define_proof_model. That is cake's
+# own label for it, from cencode_global_cardinality_aux's cat_least_one prefixed
+# by the variable index, so the whole label set agrees with cake's; these stay
+# `none` only for the #358 @i[X][ge0][r] variable-encoding coefficient.
 add_scp_chain_test(global_cardinality_sat          none)
 add_scp_chain_test(global_cardinality_unsat        none)
 add_scp_chain_test(global_cardinality_closed_sat   none)

@@ -75,11 +75,6 @@ auto GlobalCardinality::clone() const -> unique_ptr<Constraint>
     return cloned;
 }
 
-auto GlobalCardinality::prepare(Propagators &, State &, ProofModel * const) -> bool
-{
-    return true;
-}
-
 auto GlobalCardinality::define_proof_model(ProofModel & model, const State &) -> void
 {
     // The closed restriction: every variable takes one of the cover values.

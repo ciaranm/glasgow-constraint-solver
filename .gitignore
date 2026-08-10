@@ -13,6 +13,11 @@ Doxyfile
 *.pbp
 *.varmap
 *.scp
+# run_scp_chain.bash's intermediates: cake's re-derived OPB and veripb's
+# elaborated core. The script deletes both on success, so a tracked one is a
+# leftover from a hand run -- which is how six of them reached the root once.
+*.verifiedopb
+*.corepb
 # ... except the curated workflow-2 regression cases, which are source, not generated:
 !verified_encodings/scp_cases/*.scp
 # ... and the committed VeriPB smoke fixture used by the Windows CI lane:
