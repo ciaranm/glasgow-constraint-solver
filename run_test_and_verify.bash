@@ -54,5 +54,39 @@ fi
 
 veripb "${proofname}.opb" "${proofname}.pbp" || exit 1
 
+# Writer/reader symmetry: whatever .scp the run wrote must be one gcs::read_scp
+# can rebuild. The chain harness re-solves the .scp as its first step, so a
+# constraint whose keyword the reader has never heard of fails the chain long
+# after the fact, in a place that looks like a solver bug. Checking it here
+# means the example that posts the constraint is what reports it. The constraint
+# tests do the same thing in-process (check_scp_writer_reader_symmetry); this
+# covers the examples, benchmarks and frontend binaries, which are where the
+# less-common constraints actually get posted.
+#
+# The solver's path comes from scp_solver_path, which CMake generates beside the
+# binaries; GCS_SCP_SOLVER overrides it. Both absent (running outside a build
+# tree) simply skips the check, as does a run that wrote no .scp.
+scp_solver=${GCS_SCP_SOLVER:-}
+if [[ -z $scp_solver ]] ; then
+    scp_solver_path_file=$(dirname "$prog")/scp_solver_path
+    [[ -r $scp_solver_path_file ]] && scp_solver=$(<"$scp_solver_path_file")
+fi
+
+# Only exit status 2 -- a keyword read_scp has no case for -- fails the test.
+# Status 1 is a keyword it knows in a shape it cannot rebuild: a view operand
+# renders as the list `(-X + 17)`, which the grammar does not parse, and that is
+# a documented limitation rather than a coverage gap. (It does mean a model
+# whose first unreadable thing is a view can hide a bad keyword later in the
+# same file; the in-process check in the constraint tests has the same
+# property, and between them the constraints are covered either way.)
+if [[ -n $scp_solver && -x $scp_solver && -e ${proofname}.scp ]] ; then
+    "$scp_solver" --parse-only "${proofname}.scp"
+    scp_read_status=$?
+    if [[ $scp_read_status -eq 2 ]] ; then
+        echo "$0: ${proofname}.scp names a constraint gcs::read_scp cannot read -- see dev_docs/workflow2_testing.md" 1>&2
+        exit 1
+    fi
+fi
+
 # Verification passed, so dispose of the proof unless asked to preserve it.
 dispose_proof "$proofname"

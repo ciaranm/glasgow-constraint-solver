@@ -4,11 +4,13 @@
 #include <gcs/current_state.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
+#include <gcs/scp_reader.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <gcs/constraints/innards/cake_probe.hh>
 
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
 #include <util/enumerate.hh>
@@ -18,6 +20,7 @@
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -153,6 +156,55 @@ namespace gcs::test_innards
     }
 
     /**
+     * \brief Assert that read_scp has a case for every constraint keyword the
+     * test's `.scp` contains.
+     *
+     * Writer/reader symmetry is not automatic: Constraint::s_expr() is a
+     * per-constraint override, so a new constraint can write a keyword read_scp
+     * has never heard of, and nothing notices until something tries to read that
+     * `.scp` back — the workflow-2 chain harness re-solves the `.scp` as its
+     * first step, so an unreadable keyword fails the chain before the verified
+     * encoder is even invoked. Running this from every proving constraint test
+     * means a new constraint's own test is what catches it.
+     *
+     * Deliberately narrow: only ScpUnsupportedConstraintError fails. Any other
+     * ScpReadError is a shape the reader knows about but cannot rebuild from
+     * this instance (a view operand, for one), which is a documented limitation
+     * rather than a missing keyword. Posting into a throwaway Problem is cheap
+     * next to the solve and veripb run that precede it.
+     *
+     * Constraint types named `test_...` are exempt: a few tests define an ad-hoc
+     * Constraint to drive one piece of proof machinery (see
+     * innards/tabulation_test.cc, innards/product_justify_test.cc), and those
+     * are not constraints the reader should know. Use that prefix when adding
+     * another.
+     */
+    inline auto check_scp_writer_reader_symmetry(const std::string & proof_name) -> void
+    {
+        std::ifstream scp_in{proof_name + ".scp"};
+        if (! scp_in)
+            return;
+        std::string scp{std::istreambuf_iterator<char>{scp_in}, std::istreambuf_iterator<char>{}};
+
+        Problem rebuilt;
+        try {
+            read_scp(rebuilt, scp);
+        }
+        catch (const ScpUnsupportedConstraintError & e) {
+            if (! e.operator_name().starts_with("test_"))
+                throw UnexpectedException{
+                    std::string{"the .scp writer emitted a constraint read_scp cannot read ("} + e.what() + "): add a case to gcs/scp_reader.cc"};
+        }
+        catch (const ScpReadError &) {
+            // A keyword the reader knows, in a shape it cannot rebuild. Not what
+            // this guard is for.
+        }
+        catch (const innards::SExprParseError &) {
+            // Likewise: a name the s-expression grammar cannot round-trip.
+        }
+    }
+
+    /**
      * \brief Verify a proof with VeriPB and, on success, dispose of it.
      *
      * Returns whether verification succeeded. The proof files are left in place
@@ -175,6 +227,7 @@ namespace gcs::test_innards
     {
         if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
             return false;
+        check_scp_writer_reader_symmetry(proof_name);
         cake_probe_chain(proof_name); // PROBE: measure workflow-2 chain (no-op unless GCS_TEST_CAKE)
         dispose_of_proof_files(proof_name);
         return true;

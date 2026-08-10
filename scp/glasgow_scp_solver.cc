@@ -59,8 +59,12 @@ auto main(int argc, char * argv[]) -> int
             ("proof-files-basename", "Basename for the .opb and .pbp files", //
                 cxxopts::value<string>()->default_value("scp"))              //
             ("all", "Find all solutions (implied by an objective)")          //
-            ("stats", "Print solve statistics")                              //
-            ("file", "The .scp file to solve", cxxopts::value<string>())     //
+            ("parse-only",
+                "Read the file and post its constraints, but do "
+                "not search: a cheap check that the .scp is one "
+                "this solver can rebuild")                               //
+            ("stats", "Print solve statistics")                          //
+            ("file", "The .scp file to solve", cxxopts::value<string>()) //
             ;
         options.parse_positional({"file"});
         options.positional_help("scp-file.scp");
@@ -91,10 +95,27 @@ auto main(int argc, char * argv[]) -> int
     try {
         model = read_scp(problem, text);
     }
+    catch (const ScpUnsupportedConstraintError & e) {
+        // Distinguished from every other read failure by its exit status, so a
+        // caller checking writer/reader symmetry can tell "this reader has no
+        // case for that keyword" (a gap to fix) from "this reader knows the
+        // keyword but cannot rebuild this instance" (a view operand, say --- a
+        // documented limitation). See run_test_and_verify.bash.
+        println(cerr, "Error: {}", e.what());
+        return 2;
+    }
     catch (const std::exception & e) {
         println(cerr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }
+
+    // --parse-only stops here: read_scp has created the variables and posted
+    // every constraint, which is the whole question when the caller is checking
+    // that a written .scp can be read back (run_test_and_verify.bash does this
+    // for every proving example, so an unreadable keyword is caught by the
+    // example that writes it rather than by a chain run much later).
+    if (options_vars.contains("parse-only"))
+        return EXIT_SUCCESS;
 
     // read_scp resolves an objective but leaves posting it to us, so that a
     // caller who wants to enumerate an optimisation instance still can. Here we
