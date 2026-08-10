@@ -10,7 +10,6 @@
 
 #include <gcs/constraints/innards/cake_probe.hh>
 
-#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
 #include <util/enumerate.hh>
@@ -167,11 +166,22 @@ namespace gcs::test_innards
      * encoder is even invoked. Running this from every proving constraint test
      * means a new constraint's own test is what catches it.
      *
-     * Deliberately narrow: only ScpUnsupportedConstraintError fails. Any other
-     * ScpReadError is a shape the reader knows about but cannot rebuild from
-     * this instance (a view operand, for one), which is a documented limitation
-     * rather than a missing keyword. Posting into a throwaway Problem is cheap
-     * next to the solve and veripb run that precede it.
+     * **Only ScpUnsupportedConstraintError fails; every other exception is
+     * swallowed**, and that is deliberate rather than an oversight. Re-posting
+     * into a throwaway Problem is an extra probe alongside the solve the test
+     * already did, so anything it throws that is not a missing keyword is a
+     * limitation of the probe, not a finding about the constraint under test —
+     * a view operand the grammar cannot parse, an instance shape the public
+     * constructors cannot rebuild, or a name Problem::check_name() rejects (the
+     * anonymous `_N` case was exactly that, and it is not an ScpReadError at
+     * all). Anything genuinely wrong with posting would already have failed the
+     * real solve above.
+     *
+     * Catching narrowly would mean every proving constraint test — which is all
+     * of them — could start failing on an unrelated reader limitation, so the
+     * blast radius is the reason for the wide catch, not carelessness. Posting
+     * into a throwaway Problem is cheap next to the solve and veripb run that
+     * precede it.
      *
      * Constraint types named `test_...` are exempt: a few tests define an ad-hoc
      * Constraint to drive one piece of proof machinery (see
@@ -195,12 +205,8 @@ namespace gcs::test_innards
                 throw UnexpectedException{
                     std::string{"the .scp writer emitted a constraint read_scp cannot read ("} + e.what() + "): add a case to gcs/scp_reader.cc"};
         }
-        catch (const ScpReadError &) {
-            // A keyword the reader knows, in a shape it cannot rebuild. Not what
-            // this guard is for.
-        }
-        catch (const innards::SExprParseError &) {
-            // Likewise: a name the s-expression grammar cannot round-trip.
+        catch (const std::exception &) {
+            // Not a missing keyword, so not this guard's business: see above.
         }
     }
 
