@@ -282,6 +282,12 @@ auto gcs::solve_with(
     Problem & problem, SolveCallbacks callbacks, const optional<ProofOptions> & optional_proof_options, atomic<bool> * optional_abort_flag) -> Stats
 {
     Stats stats;
+
+    // Before anything can report: a presolver's decision is said as it is made,
+    // and the presolvers run inside this call. Unset does not mean silence
+    // here, deliberately --- see SolveCallbacks::stats_report.
+    stats.set_report_handler(callbacks.stats_report ? callbacks.stats_report : default_stats_report());
+
     auto start_time = steady_clock::now();
 
     optional<Proof> optional_proof;
@@ -303,7 +309,7 @@ auto gcs::solve_with(
         optional_proof->model()->write_preamble();
     }
 
-    auto propagators = problem.create_propagators(state, optional_proof ? optional_proof->model() : nullptr);
+    auto propagators = problem.create_propagators(state, stats, optional_proof ? optional_proof->model() : nullptr);
 
     // With restarts on, search learns nogoods from refuted regions. Install an
     // (initially empty) Nogoods over a store the restart loop grows, subscribed
@@ -459,6 +465,11 @@ auto gcs::solve_with(
     propagators.fill_in_constraint_stats(stats);
     if (nogood_store)
         stats.learned_nogoods = nogood_store->size();
+
+    // The search is over, so a caller holding the result should not be holding
+    // a live callback into it: the notes are all accumulated, and reporting a
+    // new one now would be reporting it about nothing.
+    stats.set_report_handler(StatsReportCallback{});
 
     return stats;
 }

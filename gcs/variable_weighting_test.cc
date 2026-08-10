@@ -36,7 +36,9 @@ TEST_CASE("ClassicDomWDeg starts at the variable's degree")
     auto y = state.allocate_integer_variable_with_state(0_i, 10_i);
     auto z = state.allocate_integer_variable_with_state(0_i, 10_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {x, y}});
     propagators.install(NumberedConstraint{2}, a_propagator_that_does_nothing(), Triggers{.on_change = {y, z}});
     propagators.install(NumberedConstraint{3}, a_propagator_that_does_nothing(), Triggers{.on_change = {x, z}});
@@ -62,7 +64,9 @@ TEST_CASE("ClassicDomWDeg bumps the failing constraint's weight")
     auto y = state.allocate_integer_variable_with_state(0_i, 10_i);
     auto z = state.allocate_integer_variable_with_state(0_i, 10_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {x, y}});
     propagators.install(NumberedConstraint{2}, a_propagator_that_does_nothing(), Triggers{.on_change = {y, z}});
     propagators.install(NumberedConstraint{3}, a_propagator_that_does_nothing(), Triggers{.on_change = {x, z}});
@@ -89,7 +93,9 @@ TEST_CASE("ClassicDomWDeg counts only constraints with at least two unassigned v
     auto y = state.allocate_integer_variable_with_state(5_i, 5_i); // already fixed
     auto z = state.allocate_integer_variable_with_state(0_i, 10_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     // _1 over {x, y}: y is fixed, so only one unassigned variable -> excluded.
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {x, y}});
     // _2 over {x, z}: two unassigned -> counted.
@@ -113,7 +119,9 @@ TEST_CASE("ClassicDomWDeg snapshot and load round-trip")
     auto y = state.allocate_integer_variable_with_state(0_i, 10_i);
     auto z = state.allocate_integer_variable_with_state(0_i, 10_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {x, y}});
     propagators.install(NumberedConstraint{2}, a_propagator_that_does_nothing(), Triggers{.on_change = {y, z}});
     propagators.install(NumberedConstraint{3}, a_propagator_that_does_nothing(), Triggers{.on_change = {x, z}});
@@ -184,7 +192,9 @@ TEST_CASE("ConflictHistorySearch builds a recency-weighted score")
     auto b = state.allocate_integer_variable_with_state(0_i, 10_i);
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, x}});
     propagators.install(NumberedConstraint{2}, a_propagator_that_does_nothing(), Triggers{.on_change = {b, x}});
 
@@ -214,7 +224,9 @@ TEST_CASE("ConflictHistorySearch snapshot and load round-trip the scores")
     auto a = state.allocate_integer_variable_with_state(0_i, 10_i);
     auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, x}});
 
     ConflictHistorySearch weighting{propagators};
@@ -235,7 +247,9 @@ TEST_CASE("RefinedWeighting ca.cd increments by 1 / (fut * (1 + dom))")
     auto a = state.allocate_integer_variable_with_state(0_i, 2_i); // dom 3
     auto b = state.allocate_integer_variable_with_state(0_i, 2_i); // dom 3
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, b}});
 
     RefinedWeighting weighting{propagators, state, RefinedWeighting::Variant::CurrentArityCurrentDomain};
@@ -257,7 +271,9 @@ TEST_CASE("RefinedWeighting variants increment differently and round-trip")
     auto a = state.allocate_integer_variable_with_state(0_i, 2_i); // dom 3
     auto b = state.allocate_integer_variable_with_state(0_i, 2_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, b}});
 
     // The CurrentArity variant increments by 1 / fut = 1 / 2 = 0.5, not the ca.cd 0.125.

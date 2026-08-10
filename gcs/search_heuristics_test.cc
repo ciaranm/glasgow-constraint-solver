@@ -44,7 +44,9 @@ TEST_CASE("dom_wdeg orders by dom/W, with a zero-weight variable last")
     auto d = state.allocate_integer_variable_with_state(0_i, 3_i); // dom 4, in no constraint
     auto x = state.allocate_integer_variable_with_state(0_i, 3_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     // a is in one constraint, b in two, c in three (each paired with x); weights
     // are uniform at the root, so W(a)=1, W(b)=2, W(c)=3 and W(d)=0.
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, x}});
@@ -79,7 +81,9 @@ TEST_CASE("dom_wdeg seeded weights change the choice")
     auto c = state.allocate_integer_variable_with_state(0_i, 3_i);
     auto x = state.allocate_integer_variable_with_state(0_i, 3_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, x}});
     propagators.install(NumberedConstraint{2}, a_propagator_that_does_nothing(), Triggers{.on_change = {b, x}});
     propagators.install(NumberedConstraint{3}, a_propagator_that_does_nothing(), Triggers{.on_change = {b, x}});
@@ -105,7 +109,9 @@ TEST_CASE("dom_wdeg tie-breaks on degree")
     auto a = state.allocate_integer_variable_with_state(0_i, 3_i);
     auto b = state.allocate_integer_variable_with_state(0_i, 3_i);
 
-    Propagators propagators;
+    Stats stats;
+
+    Propagators propagators{stats};
     // Both share the one binary constraint, so W(a)=W(b)=1 and dom/W ties. a is
     // also in a second, unary constraint: a unary constraint never has two
     // unassigned variables, so weighted_degree_of filters it out (W(a) stays 1),
@@ -132,7 +138,8 @@ TEST_CASE("split_random takes each half first sometimes")
 {
     State state;
     auto x = IntegerVariableID{state.allocate_integer_variable_with_state(1_i, 4_i)};
-    Propagators propagators;
+    Stats stats;
+    Propagators propagators{stats};
 
     // The split point does not depend on the coin flip: domain size 4 gives
     // mid = 2, and dropping mid - 1 = 1 value lands on 2 either way.

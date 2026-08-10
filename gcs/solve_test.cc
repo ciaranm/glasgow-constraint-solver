@@ -13,9 +13,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdlib>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
+#include <sstream>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -568,4 +571,180 @@ TEST_CASE("A presolver's initialiser can report unsatisfiability")
     CHECK(*ran == 1);
     CHECK(! found_solution); // a contradiction there ends the solve, rather than being lost
     CHECK(verify_proof_and_dispose(proof_name));
+}
+
+namespace
+{
+    /// The number of fields in a stats block, worked out from its size.
+    ///
+    /// Every field of these blocks is eight bytes wide --- a `std::size_t`, an
+    /// `Integer`, a nested block of `std::size_t`s, or a `bool` that pads out to
+    /// the next one --- and the only other thing in the object is the vtable
+    /// pointer this design's base class brings. So `sizeof` counts the fields,
+    /// and a field added without a matching `entries()` line moves one side of
+    /// the comparison below and not the other. That is the rot this design can
+    /// grow: a figure that exists, is filled in, and reaches nobody.
+    template <typename Block_>
+    [[nodiscard]] auto field_count() -> std::size_t
+    {
+        static_assert(0 == (sizeof(Block_) - sizeof(void *)) % sizeof(std::size_t),
+            "this block has a field that is not eight bytes wide, so "
+            "counting its fields needs doing another way");
+        return (sizeof(Block_) - sizeof(void *)) / sizeof(std::size_t);
+    }
+
+    /// A recording StatsReportCallback. Tests assert on the notes rather than on
+    /// rendered output, because a note's *level* is what rendering throws away
+    /// and a level quietly drifting down to Detailed is what would undo this
+    /// channel with nothing else noticing.
+    struct Recorder
+    {
+        std::shared_ptr<std::vector<StatsNote>> notes = std::make_shared<std::vector<StatsNote>>();
+
+        [[nodiscard]] auto callback() const -> StatsReportCallback
+        {
+            return [notes = notes](const StatsNote & note) -> void { notes->push_back(note); };
+        }
+
+        [[nodiscard]] auto at_level(StatsLevel level) const -> std::vector<StatsNote>
+        {
+            std::vector<StatsNote> result;
+            for (const auto & note : *notes)
+                if (note.level == level)
+                    result.push_back(note);
+            return result;
+        }
+    };
+
+    [[nodiscard]] auto component_named(const Stats & stats, const std::string & name) -> std::shared_ptr<const ComponentStats>
+    {
+        for (const auto & component : stats.components())
+            if (component->component_name() == name)
+                return component;
+        return nullptr;
+    }
+}
+
+TEST_CASE("A note is rendered with its component label, except at Important")
+{
+    // The component label is for someone who knows what the component is, and
+    // an Important note is written for someone who does not.
+    CHECK(render(StatsNote{StatsLevel::General, "auto_table", nullopt, "did a thing"}) == "auto_table: did a thing");
+    CHECK(render(StatsNote{StatsLevel::Important, "auto_table", nullopt, "did a thing"}) == "did a thing");
+
+    // The ConstraintID is on the note rather than baked into the text, so that
+    // a caller can filter and a test can assert; putting it into words is the
+    // renderer's job.
+    CHECK(render(StatsNote{StatsLevel::General, "auto_table", ConstraintID{NumberedConstraint{7}}, "did a thing"}) == "auto_table: did a thing (_7)");
+}
+
+TEST_CASE("Stats accumulates notes and forwards them as they happen")
+{
+    Stats stats;
+
+    std::vector<StatsLevel> seen;
+    stats.set_report_handler([&](const StatsNote & note) -> void { seen.push_back(note.level); });
+
+    stats.report(StatsNote{StatsLevel::Debug, "a", nullopt, "one"});
+    stats.report(StatsNote{StatsLevel::Important, "a", nullopt, "two"});
+
+    // Forwarded at the moment of reporting, in order, and kept.
+    CHECK(seen == std::vector<StatsLevel>{StatsLevel::Debug, StatsLevel::Important});
+    CHECK(stats.notes().size() == 2);
+
+    // The default callback filters by level rather than reporting everything.
+    std::ostringstream captured;
+    auto old = std::cerr.rdbuf(captured.rdbuf());
+    auto reporter = default_stats_report();
+    reporter(StatsNote{StatsLevel::General, "a", nullopt, "quiet"});
+    reporter(StatsNote{StatsLevel::Important, "a", nullopt, "loud"});
+    std::cerr.rdbuf(old);
+    CHECK(captured.str() == "loud\n");
+}
+
+TEST_CASE("Registering the same component block twice reports it once")
+{
+    // A constraint installed many times, or a presolver whose block is shared
+    // with a caller who also registered it, should be one line and not N.
+    struct Block final : ComponentStats
+    {
+        [[nodiscard]] auto component_name() const -> std::string override
+        {
+            return "block";
+        }
+        [[nodiscard]] auto summary() const -> std::string override
+        {
+            return "nothing";
+        }
+        [[nodiscard]] auto entries() const -> std::vector<StatsEntry> override
+        {
+            return {};
+        }
+    };
+
+    Stats stats;
+    auto block = std::make_shared<Block>();
+    stats.add_component(block);
+    stats.add_component(block);
+    CHECK(stats.components().size() == 1);
+}
+
+TEST_CASE("AutoTable reports what it did, with no stats block asked for")
+{
+    // Default-constructed, deliberately: the always-allocate path is the whole
+    // of #662's fix for this presolver, and it is the part with no other
+    // observable effect. Before it, the only record that AutoTable ran at all
+    // was three proof comments, so with proofs off --- which is here --- a
+    // presolver that had quietly stopped firing looked exactly like one that
+    // had fired.
+    Problem p;
+    auto a = p.create_integer_variable(0_i, 3_i);
+    auto b = p.create_integer_variable(0_i, 3_i);
+    p.post(WeightedSum{} + 1_i * a + 1_i * b == 3_i);
+    p.add_presolver(AutoTable{vector<IntegerVariableID>{a, b}});
+
+    Recorder recorder;
+    auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }, .stats_report = recorder.callback()});
+
+    auto component = component_named(stats, "auto_table");
+    REQUIRE(component);
+    CHECK(! component->summary().empty());
+
+    // And that it is the block the presolver actually filled in, rather than a
+    // fresh one: Problem::add_presolver stores a *clone*, and run() happens on
+    // that, so a clone allocating its own block would leave a summary saying
+    // nothing while the tabulation went ahead.
+    auto entries = component->entries();
+    CHECK(entries.size() == field_count<AutoTableStats>());
+
+    std::map<std::string, long long> by_name;
+    for (const auto & entry : entries)
+        by_name.emplace(entry.name, entry.value);
+    CHECK(by_name["ran"] == 1);
+    CHECK(by_name["variables"] == 2);
+    CHECK(by_name["tuples"] == 4); // a + b == 3, over 0..3
+    CHECK(by_name["search_nodes"] > 0);
+}
+
+TEST_CASE("A caller's AutoTable stats block is the one that gets filled in and reported")
+{
+    // Problem::add_presolver stores a *clone*, and run() is called on that, so
+    // a clone allocating a fresh block instead of sharing this one would leave
+    // the caller's handle reading zero for ever --- while everything visible
+    // through Stats::components() carried on looking exactly right, since what
+    // is registered there is whatever the clone happens to hold. Pointer
+    // identity is what says the two are the same block.
+    auto block = std::make_shared<AutoTableStats>();
+
+    Problem p;
+    auto a = p.create_integer_variable(0_i, 3_i);
+    auto b = p.create_integer_variable(0_i, 3_i);
+    p.post(WeightedSum{} + 1_i * a + 1_i * b == 3_i);
+    p.add_presolver(AutoTable{vector<IntegerVariableID>{a, b}, block});
+
+    auto stats = solve(p, [](const CurrentState &) -> bool { return true; });
+
+    CHECK(block->ran);
+    CHECK(block->tuples == 4);
+    CHECK(component_named(stats, "auto_table").get() == static_cast<const ComponentStats *>(block.get()));
 }
