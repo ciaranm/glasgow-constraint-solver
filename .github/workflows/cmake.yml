@@ -28,9 +28,15 @@ jobs:
         # clang + libstdc++ toolchain (including the clang-only lifetime
         # annotation probe tests) and keeps the (faster) capped defaults, as
         # do the macOS lanes, which build with Apple Clang + libc++.
+        #
+        # The ubuntu-26.04 default-GCC lane is also the one lane that builds with
+        # -Werror, so a new compiler warning fails CI instead of landing unnoticed.
+        # It is that lane and no other: GCC's warning baseline has been zero since
+        # #710, whereas clang and Apple Clang still have a few hundred pre-existing
+        # warnings each. See the GCS_WERROR option in CMakeLists.txt.
         include:
           - { os: ubuntu-24.04, caps: 'OFF' }
-          - { os: ubuntu-26.04, caps: 'OFF' }
+          - { os: ubuntu-26.04, caps: 'OFF', werror: 'ON' }
           - { os: ubuntu-26.04, cc: clang, cxx: clang++ }
           - { os: macos-15 }
           - { os: macos-26 }
@@ -78,7 +84,7 @@ jobs:
       env:
         CC: ${{ matrix.cc }}
         CXX: ${{ matrix.cxx }}
-      run: cmake --preset release -B ${{github.workspace}}/build ${{ matrix.caps == 'OFF' && '-DGCS_TEST_CAP_DEFAULTS=OFF' || '' }}
+      run: cmake --preset release -B ${{github.workspace}}/build ${{ matrix.caps == 'OFF' && '-DGCS_TEST_CAP_DEFAULTS=OFF' || '' }} ${{ matrix.werror == 'ON' && '-DGCS_WERROR=ON' || '' }}
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)

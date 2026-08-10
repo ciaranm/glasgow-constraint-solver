@@ -136,6 +136,27 @@ option(GCS_TEST_CAP_DEFAULTS "Apply default solution/recursion caps to constrain
 set(GCS_TEST_MAX_SOLUTIONS "300" CACHE STRING "Default per-solve solution cap for data-driven constraint tests (when GCS_TEST_CAP_DEFAULTS)")
 set(GCS_TEST_MAX_RECURSIONS "1500" CACHE STRING "Default per-solve search-node cap for data-driven constraint tests (when GCS_TEST_CAP_DEFAULTS)")
 
+# Promote warnings to errors. Deliberately OFF by default: shipping -Werror in a
+# library is a bad deal for the people building it, because every compiler that
+# invents a new warning breaks their build for reasons that have nothing to do
+# with them. It is turned on for exactly one CI lane (the ubuntu-26.04 default-GCC
+# lane in .github/workflows/cmake.yml), which is enough to stop a new warning
+# landing unnoticed -- there is otherwise no compiler -Werror anywhere, so a warning
+# in new code is invisible to every lane and the build goes green with it in.
+#
+# Only the GCC lane, on purpose: clang and Apple Clang still have a few hundred
+# pre-existing warnings each (mostly -Winconsistent-missing-override and
+# -Wunused-lambda-capture), and MSVC is on /W3 with no equivalent, so those lanes
+# would fail immediately. GCC's baseline has been zero since #710. This option has
+# no effect on MSVC.
+#
+# It applies to the fetched dependencies too, since it is a global option set before
+# the FetchContent subdirectories are added. That is intentional -- it is what was
+# tested, and it means a dependency bump that introduces a warning is caught rather
+# than absorbed. (The xcsp3parser targets are the exception: they carry -w, which
+# leaves no warning to promote.)
+option(GCS_WERROR "Treat compiler warnings as errors (CI lane only; not for normal builds)" OFF)
+
 # Compiler flag checks always run so results are available for target-specific use.
 include(CheckCXXCompilerFlag)
 unset(COMPILER_SUPPORTS_MARCH_NATIVE CACHE)
@@ -182,6 +203,10 @@ if(PROJECT_IS_TOP_LEVEL)
     else()
         add_compile_options(-W)
         add_compile_options(-Wall)
+
+        if(GCS_WERROR)
+            add_compile_options(-Werror) # see the GCS_WERROR option above: CI lane only
+        endif()
 
         if(COMPILER_SUPPORTS_NO_RESTRICT)
             add_compile_options(-Wno-restrict) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
