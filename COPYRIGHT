@@ -1,0 +1,19 @@
+The Glasgow Constraint Solver is copyright (c) 2021-26 Ciaran McCreesh.
+
+It is dual licensed under either of
+
+  * the Apache License, Version 2.0 (see LICENCE-APACHE, or
+    https://www.apache.org/licenses/LICENSE-2.0), or
+  * the MIT License (see LICENCE-MIT, or
+    https://opensource.org/licenses/MIT),
+
+at your option. You may use, modify and redistribute this software under the
+terms of whichever of the two you prefer; you do not have to satisfy both. In
+SPDX terms, the licence of this work is:
+
+    SPDX-License-Identifier: MIT OR Apache-2.0
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this work by you, as defined in the Apache License, Version
+2.0, shall be dual licensed as above, without any additional terms or
+conditions.

@@ -27,6 +27,20 @@ All contributions should pass both the `release` and `sanitize` build and tests
 before submission, including the full test suite (with VeriPB installed) in
 both modes. See `README.md` for details.
 
+Licensing
+=========
+
+The solver is dual licensed under the Apache License, Version 2.0 and the MIT
+License, at the user's option; see `COPYRIGHT` for the full statement. Unless
+you explicitly state otherwise, any contribution you intentionally submit for
+inclusion in this work, as defined in the Apache License, Version 2.0, shall be
+dual licensed as above, without any additional terms or conditions. There is no
+copyright assignment: you keep the copyright in what you write.
+
+If a contribution contains code you did not write yourself, say where it came
+from and under what terms in the pull request, so that we can check it can be
+released both ways before merging.
+
 Code Formatting
 ===============
 

@@ -5,6 +5,7 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "gcspy"
 version = "0.1.8"
+license = "MIT OR Apache-2.0"
 
 [tool.scikit-build]
 cmake.version = ">=3.18"
