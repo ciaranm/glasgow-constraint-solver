@@ -1,0 +1,1 @@
+( (version 1) (variables (X 0 3) (Y 0 3) (B 0 3)) (constraints (_1 lin_equals_iff (B = 1) (1 X 1 Y) 3)) (prob_type enumerate) )
