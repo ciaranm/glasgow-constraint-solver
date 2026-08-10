@@ -762,8 +762,6 @@ namespace
         return count;
     }
 
-    // Every row ReifiedCompareLessThanOrMaybeEqual emits must carry an @label.
-    // The presolver's whole licence for lifting a comparison is that it can
     // The flat view both blocks reach a report through.
     //
     // These names are public. fzn-glasgow renders every registered block by
@@ -835,6 +833,8 @@ namespace
             cerr, "difference report: {} and {} entries", names_of(DifferenceLogicStats{}).size(), names_of(DifferenceSimplificationStats{}).size());
     }
 
+    // Every row ReifiedCompareLessThanOrMaybeEqual emits must carry an @label.
+    // The presolver's whole licence for lifting a comparison is that it can
     // cite the donor's row by name, and an unlabelled row cannot be cited at
     // all -- a `pol` would name something the OPB never defines.
     //
