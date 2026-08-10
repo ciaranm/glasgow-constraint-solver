@@ -184,28 +184,32 @@ become checked and fail. So the tracker marks its own lines, with
 lazily --- the first time a deletion actually needs them, and never at all in
 a proof that deletes nothing.
 
-It is *all* of them, and not just the ones the deletion goal reads. That is
-worth knowing because the narrower rule is the obvious one to try and it looks
-right on small proofs. The goal needs the definitional closure of the atoms in
-the discharging clause: an order atom's two halves, an eq atom's two halves
-plus the two order cuts it is stated over, a range literal's likewise --- and
-not the order chain linking neighbouring cuts, since the bits settle each cut
-on its own. Promoting exactly that closure and nothing else takes `abs_test`'s
-first batch from 26 lines to 10, and it verifies. It does not survive contact
-with a real instance: `skyscrapers 5` and `ortho_latin 5` then fail, not at a
-deletion but at the root `rup >= 1`, with no unchecked-deletion warning
-anywhere before it. `--unchecked-deletion` makes the failure go away, which
-places it in the checked-deletion path; and the two lines that turn out to be
-missing (`grid2_2`'s `eq5` reification, `w_how_many_hidden[3][2]`'s `eq0`) are
-definitions of atoms that appear in *no* backtrack clause in the proof, so no
-rule phrased in terms of what the goals read can reach them. VeriPB's
-propagation engine keeps a persistent root-level trail and disables the derived
-propagation sets for the duration of an `only_core` episode
-(`propagation_engine.rs`, `init_trail`); the shape of the failure is
-root-level propagation through *derived* constraints not surviving that. A
-minimal hand-written reproduction has so far resisted: a single checked
-deletion over a derived clause, or a derived general PB constraint, both
-re-propagate correctly. Until that is understood, promote the lot.
+It is *all* of them, and not just the ones the deletion goal reads --- but that
+is parked rather than settled, and the honest position is worth writing down.
+The narrower rule is the obvious one to try: promote only the definitional
+closure of the atoms in the discharging clause, being an order atom's two
+halves, an eq atom's two halves plus the two order cuts it is stated over, and
+a range literal's likewise --- but not the order chain linking neighbouring
+cuts, since the bits settle each cut on its own. That takes `abs_test`'s first
+batch from 26 lines to 10, and verifies. Whether it is *sufficient* we cannot
+currently say, because the two experiments that would answer it disagree, and
+at least one of them is measuring the checker rather than us:
+
+- Against a current checker, the narrow rule fails `skyscrapers 5` and
+  `ortho_latin 5` at a shallow `rup`, with no unchecked-deletion warning
+  anywhere before it. Both of those failures are VeriPB regressions, bisected
+  to two unrelated commits and reported upstream as `veripb-dev` issue #210. A
+  checker predating either commit verifies both proofs.
+- Against that older checker, however, the narrow rule fails 24 *other* tests
+  that the blanket promotion passes, mostly `linear_constraint_*`. Those are
+  not diagnosed. They are either a real gap in the closure that the newer
+  checker's propagation happens to paper over, or further checker bugs.
+
+Sufficiency that moves with checker version is not something to build on in
+either direction, so the blanket promotion stays until #210 is fixed and the
+comparison can be re-run against a checker worth trusting. Nothing else here
+depends on which way that lands: the blanket rule is a superset of the narrow
+one, so it is the safe end to sit at while the question is open.
 
 **2. Promotion cascades to the root.** Once a frame has promoted its clause,
 its parent's `forget_proof_level` will delete that clause, and *that* is a
@@ -237,6 +241,13 @@ need a VeriPB from 2026-06-22 or later. An older checker rejects them at the
 root with an error that reads like a missing constraint rather than a checker
 bug, and `--unchecked-deletion` makes it go away, which is misleading --- there
 is nothing wrong with the deletions.
+
+That is not the only checker caveat, and "new enough" is not the same as
+"correct": two later propagation regressions are reported as `veripb-dev` issue
+#210. Neither affects what is shipped here, which verifies 636/636, but both
+affect the narrow-promotion variant discussed above, and both are reasons to
+treat a lone deletion-related verification failure as a question about the
+checker until a second checker version agrees with it.
 
 Deleting through the level forget is kept, but on its own merits rather than to
 dodge anything: it puts the blocking constraint at the level that actually
