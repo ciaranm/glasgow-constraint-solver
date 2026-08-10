@@ -17,6 +17,7 @@ Contents
 - [Navigating the Source Code](#navigating-the-source-code)
 - [Developer Documentation](#developer-documentation)
 - [How Do We Know It's Correct?](#how-do-we-know-its-correct)
+- [Licence](#licence)
 - [Acknowledgements](#acknowledgements)
 
 Getting Started
@@ -432,12 +433,29 @@ enough that you should probably be able to write your own proof checker if you p
 For how each constraint produces its OPB encoding and how we test that the encoding matches the
 constraint's semantics, see the [developer documentation](dev_docs/).
 
+Licence
+=======
+
+The Glasgow Constraint Solver is dual licensed under either of
+
+- the Apache License, Version 2.0 ([LICENCE-APACHE](LICENCE-APACHE), or
+  <https://www.apache.org/licenses/LICENSE-2.0>), or
+- the MIT License ([LICENCE-MIT](LICENCE-MIT), or <https://opensource.org/licenses/MIT>),
+
+at your option: you may use, modify and redistribute the solver under the terms of
+whichever of the two suits you, and you do not have to satisfy both. In SPDX terms, that
+is `MIT OR Apache-2.0`. See [COPYRIGHT](COPYRIGHT) for the full statement.
+
+Unless you explicitly state otherwise, any contribution you intentionally submit for
+inclusion in this work, as defined in the Apache License, Version 2.0, shall be dual
+licensed as above, without any additional terms or conditions.
+
 Acknowledgements
 ================
 
-This work is supported by a Royal Academy of Engineering Research Fellowship. Part of this work was
-done while the author was participating in a program at the Simons Institute for the Theory of
-Computing.
+This work is supported by the Advanced Research + Invention Agency, and by a Royal Academy of
+Engineering Research Fellowship. Part of this work was done while the author was participating in a
+program at the Simons Institute for the Theory of Computing.
 
 <!-- vim: set tw=100 spell spelllang=en : -->
 

@@ -380,6 +380,14 @@ install(FILES
         ${CMAKE_CURRENT_BINARY_DIR}/GlasgowConstraintSolverConfigVersion.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GlasgowConstraintSolver)
 
+# We are dual licensed under Apache-2.0 or MIT, and section 4(a) of the former
+# asks that redistributions carry a copy of it, so install both texts.
+install(FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/COPYRIGHT
+        ${CMAKE_CURRENT_SOURCE_DIR}/LICENCE-APACHE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LICENCE-MIT
+        DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
 if(GCS_ENABLE_EXECUTABLES)
     add_subdirectory(examples)
     add_subdirectory(benchmarks)
