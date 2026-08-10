@@ -64,17 +64,9 @@ In::In(IntegerVariableID var, vector<Integer> vals) : _var(var), _val_vals(move(
 {
 }
 
-auto In::with_proof_role_prefix(string prefix) -> In &
-{
-    _proof_role_prefix = move(prefix);
-    return *this;
-}
-
 auto In::clone() const -> unique_ptr<Constraint>
 {
-    auto result = make_unique<In>(_var, _var_vals, _val_vals);
-    result->with_proof_role_prefix(_proof_role_prefix);
-    return result;
+    return make_unique<In>(_var, _var_vals, _val_vals);
 }
 
 auto In::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
@@ -144,9 +136,8 @@ auto In::define_proof_model(ProofModel & model, const State &) -> void
         sum += 1_i * sel;
     }
 
-    // cake labels the disjunction c[id][al1] (cat_least_one), with the caller's
-    // prefix in front of the role when a parent installs several of us.
-    model.add_labelled_constraint(_constraint_id, _proof_role_prefix + "al1", sum >= 1_i);
+    // cake labels the disjunction c[id][al1] (cat_least_one).
+    model.add_labelled_constraint(_constraint_id, "al1", sum >= 1_i);
 }
 
 auto In::install_propagators(Propagators & propagators) -> void
