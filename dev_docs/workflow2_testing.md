@@ -46,6 +46,84 @@ for the format lives outside this repo (cake's `SEXP_FORMAT.md`); the reader is
 the authority for what we accept, and `cake_pb_cp` for what the verified encoder
 accepts.
 
+## Writer/reader symmetry is a requirement, not a nicety
+
+`gcs::read_scp` must have a case for **every** keyword `Constraint::s_expr()`
+can write. The chain runner's first step re-solves the `.scp` with
+`glasgow_scp_solver`, so a keyword the reader has never heard of fails the chain
+before `cake_pb_cp` is even invoked — and the failure looks like a solver bug,
+not a coverage gap. This is not automatic: `s_expr()` is a per-constraint
+override, so a new constraint can introduce a keyword and nothing notices.
+
+Two checks enforce it, between them covering everything that writes a `.scp`:
+
+- **Constraint tests, in process.** `verify_proof_and_dispose` calls
+  `test_innards::check_scp_writer_reader_symmetry`, which reads the test's own
+  `.scp` back and fails if a keyword has no case
+  (`ScpUnsupportedConstraintError`). A new constraint's own test is what catches
+  the omission.
+- **Examples, benchmarks and frontends.** `run_test_and_verify.bash` runs
+  `glasgow_scp_solver --parse-only` over the `.scp` the run wrote. That binary
+  exits **2** for an unknown keyword and **1** for any other read failure, and
+  only 2 fails the test. Its path comes from `build/scp_solver_path`, which
+  CMake generates beside the binaries, so no `add_test` registration needed
+  changing; the check simply skips outside a build tree. This lane matters
+  because some constraints are only ever posted by an example — `LexSmartTable`
+  wrote the un-parseable keyword `lex` for months precisely because its only
+  caller is `examples/smart_table_lex`.
+
+Two narrower things neither check demands:
+
+- **Not every instance need round-trip.** A view operand renders as
+  `(-X + 17)`, which the grammar does not parse; a plain `ScpReadError` is
+  tolerated. Only a missing *keyword* fails. The cost is that a model whose
+  first unreadable thing is a view hides any bad keyword later in the same file
+  — `n_queens` is one — which is part of why both lanes exist.
+- **Test-fixture constraints are exempt**, by the `test_...` naming convention
+  (`test_tabulated_product`, `test_product_fragment`). Use that prefix for an
+  ad-hoc Constraint that exists only to drive one piece of proof machinery.
+
+Worth knowing what this caught when it was turned on: `difference` and
+`cumulative_optional` had no reader case at all, and neither showed up in a hand
+audit of `constraint_type()` overrides done a fortnight earlier. It also turned
+up a genuine writer bug — `DifferenceConstraints::s_expr` rendered a
+half-reified edge's condition with `s_expr_term_of(Literal)`, which collapses a
+condition to the bare variable name, so `D >= 2` and `C = 1` were written
+identically and the `.scp` described a different problem than the one solved.
+
+Two related rules that fall out of the same principle — the `.scp` describes the
+*constraint*, not how it was propagated:
+
+- **Alternative propagators share a keyword.** `Regular`, `RegularLegacy` and
+  `RegularBacchus` all write `regular`. (Note the encodings do not all match:
+  RegularLegacy's OPB is byte-identical to Regular's and chains, whereas
+  RegularBacchus's upfront encoding labels rows cake has no counterpart for, so
+  a proof *it* emits still fails against cake's OPB.)
+- **Anonymous variables come back anonymous.** A variable created without a name
+  is written `_N`, which is exactly the spelling `Problem::check_name()`
+  reserves — so the reader recreates it unnamed rather than passing the name
+  through, mirroring what `post_autonumbered` does for `_N` constraint labels.
+
+## What `cake_pb_cp` does not encode
+
+Constraints whose keyword the verified encoder has no rule for, so they cannot
+chain at all no matter what the solver does. The solver still writes and reads
+them; the gap is upstream.
+
+| Constraint | keyword | reachable from |
+|---|---|---|
+| `BinPacking` | `binpacking` | MiniZinc, XCSP |
+| `MDD` | `mdd` | MiniZinc, XCSP |
+| `Power` / `PowerTable` | `power` | MiniZinc, XCSP |
+| `MinDistance` | `min_distance` | library only |
+| `Nogoods` (posted) | `nogoods` | library only |
+
+Also upstream: `notin` (no solver writer), views (affine operands), and `in`
+over a member list with **two or more variables** — that last one parses on both
+sides but fails at VeriPB, because the solver's `f[N][inlt/ingt/in]` flags are
+not cake's `x[id][i][ge/le/eq]` selectors (#487; one variable chains fine, which
+is why `in_var_sat` passes).
+
 Two complementary mechanisms:
 
 ## Part B — curated `.scp` chain harness (built)
@@ -94,6 +172,19 @@ Adding a constraint to the harness is: drop a `.scp` in `scp_cases/` and add one
 `add_scp_chain_test(<case> <mode>)` line.
 
 ## Part A — three-way proof check in the data-driven tests (sketch)
+
+**Superseded in part.** What actually landed instead of the three-way enum below
+is `gcs/constraints/innards/cake_probe.hh`: `verify_proof_and_dispose` calls
+`cake_probe_chain`, which runs the whole chain over the test's own `.scp` and
+logs a `CAKECHAIN <name> <outcome>` line. It is a *probe*, not an assertion — it
+never fails a test — and is off unless `GCS_TEST_CAKE` is set, so it is a way to
+measure coverage over the random instances rather than to gate on it. The
+reader-symmetry check above is the part of this idea that is on by default,
+because it is cheap and needs no external tools.
+
+The remainder of this section is the original design sketch, kept for the gating
+analysis (which still describes what would be needed to make the chain an
+assertion over random instances).
 
 The random/edge-case instances live in the `*_test` binaries, which already
 thread a `proofs` bool into `solve_for_tests*(p, proof_name, …)` and loop
