@@ -106,21 +106,21 @@ Two related rules that fall out of the same principle — the `.scp` describes t
 
 ## What `cake_pb_cp` does not encode
 
-Constraints whose keyword the verified encoder has no rule for, so they cannot
-chain at all no matter what the solver does. The solver still writes and reads
-them; the gap is upstream.
+Some constraints have no rule in the verified encoder at all, so they cannot
+chain no matter what the solver does. **This document does not list them**, on
+purpose: every enumerated version of that list in this repo went stale and was
+then believed. Ask the tool instead —
 
-| Constraint | keyword | reachable from |
-|---|---|---|
-| `BinPacking` | `binpacking` | MiniZinc, XCSP |
-| `MDD` | `mdd` | MiniZinc, XCSP |
-| `Power` / `PowerTable` | `power` | MiniZinc, XCSP |
-| `MinDistance` | `min_distance` | library only |
-| `Nogoods` (posted) | `nogoods` | library only |
+```
+cake_pb_cp <model>.scp        # `unsupported constraint: <keyword>` if it has no rule
+```
 
-Also upstream: `notin` (no solver writer) and views (affine operands).
+— or `ctest -R scp_chain`, whose registered cases are by construction the ones
+that do chain. A constraint with no case in `scp_cases/` is either an upstream
+gap or an unwritten test, and running the chain over a hand-written `.scp` tells
+you which in one command.
 
-`in` used to be on that list — over a member list with two or more variables it
+`in` used to have no rule — over a member list with two or more variables it
 parsed on both sides but failed at VeriPB, because the solver's
 `f[N][inlt/ingt/in]` flags were not cake's `x[id][i][ge/le/eq]` selectors
 (#487). It is conformed now, and byte-matches. Two things that made it cheap,
