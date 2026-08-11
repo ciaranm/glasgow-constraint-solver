@@ -169,7 +169,9 @@ namespace gcs
         /// height on one donor and a constant on another.
         std::size_t converted_heights = 0;
         /// Covers already inside the support of something lifted earlier, which
-        /// would re-derive it and waste the subproblems (paper, Example 12).
+        /// the paper's Example 12 says would re-derive it and waste the
+        /// subproblems. It would not: lifting is sequence-dependent, so this
+        /// counts covers that could have produced a stronger cut. See #726.
         std::size_t dropped_visited = 0;
         /// Constraints some model row already implies term by term.
         std::size_t dropped_dominated = 0;

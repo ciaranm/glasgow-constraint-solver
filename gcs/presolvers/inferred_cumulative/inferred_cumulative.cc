@@ -158,8 +158,11 @@ namespace
     /// inv_A_longest[a]`); Sidorov confirms the intended line is
     /// `durations[ix] > durations[inv_A_longest[a]]`, which is what happens
     /// here. Its published results came from the shipped line, so the ternary
-    /// covers here are not the ones its numbers were produced from --- never
-    /// worse ones, which is the awkward direction. See the writeup.
+    /// covers here are not the ones its numbers were produced from. They are
+    /// never *shorter* covers, which is not the same as never worse cuts: what
+    /// a cover lifts to is sequence-dependent, and the visited-cover rule in
+    /// `run` lets a higher-ranked cover suppress better ones, so the corrected
+    /// line loses bound on nine Pack instances. Issue #726, and the writeup.
     [[nodiscard]] auto collect_covers(const vector<Task> & tasks, const vector<Integer> & demands, Integer capacity, size_t max_covers,
         size_t cover_cardinality) -> vector<vector<size_t>>
     {
@@ -649,6 +652,17 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
 
         // Example 12: a cover already inside the support of something lifted
         // earlier will re-derive it, so the subproblems are wasted.
+        //
+        // That premise is FALSE, and this rule costs bound. Lifting is
+        // sequence-dependent (see `lift_cover`), so a contained cover starts
+        // its own sequence and can reach a strictly stronger cut; measured, a
+        // higher-ranked cover suppresses better ones on 21 of the 110 Pack and
+        // Pack-d instances, and is the whole of the nine-instance shortfall in
+        // `certified-makespan-bounds.md`. The reference implementation has the
+        // identical rule and escapes it only by accident, through the
+        // `inv_A_longest` bug `collect_covers` documents. Kept for now because
+        // removing it is a change of inferred constraints and wants the
+        // artefact rerun behind it: issue #726.
         auto already = false;
         for (const auto & [support, cardinality] : visited)
             if (cardinality <= cover.size() && std::includes(support.begin(), support.end(), cover.begin(), cover.end())) {

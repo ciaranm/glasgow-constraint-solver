@@ -81,8 +81,10 @@ the inequality valid: `π₀ − v*`, where `v*` is the most the current left-ha
 side can weigh once that task is forced to run. The right-hand side never moves,
 which is what makes the ratio climb. A cover already inside the support of
 something lifted earlier is skipped, since lifting it again would re-derive the
-same constraint (the paper's Example 12). Constraints a model row already
-dominates are discarded, and the best `N_out` by capacity bound are kept.
+same constraint (the paper's Example 12) — **that premise is false, and the rule
+costs bound on 21 of the 110 instances; see issue #726 and the cover-family
+discussion below**. Constraints a model row already dominates are discarded, and
+the best `N_out` by capacity bound are kept.
 
 Budgets are the paper's: `N_cover`, `N_out`, and `N_calls` against the lifting
 subproblems, which are the bottleneck. The defaults here are 100, 5 and 2·10⁴,
@@ -184,14 +186,29 @@ line**, and over the Pack and Pack-d instances the two readings pick a different
 representative on 306 of 314 resource rows. The ternary cover family that comes
 out differs on 164 of those rows and on 103 of the 110 instances.
 
-The difference runs one way. The shipped line's pick is **never longer** than the
-intended one — shorter on 542 of the 922 (demand, row) pairs and equal on the
-rest — so the corrected reading's best ternary cover is never worse, and is
-better on 61 rows. A per-instance comparison against the paper's numbers is
-therefore not a comparison over the same covers, and where this presolver's `L`
-beats the published one that is a likely cause. It is also the one place where
-reproducing the method as *described* means out-performing the artefact as
-*shipped*, which is the opposite of the usual risk and worth saying out loud.
+The difference runs one way in the *covers*. The shipped line's pick is **never
+longer** than the intended one — shorter on 542 of the 922 (demand, row) pairs
+and equal on the rest — so the corrected reading's best ternary cover is never
+worse *as a cover*, and is better on 61 rows.
+
+**That does not carry to the cuts, and this document used to claim it did.** A
+cover's own durations do not determine what it lifts to. Lifting is
+sequence-dependent, and the visited-cover rule above lets a cover that ranks
+higher on `Σ dᵢ / (|C| − 1)` suppress every better cover its lifted support
+happens to contain — so a *worse* cover, reached in a different order, can yield
+a *stronger* cut. Measured: on all nine instances where this presolver's `L`
+falls short of the published one, the corrected line is the reason. On
+`pack/pack007` the reference pipeline as shipped derives 40.5 and this presolver
+39, and running that same pipeline with the corrected line gives 39 exactly. The
+anatomy, and a corpus sweep showing the rule costs bound on 21 instances rather
+than those nine, are in issue #726.
+
+So a per-instance comparison against the paper's numbers is not a comparison
+over the same covers, and that is a likely cause in **both** directions — where
+this presolver's `L` beats the published one and where it falls short. Reproducing
+the method as *described* is not, as this section once said, a place where doing
+so out-performs the artefact as *shipped*; on the instances where the two differ
+today it is the other way round.
 
 ## The certified fraction, which is the number this exists to produce
 
