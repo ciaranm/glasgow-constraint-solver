@@ -216,6 +216,13 @@ which is the remaining shape rather than a scattering — `pack/pack007`, `010`,
 `022`, `024`, `025`, `027`, short by exactly two apiece, and `pack_d/pack004`,
 `023`, `025`, short by twenty-three, fourteen and forty-four.
 
+That gap has since been diagnosed, and it is not in the lifting: **all nine are
+the visited-cover rule** discarding covers that lift to strictly stronger cuts,
+and removing it recovers every one of them. See issue #726, which also shows the
+rule costs bound on twelve further instances that are *not* short here, because
+they had no published number to fall short of. These figures will move when that
+is settled, and this section is where they have to be re-measured.
+
 The rerun also settles two questions that were open defaults:
 
 - **The lifting-call budget never binds.** `_max_lifting_calls` defaults to
