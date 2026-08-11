@@ -30,10 +30,17 @@ binary covers are exactly two-task cliques, and he keeps them. Where a
 conflicting pair has no common neighbour, its `L = d_u + d_v` can top the
 ranking and be the constraint his `L` is reported from, and ours would have
 nothing there. It costs nothing on the twenty cross-check targets, whose cliques
-run to ten members and more, and `with_minimum_clique_size(2)` turns it off — but
-whether two is worth posting *in general* is a measurement question, and the
-measurement is the artefact rerun that has not happened. That is issue #707,
-rather than something guessed at here.
+run to ten members and more, and `with_minimum_clique_size(2)` turns it off.
+
+**Measured on 2026-08-11** (issue #707, by the #708 artefact rerun), and the
+default of three stands. Over Pack in both disjunctive-bearing stages and Pack_d
+in the capacity-one stage — 165 runs — dropping the floor to two changes the
+posted set on nine of them, one clique becoming five and three or four members
+becoming eleven or twelve, and changes the **certified bound on none**. Exactly
+one `L` moves: `pack_d/pack003`, from 7 to 210, against a critical path of 406 —
+so even the improved value says nothing the model does not already imply, which
+is why it never reaches a bound. The arm over Pack_d's `both` stage was not run,
+so the claim is over the stages named and not wider.
 
 Cliques are also dropped when one posted capacity-one resource already contains
 every member: that constraint is the resource's own, and reporting its bound as
