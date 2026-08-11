@@ -79,12 +79,19 @@ families only.
 tasks longest duration first, and give each the largest coefficient that keeps
 the inequality valid: `π₀ − v*`, where `v*` is the most the current left-hand
 side can weigh once that task is forced to run. The right-hand side never moves,
-which is what makes the ratio climb. A cover already inside the support of
-something lifted earlier is skipped, since lifting it again would re-derive the
-same constraint (the paper's Example 12) — **that premise is false, and the rule
-costs bound on 21 of the 110 instances; see issue #726 and the cover-family
-discussion below**. Constraints a model row already dominates are discarded, and
-the best `N_out` by capacity bound are kept.
+which is what makes the ratio climb. Constraints a model row already dominates
+are discarded, and the best `N_out` by capacity bound are kept.
+
+**One departure from the paper here.** Example 12 skips a cover already inside
+the support of something lifted earlier, since lifting it again would re-derive
+the same constraint. It would not: lifting is sequence-dependent, so a contained
+cover starts its own sequence and can reach a strictly stronger cut, and a cover
+ranking higher on `Σ dᵢ / (|C| − 1)` suppresses every better cover its own lifted
+support happens to contain. Measured over Pack and Pack-d, the rule cost bound on
+21 of the 110 instances and was the whole of a nine-instance shortfall against
+the published `L`. Every cover is lifted here. See issue #726, and the
+cover-family discussion below for why the reference implementation does not pay
+the same price.
 
 Budgets are the paper's: `N_cover`, `N_out`, and `N_calls` against the lifting
 subproblems, which are the bottleneck. The defaults here are 100, 5 and 2·10⁴,
@@ -192,16 +199,21 @@ and equal on the rest — so the corrected reading's best ternary cover is never
 worse *as a cover*, and is better on 61 rows.
 
 **That does not carry to the cuts, and this document used to claim it did.** A
-cover's own durations do not determine what it lifts to. Lifting is
-sequence-dependent, and the visited-cover rule above lets a cover that ranks
-higher on `Σ dᵢ / (|C| − 1)` suppress every better cover its lifted support
-happens to contain — so a *worse* cover, reached in a different order, can yield
-a *stronger* cut. Measured: on all nine instances where this presolver's `L`
-falls short of the published one, the corrected line is the reason. On
-`pack/pack007` the reference pipeline as shipped derives 40.5 and this presolver
-39, and running that same pipeline with the corrected line gives 39 exactly. The
-anatomy, and a corpus sweep showing the rule costs bound on 21 instances rather
-than those nine, are in issue #726.
+cover's own durations do not determine what it lifts to, because lifting is
+sequence-dependent — so a *worse* cover, reached in a different order, can yield
+a *stronger* cut. While the visited-cover rule was in place that was not merely
+theoretical: a cover ranking higher on `Σ dᵢ / (|C| − 1)` suppressed every better
+cover its lifted support happened to contain, and on all nine instances where
+this presolver's `L` fell short of the published one, the corrected line was the
+reason. On `pack/pack007` the reference pipeline as shipped derives 40.5 and this
+presolver derived 39; running that same pipeline with the corrected line gives 39
+exactly. That is what removing the rule (#726, and the departure noted under
+Algorithm 2) was for.
+
+The corrected line is still the one to keep. It is the line Sidorov says was
+intended, it is reproducible where a duration-against-index comparison is not,
+and once every cover is lifted the choice of representative no longer decides
+which covers get a chance.
 
 So a per-instance comparison against the paper's numbers is not a comparison
 over the same covers, and that is a likely cause in **both** directions — where

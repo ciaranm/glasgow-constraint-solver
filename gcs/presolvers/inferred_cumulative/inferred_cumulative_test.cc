@@ -8,11 +8,10 @@
  * reports and which the accounting assertion beside it keeps honest.
  *
  * The headline fixture is one task filling a resource of capacity five against
- * three of demand two, and its durations are load-bearing in a way that says
- * something about the published procedure: the cover of the three small tasks
- * has to outrank the ternary covers containing the big one, or Algorithm 2's
- * visited-cover rule skips it and no coefficient above one is ever produced.
- * See lifted_instance() for the two inequalities the durations must satisfy.
+ * three of demand two, and its durations are load-bearing: the cut only bites
+ * on a horizon the donor's own energy check clears. See lifted_instance() for
+ * the inequality they must satisfy, and for the second one that Algorithm 2's
+ * visited-cover rule used to impose before #726 removed it.
  *
  * That fixture is also the differential pair the issue asks for. Its conflict
  * graph is a star --- the big task fights each small one, no two small ones
@@ -146,18 +145,19 @@ namespace
     /// The headline fixture: one task filling a resource of capacity five, and
     /// three of demand two which fit in pairs but not in threes.
     ///
-    /// The durations are what make this the fixture it is. Algorithm 1 ranks
-    /// covers by the capacity bound of their own cover inequality, and
-    /// Algorithm 2 then refuses to lift a cover whose members a previous
-    /// lifting already brought together. So the equal-demand cover of the three
-    /// small tasks has to outrank the ternary covers containing the big one, or
-    /// it is skipped before it is ever lifted and no coefficient above one is
-    /// produced at all. That needs `d_big < d_small`. Meanwhile the cut only
-    /// bites on a horizon the donor's own energy check clears, which needs
-    /// `2 d_big > d_small`. Three against five satisfies both; four equal
-    /// durations satisfies neither, which is why the obvious version of this
-    /// fixture finds nothing. That is a property of the published procedure,
-    /// not of this implementation.
+    /// The durations are what make this the fixture it is. The cut only bites
+    /// on a horizon the donor's own energy check clears, which needs
+    /// `2 d_big > d_small`; three against five satisfies it and four equal
+    /// durations does not, which is why the obvious version of this fixture
+    /// finds nothing.
+    ///
+    /// It used to need a second inequality, `d_big < d_small`, so that the
+    /// equal-demand cover of the three small tasks outranked the ternary covers
+    /// containing the big one --- otherwise the visited-cover rule skipped it
+    /// before it was ever lifted and no coefficient above one was produced at
+    /// all. That rule is gone (#726), so the ranking no longer decides whether
+    /// a cover is lifted. The durations are left as they were: they satisfy
+    /// both, and the fixture is a weaker test of nothing if it is loosened.
     auto lifted_instance(int horizon) -> Instance
     {
         return Instance{{5_i, 2_i, 2_i, 2_i}, {3_i, 5_i, 5_i, 5_i}, 5_i, horizon};

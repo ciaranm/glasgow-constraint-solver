@@ -168,11 +168,6 @@ namespace gcs
         /// setting them aside. Per (donor, task), since a task can be a variable
         /// height on one donor and a constant on another.
         std::size_t converted_heights = 0;
-        /// Covers already inside the support of something lifted earlier, which
-        /// the paper's Example 12 says would re-derive it and waste the
-        /// subproblems. It would not: lifting is sequence-dependent, so this
-        /// counts covers that could have produced a stronger cut. See #726.
-        std::size_t dropped_visited = 0;
         /// Constraints some model row already implies term by term.
         std::size_t dropped_dominated = 0;
         std::size_t dropped_over_budget = 0;
@@ -220,7 +215,7 @@ namespace gcs
      * would. The cut that comes out can then be a consequence of several rows
      * together and of none of them alone, which is why one pass runs over the
      * whole problem rather than one pass per posted constraint, and why the
-     * budgets, the visited-cover rule and the output limit are all global.
+     * budgets and the output limit are both global.
      *
      * Restricted to donors with no optional tasks, and for this presolver's own
      * reason rather than a general one: it draws a cut's members from several
