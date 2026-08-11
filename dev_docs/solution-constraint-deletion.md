@@ -12,10 +12,13 @@ Counting?) Problems in VeriPB", first if you have not: examples 3 and 4 there
 are the enumeration recipe implemented here, and section 3's account of core
 versus derived is the reason a naive `del` does not work.
 
-**These proofs need a VeriPB from 2026-06-22 or later**, i.e. one containing
-`veripb-dev` MR !193. An older checker rejects them at the root `rup >= 1`
-with what looks like a missing constraint. Finding 3 below has the details,
-including how to build a pre-fix checker and watch it happen.
+**These proofs need a VeriPB containing `veripb-dev` MR !217** (2026-08-11,
+open at the time of writing, on branch `fix/reset-derived-constraints`). An
+older checker can reject them at a `rup` step, reported as if a constraint were
+missing rather than as a checker limitation, and `--unchecked-deletion` makes it
+go away --- which is misleading, since there is nothing wrong with the
+deletions. Every VeriPB build reports version 3.0.2 regardless of commit, so
+check the commit rather than `--version`.
 
 ## The obstacle: checked deletion only sees core
 
@@ -149,7 +152,7 @@ a level holding a descendant's clause that was promoted for the same reason.
 
 ### The things that are not in the issue
 
-Three of them.
+Two of them.
 
 **1. The lazily-introduced encoding definitions have to go to core.** This is
 the real obstacle, and a direct consequence of `only_core`. The deletion goal
@@ -184,32 +187,26 @@ become checked and fail. So the tracker marks its own lines, with
 lazily --- the first time a deletion actually needs them, and never at all in
 a proof that deletes nothing.
 
-It is *all* of them, and not just the ones the deletion goal reads --- but that
-is parked rather than settled, and the honest position is worth writing down.
-The narrower rule is the obvious one to try: promote only the definitional
-closure of the atoms in the discharging clause, being an order atom's two
-halves, an eq atom's two halves plus the two order cuts it is stated over, and
-a range literal's likewise --- but not the order chain linking neighbouring
-cuts, since the bits settle each cut on its own. That takes `abs_test`'s first
-batch from 26 lines to 10, and verifies. Whether it is *sufficient* we cannot
-currently say, because the two experiments that would answer it disagree, and
-at least one of them is measuring the checker rather than us:
+What ships promotes *all* of them, and not just the ones the deletion goal
+reads --- but that is a decision about the checker we can rely on today, not a
+claim that the narrow rule is insufficient. It is not: promoting only the
+definitional closure of the atoms in the discharging clause --- an order atom's
+two halves, an eq atom's two halves plus the two order cuts it is stated over,
+and a range literal's likewise, but *not* the order chain linking neighbouring
+cuts, since the bits settle each cut on its own --- passes the whole suite,
+636/636. It is also a real reduction rather than a no-op: `abs_test`'s first
+batch goes from 26 promoted constraints to 10, and `langford --all` from 2604
+over 124 `core id` steps to 76 over 76. "The narrow closure, measured" below has
+what that buys, which is more than tidiness: it removes the one regression in
+the measurement table.
 
-- Against a current checker, the narrow rule fails `skyscrapers 5` and
-  `ortho_latin 5` at a shallow `rup`, with no unchecked-deletion warning
-  anywhere before it. Both of those failures are VeriPB regressions, bisected
-  to two unrelated commits and reported upstream as `veripb-dev` issue #210. A
-  checker predating either commit verifies both proofs.
-- Against that older checker, however, the narrow rule fails 24 *other* tests
-  that the blanket promotion passes, mostly `linear_constraint_*`. Those are
-  not diagnosed. They are either a real gap in the closure that the newer
-  checker's propagation happens to paper over, or further checker bugs.
-
-Sufficiency that moves with checker version is not something to build on in
-either direction, so the blanket promotion stays until #210 is fixed and the
-comparison can be re-run against a checker worth trusting. Nothing else here
-depends on which way that lands: the blanket rule is a superset of the narrow
-one, so it is the safe end to sit at while the question is open.
+The reason the blanket rule ships anyway is that the narrow one needs a checker
+containing MR !217, and the narrow rule's `skyscrapers 5` proof is one of the
+two cases that fail without it. CI installs the checker by cloning public
+`VeriPB.git` at HEAD, so until that contains !217, narrowing turns
+`skyscrapers-5` and `ortho_latin-5` red. Blanket is the superset, so it is the
+safe end to sit at meanwhile, and nothing else here depends on which is used.
+Switching over is a small change once the checker allows it.
 
 **2. Promotion cascades to the root.** Once a frame has promoted its clause,
 its parent's `forget_proof_level` will delete that clause, and *that* is a
@@ -220,39 +217,9 @@ only if the parent promoted as well. `ProofLogger` therefore keeps
 above reads it. At the root the clause is the empty one, `rup >= 1`, and
 deleting anything against a contradictory core is trivial.
 
-**3. The checker has to be new enough.** The first cut of this work appeared to
-show that VeriPB lost a conflict when a checked deletion landed between a
-constraint's last use and a later `rup`: `scp_chain_multiply_square_sat` ---
-`--all` enumeration of `X * X = Z` over `X` in `-3..3`, seven solutions ---
-stopped verifying, with the root's `rup >= 1` rejected as not RUP.
-
-That diagnosis was wrong, and an earlier version of this section proposed an
-upstream report that should not be filed. The failure is `veripb-dev` issue
-#192, fixed by MR !193 ("never reset trailhead to higher position than
-current", merged 2026-06-22); the checker installed on the machine at the time
-predated the fix while still reporting version 3.0.2. Deletion position has
-nothing to do with it. The *shipped* proof, with the deletion where this branch
-puts it, fails at the root `rup >= 1` on a pre-fix checker and verifies on a
-fixed one --- and so does every variant with the deletion moved earlier or
-later. Build `veripb-dev` at `dbc46fe0^` to see it for yourself.
-
-What survives is a requirement rather than a design constraint: these proofs
-need a VeriPB from 2026-06-22 or later. An older checker rejects them at the
-root with an error that reads like a missing constraint rather than a checker
-bug, and `--unchecked-deletion` makes it go away, which is misleading --- there
-is nothing wrong with the deletions.
-
-That is not the only checker caveat, and "new enough" is not the same as
-"correct": two later propagation regressions are reported as `veripb-dev` issue
-#210. Neither affects what is shipped here, which verifies 636/636, but both
-affect the narrow-promotion variant discussed above, and both are reasons to
-treat a lone deletion-related verification failure as a question about the
-checker until a second checker version agrees with it.
-
-Deleting through the level forget is kept, but on its own merits rather than to
-dodge anything: it puts the blocking constraint at the level that actually
-refutes it, and it costs one fewer `core id` step and one fewer checked
-deletion per solution than deleting next to the subsuming clause does.
+Deleting through the level forget, rather than next to the subsuming clause,
+puts the blocking constraint at the level that actually refutes it, and costs
+one fewer `core id` step and one fewer checked deletion per solution.
 
 **The enumeration half cannot have restarts.** A restart unwinds through
 `SearchResult::RestartCutoffHit`, which forgets each level *without* emitting
@@ -284,38 +251,34 @@ which is exactly what gets rejected if the guarantee has been dropped.
 
 ## Measurements
 
-Checker **pinned** to `veripb-dev` f8c29244, built at
-`~/claude/tmp/veripb-pinned`, because `~/.cargo/bin/veripb` was replaced
-part-way through this work and both binaries report 3.0.2 (see finding 3).
-Anything timed against an unpinned `veripb` on this machine is not comparable.
-"before" is `d3c9e58b`; "after" is this branch. Each pair is timed
-*alternately* --- before, after, before, after --- so machine drift lands on
-both sides equally. Five runs each except `frequency_square`, which is four.
+Checker is `veripb-dev` at MR !217; quote the checker commit alongside any
+checking time, since the version string does not distinguish builds. "before"
+is `d3c9e58b`; "after" is this branch. Each pair is timed *alternately* ---
+before, after, before, after --- so machine drift lands on both sides equally.
+Five runs each except `frequency_square`, which is four.
 Times are seconds, size is the `.pbp` in bytes, and the ratio uses medians.
 
 | instance | solutions | size before | size after | time before | time after | speedup |
 | --- | --- | --- | --- | --- | --- | --- |
-| `frequency_square --all --size 6 --lambda 2` | 53220 | 204569673 | 224919034 | 117.83 113.07 113.23 113.24 | 12.64 12.62 12.70 | 9.0x |
-| `regular_random --all --seed=1` | 32985 | 14231970 | 18870069 | 21.54 21.46 21.42 21.41 21.25 | 2.09 2.11 2.11 2.12 2.17 | 10.1x |
-| `langford --all` | 52 | 964583 | 1024105 | 0.23 0.23 0.23 0.23 0.23 | 0.26 0.26 0.27 0.27 0.27 | 0.85x |
-| `talent` (optimisation) | 23 | 6592428 | 6669941 | 1.11 1.10 1.11 1.11 1.11 | 1.13 1.13 1.13 1.12 1.12 | 0.98x |
+| `frequency_square --all --size 6 --lambda 2` | 53220 | 204569673 | 224919034 | 117.19 114.45 125.08 116.78 | 12.52 12.34 12.69 12.38 | 9.4x |
+| `regular_random --all --seed=1` | 32985 | 14231970 | 18870069 | 21.62 21.63 21.54 21.48 21.91 | 2.07 2.08 2.07 2.10 2.11 | 10.4x |
+| `langford --all` | 52 | 964583 | 1024105 | 0.24 0.24 0.24 0.24 0.24 | 0.27 0.27 0.26 0.27 0.26 | 0.89x |
+| `talent` (optimisation) | 23 | 6592428 | 6669941 | 1.13 1.18 1.14 1.12 1.12 | 1.15 1.14 1.13 1.11 1.12 | 1.00x |
 
 The "after" side includes stating solutions in bits, which is what the size
 column mostly moved on; the section above separates the two changes.
 
-The first `frequency_square` "before" run is a cold-cache outlier, which is
-why the ratios are medians rather than means: the median is 113.235 either way,
-so dropping the run by hand would change nothing. (Taking the mean instead, and
-keeping the outlier, is what gives 9.6 --- which is how a wrong figure got into
-an earlier version of this table.) Both sides verify in every case, and the
-solution counts agree
-(`ENUMERATION_COMPLETE` of 53220, 32985 and 52; `BOUNDS 6 <= obj <= 6` for
-`talent`).
+Ratios are medians because the `frequency_square` "before" side has a spread of
+about ten per cent run to run --- 114.45 to 125.08, with the high run third, so
+it is variance on a 200 MB proof rather than a cold cache. The other three
+instances are stable to a few per cent. Both sides verify in every case and the
+solution counts agree (`ENUMERATION_COMPLETE` of 53220, 32985 and 52;
+`BOUNDS 6 <= obj <= 6` for `talent`).
 
 Peak RSS moves the wrong way on the big enumeration case: `frequency_square`
-goes from 564580 KB to 644752 KB, because the encoding definitions promoted to
-core are indexed differently there. `regular_random` is flat (48608 KB to
-48352 KB) and `langford` is near enough (13804 KB to 14072 KB).
+goes from 564780 KB to 644768 KB, because the encoding definitions promoted to
+core are indexed differently there. `regular_random` is flat (48724 KB to
+48680 KB) and `langford` is near enough (14072 KB to 14312 KB).
 
 The shape to take from this: **the win is enumeration with many solutions, and
 it is an order of magnitude.** Optimisation is free but not a speedup on
@@ -326,13 +289,35 @@ objective terms, so it is not what the checker's time goes on; the 77 kB it
 gains is the bit-form `soli` lines, not the deletions. Take the optimisation
 half as tidiness (and as the thing that stops a long-running branch and bound
 accumulating rows without limit) rather than as a number. Small enumerations
-lose slightly (`langford`, 52 solutions, 15 per cent slower and 6 per cent
+lose slightly (`langford`, 52 solutions, 12 per cent slower and 6 per cent
 bigger) because the one-off promotion of the encoding to core is not paid back
 at that scale.
 
-These figures replace an earlier set taken while the checker was being swapped
-underneath them. They came out the same to within noise, so the earlier
-conclusions stood up --- but they were not safe to quote at the time.
+### The narrow closure, measured
+
+Both sides are this branch; the only difference is which encoding definitions
+get promoted. Same checker and the same alternating method, blanket → narrow:
+
+| instance | promoted ids | `.pbp` bytes | median time |
+| --- | --- | --- | --- |
+| `frequency_square` | 52786 → 52652 | 224919034 → 224918889 | 12.65 → 12.80 |
+| `regular_random` | 7717 → 7679 | 18870069 → 18869929 | 2.08 → 2.03 |
+| `langford` | 2604 → 76 | 1024105 → 1011205 | 0.26 → 0.24 |
+| `talent` | 0 → 0 | 6669941 → 6669941 | 1.14 → 1.14 |
+
+The saving is concentrated where the enumeration is *small*, which is exactly
+where the blanket rule costs us. On `langford` promotion drops by a factor of 34
+and the 12 per cent loss in the table above disappears completely --- 0.24 s is
+what the no-deletion baseline takes, so narrowing makes the small case free
+rather than merely cheaper. On the two big enumerations there is almost nothing
+to save, because with tens of thousands of solutions nearly every definition is
+needed by some deletion goal anyway; `frequency_square` comes out about one per
+cent slower, which is the closest thing to a cost here.
+
+`talent` promotes nothing under either rule, which is worth stating: the
+optimisation half never needs a definition in core at all, since what discharges
+its deletion is the new `soli`'s own improving constraint, over the objective
+terms. The closure question is entirely about the enumeration half.
 
 ## What this does not do
 
