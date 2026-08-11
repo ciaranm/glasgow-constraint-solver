@@ -505,7 +505,30 @@ namespace
     // skips -- is caught here and nowhere else.
     auto run_detection_tests() -> void
     {
-        auto check = [](const string & fixture, const DifferenceLogicStats & stats, const DifferenceLogicStats & expected) {
+        // What a fixture asserts, which is not the whole block: a designated
+        // initialiser naming three fields and defaulting the rest is how these
+        // read, and DifferenceLogicStats stopped being an aggregate when it
+        // became a ComponentStats. Mirroring only the fields `check` reads also
+        // stops a new field being silently defaulted into every fixture's
+        // expectations --- adding one here is a deliberate act.
+        // Declared in the same order as the fields in DifferenceLogicStats, so
+        // that a fixture's designated initialisers read as they did when they
+        // named that type directly.
+        struct Expected
+        {
+            size_t edges_lifted = 0;
+            size_t comparison_edges_lifted = 0;
+            size_t half_reified_edges_lifted = 0;
+            size_t nodes = 0;
+            bool propagator_installed = false;
+            size_t skipped_not_two_terms = 0;
+            size_t skipped_coefficients = 0;
+            size_t skipped_reified = 0;
+            size_t skipped_negated_view = 0;
+            size_t skipped_degenerate = 0;
+        };
+
+        auto check = [](const string & fixture, const DifferenceLogicStats & stats, const Expected & expected) {
             println(cerr,
                 "difference presolver detection {}: lifted {} ({} from comparisons, {} half-reified) over {} nodes, skipped {} not-two-terms, {} "
                 "coefficients, {} reified, {} negated-view, {} degenerate",
@@ -541,7 +564,7 @@ namespace
             p.post(LinearLessThanEqual{WeightedSum{} + 1_i * (x[0] + 2_i) + -1_i * x[2], 0_i});
             p.add_presolver(DifferenceLogic{stats});
             solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }});
-            check("five_plain_linears", *stats, DifferenceLogicStats{.edges_lifted = 5, .nodes = 4, .propagator_installed = true});
+            check("five_plain_linears", *stats, Expected{.edges_lifted = 5, .nodes = 4, .propagator_installed = true});
         }
 
         // Everything that must be skipped, one of each, plus two real edges so
@@ -585,7 +608,7 @@ namespace
             p.add_presolver(DifferenceLogic{stats});
             solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }});
             check("every_skip", *stats,
-                DifferenceLogicStats{.edges_lifted = 4,
+                Expected{.edges_lifted = 4,
                     .comparison_edges_lifted = 2,
                     .nodes = 4,
                     .propagator_installed = true,
@@ -630,7 +653,7 @@ namespace
             p.add_presolver(DifferenceLogic{stats});
             solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }});
             check("comparison_donors", *stats,
-                DifferenceLogicStats{.edges_lifted = 5,
+                Expected{.edges_lifted = 5,
                     .comparison_edges_lifted = 5,
                     .half_reified_edges_lifted = 1,
                     .nodes = 5,
@@ -653,8 +676,7 @@ namespace
             p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[2] + -1_i * x[3], -1_i});
             p.add_presolver(DifferenceLogic{stats});
             solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }});
-            check("mixed_donors", *stats,
-                DifferenceLogicStats{.edges_lifted = 3, .comparison_edges_lifted = 1, .nodes = 4, .propagator_installed = true});
+            check("mixed_donors", *stats, Expected{.edges_lifted = 3, .comparison_edges_lifted = 1, .nodes = 4, .propagator_installed = true});
         }
 
         // Half-reified donors, in every shape the propagator distinguishes: two
@@ -681,7 +703,7 @@ namespace
             p.add_presolver(DifferenceLogic{stats});
             solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }});
             check("reified_donors", *stats,
-                DifferenceLogicStats{.edges_lifted = 3,
+                Expected{.edges_lifted = 3,
                     .half_reified_edges_lifted = 2,
                     .nodes = 4,
                     .propagator_installed = true,
@@ -699,7 +721,7 @@ namespace
             p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[0] + -1_i * x[1], -1_i});
             p.add_presolver(DifferenceLogic{stats});
             solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }});
-            check("single_edge", *stats, DifferenceLogicStats{.edges_lifted = 1, .nodes = 2, .propagator_installed = false});
+            check("single_edge", *stats, Expected{.edges_lifted = 1, .nodes = 2, .propagator_installed = false});
         }
 
         // A model with nothing difference shaped in it: the presolver must stay
@@ -711,7 +733,7 @@ namespace
             p.post(AllDifferent{x});
             p.add_presolver(DifferenceLogic{stats});
             solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }});
-            check("nothing_to_lift", *stats, DifferenceLogicStats{.edges_lifted = 0, .nodes = 0, .propagator_installed = false});
+            check("nothing_to_lift", *stats, Expected{.edges_lifted = 0, .nodes = 0, .propagator_installed = false});
         }
 
         println(cerr, "difference presolver detection: ok");
@@ -738,6 +760,77 @@ namespace
             pos = line_end == string::npos ? string::npos : line_end + 1;
         }
         return count;
+    }
+
+    // The flat view both blocks reach a report through.
+    //
+    // These names are public. fzn-glasgow renders every registered block by
+    // camel-casing component_name() onto each entry name, so `difference_logic`
+    // and `edges_lifted` are what make `differenceLogicEdgesLifted` --- and
+    // minizinc/CMakeLists.txt pins six of those exactly. Renaming a field, or
+    // dropping one from entries(), is therefore a user-visible change to
+    // statistics output and has to be a deliberate one. Asserted as an ordered
+    // list rather than a count so that a rename fails as a rename.
+    auto run_report_tests() -> void
+    {
+        auto names_of = [](const ComponentStats & block) -> vector<string> {
+            vector<string> result;
+            for (const auto & entry : block.entries())
+                result.push_back(entry.name);
+            return result;
+        };
+
+        auto joined = [](const vector<string> & names) -> string {
+            string result;
+            for (const auto & name : names)
+                result += (result.empty() ? "" : ", ") + name;
+            return result;
+        };
+
+        auto check_names = [&](const string & what, const ComponentStats & block, const string & expected_component,
+                               const vector<string> & expected) {
+            if (block.component_name() != expected_component)
+                throw UnexpectedException{"the " + what + " block calls itself '" + block.component_name() + "', expected '" + expected_component +
+                    "'. This is the first half of every %%%mzn-stat name it produces."};
+            if (names_of(block) != expected)
+                throw UnexpectedException{"the " + what + " block's flat view is [" + joined(names_of(block)) + "], expected [" + joined(expected) +
+                    "]. These names are public: fzn-glasgow camel-cases them into %%%mzn-stat names and minizinc/CMakeLists.txt pins six of "
+                    "them, so this is a user-visible change and not a tidy-up."};
+        };
+
+        // The anti-rot half, and the reason it is a size rather than a count:
+        // CumulativeStrengtheningStats works its field count out by dividing
+        // sizeof by eight, which is sound there because every field is eight
+        // bytes wide. These two mix bools, sizes and a double, so pin the size
+        // directly. Skipped where a size_t is not eight bytes, since then the
+        // number below means nothing.
+        //
+        // If this fails, a field was added or removed. Add it to entries() and
+        // to the list here --- do not just update the number, which is the one
+        // response that puts the field back out of sight.
+        if (8 == sizeof(size_t)) {
+            if (104 != sizeof(DifferenceLogicStats))
+                throw UnexpectedException{"DifferenceLogicStats is " + to_string(sizeof(DifferenceLogicStats)) +
+                    " bytes, expected 104: a field was added or removed, so entries() and the list below need it too."};
+            if (120 != sizeof(DifferenceSimplificationStats))
+                throw UnexpectedException{"DifferenceSimplificationStats is " + to_string(sizeof(DifferenceSimplificationStats)) +
+                    " bytes, expected 120: a field was added or removed, so entries() and the list below need it too."};
+        }
+
+        check_names("difference-logic presolver", DifferenceLogicStats{}, "difference_logic",
+            {"edges_lifted", "comparison_edges_lifted", "half_reified_edges_lifted", "nodes", "propagator_installed", "donor_propagators_disabled",
+                "skipped_not_two_terms", "skipped_coefficients", "skipped_reified", "skipped_negated_view", "skipped_degenerate",
+                "skipped_uncitable_row"});
+
+        // Named for what a report has always called this stage, not for the
+        // header it lives in: differenceLogicSimplifyRan is pinned upstream.
+        check_names("difference simplification", DifferenceSimplificationStats{}, "difference_logic_simplify",
+            {"ran", "rounds", "nodes", "edges", "conditional_edges", "redundant_edges_removed", "redundant_conditional_edges_removed",
+                "dead_edges_removed", "conditions_fixed", "isolated_nodes_removed", "zero_weight_cycles", "nodes_on_zero_weight_cycles",
+                "base_negative_cycle", "milliseconds"});
+
+        println(
+            cerr, "difference report: {} and {} entries", names_of(DifferenceLogicStats{}).size(), names_of(DifferenceSimplificationStats{}).size());
     }
 
     // Every row ReifiedCompareLessThanOrMaybeEqual emits must carry an @label.
@@ -1006,6 +1099,7 @@ auto main(int argc, char * argv[]) -> int
     string mode{argv[1]};
 
     if (mode == "detection") {
+        run_report_tests();
         run_detection_tests();
         for (auto donor : all_donors())
             run_differential_test(donor);

@@ -23,6 +23,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::make_unique;
 using std::map;
 using std::move;
@@ -30,6 +31,8 @@ using std::nullopt;
 using std::optional;
 using std::shared_ptr;
 using std::size_t;
+using std::string;
+using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
@@ -53,7 +56,11 @@ namespace
 }
 
 DifferenceLogic::DifferenceLogic(shared_ptr<DifferenceLogicStats> stats) :
-    _stats(move(stats)), _disable_lifted_donors(false), _simplify(true), _incremental()
+    // Always a block, whether or not anyone asked for one, exactly as
+    // CumulativeStrengthening does it: what reaches a report is what was
+    // registered, and a presolver that registers nothing is a presolver that
+    // cannot be told apart from one that did nothing.
+    _stats(stats ? move(stats) : make_shared<DifferenceLogicStats>()), _disable_lifted_donors(false), _simplify(true), _incremental()
 {
 }
 
@@ -100,6 +107,13 @@ auto DifferenceLogic::clone() const -> unique_ptr<Presolver>
 
 auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & initial_state, ProofLogger * const logger) -> bool
 {
+    // Registered before anything is decided, so that a run which lifts nothing
+    // still reports having looked --- and so that this block precedes the
+    // simplification stage's, which registers from inside
+    // install_difference_propagator further down. The counters are filled in at
+    // the end, into this same object.
+    propagators.add_component_stats(_stats);
+
     // Compile-time pins on the contract the enumeration below relies upon. The
     // helper matches the type Problem *stores*, which is what clone() returns,
     // and for both of these families that is the base; asking for the derived
@@ -330,8 +344,49 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
             stats.donor_propagators_disabled = propagators.disable_propagators_for_constraints(lifted_donors);
     }
 
-    if (_stats)
-        *_stats = stats;
+    // Assigning rather than replacing is what keeps a caller's handle, and the
+    // block registered at the top of this function, the same object.
+    *_stats = stats;
 
     return true;
+}
+
+auto DifferenceLogicStats::component_name() const -> string
+{
+    return "difference_logic";
+}
+
+auto DifferenceLogicStats::summary() const -> string
+{
+    if (0 == edges_lifted)
+        return "lifted nothing";
+
+    auto result = to_string(edges_lifted) + " edges lifted over " + to_string(nodes) + " nodes, " + to_string(comparison_edges_lifted) +
+        " from comparisons and " + to_string(half_reified_edges_lifted) + " half-reified";
+
+    // Lifting edges and then not installing anything is the interesting case to
+    // be able to see: it is what a threshold, or a graph too small to be worth
+    // a propagator, looks like from outside.
+    if (! propagator_installed)
+        return result + ", but no propagator was installed";
+
+    if (0 != donor_propagators_disabled)
+        result += ", retiring " + to_string(donor_propagators_disabled) + " donor propagators";
+
+    return result;
+}
+
+auto DifferenceLogicStats::entries() const -> vector<StatsEntry>
+{
+    return {StatsEntry{"edges_lifted", static_cast<long long>(edges_lifted)},
+        StatsEntry{"comparison_edges_lifted", static_cast<long long>(comparison_edges_lifted)},
+        StatsEntry{"half_reified_edges_lifted", static_cast<long long>(half_reified_edges_lifted)},
+        StatsEntry{"nodes", static_cast<long long>(nodes)}, StatsEntry{"propagator_installed", propagator_installed ? 1 : 0},
+        StatsEntry{"donor_propagators_disabled", static_cast<long long>(donor_propagators_disabled)},
+        StatsEntry{"skipped_not_two_terms", static_cast<long long>(skipped_not_two_terms)},
+        StatsEntry{"skipped_coefficients", static_cast<long long>(skipped_coefficients)},
+        StatsEntry{"skipped_reified", static_cast<long long>(skipped_reified)},
+        StatsEntry{"skipped_negated_view", static_cast<long long>(skipped_negated_view)},
+        StatsEntry{"skipped_degenerate", static_cast<long long>(skipped_degenerate)},
+        StatsEntry{"skipped_uncitable_row", static_cast<long long>(skipped_uncitable_row)}};
 }

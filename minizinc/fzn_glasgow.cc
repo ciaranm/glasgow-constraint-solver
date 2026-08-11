@@ -18,6 +18,7 @@
 #endif
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
@@ -98,6 +99,38 @@ namespace
     auto sig_int_or_term_handler(int) -> void
     {
         abort_flag.store(true);
+    }
+
+    /**
+     * \brief A component's flat entry name as a `%%%mzn-stat` name:
+     * `difference_logic` and `edges_lifted` give `differenceLogicEdgesLifted`.
+     *
+     * The statistics MiniZinc itself defines are camelCase (`peakDepth`,
+     * `solveTime`) and a solver's own are free-form, so snake_case would be
+     * legal and still wrong to read next to them. Translating here rather than
+     * asking blocks to spell their fields twice keeps the convention in the one
+     * file that has a reason to know it: a MiniZinc spelling is not something a
+     * presolver in `gcs/presolvers/` should have an opinion about.
+     *
+     * The component name leads because these names are flat and global ---
+     * `nodes` means one thing under `difference_logic` and another under
+     * `difference_logic_simplify`, and both are reported.
+     */
+    [[nodiscard]] auto mzn_stat_name(const string & component, const string & entry) -> string
+    {
+        string result;
+        bool capitalise_next = false;
+        for (auto c : component + "_" + entry) {
+            if ('_' == c)
+                capitalise_next = true;
+            else if (capitalise_next) {
+                result += static_cast<char>(toupper(static_cast<unsigned char>(c)));
+                capitalise_next = false;
+            }
+            else
+                result += c;
+        }
+        return result;
     }
 
     struct ExtractedData
@@ -1223,25 +1256,16 @@ auto main(int argc, char * argv[]) -> int
             println(cout, "%%%mzn-stat: peakDepth={}", stats.max_depth);
             println(cout, "%%%mzn-stat: restarts={}", stats.restarts);
             println(cout, "%%%mzn-stat: solveTime={:.3f}", duration_cast<milliseconds>(stats.solve_time).count() / 1000.0);
-            // A presolver that lifts nothing preserves the solution set, adds no
-            // OPB content and leaves every proof verifying, so these counts are
-            // the only way to tell "it worked" from "it silently did nothing".
-            if (difference_logic_stats) {
-                println(cout, "%%%mzn-stat: differenceLogicEdgesLifted={}", difference_logic_stats->edges_lifted);
-                println(cout, "%%%mzn-stat: differenceLogicComparisonEdgesLifted={}", difference_logic_stats->comparison_edges_lifted);
-                println(cout, "%%%mzn-stat: differenceLogicHalfReifiedEdgesLifted={}", difference_logic_stats->half_reified_edges_lifted);
-                println(cout, "%%%mzn-stat: differenceLogicNodes={}", difference_logic_stats->nodes);
-                println(cout, "%%%mzn-stat: differenceLogicSkippedNotTwoTerms={}", difference_logic_stats->skipped_not_two_terms);
-                println(cout, "%%%mzn-stat: differenceLogicSkippedCoefficients={}", difference_logic_stats->skipped_coefficients);
-                println(cout, "%%%mzn-stat: differenceLogicSkippedReified={}", difference_logic_stats->skipped_reified);
-                println(cout, "%%%mzn-stat: differenceLogicSkippedNegatedView={}", difference_logic_stats->skipped_negated_view);
-                println(cout, "%%%mzn-stat: differenceLogicSkippedDegenerate={}", difference_logic_stats->skipped_degenerate);
-                println(cout, "%%%mzn-stat: differenceLogicSkippedUncitableRow={}", difference_logic_stats->skipped_uncitable_row);
-                println(cout, "%%%mzn-stat: differenceLogicSimplifyRan={}", difference_simplification_stats->ran ? 1 : 0);
-                println(
-                    cout, "%%%mzn-stat: differenceLogicSimplifyRedundantEdgesRemoved={}", difference_simplification_stats->redundant_edges_removed);
-                println(cout, "%%%mzn-stat: differenceLogicSimplifyConditionsFixed={}", difference_simplification_stats->conditions_fixed);
-            }
+            // Every component that registered a block, rendered without this
+            // file knowing which components exist. A presolver that lifts
+            // nothing preserves the solution set, adds no OPB content and leaves
+            // every proof verifying, so these counts are the only way to tell
+            // "it worked" from "it silently did nothing" --- and listing them by
+            // hand here is how two of DifferenceLogicStats' twelve fields came
+            // to be filled in and reported to nobody.
+            for (const auto & component : stats.components())
+                for (const auto & entry : component->entries())
+                    println(cout, "%%%mzn-stat: {}={}", mzn_stat_name(component->component_name(), entry.name), entry.value);
             println(cout, "%%%mzn-stat-end");
             cout << flush;
         }

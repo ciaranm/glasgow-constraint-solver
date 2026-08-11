@@ -1117,6 +1117,13 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, Stat
     if (graph.edges.empty() && graph.static_bounds.empty() && graph.disallowed_conditions.empty())
         return;
 
+    // Both routes to a difference propagator come through here --- the posted
+    // DifferenceConstraints and the presolver that builds a graph out of donors
+    // --- so registering the simplification block here is what makes it reach a
+    // report either way. A null block is a caller that asked for none, and
+    // add_component_stats ignores it.
+    propagators.add_component_stats(simplify.stats);
+
     incremental.audit = incremental.audit || difference_audit_from_environment();
 
     Triggers triggers;

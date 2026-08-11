@@ -75,6 +75,13 @@ set_tests_properties(minizinc-disjunctive-opt PROPERTIES SKIP_RETURN_CODE 66)
 # all four arrived as `int_lin_le`, which is the whole reason this needs no
 # predicate of its own; a flattener that started emitting `int_le` would
 # still lift four edges, but they would be counted here instead.
+#
+# These names are also the contract between ComponentStats::entries() and the
+# generic %%%mzn-stat loop in fzn_glasgow.cc: each is component_name() and an
+# entry name camel-cased together, so a rename on either side fails here rather
+# than in whatever is parsing the output. differenceLogicPropagatorInstalled is
+# one of the two fields that were filled in and reported to nobody until the
+# loop replaced the hand-written list, and is here so that stays fixed.
 add_test(NAME minizinc-differencelogic COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ differencelogic true true
     "-s --difference-logic"
     "^%%%mzn-stat: differenceLogicEdgesLifted=4$"
@@ -82,6 +89,7 @@ add_test(NAME minizinc-differencelogic COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/m
     "^%%%mzn-stat: differenceLogicNodes=4$"
     "^%%%mzn-stat: differenceLogicSkippedNotTwoTerms=1$"
     "^%%%mzn-stat: differenceLogicSkippedCoefficients=1$"
+    "^%%%mzn-stat: differenceLogicPropagatorInstalled=1$"
     "^%%%mzn-stat: differenceLogicSimplifyRan=1$")
 set_tests_properties(minizinc-differencelogic PROPERTIES SKIP_RETURN_CODE 66)
 

@@ -4,9 +4,12 @@
 #include <gcs/constraints/difference/difference_incremental.hh>
 #include <gcs/constraints/difference/difference_simplify.hh>
 #include <gcs/presolver.hh>
+#include <gcs/stats.hh>
 
 #include <cstddef>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace gcs
 {
@@ -24,9 +27,16 @@ namespace gcs
      * they are how the tests, and the measurements, tell "working" from
      * "no-op". \sa DifferenceLogic
      *
+     * Being a ComponentStats is what puts those counts into a report without
+     * anything having to list them: `fzn-glasgow` renders every registered
+     * block through entries(), so a field added here reaches `%%%mzn-stat`
+     * by existing. Before that it did not --- propagator_installed and
+     * donor_propagators_disabled were filled in and read by nobody, which is
+     * the failure entries() is for.
+     *
      * \ingroup Presolvers
      */
-    struct DifferenceLogicStats
+    struct DifferenceLogicStats final : ComponentStats
     {
         /// Donors turned into graph edges: the number that matters.
         std::size_t edges_lifted = 0;
@@ -115,6 +125,10 @@ namespace gcs
         std::size_t skipped_uncitable_row = 0;
 
         ///@}
+
+        [[nodiscard]] auto component_name() const -> std::string override;
+        [[nodiscard]] auto summary() const -> std::string override;
+        [[nodiscard]] auto entries() const -> std::vector<StatsEntry> override;
     };
 
     /**
