@@ -12,13 +12,15 @@ Counting?) Problems in VeriPB", first if you have not: examples 3 and 4 there
 are the enumeration recipe implemented here, and section 3's account of core
 versus derived is the reason a naive `del` does not work.
 
-**These proofs need a VeriPB containing `veripb-dev` MR !217** (2026-08-11,
-open at the time of writing, on branch `fix/reset-derived-constraints`). An
-older checker can reject them at a `rup` step, reported as if a constraint were
-missing rather than as a checker limitation, and `--unchecked-deletion` makes it
-go away --- which is misleading, since there is nothing wrong with the
-deletions. Every VeriPB build reports version 3.0.2 regardless of commit, so
-check the commit rather than `--version`.
+**These proofs need a VeriPB from 2026-06-22 or later**, i.e. one containing
+`veripb-dev` MR !193. An older checker rejects them at the root `rup >= 1`,
+reported as if a constraint were missing rather than as a checker limitation,
+and `--unchecked-deletion` makes it go away --- which is misleading, since there
+is nothing wrong with the deletions. Every VeriPB build reports version 3.0.2
+regardless of commit, so check the commit rather than `--version`.
+
+The narrow promotion discussed below needs a newer checker still, one containing
+MR !217; what ships here does not, and verifies against public VeriPB today.
 
 ## The obstacle: checked deletion only sees core
 
@@ -251,8 +253,10 @@ which is exactly what gets rejected if the guarantee has been dropped.
 
 ## Measurements
 
-Checker is `veripb-dev` at MR !217; quote the checker commit alongside any
-checking time, since the version string does not distinguish builds. "before"
+Checker is `veripb-dev` at MR !217 (chosen so the blanket and narrow tables
+below are comparable, not because these proofs need it); quote the checker
+commit alongside any checking time, since the version string does not
+distinguish builds. "before"
 is `d3c9e58b`; "after" is this branch. Each pair is timed *alternately* ---
 before, after, before, after --- so machine drift lands on both sides equally.
 Five runs each except `frequency_square`, which is four.
