@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_DISJUNCTIVE_DISJUNCTIVE_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/innards/disjunctive_mutations.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
@@ -15,6 +16,31 @@
 
 namespace gcs
 {
+    /**
+     * \brief Which of Disjunctive's propagation rules are enabled.
+     *
+     * Both are on by default. Turning one off weakens propagation but never
+     * changes the solutions found, and never changes the OPB encoding: these
+     * select propagation strength only, and exist so that a test can attribute
+     * an inference to the rule that made it (and so that a fixture can show a
+     * rule is load-bearing by watching the other one fail to make its
+     * inference).
+     *
+     * \ingroup Constraints
+     */
+    struct DisjunctiveRules
+    {
+        /// Time-table: the mandatory-part load profile, its overflow
+        /// contradiction and the bound pushes away from blocked times.
+        bool time_table = true;
+
+        /// Detectable precedences: a pair whose ordering is forced by bounds
+        /// alone pushes the successor's lower bound up to the predecessor's
+        /// earliest end, and the predecessor's upper bound down to the
+        /// successor's latest start less its own duration.
+        bool detectable_precedences = true;
+    };
+
     /**
      * \brief Disjunctive (1D non-overlap) constraint: tasks with variable
      * origins; the durations may each be variables or constants (constants pass
@@ -42,8 +68,11 @@ namespace gcs
      * Propagation is time-table consistent at heights = 1, capacity = 1:
      * mandatory parts of distinct tasks may not overlap, and each task's
      * bounds are pushed away from time points already mandatorily occupied
-     * by another. Stronger reasoning (edge-finding, not-first / not-last)
-     * is left for future work.
+     * by another. On top of that, <em>detectable precedences</em> order the
+     * pairs whose ordering the bounds already force &mdash; which needs no
+     * mandatory part on either task, so it prunes where time-tabling cannot.
+     * Stronger reasoning (an overload check, not-first / not-last,
+     * edge-finding) is left for future work.
      *
      * \ingroup Constraints
      */
@@ -83,6 +112,9 @@ namespace gcs
         std::vector<std::uint8_t> _zero_escape;
         std::vector<std::optional<innards::ProofFlag>> _zero;
 
+        DisjunctiveRules _rules;
+        innards::DisjunctiveProofMutation _proof_mutation = innards::disjunctive_proof_mutation::None{};
+
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
@@ -104,6 +136,16 @@ namespace gcs
         /// not overlap); default true. Takes std::optional<bool> so a runtime flag
         /// can be passed straight through.
         auto with_strict(std::optional<bool> strict = true) -> Disjunctive &;
+
+        /// Select which propagation rules are enabled (all of them, by
+        /// default). Propagation strength only: the solutions found and the OPB
+        /// encoding are the same whatever is selected.
+        auto with_rules(DisjunctiveRules rules) -> Disjunctive &;
+
+        /// Corrupt one step of the detectable-precedence derivation. For tests
+        /// only, which assert that VeriPB rejects the result; see
+        /// innards::DisjunctiveProofMutation.
+        auto with_proof_mutation(innards::DisjunctiveProofMutation mutation) -> Disjunctive &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;

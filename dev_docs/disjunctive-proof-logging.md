@@ -1,17 +1,18 @@
 # Proof logging for `Disjunctive`
 
 This document explains how the `Disjunctive` propagator's proofs are
-backed by VeriPB. The propagator is time-table consistency specialised
-to `h_i = 1`, `capacity = 1`
+backed by VeriPB. The propagator runs time-table consistency
+specialised to `h_i = 1`, `capacity = 1`
 (see [`cumulative-proof-logging.md`](cumulative-proof-logging.md) for
-the general time-table proof machinery), but the *proofs* do not use
-the time-indexed vocabulary at all: at unit heights and capacity,
-every inference the propagator makes is a statement about one **pair**
-of tasks, and is justified directly against the declarative pairwise
-OPB encoding. There is no per-(task, time) scaffolding anywhere — no
-flags, no proof-only variables, no prefix emitted before search (a
-previous design bridged to cumulative-style time-indexed flags at
-`O(n × horizon)` cost; #495 has the measurements from removing it).
+the general time-table proof machinery) plus **detectable
+precedences**, but the *proofs* do not use the time-indexed vocabulary
+at all: at unit heights and capacity, every inference the propagator
+makes is a statement about one **pair** of tasks, and is justified
+directly against the declarative pairwise OPB encoding. There is no
+per-(task, time) scaffolding anywhere — no flags, no proof-only
+variables, no prefix emitted before search (a previous design bridged
+to cumulative-style time-indexed flags at `O(n × horizon)` cost; #495
+has the measurements from removing it).
 
 For the constraint itself — semantics, propagator, the strict / non-strict
 flag — read `gcs/constraints/disjunctive/disjunctive.{hh,cc}`.
@@ -96,7 +97,7 @@ encoding maximum) degrade gracefully: `need_gevar` emits trivial
 halves and pins the boundary atom at `ProofLevel::Top`, so the same
 uniform pol works at domain edges and on domain-wiping pushes.
 
-## The three inferences
+## The four inferences
 
 - **Mandatory-overflow contradiction.** Two tasks `i`, `j` whose
   mandatory parts overlap at some time. Then neither can finish
@@ -140,6 +141,81 @@ Blocker selection is greedy (deepest mandatory end for an lb-push,
 leftmost mandatory start for a ub-push); every non-fitting start is
 blocked, so a blocker always exists while the chain has ground to
 cover, and each step strictly advances.
+
+- **Detectable precedences** (issue #731, step 2 of #729). The
+  precedence `k ≪ j` is *detectable* when `j` cannot finish before
+  `k` starts on bounds alone, `lb(s_j) + lb(l_j) > ub(s_k)`. Then
+  `before_{j,k}` is false, the separation clause forces
+  `before_{k,j}`, and reading that both ways round gives
+
+  ```
+  s_j ≥ lb(s_k) + lb(l_k)      pushing the successor up
+  s_k ≤ ub(s_j) − lb(l_k)      pushing the predecessor down
+  ```
+
+  Each detected precedence justifies its own push, so a push cites
+  only the *best* detected predecessor (latest earliest-end) or
+  successor (earliest latest-start): no set, and no chain. Vilím's
+  O(n log n) form keeps the detected predecessors in a Θ-tree and
+  pushes to the whole set's earliest completion time, which is
+  stronger and needs an energy argument (see the follow-ups).
+
+  **The proof is exactly one step of the push chain above**, with
+  `final = true` and no deposit: one pol refuting the reverse
+  precedence from the running bound, one folding the surviving
+  precedence onto the target order literal. Nothing new was needed
+  for it, which is the point — the detection condition
+  `lb(s_j) + lb(l_j) > ub(s_k)` is *precisely* the condition under
+  which the refuting pol's degree comes out positive, and it is also
+  the condition a chain step's blocker satisfies. Where the two rules
+  differ is only in what the propagator has to notice: a chain step's
+  blocker is found by scanning the profile, so it must have a
+  non-empty mandatory part, while the pol arithmetic never cared
+  whether it did. A detected predecessor with an empty mandatory part
+  is invisible to time-tabling and prunes here.
+
+  Two guards, both inherited from the pushes above: a task with no
+  guaranteed duration is skipped (there is no positive `lb(l)` to pin
+  its zero-length escape false with), and so is a task whose start is
+  already fixed. The second loses nothing: a precedence detected
+  between a fixed task and an unfixed one is the same precedence read
+  the other way round, so it pushes the unfixed one and fails there
+  if it must, and two fixed tasks that collide both have mandatory
+  parts, which is the overflow contradiction.
+
+  Each push writes one `%` comment naming the pair and the direction,
+  which is what lets a test count what fired rather than only that the
+  rule compiled. It is also the only thing this rule adds to a proof
+  beyond its two pols: a 2 GB RCPSP proof over a unary machine carried
+  982,065 of them, about 2% of the file, alongside the per-node
+  comments every proof already writes.
+
+### Rule selection, and what always runs
+
+`DisjunctiveRules` switches time-tabling's pushes and detectable
+precedences on and off independently (both default on). It selects
+propagation strength only: same solutions, same OPB.
+
+The **mandatory-overlap contradiction is not switchable**. At an
+all-fixed leaf every task's mandatory part is its whole active
+interval, so that scan is what makes the propagator a *checker*; a
+selection that stopped it running would not be weaker propagation but
+a solver reporting assignments that violate the constraint.
+`disjunctive_precedences_test` enumerates its fixture under
+`{time_table = false}` for exactly this reason — the extra solutions
+would show up there.
+
+### Which of the two pols is load-bearing
+
+Both are emitted, and on some instances either one alone suffices:
+the closing RUP can sometimes get the other's content by unit
+propagation over the operands' bit encodings. That depends on the
+particular arithmetic, not on the rule, and the propagator cannot
+cheaply tell which case it is in — so it always emits both, as the
+push chains do. The mutation lanes therefore run on a fixture where
+each half is needed (`disjunctive_precedences_test`'s `tight`), which
+is not the fixture that best *demonstrates* the rule; a fixture
+chosen for one job does not do the other, and both are in the test.
 
 ### Variable durations
 
@@ -234,6 +310,26 @@ proof *strategy* along with its parameters.
 
 ## Open follow-ups
 
+The standard suite's remaining rungs are tracked by #729. What each
+would take from *this* encoding:
+
+- **The set-based form of detectable precedences.** The rule above
+  pushes to `max_k eet_k` over the detected predecessors; Vilím's
+  pushes to `ect(Ω)`, the *set's* earliest completion time, which is
+  larger when the predecessors cannot all fit before it. That is an
+  energy statement about a set, so it is the same obstacle as the
+  overload check below, not a variation on the pairwise proof.
+- **An overload check** (#730). The conclusion,
+  `Σ_{i∈Ω} p_i > lct(Ω) − est(Ω)`, is already in this document's
+  vocabulary; the derivation is the problem, and giving `Disjunctive`
+  per-time `active_{i,t}` flags to reach it would reintroduce exactly
+  the scaffolding #495 removed. #730 records a machine-checked
+  construction that avoids them — a proof-only comparator network over
+  bit-encoded wires — verified for `k = 3 … 8` at equal durations, and
+  a refutation rather than a propagator so far.
+- **Not-first / not-last, and edge-finding** (#732, #733). The first
+  genuinely set-based *pruning* rules, and they need whatever the
+  overload check settles on first.
 - **Optional tasks (`*_opt`).** A presence flag per task gates the
   encoded pairwise clauses; the pairwise pols would carry the
   presence literals as extra residuals.
