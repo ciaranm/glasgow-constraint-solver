@@ -160,9 +160,11 @@ namespace
     /// here. Its published results came from the shipped line, so the ternary
     /// covers here are not the ones its numbers were produced from. They are
     /// never *shorter* covers, which is not the same as never worse cuts: what
-    /// a cover lifts to is sequence-dependent, and the visited-cover rule in
-    /// `run` lets a higher-ranked cover suppress better ones, so the corrected
-    /// line loses bound on nine Pack instances. Issue #726, and the writeup.
+    /// a cover lifts to is sequence-dependent. While `run` still had the
+    /// visited-cover rule, a higher-ranked cover suppressed better ones and
+    /// this corrected line cost bound on nine Pack instances as a result; with
+    /// that rule gone (#726) every cover is lifted and the choice of
+    /// representative no longer decides which get a chance. See the writeup.
     [[nodiscard]] auto collect_covers(const vector<Task> & tasks, const vector<Integer> & demands, Integer capacity, size_t max_covers,
         size_t cover_cardinality) -> vector<vector<size_t>>
     {
@@ -264,8 +266,9 @@ namespace
 
         // Covers of more than three tasks go first, as they do in the reference
         // implementation: they are the ones the short-cover families cannot
-        // produce, and the visited-cover skip would otherwise let a ternary
-        // cover's lifted support swallow them.
+        // produce. With the visited-cover rule gone (#726) this no longer
+        // decides whether they are lifted at all, only the order, which still
+        // matters where `_max_lifting_calls` runs out.
         std::stable_sort(
             covers.begin(), covers.end(), [](const vector<size_t> & a, const vector<size_t> & b) { return (a.size() > 3) && (b.size() <= 3); });
 
@@ -483,9 +486,9 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
 
     // One pass over every posted Cumulative rather than one pass each, because
     // Equation 4's lifting subproblem is over all of them at once. Everything
-    // downstream --- the cover budget, the visited rule, the subproblem budget,
-    // and how many constraints are posted --- is then global, which is what the
-    // reference implementation does with its single matrix.
+    // downstream --- the cover budget, the subproblem budget, and how many
+    // constraints are posted --- is then global, which is what the reference
+    // implementation does with its single matrix.
     vector<Donor> donors;
     vector<Task> tasks;
     map<pair<IntegerVariableID, IntegerVariableID>, size_t> task_of;
@@ -638,41 +641,29 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 covers.push_back(pooled[i]);
     }
 
-    // Algorithm 2: lift each cover, skipping any whose support a previous
-    // lifting already established, and keeping the best `_max_posted` by
-    // capacity bound. Nothing here asks whether a constraint can be *proved* ---
-    // that comes after, so the gap between what the published method infers and
-    // what we can certify is a number rather than a design decision.
+    // Algorithm 2: lift every cover, and keep the best `_max_posted` by capacity
+    // bound. Nothing here asks whether a constraint can be *proved* --- that
+    // comes after, so the gap between what the published method infers and what
+    // we can certify is a number rather than a design decision.
+    //
+    // The paper's Example 12 skips a cover already inside the support of
+    // something lifted earlier, on the grounds that lifting it again re-derives
+    // the same constraint. **It does not.** Lifting is sequence-dependent (see
+    // `lift_cover`), so a contained cover starts its own sequence and can reach
+    // a strictly stronger cut; a cover ranking higher on `sum d_i / (|C| - 1)`
+    // then suppresses every better cover its own lifted support happens to
+    // contain. Measured over Pack and Pack-d, the rule cost bound on 21 of the
+    // 110 instances and was the whole of what used to be a nine-instance
+    // shortfall against the published `L`. The reference implementation has the
+    // identical rule and escapes it only by accident, through the
+    // `inv_A_longest` bug `collect_covers` documents. Removed in #726; the cost
+    // is roughly five times the lifting subproblems, which stays well inside
+    // `_max_lifting_calls`.
     vector<Cut> cuts;
-    vector<pair<set<size_t>, size_t>> visited;
     auto calls_left = _max_lifting_calls;
 
     for (const auto & cover : covers) {
         bump(&InferredCumulativeStats::covers_considered);
-
-        // Example 12: a cover already inside the support of something lifted
-        // earlier will re-derive it, so the subproblems are wasted.
-        //
-        // That premise is FALSE, and this rule costs bound. Lifting is
-        // sequence-dependent (see `lift_cover`), so a contained cover starts
-        // its own sequence and can reach a strictly stronger cut; measured, a
-        // higher-ranked cover suppresses better ones on 21 of the 110 Pack and
-        // Pack-d instances, and is the whole of the nine-instance shortfall in
-        // `certified-makespan-bounds.md`. The reference implementation has the
-        // identical rule and escapes it only by accident, through the
-        // `inv_A_longest` bug `collect_covers` documents. Kept for now because
-        // removing it is a change of inferred constraints and wants the
-        // artefact rerun behind it: issue #726.
-        auto already = false;
-        for (const auto & [support, cardinality] : visited)
-            if (cardinality <= cover.size() && std::includes(support.begin(), support.end(), cover.begin(), cover.end())) {
-                already = true;
-                break;
-            }
-        if (already) {
-            bump(&InferredCumulativeStats::dropped_visited);
-            continue;
-        }
 
         if (calls_left == 0)
             break;
@@ -696,12 +687,6 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 support.push_back(i);
         if (support.size() < 2)
             continue;
-
-        set<size_t> unit;
-        for (size_t i = 0; i < tasks.size(); ++i)
-            if (lifted.coefficients[i] == 1_i)
-                unit.insert(i);
-        visited.emplace_back(move(unit), cover.size());
 
         // Dominance: a constraint some model row already implies term by term
         // says nothing new.
