@@ -173,15 +173,24 @@ both collections through all three stages, verifies each honest proof, records
 each `+1`, and checks every bound against a makespan somebody has actually
 achieved.
 
-Rerun on 2026-08-11 against `main` at `83b31a5e`, with VeriPB 3.0.2, which is
-issue #708. The numbers below are that run's, and they supersede the
-single-resource-lifting figures that stood here before.
+Rerun on 2026-08-11 against `main` at `83b31a5e` (issue #708), and again the
+same day with the visited-cover rule removed (issue #726), both with VeriPB
+3.0.2. The numbers below are the second run's.
 
-Over both collections in all three stages — 330 runs, no failures — **107 of the
+Over both collections in all three stages — 330 runs, no failures — **106 of the
 110 instances get a certified bound**, 105 of them beating the critical path, and
-**34 are closed**: the bound equals the best makespan anybody found, so no search
+**43 are closed**: the bound equals the best makespan anybody found, so no search
 is needed at all. Every bound verifies, refuses its own `+1`, and sits at or
 below a schedule that exists.
+
+Against the #708 run, which is the same code but for that rule: nine more
+instances closed, and **none is now short of Sidorov's `L`** where nine were.
+The one instance that moved the wrong way is `pack_d/pack045`, whose certified
+bound went from 2042 to nothing. It is not a certification regression so much as
+a different cut being posted: its `L` is 2216 either way, its critical path is
+2712, so the bound was dominated and unusable before and is absent now. The
+rows on which the derivation does not reach the `L` its cuts carry are otherwise
+*the same twelve* in both runs.
 
 This is the first run in which Pack_d's two lifted stages were executed at all;
 before, that collection had only its capacity-one stage, and five of the largest
@@ -200,37 +209,42 @@ His twelve counts instances whose *unrounded* elastic lower bound improves on
 the previously known lower bound; his own closure test, run over the same
 artefact, gives twenty, and taking the ceiling of the bound — which is the
 integral quantity a solver could actually use — gives thirty-six. Ours counts
-instances whose certified bound *equals the best known makespan*. Thirty-four
+instances whose certified bound *equals the best known makespan*. Forty-three
 against thirty-six is the comparison closest to like-for-like; see
 `~/claude/tmp/sidorov-548/RESUME.md` for the reproduction of all four numbers.
 
-The largest bound is 3614. The median `.pbp` is 62 MB and the largest 3.9 GB
-(`pack_d/pack025`, both stages), which `veripb` checks in 144 s — the slowest
-check in the sweep. The whole 275-proof set verifies in 4058 s of checker time.
+The largest bound is 3614. The median `.pbp` is 77 MB and the largest 4.7 GB
+(`pack_d/pack025`, both stages), which `veripb` checks in 146 s — the slowest
+check in the sweep. The whole 275-proof set verifies in 3877 s of checker time,
+but that figure was measured at lower parallelism than the #708 run's 4058 s
+(three and six jobs against sixteen, because the larger proofs made sixteen
+concurrent checks exhaust memory), so the two are **not** comparable and neither
+is evidence about checking speed. Proof size is, and it barely moved: 135 GB
+across all 330 rows against 138 GB.
 
-Nine instances fall short of Sidorov's `L`, down from twenty-three before
-multi-resource lifting and Pack_d's lifted stages. On every one of them it is
-this presolver's *own* `L` that falls short while the derivation reaches it
-exactly: an inference gap and not a certification one. **All nine have `rhs 2`**,
-which is the remaining shape rather than a scattering — `pack/pack007`, `010`,
-`022`, `024`, `025`, `027`, short by exactly two apiece, and `pack_d/pack004`,
-`023`, `025`, short by twenty-three, fourteen and forty-four.
+**No instance falls short of Sidorov's `L`**, where nine did before #726 and
+twenty-three before multi-resource lifting and Pack_d's lifted stages. Fourteen
+now exceed it. The nine were not an inference gap in the lifting at all: they
+were the visited-cover rule discarding covers that lift to strictly stronger
+cuts, and every one recovered when it went.
 
-That gap has since been diagnosed, and it is not in the lifting: **all nine are
-the visited-cover rule** discarding covers that lift to strictly stronger cuts,
-and removing it recovers every one of them. See issue #726, which also shows the
-rule costs bound on twelve further instances that are *not* short here, because
-they had no published number to fall short of. These figures will move when that
-is settled, and this section is where they have to be re-measured.
+Twelve rows still certify less than the `L` their own cuts carry, and they are
+the same twelve as before: `pack/pack003` and `pack_d/pack003` and `pack_d/pack055`
+on the disjunctive stage, `pack_d/pack002` reaching 212 of 230, and
+`pack_d/pack033`, `035`, `045` and `053` certifying nothing of a four-figure `L`
+on the lifted stages. That is where the next certification work is, and it is a
+different question from the one #726 answered.
 
 The rerun also settles two questions that were open defaults:
 
 - **The lifting-call budget never binds.** `_max_lifting_calls` defaults to
-  20000; over the 220 runs that solve any lifting subproblem at all, the most any
-  instance uses is **1159**, and the ninetieth percentile is 877. So the budgeted
-  direction of issue #703 — spending the budget on covers Sidorov's early stop
-  would have abandoned — costs nothing on these collections, because the budget
-  is not what stops us.
+  20000; over the runs that solve any lifting subproblem at all, the most any
+  instance uses is **3361**, and the ninetieth percentile is 3111. (Before #726
+  removed the visited-cover rule those were 1159 and 877; lifting every cover
+  costs about five times the subproblems, and still does not approach the
+  budget.) So the budgeted direction of issue #703 — spending the budget on
+  covers Sidorov's early stop would have abandoned — costs nothing on these
+  collections, because the budget is not what stops us.
 - **Two-member cliques are not worth posting here.** With
   `with_minimum_clique_size(2)`, over Pack in both disjunctive-bearing stages and
   Pack_d in the capacity-one stage (165 runs), the posted set changes on nine of

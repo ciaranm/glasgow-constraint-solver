@@ -120,11 +120,12 @@ counterpart, and which direction that costs depends on the budget:
   budget on hopeless covers and so possibly end *weaker* than he would.
 
 **Measured on 2026-08-11, and the budgeted half of that concern is empty here.**
-`_max_lifting_calls` defaults to 20000; over the 220 runs of the #708 artefact
-that solve any lifting subproblem at all, the most any instance uses is **1159**,
-with a ninetieth percentile of 877. The budget is not what stops us on Pack or
-Pack_d, so covers his early stop would have abandoned cost us nothing there —
-which leaves only the unbudgeted direction, where lifting them can only help.
+`_max_lifting_calls` defaults to 20000; over the runs of the #672 artefact that
+solve any lifting subproblem at all, the most any instance uses is **3361**, with
+a ninetieth percentile of 3111 — and 1159 and 877 before #726 stopped skipping
+covers. The budget is not what stops us on Pack or Pack_d either way, so covers
+his early stop would have abandoned cost us nothing there — which leaves only
+the unbudgeted direction, where lifting them can only help.
 
 Implementing it verbatim would be wrong: the estimate is an upper bound only
 while the unlifted coefficients stay at most one, which holds at `π₀ = 1` and

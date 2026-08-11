@@ -160,9 +160,11 @@ namespace
     /// here. Its published results came from the shipped line, so the ternary
     /// covers here are not the ones its numbers were produced from. They are
     /// never *shorter* covers, which is not the same as never worse cuts: what
-    /// a cover lifts to is sequence-dependent, and the visited-cover rule in
-    /// `run` lets a higher-ranked cover suppress better ones, so the corrected
-    /// line loses bound on nine Pack instances. Issue #726, and the writeup.
+    /// a cover lifts to is sequence-dependent. While `run` still had the
+    /// visited-cover rule, a higher-ranked cover suppressed better ones and
+    /// this corrected line cost bound on nine Pack instances as a result; with
+    /// that rule gone (#726) every cover is lifted and the choice of
+    /// representative no longer decides which get a chance. See the writeup.
     [[nodiscard]] auto collect_covers(const vector<Task> & tasks, const vector<Integer> & demands, Integer capacity, size_t max_covers,
         size_t cover_cardinality) -> vector<vector<size_t>>
     {
