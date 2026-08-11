@@ -173,15 +173,26 @@ both collections through all three stages, verifies each honest proof, records
 each `+1`, and checks every bound against a makespan somebody has actually
 achieved.
 
-**Every number in this section is stale and none of them may be quoted until the
-artefact has been rerun** (issue #708) — see the note below, which says what has
-changed under them since. They are recorded rather than deleted because what they establish is
-the *shape* of the result, and that has not moved.
+Rerun on 2026-08-11 against `main` at `83b31a5e`, with VeriPB 3.0.2, which is
+issue #708. The numbers below are that run's, and they supersede the
+single-resource-lifting figures that stood here before.
 
-Over the Pack collection in all three stages and Pack_d in the capacity-one
-stage — 227 runs, no failures — 92 of the 110 instances get a certified bound,
-every one of them beating the critical path, and **29 are closed**: the bound
-equals the best makespan anybody found, so no search is needed at all.
+Over both collections in all three stages — 330 runs, no failures — **107 of the
+110 instances get a certified bound**, 105 of them beating the critical path, and
+**34 are closed**: the bound equals the best makespan anybody found, so no search
+is needed at all. Every bound verifies, refuses its own `+1`, and sits at or
+below a schedule that exists.
+
+This is the first run in which Pack_d's two lifted stages were executed at all;
+before, that collection had only its capacity-one stage, and five of the largest
+apparent shortfalls against Sidorov's `L` were that gap rather than an inference
+one.
+
+The comparison baseline is his **CP 2026** artefact — `scheduling.csv` for
+best-known makespans and `scheduling-cuts.csv` for `L`, out of Zenodo
+`10.5281/zenodo.18663551`. He has a corrigendum in preparation with corrected
+figures of his own, so any side-by-side against a *later* set of his numbers is a
+separate exercise and should say which of his runs it used.
 
 The paper's §5.1 claims "no less than twelve", and the two numbers are **not
 measuring the same thing**, so do not put them side by side without saying so.
@@ -189,44 +200,47 @@ His twelve counts instances whose *unrounded* elastic lower bound improves on
 the previously known lower bound; his own closure test, run over the same
 artefact, gives twenty, and taking the ceiling of the bound — which is the
 integral quantity a solver could actually use — gives thirty-six. Ours counts
-instances whose certified bound *equals the best known makespan*. Twenty-nine
-against thirty-six is the comparison closest to like-for-like, and it is a
-comparison of two different collections' worth of stages at that; see
+instances whose certified bound *equals the best known makespan*. Thirty-four
+against thirty-six is the comparison closest to like-for-like; see
 `~/claude/tmp/sidorov-548/RESUME.md` for the reproduction of all four numbers.
 
-The largest is 3050; the median
-`.pbp` is 28 MB and the largest 504 MB, and `veripb` took 45 s on that one *at
-the time* --- see the note below, which the checking figure needs even more than
-the bounds do.
+The largest bound is 3614. The median `.pbp` is 62 MB and the largest 3.9 GB
+(`pack_d/pack025`, both stages), which `veripb` checks in 144 s — the slowest
+check in the sweep. The whole 275-proof set verifies in 4058 s of checker time.
 
-Some instances fall short of Sidorov's `L`, and on every one of them it is this
-presolver's *own* `L` that falls short while the derivation reaches it exactly:
-an inference gap and not a certification one. Most of the apparent gap is not
-even that — five of the largest shortfalls are Pack_d instances whose lifted
-stages were never run, and are compute rather than code. What is left, once the
-lifting stage has actually run, is a handful of instances short by two to four,
-and it was the measurement that motivated lifting over every resource rather
-than one, which the presolver now does; four of those instances have an `L` equal
-to their best known makespan, so closing the gap closes them.
+Nine instances fall short of Sidorov's `L`, down from twenty-three before
+multi-resource lifting and Pack_d's lifted stages. On every one of them it is
+this presolver's *own* `L` that falls short while the derivation reaches it
+exactly: an inference gap and not a certification one. **All nine have `rhs 2`**,
+which is the remaining shape rather than a scattering — `pack/pack007`, `010`,
+`022`, `024`, `025`, `027`, short by exactly two apiece, and `pack_d/pack004`,
+`023`, `025`, short by twenty-three, fourteen and forty-four.
 
-**These numbers predate that change and have not been rerun.** They are the
-single-resource lifting's, and the artefact's `run.bash` is what regenerates
-them.
+The rerun also settles two questions that were open defaults:
 
-Three later changes move them again, all in the direction of a better `L`:
-lifting now orders the remaining tasks by the duration they are guaranteed to
-occupy rather than by a variable's identity (which agrees on these instances,
-whose durations are all constants, but the ordering was not what it claimed);
-the candidate pairs the clique search grows are the best by bound rather than
-the first by scan order, which forty of the hundred and ten instances have
-enough conflicting pairs to notice; and a clique one posted capacity-one
-resource already contains is no longer posted, nor its bound reported. The
-twenty cross-check targets still match exactly under all three.
+- **The lifting-call budget never binds.** `_max_lifting_calls` defaults to
+  20000; over the 220 runs that solve any lifting subproblem at all, the most any
+  instance uses is **1159**, and the ninetieth percentile is 877. So the budgeted
+  direction of issue #703 — spending the budget on covers Sidorov's early stop
+  would have abandoned — costs nothing on these collections, because the budget
+  is not what stops us.
+- **Two-member cliques are not worth posting here.** With
+  `with_minimum_clique_size(2)`, over Pack in both disjunctive-bearing stages and
+  Pack_d in the capacity-one stage (165 runs), the posted set changes on nine of
+  them — one clique becomes five, three or four members become eleven or twelve —
+  and **the certified bound changes on none**. Exactly one `L` improves, and it
+  is `pack_d/pack003`, from 7 to 210 against a critical path of 406, so even the
+  improved value says nothing the model does not already imply. Issue #707's
+  default of three stands, measured rather than assumed. Not run, and so not
+  claimed: the arm over Pack_d's `both` stage.
 
-The *checking times* above are staler still, and for a second reason: hinting the
-replay's RUPs made verification six to fourteen times faster on exactly these
-certificates (see [inferred-cumulative.md](inferred-cumulative.md)), so the 45 s
-is an upper bound on an upper bound. Rerunning the artefact fixes both at once.
+Hinting the replay's RUPs (#681) is visible directly: over the 143 Pack rows
+present in both the old and new sweeps, at the same parallelism, checker time
+falls from **772 s to 94 s — 8.2x** — and the slowest single check falls from
+45 s to 2.4 s, inside the six-to-fourteen range that change predicted. Proof
+*size* went the other way, 3.5 GB to 5.0 GB over the same rows, which is
+multi-resource lifting posting more inference rather than the replay costing
+anything.
 
 Note the makespan rows have to be there to be cited: `--variant=global` puts the
 whole temporal network into one `DifferenceConstraints` propagator, so there is

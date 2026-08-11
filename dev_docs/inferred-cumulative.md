@@ -110,11 +110,24 @@ counterpart, and which direction that costs depends on the budget:
 - **Under a call budget**, which is what our default has, it makes us spend
   budget on hopeless covers and so possibly end *weaker* than he would.
 
+**Measured on 2026-08-11, and the budgeted half of that concern is empty here.**
+`_max_lifting_calls` defaults to 20000; over the 220 runs of the #708 artefact
+that solve any lifting subproblem at all, the most any instance uses is **1159**,
+with a ninetieth percentile of 877. The budget is not what stops us on Pack or
+Pack_d, so covers his early stop would have abandoned cost us nothing there —
+which leaves only the unbudgeted direction, where lifting them can only help.
+
 Implementing it verbatim would be wrong: the estimate is an upper bound only
 while the unlifted coefficients stay at most one, which holds at `π₀ = 1` and
-not in general — `lhs[next] = rhs - v*` can reach `rhs`. So a correctly gated
-version is issue #703 rather than a line to copy, and the paper is silent on the
-rule, which is why nothing here has resolved the mismatch in either direction.
+not in general — `lhs[next] = rhs - v*` can reach `rhs`. Crediting each unlifted
+task its full `d_i` rather than `d_i / rhs` restores the bound at any `π₀`, is
+strictly more conservative, and is identical to the current rule at `rhs == 1`.
+So a correctly gated version is issue #703 rather than a line to copy. The paper
+is silent on the rule; Sidorov has confirmed it is real, that he introduced it
+during the response-to-reviewers phase so it was in force for the Appendix C
+experiments, and that he intends to keep it — documenting it rather than
+pretending the published results came without it, and correcting the coefficient
+bound in his own code for v2.
 
 ### Zero-demand cover members
 
