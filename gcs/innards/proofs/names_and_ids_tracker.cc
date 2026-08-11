@@ -424,7 +424,6 @@ auto NamesAndIDsTracker::switch_from_model_to_proof(ProofLogger * const logger) 
 
 auto NamesAndIDsTracker::emit_delayed_proof_steps() -> void
 {
-    DefinitionRecordingScope definitions{_imp->logger};
     for (const auto & step : _imp->delayed_proof_steps)
         step(_imp->logger);
     _imp->delayed_proof_steps.clear();
@@ -448,7 +447,6 @@ auto NamesAndIDsTracker::track_variable_takes_at_least_one_value(const SimpleOrP
 
 auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
 {
-    DefinitionRecordingScope definitions{_imp->logger};
     return overloaded{
         [&](const ConstantIntegerVariableID &) -> ProofLine { throw UnimplementedException{}; }, //
         [&](const SimpleIntegerVariableID & var) -> ProofLine {
@@ -501,6 +499,64 @@ auto NamesAndIDsTracker::boundary_pin_line(const SimpleOrProofOnlyIntegerVariabl
     if (pin == atoms->ge_pins.end())
         return nullopt;
     return pin->second;
+}
+
+auto NamesAndIDsTracker::definition_lines_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond, vector<ProofLine> & out) const
+    -> void
+{
+    const auto * atoms = _imp->find_atoms(cond.var);
+    if (! atoms)
+        return;
+
+    // An atom whose defs hold a literal rather than a line is an alias for an
+    // order literal (the compact boolean encoding at a bound): there is no line
+    // of its own to cite, and what grounds it is that order atom's definition.
+    auto add = [&](const AtomDefs & defs) {
+        if (const auto * line = std::get_if<ProofLine>(&defs.first))
+            out.push_back(*line);
+        if (const auto * line = std::get_if<ProofLine>(&defs.second))
+            out.push_back(*line);
+    };
+
+    auto add_ge = [&](Integer v) {
+        if (auto d = atoms->ge_defs.find(v.raw_value); d != atoms->ge_defs.end())
+            add(d->second);
+        // A cut outside the declared bounds is settled by its pin rather than by
+        // the bits, so the pin has to travel with it.
+        if (auto pin = atoms->ge_pins.find(v.raw_value); pin != atoms->ge_pins.end())
+            out.push_back(pin->second);
+    };
+
+    auto add_eq = [&](Integer v) {
+        if (auto d = atoms->eq_defs.find(v.raw_value); d != atoms->eq_defs.end())
+            add(d->second);
+        add_ge(v);
+        add_ge(v + 1_i);
+    };
+
+    switch (cond.op) {
+        using enum VariableConditionOperator;
+    case GreaterEqual:
+    case Less: add_ge(cond.value); break;
+    case Equal:
+    case NotEqual: add_eq(cond.value); break;
+    case InRange:
+    case NotInRange:
+        // need_invar hands a width-1 interval back as the eq atom rather than
+        // giving it a literal of its own, so ask for it under that name.
+        if (cond.value == cond.upper_value)
+            add_eq(cond.value);
+        else {
+            if (auto by_var = _imp->invars_that_exist.find(cond.var); by_var != _imp->invars_that_exist.end())
+                if (auto d = by_var->second.find(pair{cond.value, cond.upper_value}); d != by_var->second.end()) {
+                    out.push_back(d->second.first);
+                    out.push_back(d->second.second);
+                }
+            add_ge(cond.value);
+            add_ge(cond.upper_value + 1_i);
+        }
+        break;
+    }
 }
 
 auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, XLiteral>
@@ -718,8 +774,6 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     if (_imp->find_condition(id == v))
         return;
 
-    DefinitionRecordingScope definitions{_imp->logger};
-
     auto eqvar = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, v);
     _imp->store_condition(id == v, eqvar);
 
@@ -905,8 +959,6 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
 {
     if (_imp->find_condition(id >= v))
         return;
-
-    DefinitionRecordingScope definitions{_imp->logger};
 
     auto gevar = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::GreaterEqual, v);
     _imp->store_condition(id >= v, gevar);
@@ -1371,8 +1423,6 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
 {
     if (lo > hi)
         return FalseLiteral{};
-
-    DefinitionRecordingScope definitions{_imp->logger};
 
     if (lo == hi) {
         need_direct_encoding_for(id, lo);

@@ -323,6 +323,35 @@ namespace gcs::innards
         [[nodiscard]] auto boundary_pin_line(const SimpleOrProofOnlyIntegerVariableID & id, Integer v) const -> std::optional<ProofLine>;
 
         /**
+         * \brief Append the lines defining this condition's atom, and the atoms
+         * that definition is stated over, to \c out.
+         *
+         * VeriPB re-derives a checked deletion from the core set alone
+         * (`DeletionChecker::compute` sets `only_core`), so an atom mentioned by
+         * a constraint that takes part in one has to have its definition there
+         * too, or nothing propagates and the goal fails. This says which lines
+         * those are, so a caller can move exactly them and no more.
+         *
+         * An order atom is reified directly over the variable's bits, which are
+         * formula variables and core already, so it needs only its own two
+         * halves. An eq atom is reified over its two order cuts, and a range
+         * literal over the cuts at its endpoints, so both drag those cuts'
+         * definitions in behind them. Nothing else is required --- in
+         * particular not the order chain linking neighbouring cuts, since the
+         * bits pin each cut on its own, nor the at-least-one and covering
+         * constraints.
+         *
+         * Contributes nothing for an atom that does not exist, or that has no
+         * definition to cite: one aliased to an order literal by the compact
+         * boolean encoding is grounded by that literal's definition, which is
+         * collected anyway, and assertion levels above
+         * \c AssertionLevel::Definitions omit the definitions entirely. Lines
+         * the model wrote are reported like any other; it is for the caller to
+         * notice that the OPB is already core.
+         */
+        auto definition_lines_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond, std::vector<ProofLine> & out) const -> void;
+
+        /**
          * Set things up internally as if the specified variable was a real
          * variable, so that proof_name() etc will work with it.
          */

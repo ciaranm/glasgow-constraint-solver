@@ -69,15 +69,19 @@ namespace gcs::innards
         auto discard_superseded_objective_constraints() -> void;
 
         /**
-         * Move the given already-emitted lines into the core set.
+         * Move the given already-emitted lines into the core set, in batches, so
+         * that moving a lot of them at once does not write a line megabytes wide.
+         * Lines the model wrote are skipped, the OPB being core already, as are
+         * lines already moved.
          */
         auto move_to_core(const std::vector<ProofLine> &) -> void;
 
         /**
-         * Move every definition recorded since the last call into the core set,
-         * as one `core id` step per batch. See \ref begin_recording_definitions.
+         * Move the definitions of the atoms these literals are written in into
+         * the core set, so that a checked deletion discharged by a constraint
+         * over them can propagate. See \ref NamesAndIDsTracker::definition_lines_for.
          */
-        auto promote_definitions_to_core() -> void;
+        auto move_definitions_to_core(const std::vector<Literal> & literals) -> void;
 
         /**
          * Record a solution's blocking constraint at the proof level of the
@@ -86,11 +90,12 @@ namespace gcs::innards
         auto record_solution_constraint(ProofLineNumber line) -> void;
 
         /**
-         * Having just emitted the given backtrack clause, move it to core if the
-         * level this frame is about to forget holds any core constraints, whose
-         * deletion is then checked against it. See \ref backtrack.
+         * Having just emitted the given backtrack clause over the given guesses,
+         * move it, and the definitions of the atoms the guesses are written in,
+         * to core --- if the level this frame is about to forget holds any core
+         * constraints, whose deletion is then checked against it. See \ref backtrack.
          */
-        auto discharge_solution_constraints(const ProofLine & backtrack_clause) -> void;
+        auto discharge_solution_constraints(const ProofLine & backtrack_clause, const std::vector<Literal> & guesses) -> void;
 
     public:
         /**
@@ -129,7 +134,9 @@ namespace gcs::innards
          * this also moves the backtrack clause into the core set if the level
          * about to be forgotten holds solution blocking constraints (or a
          * descendant's clause promoted for the same reason), since deleting
-         * those is checked and this clause is what subsumes them.
+         * those is checked and this clause is what subsumes them --- along with
+         * the definitions of the atoms the guesses are written in, without which
+         * the check cannot get from the deleted constraint's bits to them.
          */
         auto backtrack(const std::vector<Literal> & guesses) -> void;
 
@@ -147,30 +154,6 @@ namespace gcs::innards
          * when restarts are enabled.
          */
         auto disable_solution_deletion() -> void;
-
-        /**
-         * \brief Start recording the proof lines emitted at \c ProofLevel::Top
-         * as *definitional* --- part of what a variable's proof atoms mean,
-         * rather than something inferred about the problem.
-         *
-         * VeriPB checks a deletion from the core set by asking for the deleted
-         * constraint to be re-derivable from the rest of core *alone*: derived
-         * constraints are invisible to that check. Deleting a solution's
-         * blocking constraint, which is over the preserved bits, therefore needs
-         * everything linking those bits to the order and direct encoding atoms
-         * the backtrack clause is written in --- and those definitions are
-         * introduced lazily, in the proof, so they are derived. Lines recorded
-         * inside this scope are batched up and moved to core the first time a
-         * deletion needs them.
-         *
-         * Prefer \ref DefinitionRecordingScope to calling this directly. Nests.
-         */
-        auto begin_recording_definitions() -> void;
-
-        /**
-         * Counterpart to \ref begin_recording_definitions.
-         */
-        auto end_recording_definitions() -> void;
 
         /**
          * Derive a learned nogood --- the clause forbidding the given conjunction
@@ -468,32 +451,6 @@ namespace gcs::innards
          * instead of fully justified.
          */
         auto get_assertion_level() -> AssertionLevel;
-    };
-
-    /**
-     * Scoped form of ProofLogger::begin_recording_definitions, tolerating a null
-     * logger so a caller that also runs without proofs need not test first.
-     */
-    class DefinitionRecordingScope
-    {
-    private:
-        ProofLogger * _logger;
-
-    public:
-        explicit DefinitionRecordingScope(ProofLogger * const logger) : _logger(logger)
-        {
-            if (_logger)
-                _logger->begin_recording_definitions();
-        }
-
-        ~DefinitionRecordingScope()
-        {
-            if (_logger)
-                _logger->end_recording_definitions();
-        }
-
-        DefinitionRecordingScope(const DefinitionRecordingScope &) = delete;
-        auto operator=(const DefinitionRecordingScope &) -> DefinitionRecordingScope & = delete;
     };
 }
 

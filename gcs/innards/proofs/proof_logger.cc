@@ -22,6 +22,7 @@
 #include <deque>
 #include <fstream>
 #include <optional>
+#include <set>
 #include <sstream>
 
 #include <variant>
@@ -59,6 +60,7 @@ using std::tuple;
 using std::variant;
 using std::vector;
 using std::visit;
+using std::ranges::sort;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -202,16 +204,19 @@ struct ProofLogger::Imp
     // backtrack clause refuting the subtree it was found in.
     //
     // deleting_solution_constraints gates the whole thing;
-    // definitions_awaiting_core collects the encoding definitions a checked
-    // deletion will need to see in core (see begin_recording_definitions); and
-    // core_lines_by_level mirrors proof_lines_by_level for just the lines that
-    // are in core, so a backtrack can tell whether the level it is about to
-    // forget holds any, and its own clause therefore has to go to core to
-    // discharge their deletion.
+    // definitions_in_core remembers which atom definitions have been moved to
+    // core already, since a branch atom recurs all the way down a path and
+    // across the search (see move_to_core); and core_lines_by_level mirrors
+    // proof_lines_by_level for just the lines that are in core, so a backtrack
+    // can tell whether the level it is about to forget holds any, and its own
+    // clause therefore has to go to core to discharge their deletion.
     bool deleting_solution_constraints = true;
-    unsigned long long recording_definitions = 0;
-    vector<long long> definitions_awaiting_core;
+    std::set<long long> definitions_in_core;
     deque<IntervalSet<long long>> core_lines_by_level;
+
+    // The last line number the model wrote. Everything at or below it is in the
+    // OPB, and so is core without being asked.
+    long long last_model_line = 0;
 
     string proof_file;
     fstream proof;
@@ -406,50 +411,70 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
     auto clause = emit_under_reason(
         assert_or_rup, WPBSum{} >= 1_i, ProofLevel::Current, guesses_as_reason, AssertionAnnotation{.hint_name = hints::Backtrack::hint_name});
-    discharge_solution_constraints(clause);
+    discharge_solution_constraints(clause, guesses);
 }
 
 auto ProofLogger::disable_solution_deletion() -> void
 {
     _imp->deleting_solution_constraints = false;
-    _imp->definitions_awaiting_core.clear();
-}
-
-auto ProofLogger::begin_recording_definitions() -> void
-{
-    ++_imp->recording_definitions;
-}
-
-auto ProofLogger::end_recording_definitions() -> void
-{
-    --_imp->recording_definitions;
+    _imp->definitions_in_core.clear();
 }
 
 auto ProofLogger::move_to_core(const vector<ProofLine> & lines) -> void
 {
-    if (lines.empty())
-        return;
-
-    write_indent();
-    _imp->proof << "core id";
+    // A model line is core already, and a line moved once stays moved, so this
+    // is what actually has to be said.
+    vector<long long> to_move;
     for (const auto & line : lines)
-        _imp->proof << " " << relative_proof_line(line, _imp->proof_line.number);
-    _imp->proof << ";\n";
-}
+        if (const auto * n = std::get_if<ProofLineNumber>(&line))
+            if (n->number > _imp->last_model_line && _imp->definitions_in_core.insert(n->number).second)
+                to_move.push_back(n->number);
+    sort(to_move);
 
-auto ProofLogger::promote_definitions_to_core() -> void
-{
-    // One `core id` step can take a list, and the first batch can be most of the
-    // encoding, so chunk it rather than writing a line megabytes wide.
+    // One `core id` step takes a list, but a batch can run to thousands of
+    // definitions, so chunk it rather than writing a line megabytes wide.
     const std::size_t per_line = 128;
-    for (std::size_t start = 0; start < _imp->definitions_awaiting_core.size(); start += per_line) {
+    for (std::size_t start = 0; start < to_move.size(); start += per_line) {
         write_indent();
         _imp->proof << "core id";
-        for (auto n = start; n != std::min(start + per_line, _imp->definitions_awaiting_core.size()); ++n)
-            _imp->proof << " " << (_imp->definitions_awaiting_core[n] - _imp->proof_line.number - 1);
+        for (auto n = start; n != std::min(start + per_line, to_move.size()); ++n)
+            _imp->proof << " " << (to_move[n] - _imp->proof_line.number - 1);
         _imp->proof << ";\n";
     }
-    _imp->definitions_awaiting_core.clear();
+}
+
+auto ProofLogger::move_definitions_to_core(const vector<Literal> & literals) -> void
+{
+    vector<ProofLine> lines;
+    for (const auto & literal : literals)
+        overloaded{
+            [&](const TrueLiteral &) {},  //
+            [&](const FalseLiteral &) {}, //
+            [&](const IntegerVariableCondition & cond) {
+                overloaded{
+                    [&](const ConstantIntegerVariableID &) {}, //
+                    [&](const SimpleIntegerVariableID & var) {
+                        names_and_ids_tracker().definition_lines_for({var, cond.op, cond.value, cond.upper_value}, lines);
+                    }, //
+                    [&](const ViewOfIntegerVariableID & var) {
+                        // A registered view's atoms are its own, over BinEnc(V);
+                        // an unregistered one's are the underlying's, and the
+                        // condition has to be deviewed to name them, exactly as
+                        // the line mentioning the atom did when it was written.
+                        if (auto v_id = names_and_ids_tracker().find_view(var))
+                            names_and_ids_tracker().definition_lines_for({*v_id, cond.op, cond.value, cond.upper_value}, lines);
+                        else {
+                            auto deviewed = deview({var, cond.op, cond.value, cond.upper_value});
+                            names_and_ids_tracker().definition_lines_for({deviewed.var, deviewed.op, deviewed.value, deviewed.upper_value}, lines);
+                        }
+                    } //
+                }
+                    .visit(cond.var);
+            } //
+        }
+            .visit(literal);
+
+    move_to_core(lines);
 }
 
 auto ProofLogger::record_solution_constraint(ProofLineNumber line) -> void
@@ -478,7 +503,7 @@ auto ProofLogger::record_solution_constraint(ProofLineNumber line) -> void
     _imp->core_lines_by_level.at(level).insert_at_end(line.number);
 }
 
-auto ProofLogger::discharge_solution_constraints(const ProofLine & backtrack_clause) -> void
+auto ProofLogger::discharge_solution_constraints(const ProofLine & backtrack_clause, const vector<Literal> & guesses) -> void
 {
     if (! _imp->deleting_solution_constraints)
         return;
@@ -492,7 +517,10 @@ auto ProofLogger::discharge_solution_constraints(const ProofLine & backtrack_cla
     if (! below || below->empty())
         return;
 
-    promote_definitions_to_core();
+    // A blocking constraint is over the bits, this clause is over the guesses'
+    // atoms, and the check runs against core alone: without the definitions
+    // joining the two, nothing propagates from one to the other.
+    move_definitions_to_core(guesses);
     move_to_core({backtrack_clause});
     if (cmp_less_equal(_imp->core_lines_by_level.size(), level))
         _imp->core_lines_by_level.resize(level + 1);
@@ -867,16 +895,13 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
     // derived-line numbering is internally consistent; relativisation cancels any
     // difference from cake's count at reference time.
     _imp->proof_line.number += model.number_of_constraints().number;
+    _imp->last_model_line = _imp->proof_line.number;
 }
 
 auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber
 {
     switch (level) {
-    case ProofLevel::Top:
-        _imp->proof_lines_by_level.at(0).insert_at_end(line.number);
-        if (_imp->recording_definitions && _imp->deleting_solution_constraints)
-            _imp->definitions_awaiting_core.push_back(line.number);
-        break;
+    case ProofLevel::Top: _imp->proof_lines_by_level.at(0).insert_at_end(line.number); break;
     case ProofLevel::Current: _imp->proof_lines_by_level.at(_imp->active_proof_level).insert_at_end(line.number); break;
     case ProofLevel::Temporary: _imp->proof_lines_by_level.at(_imp->active_proof_level + 1).insert_at_end(line.number); break;
     }
