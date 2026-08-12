@@ -415,5 +415,18 @@ would take from *this* encoding:
 - **Optional tasks for `Disjunctive2D`.** The 1D form has them
   (#735, above); the 2D 4-way separation clause would take the same
   two disjuncts per pair, but nothing asks for it yet.
+- **A `cake_pb_cp` encoder for the optional form.** The pairwise
+  encoding matches cake's for the non-optional constraint, which is
+  why disjunctive proofs chain-verify, and the optional form differs
+  from it by two literals per separation clause. Until cake has that,
+  `disjunctive_optional` / `disjunctive_strict_optional` are outside
+  the chain, which is what those names are for.
+- **Conditional pruning for an undecided task.** Its own bounds are
+  never pruned, because there is no conditional-bounds store and an
+  unconditional prune would be unsound if the task turns out absent.
+  The same applies to a precedence conditional on a presence, which
+  would need the presence literals *inside* the pols rather than only
+  in the reason. Both are real propagation left on the table, and
+  `Cumulative` leaves the same amount for the same reason.
 
 <!-- vim: set tw=72 spell spelllang=en : -->

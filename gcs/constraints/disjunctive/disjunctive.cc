@@ -710,7 +710,14 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     bound = chain.back().target;
                                 }
                             }
-                            if (logger && chain.empty())
+                            // When nothing fits anywhere, every start in the
+                            // domain is blocked and so a blocker exists at
+                            // cur_lb; an empty chain there is an internal
+                            // inconsistency. Under ClaimOneTooFar a start does
+                            // still fit, and the chain running out is the whole
+                            // point, so the invariant is stated where it holds
+                            // rather than gated on the mutation.
+                            if (logger && chain.empty() && new_lb > cur_ub)
                                 throw UnexpectedException{"Disjunctive: no blocker for a presence falsification"};
 
                             auto justify = [&, j, cur_lb, chain](const ReasonLiterals & reason) -> void {
