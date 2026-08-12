@@ -81,7 +81,7 @@ namespace gcs::innards
         /// The presence argument the donor was posted with at `position`, or
         /// nullopt when the donor is not an optional-task Cumulative. As
         /// posted, not as resolved: install_derived_cumulative puts it through
-        /// cumulative_task_presence, exactly as the donor did, so that the
+        /// task_presence, exactly as the donor did, so that the
         /// reasons this constraint gives carry the presence literal its
         /// donor's active flag was reified on --- and so that a task the donor
         /// dropped as constantly absent is dropped here too.

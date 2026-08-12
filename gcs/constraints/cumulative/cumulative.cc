@@ -131,22 +131,6 @@ auto Cumulative::clone() const -> unique_ptr<Constraint>
     return result;
 }
 
-auto gcs::innards::cumulative_task_presence(const optional<IntegerVariableID> & posted) -> CumulativeTaskPresence
-{
-    if (! posted)
-        return CumulativeTaskPresence{};
-
-    if (! is_constant_variable(*posted))
-        return CumulativeTaskPresence{*posted, false};
-
-    auto value = constant_value_of(*posted);
-    if (value == 1_i)
-        return CumulativeTaskPresence{};
-    if (value == 0_i)
-        return CumulativeTaskPresence{*posted, true};
-    throw InvalidProblemDefinitionException{"Cumulative: presences must be within {0, 1}"};
-}
-
 auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     auto n = _starts.size();
@@ -167,11 +151,11 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     // Resolve each task's presence to the variable that has to appear in its
     // active flag, or nullopt when the task is unconditionally present ---
     // by the same rule anything pinning these flags has to apply, which is why
-    // cumulative_task_presence is shared rather than open-coded here.
+    // task_presence is shared rather than open-coded here.
     _presence.assign(n, std::nullopt);
     vector<bool> never_present(n, false);
     for (size_t i = 0; i < n; ++i) {
-        auto resolved = cumulative_task_presence(_presences.empty() ? std::nullopt : make_optional(_presences[i]));
+        auto resolved = task_presence(_presences.empty() ? std::nullopt : make_optional(_presences[i]), "Cumulative");
         _presence[i] = resolved.literal;
         never_present[i] = resolved.never_present;
 

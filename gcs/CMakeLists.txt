@@ -61,6 +61,7 @@ add_library(glasgow_constraint_solver
         constraints/innards/recover_am1.cc
         constraints/innards/reified_state.cc
         constraints/innards/tabulation.cc
+        constraints/innards/task_presence.cc
         constraints/innards/triggers.cc
         constraints/innards/window_energy.cc
         constraints/inverse/inverse.cc
