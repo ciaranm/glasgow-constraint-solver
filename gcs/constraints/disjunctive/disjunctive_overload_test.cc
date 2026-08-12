@@ -99,15 +99,29 @@ namespace
         int markers = 0;
     };
 
-    auto count_overload_markers(const string & basename) -> int
+    auto count_markers(const string & basename, const string & marker) -> int
     {
         ifstream f{basename + ".pbp"};
         string line;
         auto count = 0;
         while (getline(f, line))
-            if (line.find("disjunctive overload w=") != string::npos)
+            if (line.find(marker) != string::npos)
                 ++count;
         return count;
+    }
+
+    auto count_overload_markers(const string & basename) -> int
+    {
+        return count_markers(basename, "disjunctive overload w=");
+    }
+
+    /// How many of those were certified by sorting the window rather than by
+    /// re-encoding time. The two are alternative arguments over one unchanged
+    /// encoding, so which was taken is not visible in the answer --- only in
+    /// the proof.
+    auto count_sorted_markers(const string & basename) -> int
+    {
+        return count_markers(basename, "disjunctive overload by sorting network");
     }
 
     auto probe(const Instance & inst, DisjunctiveRules rules, const optional<string> & proof_name,
@@ -231,6 +245,61 @@ auto main(int argc, char * argv[]) -> int
             if (! gcs::test_innards::run_veripb(name + ".opb", name + ".pbp"))
                 fail(name + ": veripb rejected the certificate");
         }
+
+    // The same refutation, certified by sorting the window instead. Both
+    // arguments run over the one unchanged pairwise encoding, so a difference
+    // here is a bug in one of them rather than a fact about the instance.
+    if (proofs) {
+        DisjunctiveRules rules{.overload = true};
+        rules.overload_certificate = DisjunctiveOverloadCertificate::SortingNetwork;
+        auto result = probe(sharp, rules, make_optional("disjunctive_overload_sorted"));
+        if (! result.refuted_at_root)
+            fail("sorted: the root did not close");
+        if (result.markers != 1)
+            fail("sorted: expected exactly one overload marker, got " + std::to_string(result.markers));
+        if (count_sorted_markers("disjunctive_overload_sorted") != 1)
+            fail("sorted: the sorting-network certificate was asked for and not emitted");
+        if (! gcs::test_innards::run_veripb("disjunctive_overload_sorted.opb", "disjunctive_overload_sorted.pbp"))
+            fail("sorted: veripb rejected the sorting-network certificate");
+    }
+
+    // A window wide enough that the crossover picks the network on its own:
+    // three tasks of ten whose starts lie in [0, 19], so thirty units of work
+    // have to fit in a window twenty-nine wide. Certified both ways, and the
+    // default has to choose the network without being told.
+    {
+        const Instance wide{{{0, 19}, {0, 19}, {0, 19}}, {10, 10, 10}};
+
+        auto by_default = probe(wide, all_rules, proofs ? make_optional("disjunctive_overload_wide") : nullopt);
+        if (by_default.satisfiable)
+            fail("wide: a solution was reported, but thirty units do not fit in twenty-nine");
+        if (! by_default.refuted_at_root)
+            fail("wide: the rule did not close the root");
+        if (proofs) {
+            if (count_sorted_markers("disjunctive_overload_wide") != by_default.markers)
+                fail("wide: the crossover did not pick the network on a window twenty-nine wide with three tasks");
+            if (! gcs::test_innards::run_veripb("disjunctive_overload_wide.opb", "disjunctive_overload_wide.pbp"))
+                fail("wide: veripb rejected the certificate the crossover picked");
+        }
+
+        auto without_rule = probe(wide, no_overload, nullopt);
+        if (without_rule.refuted_at_root)
+            fail("wide: the root closed with the rule off, so the fixture says nothing about the rule");
+
+        // And the other certificate on the same window, which is what says the
+        // crossover is choosing between two things that both work.
+        if (proofs) {
+            DisjunctiveRules rules{.overload = true};
+            rules.overload_certificate = DisjunctiveOverloadCertificate::TimeIndexed;
+            auto result = probe(wide, rules, make_optional("disjunctive_overload_wide_time_indexed"));
+            if (! result.refuted_at_root)
+                fail("wide_time_indexed: the root did not close");
+            if (count_sorted_markers("disjunctive_overload_wide_time_indexed") != 0)
+                fail("wide_time_indexed: a sorting network was emitted where time indexing was asked for");
+            if (! gcs::test_innards::run_veripb("disjunctive_overload_wide_time_indexed.opb", "disjunctive_overload_wide_time_indexed.pbp"))
+                fail("wide_time_indexed: veripb rejected the time-indexed certificate");
+        }
+    }
 
     // A window the rule must not touch: two tasks that genuinely fit, where a
     // sloppy sweep would still find "a" window if it counted a task whose lct

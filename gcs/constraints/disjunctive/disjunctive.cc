@@ -4,6 +4,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/am1_from_pairs.hh>
+#include <gcs/innards/proofs/comparator_network.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -13,6 +14,7 @@
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
+#include <bit>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -68,7 +70,7 @@ namespace
      */
     struct OverloadInstrumentation
     {
-        unsigned long long calls = 0, windows_examined = 0, firings = 0, declined = 0;
+        unsigned long long calls = 0, windows_examined = 0, firings = 0, declined = 0, sorted = 0;
         std::map<size_t, unsigned long long> window_sizes, candidate_counts, declined_sizes;
 
         ~OverloadInstrumentation()
@@ -86,6 +88,7 @@ namespace
             println(std::cerr, "disjunctive_overload_calls: {}", calls);
             println(std::cerr, "disjunctive_overload_firings: {}", firings);
             println(std::cerr, "disjunctive_overload_declined: {}", declined);
+            println(std::cerr, "disjunctive_overload_sorted: {}", sorted);
             println(std::cerr, "disjunctive_overload_windows_examined: {}", windows_examined);
             println(std::cerr, "disjunctive_overload_window_sizes: {}", histogram(window_sizes));
             println(std::cerr, "disjunctive_overload_declined_sizes: {}", histogram(declined_sizes));
@@ -291,8 +294,13 @@ auto Disjunctive::define_proof_model(ProofModel & model, const State &) -> void
         auto flag = model.create_proof_flag(_constraint_id, vector<long long>{static_cast<long long>(i), static_cast<long long>(j)}, "bf");
         auto ineq = is_constant_variable(_lengths[i]) ? (WPBSum{} + 1_i * _starts[i] + -1_i * _starts[j] <= -_length_vals[i])
                                                       : (WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] + -1_i * _starts[j] <= 0_i);
+        // Ask what big-M the reifier is about to choose, rather than assuming:
+        // the sorting-network certificate raises this row to its own guard
+        // coefficient, and the two directions of a pair get different constants
+        // whenever their durations or encoding widths differ.
+        auto guard = -model.names_and_ids_tracker().reification_shape(ineq, HalfReifyOnConjunctionOf{{flag}}).reif_coefficient;
         auto [fwd, rev] = model.add_two_way_reified_constraint(ineq, flag);
-        return BeforeFlagData{flag, fwd, rev};
+        return BeforeFlagData{flag, fwd, rev, guard};
     };
     for (size_t a = 0; a < _active_tasks.size(); ++a) {
         auto i = _active_tasks[a];
@@ -517,6 +525,96 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 for (Integer v = hi - min_len(i) + 1_i; v <= hi; ++v)
                     pol.add(logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[i] < v) >= 1_i, ProofLevel::Temporary));
                 return pol.emit(*logger, ProofLevel::Temporary);
+            };
+
+            // --- the overload certificate as a sorting network -----------------
+            //
+            // The other way to certify the same conflict: rather than
+            // re-encoding time, sort the window's tasks inside the proof and
+            // telescope the sorted order. Costs O(w^3) and is flat in the
+            // window's span but for the wires' widths, where the time-indexed
+            // route is O(w^2) per time point --- so which is cheaper is a
+            // property of the window's shape, and neither dominates.
+            //
+            // Not every window can take it. A wire reads a start variable's own
+            // bit encoding, which has to be a simple variable's and has to read
+            // as an unsigned magnitude, and the durations have to be constants
+            // for the separation rows to be duration-relative. A window failing
+            // any of that falls back rather than declining the conflict.
+            auto sorting_network_bits = [&](size_t i) -> optional<vector<ProofLiteralOrFlag>> {
+                if (is_var_len(i))
+                    return nullopt;
+                const auto * simple = std::get_if<SimpleIntegerVariableID>(&starts[i]);
+                if (! simple)
+                    return nullopt;
+                auto & tracker = logger->names_and_ids_tracker();
+                auto bits = tracker.num_bits(*simple);
+                // A negative bit sits at index zero and carries -2^(k+1), so a
+                // wire reading the vector as an unsigned magnitude would be
+                // reading a different number.
+                if (bits > 0_i && tracker.get_bit(*simple, 0_i).first != 1_i)
+                    return nullopt;
+                vector<ProofLiteralOrFlag> result;
+                for (Integer b = 0_i; b < bits; ++b)
+                    result.push_back(ProofBitVariable{*simple, b, true});
+                return result;
+            };
+
+            auto sorting_certificate_width = [&](const vector<size_t> & tasks, Integer hi) -> optional<int> {
+                auto width = static_cast<int>(std::bit_width(static_cast<unsigned long long>(hi.raw_value)));
+                for (auto i : tasks) {
+                    auto bits = sorting_network_bits(i);
+                    if (! bits)
+                        return nullopt;
+                    width = max(width, static_cast<int>(bits->size()));
+                }
+                // The network's guard coefficients are 2^width sized, so a
+                // variable declared over half the Integer range --- which is
+                // what an unbounded FlatZinc int gets --- would overflow them
+                // long before the proof got expensive enough to care.
+                return width <= 40 ? optional<int>{width} : nullopt;
+            };
+
+            auto emit_sorting_certificate = [&](const vector<size_t> & tasks, Integer lo, Integer hi, int width,
+                                                const ReasonLiterals & reason) -> void {
+                // Everything here is Temporary: unlike the time-indexed
+                // certificate's activity flags, whose definitions say nothing
+                // about the search state and so can be kept, a window's wires
+                // are about the window, and backtracking is what deletes them.
+                logger->emit_proof_comment("disjunctive overload by sorting network");
+                ComparatorNetwork network(*logger, width, lo, hi, ProofLevel::Temporary);
+
+                // The window is a fact about the state rather than the model,
+                // so every bound the network derives from it is guarded by the
+                // inference's reason, at the network's own coefficient.
+                WPBSum guard;
+                for (const auto & lit : reason)
+                    add_term_to(guard, network.big(), ! lit);
+                network.assume(guard);
+
+                vector<ProofWire> wires;
+                for (auto i : tasks)
+                    wires.push_back(network.wire_over(*sorting_network_bits(i)));
+                for (size_t k = 0; k < tasks.size(); ++k) {
+                    network.add_task(wires[k], min_len(tasks[k]));
+                    network.set_bounds(wires[k]);
+                }
+
+                auto direction = [&](size_t x, size_t y) -> ModelSeparation {
+                    const auto & data = before_flags.at(make_pair(x, y));
+                    return ModelSeparation{data.flag, data.forward_line, data.forward_guard_coefficient};
+                };
+                for (size_t a = 0; a < tasks.size(); ++a)
+                    for (size_t b = a + 1; b < tasks.size(); ++b) {
+                        auto i = tasks[a], j = tasks[b];
+                        network.add_separation(
+                            wires[a], direction(i, j), wires[b], direction(j, i), clause_lines.at(make_pair(min(i, j), max(i, j))));
+                    }
+
+                // The row this lands on says the window is at least as wide as
+                // the work inside it, which the firing says it is not, so the
+                // framework's closing RUP has nothing left to do.
+                (void)network.sum_up(network.sort(wires));
             };
 
             auto pin_escapes = [&](const ReasonLiterals & reason, const vector<size_t> & tasks) -> void {
@@ -1221,6 +1319,33 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     return;
 
                                 pin_escapes(reason, tasks);
+
+                                // Two certificates over the one unchanged
+                                // encoding, and a crossover between them. The
+                                // network is flat in the window's span where
+                                // re-encoding time is linear in it, so a wide
+                                // window is where it pays; a window the network
+                                // cannot take falls back rather than declining
+                                // the conflict, since a certificate that is
+                                // merely more expensive is not a reason to lose
+                                // an inference.
+                                auto width = sorting_certificate_width(tasks, hi);
+                                auto sort_it = false;
+                                switch (rules.overload_certificate) {
+                                    using enum DisjunctiveOverloadCertificate;
+                                case TimeIndexed: break;
+                                case SortingNetwork: sort_it = width.has_value(); break;
+                                case Cheaper:
+                                    sort_it =
+                                        width.has_value() && (hi - lo) > Integer{static_cast<long long>(rules.overload_crossover * tasks.size())};
+                                    break;
+                                }
+
+                                if (sort_it) {
+                                    ++overload_instrumentation.sorted;
+                                    emit_sorting_certificate(tasks, lo, hi, *width, reason);
+                                    return;
+                                }
 
                                 // A Temporary vocabulary does not outlive the
                                 // firing that made it, so what the cache holds

@@ -247,12 +247,10 @@ namespace
 
         for (size_t i = 0; i < durations.size(); ++i) {
             network.add_task(tasks[i], Integer{durations[i]});
-            // The window's own bounds, as a propagator would have them: not
-            // model rows but facts about the state, which here RUP straight
-            // from the variables' domains.
-            network.set_upper_bound(
-                tasks[i], logger.emit_rup_proof_line(WPBSum{} + 1_i * built.starts[i] <= Integer{window_hi - durations[i]}, ProofLevel::Top));
-            network.set_lower_bound(tasks[i], logger.emit_rup_proof_line(WPBSum{} + 1_i * built.starts[i] >= Integer{window_lo}, ProofLevel::Top));
+            // Unguarded: here the window is the whole problem, so a task
+            // fitting inside it is the variable's own domain saying so, and
+            // holds outright.
+            network.set_bounds(tasks[i]);
         }
 
         auto direction = [&](size_t i, size_t j) {

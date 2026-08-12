@@ -270,6 +270,9 @@ namespace gcs::innards
         std::map<int, ProofWire> _duration;
         std::map<int, ProofLine> _positivity, _duration_upper;
 
+        /// What makes a state-dependent row vacuous; see \ref assume.
+        WPBSum _guard;
+
         /// Each start wire's `window_hi - wire - duration(wire) >= 0` and
         /// `wire - window_lo >= 0`.
         std::map<int, ProofLine> _upper, _lower;
@@ -380,21 +383,44 @@ namespace gcs::innards
         auto add_task(const ProofWire & start, Integer duration) -> void;
 
         /**
-         * Record `window_hi - start - duration >= 0` for a task, from a
-         * `start <= window_hi - duration` row the caller supplies --- the
-         * model's own bound row for a refutation, or a reason-backed RUP for a
-         * propagator's window.
+         * State that every bound below holds only where `guard` is zero.
+         *
+         * A propagator's window is a fact about the search state, not about the
+         * model, so the rows saying a task fits inside it have to be guarded by
+         * the inference's reason. That guard cannot simply ride along: the
+         * bounds are carried across each comparator by a case split, and a case
+         * split works by adding the negated goal to each half and dividing, so
+         * a term the halves carry and the goal does not survives the division
+         * and the split lands on something sound but not closing.
+         *
+         * So the guard is declared once and the network puts it on both sides:
+         * on the rows it emits for the bounds, and on every goal derived from
+         * them. `guard` is a sum of `big() * ~literal`, one per reason literal
+         * --- a uniform coefficient, since two rows guarded by the *same*
+         * reason at *different* coefficients cancel no better than two rows
+         * guarded by different reasons.
+         *
+         * Left empty (the default) for a whole-problem refutation, where the
+         * bounds come from the model and hold outright.
          */
-        auto set_upper_bound(const ProofWire & start, ProofLine row) -> void;
+        auto assume(const WPBSum & guard) -> void;
 
         /**
-         * And `start - window_lo >= 0`, likewise. Free when the window starts
-         * at zero and the wire is a bit vector, load-bearing otherwise: the
-         * endgame telescopes down to the *earliest* task's start, and what
-         * makes that a refutation is that it cannot be earlier than the window
-         * it was selected for.
+         * Emit the window's bounds for a task: `start + duration <= window_hi`
+         * and `start >= window_lo`, each as one RUP carrying \ref assume's
+         * guard.
+         *
+         * The network emits these rather than taking them, so that the guard on
+         * a bound and the guard on the goals derived from it cannot drift
+         * apart. Both close by propagation --- from the model's own bound rows
+         * for a refutation, and from the reason's order atoms for a propagator.
+         *
+         * The lower bound is free when the window starts at zero and the wire
+         * is a bit vector, and load-bearing otherwise: the endgame telescopes
+         * down to the *earliest* task's start, and what makes that a refutation
+         * is that it cannot be earlier than the window it was selected for.
          */
-        auto set_lower_bound(const ProofWire & start, ProofLine row) -> void;
+        auto set_bounds(const ProofWire & start) -> void;
 
         /**
          * Take a pair of tasks' separation from the model and put it in the
