@@ -767,6 +767,21 @@ if(GCS_BUILD_TESTS)
             "GCS_TEST_MAX_SOLUTIONS=${GCS_TEST_MAX_SOLUTIONS};GCS_TEST_MAX_RECURSIONS=${GCS_TEST_MAX_RECURSIONS}")
     endif()
 
+    # Clear the runtime caps for the two lanes whose whole content is comparing
+    # one model's solution *set* against another's. A cap that fires truncates
+    # both sides at different points, and comparing the prefixes tests the
+    # search order rather than the semantics --- there is no independent oracle
+    # here for check_results()'s soundness-only fallback to lean on. Safe to
+    # uncap because these lanes write no proofs at all, and proof size and
+    # VeriPB time are what the caps exist to bound; the instances are 2-3 tasks
+    # over four start values, so the enumeration is bounded by construction. The
+    # test also fails loudly if a cap ever does fire, rather than comparing
+    # prefixes.
+    foreach(mode bijection cumulative)
+        set_property(TEST disjunctive_optional_constraint_${mode} APPEND PROPERTY ENVIRONMENT
+            "GCS_TEST_MAX_SOLUTIONS=;GCS_TEST_MAX_RECURSIONS=")
+    endforeach()
+
     # Pin the linear incremental threshold per test variant: 0 = always incremental,
     # a huge value = always stateless, so CI exercises both linear propagation paths.
     # APPEND so the runtime-cap environment set just above is preserved.

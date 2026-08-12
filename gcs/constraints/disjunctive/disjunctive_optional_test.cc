@@ -121,6 +121,22 @@ namespace
         return ranges;
     }
 
+    // Every check in this file that compares two solution *sets* is vacuous
+    // against a truncated one. check_results() can degrade to a soundness check
+    // when a runtime cap fires, because it has an independent oracle to check
+    // against; two solvers that both stopped at the cap agree about nothing, and
+    // comparing their prefixes silently tests the search order instead of the
+    // semantics. So say so loudly: the fixture has outgrown the cap and wants
+    // shrinking, or its lane wants the cap cleared (which the two proof-free
+    // lanes do, since the caps exist to bound proof size and VeriPB time).
+    [[nodiscard]] auto enumerated_fully(const string & what) -> bool
+    {
+        if (! last_run_truncated())
+            return true;
+        println(cerr, "{}: a runtime cap truncated the enumeration, so the comparison would be vacuous", what);
+        return false;
+    }
+
     // Post the instance, returning the variables in enumeration order.
     auto post_optional_disjunctive(Problem & p, const vector<TaskSpec> & tasks, bool strict, DisjunctivePresenceMutation mutation)
         -> vector<IntegerVariableID>
@@ -411,6 +427,8 @@ namespace
                 Problem p;
                 auto all_vars = post_optional_disjunctive(p, tasks, strict, disjunctive_presence_mutation::None{});
                 solve_for_tests(p, nullopt, with_presences, tuple{all_vars});
+                if (! enumerated_fully("constant-presence equivalence " + std::to_string(k) + " (optional form)"))
+                    return false;
             }
             {
                 Problem p;
@@ -421,6 +439,8 @@ namespace
                     lengths_v.push_back(constant_variable(Integer{t.length.first}));
                 p.post(Disjunctive{starts, lengths_v}.with_strict(strict));
                 solve_for_tests(p, nullopt, without, tuple{starts});
+                if (! enumerated_fully("constant-presence equivalence " + std::to_string(k) + " (plain form)"))
+                    return false;
             }
             if (with_presences != without) {
                 println(cerr, "constant-presence equivalence {}: optional form has {} solutions, plain form has {}", k, with_presences.size(),
@@ -554,6 +574,8 @@ namespace
             all_vars = starts;
             all_vars.insert(all_vars.end(), presences.begin(), presences.end());
             solve_for_tests(p, nullopt, via_presence, tuple{all_vars});
+            if (! enumerated_fully("bijection " + tag + " (presence model)"))
+                return false;
         }
 
         {
@@ -575,6 +597,8 @@ namespace
             all_vars = starts;
             all_vars.insert(all_vars.end(), presences.begin(), presences.end());
             solve_for_tests(p, nullopt, via_duration, tuple{all_vars});
+            if (! enumerated_fully("bijection " + tag + " (variable-duration model)"))
+                return false;
         }
 
         if (via_presence != via_duration) {
@@ -601,6 +625,7 @@ namespace
     {
         set<vector<int>> via_disjunctive, via_cumulative;
 
+        bool fully = true;
         auto build = [&](bool as_cumulative, set<vector<int>> & into) {
             Problem p;
             vector<IntegerVariableID> starts, lengths_v, presences, all_vars;
@@ -619,10 +644,13 @@ namespace
             all_vars = starts;
             all_vars.insert(all_vars.end(), presences.begin(), presences.end());
             solve_for_tests(p, nullopt, into, tuple{all_vars});
+            fully &= enumerated_fully("vs cumulative " + tag + (as_cumulative ? " (cumulative model)" : " (disjunctive model)"));
         };
 
         build(false, via_disjunctive);
         build(true, via_cumulative);
+        if (! fully)
+            return false;
 
         if (via_disjunctive != via_cumulative) {
             println(cerr, "vs cumulative {}: disjunctive has {} solutions, cumulative has {}", tag, via_disjunctive.size(), via_cumulative.size());
