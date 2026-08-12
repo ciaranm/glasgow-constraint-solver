@@ -403,6 +403,10 @@ auto main(int argc, char * argv[]) -> int
                 "Give every posted Disjunctive the overload check, which is off by default "     //
                 "because it has no certificate yet (#730). Measurement only: incompatible with " //
                 "--prove")                                                                       //
+            ("disjunctive-overload-temporary",
+                "Introduce the overload certificate's activity flags per firing and let backtracking " //
+                "delete them, rather than once at the proof's top level. Slower and larger, and here " //
+                "so that #730's measurement can be repeated rather than believed")                     //
             ("disjunctive-overload-max-window",
                 "Have the overload check decline a conflict whose smallest window holds more "  //
                 "than this many tasks, its certificate being cubic in that. Zero, the default," //
@@ -666,6 +670,8 @@ auto main(int argc, char * argv[]) -> int
     DisjunctiveRules disjunctive_rules;
     disjunctive_rules.overload = options_vars["disjunctive-overload"].as<bool>();
     disjunctive_rules.overload_max_window = options_vars["disjunctive-overload-max-window"].as<std::size_t>();
+    if (options_vars["disjunctive-overload-temporary"].as<bool>())
+        disjunctive_rules.overload_vocabulary_at = gcs::innards::ProofLevel::Temporary;
 
     for (std::size_t r = 0; r < instance.capacities.size(); ++r) {
         // A task that runs for no time never occupies a resource, so leaving it

@@ -3,6 +3,7 @@
 #include <gcs/constraints/innards/task_presence.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/am1_from_pairs.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -35,7 +36,9 @@ using namespace gcs::innards;
 
 using std::make_optional;
 using std::make_pair;
+using std::make_shared;
 using std::make_unique;
+using std::map;
 using std::max;
 using std::min;
 using std::move;
@@ -91,6 +94,24 @@ namespace
     };
 
     OverloadInstrumentation overload_instrumentation;
+
+    /**
+     * One (task, time) flag of the overload certificate's re-encoding, and the
+     * two rows defining it: `forward` is the flag implying both of its order
+     * literals, `backward` the clause the two of them imply it by. The bridge
+     * consumes the first and the energy telescope the second.
+     */
+    struct ActivityFlag
+    {
+        ProofFlag flag;
+        /// The flag implying each of its two order literals, one clause each
+        /// rather than the single row a conjunction reifies to. The bridge
+        /// cancels exactly one literal per operand, so a row carrying both
+        /// would leave the other behind and the pol would not close.
+        ProofLine implies_starts_by, implies_started;
+        /// The two of them implying the flag: what the energy sum telescopes.
+        ProofLine backward;
+    };
 }
 
 Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<IntegerVariableID> lengths) : _starts(move(starts)), _lengths(move(lengths))
@@ -326,6 +347,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
         [starts = move(_starts), lengths = move(_length_vals), length_vars = move(_lengths), zero = move(_zero), strict = _strict,
             active_tasks = move(_active_tasks), before_flags = move(_before_flags), clause_lines = move(_clause_lines), presence = move(_presence),
             rules = _rules, mutation = _proof_mutation, presence_mutation = _presence_mutation,
+            // The overload certificate's vocabulary, kept across firings when
+            // it lives at Top. A shared_ptr rather than a member because the
+            // propagator is invoked through a const callable, and the cache is
+            // proof-side state that no inference reads.
+            activity = make_shared<map<pair<size_t, long long>, ActivityFlag>>(),
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Current guaranteed (min) and possible (max) duration of task i:
             // for a constant duration both are the value; for a variable
@@ -378,7 +404,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // into the flag's row); a variable duration l_a additionally
             // cites its current lower bound (the reason covers it).
             auto emit_before_pol = [&](size_t a, size_t b, const optional<IntegerVariableCondition> & cond_a,
-                                       const optional<IntegerVariableCondition> & cond_b) -> void {
+                                       const optional<IntegerVariableCondition> & cond_b) -> ProofLine {
                 auto & tracker = logger->names_and_ids_tracker();
                 PolBuilder pol;
                 pol.add(before_flags.at(make_pair(a, b)).forward_line);
@@ -402,7 +428,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     add_defining_row(length_vars[a] >= state.lower_bound(length_vars[a]));
                 if (cond_b)
                     add_defining_row(*cond_b);
-                pol.saturate().emit(*logger, ProofLevel::Temporary);
+                return pol.saturate().emit(*logger, ProofLevel::Temporary);
             };
 
             // The current-bound literals on a task's start, or nullopt for a
@@ -425,6 +451,71 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // bound) so the separation clauses reduce to their before-flag
             // disjunctions. No-op in strict mode / for always-positive
             // durations.
+            // --- the overload certificate's re-encoding of time --------------
+            //
+            // An activity flag says a task occupies a time point:
+            //     act_{i,t} <-> s_i >= t - p_i + 1  AND  s_i < t + 1
+            // which is a conjunction of two order literals the encoding
+            // already mints, so it costs two reds and adds nothing to the
+            // model. Cached when it lives at Top, its definition saying
+            // nothing about the search state; the cache is cleared per firing
+            // at Temporary, where backtracking deletes the rows behind it.
+            auto activity_flag = [&](size_t i, Integer t) -> const ActivityFlag & {
+                auto key = make_pair(i, t.raw_value);
+                if (auto found = activity->find(key); found != activity->end())
+                    return found->second;
+                auto started = starts[i] >= t - min_len(i) + 1_i, starts_by = starts[i] < t + 1_i;
+                auto both = WPBSum{} + 1_i * started + 1_i * starts_by >= 2_i;
+                auto flag = logger->create_proof_flag("dovl");
+                auto implies_started =
+                    logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * started >= 1_i, flag, rules.overload_vocabulary_at);
+                auto implies_starts_by =
+                    logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * starts_by >= 1_i, flag, rules.overload_vocabulary_at);
+                auto backward = logger->emit_red_proof_lines_reverse_reifying(both, flag, rules.overload_vocabulary_at);
+                return activity->emplace(key, ActivityFlag{flag, implies_starts_by, implies_started, backward}).first->second;
+            };
+
+            // Two tasks cannot both occupy time t. This is the step
+            // `Cumulative` never has to take, its OPB stating the capacity row
+            // outright: here it is derived from the pairwise encoding. Each
+            // direction is the before flag's [r] row plus the two operands'
+            // order-literal definitions, which cancels the starts and lands on
+            // degree p_x + (t - p_x + 1) - t = 1; the two directions plus the
+            // separation clause pair the before literals off into a constant,
+            // and halving is exact.
+            auto bridge_pair = [&](size_t i, size_t j, Integer t) -> ProofLine {
+                auto half = [&](size_t x, size_t y) -> ProofLine {
+                    PolBuilder pol;
+                    pol.add(emit_before_pol(x, y, starts[x] >= t - min_len(x) + 1_i, starts[y] < t + 1_i));
+                    pol.add(activity_flag(x, t).implies_started);
+                    pol.add(activity_flag(y, t).implies_starts_by);
+                    return pol.saturate().emit(*logger, ProofLevel::Temporary);
+                };
+                PolBuilder pol;
+                pol.add(half(i, j));
+                pol.add(half(j, i));
+                pol.add(clause_lines.at(make_pair(min(i, j), max(i, j))));
+                return pol.divide_by(2_i).emit(*logger, ProofLevel::Temporary);
+            };
+
+            // A task in the window occupies at least lb(l) of its time points.
+            // Summing the backward rows telescopes --- each order literal
+            // appears once positively and once negatively --- and what is left
+            // over at the two ends are the p thresholds below the window,
+            // which hold because the task starts inside it, and the p above,
+            // which fail because it finishes inside. Both follow from bounds
+            // the reason carries, so one reason-wrapped RUP each.
+            auto energy_pol = [&](size_t i, Integer lo, Integer hi, const ReasonLiterals & reason) -> ProofLine {
+                PolBuilder pol;
+                for (Integer t = lo; t < hi; ++t)
+                    pol.add(activity_flag(i, t).backward);
+                for (Integer v = lo - min_len(i) + 1_i; v <= lo; ++v)
+                    pol.add(logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[i] >= v) >= 1_i, ProofLevel::Temporary));
+                for (Integer v = hi - min_len(i) + 1_i; v <= hi; ++v)
+                    pol.add(logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[i] < v) >= 1_i, ProofLevel::Temporary));
+                return pol.emit(*logger, ProofLevel::Temporary);
+            };
+
             auto pin_escapes = [&](const ReasonLiterals & reason, const vector<size_t> & tasks) -> void {
                 for (auto r : tasks)
                     if (zero[r])
@@ -1019,15 +1110,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // since either way the node is refuted inside the same
                 // propagation fixpoint.
                 //
-                // There is no certificate, so this refuses to run with a
-                // logger attached rather than emitting something VeriPB would
-                // reject --- or worse, an unjustified inference that no proof
-                // ever mentions. See disjunctive.hh's DisjunctiveRules.
                 if (rules.overload) {
-                    if (logger)
-                        throw UnexpectedException{
-                            "Disjunctive: the overload check has no certificate yet (#730), so it cannot be run with proof logging"};
-
                     // Measuring what a firing would cost means measuring the
                     // *smallest* window that refutes the state, since the
                     // certificate is cubic in it: hence the full O(n^2) sweep
@@ -1068,6 +1151,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     // the sweep is quadratic, and the first b to overflow for
                     // a given a is the smallest window that does.
                     vector<size_t> smallest;
+                    Integer window_lo = 0_i, window_hi = 0_i;
                     for (size_t w = 0; w < window_starts.size(); ++w) {
                         if (w > 0 && window_starts[w] == window_starts[w - 1])
                             continue;
@@ -1082,8 +1166,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             inside.push_back(c.task);
                             ++overload_instrumentation.windows_examined;
                             if (energy > c.lct - a) {
-                                if (smallest.empty() || inside.size() < smallest.size())
+                                if (smallest.empty() || inside.size() < smallest.size()) {
                                     smallest = inside;
+                                    window_lo = a;
+                                    window_hi = c.lct;
+                                }
                                 break;
                             }
                         }
@@ -1117,7 +1204,65 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             for (auto i : smallest)
                                 if (is_var_len(i))
                                     reason_vars.push_back(length_vars[i]);
-                            inference.contradiction(logger, JustifyUsingRUP{hints::Disjunctive{owner}}, reason_over(reason_vars));
+
+                            // The certificate re-encodes time inside the
+                            // proof. Nothing here touches the OPB, which stays
+                            // the pairwise encoding whatever the rules say:
+                            // the model is the statement being verified, so a
+                            // model that moved with a rule selection would be
+                            // a different problem per setting.
+                            auto justify = [&, tasks = smallest, lo = window_lo, hi = window_hi](const ReasonLiterals & reason) -> void {
+                                pin_escapes(reason, tasks);
+
+                                // A Temporary vocabulary does not outlive the
+                                // firing that made it, so what the cache holds
+                                // from last time has been deleted and citing
+                                // it would be citing a dead row.
+                                if (ProofLevel::Top != rules.overload_vocabulary_at)
+                                    activity->clear();
+
+                                // (1) The vocabulary: a flag per (task, time)
+                                // saying the task occupies that time.
+                                for (auto i : tasks)
+                                    for (Integer t = lo; t < hi; ++t)
+                                        (void)activity_flag(i, t);
+
+                                // (2) The bridge, which is what `Cumulative`
+                                // never needs: its OPB states the capacity row
+                                // outright, and here it has to be derived. Per
+                                // ordered pair and time, the before flag's [r]
+                                // row plus the two operands' order-literal
+                                // definitions cancels the starts and lands on
+                                // degree p_x + (t - p_x + 1) - t = 1.
+                                map<Integer, vector<vector<ProofLine>>> at_most_ones;
+                                for (Integer t = lo; t < hi; ++t) {
+                                    auto & tri = at_most_ones[t];
+                                    tri.resize(tasks.size());
+                                    for (size_t b = 0; b < tasks.size(); ++b)
+                                        for (size_t a = 0; a < b; ++a)
+                                            tri[b].push_back(bridge_pair(tasks[a], tasks[b], t));
+                                }
+
+                                // (3) The fold, and (4) the energies, summed:
+                                // the folds say at most one task occupies each
+                                // of the window's hi - lo times, the energies
+                                // say the tasks between them need more than
+                                // that, and the framework's closing RUP has
+                                // nothing left to do.
+                                PolBuilder total;
+                                for (Integer t = lo; t < hi; ++t) {
+                                    vector<ProofLiteralOrFlag> members;
+                                    for (auto i : tasks)
+                                        members.push_back(activity_flag(i, t).flag);
+                                    total.add(recover_am1_from_pairs(*logger, members, at_most_ones[t], ProofLevel::Temporary));
+                                }
+                                for (auto i : tasks)
+                                    total.add(energy_pol(i, lo, hi, reason));
+                                total.emit(*logger, ProofLevel::Temporary);
+                            };
+
+                            inference.contradiction(
+                                logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
                             return PropagatorState::DisableUntilBacktrack;
                         }
                     }
