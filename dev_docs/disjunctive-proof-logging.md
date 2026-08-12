@@ -40,7 +40,9 @@ For a constant duration the flag's inequality folds to
 `s_i − s_j ≤ −l_i`; for a variable duration the `l_i` term stays on
 the left-hand side. Non-strict mode adds a reified `l_i ≤ 0` escape
 flag (`x[id][i][zw]`) per variable-duration task to the separation
-clause — a zero-length task does not constrain.
+clause — a zero-length task does not constrain. Optional tasks add
+their presence literals to the same clause, and nothing else (see
+below).
 
 ## The pairwise justification vocabulary
 
@@ -97,7 +99,7 @@ encoding maximum) degrade gracefully: `need_gevar` emits trivial
 halves and pins the boundary atom at `ProofLevel::Top`, so the same
 uniform pol works at domain edges and on domain-wiping pushes.
 
-## The four inferences
+## The inferences
 
 - **Mandatory-overflow contradiction.** Two tasks `i`, `j` whose
   mandatory parts overlap at some time. Then neither can finish
@@ -194,7 +196,9 @@ cover, and each step strictly advances.
 
 `DisjunctiveRules` switches time-tabling's pushes and detectable
 precedences on and off independently (both default on). It selects
-propagation strength only: same solutions, same OPB.
+propagation strength only: same solutions, same OPB. Presence
+falsification reads time-tabling's own placement scan, so it is under
+`time_table` with the pushes.
 
 The **mandatory-overlap contradiction is not switchable**. At an
 all-fixed leaf every task's mandatory part is its whole active
@@ -228,6 +232,75 @@ variable — the in-proof end introduction
 (`ProofLogger::introduce_bits_of`) exists for Cumulative's
 time-indexed `after` flags, which Disjunctive's proofs no longer use.
 
+### Optional tasks
+
+An optional task carries a `{0, 1}` presence variable. It reaches the
+encoding in exactly one place — two more disjuncts on the separation
+clause the pair already had:
+
+```
+before_{i,j} + before_{j,i} [+ zw_i + zw_j] + ¬p_i + ¬p_j  ≥ 1
+```
+
+The before-flag reifications stay **unconditional**:
+`before_{i,j} ⇔ s_i + l_i ≤ s_j` whatever the presences. That is the
+design, not an economy. Every justification in this document is a pol
+over those reification rows and the operands' bound-literal definition
+rows, so leaving them alone means **the pols do not change at all**:
+presence surfaces only where the *separation clause* is used, which is
+always the framework's closing reason-wrapped RUP. Each such RUP just
+has two more literals available in its reason. A presence posted as
+the constant 1 resolves to nothing at all (`innards::task_presence`,
+shared with `Cumulative`), so a non-optional model's OPB is unchanged
+byte for byte, and a constant 0 drops the task from the constraint
+entirely.
+
+Propagation follows `Cumulative`'s rules and for its reasons: an
+absent task is dropped; an **undecided** task contributes no mandatory
+part, is in nobody's blocker set, is not a detected predecessor or
+successor, and — the load-bearing part — **its own start bounds are
+never pruned**, because there is no conditional-bounds store and a
+prune valid only if the task is present would be unsound. Reasons
+carry `p_i = 1` as an explicit literal per task known present, rather
+than putting the variable in the reason's variable list: an undecided
+presence has no fact to record, and `generic_reason` would spend an
+order atom saying `0 ≤ p ≤ 1`.
+
+**Presence falsification.** When no start in `dom(s_j)` escapes the
+mandatory parts of the present tasks, `p_j = 0`. The derivation is the
+lb-push chain above, replayed over the *whole* domain, with "or task
+`j` is not here at all" carried as an extra disjunct on every deposit:
+
+```
+[s_j ≥ target] ∨ ¬p_j                (one RUP under reason per step)
+```
+
+so each step reads "either `j` starts later than this, or `j` is not
+here". The last step deposits nothing, exactly as the last step of a
+push does: its target is one past `j`'s upper bound, which the reason
+already refutes, so the closing RUP concludes the presence. The two
+pols per step are the ordinary ones — `emit_lb_chain_step` takes the
+extra disjunct as an argument and changes nothing else.
+
+Falsification is **conflict-shaped**, and that constrains what can
+test it. Once the chain has cornered the task, the reason context
+extended with "the task is present" is contradictory and every RUP
+under it is vacuously valid, so a mutation that merely *shortens* the
+chain is still sound and VeriPB is right to accept it. Corrupting the
+route is not a test; corrupt the destination. Hence the three lanes in
+`innards/disjunctive_mutations.hh`: `WrongTask` (argue about a task
+nothing has cornered), `ClaimOneTooFar` (draw the conclusion where it
+is false, on a fixture with exactly one placement left), and
+`EmitNothing` as the control. `cumulative_mutations.hh` records the
+same finding from the constraint this rule is modelled on.
+
+The strict-mode zero-length check below is where optional tasks meet
+#731's trap in its second form. That check and the mandatory-overlap
+scan are what make the propagator a *checker*, so both use the same
+`is_present` test as the profile: an undecided task that slipped past
+the leaf check would be one whose presence never got fixed, and the
+solver would report it as a solution.
+
 ### Non-strict zero-length escapes
 
 Whenever an inference fires, every involved task has a positive
@@ -249,6 +322,15 @@ declarative pairwise encoding alone is RUP-closable. With `s_z` and
 assignments and the encoded clause `before_{z,k} + before_{k,z} ≥ 1`
 unit-fails. So this contradiction is pure RUP — `JustifyUsingRUP{hints::Disjunctive{owner}}`
 (the typed hint is inert in proofs-off mode; the justification is still a bare RUP).
+
+With optional tasks the clause carries the pair's presence disjuncts
+too, so both tasks have to be *known present* for it to unit-fail —
+which is also the semantics, since an absent task sits wherever it
+likes. This is the only certified route to a strict optional
+disjunctive: a task consuming nothing for no time is invisible to a
+resource profile, so nothing built on `Cumulative` can express it, and
+MiniZinc's `fzn_disjunctive_strict_opt` had no solver redefinition at
+all before #735.
 
 ## 2D non-overlap (`Disjunctive2D` / `diffn`)
 
@@ -330,8 +412,8 @@ would take from *this* encoding:
 - **Not-first / not-last, and edge-finding** (#732, #733). The first
   genuinely set-based *pruning* rules, and they need whatever the
   overload check settles on first.
-- **Optional tasks (`*_opt`).** A presence flag per task gates the
-  encoded pairwise clauses; the pairwise pols would carry the
-  presence literals as extra residuals.
+- **Optional tasks for `Disjunctive2D`.** The 1D form has them
+  (#735, above); the 2D 4-way separation clause would take the same
+  two disjuncts per pair, but nothing asks for it yet.
 
 <!-- vim: set tw=72 spell spelllang=en : -->
