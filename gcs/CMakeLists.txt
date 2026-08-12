@@ -104,6 +104,7 @@ add_library(glasgow_constraint_solver
         innards/literal.cc
         innards/power.cc
         innards/proofs/am1_from_pairs.cc
+        innards/proofs/comparator_network.cc
         innards/proofs/am1_from_row.cc
         innards/proofs/bits_encoding.cc
         innards/proofs/constraint_proof_model_data.cc
@@ -641,9 +642,12 @@ if(GCS_BUILD_TESTS)
 
     add_executable(am1_from_pairs_test innards/proofs/am1_from_pairs_test.cc)
     target_link_libraries(am1_from_pairs_test PRIVATE glasgow_constraint_solver)
+    add_executable(comparator_network_test innards/proofs/comparator_network_test.cc)
+    target_link_libraries(comparator_network_test PRIVATE glasgow_constraint_solver)
     # Verifies (and deliberately fails to verify) its own proofs internally, so
     # it needs no wrapper.
     add_test(NAME am1_from_pairs_test COMMAND $<TARGET_FILE:am1_from_pairs_test>)
+    add_test(NAME comparator_network_test COMMAND $<TARGET_FILE:comparator_network_test>)
 
     add_executable(am1_from_row_test innards/proofs/am1_from_row_test.cc)
     target_link_libraries(am1_from_row_test PRIVATE glasgow_constraint_solver)
