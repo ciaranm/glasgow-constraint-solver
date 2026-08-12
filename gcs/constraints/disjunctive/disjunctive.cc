@@ -484,6 +484,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // separation clause pair the before literals off into a constant,
             // and halving is exact.
             auto bridge_pair = [&](size_t i, size_t j, Integer t) -> ProofLine {
+                if (std::holds_alternative<disjunctive_proof_mutation::RupOverloadBridge>(mutation))
+                    return logger->emit_rup_proof_line(
+                        WPBSum{} + 1_i * ! activity_flag(i, t).flag + 1_i * ! activity_flag(j, t).flag >= 1_i, ProofLevel::Temporary);
                 auto half = [&](size_t x, size_t y) -> ProofLine {
                     PolBuilder pol;
                     pol.add(emit_before_pol(x, y, starts[x] >= t - min_len(x) + 1_i, starts[y] < t + 1_i));
@@ -1212,6 +1215,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             // model that moved with a rule selection would be
                             // a different problem per setting.
                             auto justify = [&, tasks = smallest, lo = window_lo, hi = window_hi](const ReasonLiterals & reason) -> void {
+                                logger->emit_proof_comment(
+                                    "disjunctive overload w=" + std::to_string(tasks.size()) + " span=" + std::to_string((hi - lo).raw_value));
+                                if (std::holds_alternative<disjunctive_proof_mutation::OverloadEmitNothing>(mutation))
+                                    return;
+
                                 pin_escapes(reason, tasks);
 
                                 // A Temporary vocabulary does not outlive the
@@ -1250,14 +1258,18 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 // that, and the framework's closing RUP has
                                 // nothing left to do.
                                 PolBuilder total;
-                                for (Integer t = lo; t < hi; ++t) {
-                                    vector<ProofLiteralOrFlag> members;
+                                if (! std::holds_alternative<disjunctive_proof_mutation::SkipOverloadFold>(mutation))
+                                    for (Integer t = lo; t < hi; ++t) {
+                                        vector<ProofLiteralOrFlag> members;
+                                        for (auto i : tasks)
+                                            members.push_back(activity_flag(i, t).flag);
+                                        total.add(recover_am1_from_pairs(*logger, members, at_most_ones[t], ProofLevel::Temporary));
+                                    }
+                                if (! std::holds_alternative<disjunctive_proof_mutation::SkipOverloadEnergy>(mutation))
                                     for (auto i : tasks)
-                                        members.push_back(activity_flag(i, t).flag);
-                                    total.add(recover_am1_from_pairs(*logger, members, at_most_ones[t], ProofLevel::Temporary));
-                                }
-                                for (auto i : tasks)
-                                    total.add(energy_pol(i, lo, hi, reason));
+                                        total.add(energy_pol(i, lo, hi, reason));
+                                if (total.empty())
+                                    return;
                                 total.emit(*logger, ProofLevel::Temporary);
                             };
 

@@ -84,11 +84,43 @@ namespace gcs::innards
         struct PushOneTooFar
         {
         };
+
+        /// Emit no overload certificate at all, leaving the contradiction to
+        /// the framework's wrapping RUP. The control for that rule: unlike
+        /// presence falsification, an overload's reason context is *not*
+        /// contradictory until the argument makes it so, which is why the
+        /// route mutations below bite where that rule's could not.
+        struct OverloadEmitNothing
+        {
+        };
+
+        /// Leave the per-time at-most-ones out of the overload endgame, so
+        /// nothing says the window can hold only one task at a time and the
+        /// energies have no supply to exceed.
+        struct SkipOverloadFold
+        {
+        };
+
+        /// Leave the tasks' energies out of the overload endgame, so nothing
+        /// says how much work the window must contain.
+        struct SkipOverloadEnergy
+        {
+        };
+
+        /// Conclude each pair's per-time at-most-one by bare `rup` rather than
+        /// by the bridge pol. The step with no counterpart in Cumulative, and
+        /// the one worth knowing propagation cannot make: getting from the
+        /// pairwise encoding to a statement about a time point is arithmetic,
+        /// not propagation.
+        struct RupOverloadBridge
+        {
+        };
     }
 
-    using DisjunctiveProofMutation =
-        std::variant<disjunctive_proof_mutation::None, disjunctive_proof_mutation::EmitNothing, disjunctive_proof_mutation::SkipRefutation,
-            disjunctive_proof_mutation::SkipTargetFold, disjunctive_proof_mutation::LooseDetectionBound, disjunctive_proof_mutation::PushOneTooFar>;
+    using DisjunctiveProofMutation = std::variant<disjunctive_proof_mutation::None, disjunctive_proof_mutation::EmitNothing,
+        disjunctive_proof_mutation::SkipRefutation, disjunctive_proof_mutation::SkipTargetFold, disjunctive_proof_mutation::LooseDetectionBound,
+        disjunctive_proof_mutation::PushOneTooFar, disjunctive_proof_mutation::OverloadEmitNothing, disjunctive_proof_mutation::SkipOverloadFold,
+        disjunctive_proof_mutation::SkipOverloadEnergy, disjunctive_proof_mutation::RupOverloadBridge>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,
