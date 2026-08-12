@@ -1273,6 +1273,32 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // any: counting either would manufacture a conflict.
                         if (min_len(i) == 0_i || ! is_present(i))
                             continue;
+                        // A *variable* duration is left out of the window
+                        // rather than counted at its lower bound, and the
+                        // reason is the certificate rather than the rule.
+                        //
+                        // Both certificates read the duration as a constant.
+                        // The time-indexed one defines its activity flags on an
+                        // order literal of the start with a threshold computed
+                        // from the duration, so the before flag's row carries a
+                        // duration term with nothing to cancel against; citing
+                        // the duration's bound row instead leaves a residual
+                        // literal, and the per-time at-most-ones are then not
+                        // the two-literal rows the fold needs. The sorting
+                        // network pins its durations outright. Counting a
+                        // variable-duration task would therefore fire the rule
+                        // and emit a certificate VeriPB rejects.
+                        //
+                        // Doing this properly means defining the flags against
+                        // `s_i + l_i` --- which makes the bridge cancel exactly
+                        // --- and giving the energy telescope an order-encoded
+                        // end variable to sum over, since reified linear atoms
+                        // at consecutive times have no encoded relationship to
+                        // telescope through. Until then the rule reasons about
+                        // the constant-duration tasks alone, which is sound and
+                        // simply weaker.
+                        if (is_var_len(i))
+                            continue;
                         auto [s_lo, s_hi] = state.bounds(starts[i]);
                         candidates.push_back(Candidate{i, s_lo, s_hi + min_len(i), min_len(i)});
                     }

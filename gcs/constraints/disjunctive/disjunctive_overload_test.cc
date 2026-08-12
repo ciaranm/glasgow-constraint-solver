@@ -361,6 +361,39 @@ auto main(int argc, char * argv[]) -> int
                 " for deriving them again");
     }
 
+    // Variable durations, which the rule leaves alone: three tasks whose
+    // durations are variables in [3, 4] and whose starts lie in [0, 5], so nine
+    // guaranteed units would have to fit in a window eight wide. Counting them
+    // at their lower bounds would fire the rule and emit a certificate VeriPB
+    // rejects --- the before flag's duration term has nothing to cancel against
+    // once the activity flags are defined on a constant threshold, and the
+    // residual literal it leaves stops the per-time rows being the two-literal
+    // at-most-ones the fold needs. So the rule declines, and this is the
+    // fixture that says so rather than a comment claiming it.
+    if (proofs) {
+        Problem prob;
+        vector<IntegerVariableID> starts, lengths;
+        for (auto k = 0; k < 3; ++k) {
+            starts.push_back(prob.create_integer_variable(0_i, 5_i));
+            lengths.push_back(prob.create_integer_variable(3_i, 4_i));
+        }
+        prob.post(Disjunctive{starts, lengths}.with_rules(all_rules));
+
+        auto satisfiable = false;
+        solve_with(prob, SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+            satisfiable = true;
+            return false;
+        }},
+            make_optional<ProofOptions>(ProofFileNames{"disjunctive_overload_variable_lengths"}));
+
+        if (satisfiable)
+            fail("variable_lengths: a solution was reported, but nine units do not fit in eight");
+        if (count_overload_markers("disjunctive_overload_variable_lengths") != 0)
+            fail("variable_lengths: the rule fired on a variable duration, which its certificate cannot express");
+        if (! gcs::test_innards::run_veripb("disjunctive_overload_variable_lengths.opb", "disjunctive_overload_variable_lengths.pbp"))
+            fail("variable_lengths: veripb rejected the proof");
+    }
+
     // A window the rule must not touch: two tasks that genuinely fit, where a
     // sloppy sweep would still find "a" window if it counted a task whose lct
     // falls outside it.
