@@ -21,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -39,6 +40,7 @@ using namespace gcs::innards;
 using std::make_optional;
 using std::make_pair;
 using std::make_shared;
+using std::make_tuple;
 using std::make_unique;
 using std::map;
 using std::max;
@@ -48,6 +50,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::size_t;
+using std::tuple;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::sort;
@@ -71,6 +74,7 @@ namespace
     struct OverloadInstrumentation
     {
         unsigned long long calls = 0, windows_examined = 0, firings = 0, declined = 0, sorted = 0;
+        unsigned long long bridge_derived = 0, bridge_reused = 0;
         std::map<size_t, unsigned long long> window_sizes, candidate_counts, declined_sizes;
 
         ~OverloadInstrumentation()
@@ -89,6 +93,8 @@ namespace
             println(std::cerr, "disjunctive_overload_firings: {}", firings);
             println(std::cerr, "disjunctive_overload_declined: {}", declined);
             println(std::cerr, "disjunctive_overload_sorted: {}", sorted);
+            println(std::cerr, "disjunctive_overload_bridge_derived: {}", bridge_derived);
+            println(std::cerr, "disjunctive_overload_bridge_reused: {}", bridge_reused);
             println(std::cerr, "disjunctive_overload_windows_examined: {}", windows_examined);
             println(std::cerr, "disjunctive_overload_window_sizes: {}", histogram(window_sizes));
             println(std::cerr, "disjunctive_overload_declined_sizes: {}", histogram(declined_sizes));
@@ -359,7 +365,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // it lives at Top. A shared_ptr rather than a member because the
             // propagator is invoked through a const callable, and the cache is
             // proof-side state that no inference reads.
-            activity = make_shared<map<pair<size_t, long long>, ActivityFlag>>(),
+            activity = make_shared<map<tuple<size_t, long long, long long>, ActivityFlag>>(),
+            // And the bridge's per-time at-most-ones, which depend on the same
+            // three things and on nothing else, so they are reusable on exactly
+            // the same terms.
+            bridge = make_shared<map<tuple<size_t, size_t, long long, long long, long long>, ProofLine>>(),
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Current guaranteed (min) and possible (max) duration of task i:
             // for a constant duration both are the value; for a variable
@@ -468,8 +478,15 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // model. Cached when it lives at Top, its definition saying
             // nothing about the search state; the cache is cleared per firing
             // at Temporary, where backtracking deletes the rows behind it.
+            //
+            // The *duration* is part of the key, not just the task and the
+            // time. For a constant duration that changes nothing, but a
+            // variable one moves the flag's own definition, and a later firing
+            // citing a flag defined at a shorter duration would be building a
+            // pol whose terms no longer cancel --- a rejected proof rather than
+            // an unsound one, but rejected all the same.
             auto activity_flag = [&](size_t i, Integer t) -> const ActivityFlag & {
-                auto key = make_pair(i, t.raw_value);
+                auto key = make_tuple(i, t.raw_value, min_len(i).raw_value);
                 if (auto found = activity->find(key); found != activity->end())
                     return found->second;
                 auto started = starts[i] >= t - min_len(i) + 1_i, starts_by = starts[i] < t + 1_i;
@@ -491,10 +508,27 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // degree p_x + (t - p_x + 1) - t = 1; the two directions plus the
             // separation clause pair the before literals off into a constant,
             // and halving is exact.
+            //
+            // Like an activity flag, the row this lands on is about a pair of
+            // tasks and a time and about nothing else, so it can be kept and
+            // cited again --- which is what \ref DisjunctiveRules::overload_cache_bridge
+            // asks for. That turns the certificate's per-firing cost from a
+            // pair of tasks per time point into a task per time point, once the
+            // window's pairs have been seen; it can only pay where the
+            // vocabulary is kept too, since nothing within a single firing asks
+            // for the same pair and time twice.
             auto bridge_pair = [&](size_t i, size_t j, Integer t) -> ProofLine {
                 if (std::holds_alternative<disjunctive_proof_mutation::RupOverloadBridge>(mutation))
                     return logger->emit_rup_proof_line(
                         WPBSum{} + 1_i * ! activity_flag(i, t).flag + 1_i * ! activity_flag(j, t).flag >= 1_i, ProofLevel::Temporary);
+
+                auto key = make_tuple(min(i, j), max(i, j), t.raw_value, min_len(min(i, j)).raw_value, min_len(max(i, j)).raw_value);
+                if (rules.overload_cache_bridge)
+                    if (auto found = bridge->find(key); found != bridge->end()) {
+                        ++overload_instrumentation.bridge_reused;
+                        return found->second;
+                    }
+
                 auto half = [&](size_t x, size_t y) -> ProofLine {
                     PolBuilder pol;
                     pol.add(emit_before_pol(x, y, starts[x] >= t - min_len(x) + 1_i, starts[y] < t + 1_i));
@@ -506,7 +540,15 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 pol.add(half(i, j));
                 pol.add(half(j, i));
                 pol.add(clause_lines.at(make_pair(min(i, j), max(i, j))));
-                return pol.divide_by(2_i).emit(*logger, ProofLevel::Temporary);
+                // Kept at the vocabulary's level rather than Temporary when it
+                // is to be reused. The rows it was derived from may be deleted
+                // out from under it; a derivation that has already happened
+                // does not need its premises to stay.
+                ++overload_instrumentation.bridge_derived;
+                auto line = pol.divide_by(2_i).emit(*logger, rules.overload_cache_bridge ? rules.overload_vocabulary_at : ProofLevel::Temporary);
+                if (rules.overload_cache_bridge)
+                    bridge->emplace(key, line);
+                return line;
             };
 
             // A task in the window occupies at least lb(l) of its time points.
@@ -1351,8 +1393,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 // firing that made it, so what the cache holds
                                 // from last time has been deleted and citing
                                 // it would be citing a dead row.
-                                if (ProofLevel::Top != rules.overload_vocabulary_at)
+                                if (ProofLevel::Top != rules.overload_vocabulary_at) {
                                     activity->clear();
+                                    bridge->clear();
+                                }
 
                                 // (1) The vocabulary: a flag per (task, time)
                                 // saying the task occupies that time.

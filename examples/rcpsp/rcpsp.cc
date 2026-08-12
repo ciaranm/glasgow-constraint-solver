@@ -400,9 +400,23 @@ auto main(int argc, char * argv[]) -> int
                 "is not confounded by which resources happen to be unary) or disjunctive",     //
                 cxxopts::value<string>()->default_value("cumulative"))                         //
             ("disjunctive-overload",
-                "Give every posted Disjunctive the overload check, which is off by default "     //
-                "because it has no certificate yet (#730). Measurement only: incompatible with " //
-                "--prove")                                                                       //
+                "Give every posted Disjunctive the overload check, off by default because its "   //
+                "certificate is expensive enough that whether it pays is what #730 is measuring") //
+            ("disjunctive-overload-certificate",
+                "How to certify an overload: time-indexed (re-encode time in the proof), "     //
+                "sorting-network (sort the window's tasks in the proof), or cheaper (the "     //
+                "default, which picks per firing from the window's shape). Both run over the " //
+                "one unchanged encoding, so this selects a proof strategy and not a model",    //
+                cxxopts::value<string>()->default_value("cheaper"))                            //
+            ("disjunctive-overload-crossover",
+                "Where cheaper switches: emit the sorting network once the window's span "      //
+                "exceeds this many times the number of tasks in it. Seven by default, measured" //
+                " in-solver",                                                                   //
+                cxxopts::value<std::size_t>()->default_value("7"))                              //
+            ("disjunctive-overload-derive-at-most-ones-again",
+                "Derive the time-indexed certificate's per-time at-most-ones per firing rather " //
+                "than keeping them and citing them again. Here so that what keeping them buys "  //
+                "can be measured rather than believed")                                          //
             ("disjunctive-overload-temporary",
                 "Introduce the overload certificate's activity flags per firing and let backtracking " //
                 "delete them, rather than once at the proof's top level. Slower and larger, and here " //
@@ -672,6 +686,21 @@ auto main(int argc, char * argv[]) -> int
     disjunctive_rules.overload_max_window = options_vars["disjunctive-overload-max-window"].as<std::size_t>();
     if (options_vars["disjunctive-overload-temporary"].as<bool>())
         disjunctive_rules.overload_vocabulary_at = gcs::innards::ProofLevel::Temporary;
+    disjunctive_rules.overload_cache_bridge = ! options_vars["disjunctive-overload-derive-at-most-ones-again"].as<bool>();
+    disjunctive_rules.overload_crossover = options_vars["disjunctive-overload-crossover"].as<std::size_t>();
+    {
+        auto which = options_vars["disjunctive-overload-certificate"].as<string>();
+        if (which == "time-indexed")
+            disjunctive_rules.overload_certificate = DisjunctiveOverloadCertificate::TimeIndexed;
+        else if (which == "sorting-network")
+            disjunctive_rules.overload_certificate = DisjunctiveOverloadCertificate::SortingNetwork;
+        else if (which == "cheaper")
+            disjunctive_rules.overload_certificate = DisjunctiveOverloadCertificate::Cheaper;
+        else {
+            println(cerr, "unknown --disjunctive-overload-certificate {}", which);
+            return EXIT_FAILURE;
+        }
+    }
 
     for (std::size_t r = 0; r < instance.capacities.size(); ++r) {
         // A task that runs for no time never occupies a resource, so leaving it

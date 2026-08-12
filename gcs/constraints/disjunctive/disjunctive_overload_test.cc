@@ -97,7 +97,19 @@ namespace
         bool refuted_at_root = false;
         bool satisfiable = false;
         int markers = 0;
+        int solutions = 0;
     };
+
+    auto proof_lines(const string & basename) -> int
+    {
+        ifstream f{basename + ".pbp"};
+        string line;
+        auto count = 0;
+        while (getline(f, line))
+            if (line.find(';') != string::npos)
+                ++count;
+        return count;
+    }
 
     auto count_markers(const string & basename, const string & marker) -> int
     {
@@ -125,7 +137,7 @@ namespace
     }
 
     auto probe(const Instance & inst, DisjunctiveRules rules, const optional<string> & proof_name,
-        DisjunctiveProofMutation mutation = disjunctive_proof_mutation::None{}) -> Probe
+        DisjunctiveProofMutation mutation = disjunctive_proof_mutation::None{}, bool enumerate = false) -> Probe
     {
         Problem p;
         post(p, inst, rules, mutation);
@@ -138,11 +150,14 @@ namespace
         solve_with(p,
             SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
                                result.satisfiable = true;
-                               return false;
+                               ++result.solutions;
+                               return enumerate;
                            },
                 .trace = [&](const CurrentState &) -> bool {
                     reached_a_node = true;
-                    return false;
+                    // Stopping at the first node is what makes "refuted at the
+                    // root" observable; enumerating needs the search to run on.
+                    return enumerate;
                 }},
             proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
         result.refuted_at_root = ! reached_a_node && ! result.satisfiable;
@@ -270,7 +285,15 @@ auto main(int argc, char * argv[]) -> int
     {
         const Instance wide{{{0, 19}, {0, 19}, {0, 19}}, {10, 10, 10}};
 
-        auto by_default = probe(wide, all_rules, proofs ? make_optional("disjunctive_overload_wide") : nullopt);
+        // The crossover is set here rather than taken from the default: the
+        // default is three hundred, measured over searches where keeping the
+        // at-most-ones amortises the time-indexed route, and a window that
+        // reached it would be far too big to put in a fixture. What is being
+        // tested is that the switch fires on the window's shape, not what the
+        // shipped number happens to be.
+        DisjunctiveRules crossing{.overload = true};
+        crossing.overload_crossover = 9;
+        auto by_default = probe(wide, crossing, proofs ? make_optional("disjunctive_overload_wide") : nullopt);
         if (by_default.satisfiable)
             fail("wide: a solution was reported, but thirty units do not fit in twenty-nine");
         if (! by_default.refuted_at_root)
@@ -278,6 +301,12 @@ auto main(int argc, char * argv[]) -> int
         if (proofs) {
             if (count_sorted_markers("disjunctive_overload_wide") != by_default.markers)
                 fail("wide: the crossover did not pick the network on a window twenty-nine wide with three tasks");
+            // And the shipped default, on the same window, picks the other one.
+            auto shipped = probe(wide, all_rules, make_optional("disjunctive_overload_wide_default"));
+            if (count_sorted_markers("disjunctive_overload_wide_default") != 0)
+                fail("wide: the shipped crossover picked the network on a window nowhere near three hundred tasks' worth of span");
+            if (! shipped.refuted_at_root)
+                fail("wide: the shipped default did not close the root");
             if (! gcs::test_innards::run_veripb("disjunctive_overload_wide.opb", "disjunctive_overload_wide.pbp"))
                 fail("wide: veripb rejected the certificate the crossover picked");
         }
@@ -299,6 +328,37 @@ auto main(int argc, char * argv[]) -> int
             if (! gcs::test_innards::run_veripb("disjunctive_overload_wide_time_indexed.opb", "disjunctive_overload_wide_time_indexed.pbp"))
                 fail("wide_time_indexed: veripb rejected the time-indexed certificate");
         }
+    }
+
+    // Many firings, which is the only way the kept per-time at-most-ones can
+    // be reused: four tasks of three in a window of twelve fit exactly, so
+    // every solution is a permutation and the search meets an overloaded
+    // subwindow whenever it puts a task down out of step. Enumerating rather
+    // than stopping at the first solution is what makes it fire repeatedly.
+    if (proofs) {
+        const Instance permutations{{{0, 9}, {0, 9}, {0, 9}, {0, 9}}, {3, 3, 3, 3}};
+
+        auto run = [&](bool cache, const string & name) -> pair<Probe, int> {
+            DisjunctiveRules rules{.overload = true};
+            rules.overload_cache_bridge = cache;
+            auto result = probe(permutations, rules, make_optional(name), disjunctive_proof_mutation::None{}, true);
+            if (! gcs::test_innards::run_veripb(name + ".opb", name + ".pbp"))
+                fail(name + ": veripb rejected the certificate");
+            return {result, proof_lines(name)};
+        };
+
+        auto [cached, cached_lines] = run(true, "disjunctive_overload_cached");
+        auto [derived, derived_lines] = run(false, "disjunctive_overload_uncached");
+
+        if (cached.markers < 2)
+            fail("permutations: the rule fired " + std::to_string(cached.markers) + " times, so nothing was there to reuse");
+        if (cached.solutions != derived.solutions || cached.markers != derived.markers)
+            fail("permutations: keeping the at-most-ones changed the search, which it must not");
+        // The whole point of the option. If keeping them ever stops paying,
+        // this is where that shows up rather than in a benchmark nobody runs.
+        if (cached_lines >= derived_lines)
+            fail("permutations: keeping the at-most-ones cost " + std::to_string(cached_lines) + " lines against " + std::to_string(derived_lines) +
+                " for deriving them again");
     }
 
     // A window the rule must not touch: two tasks that genuinely fit, where a
