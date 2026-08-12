@@ -1159,6 +1159,24 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
                     .with_strict(op.ends_with("_strict")),
                 label);
         }
+        else if (op == "disjunctive_optional" || op == "disjunctive_strict_optional") {
+            // (label disjunctive_optional (starts...) (lengths...)
+            // (presences...)): disjunctive over tasks that may be absent,
+            // presences[i] in {0,1} saying whether task i happens at all. The
+            // presences list goes last, where the FlatZinc builtin puts it.
+            // Deliberately a keyword of its own rather than an optional argument
+            // to `disjunctive`: each separation clause carries the pair's
+            // presence disjuncts, so re-deriving it as a plain disjunctive would
+            // give a different and strictly stronger constraint.
+            if (terms.size() != 5)
+                throw ScpReadError{"disjunctive_optional is (label " + op + " (starts...) (lengths...) (presences...))"};
+            post_constraint(problem,
+                Disjunctive{resolve_variable_list(variables, terms[2], "the disjunctive_optional start list"),
+                    resolve_variable_list(variables, terms[3], "the disjunctive_optional length list"),
+                    resolve_variable_list(variables, terms[4], "the disjunctive_optional presence list")}
+                    .with_strict(op == "disjunctive_strict_optional"),
+                label);
+        }
         else if (op == "disjunctive2d" || op == "disjunctive2d_strict") {
             // (label disjunctive2d (xs...) (ys...) (widths...) (heights...)): the
             // rectangles [x, x + w) x [y, y + h) pairwise do not overlap. As for

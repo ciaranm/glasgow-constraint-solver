@@ -6,8 +6,9 @@
 /**
  * \file
  *
- * Deliberate corruptions of `Disjunctive`'s detectable-precedence proof steps,
- * which exist so that a test can show the honest derivation is tight to what it
+ * Deliberate corruptions of `Disjunctive`'s detectable-precedence and
+ * presence-falsification proof steps, which exist so that a test can show the
+ * honest derivation is tight to what it
  * claims. They live here, in the innards, rather than beside the constraint they
  * corrupt: a header a user of the library includes should not advertise a way to
  * make the solver emit deliberately wrong proofs. Same reason as
@@ -88,6 +89,67 @@ namespace gcs::innards
     using DisjunctiveProofMutation =
         std::variant<disjunctive_proof_mutation::None, disjunctive_proof_mutation::EmitNothing, disjunctive_proof_mutation::SkipRefutation,
             disjunctive_proof_mutation::SkipTargetFold, disjunctive_proof_mutation::LooseDetectionBound, disjunctive_proof_mutation::PushOneTooFar>;
+
+    /**
+     * \brief Deliberate corruptions of the presence-falsification derivation,
+     * for testing only. VeriPB must reject each of them.
+     *
+     * What can serve as a test here is narrower than for a bound push, and
+     * worth understanding before adding to this list: presence falsification is
+     * a *conflict-shaped* rule, whose content is "this task cannot be here at
+     * all". Once the chain has cornered the task, the reason context extended
+     * with "the task is present" is contradictory, and every RUP under it is
+     * vacuously valid. A mutation that merely shortens the chain therefore
+     * produces a shorter but still *sound* derivation, and VeriPB is right to
+     * accept it. Corrupting the route is not a test; corrupt the destination.
+     * `cumulative_mutations.hh` records the same finding, from the constraint
+     * this rule is modelled on.
+     *
+     * So the two that bite are \ref disjunctive_presence_mutation::WrongTask,
+     * which argues about a task nothing has cornered, and \ref
+     * disjunctive_presence_mutation::ClaimOneTooFar, which draws the conclusion
+     * where it is false. \ref disjunctive_presence_mutation::EmitNothing is the
+     * control that says the chain is required at all.
+     *
+     * All but ClaimOneTooFar change nothing except the proof: the same
+     * presences are falsified, the same solutions reported, and the OPB is
+     * untouched. ClaimOneTooFar necessarily changes the inference, since making
+     * the conclusion wrong is the whole point of it.
+     *
+     * \ingroup Innards
+     */
+    namespace disjunctive_presence_mutation
+    {
+        /// Emit the honest derivation.
+        struct None
+        {
+        };
+
+        /// Carry some other optional task's presence literal on the chain's
+        /// deposits, so the derivation argues about a task that is not the one
+        /// being falsified.
+        struct WrongTask
+        {
+        };
+
+        /// Fire on an instance where exactly one placement still fits, claiming
+        /// the task is absent when it is not. The "bound + 1 must fail" check
+        /// for this rule: it corrupts the conclusion rather than the route to
+        /// it, which is what a margin of exactly one unit is there to expose.
+        struct ClaimOneTooFar
+        {
+        };
+
+        /// Emit no chain at all, leaving the inference to the framework's
+        /// wrapping RUP. Not a corruption but a control: if VeriPB accepts
+        /// this, the chain is decoration and no mutation of it can be caught.
+        struct EmitNothing
+        {
+        };
+    }
+
+    using DisjunctivePresenceMutation = std::variant<disjunctive_presence_mutation::None, disjunctive_presence_mutation::WrongTask,
+        disjunctive_presence_mutation::ClaimOneTooFar, disjunctive_presence_mutation::EmitNothing>;
 }
 
 #endif

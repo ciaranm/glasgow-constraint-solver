@@ -65,6 +65,15 @@ namespace gcs
      * distinction is fully resolved at construction; with variable durations a
      * task may become zero-length during search.
      *
+     * Tasks may also be <em>optional</em>: the constructor taking a `presences`
+     * array makes task <em>i</em> conditional on a {0, 1} variable. A task with
+     * <em>presences[i] = 0</em> is absent &mdash; it occupies no time, so it may
+     * overlap anything and its start is unconstrained. The presence appears in
+     * the encoding as one more disjunct on each separation clause the task takes
+     * part in, and nowhere else, so a task posted with
+     * <em>presences[i] = 1</em> and one posted without presences at all produce
+     * the same OPB.
+     *
      * Propagation is time-table consistent at heights = 1, capacity = 1:
      * mandatory parts of distinct tasks may not overlap, and each task's
      * bounds are pushed away from time points already mandatorily occupied
@@ -73,6 +82,12 @@ namespace gcs
      * mandatory part on either task, so it prunes where time-tabling cannot.
      * Stronger reasoning (an overload check, not-first / not-last,
      * edge-finding) is left for future work.
+     *
+     * A task whose presence is still undecided is left out of the profile and
+     * out of every push, in either role: it blocks nothing, and nothing is
+     * inferred about its start, since a prune that is only valid when the task
+     * is present would be wrong if it turns out absent. If no start at all is
+     * left for such a task under the profile, its presence is inferred to be 0.
      *
      * \ingroup Constraints
      */
@@ -83,6 +98,23 @@ namespace gcs
         std::vector<IntegerVariableID> _lengths;
         bool _strict = true;
         std::vector<std::size_t> _active_tasks;
+
+        // Per-task presence, as posted; empty for the constructors that take no
+        // presences, where every task is unconditionally present. Resolved into
+        // _presence by prepare(); this copy exists for clone() and s_expr().
+        std::vector<IntegerVariableID> _presences;
+
+        // Per-task presence as resolved by innards::task_presence: nullopt for a
+        // task that is unconditionally present --- the non-optional
+        // constructors, or a presence argument that is the constant 1 --- which
+        // then needs no disjunct in its separation clauses and no presence
+        // literal in a reason, so it encodes and propagates exactly as it did
+        // before optional tasks existed. A task whose presence is the constant 0
+        // is dropped from _active_tasks and appears nowhere at all. Only
+        // *constant* presences resolve: a checker reads the OPB, not the initial
+        // State, so a variable whose domain happens to be a singleton keeps its
+        // disjunct.
+        std::vector<std::optional<IntegerVariableID>> _presence;
 
         // Length snapshots resolved in prepare(). _length_vals holds the
         // constant value for a constant duration (0 placeholder for a variable
@@ -114,6 +146,7 @@ namespace gcs
 
         DisjunctiveRules _rules;
         innards::DisjunctiveProofMutation _proof_mutation = innards::disjunctive_proof_mutation::None{};
+        innards::DisjunctivePresenceMutation _presence_mutation = innards::disjunctive_presence_mutation::None{};
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
@@ -132,6 +165,20 @@ namespace gcs
          */
         explicit Disjunctive(std::vector<IntegerVariableID> starts, std::vector<Integer> lengths);
 
+        /**
+         * \brief Optional-task form: `presences[i]` is a {0, 1} variable saying
+         * whether task `i` happens at all. An absent task occupies no time and
+         * has an unconstrained start.
+         *
+         * Each presence must be a variable whose domain is within {0, 1}, or
+         * the constant 0 or 1. A constant 1 is the same as leaving the task out
+         * of the optional form entirely, and encodes identically.
+         *
+         * \throws InvalidProblemDefinitionException if a presence's domain is
+         * not within {0, 1}, or if the arrays' sizes disagree.
+         */
+        explicit Disjunctive(std::vector<IntegerVariableID> starts, std::vector<IntegerVariableID> lengths, std::vector<IntegerVariableID> presences);
+
         /// Whether the tasks are strictly disjunctive (zero-length tasks also may
         /// not overlap); default true. Takes std::optional<bool> so a runtime flag
         /// can be passed straight through.
@@ -146,6 +193,19 @@ namespace gcs
         /// only, which assert that VeriPB rejects the result; see
         /// innards::DisjunctiveProofMutation.
         auto with_proof_mutation(innards::DisjunctiveProofMutation mutation) -> Disjunctive &;
+
+        /// Corrupt one step of the presence-falsification derivation. For tests
+        /// only, which assert that VeriPB rejects the result; see
+        /// innards::DisjunctivePresenceMutation.
+        auto with_presence_mutation(innards::DisjunctivePresenceMutation mutation) -> Disjunctive &;
+
+        /**
+         * \brief The presences this constraint was posted with.
+         *
+         * Empty for the non-optional constructors, which is how a caller asks
+         * "is this an optional-task Disjunctive?".
+         */
+        [[nodiscard]] auto presences() const -> const std::vector<IntegerVariableID> &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
