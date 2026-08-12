@@ -39,6 +39,29 @@ namespace gcs
         /// earliest end, and the predecessor's upper bound down to the
         /// successor's latest start less its own duration.
         bool detectable_precedences = true;
+
+        /// The overload check: a window whose fully-contained tasks carry more
+        /// duration than the window is wide is infeasible. Conflict-only, and
+        /// the capacity-one case of what CumulativeRules::overload does.
+        ///
+        /// Off by default, and unlike the other two this one cannot be turned
+        /// on with proofs enabled: it has no certificate yet. The only known
+        /// one against the pairwise encoding is the proof-only comparator
+        /// network of issue #730, which costs O(w^3) proof lines for a window
+        /// of w tasks, against two pols for every inference the propagator
+        /// makes today. The flag exists so that the firing rate and the window
+        /// sizes can be measured with proofs off, which is what decides
+        /// whether that certificate is affordable at all.
+        bool overload = false;
+
+        /// Refuse an overload conflict whose smallest window holds more than
+        /// this many tasks; zero, the default, takes every conflict. Since the
+        /// certificate is cubic in the window, a cap is the one knob that
+        /// makes its cost bounded rather than merely finite --- at the price
+        /// of a weaker rule, because a state whose only overloaded window is
+        /// larger than the cap goes unrefuted. Whether that price is worth
+        /// paying is a measurement, not a preference: see \ref overload.
+        std::size_t overload_max_window = 0;
     };
 
     /**

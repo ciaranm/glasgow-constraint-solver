@@ -12,12 +12,23 @@
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
+#include <cstdlib>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+using std::println;
+#else
+#include <fmt/core.h>
+using fmt::println;
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -34,6 +45,53 @@ using std::pair;
 using std::size_t;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::sort;
+
+namespace
+{
+    /**
+     * Instrumentation for the overload check (issue #730). The rule has no
+     * certificate yet, so what has to be decided first is not how to write one
+     * but whether one is affordable: the proof-only comparator network in the
+     * issue costs O(w^3) lines for a window of w tasks --- 30k at w = 12,
+     * 133k at w = 20 --- against two pols for every inference the propagator
+     * makes today. Issue #731 recorded 982,065 detectable-precedence pushes in
+     * a single RCPSP proof, so a comparable overload firing rate would put the
+     * rule out of reach at any window size.
+     *
+     * Hence a static counter rather than a stats object threaded through the
+     * public API: this measures a design question, and goes away with the
+     * answer. Printed at exit when GCS_DISJUNCTIVE_OVERLOAD_STATS is set.
+     */
+    struct OverloadInstrumentation
+    {
+        unsigned long long calls = 0, windows_examined = 0, firings = 0, declined = 0;
+        std::map<size_t, unsigned long long> window_sizes, candidate_counts, declined_sizes;
+
+        ~OverloadInstrumentation()
+        {
+            if (! std::getenv("GCS_DISJUNCTIVE_OVERLOAD_STATS") || 0 == calls)
+                return;
+
+            auto histogram = [](const std::map<size_t, unsigned long long> & h) {
+                std::string result;
+                for (const auto & [k, v] : h)
+                    result += (result.empty() ? "" : ",") + std::to_string(k) + "=" + std::to_string(v);
+                return result;
+            };
+
+            println(std::cerr, "disjunctive_overload_calls: {}", calls);
+            println(std::cerr, "disjunctive_overload_firings: {}", firings);
+            println(std::cerr, "disjunctive_overload_declined: {}", declined);
+            println(std::cerr, "disjunctive_overload_windows_examined: {}", windows_examined);
+            println(std::cerr, "disjunctive_overload_window_sizes: {}", histogram(window_sizes));
+            println(std::cerr, "disjunctive_overload_declined_sizes: {}", histogram(declined_sizes));
+            println(std::cerr, "disjunctive_overload_candidate_counts: {}", histogram(candidate_counts));
+        }
+    };
+
+    OverloadInstrumentation overload_instrumentation;
+}
 
 Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<IntegerVariableID> lengths) : _starts(move(starts)), _lengths(move(lengths))
 {
@@ -947,6 +1005,123 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             }
                         }
                     }
+
+                // Overload checking, the capacity-one case of Cumulative's
+                // (OC'): if the tasks that must run entirely inside a window
+                // [a, b) carry more guaranteed duration than the window is
+                // wide, the state is infeasible.
+                //
+                // Last, rather than between the overflow scan and the bound
+                // pushes where Cumulative puts it, because what is being
+                // measured is the *marginal* firing rate: a state the rules
+                // above can already refute is not one this rule would have to
+                // pay a certificate for. That costs nothing in search shape,
+                // since either way the node is refuted inside the same
+                // propagation fixpoint.
+                //
+                // There is no certificate, so this refuses to run with a
+                // logger attached rather than emitting something VeriPB would
+                // reject --- or worse, an unjustified inference that no proof
+                // ever mentions. See disjunctive.hh's DisjunctiveRules.
+                if (rules.overload) {
+                    if (logger)
+                        throw UnexpectedException{
+                            "Disjunctive: the overload check has no certificate yet (#730), so it cannot be run with proof logging"};
+
+                    // Measuring what a firing would cost means measuring the
+                    // *smallest* window that refutes the state, since the
+                    // certificate is cubic in it: hence the full O(n^2) sweep
+                    // and a minimum over it, rather than stopping at the first
+                    // conflict.
+                    struct Candidate
+                    {
+                        size_t task;
+                        Integer est, lct, duration;
+                    };
+
+                    vector<Candidate> candidates;
+                    candidates.reserve(active_tasks.size());
+                    for (auto i : active_tasks) {
+                        // A task with no guaranteed duration carries no energy,
+                        // and one not known present might not be here to carry
+                        // any: counting either would manufacture a conflict.
+                        if (min_len(i) == 0_i || ! is_present(i))
+                            continue;
+                        auto [s_lo, s_hi] = state.bounds(starts[i]);
+                        candidates.push_back(Candidate{i, s_lo, s_hi + min_len(i), min_len(i)});
+                    }
+                    sort(candidates, [](const Candidate & a, const Candidate & b) { return a.lct < b.lct; });
+
+                    vector<Integer> window_starts;
+                    window_starts.reserve(candidates.size());
+                    for (const auto & c : candidates)
+                        window_starts.push_back(c.est);
+                    sort(window_starts);
+
+                    ++overload_instrumentation.calls;
+                    ++overload_instrumentation.candidate_counts[candidates.size()];
+
+                    // The windows worth trying are [a, b) with a an earliest
+                    // start and b a latest completion time; the tasks with
+                    // est >= a and lct <= b must all fit inside. Taking the
+                    // candidates in lct order makes the energy accumulate, so
+                    // the sweep is quadratic, and the first b to overflow for
+                    // a given a is the smallest window that does.
+                    vector<size_t> smallest;
+                    for (size_t w = 0; w < window_starts.size(); ++w) {
+                        if (w > 0 && window_starts[w] == window_starts[w - 1])
+                            continue;
+                        auto a = window_starts[w];
+
+                        Integer energy = 0_i;
+                        vector<size_t> inside;
+                        for (const auto & c : candidates) {
+                            if (c.est < a)
+                                continue;
+                            energy += c.duration;
+                            inside.push_back(c.task);
+                            ++overload_instrumentation.windows_examined;
+                            if (energy > c.lct - a) {
+                                if (smallest.empty() || inside.size() < smallest.size())
+                                    smallest = inside;
+                                break;
+                            }
+                        }
+                    }
+
+                    // A capped rule declines a conflict it cannot afford to
+                    // certify. Counted before the cap is applied, so the
+                    // histogram says what was on offer and not merely what was
+                    // taken.
+                    if (! smallest.empty()) {
+                        ++overload_instrumentation.firings;
+                        ++overload_instrumentation.window_sizes[smallest.size()];
+                        if (0 != rules.overload_max_window && smallest.size() > rules.overload_max_window) {
+                            ++overload_instrumentation.declined;
+                            ++overload_instrumentation.declined_sizes[smallest.size()];
+                            smallest.clear();
+                        }
+                    }
+
+                    if (! smallest.empty()) {
+
+                        // Passive mode detects and counts without acting, which
+                        // answers a different question: how many nodes of
+                        // *today's* search tree are overloaded. That number is
+                        // an upper bound rather than a cost, since a rule that
+                        // actually fired would have pruned the subtree the
+                        // later firings are counted in.
+                        static const bool passive = nullptr != std::getenv("GCS_DISJUNCTIVE_OVERLOAD_PASSIVE");
+                        if (! passive) {
+                            auto reason_vars = starts;
+                            for (auto i : smallest)
+                                if (is_var_len(i))
+                                    reason_vars.push_back(length_vars[i]);
+                            inference.contradiction(logger, JustifyUsingRUP{hints::Disjunctive{owner}}, reason_over(reason_vars));
+                            return PropagatorState::DisableUntilBacktrack;
+                        }
+                    }
+                }
             }
 
             // Strict-mode zero-length tasks: check that no zero-length task
