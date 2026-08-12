@@ -22,14 +22,16 @@ using std::string;
 using std::to_string;
 using std::vector;
 
-ComparatorNetwork::ComparatorNetwork(ProofLogger & logger, int width, Integer horizon, ProofLevel level, ComparatorNetworkMutation mutation) :
-    _logger(logger), _width(width), _horizon(horizon), _level(level), _mutation(mutation), _span((Integer{1LL << width}) - 1_i),
+ComparatorNetwork::ComparatorNetwork(
+    ProofLogger & logger, int width, Integer window_lo, Integer window_hi, ProofLevel level, ComparatorNetworkMutation mutation) :
+    _logger(logger), _width(width), _window_lo(window_lo), _window_hi(window_hi), _level(level), _mutation(mutation),
+    _span((Integer{1LL << width}) - 1_i),
     // Twice a wire's span, so that a transfer lemma --- which adds two record
     // rows and divides by a separation row's guard coefficient --- comes out at
-    // exactly one; and at least the horizon, so that a model row's own guard
-    // coefficient can be raised to it. Larger would still be sound and would
-    // make that division land short.
-    _big(max(2_i * ((Integer{1LL << width}) - 1_i), horizon)),
+    // exactly one; and at least the window's end, so that a model row's own
+    // guard coefficient can be raised to it. Larger would still be sound and
+    // would make that division land short.
+    _big(max(2_i * ((Integer{1LL << width}) - 1_i), window_hi)),
     // Every case split divides by this, which is generous enough for the
     // largest guard coefficient any lemma below accumulates (the gap lemma's
     // `big + 3 * span`). Generous is safe because the negated goal cancels
@@ -64,15 +66,24 @@ auto ComparatorNetwork::fresh_wire(const string & stem) -> ProofWire
     ProofWire wire{.id = _next_wire_id++, .bits = {}};
     auto name = next_name(stem);
     for (auto t = 0; t < _width; ++t)
-        wire.bits.push_back(_logger.create_proof_flag(name + "b" + to_string(t)));
+        wire.bits.push_back(ProofLiteralOrFlag{_logger.create_proof_flag(name + "b" + to_string(t))});
     return wire;
 }
 
-auto ComparatorNetwork::wire_over(const vector<ProofFlag> & bits) -> ProofWire
+auto ComparatorNetwork::wire_over(const vector<ProofLiteralOrFlag> & bits) -> ProofWire
 {
-    if (static_cast<int>(bits.size()) != _width)
-        throw ProofError{"comparator network wire of the wrong width"};
-    return ProofWire{.id = _next_wire_id++, .bits = bits};
+    if (static_cast<int>(bits.size()) > _width)
+        throw ProofError{"comparator network wire wider than the network"};
+
+    // Padding a narrower variable is two wasted mux clauses per padded bit ---
+    // the two that place a constant-zero input into the output are tautologies
+    // --- and the other two are what force the output's high bits to zero, so
+    // the padding is not free but is very nearly so, and it is what lets a
+    // window hold tasks whose starts were encoded to different widths.
+    auto padded = bits;
+    while (static_cast<int>(padded.size()) < _width)
+        padded.push_back(ProofLiteralOrFlag{ProofLiteral{FalseLiteral{}}});
+    return ProofWire{.id = _next_wire_id++, .bits = move(padded)};
 }
 
 auto ComparatorNetwork::terms(const ProofWire & wire, Integer sign) const -> WPBSum
@@ -85,7 +96,7 @@ auto ComparatorNetwork::terms(const ProofWire & wire, Integer sign) const -> WPB
 auto ComparatorNetwork::add_terms(WPBSum & sum, const ProofWire & wire, Integer sign) const -> void
 {
     for (auto t = 0; t < _width; ++t)
-        sum += (sign * Integer{1LL << t}) * wire.bits[t];
+        add_term_to(sum, sign * Integer{1LL << t}, wire.bits[t]);
 }
 
 auto ComparatorNetwork::pin(const ProofWire & wire, Integer value) -> void
@@ -93,10 +104,7 @@ auto ComparatorNetwork::pin(const ProofWire & wire, Integer value) -> void
     for (auto t = 0; t < _width; ++t) {
         auto on = 0 != ((value.raw_value >> t) & 1);
         WPBSum sum;
-        if (on)
-            sum += 1_i * wire.bits[t];
-        else
-            sum += 1_i * ! wire.bits[t];
+        add_term_to(sum, 1_i, on ? wire.bits[t] : ! wire.bits[t]);
         _logger.emit_red_proof_line(
             move(sum) >= 1_i, {{wire.bits[t], on ? ProofLiteralOrFlag{TrueLiteral{}} : ProofLiteralOrFlag{FalseLiteral{}}}}, _level);
     }
@@ -125,37 +133,45 @@ auto ComparatorNetwork::add_task(const ProofWire & start, Integer duration) -> v
     _duration_upper.emplace(wire.id, _logger.emit_rup_proof_line(terms(wire, -1_i) >= -duration, _level));
 }
 
-auto ComparatorNetwork::set_upper_bound(const ProofWire & start, ProofLine model_row) -> void
+auto ComparatorNetwork::set_upper_bound(const ProofWire & start, ProofLine row) -> void
 {
     PolBuilder builder;
-    builder.add(model_row).add(_duration_upper.at(_duration.at(start.id).id));
+    builder.add(row).add(_duration_upper.at(_duration.at(start.id).id));
     _upper.insert_or_assign(start.id, builder.emit(_logger, _level));
 }
 
-auto ComparatorNetwork::add_separation(const ProofWire & x, ProofFlag x_first_flag, ProofLine x_first_row, const ProofWire & y,
-    ProofFlag y_first_flag, ProofLine y_first_row, ProofLine clause, Integer guard_coefficient) -> void
+auto ComparatorNetwork::set_lower_bound(const ProofWire & start, ProofLine row) -> void
 {
-    if (guard_coefficient > _big)
-        throw ProofError{"comparator network guard coefficient is too small for the model's rows"};
+    _lower.insert_or_assign(start.id, row);
+}
 
-    auto adopt = [&](const ProofWire & first, ProofFlag flag, ProofLine row) -> ProofLine {
+auto ComparatorNetwork::add_separation(
+    const ProofWire & x, const ModelSeparation & x_first, const ProofWire & y, const ModelSeparation & y_first, ProofLine clause) -> void
+{
+    auto adopt = [&](const ProofWire & first, const ModelSeparation & direction) -> ProofLine {
+        if (direction.guard_coefficient > _big)
+            throw ProofError{"comparator network guard coefficient is too small for the model's rows"};
+
         // Subtract the pinned duration, putting the model's `y - x >= p_x` in
         // the duration-relative form the network maintains across a mux.
         PolBuilder relative;
-        relative.add(row).add(_duration_upper.at(_duration.at(first.id).id));
+        relative.add(direction.row).add(_duration_upper.at(_duration.at(first.id).id));
         auto result = relative.emit(_logger, _level);
 
         // Then raise the row's own big-M to the network's, using the literal
         // axiom `~flag >= 0`, so that separation rows all carry the same guard
         // coefficient whether they came from the model or from a comparator.
-        if (guard_coefficient == _big)
+        // Per direction, since the two halves of a pair rarely agree.
+        if (direction.guard_coefficient == _big)
             return result;
         PolBuilder raised;
-        raised.add(! _logger.names_and_ids_tracker().xliteral_for(flag), _big - guard_coefficient, _logger.names_and_ids_tracker()).add(result);
+        raised
+            .add(! _logger.names_and_ids_tracker().xliteral_for(direction.flag), _big - direction.guard_coefficient, _logger.names_and_ids_tracker())
+            .add(result);
         return raised.emit(_logger, _level);
     };
 
-    record_separation(x, adopt(x, x_first_flag, x_first_row), y, adopt(y, y_first_flag, y_first_row), clause);
+    record_separation(x, adopt(x, x_first), y, adopt(y, y_first), clause);
 }
 
 auto ComparatorNetwork::record_separation(
@@ -213,10 +229,10 @@ auto ComparatorNetwork::compare(const ProofWire & a, const ProofWire & b, const 
             for (auto which = 0; which < 4; ++which) {
                 WPBSum clause;
                 switch (which) {
-                case 0: clause += 1_i * ! selector, clause += 1_i * ! on_t, clause += 1_i * out_bit; break;
-                case 1: clause += 1_i * selector, clause += 1_i * ! on_f, clause += 1_i * out_bit; break;
-                case 2: clause += 1_i * ! selector, clause += 1_i * on_t, clause += 1_i * ! out_bit; break;
-                default: clause += 1_i * selector, clause += 1_i * on_f, clause += 1_i * ! out_bit; break;
+                case 0: clause += 1_i * ! selector, add_term_to(clause, 1_i, ! on_t), add_term_to(clause, 1_i, out_bit); break;
+                case 1: clause += 1_i * selector, add_term_to(clause, 1_i, ! on_f), add_term_to(clause, 1_i, out_bit); break;
+                case 2: clause += 1_i * ! selector, add_term_to(clause, 1_i, on_t), add_term_to(clause, 1_i, ! out_bit); break;
+                default: clause += 1_i * selector, add_term_to(clause, 1_i, on_f), add_term_to(clause, 1_i, ! out_bit); break;
                 }
                 auto witness = (which < 2) ? ProofLiteralOrFlag{TrueLiteral{}} : ProofLiteralOrFlag{FalseLiteral{}};
                 per_bit.push_back(_logger.emit_red_proof_line(move(clause) >= 1_i, {{out_bit, witness}}, _level));
@@ -430,7 +446,22 @@ auto ComparatorNetwork::derive_bound(const Comparator & c, const ProofWire & out
     WPBSum goal;
     add_terms(goal, out, -1_i);
     add_terms(goal, d_out, -1_i);
-    return case_split(move(goal) >= -_horizon, {from_a.emit(_logger, _level), from_b.emit(_logger, _level)});
+    return case_split(move(goal) >= -_window_hi, {from_a.emit(_logger, _level), from_b.emit(_logger, _level)});
+}
+
+auto ComparatorNetwork::derive_lower_bound(const Comparator & c, const ProofWire & out, ProofLine ge_a, ProofLine ge_b) -> ProofLine
+{
+    // `out - window_lo >= 0`, carried through the mux from the inputs'. Free at
+    // a window starting from zero, where a bit vector cannot be negative in the
+    // first place --- but the endgame telescopes down to the earliest task's
+    // start, and over a real window what makes that a refutation is that the
+    // earliest start is not earlier than the window it was selected for.
+    PolBuilder from_a;
+    from_a.add(_lower.at(c.a.id)).add(ge_a);
+    PolBuilder from_b;
+    from_b.add(_lower.at(c.b.id)).add(ge_b);
+
+    return case_split(terms(out, 1_i) >= _window_lo, {from_a.emit(_logger, _level), from_b.emit(_logger, _level)});
 }
 
 auto ComparatorNetwork::reify_separation(const ProofWire & x, const ProofWire & y, const string & stem) -> SeparationFlags
@@ -579,7 +610,7 @@ auto ComparatorNetwork::sort(const vector<ProofWire> & tasks) -> SortedTasks
     if (tasks.size() < 2)
         throw ProofError{"a comparator network needs at least two tasks to sort"};
 
-    SortedTasks result{.chain = {}, .preserved = {}, .top_upper_bound = {}};
+    SortedTasks result{.chain = {}, .preserved = {}, .top_upper_bound = {}, .bottom_lower_bound = {}};
 
     auto live = tasks;
     optional<ProofWire> previous_maximum, first_maximum;
@@ -643,6 +674,8 @@ auto ComparatorNetwork::sort(const vector<ProofWire> & tasks) -> SortedTasks
             // bound.
             _upper.insert_or_assign(c.hi.id, derive_bound(c, c.hi, c.d_hi, c.hi_le_a, c.hi_le_b, c.d_hi_le_a, c.d_hi_le_b));
             _upper.insert_or_assign(c.lo.id, derive_bound(c, c.lo, c.d_lo, c.lo_le_a, c.lo_le_b, c.d_lo_le_a, c.d_lo_le_b));
+            _lower.insert_or_assign(c.hi.id, derive_lower_bound(c, c.hi, c.hi_ge_a, c.hi_ge_b));
+            _lower.insert_or_assign(c.lo.id, derive_lower_bound(c, c.lo, c.lo_ge_a, c.lo_ge_b));
 
             leftovers.push_back(c.lo);
             running = c.hi;
@@ -660,6 +693,7 @@ auto ComparatorNetwork::sort(const vector<ProofWire> & tasks) -> SortedTasks
 
     result.chain.push_back(previous_gaps.at(live[0].id));
     result.top_upper_bound = _upper.at(first_maximum->id);
+    result.bottom_lower_bound = _lower.at(live[0].id);
     return result;
 }
 
@@ -667,14 +701,15 @@ auto ComparatorNetwork::sum_up(const SortedTasks & sorted) -> ProofLine
 {
     // Telescope: each chain row is one adjacent gap, so summing them leaves the
     // largest start minus the smallest, minus every duration but the largest's.
-    // The largest's own upper bound puts the horizon on the other side, and the
-    // preservation rows turn the sorted durations back into the instance's own.
-    // What is left says the horizon covers the total work, over a start that
-    // bit-encoding already makes non-negative.
+    // The largest's upper bound and the smallest's lower bound then replace the
+    // two ends by the window they were selected for, and the preservation rows
+    // turn the sorted durations back into the instance's own. What is left says
+    // the window is as wide as the work inside it.
     PolBuilder builder;
     for (const auto & row : sorted.chain)
         builder.add(row);
     builder.add(sorted.top_upper_bound);
+    builder.add(sorted.bottom_lower_bound);
     if (! holds_alternative<comparator_network_mutation::DropPreservation>(_mutation))
         for (const auto & row : sorted.preserved)
             builder.add(row);

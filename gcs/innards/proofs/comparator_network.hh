@@ -109,6 +109,11 @@ namespace gcs::innards
      * introduced during search cannot be a model variable, and does not need to
      * be, every step below being cutting planes over the bits.
      *
+     * A bit is anything a proof can name: a fresh flag, one bit of a model
+     * variable's own encoding (which is how a propagator's tasks enter, without
+     * a copy layer and without the model gaining anything), or a constant, which
+     * is how a variable narrower than the network is padded up to it.
+     *
      * `id` is the network's own handle for the wire, and is what its duration,
      * bounds and separations are filed under.
      *
@@ -117,7 +122,7 @@ namespace gcs::innards
     struct ProofWire
     {
         int id;
-        std::vector<ProofFlag> bits;
+        std::vector<ProofLiteralOrFlag> bits;
     };
 
     /**
@@ -160,6 +165,32 @@ namespace gcs::innards
     };
 
     /**
+     * \brief One direction of a pair's separation, as the model states it.
+     *
+     * `flag` is the model's "x runs before y" flag, `row` the forward half of
+     * its reification (`M * ~flag + y - x >= duration(x)`), and
+     * `guard_coefficient` the `M` that row carries --- which for a row emitted
+     * by ProofModel::add_two_way_reified_constraint is
+     * `-NamesAndIDsTracker::reification_shape(...).reif_coefficient`.
+     *
+     * The coefficient is per direction, not per pair, and asking for it rather
+     * than assuming is not ceremony: a reifier sizes the constant from the
+     * inequality it is given, so `before_{i,j}` and `before_{j,i}` differ
+     * whenever the two tasks' durations or encoding widths do. Raising both by
+     * the same amount leaves one of them short of the network's guard
+     * coefficient, and every later division by it then rounds instead of
+     * cancelling.
+     *
+     * \ingroup Innards
+     */
+    struct ModelSeparation
+    {
+        ProofFlag flag;
+        ProofLine row;
+        Integer guard_coefficient;
+    };
+
+    /**
      * \brief What sorting the tasks leaves behind, and all the endgame needs.
      *
      * \ingroup Innards
@@ -176,8 +207,11 @@ namespace gcs::innards
         /// own.
         std::vector<ProofLine> preserved;
 
-        /// `horizon - largest - duration(largest) >= 0`.
+        /// `window_hi - largest - duration(largest) >= 0`.
         ProofLine top_upper_bound;
+
+        /// `smallest - window_lo >= 0`.
+        ProofLine bottom_lower_bound;
     };
 
     /**
@@ -224,7 +258,7 @@ namespace gcs::innards
 
         ProofLogger & _logger;
         int _width;
-        Integer _horizon;
+        Integer _window_lo, _window_hi;
         ProofLevel _level;
         ComparatorNetworkMutation _mutation;
         Integer _span, _big, _div;
@@ -236,8 +270,9 @@ namespace gcs::innards
         std::map<int, ProofWire> _duration;
         std::map<int, ProofLine> _positivity, _duration_upper;
 
-        /// Each start wire's `horizon - wire - duration(wire) >= 0`.
-        std::map<int, ProofLine> _upper;
+        /// Each start wire's `window_hi - wire - duration(wire) >= 0` and
+        /// `wire - window_lo >= 0`.
+        std::map<int, ProofLine> _upper, _lower;
 
         /// Keyed by the pair of wire ids, smaller first.
         std::map<std::pair<int, int>, Separation> _separations;
@@ -272,6 +307,8 @@ namespace gcs::innards
         [[nodiscard]] auto derive_bound(const Comparator &, const ProofWire & out, const ProofWire & d_out, ProofLine le_a, ProofLine le_b,
             ProofLine d_le_a, ProofLine d_le_b) -> ProofLine;
 
+        [[nodiscard]] auto derive_lower_bound(const Comparator &, const ProofWire & out, ProofLine ge_a, ProofLine ge_b) -> ProofLine;
+
         auto separate_from_gap(const ProofWire & x, const ProofWire & y, ProofLine gap) -> void;
 
         auto transfer(const ProofWire & out, const ProofWire & other, const Comparator &, ProofLine le_a, ProofLine ge_a, ProofLine le_b,
@@ -280,15 +317,18 @@ namespace gcs::innards
     public:
         /**
          * `width` bits per wire, which must be enough for every value the
-         * caller pins or bounds, and `horizon` the upper bound every task's
-         * completion is measured against. The guard coefficient every
-         * conditional row carries is derived from both: it has to dominate
-         * twice a wire's span, so that a transfer lemma's division comes out at
-         * one, and to reach the guard coefficient of the caller's own rows, so
-         * that \ref add_separation can raise them to it.
+         * caller pins or bounds, and `[window_lo, window_hi)` the window whose
+         * tasks are being sorted --- for a whole-problem refutation that is
+         * `[0, horizon)`, and for a propagator it is the overloaded window.
+         *
+         * The guard coefficient every conditional row carries is derived from
+         * the width and the window: it has to dominate twice a wire's span, so
+         * that a transfer lemma's division comes out at one, and to reach the
+         * guard coefficient of the caller's own rows, so that \ref
+         * add_separation can raise them to it.
          */
-        explicit ComparatorNetwork(
-            ProofLogger &, int width, Integer horizon, ProofLevel, ComparatorNetworkMutation = comparator_network_mutation::None{});
+        explicit ComparatorNetwork(ProofLogger &, int width, Integer window_lo, Integer window_hi, ProofLevel,
+            ComparatorNetworkMutation = comparator_network_mutation::None{});
 
         [[nodiscard]] auto width() const -> int;
         [[nodiscard]] auto span() const -> Integer;
@@ -298,9 +338,24 @@ namespace gcs::innards
         /// them.
         [[nodiscard]] auto fresh_wire(const std::string & stem) -> ProofWire;
 
-        /// A wire reading flags that already exist --- a model variable's own
-        /// bit encoding, most often. Nothing is emitted.
-        [[nodiscard]] auto wire_over(const std::vector<ProofFlag> & bits) -> ProofWire;
+        /**
+         * A wire reading bits that already exist --- a model variable's own
+         * encoding, most often. Nothing is emitted.
+         *
+         * Fewer bits than the network's width are padded with constant zeroes,
+         * so a window's tasks can have been encoded to different widths and
+         * still be compared. More is an error: the network's guard coefficients
+         * are sized from its width, and a wire that overflows them would make
+         * every guarded row it appears in unsound.
+         *
+         * The bits must read as an unsigned magnitude, least significant first.
+         * A two's-complement encoding's sign bit is not that, and a comparator
+         * muxing one into an unsigned output would land on the wrong value, so
+         * a caller with a possibly-negative variable has to say so some other
+         * way --- which for the disjunctive overload check means a window whose
+         * tasks all start at or after zero.
+         */
+        [[nodiscard]] auto wire_over(const std::vector<ProofLiteralOrFlag> & bits) -> ProofWire;
 
         /// `sign * wire` as pseudo-Boolean terms, for building a row about it.
         [[nodiscard]] auto terms(const ProofWire &, Integer sign) const -> WPBSum;
@@ -325,29 +380,33 @@ namespace gcs::innards
         auto add_task(const ProofWire & start, Integer duration) -> void;
 
         /**
-         * Record `horizon - start - duration >= 0` for a task, from the model's
-         * own `start <= horizon - duration` row.
+         * Record `window_hi - start - duration >= 0` for a task, from a
+         * `start <= window_hi - duration` row the caller supplies --- the
+         * model's own bound row for a refutation, or a reason-backed RUP for a
+         * propagator's window.
          */
-        auto set_upper_bound(const ProofWire & start, ProofLine model_row) -> void;
+        auto set_upper_bound(const ProofWire & start, ProofLine row) -> void;
+
+        /**
+         * And `start - window_lo >= 0`, likewise. Free when the window starts
+         * at zero and the wire is a bit vector, load-bearing otherwise: the
+         * endgame telescopes down to the *earliest* task's start, and what
+         * makes that a refutation is that it cannot be earlier than the window
+         * it was selected for.
+         */
+        auto set_lower_bound(const ProofWire & start, ProofLine row) -> void;
 
         /**
          * Take a pair of tasks' separation from the model and put it in the
-         * form the lemmas want.
-         *
-         * `x_first_row` is the model's forward reification half for "x runs
-         * before y", `M * ~flag + y - x >= duration(x)`, and `x_first_flag` the
-         * flag it is guarded on; likewise the other way round. `clause` says
-         * one of the two flags holds. `guard_coefficient` is the `M` those rows
-         * carry --- for a row emitted by ProofModel::add_two_way_reified_constraint
-         * that is `-NamesAndIDsTracker::reification_shape(...).reif_coefficient`
-         * --- and must not exceed \ref big.
+         * form the lemmas want: `x_first` says x runs before y, `y_first` the
+         * other way round, and `clause` says one of them does.
          *
          * The rows are made duration-relative (the pinned duration subtracted,
          * so the network can carry them across a mux) and raised to the
-         * network's own guard coefficient.
+         * network's own guard coefficient, which neither may exceed.
          */
-        auto add_separation(const ProofWire & x, ProofFlag x_first_flag, ProofLine x_first_row, const ProofWire & y, ProofFlag y_first_flag,
-            ProofLine y_first_row, ProofLine clause, Integer guard_coefficient) -> void;
+        auto add_separation(
+            const ProofWire & x, const ModelSeparation & x_first, const ProofWire & y, const ModelSeparation & y_first, ProofLine clause) -> void;
 
         /**
          * Introduce a comparator over two tasks already in play: a selector
@@ -370,10 +429,9 @@ namespace gcs::innards
          * The endgame: sum the chain, add the largest task's upper bound, and
          * turn the sorted durations back into the instance's own.
          *
-         * The row returned says the horizon is at least the total work, over a
-         * start that bit encoding already makes non-negative --- so if the
-         * tasks do not fit in the window, it is contradictory outright and any
-         * RUP closes. Emitting that contradiction is left to the caller, which
+         * The row returned says the window is at least as wide as the total
+         * work in it --- so if the tasks do not fit, it is contradictory
+         * outright and any RUP closes. Emitting that contradiction is left to the caller, which
          * inside a propagator means `ThenRUP::Yes` under a reason rather than a
          * bare line.
          */
