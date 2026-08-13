@@ -884,6 +884,16 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         // loop below simply does not run; no early exit needed.
         sort(candidates, [](const Candidate & a, const Candidate & b) { return a.lct < b.lct; });
 
+        // The tallest height any candidate could bring to a window, which is
+        // what makes edge-finding's `rest` largest. One multiplication against
+        // it rules a window out for every task at once, and most windows go
+        // that way --- worth having, because the task scan inside the window
+        // sweep is what makes edge-finding cubic where the overload check is
+        // quadratic.
+        Integer tallest = 0_i;
+        for (const auto & c : candidates)
+            tallest = max(tallest, hlb(c.task));
+
         vector<Integer> window_starts;
         window_starts.reserve(candidates.size());
         for (const auto & c : candidates)
@@ -905,7 +915,72 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 inside_tasks.push_back(c.task);
 
                 auto b = c.lct;
-                auto supply = capacity * slots_within(a, b);
+                auto width = slots_within(a, b);
+                auto supply = capacity * width;
+
+                // Edge-finding. A task j that starts inside [a, b) but is not
+                // contained in it can be pushed when the window has no room
+                // left: if everything contained plus the whole of j cannot fit,
+                // j must end after b, and the most of j that can be inside the
+                // window is what the contained tasks leave over. Writing
+                //
+                //     rest = energy − (capacity − h_j) · width
+                //
+                // for the contained energy that exceeds what could be there if
+                // j ran at full height across the whole window, j occupies at
+                // most width − ⌈rest / h_j⌉ of the window's slots, so it starts
+                // at a + ⌈rest / h_j⌉ or later.
+                //
+                // The rule is written to fit one certificate: over this window,
+                // the contained tasks' energy by the window-energy lemma, plus
+                // j's *clipped* energy at start bounds [est_j, new_lb − 1],
+                // against the same capacity lines the overload check cites.
+                // Which is why the fire condition below is the certificate's
+                // own inequality and not the textbook detection alone --- what
+                // the propagator asks is exactly what the proof will say.
+                if (rules.edge_finding && ! inside_tasks.empty() && energy > (capacity - tallest) * width) {
+                    for (const auto & j : candidates) {
+                        // Contained tasks are already counted, and one starting
+                        // before a would need the wider window [est_j, b) --- a
+                        // different window, which this sweep visits in its own
+                        // right when some task's est is that low.
+                        if (j.est < a || j.lct <= b)
+                            continue;
+
+                        auto h_j = hlb(j.task), p_j = llb(j.task);
+                        auto rest = energy - (capacity - h_j) * width;
+                        if (rest <= 0_i)
+                            continue;
+
+                        // Detection: the contained tasks together with the
+                        // whole of j do not fit. Without it the push can land
+                        // where j's clipped energy is only p_j, which is too
+                        // little to refute.
+                        if (energy + h_j * p_j <= supply)
+                            continue;
+
+                        auto new_lb = a + (rest + h_j - 1_i) / h_j;
+                        if (new_lb <= j.est)
+                            continue;
+
+                        // What the lemma would derive for j, were it asked for
+                        // this window under the negated conclusion. The window
+                        // stands in for j's flag range, which is safe because
+                        // the lemma clips to max(a, flag range start) and j
+                        // starts at or after both.
+                        auto clipped =
+                            window_energy::window_energy_bound(p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{j.est, new_lb - 1_i});
+                        if (energy + h_j * clipped <= supply)
+                            continue;
+
+                        if (logger)
+                            throw ProofError{"cumulative edge-finding is not certified yet"};
+
+                        inference.infer_greater_than_or_equal(
+                            logger, starts[j.task], new_lb, JustifyUsingRUP{hints::Cumulative{owner}}, reason_with_presence());
+                    }
+                }
+
                 auto outside_profile = rules.profile_overload ? profile_within(a, b) - inside_mandatory : 0_i;
                 if (energy + outside_profile <= supply)
                     continue;

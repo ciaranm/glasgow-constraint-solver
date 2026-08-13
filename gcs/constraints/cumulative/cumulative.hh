@@ -43,6 +43,16 @@ namespace gcs
         /// that are *not* fully contained in the window (rule (TTOC)). Has no
         /// effect unless \ref overload is also set.
         bool profile_overload = true;
+
+        /// Edge-finding: if a window's contained tasks plus one more task that
+        /// starts inside it cannot all fit, that task must end after the
+        /// window, and its start is pushed up by the energy the window has no
+        /// room for. Unlike the overload check this moves a bound, and it runs
+        /// over the same window sweep.
+        ///
+        /// \warning Not yet certified. A propagator with this set refuses to
+        /// run against a proof logger.
+        bool edge_finding = false;
     };
 
     /**

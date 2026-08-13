@@ -339,6 +339,10 @@ auto main(int argc, char * argv[]) -> int
             ("infer-cumulative-lifting-calls",                                                           //
                 "Cap how many lifting subproblems are solved (Sidorov's N_calls)",                       //
                 cxxopts::value<std::size_t>()->default_value("20000"))                                   //
+            ("cumulative-edge-finding",                                                                  //
+                "Run edge-finding on every posted Cumulative, alongside time-tabling and the overload "  //
+                "check. Not certified yet, so a run with --prove will refuse it",                        //
+                cxxopts::value<bool>()->default_value("false"))                                          //
             ("mutate-makespan-bound",                                                                    //
                 "Claim a makespan one larger than the inferred constraints' energy supports. For "       //
                 "validating the bound only: VeriPB must reject the resulting proof, and a run that "     //
@@ -620,6 +624,9 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
+    auto cumulative_rules = CumulativeRules{};
+    cumulative_rules.edge_finding = options_vars["cumulative-edge-finding"].as<bool>();
+
     vector<IntegerVariableID> machine_order_vars;
     if (machine_variant == "difference" && machine_starts.size() >= 2)
         for (std::size_t a = 0; a < machine_starts.size(); ++a)
@@ -735,7 +742,7 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(Disjunctive{users, user_durations}.with_rules(disjunctive_rules));
         }
         else
-            problem.post(Cumulative{task_starts, task_durations, task_demands, instance.capacities[r]});
+            problem.post(Cumulative{task_starts, task_durations, task_demands, instance.capacities[r]}.with_rules(cumulative_rules));
     }
 
     // The four ways of saying that the machine does one thing at a time. Every
