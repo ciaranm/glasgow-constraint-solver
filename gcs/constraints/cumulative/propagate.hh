@@ -4,6 +4,7 @@
 #include <gcs/constraint_id.hh>
 #include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/constraints/innards/task_presence.hh>
+#include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
@@ -16,6 +17,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <tuple>
 #include <vector>
 
 namespace gcs::innards
@@ -64,7 +66,12 @@ namespace gcs::innards
         /// contribution. Empty for a constant height, and empty throughout for
         /// a derived Cumulative, which takes constant heights only.
         std::vector<std::vector<std::vector<ProofFlag>>> contrib_flags;
-        std::vector<Integer> per_task_t_lo;
+        /// Where each task's flags run from and to, inclusive. The `hi` half
+        /// is what edge-finding needs: a window can extend past the last time a
+        /// task could be active, and both the rule and its certificate have to
+        /// clip to the same place or the propagator will fire where the lemma
+        /// cannot derive what it assumed.
+        std::vector<Integer> per_task_t_lo, per_task_t_hi;
 
         /// Per task, the `end >= start + length` line for the proof-only end
         /// proxy a task whose start and length both vary is pinned through, and
@@ -89,6 +96,20 @@ namespace gcs::innards
         std::vector<std::size_t> overload_tasks;
         std::vector<Integer> time_slot_prefix;
         Integer time_slot_lo = 0_i;
+
+        /// Edge-finding's window-energy rows, keyed on (task, window lo, window
+        /// hi, threshold). They are facts about the model rather than about the
+        /// search state, so they live at ProofLevel::Top and every later firing
+        /// over the same window cites the same line. Shared, and mutable
+        /// through the shared_ptr, because the propagator closure holds these
+        /// inputs by value and const.
+        ///
+        /// Worth having by a wide margin: measured over the Pack instances, a
+        /// row is cited between 322 and 3455 times for each time it is derived,
+        /// because a window is a pair of an earliest start and a latest
+        /// completion time and those repeat constantly. Re-deriving per firing
+        /// costs about a hundred times more.
+        std::shared_ptr<std::map<std::tuple<std::size_t, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>> guarded_energy;
     };
 
     /**

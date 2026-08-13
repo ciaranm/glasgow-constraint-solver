@@ -276,6 +276,7 @@ if(GCS_BUILD_TESTS)
     add_executable(count_test constraints/count/count_test.cc)
     add_executable(cumulative_test constraints/cumulative/cumulative_test.cc)
     add_executable(cumulative_overload_test constraints/cumulative/cumulative_overload_test.cc)
+    add_executable(cumulative_edge_finding_test constraints/cumulative/cumulative_edge_finding_test.cc)
     add_executable(derived_cumulative_test constraints/cumulative/derived_cumulative_test.cc)
     add_executable(cumulative_optional_test constraints/cumulative/cumulative_optional_test.cc)
     add_executable(difference_test constraints/difference/difference_constraints_test.cc)
@@ -329,7 +330,7 @@ if(GCS_BUILD_TESTS)
 
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test bin_packing_test comparison_test
-            count_test cumulative_test cumulative_overload_test cumulative_optional_test derived_cumulative_test difference_test disjunctive_test disjunctive_optional_test disjunctive_overload_test disjunctive_precedences_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
+            count_test cumulative_test cumulative_overload_test cumulative_edge_finding_test cumulative_optional_test derived_cumulative_test difference_test disjunctive_test disjunctive_optional_test disjunctive_overload_test disjunctive_precedences_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
             logical_test mdd_test min_distance_test min_distance_matching_test min_max_test mini_linear_test multiply_test n_value_test nogoods_test parity_test
             plus_minus_test power_test product_bounds_test product_justify_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
@@ -352,6 +353,12 @@ if(GCS_BUILD_TESTS)
     add_test(NAME gac_global_cardinality_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:gac_global_cardinality_test>)
     add_test(NAME cumulative_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
     add_test(NAME cumulative_overload COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_overload_test>)
+    add_test(NAME cumulative_edge_finding COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_edge_finding_test>)
+    foreach(mutation drop toofar capacity)
+        add_test(NAME cumulative_edge_finding_mutation_${mutation}
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                --basename cumulative_edge_finding_mutation_${mutation} $<TARGET_FILE:cumulative_edge_finding_test> --mutate=${mutation})
+    endforeach()
     add_test(NAME derived_cumulative COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:derived_cumulative_test>)
     # Mutation lanes: each writes a deliberately corrupted proof of the
     # sharp-margin fixture, and passes only if veripb rejects it. Distinct

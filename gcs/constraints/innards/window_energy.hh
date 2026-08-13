@@ -98,6 +98,66 @@ namespace gcs::innards::window_energy
      */
     [[nodiscard]] auto derive_window_energy(ProofLogger &, const ReasonLiterals &, const ConstantLengthTask &, Integer lo, Integer hi,
         std::pair<Integer, Integer> start_bounds, ProofLevel) -> std::optional<WindowEnergy>;
+
+    /**
+     * \brief What derive_guarded_window_energy() proved.
+     *
+     * The line reads
+     *
+     * <blockquote>
+     * sum of <code>active[t]</code> over the window
+     * + <code>low_coeff</code>&middot;<code>~[start &ge; low_guard]</code>
+     * + <code>bound</code>&middot;<code>[start &ge; high_guard]</code>
+     * &ge; <code>bound</code>
+     * </blockquote>
+     *
+     * so a citer has to discharge both guards. The first holds for any task the
+     * window contains, the second is the negation of a bound push's conclusion.
+     */
+    struct GuardedWindowEnergy
+    {
+        ProofLine line;
+        /// The activity the line establishes once both guards are discharged.
+        Integer bound;
+        /// The window the sum runs over: the requested one clipped to the flag range.
+        Integer lo, hi;
+        /// The line carries <code>low_coeff</code> copies of
+        /// <code>~[start &ge; low_guard]</code>. A citer whose reason entails
+        /// <code>start &ge; low_guard</code> discharges them.
+        Integer low_guard, low_coeff;
+        /// ... and <code>bound</code> copies of <code>[start &ge; high_guard]</code>,
+        /// which is the requested threshold.
+        Integer high_guard;
+    };
+
+    /**
+     * \brief Derive the same activity bound as derive_window_energy(), but as a
+     * fact about the *model* rather than about the current bounds, so that it
+     * can be kept and cited again.
+     *
+     * derive_window_energy() resolves the order literals its sum leaves over
+     * against <code>start_bounds</code>, which makes the line reason-backed and
+     * so good for one inference. This weakens them onto two guard literals
+     * instead --- every "ends by t" survivor onto <code>[start &ge; low_guard]</code>
+     * along the order encoding's own monotonicity, and every "starts after t"
+     * survivor at or above <code>high_guard</code> onto that --- leaving a line
+     * that holds for every value of the start variable. Emit it once at
+     * ProofLevel::Top and every later firing over the same window cites it.
+     *
+     * The bound is the same one window_energy_bound() predicts for start bounds
+     * <code>(low_guard, high_guard - 1)</code>: the guards stand in for the
+     * bounds a firing would have had. It is therefore the *clipped* bound
+     * whenever <code>high_guard</code> falls inside the window, which is what a
+     * bound push needs --- the pushed task is the one that does not fit.
+     *
+     * Costs two more pol lines per surviving order literal than the
+     * reason-backed form, all of them inside the part that gets kept.
+     *
+     * Returns nullopt on an empty clipped window, or when the bound would be
+     * zero or less.
+     */
+    [[nodiscard]] auto derive_guarded_window_energy(ProofLogger &, const ConstantLengthTask &, Integer lo, Integer hi, Integer high_guard, ProofLevel)
+        -> std::optional<GuardedWindowEnergy>;
 }
 
 #endif
