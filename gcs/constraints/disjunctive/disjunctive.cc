@@ -197,11 +197,16 @@ auto Disjunctive::prepare(Propagators &, State & initial_state, ProofModel * con
     // Resolve length snapshots. _length_vals is the constant value (0
     // placeholder for a variable, where _lengths[i] is read from the state).
     _length_vals.assign(n, 0_i);
+    _energy_lens.assign(n, 0_i);
     for (size_t i = 0; i < n; ++i) {
-        if (is_constant_variable(_lengths[i]))
+        if (is_constant_variable(_lengths[i])) {
             _length_vals[i] = constant_value_of(_lengths[i]);
+            _energy_lens[i] = _length_vals[i];
+        }
         else if (initial_state.lower_bound(_lengths[i]) < 0_i)
             throw InvalidProblemDefinitionException{"Disjunctive: lengths must be non-negative"};
+        else
+            _energy_lens[i] = initial_state.lower_bound(_lengths[i]);
     }
 
     // Resolve each task's presence to the variable its separation clauses have
@@ -358,9 +363,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [starts = move(_starts), lengths = move(_length_vals), length_vars = move(_lengths), zero = move(_zero), strict = _strict,
-            active_tasks = move(_active_tasks), before_flags = move(_before_flags), clause_lines = move(_clause_lines), presence = move(_presence),
-            rules = _rules, mutation = _proof_mutation, presence_mutation = _presence_mutation,
+        [starts = move(_starts), lengths = move(_length_vals), energy_lens = move(_energy_lens), length_vars = move(_lengths), zero = move(_zero),
+            strict = _strict, active_tasks = move(_active_tasks), before_flags = move(_before_flags), clause_lines = move(_clause_lines),
+            presence = move(_presence), rules = _rules, mutation = _proof_mutation, presence_mutation = _presence_mutation,
             // The overload certificate's vocabulary, kept across firings when
             // it lives at Top. A shared_ptr rather than a member because the
             // propagator is invoked through a const callable, and the cache is
@@ -370,12 +375,16 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // three things and on nothing else, so they are reusable on exactly
             // the same terms.
             bridge = make_shared<map<tuple<size_t, size_t, long long, long long, long long>, ProofLine>>(),
+            floors = make_shared<map<size_t, ProofLine>>(), escapes = make_shared<map<size_t, ProofLine>>(),
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Current guaranteed (min) and possible (max) duration of task i:
             // for a constant duration both are the value; for a variable
             // duration they are the live lower / upper bounds.
             auto is_var_len = [&](size_t i) -> bool { return ! is_constant_variable(length_vars[i]); };
             auto min_len = [&](size_t i) -> Integer { return is_var_len(i) ? state.lower_bound(length_vars[i]) : lengths[i]; };
+            // What the overload check counts, which is not the same thing: see
+            // Disjunctive::_energy_lens.
+            auto energy_len = [&](size_t i) -> Integer { return energy_lens[i]; };
             auto max_len = [&](size_t i) -> Integer { return is_var_len(i) ? state.upper_bound(length_vars[i]) : lengths[i]; };
 
             // A task with no presence variable is always here. An optional one
@@ -421,8 +430,13 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // (nullopt for a constant start, whose value is already folded
             // into the flag's row); a variable duration l_a additionally
             // cites its current lower bound (the reason covers it).
+            //
+            // `duration_floor`, when given, replaces the duration's current
+            // bound row with one the caller has: the overload certificate
+            // needs a *reason-free* floor, and cites the model's declared one.
             auto emit_before_pol = [&](size_t a, size_t b, const optional<IntegerVariableCondition> & cond_a,
-                                       const optional<IntegerVariableCondition> & cond_b) -> ProofLine {
+                                       const optional<IntegerVariableCondition> & cond_b,
+                                       const optional<ProofLine> & duration_floor = nullopt) -> ProofLine {
                 auto & tracker = logger->names_and_ids_tracker();
                 PolBuilder pol;
                 pol.add(before_flags.at(make_pair(a, b)).forward_line);
@@ -442,7 +456,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 };
                 if (cond_a)
                     add_defining_row(*cond_a);
-                if (is_var_len(a))
+                if (duration_floor)
+                    pol.add(*duration_floor);
+                else if (is_var_len(a))
                     add_defining_row(length_vars[a] >= state.lower_bound(length_vars[a]));
                 if (cond_b)
                     add_defining_row(*cond_b);
@@ -485,11 +501,35 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // citing a flag defined at a shorter duration would be building a
             // pol whose terms no longer cancel --- a rejected proof rather than
             // an unsound one, but rejected all the same.
+            // The reason-free facts a variable-duration task's bridge needs:
+            // that it runs for at least its declared minimum, and --- in
+            // non-strict mode, where its separation clauses carry a
+            // zero-length escape --- that the escape is false. Both follow from
+            // the model's own bound row, so neither wants a reason, and both
+            // are about the task alone, so both are kept beside the vocabulary.
+            auto duration_floor = [&](size_t i) -> optional<ProofLine> {
+                if (! is_var_len(i))
+                    return nullopt;
+                if (auto found = floors->find(i); found != floors->end())
+                    return found->second;
+                return floors->emplace(i, logger->emit_rup_proof_line(WPBSum{} + 1_i * length_vars[i] >= energy_len(i), rules.overload_vocabulary_at))
+                    .first->second;
+            };
+
+            auto escape_is_false = [&](size_t i) -> optional<ProofLine> {
+                if (! zero[i])
+                    return nullopt;
+                if (auto found = escapes->find(i); found != escapes->end())
+                    return found->second;
+                return escapes->emplace(i, logger->emit_rup_proof_line(WPBSum{} + 1_i * ! *zero[i] >= 1_i, rules.overload_vocabulary_at))
+                    .first->second;
+            };
+
             auto activity_flag = [&](size_t i, Integer t) -> const ActivityFlag & {
-                auto key = make_tuple(i, t.raw_value, min_len(i).raw_value);
+                auto key = make_tuple(i, t.raw_value, energy_len(i).raw_value);
                 if (auto found = activity->find(key); found != activity->end())
                     return found->second;
-                auto started = starts[i] >= t - min_len(i) + 1_i, starts_by = starts[i] < t + 1_i;
+                auto started = starts[i] >= t - energy_len(i) + 1_i, starts_by = starts[i] < t + 1_i;
                 auto both = WPBSum{} + 1_i * started + 1_i * starts_by >= 2_i;
                 auto flag = logger->create_proof_flag("dovl");
                 auto implies_started =
@@ -522,7 +562,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     return logger->emit_rup_proof_line(
                         WPBSum{} + 1_i * ! activity_flag(i, t).flag + 1_i * ! activity_flag(j, t).flag >= 1_i, ProofLevel::Temporary);
 
-                auto key = make_tuple(min(i, j), max(i, j), t.raw_value, min_len(min(i, j)).raw_value, min_len(max(i, j)).raw_value);
+                auto key = make_tuple(min(i, j), max(i, j), t.raw_value, energy_len(min(i, j)).raw_value, energy_len(max(i, j)).raw_value);
                 if (rules.overload_cache_bridge)
                     if (auto found = bridge->find(key); found != bridge->end()) {
                         ++overload_instrumentation.bridge_reused;
@@ -531,7 +571,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 
                 auto half = [&](size_t x, size_t y) -> ProofLine {
                     PolBuilder pol;
-                    pol.add(emit_before_pol(x, y, starts[x] >= t - min_len(x) + 1_i, starts[y] < t + 1_i));
+                    pol.add(emit_before_pol(x, y, starts[x] >= t - energy_len(x) + 1_i, starts[y] < t + 1_i, duration_floor(x)));
                     pol.add(activity_flag(x, t).implies_started);
                     pol.add(activity_flag(y, t).implies_starts_by);
                     return pol.saturate().emit(*logger, ProofLevel::Temporary);
@@ -540,6 +580,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 pol.add(half(i, j));
                 pol.add(half(j, i));
                 pol.add(clause_lines.at(make_pair(min(i, j), max(i, j))));
+                // A separation clause carrying zero-length escapes would leave
+                // them in the at-most-one, where the fold has no use for them.
+                for (auto r : {i, j})
+                    if (auto row = escape_is_false(r))
+                        pol.add(*row);
                 // Kept at the vocabulary's level rather than Temporary when it
                 // is to be reused. The rows it was derived from may be deleted
                 // out from under it; a derivation that has already happened
@@ -562,9 +607,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 PolBuilder pol;
                 for (Integer t = lo; t < hi; ++t)
                     pol.add(activity_flag(i, t).backward);
-                for (Integer v = lo - min_len(i) + 1_i; v <= lo; ++v)
+                for (Integer v = lo - energy_len(i) + 1_i; v <= lo; ++v)
                     pol.add(logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[i] >= v) >= 1_i, ProofLevel::Temporary));
-                for (Integer v = hi - min_len(i) + 1_i; v <= hi; ++v)
+                for (Integer v = hi - energy_len(i) + 1_i; v <= hi; ++v)
                     pol.add(logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[i] < v) >= 1_i, ProofLevel::Temporary));
                 return pol.emit(*logger, ProofLevel::Temporary);
             };
@@ -1271,36 +1316,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // A task with no guaranteed duration carries no energy,
                         // and one not known present might not be here to carry
                         // any: counting either would manufacture a conflict.
-                        if (min_len(i) == 0_i || ! is_present(i))
-                            continue;
-                        // A *variable* duration is left out of the window
-                        // rather than counted at its lower bound, and the
-                        // reason is the certificate rather than the rule.
-                        //
-                        // Both certificates read the duration as a constant.
-                        // The time-indexed one defines its activity flags on an
-                        // order literal of the start with a threshold computed
-                        // from the duration, so the before flag's row carries a
-                        // duration term with nothing to cancel against; citing
-                        // the duration's bound row instead leaves a residual
-                        // literal, and the per-time at-most-ones are then not
-                        // the two-literal rows the fold needs. The sorting
-                        // network pins its durations outright. Counting a
-                        // variable-duration task would therefore fire the rule
-                        // and emit a certificate VeriPB rejects.
-                        //
-                        // Doing this properly means defining the flags against
-                        // `s_i + l_i` --- which makes the bridge cancel exactly
-                        // --- and giving the energy telescope an order-encoded
-                        // end variable to sum over, since reified linear atoms
-                        // at consecutive times have no encoded relationship to
-                        // telescope through. Until then the rule reasons about
-                        // the constant-duration tasks alone, which is sound and
-                        // simply weaker.
-                        if (is_var_len(i))
+                        if (energy_len(i) == 0_i || ! is_present(i))
                             continue;
                         auto [s_lo, s_hi] = state.bounds(starts[i]);
-                        candidates.push_back(Candidate{i, s_lo, s_hi + min_len(i), min_len(i)});
+                        candidates.push_back(Candidate{i, s_lo, s_hi + energy_len(i), energy_len(i)});
                     }
                     sort(candidates, [](const Candidate & a, const Candidate & b) { return a.lct < b.lct; });
 
@@ -1422,6 +1441,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 if (ProofLevel::Top != rules.overload_vocabulary_at) {
                                     activity->clear();
                                     bridge->clear();
+                                    floors->clear();
+                                    escapes->clear();
                                 }
 
                                 // (1) The vocabulary: a flag per (task, time)

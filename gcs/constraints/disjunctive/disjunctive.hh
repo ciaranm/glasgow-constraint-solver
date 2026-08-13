@@ -228,6 +228,21 @@ namespace gcs
         // one, where _lengths[i] is read from the state instead).
         std::vector<Integer> _length_vals;
 
+        // The duration the overload check counts a task's energy at, and
+        // builds its certificate's constant thresholds from: the constant
+        // duration, or for a variable one its *declared* lower bound rather
+        // than its current one.
+        //
+        // Declared, because the certificate needs it reason-free. The pairwise
+        // rows carry a duration term with nothing to cancel against, so
+        // something has to say how short the task can be --- and a fact about
+        // the current state would have to be reason-backed, which puts the
+        // reason's literals into the per-time at-most-ones, where the fold's
+        // induction divides and does not carry them cleanly. The model's own
+        // bound row says it outright, for the price of counting a task that
+        // search has since lengthened at less energy than it now has.
+        std::vector<Integer> _energy_lens;
+
         // Encoded pairwise reified before-flags. The OPB stays purely
         // declarative: for each ordered pair (i, j) of active tasks,
         // before_{i,j} <-> s_i + l_i <= s_j, plus one clause per unordered
