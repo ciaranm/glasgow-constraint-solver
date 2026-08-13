@@ -138,9 +138,19 @@ namespace gcs
         ///
         /// so the crossing is out at roughly three hundred. The first two rows
         /// are searches that ran to completion; the second two timed out at
-        /// different points and are marginal costs rather than totals, so treat
-        /// three hundred as bracketed rather than pinned --- the artefact is
-        /// what pins it.
+        /// different points and are marginal costs rather than totals, so three
+        /// hundred was bracketed rather than pinned.
+        ///
+        /// The artefact has since been run, and it does not pin it either: on
+        /// generated RCPSP the time-indexed certificate wins at every horizon
+        /// where both certificates fit a proof budget at all (16.6x at a horizon
+        /// of 140, 9.25x at 275, 5.92x at 542), and past that the network does
+        /// not produce a complete proof to compare against. So no cell was found
+        /// where the network is cheaper, and three hundred stands as a figure
+        /// high enough never to pick it wrongly --- it selected the better
+        /// certificate on every comparable cell --- rather than as a measured
+        /// crossing point. A family with genuinely long horizons and small
+        /// windows would be needed to find one, and none is to hand.
         ///
         /// Set this to seven alongside `overload_cache_bridge = false`: without
         /// the amortisation the old number is the right one, and the two

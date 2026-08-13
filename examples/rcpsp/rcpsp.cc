@@ -409,10 +409,11 @@ auto main(int argc, char * argv[]) -> int
                 "one unchanged encoding, so this selects a proof strategy and not a model",    //
                 cxxopts::value<string>()->default_value("cheaper"))                            //
             ("disjunctive-overload-crossover",
-                "Where cheaper switches: emit the sorting network once the window's span "      //
-                "exceeds this many times the number of tasks in it. Seven by default, measured" //
-                " in-solver",                                                                   //
-                cxxopts::value<std::size_t>()->default_value("7"))                              //
+                "Where cheaper switches: emit the sorting network once the window's span "                      //
+                "exceeds this many times the number of tasks in it. Set this to seven alongside "               //
+                "--disjunctive-overload-derive-at-most-ones-again: without that amortisation the "              //
+                "two certificates cross far earlier, and the pair of settings belongs together",                //
+                cxxopts::value<std::size_t>()->default_value(to_string(DisjunctiveRules{}.overload_crossover))) //
             ("disjunctive-overload-derive-at-most-ones-again",
                 "Derive the time-indexed certificate's per-time at-most-ones per firing rather " //
                 "than keeping them and citing them again. Here so that what keeping them buys "  //
