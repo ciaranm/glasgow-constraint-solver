@@ -1490,6 +1490,13 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 std::to_string(b.raw_value) + ") rule=" + (strengthen.empty() ? "ttheoc" : "kaoc") +
                                 " strengthened=" + std::to_string(strengthen.size()) + "/" + std::to_string((b - a).raw_value));
 
+                            // Tests only: each of these breaks one step of what
+                            // follows in a way that must make VeriPB reject.
+                            // See CumulativeProofMutation.
+                            auto claim_one_better = std::holds_alternative<cumulative_proof_mutation::ClaimOneBetterAvailability>(mutation);
+                            auto strengthen_one_fewer = std::holds_alternative<cumulative_proof_mutation::StrengthenOneFewer>(mutation);
+                            auto omit_capacity_line = std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation);
+
                             vector<bool> is_inside(starts.size(), false);
                             for (auto i : inside_tasks)
                                 is_inside[i] = true;
@@ -1503,6 +1510,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                             // that what is left is a statement about exactly
                             // the heights the knapsack reasons over.
                             for (Integer t = a; t < b; ++t) {
+                                if (omit_capacity_line && t == b - 1_i)
+                                    continue;
                                 auto capacity_line = capacity_lines.find(t);
                                 if (capacity_line == capacity_lines.end())
                                     continue;
@@ -1528,9 +1537,14 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 auto idx = static_cast<size_t>((t - t_lo).raw_value);
                                 auto left = max(0_i, capacity - mand_load[idx]);
                                 auto line = avail.emit(*logger, ProofLevel::Temporary);
-                                if (find(strengthen, t) != strengthen.end()) {
-                                    auto strengthened = derive_subset_sum_strengthening(*logger, items, line, left, ProofLevel::Temporary);
-                                    if (strengthened.bound != elastic_supply_at(t))
+                                auto strengthen_here = find(strengthen, t) != strengthen.end();
+                                if (strengthen_one_fewer && ! strengthen.empty() && t == strengthen.front())
+                                    strengthen_here = false;
+                                if (strengthen_here) {
+                                    auto strengthened = derive_subset_sum_strengthening(*logger, items, line, left, ProofLevel::Temporary,
+                                        claim_one_better ? SubsetSumMutation{subset_sum_mutation::ClaimOneBetter{}}
+                                                         : SubsetSumMutation{subset_sum_mutation::None{}});
+                                    if (! claim_one_better && strengthened.bound != elastic_supply_at(t))
                                         throw ProofError{"cumulative knapsack overload: the strengthening at time " + std::to_string(t.raw_value) +
                                             " reached " + std::to_string(strengthened.bound.raw_value) + ", not the " +
                                             std::to_string(elastic_supply_at(t).raw_value) + " the check counted on"};
@@ -1544,6 +1558,16 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                             // sum: those time points charged the availability
                             // side instead, and counting them twice would leave
                             // the pol open.
+                            //
+                            // That weakening is what makes the pol *itself*
+                            // contradictory, and it is deliberately kept even
+                            // though it is not load-bearing: leaving it out
+                            // still verifies, because the terms it would have
+                            // cancelled are ones unit propagation assigns from
+                            // the reason's own bound literals --- the same
+                            // reason (TTOC)'s pins are usually droppable. So
+                            // there is no mutation lane for this step; a
+                            // corruption of it is accepted, and rightly.
                             for (auto i : inside_tasks) {
                                 auto energy_line = window_energy::derive_window_energy(*logger, reason,
                                     window_energy::ConstantLengthTask{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i],

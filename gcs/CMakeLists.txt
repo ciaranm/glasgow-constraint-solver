@@ -365,6 +365,14 @@ if(GCS_BUILD_TESTS)
     add_test(NAME cumulative_ttef COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_ttef_test>)
     add_test(NAME cumulative_nfnl COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_nfnl_test>)
     add_test(NAME cumulative_kaoc COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_kaoc_test>)
+    foreach(fixture cloutier_ex2 dp_path compulsory)
+        foreach(mutation claim_one_better strengthen_one_fewer capacity)
+            add_test(NAME cumulative_kaoc_mutation_${fixture}_${mutation}
+                COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                    --basename cumulative_kaoc_mutation_${fixture}_${mutation} $<TARGET_FILE:cumulative_kaoc_test>
+                    --mutate=${mutation} --fixture=${fixture})
+        endforeach()
+    endforeach()
     foreach(mutation toofar drop roomy_toofar roomy_drop)
         add_test(NAME cumulative_nfnl_mutation_${mutation}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
