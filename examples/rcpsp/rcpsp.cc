@@ -343,6 +343,11 @@ auto main(int argc, char * argv[]) -> int
                 "Run edge-finding on every posted Cumulative, alongside time-tabling and the overload "  //
                 "check. Certified, but off by default: the sweep that finds the firings is cubic",       //
                 cxxopts::value<bool>()->default_value("false"))                                          //
+            ("cumulative-time-table-edge-finding",                                                       //
+                "Strengthen edge-finding with the mandatory-part load of the tasks the window does not " //
+                "contain (TTEF). Implies --cumulative-edge-finding. Not certified yet, so a run with "   //
+                "--prove will refuse it",                                                                //
+                cxxopts::value<bool>()->default_value("false"))                                          //
             ("mutate-makespan-bound",                                                                    //
                 "Claim a makespan one larger than the inferred constraints' energy supports. For "       //
                 "validating the bound only: VeriPB must reject the resulting proof, and a run that "     //
@@ -625,7 +630,8 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto cumulative_rules = CumulativeRules{};
-    cumulative_rules.edge_finding = options_vars["cumulative-edge-finding"].as<bool>();
+    cumulative_rules.time_table_edge_finding = options_vars["cumulative-time-table-edge-finding"].as<bool>();
+    cumulative_rules.edge_finding = options_vars["cumulative-edge-finding"].as<bool>() || cumulative_rules.time_table_edge_finding;
 
     vector<IntegerVariableID> machine_order_vars;
     if (machine_variant == "difference" && machine_starts.size() >= 2)

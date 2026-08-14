@@ -55,6 +55,17 @@ namespace gcs
         /// anything fires (#742); the inferences themselves cost nothing
         /// measurable.
         bool edge_finding = false;
+
+        /// Strengthen edge-finding with the mandatory-part load of the tasks
+        /// that are *not* fully contained in the window, exactly as \ref
+        /// profile_overload does for the overload check: time-table extended
+        /// edge-finding (TTEF). Has no effect unless \ref edge_finding is also
+        /// set, and wants \ref profile_overload set alongside it, since a
+        /// window the profile already overloads is left to the overload check.
+        ///
+        /// \warning Not yet certified. A propagator with this set refuses to
+        /// run against a proof logger.
+        bool time_table_edge_finding = false;
     };
 
     /**
