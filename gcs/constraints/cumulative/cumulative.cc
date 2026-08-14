@@ -805,14 +805,14 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 cite(i, clipped_window_start(i, a), clipped_window_end(i, b) - llb(i) + 1_i, true, true);
             }
 
-            // The threshold is the guard the conclusion is about, so that is
-            // the one the skip-clip mutation replaces: the un-clipped row is
-            // still valid, being the stronger claim, which is why this lane is
-            // here to be recorded rather than caught.
-            auto skip_clip = std::holds_alternative<cumulative_proof_mutation::EdgeFindingSkipClip>(mutation);
-            cite(pushed, skip_clip && discharge == GuardToDischarge::High ? clipped_window_start(pushed, a) : pushed_low_guard,
-                skip_clip && discharge == GuardToDischarge::Low ? clipped_window_end(pushed, b) - llb(pushed) + 1_i : pushed_high_guard,
-                discharge == GuardToDischarge::Low, discharge == GuardToDischarge::High);
+            // No mutation lane for citing the pushed task's row at the
+            // threshold a *contained* task would use, i.e. for forgetting to
+            // clip. That was tried, and it verifies: the un-clipped row claims
+            // more energy and is usually valid too, being the stronger claim.
+            // So the clipping is not something a corrupted proof can be made to
+            // reveal, and what keeps it honest is the propagator asking
+            // window_energy_bound for exactly what the derivation will be given.
+            cite(pushed, pushed_low_guard, pushed_high_guard, discharge == GuardToDischarge::Low, discharge == GuardToDischarge::High);
 
             pol.emit(*logger, ProofLevel::Temporary);
         };
