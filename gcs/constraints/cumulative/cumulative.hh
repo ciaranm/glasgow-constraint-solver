@@ -96,8 +96,8 @@ namespace gcs
         /// set, and wants \ref profile_overload set alongside it, since a
         /// window the profile already overloads is left to the overload check.
         ///
-        /// \warning Not yet certified. A propagator with this set refuses to
-        /// run against a proof logger.
+        /// Certified, by edge-finding's certificate plus the mandatory
+        /// (task, time) pins the overload check already emits.
         bool time_table_edge_finding = false;
 
         /// Count every task's *guaranteed* energy inside the window --- the
