@@ -313,11 +313,10 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
 
 auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
 {
-    // The rules are measured before they are certified, and a propagator that
-    // infers what it cannot justify is worse than one that declines: refuse
-    // here rather than emit a proof VeriPB will reject.
-    if (_rules.time_table_edge_finding || _rules.energetic_edge_finding)
-        throw UnimplementedException{"the strengthened forms of edge-finding are not yet certified"};
+    // A propagator that infers what it cannot justify is worse than one that
+    // declines: refuse here rather than emit a proof VeriPB will reject.
+    if (_rules.energetic_edge_finding)
+        throw UnimplementedException{"energetic edge-finding is not yet certified"};
 
     // Time-table OPB encoding:
     //   for each task i and each time point t in its possible-active range:
@@ -811,6 +810,42 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 cite(i, clipped_window_start(i, a), clipped_window_end(i, b) - llb(i) + 1_i, true, true);
             }
 
+            // TTEF: the tasks the window does not contain still put their
+            // mandatory-part load into it, and that load is pinned exactly the
+            // way the overload check's (TTOC) strengthening pins it. A task
+            // whose energy row is already in the pol must not be pinned as well
+            // --- the capacity lines supply each time point once, so a second
+            // claim on the same activity would leave the pol open.
+            //
+            // The bounds read here are the live ones rather than the mand_load
+            // snapshot the sweep was set up from. A mandatory part only grows as
+            // the sweep pushes bounds around, so the pins claim at least what
+            // the firing's arithmetic counted, and a pol carrying more energy
+            // than it needs closes just the same.
+            if (rules.time_table_edge_finding) {
+                vector<bool> contained(starts.size(), false);
+                for (auto i : inside_tasks)
+                    contained[i] = true;
+                auto skip_pin = std::holds_alternative<cumulative_proof_mutation::DropProfilePin>(mutation);
+                auto skip_all_pins = std::holds_alternative<cumulative_proof_mutation::DropProfilePins>(mutation);
+                for (auto i : active_tasks) {
+                    if (i == pushed || contained[i] || ! is_present(i))
+                        continue;
+                    auto lst = state.upper_bound(starts[i]);
+                    auto eet = state.lower_bound(starts[i]) + llb(i);
+                    for (Integer t = max(lst, a); t < min(eet, b); ++t) {
+                        if (skip_all_pins)
+                            continue;
+                        if (skip_pin) {
+                            skip_pin = false;
+                            continue;
+                        }
+                        auto [line, coeff] = pin_contributor(reason, i, t);
+                        pol.add(line, coeff);
+                    }
+                }
+            }
+
             // No mutation lane for citing the pushed task's row at the
             // threshold a *contained* task would use, i.e. for forgetting to
             // clip. That was tried, and it verifies: the un-clipped row claims
@@ -1063,6 +1098,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 // lemma a certificate would cite, and it is at least the task's
                 // mandatory part in the window --- and for a contained task it
                 // is the whole of its energy.
+                //
                 // A task the window cannot reach has a *negative* bound here,
                 // the lemma's way of saying it has more slack than the window
                 // has room, so clamp before summing.
