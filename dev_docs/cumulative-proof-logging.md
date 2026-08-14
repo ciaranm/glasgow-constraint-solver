@@ -1133,7 +1133,7 @@ lanes, all rejected.
 - **Not-first / not-last (#732).** Now cheap: it is edge-finding's certificate
   with a different window and the conclusion on the other bound, and the guarded
   row already takes its threshold as a parameter.
-- **Edge-finding's scan (#744).** The rule is certified and its inferences cost
+- **Edge-finding's scan (#742).** The rule is certified and its inferences cost
   nothing measurable, but the window x task sweep that finds them is O(n^3) and
   taxes the solve about 1.5x at identical search. Propagation performance, not
   proof logging.
