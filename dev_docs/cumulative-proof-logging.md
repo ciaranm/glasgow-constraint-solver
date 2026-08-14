@@ -22,13 +22,13 @@ bounds** — over optional tasks and over variable durations, heights and
 capacities.
 
 Also certified, off by default: **edge-finding**, in both directions, under
-`CumulativeRules::edge_finding`, and **time-table extended edge-finding**
-(TTEF) under `CumulativeRules::time_table_edge_finding`. See the sections below.
+`CumulativeRules::edge_finding`, **time-table extended edge-finding** (TTEF)
+under `CumulativeRules::time_table_edge_finding`, and **not-first / not-last**
+under `CumulativeRules::not_first_not_last`. See the sections below.
 
-Not here: **not-first / not-last** and **KAOC** (#550). Those are propagation
-rules a competitive cumulative solver also runs, so the claim to make is "a wide
-range of commonly used techniques", not completeness. The Open follow-ups
-section at the end says what each would take.
+Not here: **KAOC** (#550), and energetic reasoning in general. The claim to make
+is "a wide range of commonly used techniques", not completeness. The Open
+follow-ups section at the end says what each would take.
 
 ## What's hard about it
 
@@ -1201,16 +1201,79 @@ logger while it is set — and it is in the tree to be measured, not to be used:
 the row above is what it buys, and the propagation cost of recomputing the sum
 per window is not paid for on this family.
 
+## Not-first / not-last: the same certificate, different thresholds (#732)
+
+A task that cannot start before every task the window contains has ended must
+start after the earliest of those ends; and a task that cannot end after every
+one of them has started must end before the latest of those starts. So the
+thresholds are the contained set's own `min ect` and `max lst`, not a figure
+computed from the leftover energy --- which is what makes this a different rule
+rather than a weaker edge-finding.
+`CumulativeRules::not_first_not_last`, off by default.
+
+**The certificate is edge-finding's, unchanged.** Same window, same guarded
+rows, same `pol`; what differs is the threshold and which guard carries the
+negated conclusion, and `derive_guarded_window_energy` already takes both as
+parameters. Nothing was added to the proof vocabulary, and the first proof
+generated verified.
+
+**What is new is which tasks it can speak about.** Where a task has one end
+inside the window, edge-finding's threshold is the furthest an energy argument
+over that window can reach --- `step = ceil(rest / h_j)` is exactly the largest
+`v` for which `energy + h_j * minoverlap(a, b, est_j, v-1) > supply` --- so its
+push subsumes this rule's and the live-bound test drops the duplicate. Measured
+over `data_bl`, **every one of 6,316,773 firings is on a task that SPANS the
+window**, which is the case the edge-finding section documents as one where
+nothing can be said. A spanning task's guaranteed energy is a hump in its start:
+it rises until the task is fully inside the window and falls after, so no
+closed form pushes it, and restricting the start to one side of a threshold is
+what makes the hump's *minimum* say something.
+
+One wrinkle in the guards. A spanning task's lower bound is to the left of the
+window, so the low guard cannot be `clipped_window_start`, which would not be
+dischargeable. It is `min(lb(s_j), clipped_window_start(j, a))`: any guard at or
+past the window's start already discharges every survivor the ladder has, so
+where the bound is inside the window the window's own start does just as well
+--- and being a fact about the window rather than about the search, the row it
+derives is the one edge-finding already keeps, rather than one keyed on a bound
+that moves.
+
+**Measured, `data_bl` + `data_pack` at 60 s**, over the 37 instances every arm
+closed:
+
+| arm | recursions | vs baseline | propagations |
+|---|---|---|---|
+| edge-finding | 3,852,140 | 1.000x | 45,917,542 |
+| + not-first / not-last | 3,846,036 | 0.998x | 45,847,449 |
+| TTEF | 2,244,499 | 1.000x | 30,271,109 |
+| + not-first / not-last | 2,238,267 | 0.997x | 30,071,983 |
+
+It changes the search on 5 of 37 over edge-finding and 8 of 37 over TTEF, never
+for the worse, and no arm disagrees about an optimum. But it fires in the
+millions to buy that 0.3%, and at 60 s it **closes fewer instances than leaving
+it off** (37 against 39, and 38 against 39 alongside TTEF) --- the scan costs
+more than the pruning returns. Hence off by default, and hence the honest
+summary: certifiable for nothing, and worth nearly nothing.
+
+Testing is `cumulative_nfnl_test`, whose fixtures were searched the same way
+TTEF's were and against the same two conditions --- the rule must move a bound
+that time-tabling, the overload check, edge-finding and TTEF together do not,
+and the bound must be one a solution sits on. Its mutation harness differs in
+one way from the other two, and deliberately: it does **not** insist the root
+was reached. A push corrupted one step too far can empty a domain outright,
+leaving no root to report, and the proof of that emptying is exactly the
+corrupted step. Where a mutation is a no-op the root *is* reached and veripb
+accepts, which fails the lane, so the verdict is veripb's either way.
+
+`PushOneTooFar` had to be wired into this rule's own pushes. Until it was, the
+lane was corrupting an edge-finding firing on the same instance and reporting a
+rejection that said nothing about not-first / not-last.
+
 ## Open follow-ups
 - **Energetic reasoning.** The window-energy lemma above is the first
   piece of it: horizontally elastic and knapsack-augmented checking
   (#550) build on the clipped form, and the lifted-constraint
   presolvers (#549) on the contained one.
-- **Not-first / not-last (#732).** Now cheap: it is edge-finding's certificate
-  with a different window and the conclusion on the other bound, and the guarded
-  row already takes its threshold as a parameter. Expect the same fixture
-  difficulty TTEF ran into: the conclusion is an existing time point, which is
-  where unit propagation reaches on its own most easily.
 - **Guarded pins for the profile term.** TTEF's pins are reason-backed and
   re-derived per firing, at 2.93 lines' worth per firing and 15,037x repetition.
   A one-time-point `derive_guarded_window_energy` row is keyed by `(task, time)`
