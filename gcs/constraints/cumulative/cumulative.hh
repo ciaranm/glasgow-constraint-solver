@@ -84,6 +84,26 @@ namespace gcs
         /// \warning Not yet certified. A propagator with this set refuses to
         /// run against a proof logger.
         bool energetic_edge_finding = false;
+
+        /// Not-first / not-last: a task that cannot start before every task the
+        /// window contains has ended must start after the earliest of those
+        /// ends, and a task that cannot end after every one of them has started
+        /// must end before the latest of those starts.
+        ///
+        /// The thresholds are the set's own `min ect` and `max lst` rather than
+        /// a figure computed from the leftover energy, which is what makes this
+        /// a different rule from edge-finding rather than a weaker one: it can
+        /// fire on a task that *spans* the window, where edge-finding's closed
+        /// form does not apply and which \ref edge_finding therefore skips.
+        /// Where a task has one end inside the window, edge-finding pushes at
+        /// least as far, and the live-bound check drops the duplicate: measured
+        /// over the benchmark set, *every* firing is on a spanning task.
+        ///
+        /// Certified, by edge-finding's certificate unchanged. Off by default
+        /// because it is not worth its scan: it fires in the millions and buys
+        /// 0.3% of the search, and at a 60 s timeout it closes fewer instances
+        /// than leaving it off.
+        bool not_first_not_last = false;
     };
 
     /**

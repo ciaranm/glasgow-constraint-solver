@@ -353,6 +353,10 @@ auto main(int argc, char * argv[]) -> int
                 "than only the contained tasks' whole energy (subsumes TTEF). Implies "                  //
                 "--cumulative-edge-finding. Not certified yet, so a run with --prove will refuse it",    //
                 cxxopts::value<bool>()->default_value("false"))                                          //
+            ("cumulative-not-first-not-last",                                                            //
+                "Run not-first / not-last on every posted Cumulative, alongside edge-finding. Implies "  //
+                "--cumulative-edge-finding",                                                             //
+                cxxopts::value<bool>()->default_value("false"))                                          //
             ("mutate-makespan-bound",                                                                    //
                 "Claim a makespan one larger than the inferred constraints' energy supports. For "       //
                 "validating the bound only: VeriPB must reject the resulting proof, and a run that "     //
@@ -637,8 +641,9 @@ auto main(int argc, char * argv[]) -> int
     auto cumulative_rules = CumulativeRules{};
     cumulative_rules.time_table_edge_finding = options_vars["cumulative-time-table-edge-finding"].as<bool>();
     cumulative_rules.energetic_edge_finding = options_vars["cumulative-energetic-edge-finding"].as<bool>();
-    cumulative_rules.edge_finding =
-        options_vars["cumulative-edge-finding"].as<bool>() || cumulative_rules.time_table_edge_finding || cumulative_rules.energetic_edge_finding;
+    cumulative_rules.not_first_not_last = options_vars["cumulative-not-first-not-last"].as<bool>();
+    cumulative_rules.edge_finding = options_vars["cumulative-edge-finding"].as<bool>() || cumulative_rules.time_table_edge_finding ||
+        cumulative_rules.energetic_edge_finding || cumulative_rules.not_first_not_last;
 
     vector<IntegerVariableID> machine_order_vars;
     if (machine_variant == "difference" && machine_starts.size() >= 2)
