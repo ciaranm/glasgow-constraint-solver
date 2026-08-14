@@ -1429,6 +1429,21 @@ not**: 0.693x of the search, but it closes *fewer* instances than leaving it off
 because its per-time-point scan costs more than the pruning returns --- the same
 verdict not-first / not-last got, and for the same reason.
 
+And on top of the edge-finding family, which is the question that decides
+whether it is worth having at all --- over the 39 instances both arms closed:
+
+| arm | recursions | vs TTEF | propagations | closed | wall |
+|---|---|---|---|---|---|
+| TTEF | 7,250,390 | 1.000x | 74,388,179 | 39 / 95 | 98.2 s |
+| + (KAOC) | 2,342,923 | 0.323x | 29,856,904 | 49 / 95 | 76.0 s |
+
+Fewer recursions on 26 of 39 and more on none, ten more instances closed, and
+**faster in wall time as well** --- so the rule pays for its own O(n^2 * horizon)
+scan and then some. It is not subsumed by the energetic family: edge-finding and
+TTEF move bounds from a window's total energy, and this refutes windows where
+the *shape* of the heights is what does not fit, which no amount of aggregate
+energy reasoning sees.
+
 Soundness: 600 generated instances enumerated exhaustively at sizes 8 and 10,
 zero solution-count differences against the rules off.
 
