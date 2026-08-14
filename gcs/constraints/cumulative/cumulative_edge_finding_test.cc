@@ -95,19 +95,19 @@ namespace
     /// which is where a pruning rule has to be measured: edge-finding moves
     /// bounds rather than reporting conflicts, so an enumeration test alone
     /// cannot tell whether it fired.
-    auto root_lower_bounds(const Instance & inst, CumulativeRules rules, CumulativeProofMutation mutation, const optional<string> & proof_name)
-        -> optional<vector<int>>
+    auto root_bounds(const Instance & inst, CumulativeRules rules, CumulativeProofMutation mutation, const optional<string> & proof_name)
+        -> optional<vector<pair<int, int>>>
     {
         Problem p;
         auto starts = post(p, inst, rules, mutation);
 
-        optional<vector<int>> bounds;
+        optional<vector<pair<int, int>>> bounds;
         solve_with(p,
             SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
                                if (! bounds) {
                                    bounds.emplace();
                                    for (const auto & v : starts)
-                                       bounds->push_back(static_cast<int>(s(v).raw_value));
+                                       bounds->emplace_back(static_cast<int>(s(v).raw_value), static_cast<int>(s(v).raw_value));
                                }
                                return false;
                            },
@@ -115,7 +115,7 @@ namespace
                     if (! bounds) {
                         bounds.emplace();
                         for (const auto & v : starts)
-                            bounds->push_back(static_cast<int>(s.lower_bound(v).raw_value));
+                            bounds->emplace_back(static_cast<int>(s.lower_bound(v).raw_value), static_cast<int>(s.upper_bound(v).raw_value));
                     }
                     return false;
                 }},
@@ -176,10 +176,22 @@ auto main(int argc, char * argv[]) -> int
     // constant and the citing pol has to discharge it.
     const Instance packed_offset{{{2, 6}, {2, 6}, {2, 6}, {2, 6}, {2, 20}}, {4, 4, 4, 4, 4}, {1, 1, 1, 1, 1}, 2};
 
+    // The mirror image: [4, 12) is full, and the fifth task ENDS inside it but
+    // starts before, so it is its upper bound that has to fall --- to 2, the
+    // last start that keeps it clear of the window altogether. Same window,
+    // same energy, and the negated conclusion lands on the row's low guard
+    // instead of its high one.
+    //
+    // The pushed task is shorter than the rest on purpose. At length four the
+    // push would pin it to its own lower bound, and then the one-too-far
+    // mutation empties the domain rather than corrupting a proof.
+    const Instance packed_mirror{{{4, 8}, {4, 8}, {4, 8}, {4, 8}, {0, 8}}, {4, 4, 4, 4, 2}, {1, 1, 1, 1, 1}, 2};
+
     // Mutation mode: emit one deliberately corrupted proof and stop, for
     // run_test_and_expect_verify_failure.bash to hand to veripb.
     {
         optional<CumulativeProofMutation> mutation;
+        const Instance * fixture = &packed_offset;
         string proof_basename = "cumulative_edge_finding_mutation";
         for (int a = 1; a < argc; ++a) {
             string arg = argv[a];
@@ -189,12 +201,20 @@ auto main(int argc, char * argv[]) -> int
                 mutation = cumulative_proof_mutation::PushOneTooFar{};
             else if (arg == "--mutate=capacity")
                 mutation = cumulative_proof_mutation::OmitCapacityLine{};
+            else if (arg == "--mutate=mirror_toofar") {
+                mutation = cumulative_proof_mutation::PushOneTooFar{};
+                fixture = &packed_mirror;
+            }
+            else if (arg == "--mutate=mirror_drop") {
+                mutation = cumulative_proof_mutation::DropContainedTask{};
+                fixture = &packed_mirror;
+            }
             else if (arg == "--proof-files-basename" && a + 1 < argc)
                 proof_basename = argv[++a];
         }
 
         if (mutation) {
-            auto bounds = root_lower_bounds(packed_offset, with, *mutation, make_optional(proof_basename));
+            auto bounds = root_bounds(*fixture, with, *mutation, make_optional(proof_basename));
             if (! bounds)
                 fail("mutation mode: nothing was reached, so the proof is empty");
             println(cerr, "wrote a deliberately corrupted proof to {}.pbp", proof_basename);
@@ -202,19 +222,21 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
-    // The rule fires, and pushes exactly as far as the energy supports.
-    for (const auto & [name, inst, expected_push] :
-        vector<tuple<string, Instance, int>>{{"packed", packed, 8}, {"packed_offset", packed_offset, 10}}) {
-        auto off = root_lower_bounds(inst, without, cumulative_proof_mutation::None{}, nullopt);
-        auto on =
-            root_lower_bounds(inst, with, cumulative_proof_mutation::None{}, proofs ? make_optional("cumulative_edge_finding_" + name) : nullopt);
+    // The rule fires, and pushes exactly as far as the energy supports --- in
+    // both directions. `raises` says which bound the fixture is about.
+    for (const auto & [name, inst, raises, expected] : vector<tuple<string, Instance, bool, int>>{
+             {"packed", packed, true, 8}, {"packed_offset", packed_offset, true, 10}, {"packed_mirror", packed_mirror, false, 2}}) {
+        auto off = root_bounds(inst, without, cumulative_proof_mutation::None{}, nullopt);
+        auto on = root_bounds(inst, with, cumulative_proof_mutation::None{}, proofs ? make_optional("cumulative_edge_finding_" + name) : nullopt);
         if (! off || ! on)
             fail(name + ": nothing was reached at the root");
-        if (off->back() >= expected_push)
+
+        auto pick = [&, raises = raises](const vector<pair<int, int>> & b) { return raises ? b.back().first : b.back().second; };
+        if (raises ? pick(*off) >= expected : pick(*off) <= expected)
             fail(name + ": time-tabling alone already reaches the push, so this fixture measures nothing");
-        if (on->back() != expected_push)
-            fail(name + ": expected the pushed task's lower bound to reach " + std::to_string(expected_push) + ", got " + std::to_string(on->back()));
-        println(cerr, "cumulative edge finding {}: pushed task lb {} -> {}", name, off->back(), on->back());
+        if (pick(*on) != expected)
+            fail(name + ": expected the pushed task's bound to reach " + std::to_string(expected) + ", got " + std::to_string(pick(*on)));
+        println(cerr, "cumulative edge finding {}: pushed task {} {} -> {}", name, raises ? "lb" : "ub", pick(*off), pick(*on));
         if (proofs)
             verify_proof_and_clean_up("cumulative_edge_finding_" + name);
     }

@@ -116,7 +116,7 @@ auto gcs::innards::install_derived_cumulative(
     // A derived Cumulative's own cache. Not the donor's: the rows are about
     // this constraint's window and this constraint's capacity lines, so sharing
     // one would have a firing cite a line derived against different rows.
-    inputs->guarded_energy = make_shared<std::map<std::tuple<std::size_t, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>();
+    inputs->guarded_energy = make_shared<std::map<std::tuple<std::size_t, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>();
 
     // The donors' rows, to derive from. Resolved before anything is installed:
     // a derived constraint that cannot cite what it needs must not be installed

@@ -147,8 +147,16 @@ namespace gcs::innards::window_energy
      * The bound is the same one window_energy_bound() predicts for start bounds
      * <code>(low_guard, high_guard - 1)</code>: the guards stand in for the
      * bounds a firing would have had. It is therefore the *clipped* bound
-     * whenever <code>high_guard</code> falls inside the window, which is what a
-     * bound push needs --- the pushed task is the one that does not fit.
+     * whenever a guard falls inside the window, which is what a bound push
+     * needs --- the pushed task is the one that does not fit.
+     *
+     * Which guard the push lands on depends on which way it goes. Raising
+     * <code>lb(start)</code> makes <code>high_guard</code> the negated
+     * conclusion and <code>low_guard</code> the window start; lowering
+     * <code>ub(start)</code> is the mirror, and puts the negated conclusion on
+     * <code>low_guard</code>. Either guard may sit inside the survivors' range,
+     * and the ones it cannot reach are discharged by their own literal axioms
+     * at a unit of the bound each.
      *
      * Costs two more pol lines per surviving order literal than the
      * reason-backed form, all of them inside the part that gets kept.
@@ -156,8 +164,8 @@ namespace gcs::innards::window_energy
      * Returns nullopt on an empty clipped window, or when the bound would be
      * zero or less.
      */
-    [[nodiscard]] auto derive_guarded_window_energy(ProofLogger &, const ConstantLengthTask &, Integer lo, Integer hi, Integer high_guard, ProofLevel)
-        -> std::optional<GuardedWindowEnergy>;
+    [[nodiscard]] auto derive_guarded_window_energy(ProofLogger &, const ConstantLengthTask &, Integer lo, Integer hi, Integer low_guard,
+        Integer high_guard, ProofLevel) -> std::optional<GuardedWindowEnergy>;
 }
 
 #endif

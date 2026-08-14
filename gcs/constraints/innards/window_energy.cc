@@ -192,30 +192,16 @@ auto gcs::innards::window_energy::derive_window_energy(ProofLogger & logger, con
 }
 
 auto gcs::innards::window_energy::derive_guarded_window_energy(ProofLogger & logger, const ConstantLengthTask & task, Integer lo, Integer hi,
-    Integer high_guard, ProofLevel level) -> optional<GuardedWindowEnergy>
+    Integer low_guard, Integer high_guard, ProofLevel level) -> optional<GuardedWindowEnergy>
 {
-    // The guards stand in for the bounds a firing would have had: every "ends
-    // by t" survivor is kept, and a "starts after t" survivor is lost exactly
-    // when it sits below the threshold. So the shape, and the bound it
-    // predicts, are the reason-backed ones for those bounds.
-    //
-    // The low one is the *clipped* window start, not the requested one. Where a
-    // task's flags begin after the window does, the two differ, and passing the
-    // requested start would have the shape believe the low guard leaves some of
-    // the "ends by t" survivors undecided --- costing bound the derivation does
-    // not actually lose.
-    auto window_lo = max(lo, task.flags_t_lo);
-    auto shape = shape_of(task.length, task.flags_t_lo, task.active.size(), lo, hi, pair{window_lo, high_guard - 1_i});
+    // The guards stand in for the bounds a firing would have had, so the shape,
+    // and the bound it predicts, are the reason-backed ones for those bounds.
+    auto shape = shape_of(task.length, task.flags_t_lo, task.active.size(), lo, hi, pair{low_guard, high_guard - 1_i});
     if (shape.empty() || shape.bound <= 0_i)
         return nullopt;
 
     auto & tracker = logger.names_and_ids_tracker();
     IntegerVariableID start = task.start;
-
-    // The strongest of the "ends by t" survivors, and so the one the others
-    // weaken onto. It is the clipped window's start whenever the task can be
-    // contained at all, which is the only case a citer has.
-    auto low_guard = shape.u_hi;
 
     auto per_time = emit_per_time_bridges(logger, task, shape, level);
 
@@ -226,38 +212,41 @@ auto gcs::innards::window_energy::derive_guarded_window_energy(ProofLogger & log
     // Each ~[s >= u] is cancelled by the order encoding's own monotonicity
     // rather than by a bound: `[s >= u] \/ ~[s >= low_guard]` turns it into
     // ~[s >= low_guard], so the survivors collapse onto one literal carrying
-    // their whole count.
-    auto low_coeff = 0_i;
+    // their whole count. A survivor *above* the guard cannot be weakened onto
+    // it --- the implication runs the wrong way --- so it is discharged by its
+    // own literal axiom, at the cost of one unit of the bound.
+    auto low_coeff = 0_i, kept_u = 0_i;
     for (Integer u = shape.u_lo; u <= shape.u_hi; ++u) {
-        // The strongest survivor is already the guard, and adding anything for
-        // it would discharge it at the cost of a unit of the bound instead.
-        if (u != low_guard)
-            sum.add(order_implication(logger, tracker, start, u, low_guard, level));
-        ++low_coeff;
-    }
-
-    // Mirror image, except that a survivor below the threshold cannot be
-    // weakened onto it --- the implication runs the wrong way --- so it is
-    // discharged by its own literal axiom, at the cost of one unit of the
-    // bound. That is where the clipping comes from: the bound falls by exactly
-    // the number of time points the threshold puts out of reach.
-    auto bound = 0_i;
-    for (Integer v = shape.v_lo; v <= shape.v_hi; ++v) {
-        if (v < high_guard)
-            sum.add(! tracker.xliteral_for_ensuring(task.start >= v), tracker);
+        if (u > low_guard)
+            sum.add(tracker.xliteral_for_ensuring(task.start >= u), tracker);
         else {
-            if (v != high_guard)
-                sum.add(order_implication(logger, tracker, start, high_guard, v, level));
-            ++bound;
+            // The survivor that *is* the guard needs no implication of its own,
+            // and adding one would discharge it at a unit's cost instead.
+            if (u != low_guard)
+                sum.add(order_implication(logger, tracker, start, u, low_guard, level));
+            ++low_coeff;
+            ++kept_u;
         }
     }
 
-    // The `v == high_guard` and `u == low_guard` survivors need no implication
-    // of their own, so the guards' coefficients are what the counting says
-    // rather than what was emitted. As in the reason-backed form, a
-    // disagreement here would surface only as a rejected proof much later.
-    if (bound != shape.bound)
+    // Mirror image at the other end, and where the clipping comes from: the
+    // bound falls by exactly the number of time points the threshold puts out
+    // of reach.
+    auto lost_v = 0_i;
+    for (Integer v = shape.v_lo; v <= shape.v_hi; ++v) {
+        if (v < high_guard) {
+            sum.add(! tracker.xliteral_for_ensuring(task.start >= v), tracker);
+            ++lost_v;
+        }
+        else if (v != high_guard)
+            sum.add(order_implication(logger, tracker, start, high_guard, v, level));
+    }
+
+    // What the emission built must be what shape_of predicted: the citer scales
+    // this line by a height and expects a specific total, so a disagreement
+    // would surface only as a rejected proof a long way from here.
+    if (kept_u - lost_v != shape.bound)
         throw ProofError{"guarded window energy derivation and its predicted bound disagree"};
 
-    return GuardedWindowEnergy{sum.emit(logger, level), bound, shape.a, shape.b, low_guard, low_coeff, high_guard};
+    return GuardedWindowEnergy{sum.emit(logger, level), shape.bound, shape.a, shape.b, low_guard, low_coeff, high_guard};
 }

@@ -98,7 +98,7 @@ namespace gcs::innards
         Integer time_slot_lo = 0_i;
 
         /// Edge-finding's window-energy rows, keyed on (task, window lo, window
-        /// hi, threshold). They are facts about the model rather than about the
+        /// hi, low guard, high guard). They are facts about the model rather than about the
         /// search state, so they live at ProofLevel::Top and every later firing
         /// over the same window cites the same line. Shared, and mutable
         /// through the shared_ptr, because the propagator closure holds these
@@ -109,7 +109,7 @@ namespace gcs::innards
         /// because a window is a pair of an earliest start and a latest
         /// completion time and those repeat constantly. Re-deriving per firing
         /// costs about a hundred times more.
-        std::shared_ptr<std::map<std::tuple<std::size_t, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>> guarded_energy;
+        std::shared_ptr<std::map<std::tuple<std::size_t, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>> guarded_energy;
     };
 
     /**

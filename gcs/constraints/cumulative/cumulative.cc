@@ -569,7 +569,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .overload_tasks = move(_overload_tasks),
         .time_slot_prefix = move(_time_slot_prefix),
         .time_slot_lo = _time_slot_lo,
-        .guarded_energy = std::make_shared<std::map<std::tuple<size_t, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>()};
+        .guarded_energy = std::make_shared<std::map<std::tuple<size_t, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>()};
 
     propagators.install(
         constraint_id(),
@@ -720,28 +720,102 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     auto active_flag_count = [&](size_t i) { return static_cast<size_t>((per_task_t_hi[i] - per_task_t_lo[i] + 1_i).raw_value); };
 
     // The window a task's flags actually reach, which is where the lemma clips
-    // to. A task contained in [a, b) is contained in this too, and its
-    // "contained" threshold has to be stated against it.
+    // to. A task contained in [a, b) is contained in this too, and both its
+    // guards have to be stated against it: a guard outside the clipped window
+    // leaves survivors the derivation cannot weaken onto it, and each of those
+    // costs a unit of the bound.
+    auto clipped_window_start = [&](size_t i, Integer a) { return max(a, per_task_t_lo[i]); };
     auto clipped_window_end = [&](size_t i, Integer b) { return min(b, per_task_t_hi[i] + 1_i); };
 
     // Edge-finding's window-energy rows, derived once and cited after. The row
     // is a fact about the model --- the bounds a firing would have resolved its
     // leftover order literals against are carried as guard literals instead ---
     // so it lives at Top and outlives the search state that first wanted it.
-    auto guarded_energy = [&](size_t i, Integer lo, Integer hi, Integer threshold) -> const window_energy::GuardedWindowEnergy & {
-        auto key = std::tuple{i, lo, hi, threshold};
+    auto guarded_energy = [&](size_t i, Integer lo, Integer hi, Integer low_guard, Integer high_guard) -> const window_energy::GuardedWindowEnergy & {
+        auto key = std::tuple{i, lo, hi, low_guard, high_guard};
         if (auto found = inputs.guarded_energy->find(key); found != inputs.guarded_energy->end())
             return found->second;
         auto derived = window_energy::derive_guarded_window_energy(*logger,
             window_energy::ConstantLengthTask{
                 std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i], before_flags[i], after_flags[i], active_flags[i]},
-            lo, hi, threshold, ProofLevel::Top);
+            lo, hi, low_guard, high_guard, ProofLevel::Top);
         if (! derived)
             throw ProofError{"cumulative edge-finding: task " + std::to_string(i) + " has no derivable window energy over [" +
-                std::to_string(lo.raw_value) + "," + std::to_string(hi.raw_value) + ") at threshold " + std::to_string(threshold.raw_value) +
-                " (length " + std::to_string(llb(i).raw_value) + ", flags from " + std::to_string(per_task_t_lo[i].raw_value) + " for " +
-                std::to_string(active_flags[i].size()) + ")"};
+                std::to_string(lo.raw_value) + "," + std::to_string(hi.raw_value) + ") guarded by [" + std::to_string(low_guard.raw_value) + "," +
+                std::to_string(high_guard.raw_value) + ") (length " + std::to_string(llb(i).raw_value) + ", flags from " +
+                std::to_string(per_task_t_lo[i].raw_value) + " for " + std::to_string(active_flags[i].size()) + ")"};
         return inputs.guarded_energy->emplace(key, *derived).first->second;
+    };
+
+    // Which of the pushed task's two guards its firing has to discharge. The
+    // other one is the negated conclusion, and the wrapping RUP refutes it.
+    enum class GuardToDischarge
+    {
+        Low,
+        High
+    };
+
+    // Edge-finding's certificate, in both directions. It is the overload
+    // check's, emitted under the negated conclusion: the contained tasks'
+    // energy, plus what the pushed task must still occupy if the conclusion
+    // were false, against the same capacity rows. That overflows the window, so
+    // the pol is contradictory and the framework's wrapping RUP turns it into
+    // the push.
+    //
+    // Every energy row is a *guarded* one, so it says nothing about the current
+    // bounds and is cited rather than re-derived. What a firing pays is the
+    // guard discharges and one pol.
+    auto edge_finding_justification = [&](Integer a, Integer b, const vector<size_t> & inside_tasks, size_t pushed, Integer pushed_low_guard,
+                                          Integer pushed_high_guard, GuardToDischarge discharge) {
+        return [&, a, b, inside_tasks, pushed, pushed_low_guard, pushed_high_guard, discharge](const ReasonLiterals & reason) -> void {
+            if (! logger)
+                return;
+
+            PolBuilder pol;
+            for (Integer t = a; t < b; ++t) {
+                if (std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation) && t == b - 1_i)
+                    continue;
+                if (auto line = capacity_lines.find(t); line != capacity_lines.end())
+                    pol.add(line->second);
+            }
+
+            auto cite = [&](size_t i, Integer low_guard, Integer high_guard, bool discharge_low, bool discharge_high) {
+                const auto & row = guarded_energy(i, a, b, low_guard, high_guard);
+                pol.add(row.line, hlb(i));
+                if (discharge_low && row.low_coeff > 0_i)
+                    pol.add(
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[i] >= row.low_guard) >= 1_i, ProofLevel::Temporary),
+                        hlb(i) * row.low_coeff);
+                if (discharge_high && row.bound > 0_i)
+                    pol.add(
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[i] < row.high_guard) >= 1_i, ProofLevel::Temporary),
+                        hlb(i) * row.bound);
+            };
+
+            // A contained task is inside the window whichever way the push
+            // goes, so both its guards are refuted by the reason. Its high
+            // guard is the first start that would take it out of the window,
+            // stated against the *clipped* window since that is where the
+            // lemma's sum stops; where the two differ the guard is refuted by
+            // the task's declared bounds rather than by the search, and the RUP
+            // closes on those just the same.
+            for (auto i : inside_tasks) {
+                if (std::holds_alternative<cumulative_proof_mutation::DropContainedTask>(mutation) && i == inside_tasks.front())
+                    continue;
+                cite(i, clipped_window_start(i, a), clipped_window_end(i, b) - llb(i) + 1_i, true, true);
+            }
+
+            // The threshold is the guard the conclusion is about, so that is
+            // the one the skip-clip mutation replaces: the un-clipped row is
+            // still valid, being the stronger claim, which is why this lane is
+            // here to be recorded rather than caught.
+            auto skip_clip = std::holds_alternative<cumulative_proof_mutation::EdgeFindingSkipClip>(mutation);
+            cite(pushed, skip_clip && discharge == GuardToDischarge::High ? clipped_window_start(pushed, a) : pushed_low_guard,
+                skip_clip && discharge == GuardToDischarge::Low ? clipped_window_end(pushed, b) - llb(pushed) + 1_i : pushed_high_guard,
+                discharge == GuardToDischarge::Low, discharge == GuardToDischarge::High);
+
+            pol.emit(*logger, ProofLevel::Temporary);
+        };
     };
 
     using ExtLits = vector<IntegerVariableCondition>;
@@ -1034,74 +1108,64 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         // lemma clips there. Passing anything else would have
                         // the rule fire where the certificate establishes less
                         // than the rule assumed.
+                        // The same start bounds the guarded derivation will be
+                        // given, not the state's: the row is a model fact, and
+                        // asking the check for anything else would let the rule
+                        // fire on more energy than the certificate establishes.
                         auto clipped = window_energy::window_energy_bound(
-                            p_j, per_task_t_lo[j.task], active_flag_count(j.task), a, b, pair{max(j.est, per_task_t_lo[j.task]), new_lb - 1_i});
+                            p_j, per_task_t_lo[j.task], active_flag_count(j.task), a, b, pair{clipped_window_start(j.task, a), new_lb - 1_i});
                         if (clipped <= 0_i || energy + h_j * clipped <= supply)
                             continue;
 
-                        // The certificate is the overload check's, emitted
-                        // under the negated conclusion: the contained tasks'
-                        // energy, plus what the pushed task must still occupy
-                        // if it started before new_lb, against the same
-                        // capacity rows. Under `s_j < new_lb` that overflows
-                        // the window, so the pol is contradictory and the
-                        // framework's wrapping RUP turns it into the push.
-                        //
-                        // Every energy row here is a *guarded* one, so it says
-                        // nothing about the current bounds and is cited rather
-                        // than re-derived; what a firing pays is the discharges
-                        // and the pol.
-                        auto justify = [&, a, b, inside_tasks, pushed = j.task, new_lb](const ReasonLiterals & reason) -> void {
-                            if (! logger)
-                                return;
-
-                            PolBuilder pol;
-                            for (Integer t = a; t < b; ++t) {
-                                if (std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation) && t == b - 1_i)
-                                    continue;
-                                if (auto line = capacity_lines.find(t); line != capacity_lines.end())
-                                    pol.add(line->second);
-                            }
-
-                            // Discharge a guard the reason refutes, and add the
-                            // row it guards. `high` is left standing for the
-                            // pushed task: there it is the negated conclusion.
-                            auto cite = [&](size_t i, Integer threshold, bool discharge_high) {
-                                const auto & row = guarded_energy(i, a, b, threshold);
-                                pol.add(row.line, hlb(i));
-                                pol.add(logger->emit_rup_proof_line_under_reason(
-                                            reason, WPBSum{} + 1_i * (starts[i] >= row.low_guard) >= 1_i, ProofLevel::Temporary),
-                                    hlb(i) * row.low_coeff);
-                                if (discharge_high)
-                                    pol.add(logger->emit_rup_proof_line_under_reason(
-                                                reason, WPBSum{} + 1_i * (starts[i] < row.high_guard) >= 1_i, ProofLevel::Temporary),
-                                        hlb(i) * row.bound);
-                            };
-
-                            // A contained task's threshold is the first start
-                            // that would take it out of the window --- stated
-                            // against the *clipped* window, since that is where
-                            // the lemma's sum stops. Where the two differ the
-                            // guard is refuted by the task's declared bounds
-                            // rather than by the search, and the RUP below
-                            // closes on those.
-                            for (auto i : inside_tasks) {
-                                if (std::holds_alternative<cumulative_proof_mutation::DropContainedTask>(mutation) && i == inside_tasks.front())
-                                    continue;
-                                cite(i, clipped_window_end(i, b) - llb(i) + 1_i, true);
-                            }
-                            cite(pushed,
-                                std::holds_alternative<cumulative_proof_mutation::EdgeFindingSkipClip>(mutation)
-                                    ? clipped_window_end(pushed, b) - llb(pushed) + 1_i
-                                    : new_lb,
-                                false);
-
-                            pol.emit(*logger, ProofLevel::Temporary);
-                        };
-
                         inference.infer_greater_than_or_equal(logger, starts[j.task],
                             std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation) ? new_lb + 1_i : new_lb,
-                            JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                            JustifyExplicitly{edge_finding_justification(
+                                                  a, b, inside_tasks, j.task, clipped_window_start(j.task, a), new_lb, GuardToDischarge::Low),
+                                ThenRUP::Yes, hints::Cumulative{owner}},
+                            reason_with_presence());
+                    }
+
+                    // The mirror. A task ending inside the window but starting
+                    // before it cannot start so late that its own energy no
+                    // longer fits alongside the contained tasks', so its upper
+                    // bound falls to `b - p_j - ceil(rest / h_j)`. Same window,
+                    // same `rest`, same certificate --- what changes is which
+                    // guard the negated conclusion lands on: raising a lower
+                    // bound refutes the row's high guard, lowering an upper
+                    // bound refutes its low one.
+                    for (auto j_idx : by_height) {
+                        const auto & j = candidates[j_idx];
+
+                        auto h_j = j.height;
+                        auto rest = energy - (capacity - h_j) * width;
+                        if (rest <= 0_i)
+                            break;
+
+                        // Ends inside the window, starts before it: the exact
+                        // complement of the case above, and the tasks the
+                        // accumulation loop skipped.
+                        if (j.est >= a || j.lct > b)
+                            continue;
+
+                        auto p_j = j.length;
+                        if (energy + h_j * p_j <= supply)
+                            continue;
+
+                        auto new_ub = b - p_j - (rest + h_j - 1_i) / h_j;
+                        if (new_ub >= state.upper_bound(starts[j.task]))
+                            continue;
+
+                        auto clipped = window_energy::window_energy_bound(
+                            p_j, per_task_t_lo[j.task], active_flag_count(j.task), a, b, pair{new_ub + 1_i, clipped_window_end(j.task, b) - p_j});
+                        if (clipped <= 0_i || energy + h_j * clipped <= supply)
+                            continue;
+
+                        inference.infer_less_than(logger, starts[j.task],
+                            (std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation) ? new_ub - 1_i : new_ub) + 1_i,
+                            JustifyExplicitly{edge_finding_justification(a, b, inside_tasks, j.task, new_ub + 1_i,
+                                                  clipped_window_end(j.task, b) - p_j + 1_i, GuardToDischarge::High),
+                                ThenRUP::Yes, hints::Cumulative{owner}},
+                            reason_with_presence());
                     }
                 }
 
