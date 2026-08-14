@@ -313,11 +313,11 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
 
 auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
 {
-    // The rule is measured before it is certified, and a propagator that
+    // The rules are measured before they are certified, and a propagator that
     // infers what it cannot justify is worse than one that declines: refuse
     // here rather than emit a proof VeriPB will reject.
-    if (_rules.time_table_edge_finding)
-        throw UnimplementedException{"time-table extended edge-finding is not yet certified"};
+    if (_rules.time_table_edge_finding || _rules.energetic_edge_finding)
+        throw UnimplementedException{"the strengthened forms of edge-finding are not yet certified"};
 
     // Time-table OPB encoding:
     //   for each task i and each time point t in its possible-active range:
@@ -1056,7 +1056,38 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 // mandatory part lies inside the window too, so taking I(a, b)'s
                 // off the window's total leaves exactly the rest.
                 auto window_profile = profile_within(a, b) - inside_mandatory;
-                auto ef_profile = rules.time_table_edge_finding ? window_profile : 0_i;
+
+                // A task's *guaranteed* energy inside the window: the least
+                // overlap its execution interval can have with [a, b) over the
+                // starts its bounds still allow. This is one call of the very
+                // lemma a certificate would cite, and it is at least the task's
+                // mandatory part in the window --- and for a contained task it
+                // is the whole of its energy.
+                // A task the window cannot reach has a *negative* bound here,
+                // the lemma's way of saying it has more slack than the window
+                // has room, so clamp before summing.
+                auto guaranteed = [&](const Candidate & c2) {
+                    return c2.height *
+                        max(0_i,
+                            window_energy::window_energy_bound(
+                                c2.length, per_task_t_lo[c2.task], active_flag_count(c2.task), a, b, pair{c2.est, c2.lct - c2.length}));
+                };
+
+                // What the window is charged with, before the task being pushed
+                // is taken back out of it:
+                //
+                //   edge-finding  the contained tasks' whole energy
+                //   TTEF          plus the mandatory-part load of the rest
+                //   energetic     every task's guaranteed energy, which
+                //                 subsumes both
+                Integer window_total = energy;
+                if (rules.energetic_edge_finding) {
+                    window_total = 0_i;
+                    for (const auto & c2 : candidates)
+                        window_total += guaranteed(c2);
+                }
+                else if (rules.time_table_edge_finding)
+                    window_total = energy + window_profile;
 
                 // Edge-finding. A task j that starts inside [a, b) but is not
                 // contained in it can be pushed when the window has no room
@@ -1078,20 +1109,21 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 // Which is why the fire condition below is the certificate's
                 // own inequality and not the textbook detection alone --- what
                 // the propagator asks is exactly what the proof will say.
-                // `energy + ef_profile <= supply` because a window that already
+                // `window_total <= supply` because a window that already
                 // overflows is a conflict, not a push: the overload check below
                 // owns it, and edge-finding's arithmetic there yields a `rest`
                 // big enough to put new_lb past the window entirely, where the
                 // pushed task's clipped energy is zero and there is nothing to
-                // certify with. (Which is why TTEF wants profile_overload on:
-                // with it off, a window only the profile overloads is skipped
-                // here and refuted nowhere. Sound, just weaker.)
+                // certify with. (Which is why the strengthened forms want
+                // profile_overload on: with it off, a window only the extra
+                // energy overloads is skipped here and refuted nowhere. Sound,
+                // just weaker.)
                 //
-                // All three tests are profile-inclusive, so they stay necessary
-                // conditions for a firing once j's own mandatory load comes
-                // back out below.
-                if (rules.edge_finding && ! inside_tasks.empty() && energy + ef_profile <= supply &&
-                    energy + ef_profile > (capacity - tallest) * width && energy + ef_profile + heaviest > supply) {
+                // All three tests charge the window in full, so they stay
+                // necessary conditions for a firing once the pushed task's own
+                // contribution comes back out below.
+                if (rules.edge_finding && ! inside_tasks.empty() && window_total <= supply && window_total > (capacity - tallest) * width &&
+                    window_total + heaviest > supply) {
                     // One pass for both directions. They share everything up to
                     // the last test --- the same candidates in the same order,
                     // the same `rest`, the same detection --- and differ only in
@@ -1103,11 +1135,11 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
 
                         // Heights descend, so once one task's `rest` has gone
                         // non-positive every shorter one's has too. Test the
-                        // profile-inclusive figure here: taking j's own
-                        // mandatory load back out below only lowers `rest`, so
-                        // the early exit stays valid.
+                        // figure that charges the window in full here: taking
+                        // j's own contribution back out below only lowers
+                        // `rest`, so the early exit stays valid.
                         auto h_j = j.height;
-                        if (energy + ef_profile - (capacity - h_j) * width <= 0_i)
+                        if (window_total - (capacity - h_j) * width <= 0_i)
                             break;
 
                         // A task with one end inside the window and one outside.
@@ -1121,15 +1153,18 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
 
                         auto p_j = j.length;
 
-                        // j is not contained, so whatever of its own mandatory
-                        // part falls inside the window is in ef_profile --- and
-                        // the clipped energy below covers those same times. Each
-                        // time point has one capacity line to cancel against, so
-                        // counting j twice would leave the pol open. Take it back
-                        // out. lst_j = lct_j − p_j and eet_j = est_j + p_j, which
-                        // is what mand_load was built from.
-                        auto mandatory_inside = rules.time_table_edge_finding ? h_j * max(0_i, min(j.est + p_j, b) - max(j.lct - p_j, a)) : 0_i;
-                        auto other_energy = energy + ef_profile - mandatory_inside;
+                        // j is not contained, so whatever of it the window has
+                        // already been charged with covers the same time points
+                        // as the clipped energy added below under the negated
+                        // conclusion. Each time point has one capacity line to
+                        // cancel against, so counting j twice would leave the
+                        // pol open: take it back out. lst_j = lct_j − p_j and
+                        // eet_j = est_j + p_j, which is what mand_load was built
+                        // from.
+                        auto own = rules.energetic_edge_finding ? guaranteed(j)
+                            : rules.time_table_edge_finding     ? h_j * max(0_i, min(j.est + p_j, b) - max(j.lct - p_j, a))
+                                                                : 0_i;
+                        auto other_energy = window_total - own;
                         auto rest = other_energy - (capacity - h_j) * width;
                         if (rest <= 0_i)
                             continue;
