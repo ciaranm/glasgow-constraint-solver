@@ -49,26 +49,50 @@ using namespace gcs::test_innards;
 
 namespace
 {
+    // A length is a range: `{p, p}` is a constant, and `{p, q}` with p < q a
+    // decision variable, which the rule counts at `p` --- the duration the task
+    // guarantees, and the one its energy rows carry a guard for (#689).
     struct Instance
     {
         vector<pair<int, int>> start_ranges;
-        vector<int> lengths;
+        vector<pair<int, int>> lengths;
         vector<int> heights;
         int capacity;
     };
 
-    auto is_satisfying(const Instance & inst, const vector<int> & starts) -> bool
+    auto length_is_var(const Instance & inst, size_t i) -> bool
+    {
+        return inst.lengths[i].first != inst.lengths[i].second;
+    }
+
+    // Every variable an assignment has to fix, in the order the solutions carry
+    // them: the starts, then the variable lengths in task order.
+    auto all_ranges(const Instance & inst) -> vector<pair<int, int>>
+    {
+        auto ranges = inst.start_ranges;
+        for (size_t i = 0; i < inst.lengths.size(); ++i)
+            if (length_is_var(inst, i))
+                ranges.push_back(inst.lengths[i]);
+        return ranges;
+    }
+
+    auto is_satisfying(const Instance & inst, const vector<int> & vals) -> bool
     {
         auto n = inst.start_ranges.size();
+        vector<int> l(n);
+        size_t k = n;
+        for (size_t i = 0; i < n; ++i)
+            l[i] = length_is_var(inst, i) ? vals.at(k++) : inst.lengths[i].first;
+
         int t_lo = INT_MAX, t_hi = INT_MIN;
         for (size_t i = 0; i < n; ++i) {
-            t_lo = min(t_lo, starts[i]);
-            t_hi = max(t_hi, starts[i] + inst.lengths[i] - 1);
+            t_lo = min(t_lo, vals[i]);
+            t_hi = max(t_hi, vals[i] + l[i] - 1);
         }
         for (int t = t_lo; t <= t_hi; ++t) {
             int load = 0;
             for (size_t i = 0; i < n; ++i)
-                if (starts[i] <= t && t < starts[i] + inst.lengths[i])
+                if (vals[i] <= t && t < vals[i] + l[i])
                     load += inst.heights[i];
             if (load > inst.capacity)
                 return false;
@@ -76,19 +100,37 @@ namespace
         return true;
     }
 
-    auto post(Problem & p, const Instance & inst, CumulativeRules rules, CumulativeProofMutation mutation = cumulative_proof_mutation::None{})
-        -> vector<IntegerVariableID>
+    /// What posting an instance created: the starts, which is what the bound
+    /// measurements read, and every decision variable, which is what an
+    /// enumeration has to be told about.
+    struct Posted
     {
-        vector<IntegerVariableID> starts;
-        vector<Integer> lengths, heights;
+        vector<IntegerVariableID> starts, all_vars;
+    };
+
+    auto post(Problem & p, const Instance & inst, CumulativeRules rules, CumulativeProofMutation mutation = cumulative_proof_mutation::None{})
+        -> Posted
+    {
+        Posted posted;
+        vector<IntegerVariableID> lengths, heights;
         for (size_t i = 0; i < inst.start_ranges.size(); ++i) {
-            starts.push_back(
+            posted.starts.push_back(
                 p.create_integer_variable(Integer{inst.start_ranges[i].first}, Integer{inst.start_ranges[i].second}, "start" + std::to_string(i)));
-            lengths.push_back(Integer{inst.lengths[i]});
-            heights.push_back(Integer{inst.heights[i]});
+            posted.all_vars.push_back(posted.starts.back());
+            heights.push_back(constant_variable(Integer{inst.heights[i]}));
         }
-        p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(rules).with_proof_mutation(mutation));
-        return starts;
+        for (size_t i = 0; i < inst.lengths.size(); ++i) {
+            if (! length_is_var(inst, i))
+                lengths.push_back(constant_variable(Integer{inst.lengths[i].first}));
+            else {
+                lengths.push_back(
+                    p.create_integer_variable(Integer{inst.lengths[i].first}, Integer{inst.lengths[i].second}, "length" + std::to_string(i)));
+                posted.all_vars.push_back(lengths.back());
+            }
+        }
+        p.post(
+            Cumulative{posted.starts, lengths, heights, constant_variable(Integer{inst.capacity})}.with_rules(rules).with_proof_mutation(mutation));
+        return posted;
     }
 
     /// The lower bound each start is left with once root propagation has run,
@@ -99,7 +141,7 @@ namespace
         -> optional<vector<pair<int, int>>>
     {
         Problem p;
-        auto starts = post(p, inst, rules, mutation);
+        auto starts = post(p, inst, rules, mutation).starts;
 
         optional<vector<pair<int, int>>> bounds;
         solve_with(p,
@@ -139,12 +181,12 @@ namespace
         cerr << flush;
 
         set<vector<int>> expected, actual;
-        build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(inst, starts); }, inst.start_ranges);
+        build_expected(expected, [&](const vector<int> & vals) { return is_satisfying(inst, vals); }, all_ranges(inst));
         println(cerr, " expecting {} solutions", expected.size());
 
         Problem p;
-        auto starts = post(p, inst, rules);
-        solve_for_tests(p, proof_name, actual, tuple{starts});
+        auto all_vars = post(p, inst, rules).all_vars;
+        solve_for_tests(p, proof_name, actual, tuple{all_vars});
         check_results(proof_name, expected, actual);
     }
 }
@@ -169,12 +211,12 @@ auto main(int argc, char * argv[]) -> int
     // and unit propagation over the time-table encoding closes the conclusion's
     // RUP whatever the derivation above it says. 301 randomly generated firings
     // were all of that kind before this family was found.
-    const Instance packed{{{0, 4}, {0, 4}, {0, 4}, {0, 4}, {0, 12}}, {4, 4, 4, 4, 4}, {1, 1, 1, 1, 1}, 2};
+    const Instance packed{{{0, 4}, {0, 4}, {0, 4}, {0, 4}, {0, 12}}, {{4, 4}, {4, 4}, {4, 4}, {4, 4}, {4, 4}}, {1, 1, 1, 1, 1}, 2};
 
     // The same, over a window that does not start where the tasks' domains do,
     // so the derivation's lower guard is a real order literal rather than a
     // constant and the citing pol has to discharge it.
-    const Instance packed_offset{{{2, 6}, {2, 6}, {2, 6}, {2, 6}, {2, 20}}, {4, 4, 4, 4, 4}, {1, 1, 1, 1, 1}, 2};
+    const Instance packed_offset{{{2, 6}, {2, 6}, {2, 6}, {2, 6}, {2, 20}}, {{4, 4}, {4, 4}, {4, 4}, {4, 4}, {4, 4}}, {1, 1, 1, 1, 1}, 2};
 
     // The mirror image: [4, 12) is full, and the fifth task ENDS inside it but
     // starts before, so it is its upper bound that has to fall --- to 2, the
@@ -185,7 +227,20 @@ auto main(int argc, char * argv[]) -> int
     // The pushed task is shorter than the rest on purpose. At length four the
     // push would pin it to its own lower bound, and then the one-too-far
     // mutation empties the domain rather than corrupting a proof.
-    const Instance packed_mirror{{{4, 8}, {4, 8}, {4, 8}, {4, 8}, {0, 8}}, {4, 4, 4, 4, 2}, {1, 1, 1, 1, 1}, 2};
+    const Instance packed_mirror{{{4, 8}, {4, 8}, {4, 8}, {4, 8}, {0, 8}}, {{4, 4}, {4, 4}, {4, 4}, {4, 4}, {2, 2}}, {1, 1, 1, 1, 1}, 2};
+
+    // `packed` with one of the four contained tasks given a variable duration.
+    // It guarantees the same four units of energy, so the window is as full as
+    // before and the push is to the same place --- but the row saying so is now
+    // a statement about a length the model does not fix, and carries a guard
+    // for it that the citing pol has to discharge (#689).
+    const Instance packed_var{{{0, 4}, {0, 4}, {0, 4}, {0, 4}, {0, 12}}, {{4, 5}, {4, 4}, {4, 4}, {4, 4}, {4, 4}}, {1, 1, 1, 1, 1}, 2};
+
+    // The other place a length guard turns up: on the *pushed* task's own row,
+    // which is cited at the threshold rather than for containment. Its clipped
+    // energy is measured at lb(l) like everything else, so the push is again to
+    // eight, and it is the length it might have that has to not matter.
+    const Instance packed_var_pushed{{{0, 4}, {0, 4}, {0, 4}, {0, 4}, {0, 12}}, {{4, 4}, {4, 4}, {4, 4}, {4, 4}, {4, 6}}, {1, 1, 1, 1, 1}, 2};
 
     // Mutation mode: emit one deliberately corrupted proof and stop, for
     // run_test_and_expect_verify_failure.bash to hand to veripb.
@@ -224,8 +279,9 @@ auto main(int argc, char * argv[]) -> int
 
     // The rule fires, and pushes exactly as far as the energy supports --- in
     // both directions. `raises` says which bound the fixture is about.
-    for (const auto & [name, inst, raises, expected] : vector<tuple<string, Instance, bool, int>>{
-             {"packed", packed, true, 8}, {"packed_offset", packed_offset, true, 10}, {"packed_mirror", packed_mirror, false, 2}}) {
+    for (const auto & [name, inst, raises, expected] :
+        vector<tuple<string, Instance, bool, int>>{{"packed", packed, true, 8}, {"packed_offset", packed_offset, true, 10},
+            {"packed_mirror", packed_mirror, false, 2}, {"packed_var", packed_var, true, 8}, {"packed_var_pushed", packed_var_pushed, true, 8}}) {
         auto off = root_bounds(inst, without, cumulative_proof_mutation::None{}, nullopt);
         auto on = root_bounds(inst, with, cumulative_proof_mutation::None{}, proofs ? make_optional("cumulative_edge_finding_" + name) : nullopt);
         if (! off || ! on)
@@ -244,9 +300,10 @@ auto main(int argc, char * argv[]) -> int
     // Soundness, over instances small enough to enumerate: the rule may not
     // lose a solution, with or without a proof being written.
     for (const auto & [name, inst] :
-        vector<pair<string, Instance>>{{"packed", packed}, {"tight", Instance{{{0, 3}, {0, 3}, {0, 5}}, {2, 2, 3}, {1, 1, 1}, 2}},
-            {"mixed_heights", Instance{{{0, 4}, {0, 4}, {0, 6}}, {3, 2, 2}, {2, 1, 2}, 3}},
-            {"unit_lengths", Instance{{{0, 3}, {0, 3}, {0, 3}, {0, 5}}, {1, 1, 1, 2}, {1, 1, 1, 1}, 2}}}) {
+        vector<pair<string, Instance>>{{"packed", packed}, {"tight", Instance{{{0, 3}, {0, 3}, {0, 5}}, {{2, 2}, {2, 2}, {3, 3}}, {1, 1, 1}, 2}},
+            {"mixed_heights", Instance{{{0, 4}, {0, 4}, {0, 6}}, {{3, 3}, {2, 2}, {2, 2}}, {2, 1, 2}, 3}},
+            {"unit_lengths", Instance{{{0, 3}, {0, 3}, {0, 3}, {0, 5}}, {{1, 1}, {1, 1}, {1, 1}, {2, 2}}, {1, 1, 1, 1}, 2}},
+            {"var_contained", packed_var}, {"var_pushed", packed_var_pushed}}) {
         check_enumeration(name, inst, with, nullopt);
         if (proofs)
             check_enumeration(name, inst, with, make_optional("cumulative_edge_finding_enum_" + name));

@@ -116,7 +116,8 @@ auto gcs::innards::install_derived_cumulative(
     // A derived Cumulative's own cache. Not the donor's: the rows are about
     // this constraint's window and this constraint's capacity lines, so sharing
     // one would have a firing cite a line derived against different rows.
-    inputs->guarded_energy = make_shared<std::map<std::tuple<std::size_t, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>();
+    inputs->guarded_energy =
+        make_shared<std::map<std::tuple<std::size_t, Integer, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>();
 
     // The donors' rows, to derive from. Resolved before anything is installed:
     // a derived constraint that cannot cite what it needs must not be installed
@@ -259,16 +260,17 @@ auto gcs::innards::install_derived_cumulative(
         vector<makespan_energy::EnergyTask> energy_tasks;
         vector<std::optional<IntegerVariableID>> energy_presences;
         for (auto i : inputs->overload_tasks) {
-            // A plain variable and a constant, and by construction:
-            // prepare_cumulative_overload_check keeps only such tasks, the
-            // window-energy lemma needing a task's energy to be a number before
-            // it can count it. So a variable-duration task takes part in the
-            // time-tabling and in the rows, and stays out of the energy
-            // argument.
+            // A plain variable and a constant. The start is by construction ---
+            // prepare_cumulative_overload_check keeps only such tasks --- but
+            // the length is not: that filter admits a variable one and counts it
+            // at the duration it guarantees (#689), which the makespan bound
+            // cannot do, its rows being built once at the root off a length that
+            // has to be a number. So a variable-duration task takes part in the
+            // time-tabling, in the rows and in the overload check's energy, and
+            // stays out of the makespan argument alone.
             //
             // Checked rather than assumed, because the invariant lives in
-            // another file and loosening that filter is a thing somebody will
-            // want to do: what would arrive here otherwise is a
+            // another file: what would arrive here otherwise is a
             // std::bad_variant_access from inside an install initialiser, and
             // what should arrive is nothing at all.
             if (! std::holds_alternative<SimpleIntegerVariableID>(spec.tasks[i].start) || ! is_constant_variable(spec.tasks[i].length))

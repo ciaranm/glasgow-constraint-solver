@@ -525,17 +525,58 @@ against its terms in the capacity lines, and what is left is a
 constraint with nothing but negative coefficients on the left and a
 positive right hand side. The framework's wrapping RUP closes it.
 
+### A variable duration, counted at what it guarantees
+
+A task whose length is a decision variable is in the energy set too, and
+counted at `lb(l)` — the duration it will run for whatever the search
+does with the rest of it. `[start, start + lb(l))` is inside the real
+execution interval, so activity established for the short one is
+activity all the same, and `shape_of` and the telescoping are the
+constant-length ones with `p = lb(l)`.
+
+What changes is the `after` bridge, and only it. For a constant length
+`after_{i,t}` is reified on the single variable `s ≥ t − l + 1` and the
+bridge is a two-line `pol`; for a variable one it is reified on
+`s + l ≥ t + 1`, and the bridge adds the length's own order literal to
+cancel the `l` bits:
+
+    pol( @…[ca][f] : ¬after → s + l ≤ t )
+       + ( [s ≥ t−p+1] → s ≥ t−p+1 )
+       + ( [l ≥ p]     → l ≥ p     )   s
+    = after_t ∨ ¬[s ≥ t−p+1] ∨ ¬[l ≥ p]
+
+which is the whole of the idea: `s ≥ t−p+1` and `l ≥ p` together give
+`s + l ≥ t+1`. The saturation is what makes `¬[l ≥ p]` worth one unit
+rather than whatever the length's encoding gave it, so a unit saying
+`[l ≥ p]` cancels it outright.
+
+Where that unit comes from is what decides whether the derivation is
+reason-free. At the length's **declared** lower bound it is the boundary
+pin `need_gevar` already wrote at the top of the proof — a model fact —
+so the row is as reusable as a constant-length one. Above it the fact is
+still permanent for the subtree but nothing has written it down, so
+`derive_window_energy` emits a unit RUP under the reason (which is why
+every variable length is in `reason_vars`). `derive_guarded_window_energy`
+cannot do either, its rows outliving the node that wanted them: it keeps
+`¬[l ≥ p]` as a **third guard**, one copy per time point summed, and the
+citing `pol` discharges it alongside the two start guards. The length is
+part of that cache's key for the same reason.
+
+`window_energy::Task::length_variable` is the switch, and is set exactly
+when `after` was reified the two-variable way. Everything else in
+`window_energy.cc` is shared between the two kinds.
+
 ### Restrictions, and why they are only weakenings
 
-The energy set takes only tasks with a constant length and height (a
-variable height enters `C_t` as the bit-linearised `contrib`, not as
-`h·active`, so the cancellation would not be exact) and a start that is
-a plain variable with an order encoding (the bridges need order
-literals; a `{0,1}` domain is direct-only encoded, and a view's atoms
-would need deview-mode arithmetic). The whole check is skipped when the
-capacity is a variable: a `(b−a)·capacity` term would survive into the
-conflict line for the wrapping RUP to dispose of over the capacity's
-bits, which it cannot do in general.
+The energy set takes only tasks with a constant height (a variable
+height enters `C_t` as the bit-linearised `contrib`, not as `h·active`,
+so the cancellation would not be exact) and a start — and a variable
+length — that is a plain variable with an order encoding (the bridges
+need order literals; a `{0,1}` domain is direct-only encoded, and a
+view's atoms would need deview-mode arithmetic). The whole check is
+skipped when the capacity is a variable: a `(b−a)·capacity` term would
+survive into the conflict line for the wrapping RUP to dispose of over
+the capacity's bits, which it cannot do in general.
 
 None of these lose soundness or solutions: a task the energy set will
 not take still counts through `F(a, b)`, and a check not made is a
@@ -927,16 +968,21 @@ it otherwise. It asks "can this task load the resource at all?" *first*: a task
 the donor gave no window — a zero height on this resource — published no proxy
 either, and would otherwise be counted as set aside for the wrong reason.
 
-The energy rules need no thought. `prepare_cumulative_overload_check` keeps only
-constant-length tasks, a window-energy lemma needing a task's energy to be a
-number, so a variable-duration task takes part in the rows and the time-tabling
-and stays out of the lemma. Where it *does* earn its place in a presolver that
-runs the energy rules alone is the (TTOC) profile term, which counts a task's
-mandatory part whether or not the lemma can speak for it — and those pins are the
-ones that go through the proxy. `cumulative_strengthening_var_length` is that
-case: four tasks of energy six fill a window of four at the strengthened capacity
-exactly, and one compulsory time point of a fifth, variable-duration task is the
-whole of the overshoot.
+The energy rules take such a task as well, at the duration it guarantees (see
+"A variable duration, counted at what it guarantees" above), and the proxy is
+not what they go through: the window-energy bridge cancels the length against
+its own order literal rather than materialising the sum. The proxy is still what
+the **pins** need, so a presolver running the energy rules gets both — the (TTOC)
+profile term counts a variable-duration task's mandatory part through the proxy,
+and the lemma counts its `lb(l)·h` through the bridge.
+`cumulative_strengthening_var_length` is the profile case: four tasks of energy
+six fill a window of four at the strengthened capacity exactly, and one
+compulsory time point of a fifth, variable-duration task is the whole of the
+overshoot.
+
+The **makespan** bound is the one energy rule that still declines a variable
+duration, and `install_derived_cumulative` re-checks rather than assuming: its
+rows are built once at the root off a length that has to be a number.
 
 **A tripwire.** No fixture in the tree catches the *wrong* line being published.
 Publish `end ≤ s + l` in place of `end ≥ s + l` and every proof still verifies:
@@ -1523,19 +1569,17 @@ per time point. Same trade as #742 for edge-finding's scan, and the same answer
   nothing measurable, but the window x task sweep that finds them is O(n^3) and
   taxes the solve about 1.5x at identical search. Propagation performance, not
   proof logging.
-- **A variable duration in the energy set (#689).** The window-energy
-  lemma's eligibility filter turns away a task whose length or height is
-  not a constant, and those two halves are now in different states. The
-  **height** one has resolved itself: a task #686 converted arrives at the
-  filter as a constant and passes, which
-  `cumulative_strengthening_all_var_heights` demonstrates by refuting at
-  the root through the energy check. The **length** one still binds, since
-# 685 passes a length through as the variable it was posted with — so a
-  multi-mode RCPSP task gets its demand counted and its energy discarded,
-  and it is the duration that discards it. Loosening it is not free: the
-  lemma telescopes order literals over ranges fixed by a constant length,
-  and a variable-duration task's `after` is reified on `start + length`
-  instead. #689 has the sketch. The rest of #542's staging is unchanged.
+- **A posted constraint's variable height in the energy set (#689's other
+  half).** The length half is done: a variable-duration task is counted at
+  `lb(l)`. The height half is done for a *derived* constraint by accident of
+  composition — a task #686 converted arrives at the filter as a constant and
+  passes, which `cumulative_strengthening_all_var_heights` demonstrates by
+  refuting at the root through the energy check — but a **posted** constraint's
+  variable-height task is still turned away, and need not be: #686's conversion
+  RUP is not specific to derived constraints, and the same line would let the
+  energy set count such a task at `lb(h)`. What it would cost is the
+  cancellation in the conflict `pol`, since a variable height enters `C_t` as
+  the bit-linearised `contrib` rather than as `h·active`.
 - **Conditional bounds for optional tasks.** An undecided task's start
   bounds are never pruned, because there is no conditional-bounds store
   and an unconditional prune would be unsound if the task turns out

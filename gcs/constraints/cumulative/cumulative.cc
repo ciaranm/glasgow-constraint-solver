@@ -246,21 +246,31 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
     const vector<Integer> & per_task_t_hi, const State & initial_state) -> CumulativeOverloadData
 {
     CumulativeOverloadData result;
-    // Which tasks the window-energy lemma can speak about: a constant length
-    // and height (so the task's energy is a constant, and its load in C_t is
-    // h·active rather than the bit-linearised contrib), and a start that is a
-    // plain variable with an order encoding, since the lemma bridges the
-    // before/after flags to the start's order literals. A task that is not
-    // eligible is not lost to the check: whatever it must occupy still counts,
-    // through the profile term of the (TTOC) strengthening.
+    // Which tasks the window-energy lemma can speak about: a constant height
+    // (so the task's load in C_t is h·active rather than the bit-linearised
+    // contrib), and a start that is a plain variable with an order encoding,
+    // since the lemma bridges the before/after flags to the start's order
+    // literals. A task that is not eligible is not lost to the check: whatever
+    // it must occupy still counts, through the profile term of the (TTOC)
+    // strengthening.
     //
     // The height half is looser than it reads. A *derived* Cumulative's tasks
     // carry constant heights by construction, so one whose donor height was a
     // variable arrives here already converted to the demand it guarantees and
     // passes --- which is how an all-variable-height donor's energy gets
     // counted at all. A posted constraint's variable height is still turned
-    // away, and need not be: the same conversion would serve. The length half
-    // is the one that genuinely binds, and #689 is what it would take.
+    // away, and need not be: the same conversion would serve, and #689's
+    // remaining half is what it would take.
+    //
+    // A *variable* length is admitted (#689), at the length it is guaranteed to
+    // reach rather than at the one it might: the lemma counts the task over
+    // [start, start + lb(length)), which its execution interval contains, by
+    // bridging its `after` flags back onto the start's order literals through
+    // the length's own. What that needs from here is a length whose order
+    // literals exist to be bridged with, so a plain variable, and one that can
+    // be positive at all --- a task whose length can only be zero is not an
+    // active task in the first place. Whether the bound it reaches is worth
+    // anything is asked at every node, in the candidate sweep, and not here.
     //
     // Presence is not among the tests, and deliberately so. What is asked here
     // is whether the lemma could *ever* speak about a task, which is a question
@@ -270,18 +280,26 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
     // presence literals of the ones it did use into the reason. A task that can
     // never be present at all is gone before this is called, `active_tasks`
     // having dropped it.
+    // A variable whose domain is exactly {0, 1} is direct-only encoded, so it
+    // has no order literals for the lemma's bridges to cancel against. Asked of
+    // a variable length as well as of the start: both are bridged through.
+    auto direct_only_encoded = [&](const IntegerVariableID & v) {
+        auto [lo, hi] = initial_state.bounds(v);
+        return lo == 0_i && hi == 1_i;
+    };
+
     result.overload_tasks.clear();
     for (auto i : active_tasks) {
-        if (! is_constant_variable(lengths[i]) || ! is_constant_variable(heights[i]))
+        if (! is_constant_variable(heights[i]) || constant_value_of(heights[i]) <= 0_i)
             continue;
-        if (constant_value_of(lengths[i]) <= 0_i || constant_value_of(heights[i]) <= 0_i)
+        if (! std::holds_alternative<SimpleIntegerVariableID>(starts[i]) || direct_only_encoded(starts[i]))
             continue;
-        if (! std::holds_alternative<SimpleIntegerVariableID>(starts[i]))
-            continue;
-        // A start whose domain is exactly {0, 1} is direct-only encoded, so it
-        // has no order literals for the lemma's bridges to cancel against.
-        auto [s_lo, s_hi] = initial_state.bounds(starts[i]);
-        if (s_lo == 0_i && s_hi == 1_i)
+        if (is_constant_variable(lengths[i])) {
+            if (constant_value_of(lengths[i]) <= 0_i)
+                continue;
+        }
+        else if (! std::holds_alternative<SimpleIntegerVariableID>(lengths[i]) || initial_state.upper_bound(lengths[i]) <= 0_i ||
+            direct_only_encoded(lengths[i]))
             continue;
         result.overload_tasks.push_back(i);
     }
@@ -580,7 +598,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .overload_tasks = move(_overload_tasks),
         .time_slot_prefix = move(_time_slot_prefix),
         .time_slot_lo = _time_slot_lo,
-        .guarded_energy = std::make_shared<std::map<std::tuple<size_t, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>()};
+        .guarded_energy =
+            std::make_shared<std::map<std::tuple<size_t, Integer, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>()};
 
     propagators.install(
         constraint_id(),
@@ -640,6 +659,18 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     auto lub = [&](size_t i) { return state.upper_bound(lengths_var[i]); };
     auto l_is_var = [&](size_t i) { return ! is_constant_variable(lengths_var[i]); };
     auto s_is_var = [&](size_t i) { return ! is_constant_variable(starts[i]); };
+
+    // The task as the window-energy lemma sees it. Only ever called for a task
+    // prepare_cumulative_overload_check kept, so the start --- and a variable
+    // length --- really are plain variables. A variable length goes along with
+    // lb(l_i) rather than instead of it: the flags it has to bridge through are
+    // reified on the two-variable s_i + l_i, and the lemma needs to know that to
+    // read them, while what it counts the task at is still the length the task
+    // is guaranteed to run for.
+    auto lemma_task = [&](size_t i) {
+        return window_energy::Task{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i], before_flags[i], after_flags[i],
+            active_flags[i], l_is_var(i) ? make_optional(std::get<SimpleIntegerVariableID>(lengths_var[i])) : optional<SimpleIntegerVariableID>{}};
+    };
 
     // A task with no presence variable is always here. An optional one is here
     // only once its presence is fixed to 1: until then it contributes nothing
@@ -742,14 +773,16 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // is a fact about the model --- the bounds a firing would have resolved its
     // leftover order literals against are carried as guard literals instead ---
     // so it lives at Top and outlives the search state that first wanted it.
+    //
+    // The length a variable-duration task is counted at is part of the key, and
+    // has to be: it is the live lower bound, so the same task over the same
+    // window is a different row once the search has tightened it. It is a guard
+    // on the row too, which is what keeps the row itself a model fact.
     auto guarded_energy = [&](size_t i, Integer lo, Integer hi, Integer low_guard, Integer high_guard) -> const window_energy::GuardedWindowEnergy & {
-        auto key = std::tuple{i, lo, hi, low_guard, high_guard};
+        auto key = std::tuple{i, lo, hi, low_guard, high_guard, llb(i)};
         if (auto found = inputs.guarded_energy->find(key); found != inputs.guarded_energy->end())
             return found->second;
-        auto derived = window_energy::derive_guarded_window_energy(*logger,
-            window_energy::ConstantLengthTask{
-                std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i], before_flags[i], after_flags[i], active_flags[i]},
-            lo, hi, low_guard, high_guard, ProofLevel::Top);
+        auto derived = window_energy::derive_guarded_window_energy(*logger, lemma_task(i), lo, hi, low_guard, high_guard, ProofLevel::Top);
         if (! derived)
             throw ProofError{"cumulative edge-finding: task " + std::to_string(i) + " has no derivable window energy over [" +
                 std::to_string(lo.raw_value) + "," + std::to_string(hi.raw_value) + ") guarded by [" + std::to_string(low_guard.raw_value) + "," +
@@ -801,6 +834,16 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                     pol.add(
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[i] < row.high_guard) >= 1_i, ProofLevel::Temporary),
                         hlb(i) * row.bound);
+                // The length guard, which unlike the other two is discharged
+                // whichever way the push goes: it says nothing about the
+                // conclusion, only that the task really does run for as long as
+                // the row counted it at. The reason carries every variable
+                // length's bounds, so this closes on the same literals the row
+                // was derived under.
+                if (row.length_coeff > 0_i)
+                    pol.add(logger->emit_rup_proof_line_under_reason(
+                                reason, WPBSum{} + 1_i * (lengths_var[i] >= row.length_guard) >= 1_i, ProofLevel::Temporary),
+                        hlb(i) * row.length_coeff);
             };
 
             // A contained task is inside the window whichever way the push
@@ -1034,6 +1077,14 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             // there. Its presence literal is already in the reason, put there
             // with every other known-present task's.
             if (! is_present(i))
+                continue;
+            // A task guaranteed no duration at all carries no guaranteed
+            // energy, so there is nothing for the lemma to establish and
+            // nothing for the window to be charged. Only reachable for a
+            // variable length --- a constant one this small was turned away at
+            // prepare time --- and it can stop being true further down the
+            // search, which is why it is asked here and not there.
+            if (llb(i) <= 0_i)
                 continue;
             auto [s_lo, s_hi] = state.bounds(starts[i]);
             auto p = llb(i), h = hlb(i);
@@ -1650,10 +1701,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 // anyway, and why this only showed up on
                                 // generated instances.
                                 auto [i_est, i_lst] = state.bounds(starts[i]);
-                                auto energy_line = window_energy::derive_window_energy(*logger, reason,
-                                    window_energy::ConstantLengthTask{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i],
-                                        before_flags[i], after_flags[i], active_flags[i]},
-                                    i_est, i_lst + llb(i), state.bounds(starts[i]), ProofLevel::Temporary);
+                                auto energy_line = window_energy::derive_window_energy(
+                                    *logger, reason, lemma_task(i), i_est, i_lst + llb(i), state.bounds(starts[i]), ProofLevel::Temporary);
                                 if (! energy_line || energy_line->bound != llb(i))
                                     throw ProofError{"cumulative elastic overload: a contained task's window energy is not its whole length"};
                                 pol.add(energy_line->line, hlb(i));
@@ -1757,10 +1806,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                     }
 
                     for (auto i : inside_tasks) {
-                        auto energy_line = window_energy::derive_window_energy(*logger, reason,
-                            window_energy::ConstantLengthTask{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i], before_flags[i],
-                                after_flags[i], active_flags[i]},
-                            a, shrink_lemma_window ? b - 1_i : b, state.bounds(starts[i]), ProofLevel::Temporary);
+                        auto energy_line = window_energy::derive_window_energy(
+                            *logger, reason, lemma_task(i), a, shrink_lemma_window ? b - 1_i : b, state.bounds(starts[i]), ProofLevel::Temporary);
                         if (! energy_line) {
                             // Only reachable under the shrunk-window
                             // mutation, where a task can be left with

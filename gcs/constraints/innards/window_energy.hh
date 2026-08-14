@@ -15,9 +15,9 @@
 namespace gcs::innards::window_energy
 {
     /**
-     * \brief A task, as the window-energy lemma sees it: a start variable with a
-     * constant duration, plus the per-time proof flags a time-table encoding
-     * gives it.
+     * \brief A task, as the window-energy lemma sees it: a start variable and a
+     * length it is guaranteed to run for, plus the per-time proof flags a
+     * time-table encoding gives it.
      *
      * The three flag vectors are indexed by <code>t - flags_t_lo</code>, and
      * must be fully reified (so that both their <code>[r]</code> and
@@ -25,19 +25,31 @@ namespace gcs::innards::window_energy
      *
      * <ul>
      * <li><code>before[t] &hArr; start &le; t</code></li>
-     * <li><code>after[t] &hArr; start &ge; t - length + 1</code></li>
+     * <li><code>after[t] &hArr; start &ge; t - length + 1</code>, or, when
+     * <code>length_variable</code> is set,
+     * <code>after[t] &hArr; start + length_variable &ge; t + 1</code></li>
      * <li><code>active[t] &hArr; before[t] &and; after[t]</code></li>
      * </ul>
      *
-     * which is exactly what <code>Cumulative::define_proof_model</code> emits.
+     * which is exactly what <code>Cumulative::define_proof_model</code> emits
+     * for a constant-length and for a variable-length task respectively.
+     *
+     * For a variable-length task, <code>length</code> is a value the length is
+     * known to be at least, and the lemma counts the task at that: the
+     * execution interval <code>[start, start + length_variable)</code> contains
+     * <code>[start, start + length)</code>, so activity established for the
+     * shorter one is activity all the same. Every derivation is then reason-free
+     * in the length exactly when <code>length</code> is its *declared* lower
+     * bound; taking a tightened one instead costs a guard (see
+     * \ref GuardedWindowEnergy) or a unit RUP (see \ref derive_window_energy).
      *
      * The flag range must cover every time at which the task can be active
-     * (i.e. <code>[lb(start), ub(start) + length - 1]</code> at the time the
+     * (i.e. <code>[lb(start), ub(start) + ub(length) - 1]</code> at the time the
      * flags were created): the lemma clips its window to the flag range, and
      * that clipping is only energy-preserving because the task is inactive
      * outside it.
      */
-    struct ConstantLengthTask
+    struct Task
     {
         SimpleIntegerVariableID start;
         Integer length;
@@ -45,6 +57,12 @@ namespace gcs::innards::window_energy
         const std::vector<ProofFlag> & before;
         const std::vector<ProofFlag> & after;
         const std::vector<ProofFlag> & active;
+        /// Set iff <code>after</code> is reified on the two-variable
+        /// <code>start + length_variable</code>, in which case
+        /// <code>length</code> is what the lemma counts the task at and
+        /// <code>length_variable &ge; length</code> is what it needs to bridge
+        /// back onto <code>start</code>'s order literals.
+        std::optional<SimpleIntegerVariableID> length_variable = std::nullopt;
     };
 
     /**
@@ -92,11 +110,20 @@ namespace gcs::innards::window_energy
      * telescope: the sum's <code>start</code> terms cancel exactly, in the
      * same way the <code>end</code> bridge lemma's operand bits do.
      *
+     * A variable-length task's <code>after</code> bridge takes one more line
+     * (the length's own order literal, which cancels the length out of the
+     * flag's reification) and one more term, <code>~[length_variable &ge;
+     * length]</code>. That term is discharged once for the whole derivation
+     * rather than per time point: at the declared lower bound by the boundary
+     * pin need_gevar already wrote down, and anywhere above it by a unit RUP
+     * under the reason --- which is why the reason must entail the length bound
+     * as well as <code>start_bounds</code>.
+     *
      * Returns nullopt when the window is empty after clipping, or when the
      * bound would be zero or less (there is nothing to say, and callers must
      * not cite a line that was never emitted).
      */
-    [[nodiscard]] auto derive_window_energy(ProofLogger &, const ReasonLiterals &, const ConstantLengthTask &, Integer lo, Integer hi,
+    [[nodiscard]] auto derive_window_energy(ProofLogger &, const ReasonLiterals &, const Task &, Integer lo, Integer hi,
         std::pair<Integer, Integer> start_bounds, ProofLevel) -> std::optional<WindowEnergy>;
 
     /**
@@ -108,16 +135,19 @@ namespace gcs::innards::window_energy
      * sum of <code>active[t]</code> over the window
      * + <code>low_coeff</code>&middot;<code>~[start &ge; low_guard]</code>
      * + <code>bound</code>&middot;<code>[start &ge; high_guard]</code>
+     * + <code>length_coeff</code>&middot;<code>~[length_variable &ge; length]</code>
      * &ge; <code>bound</code>
      * </blockquote>
      *
-     * so a citer has to discharge both guards. The first holds for any task the
-     * window contains, the second is the negation of a bound push's conclusion.
+     * so a citer has to discharge every guard. The first holds for any task the
+     * window contains, the second is the negation of a bound push's conclusion,
+     * and the third is absent (<code>length_coeff</code> zero) unless the task's
+     * length is a variable.
      */
     struct GuardedWindowEnergy
     {
         ProofLine line;
-        /// The activity the line establishes once both guards are discharged.
+        /// The activity the line establishes once every guard is discharged.
         Integer bound;
         /// The window the sum runs over: the requested one clipped to the flag range.
         Integer lo, hi;
@@ -128,6 +158,13 @@ namespace gcs::innards::window_energy
         /// ... and <code>bound</code> copies of <code>[start &ge; high_guard]</code>,
         /// which is the requested threshold.
         Integer high_guard;
+        /// ... and, for a variable-length task, <code>length_coeff</code> copies
+        /// of <code>~[length_variable &ge; length_guard]</code>, one per time
+        /// point summed. Zero for a constant-length task, whose line has no such
+        /// term. A citer whose reason entails the length bound discharges them;
+        /// at the declared lower bound the boundary pin does it with no reason
+        /// at all.
+        Integer length_guard, length_coeff;
     };
 
     /**
@@ -158,14 +195,22 @@ namespace gcs::innards::window_energy
      * and the ones it cannot reach are discharged by their own literal axioms
      * at a unit of the bound each.
      *
+     * A variable length is weakened onto a guard of its own for the same
+     * reason, and only when it has to be: at the declared lower bound the
+     * length term would be paid off by a boundary pin, which is a model fact,
+     * but the row is kept across nodes and the caller may well be counting the
+     * task at a bound the search has tightened. Carrying the term instead
+     * leaves one row that is right at either, and costs its citer one more
+     * unit RUP.
+     *
      * Costs two more pol lines per surviving order literal than the
      * reason-backed form, all of them inside the part that gets kept.
      *
      * Returns nullopt on an empty clipped window, or when the bound would be
      * zero or less.
      */
-    [[nodiscard]] auto derive_guarded_window_energy(ProofLogger &, const ConstantLengthTask &, Integer lo, Integer hi, Integer low_guard,
-        Integer high_guard, ProofLevel) -> std::optional<GuardedWindowEnergy>;
+    [[nodiscard]] auto derive_guarded_window_energy(
+        ProofLogger &, const Task &, Integer lo, Integer hi, Integer low_guard, Integer high_guard, ProofLevel) -> std::optional<GuardedWindowEnergy>;
 }
 
 #endif
