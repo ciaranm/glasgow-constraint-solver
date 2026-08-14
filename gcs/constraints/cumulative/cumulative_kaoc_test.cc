@@ -276,6 +276,15 @@ namespace
 
 auto main(int argc, char * argv[]) -> int
 {
+    // Before anything solves. Nothing in this file draws random *data* --- every
+    // fixture is written out --- but the enumeration below branches with
+    // random_branch_with_optional_seed, and without this its order comes from a
+    // random_device: `--seed=N` was silently ignored, no seed was announced, and
+    // cumulative_kaoc_enumeration.pbp differed between two runs of the same
+    // binary. A failing lane could not be re-run, and the proof was useless as
+    // a byte-diff reference.
+    establish_and_announce_seed(argc, argv);
+
     // A mutation lane runs one fixture and expects VeriPB to reject it. Which
     // fixture matters: `cloutier_ex2` takes the strengthening's divisibility
     // fast path and `dp_path` its layered dynamic programme, and a mutation
