@@ -11,11 +11,13 @@
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/subset_sum_strengthening.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -44,8 +46,12 @@ using std::pair;
 using std::size_t;
 using std::string;
 using std::stringstream;
+using std::uint64_t;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::fill;
+using std::ranges::find;
+using std::ranges::none_of;
 using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -1067,10 +1073,101 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             window_starts.push_back(c.est);
         sort(window_starts);
 
+        // (TTHE-OC) and (KAOC) charge the window one time point at a time, so
+        // they need to know what the contained set could take at each of them
+        // separately. Two arrays indexed by t − t_lo carry it: the heights of
+        // the contained tasks that could run at t without being compulsory
+        // there, and — for the knapsack rule — which totals those heights can
+        // actually add up to, as a bitset over 0..capacity.
+        //
+        // Both are grown one task at a time as the window's right edge
+        // advances and reset when the left edge moves, which is Cloutier &
+        // Quimper's incremental Profile (their Algorithm 3 is the shift-or on
+        // the bitset). Their doubly linked list over time points is the part
+        // not reproduced here: it collapses runs where the profile is constant,
+        // and without it this sweep is O(n²·horizon) rather than O(Cn²). That
+        // is the same trade #742 records for edge-finding's scan, and the same
+        // answer — the rule is off by default, and the cost is propagation
+        // performance rather than proof content.
+        //
+        // A variable height would put bit-linearised contribution terms in the
+        // capacity line instead of one `h·active`, which neither the knapsack's
+        // item list nor the term-dropping below can read. v1 declines rather
+        // than approximates: the plain rules above still run.
+        auto elastic_rules = (rules.elastic_overload || rules.knapsack_overload) && none_of(active_tasks, [&](size_t i) { return h_is_var(i); });
+        auto knapsack_words = static_cast<size_t>(capacity.raw_value / 64 + 1);
+        vector<Integer> optional_height(elastic_rules ? static_cast<size_t>(range) : 0, 0_i);
+        vector<uint64_t> reachable(elastic_rules && rules.knapsack_overload ? static_cast<size_t>(range) * knapsack_words : 0, 0);
+
+        // The times this task is optional at: it could be running, but nothing
+        // says it must be. Its compulsory part is charged to the profile
+        // instead, and comes off the *required* side of the comparison rather
+        // than off what the time point supplies --- so counting it here as well
+        // would charge it twice, and the pol would not close.
+        //
+        // A task with no compulsory part at all is optional across the whole of
+        // [est, lct), which is the case to be careful with: `lst` is then at or
+        // past `ect`, and taking the two ends as [est, lst) and [ect, lct)
+        // would silently drop everything between them.
+        auto optional_times = [&](const Candidate & c) {
+            auto lst = c.lct - c.length, ect = c.est + c.length;
+            if (lst < ect)
+                return pair{pair{c.est, lst}, pair{ect, c.lct}};
+            return pair{pair{c.est, c.lct}, pair{c.lct, c.lct}};
+        };
+
+        auto join_elastic = [&](const Candidate & c) {
+            auto [before, after] = optional_times(c);
+            for (auto [from, to] : {before, after})
+                for (Integer t = from; t < to; ++t) {
+                    auto idx = static_cast<size_t>((t - t_lo).raw_value);
+                    optional_height[idx] += c.height;
+                    if (rules.knapsack_overload) {
+                        // bitset |= bitset << height, most significant word
+                        // first so a shift reads only bits it has not written.
+                        auto * bits = reachable.data() + idx * knapsack_words;
+                        auto shift = static_cast<size_t>(c.height.raw_value);
+                        for (size_t k = knapsack_words; k-- > 0;) {
+                            auto word = (shift / 64 > k) ? 0ull : bits[k - shift / 64] << (shift % 64);
+                            if (shift % 64 != 0 && shift / 64 < k)
+                                word |= bits[k - shift / 64 - 1] >> (64 - shift % 64);
+                            bits[k] |= word;
+                        }
+                    }
+                }
+        };
+
+        // What one time point supplies to the contained set: what the profile
+        // leaves of the capacity, capped by what the tasks that could be here
+        // are between them able to take — and, for (KAOC), by the largest total
+        // those heights can actually add up to, since a resource no subset of
+        // them can reach is not available either.
+        auto elastic_supply_at = [&](Integer t) {
+            auto idx = static_cast<size_t>((t - t_lo).raw_value);
+            auto left = max(0_i, capacity - mand_load[idx]);
+            auto cap = min(left, optional_height[idx]);
+            if (rules.knapsack_overload && cap > 0_i) {
+                const auto * bits = reachable.data() + idx * knapsack_words;
+                for (Integer v = cap; v >= 0_i; --v)
+                    if (bits[static_cast<size_t>(v.raw_value) / 64] >> (static_cast<size_t>(v.raw_value) % 64) & 1ull)
+                        return v;
+                return 0_i;
+            }
+            return cap;
+        };
+
         for (size_t w = 0; w < window_starts.size(); ++w) {
             if (w > 0 && window_starts[w] == window_starts[w - 1])
                 continue;
             auto a = window_starts[w];
+
+            if (elastic_rules) {
+                fill(optional_height, 0_i);
+                fill(reachable, 0ull);
+                // Every bitset starts with only the empty subset reachable.
+                for (size_t k = 0; k < reachable.size(); k += knapsack_words)
+                    reachable[k] = 1ull;
+            }
 
             // min_ect and max_lst are not-first / not-last's thresholds, over
             // the same growing contained set the energy accumulates over.
@@ -1082,6 +1179,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 energy += c.energy;
                 inside_mandatory += c.mandatory;
                 inside_tasks.push_back(c.task);
+                if (elastic_rules)
+                    join_elastic(c);
                 min_ect = inside_tasks.size() == 1 ? c.est + c.length : min(min_ect, c.est + c.length);
                 max_lst = inside_tasks.size() == 1 ? c.lct - c.length : max(max_lst, c.lct - c.length);
 
@@ -1327,6 +1426,149 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 }
 
                 auto outside_profile = rules.profile_overload ? window_profile : 0_i;
+
+                // (TTHE-OC) and (KAOC). Both compare the same two quantities,
+                // and differ only in how tightly one of them is capped:
+                //
+                //   required   each contained task's energy, less whatever of
+                //              it its compulsory part already accounts for
+                //   supplied   summed one time point at a time, each capped by
+                //              what the profile leaves, by the heights of the
+                //              tasks that could be there, and (KAOC) by the
+                //              largest total those heights can reach
+                //
+                // With no cap but the profile's this is exactly (TTOC): each
+                // contained task's compulsory load comes off the required side
+                // and goes back on as the supply the profile removes, and the
+                // two rearrange into `e + F > C·(b−a)` term for term. So the
+                // rules form a ladder over one comparison, and the certificate
+                // below is one shape with a tighter line per time point --- not
+                // three certificates.
+                //
+                // Tried only where (TTOC) has already declined, which is sound
+                // because it dominates neither: whatever (TTOC) detects, this
+                // detects too. What that buys is the cheaper certificate
+                // wherever the cheaper rule was enough.
+                if (elastic_rules && ! inside_tasks.empty() && energy + outside_profile <= supply) {
+                    auto required = energy - inside_mandatory;
+
+                    // What each time point supplies with and without the
+                    // knapsack cap. The gap between them is what strengthening
+                    // that point would buy the conflict, and it is worth
+                    // knowing separately: the DP costs a layer of proof flags
+                    // per reachable partial sum, so the certificate pays for it
+                    // only where the contradiction cannot do without.
+                    Integer elastic_total = 0_i;
+                    vector<pair<Integer, Integer>> gain_at;
+                    for (Integer t = a; t < b; ++t) {
+                        auto idx = static_cast<size_t>((t - t_lo).raw_value);
+                        auto uncapped = min(max(0_i, capacity - mand_load[idx]), optional_height[idx]);
+                        elastic_total += uncapped;
+                        if (auto gain = uncapped - elastic_supply_at(t); gain > 0_i)
+                            gain_at.emplace_back(gain, t);
+                    }
+
+                    // Biggest gains first, and stop as soon as the comparison
+                    // tips: `strengthen` is then exactly the set of time points
+                    // the conflict rests on, and every other one keeps the
+                    // cheap line.
+                    sort(gain_at, [](const auto & x, const auto & y) { return x.first > y.first; });
+                    vector<Integer> strengthen;
+                    auto supplied = elastic_total;
+                    for (const auto & [gain, t] : gain_at) {
+                        if (required > supplied)
+                            break;
+                        supplied -= gain;
+                        strengthen.push_back(t);
+                    }
+
+                    if (required > supplied) {
+                        auto justify = [&, a, b, inside_tasks, strengthen, required, supplied](const ReasonLiterals & reason) -> void {
+                            if (! logger)
+                                return;
+                            logger->emit_proof_comment("cumulative overload conflict window=[" + std::to_string(a.raw_value) + "," +
+                                std::to_string(b.raw_value) + ") rule=" + (strengthen.empty() ? "ttheoc" : "kaoc") +
+                                " strengthened=" + std::to_string(strengthen.size()) + "/" + std::to_string((b - a).raw_value));
+
+                            vector<bool> is_inside(starts.size(), false);
+                            for (auto i : inside_tasks)
+                                is_inside[i] = true;
+
+                            PolBuilder pol;
+
+                            // One availability line per time point: the
+                            // capacity row, with every compulsory contribution
+                            // pinned off it and every term that is not a
+                            // contained task's optional one weakened away, so
+                            // that what is left is a statement about exactly
+                            // the heights the knapsack reasons over.
+                            for (Integer t = a; t < b; ++t) {
+                                auto capacity_line = capacity_lines.find(t);
+                                if (capacity_line == capacity_lines.end())
+                                    continue;
+
+                                PolBuilder avail;
+                                avail.add(capacity_line->second);
+                                vector<SubsetSumItem> items;
+                                for (auto j : active_tasks) {
+                                    if (t < per_task_t_lo[j] || t > per_task_t_hi[j])
+                                        continue;
+                                    auto flag = active_flags[j][static_cast<size_t>((t - per_task_t_lo[j]).raw_value)];
+                                    auto lst = state.upper_bound(starts[j]), eet = state.lower_bound(starts[j]) + llb(j);
+                                    if (is_present(j) && lst <= t && t < eet) {
+                                        auto [line, coeff] = pin_contributor(reason, j, t);
+                                        avail.add(line, coeff);
+                                    }
+                                    else if (is_inside[j] && state.lower_bound(starts[j]) <= t && t < state.upper_bound(starts[j]) + llb(j))
+                                        items.push_back(SubsetSumItem{hlb(j), flag});
+                                    else
+                                        avail.weaken(flag, logger->names_and_ids_tracker());
+                                }
+
+                                auto idx = static_cast<size_t>((t - t_lo).raw_value);
+                                auto left = max(0_i, capacity - mand_load[idx]);
+                                auto line = avail.emit(*logger, ProofLevel::Temporary);
+                                if (find(strengthen, t) != strengthen.end()) {
+                                    auto strengthened = derive_subset_sum_strengthening(*logger, items, line, left, ProofLevel::Temporary);
+                                    if (strengthened.bound != elastic_supply_at(t))
+                                        throw ProofError{"cumulative knapsack overload: the strengthening at time " + std::to_string(t.raw_value) +
+                                            " reached " + std::to_string(strengthened.bound.raw_value) + ", not the " +
+                                            std::to_string(elastic_supply_at(t).raw_value) + " the check counted on"};
+                                    line = strengthened.line;
+                                }
+                                pol.add(line);
+                            }
+
+                            // ... against each contained task's energy, with
+                            // its compulsory times weakened back out of the
+                            // sum: those time points charged the availability
+                            // side instead, and counting them twice would leave
+                            // the pol open.
+                            for (auto i : inside_tasks) {
+                                auto energy_line = window_energy::derive_window_energy(*logger, reason,
+                                    window_energy::ConstantLengthTask{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i],
+                                        before_flags[i], after_flags[i], active_flags[i]},
+                                    a, b, state.bounds(starts[i]), ProofLevel::Temporary);
+                                if (! energy_line || energy_line->bound != llb(i))
+                                    throw ProofError{"cumulative elastic overload: a contained task's window energy is not its whole length"};
+                                pol.add(energy_line->line, hlb(i));
+
+                                auto lst = state.upper_bound(starts[i]), eet = state.lower_bound(starts[i]) + llb(i);
+                                for (Integer t = max(lst, a); t < min(eet, b); ++t)
+                                    pol.add(! logger->names_and_ids_tracker().xliteral_for(
+                                                active_flags[i][static_cast<size_t>((t - per_task_t_lo[i]).raw_value)]),
+                                        hlb(i), logger->names_and_ids_tracker());
+                            }
+
+                            pol.emit(*logger, ProofLevel::Temporary);
+                        };
+
+                        inference.contradiction(
+                            logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, reason_with_presence());
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
+                }
+
                 if (energy + outside_profile <= supply)
                     continue;
 
