@@ -103,6 +103,12 @@ namespace gcs
         /// because it is not worth its scan: it fires in the millions and buys
         /// 0.3% of the search, and at a 60 s timeout it closes fewer instances
         /// than leaving it off.
+        ///
+        /// The detection is what the window-energy lemma can *derive* --- the
+        /// least overlap the pushed task can have with the window over the
+        /// negated conclusion's whole start range --- where the published rules
+        /// take the overlap at one end of that range. So this is a weakening of
+        /// them, sound and certified but firing less often. See #746.
         bool not_first_not_last = false;
     };
 
