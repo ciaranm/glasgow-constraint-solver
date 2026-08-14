@@ -1095,9 +1095,22 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         // item list nor the term-dropping below can read. v1 declines rather
         // than approximates: the plain rules above still run.
         auto elastic_rules = (rules.elastic_overload || rules.knapsack_overload) && none_of(active_tasks, [&](size_t i) { return h_is_var(i); });
+
+        // The knapsack cap is pseudo-polynomial in the capacity twice over: a
+        // bitset of `capacity + 1` bits at every time point, and a layer of
+        // proof flags per reachable partial sum in every strengthening it
+        // certifies. Scheduling capacities are small --- Cloutier & Quimper
+        // report C <= 122 across their benchmarks, and the local RCPSP
+        // instances run 5 to 22 --- so this bound is far above anything the
+        // rule is meant for, and exists so that a model with a capacity in the
+        // millions degrades to the horizontally elastic cap instead of asking
+        // for terabytes. Not a silent cap on strength: what it turns off is one
+        // of three rungs, and the two below it still run.
+        constexpr auto max_knapsack_capacity = 4096;
+        auto knapsack_rule = rules.knapsack_overload && capacity <= Integer{max_knapsack_capacity};
         auto knapsack_words = static_cast<size_t>(capacity.raw_value / 64 + 1);
         vector<Integer> optional_height(elastic_rules ? static_cast<size_t>(range) : 0, 0_i);
-        vector<uint64_t> reachable(elastic_rules && rules.knapsack_overload ? static_cast<size_t>(range) * knapsack_words : 0, 0);
+        vector<uint64_t> reachable(elastic_rules && knapsack_rule ? static_cast<size_t>(range) * knapsack_words : 0, 0);
 
         // The times this task is optional at: it could be running, but nothing
         // says it must be. Its compulsory part is charged to the profile
@@ -1122,7 +1135,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 for (Integer t = from; t < to; ++t) {
                     auto idx = static_cast<size_t>((t - t_lo).raw_value);
                     optional_height[idx] += c.height;
-                    if (rules.knapsack_overload) {
+                    if (knapsack_rule) {
                         // bitset |= bitset << height, most significant word
                         // first so a shift reads only bits it has not written.
                         auto * bits = reachable.data() + idx * knapsack_words;
@@ -1146,7 +1159,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             auto idx = static_cast<size_t>((t - t_lo).raw_value);
             auto left = max(0_i, capacity - mand_load[idx]);
             auto cap = min(left, optional_height[idx]);
-            if (rules.knapsack_overload && cap > 0_i) {
+            if (knapsack_rule && cap > 0_i) {
                 const auto * bits = reachable.data() + idx * knapsack_words;
                 for (Integer v = cap; v >= 0_i; --v)
                     if (bits[static_cast<size_t>(v.raw_value) / 64] >> (static_cast<size_t>(v.raw_value) % 64) & 1ull)
