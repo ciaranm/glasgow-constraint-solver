@@ -4,6 +4,7 @@
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/integer.hh>
 
 #include <variant>
@@ -127,6 +128,15 @@ namespace gcs::innards
      * cannot add to the OPB even by mistake. `level` selects where they land
      * --- `Temporary` inside a conflict justification, `Top` for a presolver.
      *
+     * `reason` must be the one the *source line* was derived under, and an
+     * empty one says the source is a fact about the model. This matters: a
+     * reason-backed source carries the negated reason's literals alongside its
+     * own terms, so a dead state's "this prefix cannot be completed" is only
+     * true where the reason holds, and every RUP below has to say so too.
+     * Getting this wrong does not produce a wrong answer --- it produces a
+     * proof VeriPB rejects, on the first instance whose conflict happens below
+     * the root.
+     *
      * Degenerate cases: an empty item list gives a bound of zero; a bound that
      * is already reachable returns the source line unchanged; a bound at least
      * the sum of every coefficient gives that sum.
@@ -134,7 +144,8 @@ namespace gcs::innards
      * \ingroup Innards
      */
     [[nodiscard]] auto derive_subset_sum_strengthening(ProofLogger &, const std::vector<SubsetSumItem> & items, ProofLine source, Integer bound,
-        ProofLevel level, SubsetSumMutation mutation = subset_sum_mutation::None{}) -> SubsetSumStrengthening;
+        ProofLevel level, const ReasonLiterals & reason = ReasonLiterals{}, SubsetSumMutation mutation = subset_sum_mutation::None{})
+        -> SubsetSumStrengthening;
 }
 
 #endif

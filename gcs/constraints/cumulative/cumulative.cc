@@ -1497,6 +1497,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
 
                     if (required > supplied) {
                         auto justify = [&, a, b, inside_tasks, strengthen, required, supplied](const ReasonLiterals & reason) -> void {
+                            Integer pol_supply = 0_i, pol_required = 0_i;
                             if (! logger)
                                 return;
                             logger->emit_proof_comment("cumulative overload conflict window=[" + std::to_string(a.raw_value) + "," +
@@ -1529,9 +1530,51 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 if (capacity_line == capacity_lines.end())
                                     continue;
 
+                                auto idx = static_cast<size_t>((t - t_lo).raw_value);
+                                auto left = max(0_i, capacity - mand_load[idx]);
+
+                                // Which of the contained tasks could be running
+                                // here without being obliged to. These are the
+                                // heights the cap is stated over, whichever way
+                                // it is derived.
+                                vector<SubsetSumItem> items;
+                                for (auto j : active_tasks) {
+                                    if (t < per_task_t_lo[j] || t > per_task_t_hi[j] || ! is_inside[j])
+                                        continue;
+                                    auto lst = state.upper_bound(starts[j]), eet = state.lower_bound(starts[j]) + llb(j);
+                                    if (is_present(j) && lst <= t && t < eet)
+                                        continue;
+                                    if (state.lower_bound(starts[j]) <= t && t < state.upper_bound(starts[j]) + llb(j))
+                                        items.push_back(
+                                            SubsetSumItem{hlb(j), active_flags[j][static_cast<size_t>((t - per_task_t_lo[j]).raw_value)]});
+                                }
+
+                                // Where those heights do not add up to what the
+                                // profile leaves, the capacity row is not the
+                                // binding fact and citing it would supply the
+                                // window with resource nobody can take. The
+                                // binding fact is then each task's own literal
+                                // axiom, and their sum is the whole cap --- no
+                                // capacity row, no pins, and nothing for the
+                                // knapsack to improve on, since the entire set
+                                // already fits.
+                                //
+                                // This is the horizontally elastic cap, and
+                                // deriving it rather than only computing it is
+                                // what the first version got wrong: a fixture
+                                // where every task can be at every time point
+                                // never takes this branch, and every published
+                                // one is like that.
+                                if (optional_height[idx] <= left) {
+                                    pol_supply += optional_height[idx];
+                                    for (const auto & item : items)
+                                        pol.add(! logger->names_and_ids_tracker().xliteral_for(std::get<ProofFlag>(item.term)), item.coefficient,
+                                            logger->names_and_ids_tracker());
+                                    continue;
+                                }
+
                                 PolBuilder avail;
                                 avail.add(capacity_line->second);
-                                vector<SubsetSumItem> items;
                                 for (auto j : active_tasks) {
                                     if (t < per_task_t_lo[j] || t > per_task_t_hi[j])
                                         continue;
@@ -1541,20 +1584,24 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                         auto [line, coeff] = pin_contributor(reason, j, t);
                                         avail.add(line, coeff);
                                     }
-                                    else if (is_inside[j] && state.lower_bound(starts[j]) <= t && t < state.upper_bound(starts[j]) + llb(j))
-                                        items.push_back(SubsetSumItem{hlb(j), flag});
-                                    else
+                                    else if (! (is_inside[j] && state.lower_bound(starts[j]) <= t && t < state.upper_bound(starts[j]) + llb(j)))
                                         avail.weaken(flag, logger->names_and_ids_tracker());
                                 }
 
-                                auto idx = static_cast<size_t>((t - t_lo).raw_value);
-                                auto left = max(0_i, capacity - mand_load[idx]);
                                 auto line = avail.emit(*logger, ProofLevel::Temporary);
                                 auto strengthen_here = find(strengthen, t) != strengthen.end();
                                 if (strengthen_one_fewer && ! strengthen.empty() && t == strengthen.front())
                                     strengthen_here = false;
                                 if (strengthen_here) {
-                                    auto strengthened = derive_subset_sum_strengthening(*logger, items, line, left, ProofLevel::Temporary,
+                                    // The reason goes in: the availability
+                                    // line was derived under it (its pins
+                                    // carry the negated reason's literals
+                                    // alongside their own terms), so a dead
+                                    // state's "this prefix cannot be
+                                    // completed" only holds where the reason
+                                    // does, and every RUP inside the
+                                    // strengthening has to say so too.
+                                    auto strengthened = derive_subset_sum_strengthening(*logger, items, line, left, ProofLevel::Temporary, reason,
                                         claim_one_better ? SubsetSumMutation{subset_sum_mutation::ClaimOneBetter{}}
                                                          : SubsetSumMutation{subset_sum_mutation::None{}});
                                     if (! claim_one_better && strengthened.bound != elastic_supply_at(t))
@@ -1562,7 +1609,10 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                             " reached " + std::to_string(strengthened.bound.raw_value) + ", not the " +
                                             std::to_string(elastic_supply_at(t).raw_value) + " the check counted on"};
                                     line = strengthened.line;
+                                    pol_supply += strengthened.bound;
                                 }
+                                else
+                                    pol_supply += left;
                                 pol.add(line);
                             }
 
@@ -1582,20 +1632,58 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                             // there is no mutation lane for this step; a
                             // corruption of it is accepted, and rightly.
                             for (auto i : inside_tasks) {
+                                // Over the task's *own* [est, lct), not over
+                                // the whole window. A contained task's span
+                                // sits inside the window either way, so the
+                                // bound is the same p_i --- but the sum's time
+                                // points then line up exactly with the ones the
+                                // availability lines charged for.
+                                //
+                                // Take the window instead and the pol is left
+                                // with a negative coefficient on every
+                                // (task, time) the task cannot reach: the
+                                // availability lines never mention those, and
+                                // nothing cancels them. Unit propagation
+                                // usually finishes it from the reason's bound
+                                // literals, which is why every fixture where
+                                // the tasks all span the window verifies
+                                // anyway, and why this only showed up on
+                                // generated instances.
+                                auto [i_est, i_lst] = state.bounds(starts[i]);
                                 auto energy_line = window_energy::derive_window_energy(*logger, reason,
                                     window_energy::ConstantLengthTask{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i],
                                         before_flags[i], after_flags[i], active_flags[i]},
-                                    a, b, state.bounds(starts[i]), ProofLevel::Temporary);
+                                    i_est, i_lst + llb(i), state.bounds(starts[i]), ProofLevel::Temporary);
                                 if (! energy_line || energy_line->bound != llb(i))
                                     throw ProofError{"cumulative elastic overload: a contained task's window energy is not its whole length"};
                                 pol.add(energy_line->line, hlb(i));
+                                pol_required += hlb(i) * energy_line->bound;
 
                                 auto lst = state.upper_bound(starts[i]), eet = state.lower_bound(starts[i]) + llb(i);
-                                for (Integer t = max(lst, a); t < min(eet, b); ++t)
+                                for (Integer t = max(lst, a); t < min(eet, b); ++t) {
                                     pol.add(! logger->names_and_ids_tracker().xliteral_for(
                                                 active_flags[i][static_cast<size_t>((t - per_task_t_lo[i]).raw_value)]),
                                         hlb(i), logger->names_and_ids_tracker());
+                                    pol_required -= hlb(i);
+                                }
                             }
+
+                            // What the pol actually adds up to, against what
+                            // the rule decided to fire on. The two are computed
+                            // on opposite sides of the propagator --- one from
+                            // the incremental per-time-point arrays, the other
+                            // from the lines as they are emitted --- so they
+                            // agree only if the certificate is charging the
+                            // window for what the check counted. A mismatch is
+                            // a proof VeriPB will reject, and it reads far
+                            // better here than there. Off under a mutation,
+                            // whose whole purpose is to make the two disagree.
+                            if (std::holds_alternative<cumulative_proof_mutation::None>(mutation) &&
+                                (pol_supply != supplied || pol_required != required))
+                                throw ProofError{"cumulative elastic overload: the pol says " + std::to_string(pol_required.raw_value) + " > " +
+                                    std::to_string(pol_supply.raw_value) + " but the check said " + std::to_string(required.raw_value) + " > " +
+                                    std::to_string(supplied.raw_value) + " over [" + std::to_string(a.raw_value) + "," + std::to_string(b.raw_value) +
+                                    ")"};
 
                             pol.emit(*logger, ProofLevel::Temporary);
                         };

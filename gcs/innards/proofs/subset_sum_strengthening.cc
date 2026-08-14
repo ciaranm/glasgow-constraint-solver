@@ -122,7 +122,7 @@ auto gcs::innards::largest_subset_sum_at_most(const vector<Integer> & coefficien
 }
 
 auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const vector<SubsetSumItem> & items, ProofLine source, Integer bound,
-    ProofLevel level, SubsetSumMutation mutation) -> SubsetSumStrengthening
+    ProofLevel level, const ReasonLiterals & reason, SubsetSumMutation mutation) -> SubsetSumStrengthening
 {
     vector<Integer> coefficients;
     coefficients.reserve(items.size());
@@ -191,7 +191,7 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
     // is a one-line RUP. Every later layer's at-least-one is a RUP against the
     // previous one, which is why they are emitted rather than kept: unit
     // propagation finds them in the database.
-    logger.emit_rup_proof_line(WPBSum{} + 1_i * layers.back().at(0_i).exactly >= 1_i, level);
+    logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * layers.back().at(0_i).exactly >= 1_i, level);
 
     for (size_t k = 0; k < items.size(); ++k) {
         const auto & item = items[k];
@@ -235,7 +235,7 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
             stays += 1_i * ! state.exactly;
             add_term_to(stays, 1_i, item.term);
             stays += 1_i * stay.exactly;
-            auto stay_transition = logger.emit_rup_proof_line(move(stays) >= 1_i, level);
+            auto stay_transition = logger.emit_rup_proof_line_under_reason(reason, move(stays) >= 1_i, level);
 
             if (advanced <= bound) {
                 const auto & step = after.at(advanced);
@@ -258,7 +258,7 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
                 steps += 1_i * ! state.exactly;
                 add_term_to(steps, 1_i, ! item.term);
                 steps += 1_i * step.exactly;
-                auto step_transition = logger.emit_rup_proof_line(move(steps) >= 1_i, level);
+                auto step_transition = logger.emit_rup_proof_line_under_reason(reason, move(steps) >= 1_i, level);
 
                 // Either way the layer moves to one of the two states:
                 // resolving the two transitions on the item literal.
@@ -282,7 +282,7 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
                 WPBSum out;
                 out += 1_i * ! state.exactly;
                 add_term_to(out, 1_i, ! item.term);
-                auto item_is_out = logger.emit_rup_proof_line(move(out) >= 1_i, level);
+                auto item_is_out = logger.emit_rup_proof_line_under_reason(reason, move(out) >= 1_i, level);
 
                 if (! skip_this_layer) {
                     PolBuilder resolve;
@@ -298,7 +298,7 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
         WPBSum at_least_one;
         for (const auto & [value, state] : after)
             at_least_one += 1_i * state.exactly;
-        logger.emit_rup_proof_line(move(at_least_one) >= 1_i, level);
+        logger.emit_rup_proof_line_under_reason(reason, move(at_least_one) >= 1_i, level);
 
         layers.push_back(move(after));
         prefix = move(after_prefix);
@@ -312,10 +312,10 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
         PolBuilder dominated;
         dominated.add(state.at_most_forward).add(under_reverse).saturate();
         dominated.emit(logger, level);
-        logger.emit_rup_proof_line(WPBSum{} + 1_i * ! state.exactly + 1_i * under >= 1_i, level);
+        logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ! state.exactly + 1_i * under >= 1_i, level);
     }
 
-    auto under_holds = logger.emit_rup_proof_line(WPBSum{} + 1_i * under >= 1_i, level);
+    auto under_holds = logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * under >= 1_i, level);
 
     // Discharge the flag: its forward half is the strengthened line, weakened
     // by the reification coefficient, and the unit above pays exactly that
