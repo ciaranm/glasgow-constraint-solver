@@ -341,7 +341,7 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<std::size_t>()->default_value("20000"))                                   //
             ("cumulative-edge-finding",                                                                  //
                 "Run edge-finding on every posted Cumulative, alongside time-tabling and the overload "  //
-                "check. Not certified yet, so a run with --prove will refuse it",                        //
+                "check. Certified, but off by default: the sweep that finds the firings is cubic",       //
                 cxxopts::value<bool>()->default_value("false"))                                          //
             ("mutate-makespan-bound",                                                                    //
                 "Claim a makespan one larger than the inferred constraints' energy supports. For "       //
