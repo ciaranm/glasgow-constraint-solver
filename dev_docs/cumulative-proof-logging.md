@@ -566,17 +566,64 @@ part of that cache's key for the same reason.
 when `after` was reified the two-variable way. Everything else in
 `window_energy.cc` is shared between the two kinds.
 
+### A variable demand, and where it lands instead
+
+A variable height changes nothing about what the lemma derives. It
+changes what a *capacity row carries*: `C_t` holds the bit-linearised
+`contrib` rather than `h·active`, so an activity bound has nothing to
+cancel against until it is converted into contribution terms.
+
+`guaranteed_contribution_row` is the conversion, and it is #686's line:
+
+    Σ_k 2^k·cc_k  +  lb(h)·¬active_t  ≥  lb(h)
+
+— "either the task is not active here, or it contributes at least
+`lb(h)`". A citer emits one per time point of the energy row's *clipped*
+window and adds the row itself at `lb(h)`. Each conversion line carries
+`lb(h)·¬active_t` where the scaled row carries `lb(h)·active_t`, so the
+activity cancels between them and what is left is
+
+    Σ_{t∈[a,b)} contrib_t  ≥  lb(h)·bound
+
+which is what cancels against `C_t`. Anything else the row carried — a
+guarded row's guard literals — rides through at the same scale, so the
+citer discharges them exactly as it would have.
+
+The window has to be the row's own clipped one and not the requested
+one, or the conversion lines do not cover the time points the row's sum
+runs over and the cancellation is partial.
+
+It is a RUP and not a `pol`, and the argument is in the lemma's own
+header. **It has to go out under the reason**, though, and not merely to
+record what it depends on: the unit saying the height reaches the bound
+is itself reason-backed whenever the bound is not the declared one, so
+it is a *clause* carrying the reason's negations rather than a unit. A
+goal stated without the reason leaves those literals unassigned, the
+clause does not propagate, and the hint is worth nothing — which is a
+rejected proof, not a slow one. (That is the one thing the derived path
+did not have to know, its conversion running at the root.)
+
+`donor_view`'s conversion is the same call. There it happens *before*
+the filter, rewriting the derived constraint's capacity rows, which is
+why an all-variable-height donor's energy was counted long before a
+posted constraint's was.
+
 ### Restrictions, and why they are only weakenings
 
-The energy set takes only tasks with a constant height (a variable
-height enters `C_t` as the bit-linearised `contrib`, not as `h·active`,
-so the cancellation would not be exact) and a start — and a variable
-length — that is a plain variable with an order encoding (the bridges
-need order literals; a `{0,1}` domain is direct-only encoded, and a
-view's atoms would need deview-mode arithmetic). The whole check is
-skipped when the capacity is a variable: a `(b−a)·capacity` term would
-survive into the conflict line for the wrapping RUP to dispose of over
-the capacity's bits, which it cannot do in general.
+The energy set takes a start — and a variable length — that is a plain
+variable with an order encoding (the bridges need order literals; a
+`{0,1}` domain is direct-only encoded, and a view's atoms would need
+deview-mode arithmetic). A `{0,1}` *height* is fine: its atom resolves
+to a bare literal rather than to a defining line, which costs the
+conversion its hints and nothing else. The whole check is skipped when
+the capacity is a variable: a `(b−a)·capacity` term would survive into
+the conflict line for the wrapping RUP to dispose of over the capacity's
+bits, which it cannot do in general.
+
+The **elastic** rules — (TTHE-OC) and (KAOC) — still decline a variable
+height outright, and that is not the same restriction: their knapsack
+item list and term-dropping read heights off the capacity row's
+coefficients, which a bit-linearised contribution is not.
 
 None of these lose soundness or solutions: a task the energy set will
 not take still counts through `F(a, b)`, and a check not made is a
@@ -1019,7 +1066,9 @@ improvement rather than a divergence, and
 siblings publish them.
 
 **The conversion is one hinted RUP** per (variable-height task, time), with `L`
-the height's lower bound:
+the height's lower bound. It is `guaranteed_contribution_row`, shared with the
+posted constraint's energy set, which reaches it from the other side (see "A
+variable demand, and where it lands instead"):
 
 ```
 rup  Σ_k 2^k·cc_{i,t,k} + L·¬active_{i,t} >= L   :  @c[id][<i>_<t>_cge]  <the height's lower-bound line> ;
@@ -1538,6 +1587,9 @@ can test it.
 Constant heights only: a variable height puts bit-linearised contribution terms
 in the capacity row, which neither the knapsack's item list nor the term-dropping
 can read, so v1 declines rather than approximates and the plain rules still run.
+This is *not* the restriction the energy set shed in #689 — there the conversion
+turns an activity bound into contribution terms, where here what would have to
+be converted is the row the items are read off.
 A capacity above 4096 falls back to the elastic cap, since the bitset is
 `capacity + 1` bits at every time point (scheduling capacities are nothing like
 that --- Cloutier & Quimper report `C <= 122` across their benchmarks).
@@ -1569,17 +1621,20 @@ per time point. Same trade as #742 for edge-finding's scan, and the same answer
   nothing measurable, but the window x task sweep that finds them is O(n^3) and
   taxes the solve about 1.5x at identical search. Propagation performance, not
   proof logging.
-- **A posted constraint's variable height in the energy set (#689's other
-  half).** The length half is done: a variable-duration task is counted at
-  `lb(l)`. The height half is done for a *derived* constraint by accident of
-  composition — a task #686 converted arrives at the filter as a constant and
-  passes, which `cumulative_strengthening_all_var_heights` demonstrates by
-  refuting at the root through the energy check — but a **posted** constraint's
-  variable-height task is still turned away, and need not be: #686's conversion
-  RUP is not specific to derived constraints, and the same line would let the
-  energy set count such a task at `lb(h)`. What it would cost is the
-  cancellation in the conflict `pol`, since a variable height enters `C_t` as
-  the bit-linearised `contrib` rather than as `h·active`.
+- **Guarded contribution rows.** A variable-height task's conversion is
+  reason-backed and re-derived per firing, one line per time point of the
+  window — the same shape as TTEF's pins above, and amenable to the same
+  answer. At the height's *declared* lower bound the line is a model fact
+  (`cge` plus the boundary pin) and could live at `ProofLevel::Top` and be
+  cached; taking the live bound instead is what makes it reason-backed, for the
+  same reason the length does. Whether the declared bound is worth having is a
+  measurement nobody has made.
+- **The elastic family over variable heights.** (TTHE-OC) and (KAOC) decline a
+  variable height, and unlike the energy set they are not one conversion away:
+  the knapsack's item list is a set of heights read off a capacity row's
+  coefficients, and a bit-linearised contribution is not a coefficient on a
+  flag. Converting the row first — which is exactly what `donor_view` does for
+  a derived constraint — is the obvious route and has not been tried.
 - **Conditional bounds for optional tasks.** An undecided task's start
   bounds are never pruned, because there is no conditional-bounds store
   and an unconditional prune would be unsound if the task turns out
