@@ -104,7 +104,7 @@ namespace
         logger.start_proof(model);
         tracker.emit_delayed_proof_steps();
 
-        ComparatorNetwork network(logger, 4, 15_i, ProofLevel::Top);
+        ComparatorNetwork network(logger, 4, 0_i, 15_i, ProofLevel::Top);
         auto a = network.fresh_wire("a"), b = network.fresh_wire("b");
         network.pin(a, Integer{a_value});
         network.pin(b, Integer{b_value});
@@ -155,72 +155,54 @@ namespace
     }
 
     /* The pairwise disjunctive encoding, and nothing else: this is the model a
-     * Disjunctive already defines, written out here over plain proof flags so
-     * that the test owns every big-M and the network is exercised against the
-     * shapes it will meet rather than against rows invented to suit it.
+     * Disjunctive already defines, written out here over *real* integer
+     * variables so that the network meets the shapes it will meet in a
+     * propagator --- bits it does not own, widths that differ from task to
+     * task, and a reification big-M chosen by the model rather than by the
+     * proof.
      */
     struct PairwiseModel
     {
-        vector<vector<ProofFlag>> start_bits;
-        vector<ProofLine> upper_bounds;
+        vector<SimpleIntegerVariableID> starts;
         map<pair<size_t, size_t>, ProofFlag> before;
         map<pair<size_t, size_t>, ProofLine> before_rows;
         map<pair<size_t, size_t>, ProofLine> separation_clauses;
-        Integer big = 0_i;
+        map<pair<size_t, size_t>, Integer> guard_coefficients;
         int width = 0;
     };
 
-    auto build_pairwise_model(ProofModel & model, const vector<int> & durations, int horizon) -> PairwiseModel
+    auto build_pairwise_model(ProofModel & model, NamesAndIDsTracker & tracker, const vector<int> & durations, int window_lo, int window_hi)
+        -> PairwiseModel
     {
         auto tasks = durations.size();
         PairwiseModel built;
-        // Every start gets the same width, which its own bound row then
-        // narrows: a shared width is what lets the network's wires all be read
-        // the same way, and costs nothing but a spare high bit.
-        auto widest_start = horizon - min(durations);
-        auto widest = widest_start > max(durations) ? widest_start : max(durations);
-        built.width = static_cast<int>(std::bit_width(static_cast<unsigned long long>(widest)));
-        built.big = Integer{horizon};
 
-        built.start_bits.resize(tasks);
-        for (size_t i = 0; i < tasks; ++i)
-            for (auto t = 0; t < built.width; ++t)
-                built.start_bits[i].push_back(model.create_proof_flag("x" + to_string(i) + "_" + to_string(t)));
-
-        auto start = [&](size_t i, Integer sign) {
-            WPBSum sum;
-            for (auto t = 0; t < built.width; ++t)
-                sum += (sign * Integer{1LL << t}) * built.start_bits[i][t];
-            return sum;
-        };
-
-        // `start_i <= horizon - duration_i`. Load-bearing in a way it is not
-        // with equal durations: the shared width lets a start range over more
-        // than its own window, and this is the row that says it may not.
-        for (size_t i = 0; i < tasks; ++i)
-            built.upper_bounds.push_back(model.add_labelled_constraint("ub" + to_string(i), start(i, 1_i) <= Integer{horizon - durations[i]}));
+        // Each start is encoded to its own width, from its own domain: a task
+        // that must finish by the window's end cannot start after
+        // `window_hi - duration`, so a long task gets a narrower encoding than
+        // a short one, and the network has to pad.
+        for (size_t i = 0; i < tasks; ++i) {
+            SimpleIntegerVariableID start{i};
+            model.set_up_integer_variable(start, Integer{window_lo}, Integer{window_hi - durations[i]}, "s" + to_string(i), std::nullopt);
+            built.starts.push_back(start);
+        }
+        built.width = static_cast<int>(std::bit_width(static_cast<unsigned long long>(window_hi)));
 
         for (size_t i = 0; i < tasks; ++i)
             for (size_t j = 0; j < tasks; ++j) {
                 if (i == j)
                     continue;
-                auto name = "b" + to_string(i) + "_" + to_string(j);
-                auto flag = model.create_proof_flag(name);
+                auto flag = model.create_proof_flag("b" + to_string(i) + "_" + to_string(j));
                 built.before.emplace(pair{i, j}, flag);
 
-                // [r] before_ij -> start_j - start_i >= duration_i
-                auto forward = start(j, 1_i);
-                for (auto & term : start(i, -1_i).terms)
-                    forward += term;
-                forward += built.big * ! flag;
-                built.before_rows.emplace(pair{i, j}, model.add_labelled_constraint(name + "r", move(forward) >= Integer{durations[i]}));
-
-                // [f] ~before_ij -> start_i - start_j >= 1 - duration_i
-                auto reverse = start(i, 1_i);
-                for (auto & term : start(j, -1_i).terms)
-                    reverse += term;
-                reverse += (built.big + 1_i) * flag;
-                model.add_labelled_constraint(name + "f", move(reverse) >= Integer{1 - durations[i]});
+                // before_ij <-> start_i + duration_i <= start_j, exactly as
+                // Disjunctive::define_proof_model writes it. The [r] half is
+                // what the network consumes, and its big-M is whatever the
+                // reifier picked --- which the network then has to raise to its
+                // own, so ask rather than assume.
+                auto ineq = WPBSum{} + 1_i * built.starts[i] + -1_i * built.starts[j] <= Integer{-durations[i]};
+                built.guard_coefficients.emplace(pair{i, j}, -tracker.reification_shape(ineq, HalfReifyOnConjunctionOf{{flag}}).reif_coefficient);
+                built.before_rows.emplace(pair{i, j}, model.add_two_way_reified_constraint(ineq, flag).first);
             }
 
         for (size_t i = 0; i < tasks; ++i)
@@ -235,14 +217,14 @@ namespace
         return built;
     }
 
-    auto check_refutation(const vector<int> & durations, int horizon, ComparatorNetworkMutation mutation, const string & tag, bool expect_accepted)
-        -> void
+    auto check_refutation(const vector<int> & durations, int window_lo, int window_hi, ComparatorNetworkMutation mutation, const string & tag,
+        bool expect_accepted) -> void
     {
         auto proof_name = "comparator_network_refute_" + to_string(durations.size()) + "_" + tag;
         ProofOptions proof_options{proof_name};
         NamesAndIDsTracker tracker(proof_options);
         ProofModel model(proof_options, tracker);
-        auto built = build_pairwise_model(model, durations, horizon);
+        auto built = build_pairwise_model(model, tracker, durations, window_lo, window_hi);
         model.finalise();
 
         ProofLogger logger(proof_options, tracker);
@@ -250,19 +232,35 @@ namespace
         logger.start_proof(model);
         tracker.emit_delayed_proof_steps();
 
-        ComparatorNetwork network(logger, built.width, Integer{horizon}, ProofLevel::Top, mutation);
+        ComparatorNetwork network(logger, built.width, Integer{window_lo}, Integer{window_hi}, ProofLevel::Top, mutation);
 
         vector<ProofWire> tasks;
-        for (size_t i = 0; i < durations.size(); ++i)
-            tasks.push_back(network.wire_over(built.start_bits[i]));
+        for (size_t i = 0; i < durations.size(); ++i) {
+            // A wire straight over the model variable's own bits. Nothing is
+            // copied and nothing is emitted: the network reads the encoding
+            // that is already there, and pads the narrow ones itself.
+            vector<ProofLiteralOrFlag> bits;
+            for (Integer b = 0_i; b < tracker.num_bits(built.starts[i]); ++b)
+                bits.push_back(ProofBitVariable{built.starts[i], b, true});
+            tasks.push_back(network.wire_over(bits));
+        }
+
         for (size_t i = 0; i < durations.size(); ++i) {
             network.add_task(tasks[i], Integer{durations[i]});
-            network.set_upper_bound(tasks[i], built.upper_bounds[i]);
+            // The window's own bounds, as a propagator would have them: not
+            // model rows but facts about the state, which here RUP straight
+            // from the variables' domains.
+            network.set_upper_bound(
+                tasks[i], logger.emit_rup_proof_line(WPBSum{} + 1_i * built.starts[i] <= Integer{window_hi - durations[i]}, ProofLevel::Top));
+            network.set_lower_bound(tasks[i], logger.emit_rup_proof_line(WPBSum{} + 1_i * built.starts[i] >= Integer{window_lo}, ProofLevel::Top));
         }
+
+        auto direction = [&](size_t i, size_t j) {
+            return ModelSeparation{built.before.at(pair{i, j}), built.before_rows.at(pair{i, j}), built.guard_coefficients.at(pair{i, j})};
+        };
         for (size_t i = 0; i < durations.size(); ++i)
             for (size_t j = i + 1; j < durations.size(); ++j)
-                network.add_separation(tasks[i], built.before.at(pair{i, j}), built.before_rows.at(pair{i, j}), tasks[j], built.before.at(pair{j, i}),
-                    built.before_rows.at(pair{j, i}), built.separation_clauses.at(pair{i, j}), built.big);
+                network.add_separation(tasks[i], direction(i, j), tasks[j], direction(j, i), built.separation_clauses.at(pair{i, j}));
 
         auto sorted = network.sort(tasks);
         // The window-energy row. It is contradictory exactly when the tasks do
@@ -275,14 +273,14 @@ namespace
 
         auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
         if (accepted != expect_accepted)
-            fail("refutation of " + to_string(durations.size()) + " tasks in " + to_string(horizon) + " (" + tag + "): veripb " +
-                (accepted ? "accepted" : "rejected") + " where it should have done the opposite");
+            fail("refutation of " + to_string(durations.size()) + " tasks in [" + to_string(window_lo) + ", " + to_string(window_hi) + ") (" + tag +
+                "): veripb " + (accepted ? "accepted" : "rejected") + " where it should have done the opposite");
         dispose_of_proof_files(proof_name);
     }
 
-    /// Unequal durations that overload the window by exactly one unit, so the
-    /// instance is unsatisfiable by a margin of one and every separation clause
-    /// matters.
+    /// Unequal durations, and the total work they carry: a window one unit
+    /// narrower than that is unsatisfiable by a margin of one, so every
+    /// separation clause matters.
     auto tight_instance(size_t tasks) -> pair<vector<int>, int>
     {
         vector<int> durations;
@@ -291,7 +289,7 @@ namespace
         auto total = 0;
         for (auto d : durations)
             total += d;
-        return {durations, total - 1};
+        return {durations, total};
     }
 }
 
@@ -314,27 +312,35 @@ auto main(int, char *[]) -> int
             check_comparator(a, b, Claim::HiIsNotTheLarger, "hi_wrong", false);
         }
 
+    // A window that starts where the time line does, and one slid along it.
+    // The offset one is what a propagator's window actually looks like, and is
+    // where the earliest task's lower bound stops being free: from zero a bit
+    // vector cannot be negative and the endgame gets that end for nothing.
+    const auto offset = 7;
     for (size_t tasks = 3; tasks <= 8; ++tasks) {
-        auto [durations, horizon] = tight_instance(tasks);
-        check_refutation(durations, horizon, comparator_network_mutation::None{}, "honest", true);
-        // Same tasks, one more unit of window: they fit, and the endgame must
-        // not close. This is the control that says the refutation is about the
-        // instance rather than about the scaffolding.
-        check_refutation(durations, horizon + 1, comparator_network_mutation::None{}, "roomy", false);
+        auto [durations, work] = tight_instance(tasks);
+        check_refutation(durations, 0, work - 1, comparator_network_mutation::None{}, "honest", true);
+        check_refutation(durations, offset, offset + work - 1, comparator_network_mutation::None{}, "offset", true);
+        // The same tasks with one more unit of window: they fit, and the
+        // endgame must not close. This is the control that says the refutation
+        // is about the instance rather than about the scaffolding.
+        check_refutation(durations, 0, work, comparator_network_mutation::None{}, "roomy", false);
+        check_refutation(durations, offset, offset + work, comparator_network_mutation::None{}, "offset_roomy", false);
     }
 
     {
-        auto [durations, horizon] = tight_instance(4);
-        check_refutation(durations, horizon, comparator_network_mutation::DropPositivity{}, "drop_positivity", false);
-        check_refutation(durations, horizon, comparator_network_mutation::SwapDurations{}, "swap_durations", false);
-        check_refutation(durations, horizon, comparator_network_mutation::RupGap{}, "rup_gap", false);
+        auto [durations, work] = tight_instance(4);
+        auto lo = offset, hi = offset + work - 1;
+        check_refutation(durations, lo, hi, comparator_network_mutation::DropPositivity{}, "drop_positivity", false);
+        check_refutation(durations, lo, hi, comparator_network_mutation::SwapDurations{}, "swap_durations", false);
+        check_refutation(durations, lo, hi, comparator_network_mutation::RupGap{}, "rup_gap", false);
         // Accepted, and expected to be: with every duration pinned, propagation
         // reaches a muxed duration's positivity without the case split. Asserted
         // so that it is on the record, and so that it starts failing the day
         // durations stop being constants.
-        check_refutation(durations, horizon, comparator_network_mutation::RupPositivity{}, "rup_positivity", true);
-        check_refutation(durations, horizon, comparator_network_mutation::RupPreservation{}, "rup_preservation", false);
-        check_refutation(durations, horizon, comparator_network_mutation::DropPreservation{}, "drop_preservation", false);
+        check_refutation(durations, lo, hi, comparator_network_mutation::RupPositivity{}, "rup_positivity", true);
+        check_refutation(durations, lo, hi, comparator_network_mutation::RupPreservation{}, "rup_preservation", false);
+        check_refutation(durations, lo, hi, comparator_network_mutation::DropPreservation{}, "drop_preservation", false);
     }
 
     return EXIT_SUCCESS;
