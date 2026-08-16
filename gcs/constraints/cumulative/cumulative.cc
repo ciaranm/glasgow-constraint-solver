@@ -1,6 +1,7 @@
 #include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/constraints/cumulative/hints.hh>
 #include <gcs/constraints/cumulative/propagate.hh>
+#include <gcs/constraints/innards/guaranteed_contribution.hh>
 #include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -246,31 +247,35 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
     const vector<Integer> & per_task_t_hi, const State & initial_state) -> CumulativeOverloadData
 {
     CumulativeOverloadData result;
-    // Which tasks the window-energy lemma can speak about: a constant height
-    // (so the task's load in C_t is h·active rather than the bit-linearised
-    // contrib), and a start that is a plain variable with an order encoding,
-    // since the lemma bridges the before/after flags to the start's order
-    // literals. A task that is not eligible is not lost to the check: whatever
-    // it must occupy still counts, through the profile term of the (TTOC)
-    // strengthening.
+    // Which tasks the window-energy lemma can speak about: a start that is a
+    // plain variable with an order encoding, since the lemma bridges the
+    // before/after flags to the start's order literals. A task that is not
+    // eligible is not lost to the check: whatever it must occupy still counts,
+    // through the profile term of the (TTOC) strengthening.
     //
-    // The height half is looser than it reads. A *derived* Cumulative's tasks
-    // carry constant heights by construction, so one whose donor height was a
-    // variable arrives here already converted to the demand it guarantees and
-    // passes --- which is how an all-variable-height donor's energy gets
-    // counted at all. A posted constraint's variable height is still turned
-    // away, and need not be: the same conversion would serve, and #689's
-    // remaining half is what it would take.
+    // Neither a variable length nor a variable height is turned away any more
+    // (#689). Both are counted at what the task *guarantees* rather than at
+    // what it might use, and both are plain variables for the same reason the
+    // start is --- what the derivations need is an order literal to cancel
+    // against.
     //
-    // A *variable* length is admitted (#689), at the length it is guaranteed to
-    // reach rather than at the one it might: the lemma counts the task over
-    // [start, start + lb(length)), which its execution interval contains, by
-    // bridging its `after` flags back onto the start's order literals through
-    // the length's own. What that needs from here is a length whose order
-    // literals exist to be bridged with, so a plain variable, and one that can
-    // be positive at all --- a task whose length can only be zero is not an
-    // active task in the first place. Whether the bound it reaches is worth
-    // anything is asked at every node, in the candidate sweep, and not here.
+    // A variable **length** is counted over [start, start + lb(length)), which
+    // the execution interval contains, by bridging the `after` flags back onto
+    // the start's order literals through the length's own.
+    //
+    // A variable **height** does not change what the lemma derives at all: it
+    // changes what a capacity row carries, which is the bit-linearised
+    // `contrib` rather than `h·active`, so a citer converts the activity into
+    // contribution terms with guaranteed_contribution_row before the two can
+    // cancel. That conversion is #686's, and it is what a *derived*
+    // Cumulative's tasks have already been through by the time they reach here
+    // --- which is how an all-variable-height donor's energy got counted at all
+    // while a posted one's did not.
+    //
+    // What is asked here of either is only that it can be positive: a task
+    // whose length or height can only be zero is not an active task in the
+    // first place. Whether the bound it reaches is worth anything is asked at
+    // every node, in the candidate sweep, and not here.
     //
     // Presence is not among the tests, and deliberately so. What is asked here
     // is whether the lemma could *ever* speak about a task, which is a question
@@ -290,8 +295,6 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
 
     result.overload_tasks.clear();
     for (auto i : active_tasks) {
-        if (! is_constant_variable(heights[i]) || constant_value_of(heights[i]) <= 0_i)
-            continue;
         if (! std::holds_alternative<SimpleIntegerVariableID>(starts[i]) || direct_only_encoded(starts[i]))
             continue;
         if (is_constant_variable(lengths[i])) {
@@ -300,6 +303,15 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
         }
         else if (! std::holds_alternative<SimpleIntegerVariableID>(lengths[i]) || initial_state.upper_bound(lengths[i]) <= 0_i ||
             direct_only_encoded(lengths[i]))
+            continue;
+        if (is_constant_variable(heights[i])) {
+            if (constant_value_of(heights[i]) <= 0_i)
+                continue;
+        }
+        // A {0,1} height is not excluded, unlike a {0,1} start or length: the
+        // conversion resolves its atom to a bare literal rather than to a
+        // defining line, which costs it its hints and nothing else.
+        else if (! std::holds_alternative<SimpleIntegerVariableID>(heights[i]) || initial_state.upper_bound(heights[i]) <= 0_i)
             continue;
         result.overload_tasks.push_back(i);
     }
@@ -672,6 +684,54 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             active_flags[i], l_is_var(i) ? make_optional(std::get<SimpleIntegerVariableID>(lengths_var[i])) : optional<SimpleIntegerVariableID>{}};
     };
 
+    // What a variable-height task is guaranteed to contribute at one time
+    // point, as a term over the contribution bits a capacity row carries:
+    // `contrib >= lb(h)` unless the task is not active there. #686's line,
+    // reached from here rather than from a donor view.
+    auto guaranteed_contribution = [&](const ReasonLiterals & reason, size_t i, Integer t) -> ProofLine {
+        auto & tracker = logger->names_and_ids_tracker();
+        auto row = tracker.constraint_row_label(owner, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t));
+        // Emitted alongside the flags, so a task with a window here has one.
+        // Missing means the flags and the rows have come apart, which is worth
+        // saying here rather than as a rejected proof later.
+        if (! row)
+            throw ProofError{"cumulative: task " + std::to_string(i) + " has no contribution row at time " + std::to_string(t.raw_value)};
+        auto fi = static_cast<size_t>((t - per_task_t_lo[i]).raw_value);
+        return guaranteed_contribution_row(*logger, &reason, contrib_flags[i][fi], active_flags[i][fi],
+            std::get<SimpleIntegerVariableID>(heights_var[i]), hlb(i), ProofLine{*row}, ProofLevel::Temporary);
+    };
+
+    // An energy row as the capacity lines want it: the line to add to a pol
+    // whose other terms are C_t's, and the coefficient to add it at.
+    //
+    // For a constant height that is the row itself scaled by h, and its
+    // `active` terms cancel against C_t's directly. A variable height is not in
+    // C_t at all --- what is there is the bit-linearised contribution --- so
+    // the row is converted first: one guaranteed_contribution line per time
+    // point of its window, plus the row at lb(h). The activity cancels
+    // *between those two*, each conversion line carrying `lb(h)·~active` where
+    // the scaled row carries `lb(h)·active`, and what is left is
+    //
+    //     Sum_t contrib_t  >=  lb(h) · bound
+    //
+    // which is what cancels against C_t. Anything else the row carried --- a
+    // guarded row's guard literals --- rides through at the same scale, so a
+    // citer discharges them exactly as it would have.
+    //
+    // The window has to be the row's own *clipped* one and not the requested
+    // one: the conversion lines have to cover exactly the time points the row's
+    // sum runs over, or the cancellation is partial and the pol is left open.
+    auto energy_contribution = [&](const ReasonLiterals & reason, size_t i, ProofLine energy_line, Integer lo,
+                                   Integer hi) -> std::pair<ProofLine, Integer> {
+        if (! h_is_var(i))
+            return {energy_line, hlb(i)};
+        PolBuilder pol;
+        for (Integer t = lo; t < hi; ++t)
+            pol.add(guaranteed_contribution(reason, i, t));
+        pol.add(energy_line, hlb(i));
+        return {pol.emit(*logger, ProofLevel::Temporary), 1_i};
+    };
+
     // A task with no presence variable is always here. An optional one is here
     // only once its presence is fixed to 1: until then it contributes nothing
     // to the profile and nothing to the overload check's energy, and nothing
@@ -825,7 +885,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
 
             auto cite = [&](size_t i, Integer low_guard, Integer high_guard, bool discharge_low, bool discharge_high) {
                 const auto & row = guarded_energy(i, a, b, low_guard, high_guard);
-                pol.add(row.line, hlb(i));
+                auto [contribution_line, coeff] = energy_contribution(reason, i, row.line, row.lo, row.hi);
+                pol.add(contribution_line, coeff);
                 if (discharge_low && row.low_coeff > 0_i)
                     pol.add(
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[i] >= row.low_guard) >= 1_i, ProofLevel::Temporary),
@@ -1078,13 +1139,13 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             // with every other known-present task's.
             if (! is_present(i))
                 continue;
-            // A task guaranteed no duration at all carries no guaranteed
-            // energy, so there is nothing for the lemma to establish and
-            // nothing for the window to be charged. Only reachable for a
-            // variable length --- a constant one this small was turned away at
-            // prepare time --- and it can stop being true further down the
-            // search, which is why it is asked here and not there.
-            if (llb(i) <= 0_i)
+            // A task guaranteed no duration, or no demand, carries no
+            // guaranteed energy, so there is nothing for the lemma to establish
+            // and nothing for the window to be charged. Only reachable for a
+            // variable one --- a constant this small was turned away at prepare
+            // time --- and it can stop being true further down the search,
+            // which is why it is asked here and not there.
+            if (llb(i) <= 0_i || hlb(i) <= 0_i)
                 continue;
             auto [s_lo, s_hi] = state.bounds(starts[i]);
             auto p = llb(i), h = hlb(i);
@@ -1827,7 +1888,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                             line =
                                 logger->emit_rup_proof_line_under_reason(reason, move(activity) >= energy_line->bound + 1_i, ProofLevel::Temporary);
                         }
-                        pol.add(line, hlb(i));
+                        auto [contribution_line, coeff] = energy_contribution(reason, i, line, energy_line->lo, energy_line->hi);
+                        pol.add(contribution_line, coeff);
                     }
 
                     for (const auto & [j, t] : pins) {

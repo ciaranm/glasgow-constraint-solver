@@ -1,5 +1,6 @@
 #include <gcs/constraints/cumulative/donor_view.hh>
 #include <gcs/constraints/cumulative/propagate.hh>
+#include <gcs/constraints/innards/guaranteed_contribution.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/bits_encoding.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -236,21 +237,25 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
 
     // Convert each variable-height task's bit terms into `lb(h) x active`,
     // which is a coefficient on a flag again and so a term a recipe can argue
-    // about. One line each:
+    // about. One guaranteed_contribution_row each, added to the row with
+    // coefficient one, so the bits cancel exactly and what is left on the task
+    // is `lb(h) x active`. That lemma carries the argument for why the line is
+    // a RUP and not a `pol`.
     //
-    //     Sum_k 2^k cc_k  +  lb(h) ~active  >=  lb(h)
-    //
-    // added to the row with coefficient one, so the bits cancel exactly and
-    // what is left on the task is `lb(h) x active`. It is a RUP rather than a
-    // `pol`, and that is not laziness: negating it forces `~active` to zero,
-    // and what remains is the `cge` row and the height's lower bound over two
-    // power-of-two bit counters, which unit propagation walks down a bit at a
-    // time. Every step is single-constraint, so any fixpoint finds it --- I
-    // swept it over several thousand (bound, upper bound, bit width) shapes,
-    // including contribution bits narrower than the height's, before believing
-    // it. The `pol` it replaces would be the `cge` row plus the bound, then a
-    // saturate to cap the reification constant down to the bound, then a
-    // literal axiom per bit to put the coefficients back.
+    // The bound is the one the height has *now*, by the same route the capacity
+    // takes and for the same reason: the declared one is a weaker number the
+    // moment anything has tightened it, and a declared zero would give up the
+    // conversion altogether. No reason is passed, because this runs at the root
+    // and the bound was reached before the search started. Where that bound is
+    // not the declared one the lemma falls back to a reason-free RUP, which has
+    // no fixture, because every in-tree model reaches this bound by the
+    // declared one and need_gevar has already pinned that. What makes it sound
+    // is that a tightening which got the bound here was *proof logged*: the RUP
+    // then closes against the line that logged it. A root tightening of a
+    // donor's height taken with NoJustificationNeeded would leave nothing to
+    // close against and this would fail at check time, not here --- which is a
+    // dependency on the rest of the solver rather than on anything in this
+    // file, and so is written down rather than tested.
     for (const auto & [i, cc] : convert) {
         auto height = std::get<SimpleIntegerVariableID>(*view.height_bounded_by[i]);
         auto active = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(i, t));
@@ -261,43 +266,8 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
         if (! active || ! contribution_row)
             return nullopt;
 
-        // The bound the height has *now*, by the same route the capacity takes
-        // and for the same reason: the declared one is a weaker number the
-        // moment anything has tightened it, and a declared zero would give up
-        // the conversion altogether. The atom's definition supplies the bits,
-        // and the unit saying the atom holds is what makes the row
-        // unconditional --- permanently, the bound having been reached before
-        // the search started.
-        //
-        // The fallback below --- the RUP where no pin was written down --- has
-        // no fixture, because every in-tree model reaches this bound by the
-        // declared one, which need_gevar has already pinned. What makes it
-        // sound is that a tightening that got the bound here was *proof
-        // logged*: the RUP then closes against the line that logged it. A root
-        // tightening of a donor's height taken with NoJustificationNeeded would
-        // leave nothing to close against and this would fail at check time, not
-        // here --- which is a dependency on the rest of the solver rather than
-        // on anything in this file, and so is written down rather than tested.
-        auto at_least = height >= view.heights[i];
-        auto definition = tracker.need_pol_item_defining_literal(at_least);
-        auto holds = tracker.boundary_pin_line(height, view.heights[i]);
-        if (! holds)
-            holds = logger.emit_rup_proof_line(WPBSum{} + 1_i * at_least >= 1_i, ProofLevel::Temporary);
-
-        // Hints, where the definition came back as a line: they are what makes
-        // this cheap to check, and they are exactly the three facts the
-        // argument above uses. A zero-one height resolves to a bare literal
-        // instead, which a hint list cannot carry --- so that one goes
-        // unhinted, which is slower to check and no less true.
-        std::optional<vector<ProofLine>> hints;
-        if (auto line = std::get_if<ProofLine>(&definition))
-            hints = vector<ProofLine>{ProofLine{*contribution_row}, *line, *holds};
-
-        WPBSum guaranteed;
-        for (size_t k = 0; k < cc.size(); ++k)
-            guaranteed += power2(Integer(static_cast<long long>(k))) * cc[k];
-        guaranteed += view.heights[i] * ! *active;
-        reduced.add(logger.emit(RUPProofRule{hints}, move(guaranteed) >= view.heights[i], ProofLevel::Temporary));
+        reduced.add(
+            guaranteed_contribution_row(logger, nullptr, cc, *active, height, view.heights[i], ProofLine{*contribution_row}, ProofLevel::Temporary));
     }
 
     if (view.capacity_bounded_by) {
