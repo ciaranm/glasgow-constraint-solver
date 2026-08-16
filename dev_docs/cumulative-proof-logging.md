@@ -22,12 +22,13 @@ bounds** — over optional tasks and over variable durations, heights and
 capacities.
 
 Also certified, off by default: **edge-finding**, in both directions, under
-`CumulativeRules::edge_finding`. See the section below.
+`CumulativeRules::edge_finding`, and **time-table extended edge-finding**
+(TTEF) under `CumulativeRules::time_table_edge_finding`. See the sections below.
 
-Not here: **not-first / not-last** and **TTEF / KAOC** (#550, #696). Those are
-propagation rules a competitive cumulative solver also runs, so the claim to
-make is "a wide range of commonly used techniques", not completeness. The Open
-follow-ups section at the end says what each would take.
+Not here: **not-first / not-last** and **KAOC** (#550). Those are propagation
+rules a competitive cumulative solver also runs, so the claim to make is "a wide
+range of commonly used techniques", not completeness. The Open follow-ups
+section at the end says what each would take.
 
 ## What's hard about it
 
@@ -1125,6 +1126,81 @@ makes the same push and unit propagation closes the conclusion's RUP whatever
 the derivation above it says, so the fixture measures nothing. Six mutation
 lanes, all rejected.
 
+## TTEF: the same certificate, with the profile added (#696)
+
+Time-table extended edge-finding is to edge-finding what `(TTOC)` is to the
+overload check. The tasks a window does not contain still put their
+mandatory-part load into it, so `rest` is computed against
+
+```
+window_total = energy + (profile_within(a, b) - inside_mandatory)
+```
+
+with the pushed task's own mandatory load taken back out, since its clipped
+energy already covers those time points and each time point has one `C_t` row
+to cancel against. `CumulativeRules::time_table_edge_finding`, off by default.
+
+**The certificate is edge-finding's, plus the pins `(TTOC)` already emits.**
+Same window, same guarded rows, same `pol`; the profile term is the same
+`pin_contributor` line per mandatory `(task, time)` pair that the overload check
+uses. Nothing new was needed, which is the answer to the question #696 asked.
+
+Two things are worth knowing.
+
+- **The pins are read from the live bounds, not from the `mand_load` snapshot
+  the sweep was set up from.** A mandatory part only grows as the sweep pushes
+  bounds around, so the pins claim at least what the firing's arithmetic
+  counted, and a `pol` carrying more energy than it needs closes just the same.
+- **The pins are usually not load-bearing at all.** Without them the `pol`
+  leaves the non-contained tasks' `active` terms uncancelled, and unit
+  propagation assigns those from the reason's own bound literals — so the
+  wrapping RUP closes anyway. Dropping *every* pin is rejected on only 13 of 248
+  searched instances. They are emitted because those 13 exist, not because the
+  common case needs them.
+
+That second point is what makes the fixtures hard. A fixture has to make the
+pins matter *and* land its push somewhere a solution actually sits — where the
+push is merely valid rather than tight, "one too far" is valid too and VeriPB
+verifies the corrupted proof. `cumulative_ttef_test --search` generates random
+instances and keeps the ones satisfying both, `--describe` prints what one does,
+and `--instance=` runs a mutation against a candidate; the two `sharp` fixtures
+came out of that, and the two `profile_push` ones are hand-built to *explain*
+the rule rather than to test it. Seven mutation lanes, all rejected.
+
+`OmitCapacityLine` is not among them: it is accepted on every TTEF fixture
+searched, for the same reason dropping the pins usually is.
+
+**Measured, 175 instances at 60 s** (`data_bl`, `data_pack`, `data_la_x`), over
+the 36 that every arm closed:
+
+| arm | recursions | vs ef | propagations | vs ef |
+|---|---|---|---|---|
+| no edge-finding | 7,227,100 | 3.062x | 72,057,194 | 2.450x |
+| edge-finding | 2,359,885 | 1.000x | 29,411,592 | 1.000x |
+| TTEF | 1,768,271 | **0.749x** | 23,452,325 | 0.797x |
+| energetic | 1,573,267 | **0.667x** | 21,566,293 | 0.733x |
+
+TTEF has fewer recursions on 35 of the 36 and more on none. Do not read the
+wall times from that sweep: the arms differ in per-node cost, and `data_la_x`
+closes nothing at 60 s in any arm.
+
+What it costs: over `data_bl`, 67.1M firings, of which **72.6% are ones
+edge-finding would not make at all**, carrying **2.93 pins per firing** (most 21)
+against 4.54 contained energy rows. So the pins roughly double a firing's proof
+lines. They are also **15,037x reused** — 13,065 distinct `(task, time)` pairs
+across 196M citations — so a guarded, cached pin in the shape of
+`derive_guarded_window_energy` over `[t, t+1)` would amortise them away, exactly
+as the contained rows already are. Not done: the guards of a one-time-point row
+are fixed by `(task, time)` alone, which is why the reuse is so high.
+
+`CumulativeRules::energetic_edge_finding` is the same rule with every task's
+*guaranteed* energy in the window in place of contained-energy-plus-profile.
+That is what `window_energy_bound` computes anyway, so it needs no pins at all,
+and it is stronger. It is **not certified** — `define_proof_model` refuses a
+logger while it is set — and it is in the tree to be measured, not to be used:
+the row above is what it buys, and the propagation cost of recomputing the sum
+per window is not paid for on this family.
+
 ## Open follow-ups
 - **Energetic reasoning.** The window-energy lemma above is the first
   piece of it: horizontally elastic and knapsack-augmented checking
@@ -1132,7 +1208,21 @@ lanes, all rejected.
   presolvers (#549) on the contained one.
 - **Not-first / not-last (#732).** Now cheap: it is edge-finding's certificate
   with a different window and the conclusion on the other bound, and the guarded
-  row already takes its threshold as a parameter.
+  row already takes its threshold as a parameter. Expect the same fixture
+  difficulty TTEF ran into: the conclusion is an existing time point, which is
+  where unit propagation reaches on its own most easily.
+- **Guarded pins for the profile term.** TTEF's pins are reason-backed and
+  re-derived per firing, at 2.93 lines' worth per firing and 15,037x repetition.
+  A one-time-point `derive_guarded_window_energy` row is keyed by `(task, time)`
+  alone, so it would cache the way the contained rows do --- and the same row
+  would amortise `(TTOC)`'s pins, which the merged overload check also
+  re-derives every firing.
+- **Certifying the energetic form.** `energetic_edge_finding` measures better
+  than TTEF and needs *no* pins, since every task's contribution is a guarded
+  window-energy row. What is unresolved is the cache key: a contained task's
+  guards come from the window, a non-contained one's from its current bounds, so
+  the rows would repeat far less. Weakening the guards deliberately, to buy
+  reuse at the price of a looser bound, is the experiment.
 - **Edge-finding's scan (#742).** The rule is certified and its inferences cost
   nothing measurable, but the window x task sweep that finds them is O(n^3) and
   taxes the solve about 1.5x at identical search. Propagation performance, not

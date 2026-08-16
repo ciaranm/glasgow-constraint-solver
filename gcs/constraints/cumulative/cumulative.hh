@@ -55,6 +55,35 @@ namespace gcs
         /// anything fires (#742); the inferences themselves cost nothing
         /// measurable.
         bool edge_finding = false;
+
+        /// Strengthen edge-finding with the mandatory-part load of the tasks
+        /// that are *not* fully contained in the window, exactly as \ref
+        /// profile_overload does for the overload check: time-table extended
+        /// edge-finding (TTEF). Has no effect unless \ref edge_finding is also
+        /// set, and wants \ref profile_overload set alongside it, since a
+        /// window the profile already overloads is left to the overload check.
+        ///
+        /// \warning Not yet certified. A propagator with this set refuses to
+        /// run against a proof logger.
+        bool time_table_edge_finding = false;
+
+        /// Count every task's *guaranteed* energy inside the window --- the
+        /// least overlap its execution interval can have with the window, over
+        /// the start positions its bounds still allow --- rather than a
+        /// contained task's whole energy plus a non-contained one's mandatory
+        /// part. This subsumes \ref time_table_edge_finding: a contained task's
+        /// guaranteed energy is its whole energy, and a non-contained one's is
+        /// at least its mandatory part in the window, and usually more. It is
+        /// also exactly what the window-energy lemma derives, so unlike the
+        /// mandatory-part form it needs no per-(task, time) pins.
+        ///
+        /// Only tasks eligible for the overload check contribute, since the
+        /// lemma wants a constant length and height. Takes precedence over
+        /// \ref time_table_edge_finding when both are set.
+        ///
+        /// \warning Not yet certified. A propagator with this set refuses to
+        /// run against a proof logger.
+        bool energetic_edge_finding = false;
     };
 
     /**

@@ -78,11 +78,23 @@ namespace gcs::innards
         struct PushOneTooFar
         {
         };
+
+        /// TTEF: leave the first mandatory (task, time) pin out of the pol, so
+        /// the profile load the push relied on is one unit short.
+        struct DropProfilePin
+        {
+        };
+
+        /// TTEF: leave *every* mandatory (task, time) pin out of the pol, so
+        /// the push is left resting on edge-finding's energy alone.
+        struct DropProfilePins
+        {
+        };
     }
 
-    using CumulativeProofMutation =
-        std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy, cumulative_proof_mutation::OmitCapacityLine,
-            cumulative_proof_mutation::ShrinkLemmaWindow, cumulative_proof_mutation::DropContainedTask, cumulative_proof_mutation::PushOneTooFar>;
+    using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
+        cumulative_proof_mutation::OmitCapacityLine, cumulative_proof_mutation::ShrinkLemmaWindow, cumulative_proof_mutation::DropContainedTask,
+        cumulative_proof_mutation::PushOneTooFar, cumulative_proof_mutation::DropProfilePin, cumulative_proof_mutation::DropProfilePins>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,

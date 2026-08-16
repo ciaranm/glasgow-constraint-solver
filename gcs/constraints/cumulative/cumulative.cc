@@ -313,6 +313,11 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
 
 auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
 {
+    // A propagator that infers what it cannot justify is worse than one that
+    // declines: refuse here rather than emit a proof VeriPB will reject.
+    if (_rules.energetic_edge_finding)
+        throw UnimplementedException{"energetic edge-finding is not yet certified"};
+
     // Time-table OPB encoding:
     //   for each task i and each time point t in its possible-active range:
     //     before_{i,t}  ⇔  starts[i] ≤ t
@@ -805,6 +810,42 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 cite(i, clipped_window_start(i, a), clipped_window_end(i, b) - llb(i) + 1_i, true, true);
             }
 
+            // TTEF: the tasks the window does not contain still put their
+            // mandatory-part load into it, and that load is pinned exactly the
+            // way the overload check's (TTOC) strengthening pins it. A task
+            // whose energy row is already in the pol must not be pinned as well
+            // --- the capacity lines supply each time point once, so a second
+            // claim on the same activity would leave the pol open.
+            //
+            // The bounds read here are the live ones rather than the mand_load
+            // snapshot the sweep was set up from. A mandatory part only grows as
+            // the sweep pushes bounds around, so the pins claim at least what
+            // the firing's arithmetic counted, and a pol carrying more energy
+            // than it needs closes just the same.
+            if (rules.time_table_edge_finding) {
+                vector<bool> contained(starts.size(), false);
+                for (auto i : inside_tasks)
+                    contained[i] = true;
+                auto skip_pin = std::holds_alternative<cumulative_proof_mutation::DropProfilePin>(mutation);
+                auto skip_all_pins = std::holds_alternative<cumulative_proof_mutation::DropProfilePins>(mutation);
+                for (auto i : active_tasks) {
+                    if (i == pushed || contained[i] || ! is_present(i))
+                        continue;
+                    auto lst = state.upper_bound(starts[i]);
+                    auto eet = state.lower_bound(starts[i]) + llb(i);
+                    for (Integer t = max(lst, a); t < min(eet, b); ++t) {
+                        if (skip_all_pins)
+                            continue;
+                        if (skip_pin) {
+                            skip_pin = false;
+                            continue;
+                        }
+                        auto [line, coeff] = pin_contributor(reason, i, t);
+                        pol.add(line, coeff);
+                    }
+                }
+            }
+
             // No mutation lane for citing the pushed task's row at the
             // threshold a *contained* task would use, i.e. for forgetting to
             // clip. That was tried, and it verifies: the un-clipped row claims
@@ -1044,6 +1085,46 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 auto width = slots_within(a, b);
                 auto supply = capacity * width;
 
+                // The mandatory-part load of the tasks that are *not* contained
+                // in the window: what (TTOC) adds to the overload check below,
+                // and what TTEF adds to edge-finding. A contained task's
+                // mandatory part lies inside the window too, so taking I(a, b)'s
+                // off the window's total leaves exactly the rest.
+                auto window_profile = profile_within(a, b) - inside_mandatory;
+
+                // A task's *guaranteed* energy inside the window: the least
+                // overlap its execution interval can have with [a, b) over the
+                // starts its bounds still allow. This is one call of the very
+                // lemma a certificate would cite, and it is at least the task's
+                // mandatory part in the window --- and for a contained task it
+                // is the whole of its energy.
+                //
+                // A task the window cannot reach has a *negative* bound here,
+                // the lemma's way of saying it has more slack than the window
+                // has room, so clamp before summing.
+                auto guaranteed = [&](const Candidate & c2) {
+                    return c2.height *
+                        max(0_i,
+                            window_energy::window_energy_bound(
+                                c2.length, per_task_t_lo[c2.task], active_flag_count(c2.task), a, b, pair{c2.est, c2.lct - c2.length}));
+                };
+
+                // What the window is charged with, before the task being pushed
+                // is taken back out of it:
+                //
+                //   edge-finding  the contained tasks' whole energy
+                //   TTEF          plus the mandatory-part load of the rest
+                //   energetic     every task's guaranteed energy, which
+                //                 subsumes both
+                Integer window_total = energy;
+                if (rules.energetic_edge_finding) {
+                    window_total = 0_i;
+                    for (const auto & c2 : candidates)
+                        window_total += guaranteed(c2);
+                }
+                else if (rules.time_table_edge_finding)
+                    window_total = energy + window_profile;
+
                 // Edge-finding. A task j that starts inside [a, b) but is not
                 // contained in it can be pushed when the window has no room
                 // left: if everything contained plus the whole of j cannot fit,
@@ -1064,14 +1145,21 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 // Which is why the fire condition below is the certificate's
                 // own inequality and not the textbook detection alone --- what
                 // the propagator asks is exactly what the proof will say.
-                // `energy <= supply` because a window the contained tasks
-                // already overflow is a conflict, not a push: the overload
-                // check below owns it, and edge-finding's arithmetic there
-                // yields a `rest` big enough to put new_lb past the window
-                // entirely, where the pushed task's clipped energy is zero and
-                // there is nothing to certify with.
-                if (rules.edge_finding && ! inside_tasks.empty() && energy <= supply && energy > (capacity - tallest) * width &&
-                    energy + heaviest > supply) {
+                // `window_total <= supply` because a window that already
+                // overflows is a conflict, not a push: the overload check below
+                // owns it, and edge-finding's arithmetic there yields a `rest`
+                // big enough to put new_lb past the window entirely, where the
+                // pushed task's clipped energy is zero and there is nothing to
+                // certify with. (Which is why the strengthened forms want
+                // profile_overload on: with it off, a window only the extra
+                // energy overloads is skipped here and refuted nowhere. Sound,
+                // just weaker.)
+                //
+                // All three tests charge the window in full, so they stay
+                // necessary conditions for a firing once the pushed task's own
+                // contribution comes back out below.
+                if (rules.edge_finding && ! inside_tasks.empty() && window_total <= supply && window_total > (capacity - tallest) * width &&
+                    window_total + heaviest > supply) {
                     // One pass for both directions. They share everything up to
                     // the last test --- the same candidates in the same order,
                     // the same `rest`, the same detection --- and differ only in
@@ -1082,10 +1170,12 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         const auto & j = candidates[j_idx];
 
                         // Heights descend, so once one task's `rest` has gone
-                        // non-positive every shorter one's has too.
+                        // non-positive every shorter one's has too. Test the
+                        // figure that charges the window in full here: taking
+                        // j's own contribution back out below only lowers
+                        // `rest`, so the early exit stays valid.
                         auto h_j = j.height;
-                        auto rest = energy - (capacity - h_j) * width;
-                        if (rest <= 0_i)
+                        if (window_total - (capacity - h_j) * width <= 0_i)
                             break;
 
                         // A task with one end inside the window and one outside.
@@ -1099,11 +1189,27 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
 
                         auto p_j = j.length;
 
-                        // Detection: the contained tasks together with the whole
-                        // of j do not fit. Without it the push can land where
-                        // j's clipped energy is only p_j, which is too little to
-                        // refute.
-                        if (energy + h_j * p_j <= supply)
+                        // j is not contained, so whatever of it the window has
+                        // already been charged with covers the same time points
+                        // as the clipped energy added below under the negated
+                        // conclusion. Each time point has one capacity line to
+                        // cancel against, so counting j twice would leave the
+                        // pol open: take it back out. lst_j = lct_j − p_j and
+                        // eet_j = est_j + p_j, which is what mand_load was built
+                        // from.
+                        auto own = rules.energetic_edge_finding ? guaranteed(j)
+                            : rules.time_table_edge_finding     ? h_j * max(0_i, min(j.est + p_j, b) - max(j.lct - p_j, a))
+                                                                : 0_i;
+                        auto other_energy = window_total - own;
+                        auto rest = other_energy - (capacity - h_j) * width;
+                        if (rest <= 0_i)
+                            continue;
+
+                        // Detection: everything else in the window together with
+                        // the whole of j does not fit. Without it the push can
+                        // land where j's clipped energy is only p_j, which is too
+                        // little to refute.
+                        if (other_energy + h_j * p_j <= supply)
                             continue;
 
                         // Against the live bound, not the snapshot this sweep
@@ -1129,7 +1235,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
 
                         auto clipped = window_energy::window_energy_bound(
                             p_j, per_task_t_lo[j.task], active_flag_count(j.task), a, b, pair{low_guard, high_guard - 1_i});
-                        if (clipped <= 0_i || energy + h_j * clipped <= supply)
+                        if (clipped <= 0_i || other_energy + h_j * clipped <= supply)
                             continue;
 
                         auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
@@ -1146,7 +1252,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                     }
                 }
 
-                auto outside_profile = rules.profile_overload ? profile_within(a, b) - inside_mandatory : 0_i;
+                auto outside_profile = rules.profile_overload ? window_profile : 0_i;
                 if (energy + outside_profile <= supply)
                     continue;
 
