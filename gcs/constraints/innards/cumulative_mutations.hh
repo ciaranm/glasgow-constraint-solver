@@ -67,10 +67,22 @@ namespace gcs::innards
         struct ShrinkLemmaWindow
         {
         };
+
+        /// Edge-finding: leave one of the window's contained tasks out of the
+        /// pol, so the energy claimed falls short of what the push needs.
+        struct DropContainedTask
+        {
+        };
+
+        /// Edge-finding: push the bound one further than the energy supports.
+        struct PushOneTooFar
+        {
+        };
     }
 
-    using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
-        cumulative_proof_mutation::OmitCapacityLine, cumulative_proof_mutation::ShrinkLemmaWindow>;
+    using CumulativeProofMutation =
+        std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy, cumulative_proof_mutation::OmitCapacityLine,
+            cumulative_proof_mutation::ShrinkLemmaWindow, cumulative_proof_mutation::DropContainedTask, cumulative_proof_mutation::PushOneTooFar>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,

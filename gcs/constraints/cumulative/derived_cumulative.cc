@@ -87,7 +87,8 @@ auto gcs::innards::install_derived_cumulative(
     // task whose length or height can only be zero, or which can never be
     // present at all, never raises the profile and is not in it.
     inputs->per_task_t_lo.assign(n, 0_i);
-    vector<Integer> per_task_t_hi(n, 0_i);
+    inputs->per_task_t_hi.assign(n, 0_i);
+    auto & per_task_t_hi = inputs->per_task_t_hi;
     for (size_t i = 0; i < n; ++i) {
         if (initial_state.upper_bound(spec.tasks[i].length) <= 0_i || spec.tasks[i].height <= 0_i || never_present[i])
             continue;
@@ -111,6 +112,11 @@ auto gcs::innards::install_derived_cumulative(
         inputs->time_slot_prefix = move(overload_data.time_slot_prefix);
         inputs->time_slot_lo = overload_data.time_slot_lo;
     }
+
+    // A derived Cumulative's own cache. Not the donor's: the rows are about
+    // this constraint's window and this constraint's capacity lines, so sharing
+    // one would have a firing cite a line derived against different rows.
+    inputs->guarded_energy = make_shared<std::map<std::tuple<std::size_t, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>();
 
     // The donors' rows, to derive from. Resolved before anything is installed:
     // a derived constraint that cannot cite what it needs must not be installed

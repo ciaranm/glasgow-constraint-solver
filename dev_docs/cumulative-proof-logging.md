@@ -21,11 +21,13 @@ strengthening, conflict cliques, lifted cover cuts), and **makespan lower
 bounds** — over optional tasks and over variable durations, heights and
 capacities.
 
-Not here: **edge-finding**, **not-first / not-last**, and **TTEF / KAOC**
-(#550, #696). Those are the propagation rules a competitive cumulative solver
-also runs, so the claim to make is "a wide range of commonly used techniques",
-not completeness. The Open follow-ups section at the end says what each would
-take.
+Also certified, off by default: **edge-finding**, in both directions, under
+`CumulativeRules::edge_finding`. See the section below.
+
+Not here: **not-first / not-last** and **TTEF / KAOC** (#550, #696). Those are
+propagation rules a competitive cumulative solver also runs, so the claim to
+make is "a wide range of commonly used techniques", not completeness. The Open
+follow-ups section at the end says what each would take.
 
 ## What's hard about it
 
@@ -1064,15 +1066,77 @@ the verified-encoding chain does not silently match it against
 weaker set of capacity rows. cake has no optional cumulative encoder, and
 that gap is now named rather than hidden.
 
-## Open follow-ups
+## Edge-finding, and the reason-free window-energy row
 
-- **Edge-finding.** A *set* of tasks blocks an interval, not a single
-  task at a single time. The pol arithmetic would need to sum across
-  the set; the chain idea no longer fits directly.
+The rule (#733): at a window `[a, b)` with `Theta` the tasks contained in it,
+`energy = sum p_i h_i` over `Theta` and `width` the window's occupiable slots, a
+task `j` with one end inside the window and one outside is pushed away from it.
+Writing `rest = energy - (capacity - h_j) * width` for the contained energy that
+exceeds what could be there if `j` ran at full height throughout, a `j` starting
+inside cannot start before `a + ceil(rest / h_j)`, and a `j` ending inside
+cannot start after `b - p_j - ceil(rest / h_j)`.
+
+**The certificate is the overload check's, emitted under the negated
+conclusion.** Over the same window: the contained tasks' energy by the
+window-energy lemma, plus what `j` must still occupy if the conclusion were
+false, against the same `C_t` rows. That overflows the window, so the `pol` is
+contradictory and the framework's wrapping RUP turns it into the push. One
+window, no chain — which is what the follow-up below used to say could not be
+done.
+
+What makes it affordable is that the energy lines are made **reason-free**.
+`derive_window_energy` resolves the order literals its sum leaves over against
+the current bounds, which is good for exactly one inference.
+`derive_guarded_window_energy` weakens them onto two guard literals instead,
+along the order encoding's own monotonicity, giving
+
+```
+sum_{t in [a,b)} active_{i,t} + low_coeff·~[s_i ≥ low_guard] + bound·[s_i ≥ high_guard] ≥ bound
+```
+
+which holds for every value of `s_i`. That lives at `ProofLevel::Top` and is
+cited by every later firing over the same window; a citing firing discharges
+whichever guards its reason refutes and leaves the one the conclusion is about
+standing. Measured over the Pack instances, a row is cited between 322 and 3455
+times for each time it is derived, because a window is a pair of an earliest
+start and a latest completion time and those repeat constantly.
+
+Three things worth knowing before touching it.
+
+- **The clipping is not a separate mechanism.** A guard the ladder cannot reach
+  — because it sits the wrong side of a survivor — is discharged by that
+  survivor's own literal axiom, at a unit of the bound each. That count *is* the
+  difference between a contained task's whole `p_i` and a pushed task's clipped
+  contribution.
+- **Both guards must be stated against the clipped window.** A window can run
+  past the last time a task could be active, and the lemma clips there. A guard
+  outside that leaves survivors nothing can weaken onto, and on a task whose
+  flags start after the window does it discharged the only survivor there was.
+- **The propagator asks `window_energy_bound` for exactly the bounds the
+  derivation will be given**, not for the state's. The row is a model fact; the
+  state is the looser of the two in one direction and the tighter in the other,
+  and either way the rule would then fire on energy the certificate does not
+  establish. There is no mutation lane that can catch this, because citing a row
+  at the wrong threshold usually yields a *stronger* row that verifies happily.
+
+Testing is `cumulative_edge_finding_test`, whose fixtures are a window packed to
+capacity by tasks with **empty mandatory parts** — without that, time-tabling
+makes the same push and unit propagation closes the conclusion's RUP whatever
+the derivation above it says, so the fixture measures nothing. Six mutation
+lanes, all rejected.
+
+## Open follow-ups
 - **Energetic reasoning.** The window-energy lemma above is the first
   piece of it: horizontally elastic and knapsack-augmented checking
   (#550) build on the clipped form, and the lifted-constraint
   presolvers (#549) on the contained one.
+- **Not-first / not-last (#732).** Now cheap: it is edge-finding's certificate
+  with a different window and the conclusion on the other bound, and the guarded
+  row already takes its threshold as a parameter.
+- **Edge-finding's scan (#742).** The rule is certified and its inferences cost
+  nothing measurable, but the window x task sweep that finds them is O(n^3) and
+  taxes the solve about 1.5x at identical search. Propagation performance, not
+  proof logging.
 - **A variable duration in the energy set (#689).** The window-energy
   lemma's eligibility filter turns away a task whose length or height is
   not a constant, and those two halves are now in different states. The

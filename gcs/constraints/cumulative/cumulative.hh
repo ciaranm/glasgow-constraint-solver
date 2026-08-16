@@ -43,6 +43,18 @@ namespace gcs
         /// that are *not* fully contained in the window (rule (TTOC)). Has no
         /// effect unless \ref overload is also set.
         bool profile_overload = true;
+
+        /// Edge-finding: if a window's contained tasks plus one more task with
+        /// one end inside it cannot all fit, that task must run past the end it
+        /// hangs off, and the bound at that end moves by the energy the window
+        /// has no room for. Unlike the overload check this moves a bound, and
+        /// it runs over the same window sweep.
+        ///
+        /// Certified, in both directions. Off by default because the sweep that
+        /// finds the firings is O(n^3) and taxes the solve whether or not
+        /// anything fires (#742); the inferences themselves cost nothing
+        /// measurable.
+        bool edge_finding = false;
     };
 
     /**
