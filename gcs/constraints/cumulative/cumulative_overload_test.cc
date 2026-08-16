@@ -54,30 +54,54 @@ using namespace gcs::test_innards;
 
 namespace
 {
-    // Every fixture in this file is an all-constant instance: the overload
-    // check only speaks about tasks whose length and height are constants.
+    // Every height in this file is a constant, which is what the overload
+    // check's energy set still requires. A length is a range: `{p, p}` is the
+    // constant most fixtures use, and `{p, q}` with p < q a decision variable,
+    // which the check counts at `p` --- the duration the task is guaranteed to
+    // run for, whatever the search does with the rest of it (#689).
     struct Instance
     {
         vector<pair<int, int>> start_ranges;
-        vector<int> lengths;
+        vector<pair<int, int>> lengths;
         vector<int> heights;
         int capacity;
     };
 
-    auto is_satisfying(const Instance & inst, const vector<int> & starts) -> bool
+    auto length_is_var(const Instance & inst, size_t i) -> bool
+    {
+        return inst.lengths[i].first != inst.lengths[i].second;
+    }
+
+    // Every variable an assignment has to fix, in the order the solutions carry
+    // them: the starts, then the variable lengths in task order.
+    auto all_ranges(const Instance & inst) -> vector<pair<int, int>>
+    {
+        auto ranges = inst.start_ranges;
+        for (size_t i = 0; i < inst.lengths.size(); ++i)
+            if (length_is_var(inst, i))
+                ranges.push_back(inst.lengths[i]);
+        return ranges;
+    }
+
+    auto is_satisfying(const Instance & inst, const vector<int> & vals) -> bool
     {
         auto n = inst.start_ranges.size();
+        vector<int> l(n);
+        size_t k = n;
+        for (size_t i = 0; i < n; ++i)
+            l[i] = length_is_var(inst, i) ? vals.at(k++) : inst.lengths[i].first;
+
         int t_lo = INT_MAX, t_hi = INT_MIN;
         for (size_t i = 0; i < n; ++i) {
-            if (inst.lengths[i] == 0 || inst.heights[i] == 0)
+            if (l[i] == 0 || inst.heights[i] == 0)
                 continue;
-            t_lo = min(t_lo, starts[i]);
-            t_hi = max(t_hi, starts[i] + inst.lengths[i] - 1);
+            t_lo = min(t_lo, vals[i]);
+            t_hi = max(t_hi, vals[i] + l[i] - 1);
         }
         for (int t = t_lo; t <= t_hi; ++t) {
             int load = 0;
             for (size_t i = 0; i < n; ++i)
-                if (starts[i] <= t && t < starts[i] + inst.lengths[i])
+                if (vals[i] <= t && t < vals[i] + l[i])
                     load += inst.heights[i];
             if (load > inst.capacity)
                 return false;
@@ -88,18 +112,27 @@ namespace
     auto post(Problem & p, const Instance & inst, CumulativeRules rules, CumulativeProofMutation mutation = cumulative_proof_mutation::None{})
         -> vector<IntegerVariableID>
     {
-        vector<IntegerVariableID> starts;
-        for (auto & [lo, hi] : inst.start_ranges)
+        vector<IntegerVariableID> starts, all_vars;
+        for (auto & [lo, hi] : inst.start_ranges) {
             starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+            all_vars.push_back(starts.back());
+        }
 
-        vector<Integer> lengths, heights;
-        for (auto l : inst.lengths)
-            lengths.push_back(Integer{l});
+        vector<IntegerVariableID> lengths, heights;
+        for (size_t i = 0; i < inst.lengths.size(); ++i) {
+            auto [lo, hi] = inst.lengths[i];
+            if (! length_is_var(inst, i))
+                lengths.push_back(constant_variable(Integer{lo}));
+            else {
+                lengths.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+                all_vars.push_back(lengths.back());
+            }
+        }
         for (auto h : inst.heights)
-            heights.push_back(Integer{h});
+            heights.push_back(constant_variable(Integer{h}));
 
-        p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(rules).with_proof_mutation(mutation));
-        return starts;
+        p.post(Cumulative{starts, lengths, heights, constant_variable(Integer{inst.capacity})}.with_rules(rules).with_proof_mutation(mutation));
+        return all_vars;
     }
 
     // How many times each overload rule left its marker in a proof file. The
@@ -193,12 +226,12 @@ namespace
         cerr << flush;
 
         set<vector<int>> expected, actual;
-        build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(inst, starts); }, inst.start_ranges);
+        build_expected(expected, [&](const vector<int> & vals) { return is_satisfying(inst, vals); }, all_ranges(inst));
         println(cerr, " expecting {} solutions", expected.size());
 
         Problem p;
-        auto starts = post(p, inst, rules);
-        solve_for_tests(p, proof_name, actual, tuple{starts});
+        auto all_vars = post(p, inst, rules);
+        solve_for_tests(p, proof_name, actual, tuple{all_vars});
         check_results(proof_name, expected, actual);
     }
 
@@ -245,18 +278,31 @@ namespace
     }
 
     // A task raises the load profile at all --- what prepare() calls an active
-    // task.
+    // task. Its length only has to be able to be positive.
     auto is_active(const Instance & inst, size_t i) -> bool
     {
-        return inst.lengths[i] > 0 && inst.heights[i] > 0;
+        return inst.lengths[i].second > 0 && inst.heights[i] > 0;
     }
 
     // A task the window-energy lemma can speak about, so a task the energy set
-    // may contain. Mirrors prepare_overload_check: everything here is a
-    // constant already, so all that is left is the start's encoding.
+    // may contain. Mirrors prepare_overload_check: the heights are constants
+    // already, which leaves the encodings of the start and of a variable length
+    // --- a domain of exactly {0, 1} is direct-only encoded, so it has no order
+    // literals for the lemma's bridges to cancel against.
     auto is_eligible(const Instance & inst, size_t i) -> bool
     {
-        return is_active(inst, i) && ! (inst.start_ranges[i].first == 0 && inst.start_ranges[i].second == 1);
+        if (! is_active(inst, i) || (inst.start_ranges[i].first == 0 && inst.start_ranges[i].second == 1))
+            return false;
+        return ! (length_is_var(inst, i) && inst.lengths[i].first == 0 && inst.lengths[i].second == 1);
+    }
+
+    // A task the energy set actually counts: one whose guaranteed duration is
+    // positive, so that there is energy to count. A constant-length task this
+    // short was turned away at prepare time; a variable-length one is skipped by
+    // the candidate sweep instead, and both are then nothing but profile.
+    auto counts_energy(const Instance & inst, size_t i) -> bool
+    {
+        return is_eligible(inst, i) && inst.lengths[i].first > 0;
     }
 
     // The two rules, written out from their definitions over a plain double
@@ -275,15 +321,20 @@ namespace
     auto oracle_says_overloaded(const Instance & inst, bool with_profile) -> bool
     {
         auto n = inst.start_ranges.size();
+        // A task's guaranteed duration, which is what both its energy and its
+        // mandatory part are measured in. Its *possible* duration is the
+        // range's other end, and only the possibly-active range below uses it.
+        auto p_of = [&](size_t i) { return inst.lengths[i].first; };
+
         for (size_t wa = 0; wa < n; ++wa) {
-            if (! is_eligible(inst, wa))
+            if (! counts_energy(inst, wa))
                 continue;
             auto a = inst.start_ranges[wa].first;
 
             for (size_t wb = 0; wb < n; ++wb) {
-                if (! is_eligible(inst, wb) || inst.start_ranges[wb].first < a)
+                if (! counts_energy(inst, wb) || inst.start_ranges[wb].first < a)
                     continue;
-                auto b = inst.start_ranges[wb].second + inst.lengths[wb];
+                auto b = inst.start_ranges[wb].second + p_of(wb);
                 if (b <= a)
                     continue;
 
@@ -291,26 +342,28 @@ namespace
                 for (size_t i = 0; i < n; ++i) {
                     if (! is_active(inst, i))
                         continue;
-                    auto est = inst.start_ranges[i].first, lct = inst.start_ranges[i].second + inst.lengths[i];
-                    if (is_eligible(inst, i) && est >= a && lct <= b) {
-                        energy += static_cast<long long>(inst.lengths[i]) * inst.heights[i];
+                    auto est = inst.start_ranges[i].first, lct = inst.start_ranges[i].second + p_of(i);
+                    if (counts_energy(inst, i) && est >= a && lct <= b) {
+                        energy += static_cast<long long>(p_of(i)) * inst.heights[i];
                         continue;
                     }
                     if (! with_profile)
                         continue;
                     // the part of task i's mandatory part [lst, eet) =
                     // [ub(s), lb(s) + p) that lies inside the window
-                    auto lst = inst.start_ranges[i].second, eet = inst.start_ranges[i].first + inst.lengths[i];
+                    auto lst = inst.start_ranges[i].second, eet = inst.start_ranges[i].first + p_of(i);
                     for (auto t = max(lst, a); t < min(eet, b); ++t)
                         profile += inst.heights[i];
                 }
 
                 // Time points no task can occupy supply nothing to the window,
-                // and the propagator does not count them either.
+                // and the propagator does not count them either. What a task
+                // could occupy runs to its *longest* duration, which is where
+                // the flags it would be pinned through were laid down.
                 long long slots = 0;
                 for (auto t = a; t < b; ++t)
                     for (size_t i = 0; i < n; ++i)
-                        if (is_active(inst, i) && t >= inst.start_ranges[i].first && t <= inst.start_ranges[i].second + inst.lengths[i] - 1) {
+                        if (is_active(inst, i) && t >= inst.start_ranges[i].first && t <= inst.start_ranges[i].second + inst.lengths[i].second - 1) {
                             ++slots;
                             break;
                         }
@@ -370,7 +423,7 @@ namespace
             }();
             if (length > horizon)
                 return nullopt;
-            inst.lengths.push_back(length);
+            inst.lengths.emplace_back(length, length);
             inst.heights.push_back(height);
             inst.start_ranges.emplace_back(0, horizon - length);
             energy += static_cast<long long>(length) * height;
@@ -413,7 +466,7 @@ auto main(int argc, char * argv[]) -> int
     // of exactly one is what makes every step of the derivation load-bearing:
     // one capacity line fewer, or one unit less energy from one task, and the
     // contradiction is gone.
-    const Instance sharp{{{0, 7}, {0, 6}, {0, 7}, {0, 11}}, {5, 6, 5, 1}, {4, 3, 2, 1}, 4};
+    const Instance sharp{{{0, 7}, {0, 6}, {0, 7}, {0, 11}}, {{5, 5}, {6, 6}, {5, 5}, {1, 1}}, {4, 3, 2, 1}, 4};
 
     // Mutation mode: emit one deliberately corrupted proof of `sharp` and
     // stop, for run_test_and_expect_verify_failure.bash to hand to veripb.
@@ -446,12 +499,12 @@ auto main(int argc, char * argv[]) -> int
     // a resource of capacity one. Every mandatory part is empty (lst = 2 is
     // not before eet = 2), so time-tabling sees nothing at all; but the window
     // [0, 4) must hold 3 x 2 = 6 units of energy and supplies 1 x 4 = 4.
-    const Instance f1{{{0, 2}, {0, 2}, {0, 2}}, {2, 2, 2}, {1, 1, 1}, 1};
+    const Instance f1{{{0, 2}, {0, 2}, {0, 2}}, {{2, 2}, {2, 2}, {2, 2}}, {1, 1, 1}, 1};
 
     // F1's negative twin: the same tasks with room to spread out. The widest
     // window [0, 8) now supplies exactly the 6 units the tasks need, so
     // nothing is overloaded and the rule must stay silent at the root.
-    const Instance f1_twin{{{0, 6}, {0, 6}, {0, 6}}, {2, 2, 2}, {1, 1, 1}, 1};
+    const Instance f1_twin{{{0, 6}, {0, 6}, {0, 6}}, {{2, 2}, {2, 2}, {2, 2}}, {1, 1, 1}, 1};
 
     {
         auto with_rule = probe_root(f1, all_rules, proofs ? make_optional("cumulative_overload_f1") : nullopt);
@@ -485,12 +538,12 @@ auto main(int argc, char * argv[]) -> int
     // Time-tabling can say nothing here: no task in the window has a mandatory
     // part, and the fifth task's one unit of load never blocks a height-one
     // task under a capacity of two, so no bound moves either.
-    const Instance f2{{{0, 2}, {0, 2}, {0, 2}, {0, 2}, {1, 2}}, {2, 2, 2, 2, 4}, {1, 1, 1, 1, 1}, 2};
+    const Instance f2{{{0, 2}, {0, 2}, {0, 2}, {0, 2}, {1, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}, {4, 4}}, {1, 1, 1, 1, 1}, 2};
 
     // F2's negative twin: the same, with the straddling task moved past the
     // window, so its mandatory part [5, 8) contributes nothing to [0, 4) and
     // the window's demand is back to exactly its supply.
-    const Instance f2_twin{{{0, 2}, {0, 2}, {0, 2}, {0, 2}, {4, 5}}, {2, 2, 2, 2, 4}, {1, 1, 1, 1, 1}, 2};
+    const Instance f2_twin{{{0, 2}, {0, 2}, {0, 2}, {0, 2}, {4, 5}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}, {4, 4}}, {1, 1, 1, 1, 1}, 2};
 
     {
         auto with_rule = probe_root(f2, all_rules, proofs ? make_optional("cumulative_overload_f2") : nullopt);
@@ -514,6 +567,47 @@ auto main(int argc, char * argv[]) -> int
             fail("F2 twin: refuted at the root, but it is satisfiable");
         if (proofs && with_rule.markers.total() != 0)
             fail("F2 twin: the overload check claimed a conflict at the root");
+    }
+
+    // F3: a variable duration, which is what #689 is about. Two unit-height
+    // tasks of length two and one whose length is a decision variable in
+    // [1, 3], all free in [0, 2] against a capacity of one. The window [0, 4)
+    // supplies four units and the two constant tasks want four of them, so the
+    // conflict is exactly the one unit the variable-duration task is guaranteed
+    // to occupy somewhere inside it.
+    //
+    // Nothing else in the propagator can find that unit. The task's mandatory
+    // part is [lst, eet) = [2, 1), which is empty --- so the (TTOC) profile
+    // term, which is where a variable duration used to end up in full, has
+    // nothing to contribute, and neither has time-tabling. The energy set
+    // counting the task at lb(l) is the whole of the difference.
+    const Instance f3{{{0, 2}, {0, 2}, {0, 2}}, {{2, 2}, {2, 2}, {1, 3}}, {1, 1, 1}, 1};
+
+    // F3's negative twin: the same instance with the variable duration allowed
+    // to be zero, so the task guarantees nothing and the window is back to
+    // wanting exactly what it supplies. It is satisfiable --- the two constant
+    // tasks tile [0, 4) and the third takes no time at all --- so this also
+    // says that counting a task at anything above lb(l) would lose solutions.
+    const Instance f3_twin{{{0, 2}, {0, 2}, {0, 2}}, {{2, 2}, {2, 2}, {0, 3}}, {1, 1, 1}, 1};
+
+    {
+        auto with_rule = probe_root(f3, all_rules, proofs ? make_optional("cumulative_overload_f3") : nullopt);
+        if (! with_rule.refuted)
+            fail("F3: the overload check did not count the variable-duration task's guaranteed energy");
+        if (proofs && with_rule.markers.oc != 1)
+            fail("F3: expected exactly one (OC') marker, got " + std::to_string(with_rule.markers.oc));
+
+        auto without_rule = probe_root(f3, no_overload, nullopt);
+        if (without_rule.refuted)
+            fail("F3: time-tabling alone refuted at the root, so the fixture proves nothing");
+    }
+
+    {
+        auto with_rule = probe_root(f3_twin, all_rules, proofs ? make_optional("cumulative_overload_f3_twin") : nullopt);
+        if (with_rule.refuted)
+            fail("F3 twin: refuted at the root, but it is satisfiable");
+        if (proofs && with_rule.markers.total() != 0)
+            fail("F3 twin: the overload check claimed a conflict at the root");
     }
 
     // The sharp-margin fixture itself, with time-tabling out of the way so
@@ -548,7 +642,7 @@ auto main(int argc, char * argv[]) -> int
 
                 auto name = "cumulative_overload_sharp_" + string{label} + "_" + std::to_string(found);
                 println(cerr, "cumulative overload sharp margin {} lens={} hts={} c={} horizon={}", label, inst->lengths, inst->heights,
-                    inst->capacity, inst->start_ranges[0].second + inst->lengths[0]);
+                    inst->capacity, inst->start_ranges[0].second + inst->lengths[0].first);
                 auto probe = probe_root(*inst, only_overload, proofs ? make_optional(name) : nullopt);
                 if (! probe.refuted)
                     fail("sharp margin: the overload check did not refute at the root");
@@ -569,19 +663,29 @@ auto main(int argc, char * argv[]) -> int
         // Start domains reach below zero: a window then runs over negative
         // time points, where the order literals the lemma bridges to are on a
         // signed bit encoding (issue #553's shape).
-        std::uniform_int_distribution<> n_dist(2, 4), lo_dist(-3, 4), span_dist(0, 4), len_dist(0, 3), ht_dist(0, 3), cap_dist(0, 4);
+        // At most one task per instance gets a variable duration, and by a
+        // narrow spread: every extra value multiplies the brute-force
+        // enumeration each of these instances is also checked against, and what
+        // is wanted here is 300 instances rather than one wide one.
+        std::uniform_int_distribution<> n_dist(2, 4), lo_dist(-3, 4), span_dist(0, 4), len_dist(0, 3), ht_dist(0, 3), cap_dist(0, 4),
+            spread_dist(0, 2);
 
-        size_t fired = 0, verified = 0;
+        size_t fired = 0, verified = 0, with_var_length = 0;
         for (int k = 0; k < 300; ++k) {
             Instance inst;
             auto n = n_dist(rand);
+            auto var_task = std::uniform_int_distribution<>(0, n - 1)(rand);
+            auto spread = spread_dist(rand);
             for (int i = 0; i < n; ++i) {
                 auto lo = lo_dist(rand), span = span_dist(rand);
                 inst.start_ranges.emplace_back(lo, lo + span);
-                inst.lengths.push_back(len_dist(rand));
+                auto len = len_dist(rand);
+                inst.lengths.emplace_back(len, len + (i == var_task ? spread : 0));
                 inst.heights.push_back(ht_dist(rand));
             }
             inst.capacity = cap_dist(rand);
+            if (spread > 0)
+                ++with_var_length;
 
             auto oracle = oracle_says_overloaded(inst, true);
             // Verify a proof for the first few conflicts, rather than all of
@@ -609,7 +713,9 @@ auto main(int argc, char * argv[]) -> int
 
         if (fired == 0)
             fail("oracle cross-check: no instance in the corpus overloaded, so nothing was compared");
-        println(cerr, "oracle cross-check: {} of 300 instances overloaded at the root", fired);
+        if (with_var_length == 0)
+            fail("oracle cross-check: no instance in the corpus had a variable duration");
+        println(cerr, "oracle cross-check: {} of 300 instances overloaded at the root, {} of them with a variable duration", fired, with_var_length);
     }
 
     // Two tasks sharing one start variable. Each still has its own per-time
@@ -652,16 +758,19 @@ auto main(int argc, char * argv[]) -> int
         check_opb_unaffected("f1", f1);
         check_opb_unaffected("f2", f2);
         check_opb_unaffected("sharp", sharp);
+        check_opb_unaffected("f3", f3);
 
         std::mt19937 rand(*get_seed());
-        std::uniform_int_distribution<> n_dist(2, 4), lo_dist(-2, 4), span_dist(0, 4), len_dist(0, 3), ht_dist(0, 3), cap_dist(0, 4);
+        std::uniform_int_distribution<> n_dist(2, 4), lo_dist(-2, 4), span_dist(0, 4), len_dist(0, 3), ht_dist(0, 3), cap_dist(0, 4),
+            spread_dist(0, 3);
         for (int k = 0; k < 20; ++k) {
             Instance inst;
             auto n = n_dist(rand);
             for (int i = 0; i < n; ++i) {
                 auto lo = lo_dist(rand), span = span_dist(rand);
                 inst.start_ranges.emplace_back(lo, lo + span);
-                inst.lengths.push_back(len_dist(rand));
+                auto len = len_dist(rand);
+                inst.lengths.emplace_back(len, len + spread_dist(rand));
                 inst.heights.push_back(ht_dist(rand));
             }
             inst.capacity = cap_dist(rand);
@@ -675,6 +784,12 @@ auto main(int argc, char * argv[]) -> int
     check_enumeration("f1_twin", f1_twin, all_rules, proofs ? make_optional("cumulative_overload_enum_f1_twin") : nullopt);
     check_enumeration("f2", f2, all_rules, proofs ? make_optional("cumulative_overload_enum_f2") : nullopt);
     check_enumeration("f2_twin", f2_twin, all_rules, proofs ? make_optional("cumulative_overload_enum_f2_twin") : nullopt);
+    // F3's pair, where the search is what makes them worth running: branching
+    // on the length variable raises lb(l) below the root, so the energy rows
+    // here are ones whose length bound is not the declared one --- the case the
+    // boundary pin cannot pay for and a unit RUP has to.
+    check_enumeration("f3", f3, all_rules, proofs ? make_optional("cumulative_overload_enum_f3") : nullopt);
+    check_enumeration("f3_twin", f3_twin, all_rules, proofs ? make_optional("cumulative_overload_enum_f3_twin") : nullopt);
 
     return EXIT_SUCCESS;
 }

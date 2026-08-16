@@ -87,7 +87,19 @@ namespace
     // two-literal clause after saturation. The third adds active's [f] half,
     // the AND-gate clause active \/ ~before \/ ~after, whose before and after
     // terms then cancel against the two bridges.
-    auto emit_per_time_bridges(ProofLogger & logger, const ConstantLengthTask & task, const Shape & shape, ProofLevel level) -> vector<ProofLine>
+    //
+    // A variable-length task's `after` is reified on `s + l >= t + 1` instead,
+    // so its bridge cancels two variables rather than one: the length's own
+    // order literal `[l >= p]` takes the l bits away, and what is left after
+    // saturation is
+    //     after_t  \/  ~[s >= t - p + 1]  \/  ~[l >= p]
+    // --- the whole content of the move, since `s >= t - p + 1` and `l >= p`
+    // together give `s + l >= t + 1`. `length_holds`, where the caller has a
+    // line saying `[l >= p]`, pays the third literal off here and leaves the
+    // clause the shape the constant-length case has; where it does not, the
+    // literal stays and rides through the sum as a guard.
+    auto emit_per_time_bridges(ProofLogger & logger, const Task & task, const Shape & shape, optional<ProofLine> length_holds, ProofLevel level)
+        -> vector<ProofLine>
     {
         auto & tracker = logger.names_and_ids_tracker();
         IntegerVariableID start = task.start;
@@ -106,7 +118,23 @@ namespace
             PolBuilder after_bridge;
             after_bridge.add(ProofLineLabel{tracker.name_of(task.after[idx]) + "[f]"});
             after_bridge.add_for_literal(tracker, start >= t - shape.p + 1_i);
-            after_bridge.saturate();
+            if (task.length_variable) {
+                after_bridge.add_for_literal(tracker, *task.length_variable >= shape.p);
+                // Saturating here and not only at the end, which the PolBuilder
+                // docs warn off, is what makes the length unit worth one: the
+                // three rows leave a clause whose ~[l >= p] carries whatever
+                // coefficient the length's encoding gave it, and adding the unit
+                // to *that* would have to match it. Saturating first makes every
+                // coefficient one, so the unit cancels the literal outright.
+                after_bridge.saturate();
+                // And no second saturation after it: `~[l >= p] + [l >= p]` is
+                // the constant one, so what the addition leaves is the clause
+                // this saturation already made of everything else.
+                if (length_holds)
+                    after_bridge.add(*length_holds);
+            }
+            else
+                after_bridge.saturate();
             auto after_clause = after_bridge.emit(logger, level);
 
             PolBuilder step;
@@ -116,6 +144,26 @@ namespace
             per_time.push_back(step.emit(logger, level));
         }
         return per_time;
+    }
+
+    // The line saying a variable-length task really does run for at least the
+    // length the lemma is counting it at. At the length's declared lower bound
+    // that is the boundary pin need_gevar wrote down at the top of the proof,
+    // which is a model fact and costs nothing to cite; above it the fact is
+    // still permanent for the subtree but nothing has written it down, so a
+    // unit RUP under the reason does --- which is why the reason has to entail
+    // the length bound. Requesting the defining item first is what makes the
+    // pin exist to be found: need_gevar writes it when it creates the atom.
+    auto length_holds_line(ProofLogger & logger, const ReasonLiterals & reason, const Task & task, ProofLevel level) -> optional<ProofLine>
+    {
+        if (! task.length_variable)
+            return nullopt;
+        auto & tracker = logger.names_and_ids_tracker();
+        auto at_least = *task.length_variable >= task.length;
+        static_cast<void>(tracker.need_pol_item_defining_literal(at_least));
+        if (auto pin = tracker.boundary_pin_line(*task.length_variable, task.length))
+            return pin;
+        return logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * at_least >= 1_i, level);
     }
 
     // `[s >= weaker] \/ ~[s >= stronger]`, for weaker <= stronger: a fact about
@@ -140,8 +188,8 @@ auto gcs::innards::window_energy::window_energy_bound(
     return shape_of(length, flags_t_lo, flags_size, lo, hi, start_bounds).bound;
 }
 
-auto gcs::innards::window_energy::derive_window_energy(ProofLogger & logger, const ReasonLiterals & reason, const ConstantLengthTask & task,
-    Integer lo, Integer hi, pair<Integer, Integer> start_bounds, ProofLevel level) -> optional<WindowEnergy>
+auto gcs::innards::window_energy::derive_window_energy(ProofLogger & logger, const ReasonLiterals & reason, const Task & task, Integer lo, Integer hi,
+    pair<Integer, Integer> start_bounds, ProofLevel level) -> optional<WindowEnergy>
 {
     auto shape = shape_of(task.length, task.flags_t_lo, task.active.size(), lo, hi, start_bounds);
     if (shape.empty() || shape.bound <= 0_i)
@@ -150,7 +198,7 @@ auto gcs::innards::window_energy::derive_window_energy(ProofLogger & logger, con
     auto & tracker = logger.names_and_ids_tracker();
     IntegerVariableID start = task.start;
 
-    auto per_time = emit_per_time_bridges(logger, task, shape, level);
+    auto per_time = emit_per_time_bridges(logger, task, shape, length_holds_line(logger, reason, task, level), level);
 
     // Step 2, one pol summing them, into which the order literals telescope.
     PolBuilder sum;
@@ -191,8 +239,8 @@ auto gcs::innards::window_energy::derive_window_energy(ProofLogger & logger, con
     return WindowEnergy{sum.emit(logger, level), shape.bound, shape.a, shape.b};
 }
 
-auto gcs::innards::window_energy::derive_guarded_window_energy(ProofLogger & logger, const ConstantLengthTask & task, Integer lo, Integer hi,
-    Integer low_guard, Integer high_guard, ProofLevel level) -> optional<GuardedWindowEnergy>
+auto gcs::innards::window_energy::derive_guarded_window_energy(ProofLogger & logger, const Task & task, Integer lo, Integer hi, Integer low_guard,
+    Integer high_guard, ProofLevel level) -> optional<GuardedWindowEnergy>
 {
     // The guards stand in for the bounds a firing would have had, so the shape,
     // and the bound it predicts, are the reason-backed ones for those bounds.
@@ -203,7 +251,12 @@ auto gcs::innards::window_energy::derive_guarded_window_energy(ProofLogger & log
     auto & tracker = logger.names_and_ids_tracker();
     IntegerVariableID start = task.start;
 
-    auto per_time = emit_per_time_bridges(logger, task, shape, level);
+    // No length line, so a variable length's `~[l >= p]` stays in every per-time
+    // clause and the sum below carries one copy per time point. That is more
+    // than the bound, and the citer pays for all of them; making it exactly the
+    // bound would need the sum divided, which the leftover order literals do
+    // not survive.
+    auto per_time = emit_per_time_bridges(logger, task, shape, nullopt, level);
 
     PolBuilder sum;
     for (const auto & line : per_time)
@@ -248,5 +301,6 @@ auto gcs::innards::window_energy::derive_guarded_window_energy(ProofLogger & log
     if (kept_u - lost_v != shape.bound)
         throw ProofError{"guarded window energy derivation and its predicted bound disagree"};
 
-    return GuardedWindowEnergy{sum.emit(logger, level), shape.bound, shape.a, shape.b, low_guard, low_coeff, high_guard};
+    auto length_coeff = task.length_variable ? shape.b - shape.a : 0_i;
+    return GuardedWindowEnergy{sum.emit(logger, level), shape.bound, shape.a, shape.b, low_guard, low_coeff, high_guard, task.length, length_coeff};
 }

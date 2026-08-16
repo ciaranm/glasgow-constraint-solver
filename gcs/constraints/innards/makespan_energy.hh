@@ -146,7 +146,7 @@ namespace gcs::innards::makespan_energy
         /// task's own length.
         std::optional<MakespanLink> link = std::nullopt;
 
-        /// The task's per-time flags, as window_energy::ConstantLengthTask
+        /// The task's per-time flags, as window_energy::Task
         /// describes them, or null with proofs off.
         const std::vector<ProofFlag> * before = nullptr;
         const std::vector<ProofFlag> * after = nullptr;
