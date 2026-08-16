@@ -104,6 +104,21 @@ namespace gcs
         /// in-solver rather than believed.
         innards::ProofLevel overload_vocabulary_at = innards::ProofLevel::Top;
 
+        /// Keep each per-time at-most-one the time-indexed certificate derives
+        /// and cite it again, rather than deriving it per firing.
+        ///
+        /// The row is about a pair of tasks, a time, and their durations, and
+        /// about nothing else --- the same property that lets the activity
+        /// flags live at Top. Keeping it turns the certificate's per-firing
+        /// cost from a *pair* of tasks per time point into a task per time
+        /// point once a window's pairs have been seen, at the price of a
+        /// standing database quadratic in the tasks and linear in the horizon.
+        ///
+        /// Only has an effect where \ref overload_vocabulary_at keeps the
+        /// vocabulary too: nothing within one firing asks for the same pair and
+        /// time twice, so all the reuse is across firings.
+        bool overload_cache_bridge = true;
+
         /// Which overload certificate to emit. The default picks per firing.
         DisjunctiveOverloadCertificate overload_certificate = DisjunctiveOverloadCertificate::Cheaper;
 
@@ -111,27 +126,36 @@ namespace gcs
         /// sorting network is emitted once the window's span exceeds this many
         /// times the number of tasks in it.
         ///
-        /// Seven, measured in-solver over both certificates on identical
-        /// instances --- windows of `w` tasks of equal duration overloading by
-        /// one unit, so that only this rule fires, with the duration varied to
-        /// move the span independently of `w`. The time-indexed certificate is
-        /// linear in the span and the network is flat in it but for its wires'
-        /// widths, so they cross once; where they cross, in units of `w`:
+        /// Three hundred, and the size of that number is the point. Measured on
+        /// one firing each, the two certificates cross at a span of about seven
+        /// tasks' worth --- but \ref overload_cache_bridge amortises the
+        /// time-indexed route across firings and there is nothing to amortise
+        /// on the network's side, a window's wires being about that window. On
+        /// generated RCPSP with the at-most-ones kept, per firing:
         ///
-        ///     w      3    4    5    6    7    8   10   12
-        ///     span/w 4.7  5.7  6.1  6.4  6.6  6.6  6.7  6.8
+        ///     window span / w      5     20     80    320
+        ///     time-indexed is    30.6x  9.7x   2.3x   0.79x cheaper
         ///
-        /// which is rising and flattening, so seven fits the wide windows ---
-        /// the expensive ones, and the ones where being wrong costs most ---
-        /// and is at worst a little conservative at three or four tasks. The
-        /// simulation this rule came from said nine (#730), over models without
-        /// a window offset or a reason to carry.
+        /// so the crossing is out at roughly three hundred. The first two rows
+        /// are searches that ran to completion; the second two timed out at
+        /// different points and are marginal costs rather than totals, so three
+        /// hundred was bracketed rather than pinned.
         ///
-        /// Counted in proof lines, on this machine, with both certificates
-        /// emitted at the same level. Checking time tracks lines here but is
-        /// not the same measurement, and a RUP's cost depends on the database
-        /// it runs against.
-        std::size_t overload_crossover = 7;
+        /// The artefact has since been run, and it does not pin it either: on
+        /// generated RCPSP the time-indexed certificate wins at every horizon
+        /// where both certificates fit a proof budget at all (16.6x at a horizon
+        /// of 140, 9.25x at 275, 5.92x at 542), and past that the network does
+        /// not produce a complete proof to compare against. So no cell was found
+        /// where the network is cheaper, and three hundred stands as a figure
+        /// high enough never to pick it wrongly --- it selected the better
+        /// certificate on every comparable cell --- rather than as a measured
+        /// crossing point. A family with genuinely long horizons and small
+        /// windows would be needed to find one, and none is to hand.
+        ///
+        /// Set this to seven alongside `overload_cache_bridge = false`: without
+        /// the amortisation the old number is the right one, and the two
+        /// settings belong together.
+        std::size_t overload_crossover = 300;
     };
 
     /**
@@ -213,6 +237,21 @@ namespace gcs
         // constant value for a constant duration (0 placeholder for a variable
         // one, where _lengths[i] is read from the state instead).
         std::vector<Integer> _length_vals;
+
+        // The duration the overload check counts a task's energy at, and
+        // builds its certificate's constant thresholds from: the constant
+        // duration, or for a variable one its *declared* lower bound rather
+        // than its current one.
+        //
+        // Declared, because the certificate needs it reason-free. The pairwise
+        // rows carry a duration term with nothing to cancel against, so
+        // something has to say how short the task can be --- and a fact about
+        // the current state would have to be reason-backed, which puts the
+        // reason's literals into the per-time at-most-ones, where the fold's
+        // induction divides and does not carry them cleanly. The model's own
+        // bound row says it outright, for the price of counting a task that
+        // search has since lengthened at less energy than it now has.
+        std::vector<Integer> _energy_lens;
 
         // Encoded pairwise reified before-flags. The OPB stays purely
         // declarative: for each ordered pair (i, j) of active tasks,
