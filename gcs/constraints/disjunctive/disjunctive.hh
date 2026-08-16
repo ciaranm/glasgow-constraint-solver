@@ -17,6 +17,34 @@
 namespace gcs
 {
     /**
+     * \brief Which certificate the overload check emits, over the one
+     * unchanged pairwise OPB.
+     *
+     * Both re-encode the window inside the proof and neither touches the model,
+     * so this selects a proof *strategy* rather than a formulation: the
+     * statement being verified is the same whichever is chosen.
+     *
+     * \ingroup Constraints
+     */
+    enum class DisjunctiveOverloadCertificate
+    {
+        /// Re-encode time: an activity flag per (task, time), a pol per ordered
+        /// pair and time bridging the pairwise rows to a per-time at-most-one,
+        /// and the energies telescoped against it. Costs O(w^2) per time point,
+        /// so it grows with the window's span.
+        TimeIndexed,
+
+        /// Sort the window's tasks with a proof-only comparator network over
+        /// bit-encoded wires, and telescope the sorted order. Costs O(w^3) and
+        /// is flat in the span but for the wires' widths, so it wins once the
+        /// window is wide.
+        SortingNetwork,
+
+        /// Whichever of the two the window's own geometry says is cheaper.
+        Cheaper
+    };
+
+    /**
      * \brief Which of Disjunctive's propagation rules are enabled.
      *
      * Both are on by default. Turning one off weakens propagation but never
@@ -75,6 +103,35 @@ namespace gcs
         /// default. The switch stays so the measurement can be repeated
         /// in-solver rather than believed.
         innards::ProofLevel overload_vocabulary_at = innards::ProofLevel::Top;
+
+        /// Which overload certificate to emit. The default picks per firing.
+        DisjunctiveOverloadCertificate overload_certificate = DisjunctiveOverloadCertificate::Cheaper;
+
+        /// The crossover \ref DisjunctiveOverloadCertificate::Cheaper uses: the
+        /// sorting network is emitted once the window's span exceeds this many
+        /// times the number of tasks in it.
+        ///
+        /// Seven, measured in-solver over both certificates on identical
+        /// instances --- windows of `w` tasks of equal duration overloading by
+        /// one unit, so that only this rule fires, with the duration varied to
+        /// move the span independently of `w`. The time-indexed certificate is
+        /// linear in the span and the network is flat in it but for its wires'
+        /// widths, so they cross once; where they cross, in units of `w`:
+        ///
+        ///     w      3    4    5    6    7    8   10   12
+        ///     span/w 4.7  5.7  6.1  6.4  6.6  6.6  6.7  6.8
+        ///
+        /// which is rising and flattening, so seven fits the wide windows ---
+        /// the expensive ones, and the ones where being wrong costs most ---
+        /// and is at worst a little conservative at three or four tasks. The
+        /// simulation this rule came from said nine (#730), over models without
+        /// a window offset or a reason to carry.
+        ///
+        /// Counted in proof lines, on this machine, with both certificates
+        /// emitted at the same level. Checking time tracks lines here but is
+        /// not the same measurement, and a RUP's cost depends on the database
+        /// it runs against.
+        std::size_t overload_crossover = 7;
     };
 
     /**
@@ -167,6 +224,12 @@ namespace gcs
             innards::ProofFlag flag;
             innards::ProofLine forward_line;
             innards::ProofLine reverse_line;
+
+            /// The big-M the forward half carries, which the sorting-network
+            /// certificate has to raise to its own. Recorded here because it is
+            /// the reifier's choice and differs between the two directions of a
+            /// pair whenever their durations or encoding widths do.
+            Integer forward_guard_coefficient;
         };
         std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_flags;
         std::map<std::pair<std::size_t, std::size_t>, innards::ProofLine> _clause_lines;

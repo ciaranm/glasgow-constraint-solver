@@ -133,16 +133,25 @@ auto ComparatorNetwork::add_task(const ProofWire & start, Integer duration) -> v
     _duration_upper.emplace(wire.id, _logger.emit_rup_proof_line(terms(wire, -1_i) >= -duration, _level));
 }
 
-auto ComparatorNetwork::set_upper_bound(const ProofWire & start, ProofLine row) -> void
+auto ComparatorNetwork::assume(const WPBSum & guard) -> void
 {
-    PolBuilder builder;
-    builder.add(row).add(_duration_upper.at(_duration.at(start.id).id));
-    _upper.insert_or_assign(start.id, builder.emit(_logger, _level));
+    _guard = guard;
 }
 
-auto ComparatorNetwork::set_lower_bound(const ProofWire & start, ProofLine row) -> void
+auto ComparatorNetwork::set_bounds(const ProofWire & start) -> void
 {
-    _lower.insert_or_assign(start.id, row);
+    auto guarded = [&](WPBSum sum) {
+        for (const auto & term : _guard.terms)
+            sum += term;
+        return sum;
+    };
+
+    WPBSum fits;
+    add_terms(fits, start, -1_i);
+    add_terms(fits, _duration.at(start.id), -1_i);
+    _upper.insert_or_assign(start.id, _logger.emit_rup_proof_line(guarded(move(fits)) >= -_window_hi, _level));
+
+    _lower.insert_or_assign(start.id, _logger.emit_rup_proof_line(guarded(terms(start, 1_i)) >= _window_lo, _level));
 }
 
 auto ComparatorNetwork::add_separation(
@@ -446,6 +455,8 @@ auto ComparatorNetwork::derive_bound(const Comparator & c, const ProofWire & out
     WPBSum goal;
     add_terms(goal, out, -1_i);
     add_terms(goal, d_out, -1_i);
+    for (const auto & term : _guard.terms)
+        goal += term;
     return case_split(move(goal) >= -_window_hi, {from_a.emit(_logger, _level), from_b.emit(_logger, _level)});
 }
 
@@ -461,7 +472,10 @@ auto ComparatorNetwork::derive_lower_bound(const Comparator & c, const ProofWire
     PolBuilder from_b;
     from_b.add(_lower.at(c.b.id)).add(ge_b);
 
-    return case_split(terms(out, 1_i) >= _window_lo, {from_a.emit(_logger, _level), from_b.emit(_logger, _level)});
+    auto goal = terms(out, 1_i);
+    for (const auto & term : _guard.terms)
+        goal += term;
+    return case_split(move(goal) >= _window_lo, {from_a.emit(_logger, _level), from_b.emit(_logger, _level)});
 }
 
 auto ComparatorNetwork::reify_separation(const ProofWire & x, const ProofWire & y, const string & stem) -> SeparationFlags
