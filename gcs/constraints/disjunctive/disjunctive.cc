@@ -54,10 +54,24 @@ auto Disjunctive::with_strict(std::optional<bool> strict) -> Disjunctive &
     return *this;
 }
 
+auto Disjunctive::with_rules(DisjunctiveRules rules) -> Disjunctive &
+{
+    _rules = rules;
+    return *this;
+}
+
+auto Disjunctive::with_proof_mutation(DisjunctiveProofMutation mutation) -> Disjunctive &
+{
+    _proof_mutation = mutation;
+    return *this;
+}
+
 auto Disjunctive::clone() const -> unique_ptr<Constraint>
 {
     auto cloned = make_unique<Disjunctive>(_starts, _lengths);
     cloned->with_strict(_strict);
+    cloned->with_rules(_rules);
+    cloned->with_proof_mutation(_proof_mutation);
     return cloned;
 }
 
@@ -183,7 +197,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
     propagators.install(
         constraint_id(),
         [starts = move(_starts), lengths = move(_length_vals), length_vars = move(_lengths), zero = move(_zero), strict = _strict,
-            active_tasks = move(_active_tasks), before_flags = move(_before_flags), clause_lines = move(_clause_lines),
+            active_tasks = move(_active_tasks), before_flags = move(_before_flags), clause_lines = move(_clause_lines), rules = _rules,
+            mutation = _proof_mutation,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Current guaranteed (min) and possible (max) duration of task i:
             // for a constant duration both are the value; for a variable
@@ -289,6 +304,87 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             }
 
             if (any) {
+                // Variable durations join the reason for the push proofs (the
+                // pols and mandatory parts read lb(l)). For a constant-only
+                // instance this is just the starts, leaving the proof
+                // byte-identical.
+                auto push_reason_vars = starts;
+                for (auto i : active_tasks)
+                    if (is_var_len(i))
+                        push_reason_vars.push_back(length_vars[i]);
+
+                // The mutation switches, unpacked once for both dichotomies
+                // below. Everything but a mutation lane passes None, so all
+                // four come out false; see innards/disjunctive_mutations.hh
+                // for what each one breaks and why VeriPB has to notice.
+                struct DichotomyMutation
+                {
+                    bool emit_nothing, skip_refutation, skip_target_fold, loose_bound;
+                };
+                auto unpack_mutation = [](const DisjunctiveProofMutation & mut) -> DichotomyMutation {
+                    return {std::holds_alternative<disjunctive_proof_mutation::EmitNothing>(mut),
+                        std::holds_alternative<disjunctive_proof_mutation::SkipRefutation>(mut),
+                        std::holds_alternative<disjunctive_proof_mutation::SkipTargetFold>(mut),
+                        std::holds_alternative<disjunctive_proof_mutation::LooseDetectionBound>(mut)};
+                };
+
+                // The two pols of one pairwise dichotomy on task j's lower
+                // bound, against a single other task k: with the running bound
+                // established, j's next lb(l_j) slots reach past ub(s_k), so
+                // "j finishes before k starts" is impossible and the encoded
+                // pairwise clause forces "k finishes before j starts", which
+                // advances j's bound to `target` in one dichotomy. Both
+                // time-tabling's push chains and detectable precedences infer
+                // through this same shape; only how they choose k and target
+                // differs. `mut` is honest for everything but a mutation lane.
+                auto emit_lb_dichotomy = [&](size_t j, size_t k, Integer bound, Integer target, const DisjunctiveProofMutation & mut) -> void {
+                    auto [emit_nothing, skip_refutation, skip_target_fold, loose_bound] = unpack_mutation(mut);
+                    if (emit_nothing)
+                        return;
+                    // Left branch: j finishing before k contradicts the
+                    // running bound -- s_j >= bound plus lb(l_j) reaches past
+                    // ub(s_k), forcing bf_{j,k} false.
+                    if (! skip_refutation)
+                        emit_before_pol(j, k, starts[j] >= (loose_bound ? bound - 1_i : bound), start_ub_lit(k));
+                    // Right branch: k finishing before j puts s_j at k's
+                    // earliest end or later, folded onto the target order
+                    // literal's definition row: bf_{k,j} -> s_j >= target.
+                    if (! skip_target_fold)
+                        emit_before_pol(k, j, start_lb_lit(k), starts[j] < target);
+                };
+                // The mirror image, on j's upper bound: k finishing before j
+                // is impossible under the running bound -- s_j would be at k's
+                // earliest end or later, past bound -- so j finishes before k,
+                // capping s_j at k's latest start minus lb(l_j).
+                auto emit_ub_dichotomy = [&](size_t j, size_t k, Integer bound, Integer target, const DisjunctiveProofMutation & mut) -> void {
+                    auto [emit_nothing, skip_refutation, skip_target_fold, loose_bound] = unpack_mutation(mut);
+                    if (emit_nothing)
+                        return;
+                    if (! skip_refutation)
+                        emit_before_pol(k, j, start_lb_lit(k), starts[j] < bound + (loose_bound ? 2_i : 1_i));
+                    if (! skip_target_fold)
+                        emit_before_pol(j, k, starts[j] >= target + 1_i, start_ub_lit(k));
+                };
+
+                // One step of a time-tabling push chain, which is one
+                // dichotomy plus, for a non-final step, a deposit of the
+                // advanced bound under the reason so the next step's left
+                // branch unit-propagates from it. The final target is exactly
+                // the inferred bound, which the framework's closing RUP
+                // concludes. `bound` is the running bound the step starts from
+                // (established by the reason for the first step, by the
+                // previous step's deposit after).
+                auto emit_lb_chain_step = [&](size_t j, size_t k, Integer bound, Integer target, bool final, const ReasonLiterals & reason) -> void {
+                    emit_lb_dichotomy(j, k, bound, target, disjunctive_proof_mutation::None{});
+                    if (! final)
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[j] >= target) >= 1_i, ProofLevel::Temporary);
+                };
+                auto emit_ub_chain_step = [&](size_t j, size_t k, Integer bound, Integer target, bool final, const ReasonLiterals & reason) -> void {
+                    emit_ub_dichotomy(j, k, bound, target, disjunctive_proof_mutation::None{});
+                    if (! final)
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[j] < target + 1_i) >= 1_i, ProofLevel::Temporary);
+                };
+
                 auto range = (t_hi - t_lo + 1_i).raw_value;
                 vector<int> mand_load(range, 0);
 
@@ -302,6 +398,13 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             ++mand_load[(t - t_lo).raw_value];
                 }
 
+                // The mandatory-overlap contradiction runs whatever the rule
+                // selection is: at an all-fixed leaf every task's mandatory part
+                // is its whole active interval, so this scan is what makes the
+                // propagator a *checker*, and a rule selection that stopped it
+                // running would not be a weakening of propagation but a solver
+                // that reports assignments violating the constraint. Only the
+                // bound pushes below are time-tabling's to switch off.
                 for (auto idx = 0; idx < range; ++idx)
                     if (mand_load[idx] > 1) {
                         auto violating_t = t_lo + Integer{idx};
@@ -356,183 +459,255 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         return PropagatorState::DisableUntilBacktrack;
                     }
 
-                // Variable durations join the reason for the push proofs (the
-                // pols and mandatory parts read lb(l)). For a constant-only
-                // instance this is just the starts, leaving the proof
-                // byte-identical.
-                auto push_reason_vars = starts;
-                for (auto i : active_tasks)
-                    if (is_var_len(i))
-                        push_reason_vars.push_back(length_vars[i]);
-
-                // One step of an lb/ub-push chain: a single blocking task and
-                // the start bound the pair dichotomy advances to (the
-                // blocker's mandatory end for an lb-push, its latest start
-                // minus lb(l_j) for a ub-push). One step per BLOCKER, however
-                // long the blocker: with the running bound established, j's
-                // next lb(l_j) slots reach into the blocker's mandatory part,
-                // so "j finishes before k starts" is impossible and the
-                // encoded pairwise clause forces "k finishes before j starts",
-                // which advances the bound in one dichotomy.
-                struct ChainStep
-                {
-                    size_t blocker;
-                    Integer target;
-                };
-
-                // Per-step proof emitter. `bound` is the running bound the
-                // step starts from (established by the reason for the first
-                // step, by the previous step's deposit after), `final` says
-                // whether the framework's closing RUP concludes the target
-                // instead of an explicit intermediate deposit.
-                auto emit_lb_chain_step = [&](size_t j, size_t k, Integer bound, Integer target, bool final, const ReasonLiterals & reason) -> void {
-                    // Left branch: j finishing before k contradicts the
-                    // running bound -- s_j >= bound plus lb(l_j) reaches past
-                    // ub(s_k), forcing bf_{j,k} false.
-                    emit_before_pol(j, k, starts[j] >= bound, start_ub_lit(k));
-                    // Right branch: k finishing before j puts s_j at k's
-                    // mandatory end or later, folded onto the target order
-                    // literal's definition row: bf_{k,j} -> s_j >= target.
-                    emit_before_pol(k, j, start_lb_lit(k), starts[j] < target);
-                    // Intermediate steps deposit the advanced bound under the
-                    // reason so the next step's left branch unit-propagates
-                    // from it; the final target is exactly the inferred
-                    // bound, which the framework's closing RUP concludes.
-                    if (! final)
-                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[j] >= target) >= 1_i, ProofLevel::Temporary);
-                };
-                auto emit_ub_chain_step = [&](size_t j, size_t k, Integer bound, Integer target, bool final, const ReasonLiterals & reason) -> void {
-                    // Mirror of the lb step. Left branch: k finishing before j
-                    // is impossible under the running bound -- s_j would be at
-                    // k's mandatory end or later, past bound.
-                    emit_before_pol(k, j, start_lb_lit(k), starts[j] < bound + 1_i);
-                    // Right branch: j finishing before k caps s_j at k's
-                    // latest start minus lb(l_j), folded onto the target order
-                    // literal's definition row: bf_{j,k} -> s_j <= target.
-                    emit_before_pol(j, k, starts[j] >= target + 1_i, start_ub_lit(k));
-                    if (! final)
-                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[j] < target + 1_i) >= 1_i, ProofLevel::Temporary);
-                };
-
-                for (auto j : active_tasks) {
-                    if (min_len(j) == 0_i)
-                        continue;
-                    auto [cur_lb, cur_ub] = state.bounds(starts[j]);
-                    if (cur_lb == cur_ub)
-                        continue;
-
-                    auto lst_j = cur_ub, eet_j = cur_lb + min_len(j);
-                    auto fits_at = [&](Integer s) -> bool {
-                        for (Integer t = s; t < s + min_len(j); ++t) {
-                            auto load = mand_load[(t - t_lo).raw_value];
-                            if (lst_j < eet_j && t >= lst_j && t < eet_j)
-                                --load;
-                            if (load >= 1)
-                                return false;
-                        }
-                        return true;
+                if (rules.time_table) {
+                    // One step of an lb/ub-push chain: a single blocking task and
+                    // the start bound the pair dichotomy advances to (the
+                    // blocker's mandatory end for an lb-push, its latest start
+                    // minus lb(l_j) for a ub-push). One step per BLOCKER, however
+                    // long the blocker -- see emit_lb_dichotomy above.
+                    struct ChainStep
+                    {
+                        size_t blocker;
+                        Integer target;
                     };
 
-                    // A blocker for a chain step at running bound `bound`: a
-                    // task (other than j) whose mandatory part intersects the
-                    // window [bound, bound + lb(l_j)). Every non-fitting start
-                    // is blocked, so while the chain has ground to cover one
-                    // exists; `better` picks the most useful of two candidate
-                    // mandatory parts (deepest end for an lb-push, leftmost
-                    // start for a ub-push). Reads current bounds, which may be
-                    // tighter than the profile (mandatory parts only grow
-                    // within a pass), hence the clipping in the chain loops
-                    // below.
-                    auto find_blocker = [&](size_t j, Integer bound, const auto & better) -> pair<size_t, pair<Integer, Integer>> {
-                        optional<size_t> blocker;
-                        pair<Integer, Integer> best_mand{0_i, 0_i};
+                    for (auto j : active_tasks) {
+                        if (min_len(j) == 0_i)
+                            continue;
+                        auto [cur_lb, cur_ub] = state.bounds(starts[j]);
+                        if (cur_lb == cur_ub)
+                            continue;
+
+                        auto lst_j = cur_ub, eet_j = cur_lb + min_len(j);
+                        auto fits_at = [&](Integer s) -> bool {
+                            for (Integer t = s; t < s + min_len(j); ++t) {
+                                auto load = mand_load[(t - t_lo).raw_value];
+                                if (lst_j < eet_j && t >= lst_j && t < eet_j)
+                                    --load;
+                                if (load >= 1)
+                                    return false;
+                            }
+                            return true;
+                        };
+
+                        // A blocker for a chain step at running bound `bound`: a
+                        // task (other than j) whose mandatory part intersects the
+                        // window [bound, bound + lb(l_j)). Every non-fitting start
+                        // is blocked, so while the chain has ground to cover one
+                        // exists; `better` picks the most useful of two candidate
+                        // mandatory parts (deepest end for an lb-push, leftmost
+                        // start for a ub-push). Reads current bounds, which may be
+                        // tighter than the profile (mandatory parts only grow
+                        // within a pass), hence the clipping in the chain loops
+                        // below.
+                        auto find_blocker = [&](size_t j, Integer bound, const auto & better) -> pair<size_t, pair<Integer, Integer>> {
+                            optional<size_t> blocker;
+                            pair<Integer, Integer> best_mand{0_i, 0_i};
+                            for (auto k : active_tasks) {
+                                if (k == j || min_len(k) == 0_i)
+                                    continue;
+                                auto lst_k = state.upper_bound(starts[k]);
+                                auto eet_k = state.lower_bound(starts[k]) + min_len(k);
+                                if (lst_k < eet_k && lst_k < bound + min_len(j) && eet_k > bound &&
+                                    (! blocker || better(pair{lst_k, eet_k}, best_mand))) {
+                                    blocker = k;
+                                    best_mand = pair{lst_k, eet_k};
+                                }
+                            }
+                            if (! blocker)
+                                throw UnexpectedException{"Disjunctive: no blocker for a push chain step"};
+                            return {*blocker, best_mand};
+                        };
+
+                        // lb-push: scan upward to find the smallest fitting start,
+                        // then justify with one dichotomy step per blocker, each
+                        // advancing the running bound to the blocker's mandatory
+                        // end -- clipped to new_lb, both because the profile may
+                        // be staler than the bounds the steps cite and so the
+                        // final step lands exactly on the inferred bound.
+                        auto new_lb = cur_lb;
+                        while (new_lb <= cur_ub && ! fits_at(new_lb))
+                            ++new_lb;
+                        if (new_lb > cur_lb) {
+                            vector<ChainStep> chain;
+                            if (logger) {
+                                Integer bound = cur_lb;
+                                while (bound < new_lb) {
+                                    auto [k, mand] = find_blocker(j, bound, [](const auto & a, const auto & b) { return a.second > b.second; });
+                                    chain.push_back(ChainStep{k, min(mand.second, new_lb)});
+                                    bound = chain.back().target;
+                                }
+                            }
+
+                            auto justify = [&, j, cur_lb, chain](const ReasonLiterals & reason) -> void {
+                                vector<size_t> involved{j};
+                                for (const auto & step : chain)
+                                    involved.push_back(step.blocker);
+                                pin_escapes(reason, involved);
+                                Integer bound = cur_lb;
+                                for (size_t step = 0; step < chain.size(); ++step) {
+                                    emit_lb_chain_step(j, chain[step].blocker, bound, chain[step].target, step + 1 == chain.size(), reason);
+                                    bound = chain[step].target;
+                                }
+                            };
+
+                            inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
+                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(push_reason_vars));
+                        }
+
+                        // ub-push: mirror of lb-push, scanning downward, each step
+                        // dropping the running bound to the blocker's latest start
+                        // minus lb(l_j) (the last start from which j finishes by
+                        // the time the blocker must have started), clipped to
+                        // new_ub.
+                        auto new_ub = cur_ub;
+                        while (new_ub >= cur_lb && ! fits_at(new_ub))
+                            --new_ub;
+                        if (new_ub < cur_ub) {
+                            vector<ChainStep> chain;
+                            if (logger) {
+                                Integer bound = cur_ub;
+                                while (bound > new_ub) {
+                                    auto [k, mand] = find_blocker(j, bound, [](const auto & a, const auto & b) { return a.first < b.first; });
+                                    chain.push_back(ChainStep{k, max(mand.first - min_len(j), new_ub)});
+                                    bound = chain.back().target;
+                                }
+                            }
+
+                            auto justify = [&, j, cur_ub, chain](const ReasonLiterals & reason) -> void {
+                                vector<size_t> involved{j};
+                                for (const auto & step : chain)
+                                    involved.push_back(step.blocker);
+                                pin_escapes(reason, involved);
+                                Integer bound = cur_ub;
+                                for (size_t step = 0; step < chain.size(); ++step) {
+                                    emit_ub_chain_step(j, chain[step].blocker, bound, chain[step].target, step + 1 == chain.size(), reason);
+                                    bound = chain[step].target;
+                                }
+                            };
+
+                            inference.infer_less_than(logger, starts[j], new_ub + 1_i,
+                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(push_reason_vars));
+                        }
+                    }
+                }
+
+                // Detectable precedences. The precedence k << j is
+                // *detectable* when j cannot finish before k starts on bounds
+                // alone:
+                //
+                //     lb(s_j) + lb(l_j)  >  ub(s_k)
+                //
+                // Then before_{j,k} is false, so the separation clause forces
+                // before_{k,j}: s_k + l_k <= s_j. That bounds j from below by
+                // k's earliest end, and (reading the same precedence the other
+                // way round) bounds k from above by j's latest start less
+                // l_k:
+                //
+                //     s_j >= lb(s_k) + lb(l_k)      pushing the successor up
+                //     s_k <= ub(s_j) - lb(l_k)      pushing the predecessor down
+                //
+                // Unlike time-tabling, this asks for no mandatory part on
+                // either task, and that is exactly where the extra strength
+                // is: when k does have one, detection says j's next lb(l_j)
+                // slots reach past ub(s_k) = k's mandatory start, so the
+                // window [lb(s_j), lb(s_j) + lb(l_j)) meets k's mandatory part
+                // and time-tabling has already pushed j at least this far. A
+                // predecessor whose mandatory part is empty pushes here and
+                // nowhere else.
+                //
+                // Each detected precedence justifies its own push on its own,
+                // so a push needs only the *best* detected predecessor (the
+                // one ending latest) or successor (the one starting earliest):
+                // no set-based reasoning, and no chain. Vilim's O(n log n)
+                // form keeps the detected predecessors in a Theta-tree and
+                // pushes to the whole set's earliest completion time, which is
+                // stronger and needs an energy argument; this is the pairwise
+                // version.
+                //
+                // The proof is one dichotomy of the shape time-tabling's push
+                // chains are built from, with the blocker's mandatory part
+                // playing no part -- the pol arithmetic never referred to it,
+                // only the profile scan that picked the blocker did.
+                if (rules.detectable_precedences)
+                    for (auto j : active_tasks) {
+                        if (min_len(j) == 0_i)
+                            continue;
+                        // A task whose start is already fixed has no bound to
+                        // push, and nothing is lost by leaving it alone: a
+                        // precedence detected between a fixed task and an
+                        // unfixed one is the same precedence read the other way
+                        // round, which pushes the unfixed one and fails there
+                        // if it must; and two fixed tasks that collide both
+                        // have mandatory parts, which is the always-on overlap
+                        // contradiction above.
+                        auto [cur_lb, cur_ub] = state.bounds(starts[j]);
+                        if (cur_lb == cur_ub)
+                            continue;
+
+                        // One scan for both pushes: k is a detected
+                        // predecessor of j when j cannot finish before k
+                        // starts, and a detected successor when k cannot
+                        // finish before j starts. A task with no guaranteed
+                        // duration is skipped, as everywhere else here: it
+                        // has no zero-length escape to pin false.
+                        optional<size_t> predecessor, successor;
+                        Integer predecessor_eet = 0_i, successor_lst = 0_i;
                         for (auto k : active_tasks) {
                             if (k == j || min_len(k) == 0_i)
                                 continue;
-                            auto lst_k = state.upper_bound(starts[k]);
-                            auto eet_k = state.lower_bound(starts[k]) + min_len(k);
-                            if (lst_k < eet_k && lst_k < bound + min_len(j) && eet_k > bound &&
-                                (! blocker || better(pair{lst_k, eet_k}, best_mand))) {
-                                blocker = k;
-                                best_mand = pair{lst_k, eet_k};
+                            auto [k_lb, k_ub] = state.bounds(starts[k]);
+                            auto eet_k = k_lb + min_len(k);
+                            if (cur_lb + min_len(j) > k_ub && (! predecessor || eet_k > predecessor_eet)) {
+                                predecessor = k;
+                                predecessor_eet = eet_k;
                             }
-                        }
-                        if (! blocker)
-                            throw UnexpectedException{"Disjunctive: no blocker for a push chain step"};
-                        return {*blocker, best_mand};
-                    };
-
-                    // lb-push: scan upward to find the smallest fitting start,
-                    // then justify with one dichotomy step per blocker, each
-                    // advancing the running bound to the blocker's mandatory
-                    // end -- clipped to new_lb, both because the profile may
-                    // be staler than the bounds the steps cite and so the
-                    // final step lands exactly on the inferred bound.
-                    auto new_lb = cur_lb;
-                    while (new_lb <= cur_ub && ! fits_at(new_lb))
-                        ++new_lb;
-                    if (new_lb > cur_lb) {
-                        vector<ChainStep> chain;
-                        if (logger) {
-                            Integer bound = cur_lb;
-                            while (bound < new_lb) {
-                                auto [k, mand] = find_blocker(j, bound, [](const auto & a, const auto & b) { return a.second > b.second; });
-                                chain.push_back(ChainStep{k, min(mand.second, new_lb)});
-                                bound = chain.back().target;
+                            if (eet_k > cur_ub && (! successor || k_ub < successor_lst)) {
+                                successor = k;
+                                successor_lst = k_ub;
                             }
                         }
 
-                        auto justify = [&, j, cur_lb, chain](const ReasonLiterals & reason) -> void {
-                            vector<size_t> involved{j};
-                            for (const auto & step : chain)
-                                involved.push_back(step.blocker);
-                            pin_escapes(reason, involved);
-                            Integer bound = cur_lb;
-                            for (size_t step = 0; step < chain.size(); ++step) {
-                                emit_lb_chain_step(j, chain[step].blocker, bound, chain[step].target, step + 1 == chain.size(), reason);
-                                bound = chain[step].target;
-                            }
-                        };
+                        auto one_too_far = std::holds_alternative<disjunctive_proof_mutation::PushOneTooFar>(mutation);
 
-                        inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                            JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(push_reason_vars));
+                        // lb-push, to the predecessor's earliest end, clipped
+                        // to one past j's upper bound: a push that wipes the
+                        // domain is a contradiction, and the target has to
+                        // stay somewhere the order literal exists.
+                        if (predecessor) {
+                            auto target = min(predecessor_eet, cur_ub + 1_i) + (one_too_far ? 1_i : 0_i);
+                            if (target > cur_lb) {
+                                auto justify = [&, j, k = *predecessor, cur_lb, target](const ReasonLiterals & reason) -> void {
+                                    logger->emit_proof_comment(
+                                        "disjunctive detectable precedence " + std::to_string(k) + "<<" + std::to_string(j) + " push=lb");
+                                    pin_escapes(reason, {j, k});
+                                    emit_lb_dichotomy(j, k, cur_lb, target, mutation);
+                                };
+                                inference.infer_greater_than_or_equal(logger, starts[j], target,
+                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(push_reason_vars));
+                            }
+                        }
+
+                        // ub-push, to the successor's latest start less j's
+                        // own guaranteed duration, clipped to one below j's
+                        // lower bound. cur_ub is the bound captured before
+                        // any push above landed: by the time the justification
+                        // runs, the state holds the pushed bound, which the
+                        // reason does not support.
+                        if (successor) {
+                            auto target = max(successor_lst - min_len(j), cur_lb - 1_i) - (one_too_far ? 1_i : 0_i);
+                            if (target < cur_ub) {
+                                auto justify = [&, j, k = *successor, cur_ub, target](const ReasonLiterals & reason) -> void {
+                                    logger->emit_proof_comment(
+                                        "disjunctive detectable precedence " + std::to_string(j) + "<<" + std::to_string(k) + " push=ub");
+                                    pin_escapes(reason, {j, k});
+                                    emit_ub_dichotomy(j, k, cur_ub, target, mutation);
+                                };
+                                inference.infer_less_than(logger, starts[j], target + 1_i,
+                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(push_reason_vars));
+                            }
+                        }
                     }
-
-                    // ub-push: mirror of lb-push, scanning downward, each step
-                    // dropping the running bound to the blocker's latest start
-                    // minus lb(l_j) (the last start from which j finishes by
-                    // the time the blocker must have started), clipped to
-                    // new_ub.
-                    auto new_ub = cur_ub;
-                    while (new_ub >= cur_lb && ! fits_at(new_ub))
-                        --new_ub;
-                    if (new_ub < cur_ub) {
-                        vector<ChainStep> chain;
-                        if (logger) {
-                            Integer bound = cur_ub;
-                            while (bound > new_ub) {
-                                auto [k, mand] = find_blocker(j, bound, [](const auto & a, const auto & b) { return a.first < b.first; });
-                                chain.push_back(ChainStep{k, max(mand.first - min_len(j), new_ub)});
-                                bound = chain.back().target;
-                            }
-                        }
-
-                        auto justify = [&, j, cur_ub, chain](const ReasonLiterals & reason) -> void {
-                            vector<size_t> involved{j};
-                            for (const auto & step : chain)
-                                involved.push_back(step.blocker);
-                            pin_escapes(reason, involved);
-                            Integer bound = cur_ub;
-                            for (size_t step = 0; step < chain.size(); ++step) {
-                                emit_ub_chain_step(j, chain[step].blocker, bound, chain[step].target, step + 1 == chain.size(), reason);
-                                bound = chain[step].target;
-                            }
-                        };
-
-                        inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                            JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(push_reason_vars));
-                    }
-                }
             }
 
             // Strict-mode zero-length tasks: check that no zero-length task
