@@ -90,11 +90,29 @@ namespace gcs::innards
         struct DropProfilePins
         {
         };
+
+        /// (KAOC): claim one unit better than the largest total the heights at
+        /// a time point can actually reach. This is the mutation the knapsack
+        /// rule exists for --- it corrupts the *conclusion* of the integrality
+        /// argument rather than the route to it, so a derivation with any slack
+        /// in it verifies anyway and the rule is then resting on nothing.
+        struct ClaimOneBetterAvailability
+        {
+        };
+
+        /// (KAOC): apply the knapsack cap at one fewer time point than the
+        /// conflict needs, which is honest but leaves the window supplying more
+        /// than the comparison was told.
+        struct StrengthenOneFewer
+        {
+        };
+
     }
 
     using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
         cumulative_proof_mutation::OmitCapacityLine, cumulative_proof_mutation::ShrinkLemmaWindow, cumulative_proof_mutation::DropContainedTask,
-        cumulative_proof_mutation::PushOneTooFar, cumulative_proof_mutation::DropProfilePin, cumulative_proof_mutation::DropProfilePins>;
+        cumulative_proof_mutation::PushOneTooFar, cumulative_proof_mutation::DropProfilePin, cumulative_proof_mutation::DropProfilePins,
+        cumulative_proof_mutation::ClaimOneBetterAvailability, cumulative_proof_mutation::StrengthenOneFewer>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,

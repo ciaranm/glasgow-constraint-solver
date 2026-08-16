@@ -1343,11 +1343,170 @@ accepts, which fails the lane, so the verdict is veripb's either way.
 lane was corrupting an edge-finding firing on the same instance and reporting a
 rejection that said nothing about not-first / not-last.
 
+## The overload ladder: one certificate, a tighter line per time point (#550)
+
+`(TTOC)` charges a window `capacity x width` in bulk and subtracts the profile.
+Two published rules improve on the same comparison by capping what each
+*individual* time point supplies:
+
+* **(TTHE-OC)**, the time-table horizontally elastic overload check (Kameugne,
+  Fetgo Betmbe, Noulamo & Tayou Djamegni, C&OR 172 (2024); the formulation used
+  here is Cloutier & Quimper's equivalent one, CP 2026 SS2.2.5). A time point no
+  task can reach with more than its own tasks' heights does not supply the whole
+  capacity: resource nobody can use is not available.
+  `CumulativeRules::elastic_overload`.
+* **(KAOC)**, the knapsack-augmented overload check (Cloutier & Quimper, CP
+  2026). The tasks that could run at a time point have integer heights, so what
+  they can between them consume is the largest *subset sum* of those heights
+  fitting under what the profile leaves --- not that figure itself.
+  `CumulativeRules::knapsack_overload`, which implies the rule above and
+  dominates it.
+
+### The three rungs are one comparison
+
+Charge the window each contained task's energy less whatever its compulsory part
+already accounts for, and supply it one time point at a time:
+
+    required = e_Theta - sum_i h_i * |comp_i ^ window|
+    supplied = sum over t in [a, b) of A_t
+
+With `A_t = capacity - f(I, t)` this **is** `(TTOC)`: each contained task's
+compulsory load comes off the required side and goes back on as the supply the
+profile removes, and the two rearrange into `e + F > C(b-a)` term for term. Cap
+`A_t` by the optional heights at `t` and it is (TTHE-OC); cap it by the largest
+total they can reach and it is (KAOC). Nothing else changes --- so this is one
+certificate with a tighter line at some time points, not three certificates.
+
+### The certificate
+
+Per time point, a line saying what the contained tasks can take there:
+
+* where the optional heights **exceed** what the profile leaves, start from the
+  capacity row `C_t`, pin every compulsory contribution off it
+  (`pin_contributor`, which `(TTOC)` already uses) and `weaken` away every term
+  that is not a contained task's optional one. What is left is a statement over
+  exactly the heights the knapsack reasons about, with right hand side
+  `capacity - f(I, t)`. For (KAOC), put it through
+  `derive_subset_sum_strengthening` (#544);
+* where they **do not**, the capacity row is not the binding fact and citing it
+  would supply the window with resource nobody can take. The binding fact is
+  each task's own literal axiom, and their sum is the whole cap --- no capacity
+  row, no pins, and nothing for the knapsack to improve on, since the entire set
+  already fits.
+
+Against those, each contained task's `derive_window_energy` line scaled by its
+height, over the task's **own** `[est, lct)` rather than over the window, with
+its compulsory times weakened back out --- those charged the availability side,
+and counting them twice would leave the pol open.
+
+`weaken` is what makes the item set exact. VeriPB's `w` drops a term and lowers
+the degree by its coefficient, which is precisely "remove this from the left of
+a `<=`"; without it the knapsack would run over the wrong coefficients and the
+cap would be too weak to fire.
+
+### Strengthen only where the conflict needs it
+
+The dynamic programme costs a layer of proof flags per reachable partial sum, at
+every time point it is applied to. The certificate sorts the time points by what
+the cap buys, applies it biggest-gain first, and stops as soon as the comparison
+tips; the marker comment records `strengthened=k/w`. This falls out of the
+per-time-point shape rather than needing machinery, and it means a conflict the
+elastic cap alone can carry pays nothing for the knapsack at all --- which is
+what the `ttheoc` marker means.
+
+### Measured, `data_bl` + `data_pack` at 60 s, over the 36 instances every arm closed
+
+| arm | recursions | vs baseline | propagations | closed |
+|---|---|---|---|---|
+| time-tabling + `(OC')` + `(TTOC)` | 7,227,100 | 1.000x | 72,057,194 | 38 / 95 |
+| + (TTHE-OC) | 5,008,908 | 0.693x | 51,145,525 | 36 / 95 |
+| + (KAOC) | 2,832,478 | 0.392x | 29,227,548 | 48 / 95 |
+
+Fewer recursions on 30 of 36 and more on none, and no arm disagrees about an
+optimum. **The knapsack cap is what pays**: it more than halves the search and
+closes ten more instances at the same wall time. **The elastic cap alone does
+not**: 0.693x of the search, but it closes *fewer* instances than leaving it off,
+because its per-time-point scan costs more than the pruning returns --- the same
+verdict not-first / not-last got, and for the same reason.
+
+And on top of the edge-finding family, which is the question that decides
+whether it is worth having at all --- over the 39 instances both arms closed:
+
+| arm | recursions | vs TTEF | propagations | closed | wall |
+|---|---|---|---|---|---|
+| TTEF | 7,250,390 | 1.000x | 74,388,179 | 39 / 95 | 98.2 s |
+| + (KAOC) | 2,342,923 | 0.323x | 29,856,904 | 49 / 95 | 76.0 s |
+
+Fewer recursions on 26 of 39 and more on none, ten more instances closed, and
+**faster in wall time as well** --- so the rule pays for its own O(n^2 * horizon)
+scan and then some. It is not subsumed by the energetic family: edge-finding and
+TTEF move bounds from a window's total energy, and this refutes windows where
+the *shape* of the heights is what does not fit, which no amount of aggregate
+energy reasoning sees.
+
+Soundness: 600 generated instances enumerated exhaustively at sizes 8 and 10,
+zero solution-count differences against the rules off.
+
+### What the fixtures could not catch
+
+Both bugs found in this rule were the same mistake --- a quantity the check
+computed that the certificate never derived --- and **every fixture verified
+through both of them**. 11 of 60 proofs on generated instances did not.
+
+* The elastic cap was computed and not derived (above). Every published fixture
+  has every task able to run at every time point, so none of them ever reaches
+  the branch where the cap binds.
+* The energy lines ran over the window rather than over the task, leaving a
+  negative coefficient on every `(task, time)` the task cannot reach. Unit
+  propagation finishes that from the reason's bound literals often enough to
+  hide it, and all four fixtures have every task spanning the whole window, so
+  the residue was zero there anyway.
+
+Both are now cross-checked in the justification, which adds up what the pol
+actually charges and throws if it disagrees with what the rule fired on. The two
+figures come from opposite sides of the propagator --- the incremental
+per-time-point arrays against the lines as they are emitted --- so agreeing is
+worth something.
+
+The general lesson is the one #696 recorded from the other side: a fixture built
+to *demonstrate* a rule is symmetric and generous, and the asymmetric cases are
+exactly where a certificate and a check drift apart. Generated instances are not
+an optional extra here.
+
+### Mutations
+
+`claim_one_better` (claim one better than the largest reachable total),
+`strengthen_one_fewer` and `capacity` are rejected on all three fixtures, so the
+integrality argument is load-bearing on both of the strengthening's paths --- the
+divisibility one `cloutier_ex2` takes and the layered programme `dp_path` takes.
+
+There is no lane for the compulsory-time weakening. Leaving it out is a real
+corruption and VeriPB accepts it anyway: the terms it would have cancelled are
+the ones unit propagation assigns from the reason's own bound literals, the same
+way `(TTOC)`'s pins are droppable on 235 of 248 instances. The step stays, since
+it is what makes the pol itself contradictory rather than only close, but nothing
+can test it.
+
+### Restrictions
+
+Constant heights only: a variable height puts bit-linearised contribution terms
+in the capacity row, which neither the knapsack's item list nor the term-dropping
+can read, so v1 declines rather than approximates and the plain rules still run.
+A capacity above 4096 falls back to the elastic cap, since the bitset is
+`capacity + 1` bits at every time point (scheduling capacities are nothing like
+that --- Cloutier & Quimper report `C <= 122` across their benchmarks).
+
+Propagation is `O(n^2 * horizon)` rather than Cloutier & Quimper's `O(Cn^2)`:
+their doubly linked Profile collapses the runs where the profile is constant, and
+this keeps a flat array plus the incremental bitset (their Algorithm 3 shift-or)
+per time point. Same trade as #742 for edge-finding's scan, and the same answer
+--- what is missing is propagation performance, not proof content.
+
 ## Open follow-ups
-- **Energetic reasoning.** The window-energy lemma above is the first
-  piece of it: horizontally elastic and knapsack-augmented checking
-  (#550) build on the clipped form, and the lifted-constraint
-  presolvers (#549) on the contained one.
+- **Cloutier & Quimper's Profile.** The doubly linked list over time points,
+  which collapses the runs where the profile is constant and takes the sweep
+  from `O(n^2 * horizon)` to `O(Cn^2)`. Propagation performance only; the
+  certificate is unchanged.
 - **Guarded pins for the profile term.** TTEF's pins are reason-backed and
   re-derived per firing, at 2.93 lines' worth per firing and 15,037x repetition.
   A one-time-point `derive_guarded_window_energy` row is keyed by `(task, time)`

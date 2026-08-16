@@ -44,6 +44,39 @@ namespace gcs
         /// effect unless \ref overload is also set.
         bool profile_overload = true;
 
+        /// Cap what the window supplies at each individual time point by what
+        /// the tasks there could actually take: the *horizontally elastic*
+        /// overload check, combined with the time table (rule (TTHE-OC),
+        /// Kameugne et al. 2024; the formulation is Cloutier & Quimper's
+        /// equivalent one, CP 2026 §2.2.5).
+        ///
+        /// (TTOC) charges the whole window `capacity · width` and subtracts the
+        /// profile. That over-supplies a time point which no task can reach
+        /// with more than its own tasks' heights: a resource nobody can use is
+        /// not available. Capping each time point separately is what makes this
+        /// rule strictly stronger, and it is why the certificate sums a *line
+        /// per time point* rather than one bulk supply term.
+        ///
+        /// Has no effect unless \ref overload is also set, and wants
+        /// \ref profile_overload alongside it, since the cap is stated against
+        /// what the profile leaves.
+        bool elastic_overload = false;
+
+        /// Cap the same per-time-point supply by *integrality* as well: the
+        /// tasks that could run at a time point have integer heights, so the
+        /// resource they can between them consume is the largest subset sum of
+        /// those heights that fits under what the profile leaves --- not that
+        /// figure itself. This is the knapsack-augmented overload check
+        /// (Cloutier & Quimper, CP 2026), and it dominates \ref
+        /// elastic_overload, which it therefore implies.
+        ///
+        /// The certificate is the same one, with each time point's line put
+        /// through the subset-sum strengthening utility. Off by default: the
+        /// cap has to be recomputed as the window's task set grows, and the
+        /// derivation costs a layer of proof flags per reachable partial sum at
+        /// every time point whose slack the conflict actually needs.
+        bool knapsack_overload = false;
+
         /// Edge-finding: if a window's contained tasks plus one more task with
         /// one end inside it cannot all fit, that task must run past the end it
         /// hangs off, and the bound at that end moves by the energy the window
@@ -63,8 +96,8 @@ namespace gcs
         /// set, and wants \ref profile_overload set alongside it, since a
         /// window the profile already overloads is left to the overload check.
         ///
-        /// \warning Not yet certified. A propagator with this set refuses to
-        /// run against a proof logger.
+        /// Certified, by edge-finding's certificate plus the mandatory
+        /// (task, time) pins the overload check already emits.
         bool time_table_edge_finding = false;
 
         /// Count every task's *guaranteed* energy inside the window --- the

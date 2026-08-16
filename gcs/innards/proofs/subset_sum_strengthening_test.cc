@@ -129,7 +129,7 @@ namespace
         logger.start_proof(model);
         tracker.emit_delayed_proof_steps();
 
-        auto strengthening = derive_subset_sum_strengthening(logger, items, source, fixture.bound, ProofLevel::Top, mutation);
+        auto strengthening = derive_subset_sum_strengthening(logger, items, source, fixture.bound, ProofLevel::Top, ReasonLiterals{}, mutation);
 
         if (std::holds_alternative<subset_sum_mutation::None>(mutation)) {
             if (strengthening.bound != fixture.expected)

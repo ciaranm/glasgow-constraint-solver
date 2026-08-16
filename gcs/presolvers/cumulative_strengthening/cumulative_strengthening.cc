@@ -555,8 +555,8 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 auto donor_row = *reduced_row;
 
                 auto strengthen_to_kappa = [&](ProofLine source) -> ProofLine {
-                    auto strengthened =
-                        derive_subset_sum_strengthening(recipe_logger, items, source, capacity, ProofLevel::Temporary, subset_sum_corruption);
+                    auto strengthened = derive_subset_sum_strengthening(
+                        recipe_logger, items, source, capacity, ProofLevel::Temporary, ReasonLiterals{}, subset_sum_corruption);
                     // After the call rather than before it, and off what came
                     // back rather than off the assessment's prediction: the
                     // marker and the counter then agree with each other and
