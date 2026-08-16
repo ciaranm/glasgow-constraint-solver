@@ -1,5 +1,6 @@
 #include <gcs/constraints/disjunctive/disjunctive.hh>
 #include <gcs/constraints/disjunctive/hints.hh>
+#include <gcs/constraints/innards/task_presence.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -21,6 +22,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_optional;
 using std::make_pair;
 using std::make_unique;
 using std::max;
@@ -48,6 +50,19 @@ Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<Integer> lengt
 {
 }
 
+Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<IntegerVariableID> lengths, vector<IntegerVariableID> presences) :
+    Disjunctive(move(starts), move(lengths))
+{
+    _presences = move(presences);
+    if (_starts.size() != _presences.size())
+        throw InvalidProblemDefinitionException{"Disjunctive: starts and presences must have the same size"};
+    // A constant presence is checked here, by the rule that resolves it; a
+    // variable one is checked in prepare(), where its domain first becomes
+    // available.
+    for (const auto & p : _presences)
+        (void)task_presence(make_optional(p), "Disjunctive");
+}
+
 auto Disjunctive::with_strict(std::optional<bool> strict) -> Disjunctive &
 {
     _strict = strict.value_or(true);
@@ -66,12 +81,24 @@ auto Disjunctive::with_proof_mutation(DisjunctiveProofMutation mutation) -> Disj
     return *this;
 }
 
+auto Disjunctive::with_presence_mutation(DisjunctivePresenceMutation mutation) -> Disjunctive &
+{
+    _presence_mutation = mutation;
+    return *this;
+}
+
+auto Disjunctive::presences() const -> const vector<IntegerVariableID> &
+{
+    return _presences;
+}
+
 auto Disjunctive::clone() const -> unique_ptr<Constraint>
 {
-    auto cloned = make_unique<Disjunctive>(_starts, _lengths);
+    auto cloned = _presences.empty() ? make_unique<Disjunctive>(_starts, _lengths) : make_unique<Disjunctive>(_starts, _lengths, _presences);
     cloned->with_strict(_strict);
     cloned->with_rules(_rules);
     cloned->with_proof_mutation(_proof_mutation);
+    cloned->with_presence_mutation(_presence_mutation);
     return cloned;
 }
 
@@ -89,14 +116,40 @@ auto Disjunctive::prepare(Propagators &, State & initial_state, ProofModel * con
             throw InvalidProblemDefinitionException{"Disjunctive: lengths must be non-negative"};
     }
 
+    // Resolve each task's presence to the variable its separation clauses have
+    // to carry a disjunct on, or nullopt when the task is unconditionally
+    // present, by the rule Cumulative resolves its presences with --- the two
+    // constraints are alternative encodings of overlapping problems, so a
+    // presence argument one honours and the other drops would be a difference
+    // in meaning between them.
+    _presence.assign(n, nullopt);
+    vector<bool> never_present(n, false);
+    for (size_t i = 0; i < n; ++i) {
+        auto resolved = task_presence(_presences.empty() ? nullopt : make_optional(_presences[i]), "Disjunctive");
+        _presence[i] = resolved.literal;
+        never_present[i] = resolved.never_present;
+
+        // Only now are the domains available, which is why a variable presence
+        // is range-checked here rather than in the constructor.
+        if (resolved.literal && ! is_constant_variable(*resolved.literal)) {
+            auto [lo, hi] = initial_state.bounds(*resolved.literal);
+            if (lo < 0_i || hi > 1_i)
+                throw InvalidProblemDefinitionException{"Disjunctive: presences must be within {0, 1}"};
+        }
+    }
+
     // In non-strict mode, a task that is definitely zero-length cannot constrain
     // any other task, so drop it. A constant zero is dropped here; a variable
     // duration that *can* be zero stays active and gets a zero-length escape
     // flag (it might still take a positive value during search). In strict mode
     // every task participates (a zero-length task may not sit strictly inside
-    // another's active interval).
+    // another's active interval). A constantly-absent task is dropped in either
+    // mode: it occupies no time, so it constrains nothing and nothing
+    // constrains it, and it must appear nowhere in the encoding at all.
     _active_tasks.reserve(n);
     for (size_t i = 0; i < n; ++i) {
+        if (never_present[i])
+            continue;
         if (! _strict && is_constant_variable(_lengths[i]) && _length_vals[i] == 0_i)
             continue;
         _active_tasks.push_back(i);
@@ -128,7 +181,7 @@ auto Disjunctive::define_proof_model(ProofModel & model, const State &) -> void
     //     before_{i,j} <-> starts[i] + lengths[i] <= starts[j]
     //     before_{j,i} <-> starts[j] + lengths[j] <= starts[i]
     //   then one clause per pair:
-    //     before_{i,j} v before_{j,i}
+    //     before_{i,j} v before_{j,i} [ v presences[i] = 0 v presences[j] = 0 ]
     //
     // This is the only thing that goes into the OPB: the constraint's
     // declarative meaning, free of time-table or other propagator-specific
@@ -173,6 +226,17 @@ auto Disjunctive::define_proof_model(ProofModel & model, const State &) -> void
             for (auto r : {i, j})
                 if (_zero[r])
                     clause_sum += 1_i * *_zero[r];
+            // And so does an absent one, which is the whole of what optional
+            // tasks add to this encoding: the presence literal is the {0, 1}
+            // variable's single PB atom, so a pair of optional tasks costs two
+            // more terms in one clause they already had --- no extra flag, no
+            // extra row, and nothing else in the encoding has to know whether a
+            // task is optional. In particular the before flags stay reified
+            // *unconditionally* on the arithmetic, which is what keeps every
+            // justification below a pol over the same rows as before.
+            for (auto r : {i, j})
+                if (_presence[r])
+                    clause_sum += 1_i * (*_presence[r] == 0_i);
             // cake_pb_cp labels the separation clause @c[id][<i>_<j>sepal1].
             auto clause =
                 model.add_labelled_constraint(_constraint_id, std::to_string(i) + "_" + std::to_string(j) + "sepal1", move(clause_sum) >= 1_i);
@@ -192,13 +256,18 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
         // re-fire on variable-duration bound changes too.
         if (! is_constant_variable(_lengths[i]))
             triggers.on_bounds.emplace_back(_lengths[i]);
+        // A task starts blocking others the moment its presence is fixed to 1,
+        // and stops being anything at all when it is fixed to 0, so an optional
+        // task's presence has to wake the propagator as much as its start does.
+        if (_presence[i] && ! is_constant_variable(*_presence[i]))
+            triggers.on_instantiated.emplace_back(*_presence[i]);
     }
 
     propagators.install(
         constraint_id(),
         [starts = move(_starts), lengths = move(_length_vals), length_vars = move(_lengths), zero = move(_zero), strict = _strict,
-            active_tasks = move(_active_tasks), before_flags = move(_before_flags), clause_lines = move(_clause_lines), rules = _rules,
-            mutation = _proof_mutation,
+            active_tasks = move(_active_tasks), before_flags = move(_before_flags), clause_lines = move(_clause_lines), presence = move(_presence),
+            rules = _rules, mutation = _proof_mutation, presence_mutation = _presence_mutation,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Current guaranteed (min) and possible (max) duration of task i:
             // for a constant duration both are the value; for a variable
@@ -206,6 +275,34 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             auto is_var_len = [&](size_t i) -> bool { return ! is_constant_variable(length_vars[i]); };
             auto min_len = [&](size_t i) -> Integer { return is_var_len(i) ? state.lower_bound(length_vars[i]) : lengths[i]; };
             auto max_len = [&](size_t i) -> Integer { return is_var_len(i) ? state.upper_bound(length_vars[i]) : lengths[i]; };
+
+            // A task with no presence variable is always here. An optional one
+            // is here only once its presence is fixed to 1: until then it
+            // occupies no time as far as this propagator is concerned, blocks
+            // nothing, and nothing may be inferred about its start, since a
+            // prune that is only valid when the task is present would be plain
+            // wrong if it turns out absent. Fixed to 0, it is gone for good and
+            // every loop below skips it.
+            auto is_present = [&](size_t i) -> bool { return ! presence[i] || state.lower_bound(*presence[i]) == 1_i; };
+            auto is_absent = [&](size_t i) -> bool { return presence[i] && state.upper_bound(*presence[i]) == 0_i; };
+
+            // Presence enters a reason as an explicit literal per task known
+            // present, rather than by putting the variable in the reason's
+            // variable list: an undecided presence has no fact to record (a task
+            // not known present simply constrains nothing, and staying that way
+            // is monotone as the domain shrinks), and generic_reason would
+            // contribute the pair of trivial bounds 0 <= p <= 1 for it, which
+            // says nothing and costs an order atom on a variable whose whole
+            // encoding is one PB literal. Every inference below reasons only
+            // about tasks known present, so this one list serves all of them.
+            // The snapshot is taken once per call and stays accurate: the only
+            // presence this propagator ever changes is one it fixes to 0, and
+            // those were undecided, so absent from the list to begin with.
+            ReasonLiterals presence_lits;
+            for (auto i : active_tasks)
+                if (presence[i] && is_present(i))
+                    presence_lits.push_back(*presence[i] == 1_i);
+            auto reason_over = [&](const vector<IntegerVariableID> & vars) -> Reason { return with_extra(generic_reason(vars), presence_lits); };
 
             // The pairwise proof vocabulary. Everything the propagator infers
             // is justified through the encoded before-flags: a pol over a
@@ -289,10 +386,15 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // active interval. The TT pass misses that case; we catch it
             // below with an all-fixed pairwise check.
             //
+            // An absent task is out of the horizon as well as out of the
+            // profile: its start is unconstrained, so leaving it in would size
+            // mand_load by a domain nothing below ever indexes. An *undecided*
+            // task stays in, contributing no load but keeping room for the
+            // placements the falsification below has to scan.
             bool any = false;
             Integer t_lo = 0_i, t_hi = -1_i;
             for (auto i : active_tasks) {
-                if (max_len(i) == 0_i)
+                if (max_len(i) == 0_i || is_absent(i))
                     continue;
                 auto [s_lo, s_hi] = state.bounds(starts[i]);
                 auto lo = s_lo, hi = s_hi + max_len(i) - 1_i;
@@ -374,10 +476,23 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // concludes. `bound` is the running bound the step starts from
                 // (established by the reason for the first step, by the
                 // previous step's deposit after).
-                auto emit_lb_chain_step = [&](size_t j, size_t k, Integer bound, Integer target, bool final, const ReasonLiterals & reason) -> void {
+                //
+                // `absent` is the "or task j is not here at all" disjunct that
+                // the presence falsification below carries on every deposit, so
+                // each step reads "either j starts later than this, or j is not
+                // here"; nullopt for an ordinary push, whose task is known
+                // present. The dichotomy's two pols are the same either way:
+                // they are arithmetic over the before flags, which stay reified
+                // unconditionally, so presence never reaches them.
+                auto emit_lb_chain_step = [&](size_t j, size_t k, Integer bound, Integer target, bool final,
+                                              const optional<IntegerVariableCondition> & absent, const ReasonLiterals & reason) -> void {
                     emit_lb_dichotomy(j, k, bound, target, disjunctive_proof_mutation::None{});
-                    if (! final)
-                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[j] >= target) >= 1_i, ProofLevel::Temporary);
+                    if (! final) {
+                        auto deposit = WPBSum{} + 1_i * (starts[j] >= target);
+                        if (absent)
+                            deposit += 1_i * *absent;
+                        logger->emit_rup_proof_line_under_reason(reason, move(deposit) >= 1_i, ProofLevel::Temporary);
+                    }
                 };
                 auto emit_ub_chain_step = [&](size_t j, size_t k, Integer bound, Integer target, bool final, const ReasonLiterals & reason) -> void {
                     emit_ub_dichotomy(j, k, bound, target, disjunctive_proof_mutation::None{});
@@ -388,8 +503,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 auto range = (t_hi - t_lo + 1_i).raw_value;
                 vector<int> mand_load(range, 0);
 
+                // Only a task known present puts a mandatory part into the
+                // profile. An undecided one might not be here at all, so its
+                // mandatory part is not mandatory.
                 for (auto i : active_tasks) {
-                    if (min_len(i) == 0_i)
+                    if (min_len(i) == 0_i || ! is_present(i))
                         continue;
                     auto lst = state.upper_bound(starts[i]);
                     auto eet = state.lower_bound(starts[i]) + min_len(i);
@@ -414,7 +532,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         size_t pi = 0, pj = 0;
                         bool got_first = false, got_second = false;
                         for (auto i : active_tasks) {
-                            if (min_len(i) == 0_i)
+                            if (min_len(i) == 0_i || ! is_present(i))
                                 continue;
                             auto lst = state.upper_bound(starts[i]);
                             auto eet = state.lower_bound(starts[i]) + min_len(i);
@@ -455,7 +573,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         if (is_var_len(pj))
                             reason_vars.push_back(length_vars[pj]);
                         inference.contradiction(
-                            logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(reason_vars));
+                            logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
                         return PropagatorState::DisableUntilBacktrack;
                     }
 
@@ -472,17 +590,29 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     };
 
                     for (auto j : active_tasks) {
-                        if (min_len(j) == 0_i)
+                        // A task with no guaranteed duration blocks nothing and
+                        // fits everywhere, so there is neither a push nor a
+                        // falsification to be had from it. An absent one is not
+                        // here at all.
+                        if (min_len(j) == 0_i || is_absent(j))
                             continue;
                         auto [cur_lb, cur_ub] = state.bounds(starts[j]);
-                        if (cur_lb == cur_ub)
+                        // A fixed start leaves nothing to push, but an undecided
+                        // task with a fixed start can still be shown to have
+                        // nowhere to go.
+                        if (cur_lb == cur_ub && is_present(j))
                             continue;
 
                         auto lst_j = cur_ub, eet_j = cur_lb + min_len(j);
-                        auto fits_at = [&](Integer s) -> bool {
+                        // Only a task known present put anything into the
+                        // profile, so only that one has something to discount
+                        // before asking where it could go. An undecided task's
+                        // own mandatory part is not in mand_load and must not be
+                        // subtracted out of it.
+                        auto fits_at = [&, j](Integer s) -> bool {
                             for (Integer t = s; t < s + min_len(j); ++t) {
                                 auto load = mand_load[(t - t_lo).raw_value];
-                                if (lst_j < eet_j && t >= lst_j && t < eet_j)
+                                if (is_present(j) && lst_j < eet_j && t >= lst_j && t < eet_j)
                                     --load;
                                 if (load >= 1)
                                     return false;
@@ -500,11 +630,21 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // tighter than the profile (mandatory parts only grow
                         // within a pass), hence the clipping in the chain loops
                         // below.
-                        auto find_blocker = [&](size_t j, Integer bound, const auto & better) -> pair<size_t, pair<Integer, Integer>> {
+                        //
+                        // nullopt when there is none, which a push chain treats
+                        // as an internal inconsistency (must_find_blocker) but
+                        // the presence falsification does not: the
+                        // ClaimOneTooFar mutation deliberately runs a chain over
+                        // ground that is not all blocked, and running out of
+                        // blockers is exactly how it fails to close.
+                        auto find_blocker = [&](size_t j, Integer bound, const auto & better) -> optional<pair<size_t, pair<Integer, Integer>>> {
                             optional<size_t> blocker;
                             pair<Integer, Integer> best_mand{0_i, 0_i};
                             for (auto k : active_tasks) {
-                                if (k == j || min_len(k) == 0_i)
+                                // Only a task known present is in the profile,
+                                // and only a task in the profile can be what
+                                // made a start not fit.
+                                if (k == j || min_len(k) == 0_i || ! is_present(k))
                                     continue;
                                 auto lst_k = state.upper_bound(starts[k]);
                                 auto eet_k = state.lower_bound(starts[k]) + min_len(k);
@@ -515,8 +655,14 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 }
                             }
                             if (! blocker)
+                                return nullopt;
+                            return pair{*blocker, best_mand};
+                        };
+                        auto must_find_blocker = [&](size_t j, Integer bound, const auto & better) -> pair<size_t, pair<Integer, Integer>> {
+                            auto found = find_blocker(j, bound, better);
+                            if (! found)
                                 throw UnexpectedException{"Disjunctive: no blocker for a push chain step"};
-                            return {*blocker, best_mand};
+                            return *found;
                         };
 
                         // lb-push: scan upward to find the smallest fitting start,
@@ -525,15 +671,100 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // end -- clipped to new_lb, both because the profile may
                         // be staler than the bounds the steps cite and so the
                         // final step lands exactly on the inferred bound.
+                        auto deepest_end = [](const auto & a, const auto & b) { return a.second > b.second; };
                         auto new_lb = cur_lb;
                         while (new_lb <= cur_ub && ! fits_at(new_lb))
                             ++new_lb;
+
+                        if (! is_present(j)) {
+                            // Presence falsification. The task is undecided and,
+                            // if it were present, has nowhere left to start:
+                            // new_lb ran off the end of its domain. Replay the
+                            // lb-push chain over the whole domain with "task j is
+                            // absent" carried as an extra disjunct on every
+                            // deposit, so each step says "either j starts later
+                            // than this, or j is not here at all". The last step
+                            // deposits nothing, exactly as the last step of a
+                            // push does: its target is one past j's upper bound,
+                            // which the reason already refutes, so the
+                            // framework's closing RUP concludes the presence.
+                            //
+                            // The ClaimOneTooFar mutation fires where exactly
+                            // one placement is still open, so the conclusion is
+                            // wrong rather than the route to it. The chain then
+                            // stops short --- its last window has no blocker ---
+                            // and the closing RUP has nothing to close on, which
+                            // is what VeriPB must catch.
+                            if (new_lb <= cur_ub &&
+                                ! (std::holds_alternative<disjunctive_presence_mutation::ClaimOneTooFar>(presence_mutation) && new_lb == cur_ub))
+                                continue;
+
+                            vector<ChainStep> chain;
+                            if (logger) {
+                                Integer bound = cur_lb;
+                                while (bound <= cur_ub) {
+                                    auto found = find_blocker(j, bound, deepest_end);
+                                    if (! found)
+                                        break;
+                                    chain.push_back(ChainStep{found->first, min(found->second.second, cur_ub + 1_i)});
+                                    bound = chain.back().target;
+                                }
+                            }
+                            // When nothing fits anywhere, every start in the
+                            // domain is blocked and so a blocker exists at
+                            // cur_lb; an empty chain there is an internal
+                            // inconsistency. Under ClaimOneTooFar a start does
+                            // still fit, and the chain running out is the whole
+                            // point, so the invariant is stated where it holds
+                            // rather than gated on the mutation.
+                            if (logger && chain.empty() && new_lb > cur_ub)
+                                throw UnexpectedException{"Disjunctive: no blocker for a presence falsification"};
+
+                            auto justify = [&, j, cur_lb, chain](const ReasonLiterals & reason) -> void {
+                                // The marker a test counts to show the rule
+                                // fired, and counts to zero on the twin instance
+                                // where it must not.
+                                logger->emit_proof_comment(
+                                    "disjunctive optional: task " + std::to_string(j) + " cannot be placed anywhere, so it is absent");
+
+                                vector<size_t> involved{j};
+                                for (const auto & step : chain)
+                                    involved.push_back(step.blocker);
+                                pin_escapes(reason, involved);
+
+                                // Which task's absence the deposits argue about:
+                                // the one being falsified, unless the WrongTask
+                                // mutation points them at some other optional
+                                // task.
+                                auto about = j;
+                                if (std::holds_alternative<disjunctive_presence_mutation::WrongTask>(presence_mutation))
+                                    for (auto k : active_tasks)
+                                        if (k != j && presence[k]) {
+                                            about = k;
+                                            break;
+                                        }
+
+                                auto steps =
+                                    std::holds_alternative<disjunctive_presence_mutation::EmitNothing>(presence_mutation) ? size_t{0} : chain.size();
+                                Integer bound = cur_lb;
+                                for (size_t step = 0; step < steps; ++step) {
+                                    emit_lb_chain_step(j, chain[step].blocker, bound, chain[step].target, step + 1 == steps,
+                                        make_optional(*presence[about] == 0_i), reason);
+                                    bound = chain[step].target;
+                                }
+                            };
+
+                            inference.infer_equal(logger, *presence[j], 0_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
+                                reason_over(push_reason_vars));
+                            continue;
+                        }
+
                         if (new_lb > cur_lb) {
                             vector<ChainStep> chain;
                             if (logger) {
                                 Integer bound = cur_lb;
                                 while (bound < new_lb) {
-                                    auto [k, mand] = find_blocker(j, bound, [](const auto & a, const auto & b) { return a.second > b.second; });
+                                    auto [k, mand] = must_find_blocker(j, bound, deepest_end);
                                     chain.push_back(ChainStep{k, min(mand.second, new_lb)});
                                     bound = chain.back().target;
                                 }
@@ -546,13 +777,13 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 pin_escapes(reason, involved);
                                 Integer bound = cur_lb;
                                 for (size_t step = 0; step < chain.size(); ++step) {
-                                    emit_lb_chain_step(j, chain[step].blocker, bound, chain[step].target, step + 1 == chain.size(), reason);
+                                    emit_lb_chain_step(j, chain[step].blocker, bound, chain[step].target, step + 1 == chain.size(), nullopt, reason);
                                     bound = chain[step].target;
                                 }
                             };
 
                             inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(push_reason_vars));
+                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(push_reason_vars));
                         }
 
                         // ub-push: mirror of lb-push, scanning downward, each step
@@ -568,7 +799,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             if (logger) {
                                 Integer bound = cur_ub;
                                 while (bound > new_ub) {
-                                    auto [k, mand] = find_blocker(j, bound, [](const auto & a, const auto & b) { return a.first < b.first; });
+                                    auto [k, mand] = must_find_blocker(j, bound, [](const auto & a, const auto & b) { return a.first < b.first; });
                                     chain.push_back(ChainStep{k, max(mand.first - min_len(j), new_ub)});
                                     bound = chain.back().target;
                                 }
@@ -587,7 +818,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             };
 
                             inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(push_reason_vars));
+                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(push_reason_vars));
                         }
                     }
                 }
@@ -629,9 +860,17 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // chains are built from, with the blocker's mandatory part
                 // playing no part -- the pol arithmetic never referred to it,
                 // only the profile scan that picked the blocker did.
+                //
+                // Both tasks have to be known present: a precedence is a
+                // statement that one of them finishes before the other starts,
+                // which says nothing at all if either might not be here. That
+                // rules out a *conditional* precedence, which would need the
+                // presence literals inside the pols rather than only in the
+                // reason; the falsification above is the only place presence
+                // reaches a proof line here.
                 if (rules.detectable_precedences)
                     for (auto j : active_tasks) {
-                        if (min_len(j) == 0_i)
+                        if (min_len(j) == 0_i || ! is_present(j))
                             continue;
                         // A task whose start is already fixed has no bound to
                         // push, and nothing is lost by leaving it alone: a
@@ -654,7 +893,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         optional<size_t> predecessor, successor;
                         Integer predecessor_eet = 0_i, successor_lst = 0_i;
                         for (auto k : active_tasks) {
-                            if (k == j || min_len(k) == 0_i)
+                            if (k == j || min_len(k) == 0_i || ! is_present(k))
                                 continue;
                             auto [k_lb, k_ub] = state.bounds(starts[k]);
                             auto eet_k = k_lb + min_len(k);
@@ -684,7 +923,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     emit_lb_dichotomy(j, k, cur_lb, target, mutation);
                                 };
                                 inference.infer_greater_than_or_equal(logger, starts[j], target,
-                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(push_reason_vars));
+                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(push_reason_vars));
                             }
                         }
 
@@ -704,7 +943,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     emit_ub_dichotomy(j, k, cur_ub, target, mutation);
                                 };
                                 inference.infer_less_than(logger, starts[j], target + 1_i,
-                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(push_reason_vars));
+                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(push_reason_vars));
                             }
                         }
                     }
@@ -722,20 +961,27 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // any variable durations) fixed at vz, vk, l_k satisfying
             // vk < vz < vk + l_k, before_{z,k} = (vz <= vk) UPs to 0 and
             // before_{k,z} = (vk + l_k <= vz) UPs to 0, contradicting the
-            // encoded clause before_{z,k} + before_{k,z} >= 1.
+            // encoded clause before_{z,k} + before_{k,z} >= 1. With optional
+            // tasks the clause carries their presence disjuncts too, so both
+            // tasks must be known present for it to unit-fail --- which is also
+            // the semantics: an absent task sits wherever it likes. This is the
+            // second half of what makes the propagator a *checker*, so the
+            // presence test here has to be the same one the profile above uses,
+            // or an undecided task could slip past the leaf check that would
+            // have fixed its presence.
             for (auto z : active_tasks) {
                 if (! strict)
                     break;
                 if (max_len(z) > 0_i)
                     continue;
-                if (! state.has_single_value(starts[z]))
+                if (! state.has_single_value(starts[z]) || ! is_present(z))
                     continue;
                 auto vz = state.lower_bound(starts[z]);
                 for (auto k : active_tasks) {
                     // k must have a fixed, positive duration.
                     if (k == z || min_len(k) != max_len(k) || min_len(k) == 0_i)
                         continue;
-                    if (! state.has_single_value(starts[k]))
+                    if (! state.has_single_value(starts[k]) || ! is_present(k))
                         continue;
                     auto vk = state.lower_bound(starts[k]);
                     if (vk < vz && vz < vk + min_len(k)) {
@@ -744,7 +990,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             reason_vars.push_back(length_vars[z]);
                         if (is_var_len(k))
                             reason_vars.push_back(length_vars[k]);
-                        inference.contradiction(logger, JustifyUsingRUP{hints::Disjunctive{owner}}, generic_reason(reason_vars));
+                        inference.contradiction(logger, JustifyUsingRUP{hints::Disjunctive{owner}}, reason_over(reason_vars));
                         return PropagatorState::DisableUntilBacktrack;
                     }
                 }
@@ -757,17 +1003,32 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 
 auto Disjunctive::constraint_type() const -> std::string
 {
-    return _strict ? "disjunctive_strict" : "disjunctive";
+    // The optional forms are named apart from the plain ones rather than
+    // sharing a name: cake_pb_cp dispatches on this, and it has no encoder for
+    // an optional disjunctive, so a shared name would silently offer it the
+    // non-optional encoding of a different constraint. Naming the gap is what
+    // makes it a miss rather than a mismatch.
+    if (_presences.empty())
+        return _strict ? "disjunctive_strict" : "disjunctive";
+    return _strict ? "disjunctive_strict_optional" : "disjunctive_optional";
 }
 
 auto Disjunctive::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
-    vector<SExpr> starts, lengths;
+    vector<SExpr> starts, lengths, presences;
     for (const auto & v : _starts)
         starts.push_back(tracker.s_expr_term_of(v));
     for (const auto & l : _lengths)
         lengths.push_back(is_constant_variable(l) ? SExpr::atom(constant_value_of(l).to_string()) : tracker.s_expr_term_of(l));
-    return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(starts)), SExpr::list(std::move(lengths))});
+    for (const auto & p : _presences)
+        presences.push_back(tracker.s_expr_term_of(p));
+    vector<SExpr> terms{
+        SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(starts)), SExpr::list(std::move(lengths))};
+    // The presences list sits where the FlatZinc builtin puts it, last, and is
+    // absent altogether for a non-optional constraint --- whose s-expression
+    // must stay exactly what it was.
+    if (! _presences.empty())
+        terms.push_back(SExpr::list(std::move(presences)));
+    return SExpr::list(std::move(terms));
 }

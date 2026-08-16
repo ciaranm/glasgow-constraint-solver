@@ -810,6 +810,16 @@ auto main(int argc, char * argv[]) -> int
                 auto strict = (id == "glasgow_disjunctive_strict");
                 problem.post(Disjunctive{starts, lengths}.with_strict(strict));
             }
+            else if (id == "glasgow_disjunctive_opt" || id == "glasgow_disjunctive_strict_opt") {
+                // Optional tasks: the presence Booleans arrive as an array of
+                // var bool, which the FlatZinc reader already presents as 0/1
+                // integer variables --- exactly what Disjunctive wants.
+                const auto & starts = arg_as_array_of_var(data, args, 0);
+                const auto & lengths = arg_as_array_of_var(data, args, 1);
+                const auto & presences = arg_as_array_of_var(data, args, 2);
+                auto strict = (id == "glasgow_disjunctive_strict_opt");
+                problem.post(Disjunctive{starts, lengths, presences}.with_strict(strict));
+            }
             else if (id == "glasgow_diffn" || id == "glasgow_diffn_nonstrict") {
                 const auto & xs = arg_as_array_of_var(data, args, 0);
                 const auto & ys = arg_as_array_of_var(data, args, 1);

@@ -65,8 +65,15 @@ set_tests_properties(minizinc-cumulative-opt PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-cumulative-opt-obj COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_cumulative_opt --reference-solver chuffed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativeoptobjtest false true)
 set_tests_properties(minizinc-cumulative-opt-obj PROPERTIES SKIP_RETURN_CODE 66)
 
-add_test(NAME minizinc-disjunctive-opt COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_cumulative_opt --reference-solver chuffed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjunctiveopttest true true)
+add_test(NAME minizinc-disjunctive-opt COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_disjunctive_opt --reference-solver chuffed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjunctiveopttest true true)
 set_tests_properties(minizinc-disjunctive-opt PROPERTIES SKIP_RETURN_CODE 66)
+
+# The strict optional form, which had no redefinition at all before #735: no
+# route through cumulative can express "a present zero-duration task may not sit
+# inside another", so this one used to keep the library decomposition and go
+# uncertified.
+add_test(NAME minizinc-disjunctive-strict-opt COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_disjunctive_strict_opt --reference-solver chuffed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjunctivestrictopttest true true)
+set_tests_properties(minizinc-disjunctive-strict-opt PROPERTIES SKIP_RETURN_CODE 66)
 
 # The difference-logic presolver is invisible to solution equivalence and to
 # proof verification alike, so this one also asserts on its counters: four

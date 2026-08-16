@@ -61,6 +61,7 @@ add_library(glasgow_constraint_solver
         constraints/innards/recover_am1.cc
         constraints/innards/reified_state.cc
         constraints/innards/tabulation.cc
+        constraints/innards/task_presence.cc
         constraints/innards/triggers.cc
         constraints/innards/window_energy.cc
         constraints/inverse/inverse.cc
@@ -278,6 +279,7 @@ if(GCS_BUILD_TESTS)
     add_executable(cumulative_optional_test constraints/cumulative/cumulative_optional_test.cc)
     add_executable(difference_test constraints/difference/difference_constraints_test.cc)
     add_executable(disjunctive_test constraints/disjunctive/disjunctive_test.cc)
+    add_executable(disjunctive_optional_test constraints/disjunctive/disjunctive_optional_test.cc)
     add_executable(disjunctive_precedences_test constraints/disjunctive/disjunctive_precedences_test.cc)
     add_executable(disjunctive_2d_test constraints/disjunctive_2d/disjunctive_2d_test.cc)
     add_executable(divide_modulus_test constraints/divide_modulus/divide_modulus_test.cc)
@@ -325,7 +327,7 @@ if(GCS_BUILD_TESTS)
 
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test bin_packing_test comparison_test
-            count_test cumulative_test cumulative_overload_test cumulative_optional_test derived_cumulative_test difference_test disjunctive_test disjunctive_precedences_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
+            count_test cumulative_test cumulative_overload_test cumulative_optional_test derived_cumulative_test difference_test disjunctive_test disjunctive_optional_test disjunctive_precedences_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
             logical_test mdd_test min_distance_test min_distance_matching_test min_max_test mini_linear_test multiply_test n_value_test nogoods_test parity_test
             plus_minus_test power_test product_bounds_test product_justify_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
@@ -378,6 +380,18 @@ if(GCS_BUILD_TESTS)
     foreach(mode strict nonstrict)
         add_test(NAME disjunctive_constraint_${mode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_test> ${mode})
+    endforeach()
+    foreach(mode enumerate falsify bijection cumulative objective)
+        add_test(NAME disjunctive_optional_constraint_${mode}
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_optional_test> ${mode})
+    endforeach()
+    # Mutation lanes for the presence falsification: see
+    # innards/disjunctive_mutations.hh for why the list is short and what each
+    # one has to break.
+    foreach(mutation emit_nothing wrong_task one_too_far)
+        add_test(NAME disjunctive_optional_mutation_${mutation}
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                --basename disjunctive_optional_mutation_${mutation} $<TARGET_FILE:disjunctive_optional_test> --mutate=${mutation})
     endforeach()
     add_test(NAME disjunctive_precedences COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_precedences_test>)
     # Mutation lanes: each writes a deliberately corrupted proof of the
@@ -752,6 +766,21 @@ if(GCS_BUILD_TESTS)
         set_tests_properties(${gcs_registered_tests} PROPERTIES ENVIRONMENT
             "GCS_TEST_MAX_SOLUTIONS=${GCS_TEST_MAX_SOLUTIONS};GCS_TEST_MAX_RECURSIONS=${GCS_TEST_MAX_RECURSIONS}")
     endif()
+
+    # Clear the runtime caps for the two lanes whose whole content is comparing
+    # one model's solution *set* against another's. A cap that fires truncates
+    # both sides at different points, and comparing the prefixes tests the
+    # search order rather than the semantics --- there is no independent oracle
+    # here for check_results()'s soundness-only fallback to lean on. Safe to
+    # uncap because these lanes write no proofs at all, and proof size and
+    # VeriPB time are what the caps exist to bound; the instances are 2-3 tasks
+    # over four start values, so the enumeration is bounded by construction. The
+    # test also fails loudly if a cap ever does fire, rather than comparing
+    # prefixes.
+    foreach(mode bijection cumulative)
+        set_property(TEST disjunctive_optional_constraint_${mode} APPEND PROPERTY ENVIRONMENT
+            "GCS_TEST_MAX_SOLUTIONS=;GCS_TEST_MAX_RECURSIONS=")
+    endforeach()
 
     # Pin the linear incremental threshold per test variant: 0 = always incremental,
     # a huge value = always stateless, so CI exercises both linear propagation paths.

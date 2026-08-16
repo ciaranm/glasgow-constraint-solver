@@ -3,6 +3,7 @@
 
 #include <gcs/constraint_id.hh>
 #include <gcs/constraints/cumulative/cumulative.hh>
+#include <gcs/constraints/innards/task_presence.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
@@ -19,47 +20,6 @@
 
 namespace gcs::innards
 {
-    /**
-     * \brief What a Cumulative's presence argument for one task comes to: what
-     * its activity flags are reified on, and whether it has any at all.
-     *
-     * \sa cumulative_task_presence
-     *
-     * \ingroup Innards
-     */
-    struct CumulativeTaskPresence
-    {
-        /// The {0, 1} variable the task's active flag carries as a third
-        /// conjunct, or nullopt when the task is unconditionally present and
-        /// the flag is the two-way AND.
-        std::optional<IntegerVariableID> literal;
-
-        /// Whether the task was posted as constantly absent, in which case
-        /// Cumulative leaves it out of the constraint altogether: it has no
-        /// flags, no terms in any capacity row, and nothing may cite it.
-        bool never_present = false;
-    };
-
-    /**
-     * \brief How a Cumulative resolves the presence argument it was posted
-     * with for one task, given that argument (nullopt for a constraint posted
-     * without presences at all).
-     *
-     * Only a *constant* argument resolves away: a variable presence keeps its
-     * conjunct even when its domain is already a singleton, because the
-     * encoding has to say what it means without appealing to a domain the OPB
-     * does not record.
-     *
-     * Shared, and deliberately so. A derived Cumulative pins its donor's
-     * activity flags, so it has to reach exactly the same verdict about which
-     * of them carry a presence literal as the donor did when it built them; a
-     * second copy of this rule would be one edit away from disagreeing, and the
-     * disagreement would show up as a rejected proof a long way from here.
-     *
-     * \ingroup Innards
-     */
-    [[nodiscard]] auto cumulative_task_presence(const std::optional<IntegerVariableID> & posted) -> CumulativeTaskPresence;
-
     /**
      * \brief Everything Cumulative's propagator reads: the task data, the
      * per-time proof flags it pins, and the per-time capacity lines it builds
@@ -86,7 +46,7 @@ namespace gcs::innards
 
         /// Sized to the task count. nullopt for a task that is unconditionally
         /// present; otherwise the {0, 1} variable saying whether it is
-        /// scheduled at all, as cumulative_task_presence resolves it. A derived
+        /// scheduled at all, as task_presence resolves it. A derived
         /// Cumulative fills this in from its donors', so that the reasons it
         /// gives carry the same presence literals the flags it pins were
         /// reified on.

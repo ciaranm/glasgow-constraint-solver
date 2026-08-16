@@ -85,7 +85,7 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
         // duration does. The largest duration still allowed is what says
         // whether it can run at all, and is the same bound the donor windowed
         // its flags with.
-        auto presence = cumulative_task_presence(view.presences.empty() ? nullopt : make_optional(view.presences[i]));
+        auto presence = task_presence(view.presences.empty() ? nullopt : make_optional(view.presences[i]), "Cumulative");
         if (state.upper_bound(length) <= 0_i || height_value <= 0_i || presence.never_present) {
             view.height_bounded_by[i] = nullopt;
             // Usually there is nothing here to set aside, because the donor

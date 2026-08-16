@@ -669,6 +669,27 @@ TEST_CASE("read_scp: disjunctive enumerates correctly")
     }
 }
 
+TEST_CASE("read_scp: disjunctive_optional enumerates correctly")
+{
+    // Two length-2 tasks in 0..3 that may each be absent: they need separating
+    // only when both are present.
+    for (const auto & s : enumerate("( (version 1) (variables (S0 0 3) (S1 0 3) (P0 0 1) (P1 0 1)) (constraints (_1 disjunctive_optional (S0 S1) (2 "
+                                    "2) (P0 P1))) (prob_type enumerate) )")) {
+        auto d = s.at("S0") - s.at("S1");
+        CHECK((s.at("P0") == 0 || s.at("P1") == 0 || d >= 2 || d <= -2));
+    }
+    // The strict form differs only over zero-length tasks, which a present task
+    // may not contain: task 1 has length 0, so when both are present its start
+    // may not sit strictly inside 0's. This is the case that has no route
+    // through Cumulative at all.
+    for (const auto & s : enumerate("( (version 1) (variables (S0 0 3) (S1 0 3) (P0 0 1) (P1 0 1)) (constraints (_1 disjunctive_strict_optional (S0 "
+                                    "S1) (3 0) (P0 P1))) (prob_type enumerate) )"))
+        if (s.at("P0") == 1 && s.at("P1") == 1) {
+            bool zero_inside = s.at("S0") < s.at("S1") && s.at("S1") < s.at("S0") + 3;
+            CHECK_FALSE(zero_inside);
+        }
+}
+
 TEST_CASE("read_scp: disjunctive2d enumerates correctly")
 {
     // Two 2x2 rectangles in a 0..3 x 0..3 grid must not overlap, so they are
@@ -709,11 +730,15 @@ TEST_CASE("read_scp: regular, disjunctive, disjunctive2d and cumulative survive 
     auto s1 = original.create_integer_variable(0_i, 3_i, "S1");
     auto y0 = original.create_integer_variable(0_i, 3_i, "Y0");
     auto y1 = original.create_integer_variable(0_i, 3_i, "Y1");
+    auto p0 = original.create_integer_variable(0_i, 1_i, "P0");
+    auto p1 = original.create_integer_variable(0_i, 1_i, "P1");
     original.post(Regular{std::vector<IntegerVariableID>{x0, x1}, 2,
         std::vector<std::unordered_map<Integer, long>>{{{0_i, 0}, {1_i, 1}}, {{0_i, 1}, {1_i, 0}}}, std::vector<long>{0}});
     original.post(Disjunctive{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}}); // strict -> disjunctive_strict
     original.post(
         Disjunctive{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}}.with_strict(false)); // non-strict -> disjunctive
+    original.post(Disjunctive{std::vector<IntegerVariableID>{s0, s1}, as_constant_variables(std::vector<Integer>{2_i, 2_i}),
+        std::vector<IntegerVariableID>{p0, p1}}); // -> disjunctive_strict_optional
     original.post(Disjunctive2D{std::vector<IntegerVariableID>{s0, s1}, std::vector<IntegerVariableID>{y0, y1}, std::vector<Integer>{2_i, 2_i},
         std::vector<Integer>{2_i, 2_i}}
             .with_strict(false));

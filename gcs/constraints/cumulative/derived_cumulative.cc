@@ -70,7 +70,7 @@ auto gcs::innards::install_derived_cumulative(
     vector<bool> never_present(n, false);
     inputs->presence.reserve(n);
     for (size_t i = 0; i < n; ++i) {
-        auto resolved = cumulative_task_presence(spec.tasks[i].presence);
+        auto resolved = task_presence(spec.tasks[i].presence, "Cumulative");
         inputs->presence.push_back(resolved.literal);
         never_present[i] = resolved.never_present;
     }
