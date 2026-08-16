@@ -1,70 +1,101 @@
-# Proof logging for `Cumulative`
+#Proof logging for `Cumulative`
 
-This document explains how the `Cumulative` propagator's three inferences
-are backed by VeriPB proofs. The technique generalises beyond cumulative
-to any constraint whose propagator reasons about a *load profile* over a
-set of integer variables with constant coefficients (binPacking,
-disjunctive, energetic-time-table extensions).
+This document explains how the `Cumulative` propagator's three inferences are backed by VeriPB proofs
+    .The technique generalises beyond cumulative to any constraint whose propagator reasons about a *load profile *
+        over a set of integer variables with constant
+        coefficients(binPacking, disjunctive, energetic - time - table extensions)
+    .
 
-For the constraint itself — the basic case, the OPB encoding, the
-time-table algorithm — read `gcs/constraints/cumulative/cumulative.{hh,cc}`. For
-the broader proof-logging framework (justifications, the OPB scaffold,
-`emit_rup_proof_line_under_reason`), read [`constraints.md`](constraints.md).
+    For the constraint itself — the basic case,
+    the OPB encoding,
+    the time - table algorithm — read `gcs / constraints / cumulative / cumulative.{hh, cc}`.For the broader proof
+    - logging framework(justifications, the OPB scaffold,
+`emit_rup_proof_line_under_reason`),
+    read[`constraints.md`](constraints.md)
+        .
 
-## What is and is not covered
+    ##What is and is not covered
 
-Worth stating plainly, because "we can certify cumulative scheduling" is an
-easy thing to write and a wrong thing to claim. Certified here: **time-tabling**
-(the overflow check and both bound pushes), the **overload check** and the
-window-energy lemma under it, **derived-constraint inference** (capacity
-strengthening, conflict cliques, lifted cover cuts), and **makespan lower
-bounds** — over optional tasks and over variable durations, heights and
-capacities.
+    Worth stating plainly,
+    because "we can certify cumulative scheduling" is an easy thing to write and a wrong thing to claim.Certified here:
+**time - tabling **(the overflow check and both bound pushes), the ** overload check **and the window - energy lemma under it,
+    **derived - constraint inference **(capacity strengthening, conflict cliques, lifted cover cuts),
+    and**makespan lower bounds ** — over optional tasks and over variable durations,
+    heights and capacities.
 
-Also certified, off by default: **edge-finding**, in both directions, under
-`CumulativeRules::edge_finding`, and **time-table extended edge-finding**
-(TTEF) under `CumulativeRules::time_table_edge_finding`. See the sections below.
+    Also certified,
+    off by default : **edge - finding **
+    , in both directions
+    , under
+`CumulativeRules::edge_finding`
+    , **time - table extended edge - finding **(TTEF)under `CumulativeRules::time_table_edge_finding`
+    , and**not -first / not -last *
+    *under `CumulativeRules::not_first_not_last`.See the sections below.
 
-Not here: **not-first / not-last** and **KAOC** (#550). Those are propagation
-rules a competitive cumulative solver also runs, so the claim to make is "a wide
-range of commonly used techniques", not completeness. The Open follow-ups
-section at the end says what each would take.
+     Not here : **KAOC
+    * *(#550)
+    , and energetic reasoning in general.The claim to make is "a wide range of commonly used techniques"
+    , not completeness.The Open follow -
+        ups section at the end says what each would take
+            .
 
-## What's hard about it
+        ##What's hard about it
 
-The TT propagator on its own is textbook. The proof-logging is not: the
-inference "task `j` cannot start at any `s ∈ [cur_lb, new_lb−1]`" hinges
-on a *disjunctive* fact
+        The TT propagator on its own is textbook.The proof
+        -
+        logging is not
+    : the inference "task `j` cannot start at any `s ∈ [cur_lb, new_lb−1]`" hinges on a
+      *
+      disjunctive *
+      fact
 
 ```
-∀ blocked t.    s_j > t   ∨   s_j ≤ t − l_j
+∀ blocked t.s_j
+    > t   ∨ s_j ≤ t − l_j
 ```
 
-— and that disjunction is exactly the shape memory flags as a hazard
-(`X ∉ [a, b]` as one Boolean breaks RUP-closure under backtrack-from-guess).
-So we can't reify the blocked-time fact as a single flag.
+— and that disjunction is exactly the shape memory flags as a hazard(`X ∉ [a, b]` as one Boolean breaks RUP - closure under backtrack - from - guess)
+          .So we can't reify the blocked-time fact as a single flag.
 
-The way out is *chained bound pushes under extended reason*: at each
-blocked time `t_i` in turn, we use the lower-bound work the previous
-chain step did to close the disjunction's lower branch, leaving only
-the upper branch `s_j > t_i` to derive.
+      The way out is * chained bound pushes under extended reason * : at each blocked time `t_i` in turn
+    , we use the lower - bound work the previous chain step did to close the disjunction's lower branch, leaving only the upper branch `s_j
+    > t_i` to derive.
 
-## The OPB scaffolding (recap)
+      ##The OPB scaffolding(recap)
 
-For every task `i` and every time `t` in its possible-active window,
-`define_proof_model` emits three fully-reified flags:
+For every task `i` and every time `t` in its possible - active window,
+`define_proof_model` emits three fully - reified flags :
 
-| Flag                  | Reification                                                  |
-|-----------------------|--------------------------------------------------------------|
-| `before_{i,t}`        | `s_i ≤ t`                                                    |
-| `after_{i,t}`         | `s_i ≥ t − l_i + 1`                                          |
-| `active_{i,t}`        | `before_{i,t} ∧ after_{i,t}` (AND-gate over the two)         |
+    | Flag | Reification | | -- -- -- -- -- -- -- -- -- -- -- -|
+    -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --| | `before_
+{
+    i, t
+}
+` | `s_i ≤ t` | | `after_
+{
+    i, t
+}
+` | `s_i ≥ t − l_i + 1` | | `active_
+{
+    i, t
+}
+` | `before_
+{
+    i, t
+}
+∧ after_
+{
+    i, t
+}` (AND-gate over the two)         |
 
 and, for each `t` in the union of possible-active windows, a single
 time-table constraint
 
 ```
-C_t :    Σ_i  h_i · active_{i,t}   ≤   capacity .
+C_t :    Σ_i  h_i · active_
+{
+    i, t
+}   ≤   capacity .
 ```
 
 All three inferences below cite these flags and `C_t` lines by handle —
@@ -79,7 +110,8 @@ can capture them in the propagator closure.
 For each task `i`, the *mandatory part* is the half-open interval
 `[lst_i, eet_i) = [ub(s_i), lb(s_i) + l_i)`. It's non-empty iff
 `l_i > ub(s_i) − lb(s_i)`. Any feasible `s_i` puts the task active
-at every `t ∈ [lst_i, eet_i)`, so `active_{i,t}` is forced to 1 by
+at every `t ∈ [lst_i, eet_i)`, so `active_{
+    i, t}` is forced to 1 by
 unit propagation from the bound literals `s_i ≥ lb(s_i)` and
 `s_i ≤ ub(s_i)`.
 
@@ -88,7 +120,8 @@ can't be satisfied: the mandatory tasks alone already overflow.
 
 ### Proof emission
 
-In the `JustifyExplicitly{…, ThenRUP::Yes}` emit callback:
+In the `JustifyExplicitly{
+    …, ThenRUP::Yes}` emit callback:
 
 1. For each task `i` mandatory at `t`, emit three RUPs under the
    bounds reason:
@@ -142,14 +175,19 @@ Both branches are needed; neither alone gets us anywhere generic.
 ### The chain idea
 
 Walk the bound one blocked-time at a time. At step `i`, we hold a
-*running bound* `B_{i−1}` already established by previous steps
+*running bound* `B_{
+    i−1}` already established by previous steps
 (initially the original bound from the reason). For the step's `t_i`:
 
-- If `t_i − l_j + 1 ≤ B_{i−1}` (the *precondition*), then the lower
-  branch `s_j ≤ t_i − l_j` is incompatible with `s_j ≥ B_{i−1}`,
+- If `t_i − l_j + 1 ≤ B_{
+    i−1}` (the *precondition*), then the lower
+  branch `s_j ≤ t_i − l_j` is incompatible with `s_j ≥ B_{
+    i−1}`,
   closing it. The remaining branch gives `s_j ≥ t_i + 1`.
-- Symmetrically for `ub`-push, with `B_{i−1}` an upper bound and the
-  precondition `t_i ≥ B_{i−1}` closing the *upper* branch
+- Symmetrically for `ub`-push, with `B_{
+    i−1}` an upper bound and the
+  precondition `t_i ≥ B_{
+    i−1}` closing the *upper* branch
   `s_j ≥ t_i + 1`, leaving the lower one `s_j ≤ t_i − l_j`.
 
 So the proof advances the bound exactly one blocked-time per step,
@@ -178,7 +216,8 @@ sub-pieces below, parameterised by `j`, `t`, the contributing tasks,
 **(a) Mandatory tasks at `t` (other than `j`):** the same three RUPs
 as inference 1, under the bounds reason. Each pins `active_{i,t} = 1`.
 
-**(b) Task `j` itself, under the EXTENDED reason `{bounds ∪ ¬ext_lit}`:**
+**(b) Task `j` itself, under the EXTENDED reason `{
+    bounds ∪ ¬ext_lit}`:**
 three RUPs of the same shape, but each line has `ext_lit` appended as
 an extra disjunct:
 
@@ -256,7 +295,8 @@ mentions `j`; no aliasing in the pol.
 Two reusable ideas crystallise out of the above:
 
 1. **`pol` over `active = 1` reified flags.** When a constraint
-   ships a per-time-point sum `Σ h_i · active_{i,t} ≤ capacity` and
+   ships a per-time-point sum `Σ h_i · active_{
+    i, t} ≤ capacity` and
    the propagator detects "the load already exceeds capacity here",
    the proof is a `pol` summing scaled unit-active lines into the
    time-table constraint. VeriPB cannot do this via RUP alone:
@@ -297,18 +337,21 @@ non-constant `d`/`r`/`b` joins the reason. Each extension touches the OPB
 and the pol differently:
 
 - **Variable capacity** is nearly free: `C_t` becomes
-  `Σ h_i·active_{i,t} − capacity ≤ 0` (the bound moves left as a single
+  `Σ h_i·active_{
+    i, t} − capacity ≤ 0` (the bound moves left as a single
   linear term). The existing pol closes unchanged because the wrapping
   RUP now has `capacity ≤ ub(capacity)` in the reason.
 
-- **Variable heights** linearise the nonlinear product `h_i·active_{i,t}`
+- **Variable heights** linearise the nonlinear product `h_i·active_{
+    i, t}`
   over `cake_pb_cp`'s per-bit contribution flags `cc_k = v[id][i_t_k][cc]`
   (weight `2^k`): `contrib_{i,t} = Σ 2^k·cc_k`, half-reified
   `active ⇒ contrib = h_i` and `¬active ⇒ contrib = 0` (the flags carry no
   domain bound of their own — `cle`/`cz` constrain them, exactly as cake
   does). `C_t` sums `contrib` for variable heights (and `h_i·active` for
   constant ones, so the all-constant proof is byte-identical). The pol pins
-  `contrib_{i,t} ≥ lb(h_i)` (coeff 1) instead of an `active = 1` line
+  `contrib_{
+    i, t} ≥ lb(h_i)` (coeff 1) instead of an `active = 1` line
   scaled by the constant height; for the pushed task it deposits
   `contrib_j + lb(h_j)·ext_lit ≥ lb(h_j)`. This is **variable × Boolean**,
   which is linear — *not* the multiplication frontier. Because the `cc`
@@ -316,7 +359,8 @@ and the pol differently:
   ordinary Booleans, just as the solver's were), the variable-height load
   reasoning **chain-verifies** (`scp_chain_cumulative_var_height_sat`).
 
-- **Variable durations** rewrite `after_{i,t} ⇔ s_i + l_i ≥ t+1`. The
+- **Variable durations** rewrite `after_{
+    i, t} ⇔ s_i + l_i ≥ t+1`. The
   pinning `after = 1` then needs the *cross-variable* fact
   `s_i + l_i ≥ B`, which RUP cannot derive from the operands' bounds
   alone (the VeriPB linear-combination limit). `after` stays reified on
@@ -327,7 +371,8 @@ and the pol differently:
   no OPB encoding: `cake_pb_cp` has no such variable, so keeping it out
   of the OPB is what makes the proof chain-portable) by the install
   initialiser, which also emits, per `(i,t)`, the **bridge lemma**
-  `end_i ≥ t+1 → after_{i,t}`:
+  `end_i ≥ t+1 → after_{
+    i, t}`:
 
   ```
   pol  @v[id][i_t][ca][f]  ( ¬after → s+l ≤ t )  +  end_le ( end ≤ s+l )
@@ -415,7 +460,8 @@ The proof needs, for each `i ∈ I(a, b)`, a derived line saying task `i`
 really does spend `p_i` time active inside the window:
 
 ```
-    Σ_{t ∈ [a,b)} active_{i,t}  ≥  p_i .
+    Σ_{t ∈ [a,b)} active_{
+    i, t}  ≥  p_i .
 ```
 
 That is `derive_window_energy` in
@@ -427,9 +473,12 @@ general bound rather than just the contained case.
 Per time point `t`, three `pol` lines:
 
 ```
-    before_{i,t} \/ [s_i ≥ t+1]                  @v[..][cb][f]  +  Def([s_i < t+1])   , saturate
-    after_{i,t}  \/ ~[s_i ≥ t-p+1]               @v[..][ca][f]  +  Def([s_i ≥ t-p+1]) , saturate
-    active_{i,t} \/ [s_i ≥ t+1] \/ ~[s_i ≥ t-p+1]        @v[..][cact][f]  +  the two above
+    before_{
+    i, t} \/ [s_i ≥ t+1]                  @v[..][cb][f]  +  Def([s_i < t+1])   , saturate
+    after_{
+    i, t}  \/ ~[s_i ≥ t-p+1]               @v[..][ca][f]  +  Def([s_i ≥ t-p+1]) , saturate
+    active_{
+    i, t} \/ [s_i ≥ t+1] \/ ~[s_i ≥ t-p+1]        @v[..][cact][f]  +  the two above
 ```
 
 The first two are order bridges of exactly the shape
@@ -517,7 +566,8 @@ tracker says whether it is there:
 
 | what | published as | resolved by |
 |---|---|---|
-| `Σ h_i·active_{i,t} ≤ C` for a time `t` | `ConstraintProofModelData<Cumulative>::capacity_row_role(t)` | `NamesAndIDsTracker::constraint_row_label` |
+| `Σ h_i·active_{
+    i, t} ≤ C` for a time `t` | `ConstraintProofModelData<Cumulative>::capacity_row_role(t)` | `NamesAndIDsTracker::constraint_row_label` |
 | the `before` / `after` / `active` flags for `(i, t)` | `...::before_flag_key(i, t)` and friends | `NamesAndIDsTracker::find_proof_flag_values` |
 
 The flag half is new. A flag's name is a pure function of
@@ -642,7 +692,10 @@ sanctioned change to the OPB in the whole #541 plan, and it is a single
 extra conjunct:
 
 ```
-active_{i,t}  ⇔  before_{i,t} ∧ after_{i,t} ∧ (presences[i] = 1)
+active_{
+    i, t}  ⇔  before_{
+    i, t} ∧ after_{
+    i, t} ∧ (presences[i] = 1)
 ```
 
 `C_t` keeps its shape. A `{0, 1}` variable is direct-only encoded as one
@@ -681,7 +734,8 @@ to the (at most two) disjuncts this needs.
 
 The last step drops the start-side disjunct. Its blocked time is at or
 beyond `ub(s_j)` — that is what makes it the last, since the chain stops
-when the running bound passes `ub(s_j)` — so `before_{j,t}` follows from
+when the running bound passes `ub(s_j)` — so `before_{
+    j, t}` follows from
 the task's own upper bound in the reason, and the proof never asks for an
 order literal above the domain, which need not exist.
 
@@ -755,7 +809,8 @@ profile, is issue 09's extension and is not here.
 ### Deriving over a donor that is not all constants
 
 Everything a derived constraint's recipe does is an argument about rows of the
-form `Σ h_i·active_{i,t} ≤ C`, and a donor only writes those when its arguments
+form `Σ h_i·active_{
+    i, t} ≤ C`, and a donor only writes those when its arguments
 are constants. `CumulativeDonorView`
 ([`donor_view.hh`](../gcs/constraints/cumulative/donor_view.hh)) is what reduces
 a donor to the part of itself that is, and the reduction is per **task**: one
@@ -825,7 +880,8 @@ them.
 
 Nothing in a capacity row mentions a length, so a derived constraint over such a
 task derives exactly the row it would otherwise. What breaks is the pin.
-`after_{i,t}` for a constant length is `s_i ≥ t − l + 1`, single-variable and
+`after_{
+    i, t}` for a constant length is `s_i ≥ t − l + 1`, single-variable and
 RUP-closable from the start's bounds; for a variable one it is reified on
 `s_i + l_i ≥ t+1`, which no RUP reaches from the operands' bounds separately —
 the VeriPB linear-combination limit.
@@ -897,7 +953,8 @@ not contain `height × active` for such a task; it contains the bits of a
 linearised contribution:
 
 ```
-C_t :   Σ_{i const} h_i·active_{i,t}  +  Σ_{i var} Σ_k 2^k·cc_{i,t,k}   ≤   capacity
+C_t :   Σ_{i const} h_i·active_{i,t}  +  Σ_{i var} Σ_k 2^k·cc_{
+    i, t, k}   ≤   capacity
 ```
 
 so a subset sum of the heights is not a subset sum of the row's coefficients,
@@ -923,12 +980,14 @@ rup  Σ_k 2^k·cc_{i,t,k} + L·¬active_{i,t} >= L   :  @c[id][<i>_<t>_cge]  <th
 ```
 
 added to the capacity row with coefficient one, so the bits cancel exactly and
-what is left on that task is `L·active_{i,t}`.
+what is left on that task is `L·active_{
+    i, t}`.
 
 It closes for a reason, which is worth writing down because the alternative is
 believing a pass rate. Negating the target forces `¬active` to zero — its
 coefficient `L` exceeds the slack `L−1` — leaving
-`{Σ2^k·cc_k ≤ L−1, Σ2^k·cc_k ≥ Σ2^j·hb_j, Σ2^j·hb_j ≥ L}` over two
+`{
+    Σ2 ^ k·cc_k ≤ L−1, Σ2 ^ k·cc_k ≥ Σ2 ^ j·hb_j, Σ2 ^ j·hb_j ≥ L}` over two
 power-of-two bit counters. Induct on the top bit `2^s`: if `L ≤ 2^s` the negated
 target zeroes `cc_s`, the `cge` row then zeroes `hb_s`, and the same system
 recurs one bit narrower; if `L > 2^s` the bound row forces `hb_s = 1`, `cge`
@@ -988,7 +1047,8 @@ conversion (claiming one more than the demand, and using `ub(h)` in place of
 A *derived* Cumulative (issue 04) works over an optional donor, and the
 striking thing is how little it takes. The rows are the argument, and an
 optional task's presence is a conjunct *inside* its activity flag rather
-than a term beside it, so `Σ h_i·active_{i,t} ≤ C` is the same row either
+than a term beside it, so `Σ h_i·active_{
+    i, t} ≤ C` is the same row either
 way. Every recipe built on one — subset sums, at-most-ones, coefficient
 raising, cover cuts — reads it identically, and none of them changes at
 all.
@@ -1201,16 +1261,93 @@ logger while it is set — and it is in the tree to be measured, not to be used:
 the row above is what it buys, and the propagation cost of recomputing the sum
 per window is not paid for on this family.
 
+## Not-first / not-last: the same certificate, different thresholds (#732)
+
+A task that cannot start before every task the window contains has ended must
+start after the earliest of those ends; and a task that cannot end after every
+one of them has started must end before the latest of those starts. So the
+thresholds are the contained set's own `min ect` and `max lst`, not a figure
+computed from the leftover energy --- which is what makes this a different rule
+rather than a weaker edge-finding.
+`CumulativeRules::not_first_not_last`, off by default.
+
+**The certificate is edge-finding's, unchanged.** Same window, same guarded
+rows, same `pol`; what differs is the threshold and which guard carries the
+negated conclusion, and `derive_guarded_window_energy` already takes both as
+parameters. Nothing was added to the proof vocabulary, and the first proof
+generated verified.
+
+**What is new is which tasks it can speak about.** Where a task has one end
+inside the window, edge-finding's threshold is the furthest an energy argument
+over that window can reach --- `step = ceil(rest / h_j)` is exactly the largest
+`v` for which `energy + h_j * minoverlap(a, b, est_j, v-1) > supply` --- so its
+push subsumes this rule's and the live-bound test drops the duplicate. Measured
+over `data_bl`, **every one of 6,316,773 firings is on a task that SPANS the
+window**, which is the case the edge-finding section documents as one where
+nothing can be said. A spanning task's guaranteed energy is a hump in its start:
+it rises until the task is fully inside the window and falls after, so no
+closed form pushes it, and restricting the start to one side of a threshold is
+what makes the hump's *minimum* say something.
+
+One wrinkle in the guards. A spanning task's lower bound is to the left of the
+window, so the low guard cannot be `clipped_window_start`, which would not be
+dischargeable. It is `min(lb(s_j), clipped_window_start(j, a))`: any guard at or
+past the window's start already discharges every survivor the ladder has, so
+where the bound is inside the window the window's own start does just as well
+--- and being a fact about the window rather than about the search, the row it
+derives is the one edge-finding already keeps, rather than one keyed on a bound
+that moves.
+
+**Measured, `data_bl` + `data_pack` at 60 s**, over the 37 instances every arm
+closed:
+
+| arm | recursions | vs baseline | propagations |
+|---|---|---|---|
+| edge-finding | 3,852,140 | 1.000x | 45,917,542 |
+| + not-first / not-last | 3,846,036 | 0.998x | 45,847,449 |
+| TTEF | 2,244,499 | 1.000x | 30,271,109 |
+| + not-first / not-last | 2,238,267 | 0.997x | 30,071,983 |
+
+It changes the search on 5 of 37 over edge-finding and 8 of 37 over TTEF, never
+for the worse, and no arm disagrees about an optimum. But it fires in the
+millions to buy that 0.3%, and at 60 s it **closes fewer instances than leaving
+it off** (37 against 39, and 38 against 39 alongside TTEF) --- the scan costs
+more than the pruning returns. Hence off by default, and hence the honest
+summary: certifiable for nothing, and worth nearly nothing.
+
+**What is certified here is a weakening of the published rule (#746).** The
+conclusions are the published ones, and the propagator reproduces Schutt &
+Wolf's (CP 2010) worked example number for number. Their *detection* condition,
+and Kameugne et al.'s (CPAIOR 2018), take the pushed task's overlap at **one
+end** of the negated conclusion's start range; this takes `window_energy_bound`
+over the whole range, i.e. the minimum over both, because that is exactly what
+`derive_guarded_window_energy` can derive and the certificate then cites. Where
+each paper's setting makes the overlap monotone across that range the two
+coincide; where it does not, we fire less --- 3535 published-only firings
+against 7 of ours on one seed. #746 has the measurements and the open question,
+which is whether the divergence is a standing assumption on the task set that
+the transcription drops, or a genuine argument the window-energy lemma cannot
+make.
+
+Testing is `cumulative_nfnl_test`, whose fixtures were searched the same way
+TTEF's were and against the same two conditions --- the rule must move a bound
+that time-tabling, the overload check, edge-finding and TTEF together do not,
+and the bound must be one a solution sits on. Its mutation harness differs in
+one way from the other two, and deliberately: it does **not** insist the root
+was reached. A push corrupted one step too far can empty a domain outright,
+leaving no root to report, and the proof of that emptying is exactly the
+corrupted step. Where a mutation is a no-op the root *is* reached and veripb
+accepts, which fails the lane, so the verdict is veripb's either way.
+
+`PushOneTooFar` had to be wired into this rule's own pushes. Until it was, the
+lane was corrupting an edge-finding firing on the same instance and reporting a
+rejection that said nothing about not-first / not-last.
+
 ## Open follow-ups
 - **Energetic reasoning.** The window-energy lemma above is the first
   piece of it: horizontally elastic and knapsack-augmented checking
   (#550) build on the clipped form, and the lifted-constraint
   presolvers (#549) on the contained one.
-- **Not-first / not-last (#732).** Now cheap: it is edge-finding's certificate
-  with a different window and the conclusion on the other bound, and the guarded
-  row already takes its threshold as a parameter. Expect the same fixture
-  difficulty TTEF ran into: the conclusion is an existing time point, which is
-  where unit propagation reaches on its own most easily.
 - **Guarded pins for the profile term.** TTEF's pins are reason-backed and
   re-derived per firing, at 2.93 lines' worth per firing and 15,037x repetition.
   A one-time-point `derive_guarded_window_energy` row is keyed by `(task, time)`
@@ -1234,7 +1371,7 @@ per window is not paid for on this family.
   filter as a constant and passes, which
   `cumulative_strengthening_all_var_heights` demonstrates by refuting at
   the root through the energy check. The **length** one still binds, since
-  #685 passes a length through as the variable it was posted with — so a
+# 685 passes a length through as the variable it was posted with — so a
   multi-mode RCPSP task gets its demand counted and its energy discarded,
   and it is the duration that discards it. Loosening it is not free: the
   lemma telescopes order literals over ranges fixed by a constant length,

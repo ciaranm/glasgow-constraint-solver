@@ -1072,7 +1072,9 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 continue;
             auto a = window_starts[w];
 
-            Integer energy = 0_i, inside_mandatory = 0_i;
+            // min_ect and max_lst are not-first / not-last's thresholds, over
+            // the same growing contained set the energy accumulates over.
+            Integer energy = 0_i, inside_mandatory = 0_i, min_ect = 0_i, max_lst = 0_i;
             vector<size_t> inside_tasks;
             for (const auto & c : candidates) {
                 if (c.est < a)
@@ -1080,6 +1082,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 energy += c.energy;
                 inside_mandatory += c.mandatory;
                 inside_tasks.push_back(c.task);
+                min_ect = inside_tasks.size() == 1 ? c.est + c.length : min(min_ect, c.est + c.length);
+                max_lst = inside_tasks.size() == 1 ? c.lct - c.length : max(max_lst, c.lct - c.length);
 
                 auto b = c.lct;
                 auto width = slots_within(a, b);
@@ -1124,6 +1128,19 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 }
                 else if (rules.time_table_edge_finding)
                     window_total = energy + window_profile;
+
+                // Whatever of a task the window has already been charged with.
+                // A push adds that task's clipped energy under the negated
+                // conclusion, covering the same time points, and each time
+                // point has one capacity line to cancel against --- so this
+                // comes back out first, or the pol would be left open.
+                // lst = lct − p and eet = est + p, which is what mand_load was
+                // built from.
+                auto own_contribution = [&](const Candidate & c2) {
+                    return rules.energetic_edge_finding ? guaranteed(c2)
+                        : rules.time_table_edge_finding ? c2.height * max(0_i, min(c2.est + c2.length, b) - max(c2.lct - c2.length, a))
+                                                        : 0_i;
+                };
 
                 // Edge-finding. A task j that starts inside [a, b) but is not
                 // contained in it can be pushed when the window has no room
@@ -1180,27 +1197,17 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
 
                         // A task with one end inside the window and one outside.
                         // Both ends in means it is contained, and already
-                        // counted; neither means it spans the window, and
-                        // nothing can be said. Which end is in decides which
-                        // bound moves.
+                        // counted; neither means it spans the window, where the
+                        // closed form below does not apply --- that case is what
+                        // not-first / not-last is for. Which end is in decides
+                        // which bound moves.
                         auto starts_inside = j.est >= a, ends_inside = j.lct <= b;
                         if (starts_inside == ends_inside)
                             continue;
 
                         auto p_j = j.length;
 
-                        // j is not contained, so whatever of it the window has
-                        // already been charged with covers the same time points
-                        // as the clipped energy added below under the negated
-                        // conclusion. Each time point has one capacity line to
-                        // cancel against, so counting j twice would leave the
-                        // pol open: take it back out. lst_j = lct_j − p_j and
-                        // eet_j = est_j + p_j, which is what mand_load was built
-                        // from.
-                        auto own = rules.energetic_edge_finding ? guaranteed(j)
-                            : rules.time_table_edge_finding     ? h_j * max(0_i, min(j.est + p_j, b) - max(j.lct - p_j, a))
-                                                                : 0_i;
-                        auto other_energy = window_total - own;
+                        auto other_energy = window_total - own_contribution(j);
                         auto rest = other_energy - (capacity - h_j) * width;
                         if (rest <= 0_i)
                             continue;
@@ -1248,6 +1255,73 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         else {
                             inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
                                 JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                        }
+                    }
+                }
+
+                // Not-first / not-last. Edge-finding asks how far a task can be
+                // pushed and answers with a closed form; this asks a different
+                // question --- can j start before every task the window
+                // contains has finished, or end after every one of them has
+                // started --- and takes its thresholds from the contained set
+                // rather than from the leftover energy.
+                //
+                // Where j has one end inside the window the two overlap, and
+                // edge-finding's threshold is the furthest an energy argument
+                // over this window can reach, so its push subsumes this one and
+                // the live-bound tests below drop the duplicate. What is new is
+                // a j that SPANS the window: its guaranteed energy is a hump in
+                // its start, edge-finding's closed form assumes a task crossing
+                // one edge and so does not apply, and the rule above skips it.
+                // Restricting the start to one side of a threshold is exactly
+                // what makes the hump's minimum say something.
+                if (rules.not_first_not_last && ! inside_tasks.empty() && window_total <= supply) {
+                    for (const auto & j : candidates) {
+                        if (j.est >= a && j.lct <= b)
+                            continue;
+
+                        auto h_j = j.height, p_j = j.length;
+                        auto other_energy = window_total - own_contribution(j);
+                        auto [s_lo, s_hi] = state.bounds(starts[j.task]);
+
+                        // Not-first: refute "j starts before every contained
+                        // task has ended". The guarded row's low guard is what
+                        // the reason discharges and its high guard is the
+                        // threshold, which is the negated conclusion.
+                        //
+                        // Any low guard at or past the window's start discharges
+                        // every survivor the ladder has, so where j's own lower
+                        // bound is inside the window the window's start does
+                        // just as well --- and it is a fact about the window
+                        // rather than about the search, so the row it derives is
+                        // shared with edge-finding's rather than keyed on a
+                        // bound that moves.
+                        if (min_ect > s_lo) {
+                            auto low_guard = min(s_lo, clipped_window_start(j.task, a));
+                            auto clipped = window_energy::window_energy_bound(
+                                p_j, per_task_t_lo[j.task], active_flag_count(j.task), a, b, pair{low_guard, min_ect - 1_i});
+                            if (clipped > 0_i && other_energy + h_j * clipped > supply) {
+                                auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
+                                auto justify = edge_finding_justification(a, b, inside_tasks, j.task, low_guard, min_ect, GuardToDischarge::Low);
+                                inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
+                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                            }
+                        }
+
+                        // Not-last: the mirror. Refute "j ends after every
+                        // contained task has started", so the negated conclusion
+                        // lands on the low guard and j's own upper bound is what
+                        // the reason discharges.
+                        if (max_lst - p_j < s_hi) {
+                            auto low_guard = max_lst - p_j + 1_i;
+                            auto clipped = window_energy::window_energy_bound(
+                                p_j, per_task_t_lo[j.task], active_flag_count(j.task), a, b, pair{low_guard, s_hi});
+                            if (clipped > 0_i && other_energy + h_j * clipped > supply) {
+                                auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
+                                auto justify = edge_finding_justification(a, b, inside_tasks, j.task, low_guard, s_hi + 1_i, GuardToDischarge::High);
+                                inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
+                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                            }
                         }
                     }
                 }
