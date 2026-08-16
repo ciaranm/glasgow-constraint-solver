@@ -39,6 +39,42 @@ namespace gcs
         /// earliest end, and the predecessor's upper bound down to the
         /// successor's latest start less its own duration.
         bool detectable_precedences = true;
+
+        /// The overload check: a window whose fully-contained tasks carry more
+        /// duration than the window is wide is infeasible. Conflict-only, and
+        /// the capacity-one case of what CumulativeRules::overload does.
+        ///
+        /// Certified by re-encoding time *in the proof*: an activity flag per
+        /// (task, time) introduced by redundance over order literals the
+        /// encoding already has, a pol per ordered pair and time bridging the
+        /// pairwise separation rows to a per-time at-most-one, that folded by
+        /// recover_am1_from_pairs, and the tasks' energies telescoped against
+        /// it. The OPB is untouched: see #730, and \ref overload_vocabulary_at
+        /// for where the re-encoding lives.
+        bool overload = false;
+
+        /// Refuse an overload conflict whose smallest window holds more than
+        /// this many tasks; zero, the default, takes every conflict. Measured
+        /// on generated RCPSP (#730), every cap closes fewer instances *and*
+        /// costs more proof lines than no cap, declining a conflict deferring
+        /// the work rather than removing it --- so this exists to reproduce
+        /// that result, not because some cap is expected to pay.
+        std::size_t overload_max_window = 0;
+
+        /// Where the overload certificate's activity flags and their per-time
+        /// at-most-ones are introduced.
+        ///
+        /// `Top` derives each once and lets every later firing cite it, which
+        /// costs a standing database; `Temporary` derives them per firing and
+        /// lets backtracking delete them, which pays for them again every
+        /// time. The received objection to `Top` is that hint-free RUP costs
+        /// O(live database), so anything left standing taxes the rest of the
+        /// proof --- but measured, that tax is flat to within noise from 4,692
+        /// to 38,460 standing rows, and `Top` wins on lines and on checking
+        /// time by a margin that grows with the firing count. Hence the
+        /// default. The switch stays so the measurement can be repeated
+        /// in-solver rather than believed.
+        innards::ProofLevel overload_vocabulary_at = innards::ProofLevel::Top;
     };
 
     /**

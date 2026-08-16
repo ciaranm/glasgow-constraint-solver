@@ -399,6 +399,19 @@ auto main(int argc, char * argv[]) -> int
                 "default, so every resource is handled the same way and a variant comparison " //
                 "is not confounded by which resources happen to be unary) or disjunctive",     //
                 cxxopts::value<string>()->default_value("cumulative"))                         //
+            ("disjunctive-overload",
+                "Give every posted Disjunctive the overload check, which is off by default "     //
+                "because it has no certificate yet (#730). Measurement only: incompatible with " //
+                "--prove")                                                                       //
+            ("disjunctive-overload-temporary",
+                "Introduce the overload certificate's activity flags per firing and let backtracking " //
+                "delete them, rather than once at the proof's top level. Slower and larger, and here " //
+                "so that #730's measurement can be repeated rather than believed")                     //
+            ("disjunctive-overload-max-window",
+                "Have the overload check decline a conflict whose smallest window holds more "  //
+                "than this many tasks, its certificate being cubic in that. Zero, the default," //
+                " takes every conflict",                                                        //
+                cxxopts::value<std::size_t>()->default_value("0"))                              //
             ("horizon",
                 "Override the planning horizon (0, the default, computes it from the " //
                 "instance). A value below the optimum cuts off solutions",             //
@@ -652,6 +665,14 @@ auto main(int argc, char * argv[]) -> int
     if (instance.source_task)
         problem.post(LinearLessThanEqual{WeightedSum{} + 1_i * starts[static_cast<std::size_t>(*instance.source_task)], 0_i});
 
+    // Off unless asked for: the overload check has no certificate, so this is a
+    // measurement switch rather than a model choice. See #730.
+    DisjunctiveRules disjunctive_rules;
+    disjunctive_rules.overload = options_vars["disjunctive-overload"].as<bool>();
+    disjunctive_rules.overload_max_window = options_vars["disjunctive-overload-max-window"].as<std::size_t>();
+    if (options_vars["disjunctive-overload-temporary"].as<bool>())
+        disjunctive_rules.overload_vocabulary_at = gcs::innards::ProofLevel::Temporary;
+
     for (std::size_t r = 0; r < instance.capacities.size(); ++r) {
         // A task that runs for no time never occupies a resource, so leaving it
         // out changes nothing but keeps the propagator and the proof smaller.
@@ -681,7 +702,7 @@ auto main(int argc, char * argv[]) -> int
                     user_durations.push_back(task_durations[i]);
                 }
             if (users.size() >= 2)
-                problem.post(Disjunctive{users, user_durations});
+                problem.post(Disjunctive{users, user_durations}.with_rules(disjunctive_rules));
         }
         else
             problem.post(Cumulative{task_starts, task_durations, task_demands, instance.capacities[r]});
@@ -694,7 +715,7 @@ auto main(int argc, char * argv[]) -> int
     // it has to share a propagator with it.
     if (machine_variant != "difference" && machine_starts.size() >= 2) {
         if (machine_variant == "disjunctive")
-            problem.post(Disjunctive{machine_starts, machine_durations});
+            problem.post(Disjunctive{machine_starts, machine_durations}.with_rules(disjunctive_rules));
         else if (machine_variant == "cumulative")
             problem.post(Cumulative{machine_starts, machine_durations, vector<Integer>(machine_starts.size(), 1_i), 1_i});
         else
