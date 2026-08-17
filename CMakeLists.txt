@@ -230,15 +230,32 @@ if(PROJECT_IS_TOP_LEVEL)
         #               prints name + file:line. Keeping it in Release means crash
         #               reports and verbose proofs stay useful in optimised builds.
         #   Debug    -> -g3: full information, including macros, for interactive
-        #               debugging.
-        #   Sanitize -> -g3: fully-annotated ASan/UBSan stack traces.
+        #               debugging. This is the configuration to build when you are
+        #               going to attach a debugger; `cmake --preset debug` is not
+        #               used by any CI lane, so its size costs nobody anything.
+        #   Sanitize -> -g1 as well, which is a deliberate trade rather than an
+        #               oversight. Every test binary statically links the whole
+        #               solver, so each carries its own copy of the same DWARF, and
+        #               under -g3 the tree's 173 programs came to 84.6 GiB of a
+        #               93 GiB build tree -- around half of that being debug info,
+        #               going by among_test, one of the larger ones, at 434 MiB of
+        #               DWARF in an 819 MiB binary. That is more than a GitHub
+        #               runner has: the build fitted, and then the Sanitize lane
+        #               died mid-test with "No space left on device" when the tests
+        #               went to write their proof files (run 31973615777, 16 Aug
+        #               2026). At -g1 the same programs come to 52.1 GiB and the
+        #               tree to 56 GiB. An ASan/UBSan report still symbolises to
+        #               function + file:line there, which is all a CI log is ever
+        #               read for; what is given up is macros and local-variable
+        #               DWARF, and those want a debugger, i.e. the Debug
+        #               configuration above.
         #
-        # Anything other than Debug/Sanitize (Release, or an unset build type)
+        # Anything other than Debug (Release, Sanitize, or an unset build type)
         # gets -g1 so it always carries at least backtrace-quality debug info.
         # stacktrace_logging_test guards the Release end of this: it fails if a
         # build ever drops the debug info the verbose proof logging relies on.
         add_compile_options(-gdwarf-3)
-        add_compile_options($<IF:$<OR:$<CONFIG:Debug>,$<CONFIG:Sanitize>>,-g3,-g1>)
+        add_compile_options($<IF:$<CONFIG:Debug>,-g3,-g1>)
         add_compile_options(-pthread)
         add_link_options(-pthread)
 

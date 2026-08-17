@@ -5,11 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 Three build types are supported: `Release` (default), `Debug`, and `Sanitize`.
-All keep debug information, but scaled to purpose: `Release` uses `-g1` (`/Z7`
-on MSVC) — function names plus line tables, enough for backtraces and the
-`GCS_VERBOSE_LOGGING` stacktrace annotation — while `Debug` and `Sanitize` use
-`-g3` for full interactive debugging. Use named presets from
-`CMakePresets.json` for convenience:
+All keep debug information, but scaled to purpose: `Release` (with `/Z7` as the
+MSVC equivalent) and `Sanitize` use `-g1` — function names plus line tables,
+enough for backtraces, for the `GCS_VERBOSE_LOGGING` stacktrace annotation, and
+for an ASan or UBSan report to name a function and a `file:line` — while `Debug`
+uses `-g3` for full interactive debugging. `Sanitize` is `-g1` for size: every
+test binary links the solver statically and so carries its own copy of the same
+DWARF, which at `-g3` made a 93 GiB build tree and ran the CI runner out of
+disk; at `-g1` it is 56 GiB. Build `Debug` when you are going to attach a
+debugger. Use named presets from `CMakePresets.json` for convenience:
 
 ```shell
 cmake --preset release  && cmake --build --preset release   # optimised (default)
