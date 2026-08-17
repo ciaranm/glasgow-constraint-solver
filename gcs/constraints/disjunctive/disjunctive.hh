@@ -81,6 +81,37 @@ namespace gcs
         /// for where the re-encoding lives.
         bool overload = false;
 
+        /// Edge-finding: for a window [a, b) and the set Theta of tasks it
+        /// contains, a task with one end outside that cannot fit alongside
+        /// Theta is pushed away from the window --- up to ect(Theta) if it
+        /// starts inside, down to lct(Theta) - p(Theta) - p_j if it ends
+        /// inside. Both directions. The capacity-one case of what
+        /// CumulativeRules::edge_finding does, where `rest` collapses to
+        /// p(Theta).
+        ///
+        /// Certified over the overload check's own vocabulary: the same
+        /// activity flags, the same bridge to a per-time at-most-one, and the
+        /// same fold, with the energies cited from *guarded* rows rather than
+        /// telescoped under the reason. A guarded row states the bounds a
+        /// firing would have resolved its order literals against as guard
+        /// literals instead, so it is a fact about the model, lives at
+        /// \ref overload_vocabulary_at with the rest of the vocabulary, and is
+        /// cited by every later firing over the same window. The one whose
+        /// guard is the negated conclusion is what the pol lands on.
+        ///
+        /// Off by default, and for the reason #742 records on the cumulative
+        /// side: the sweep is cubic, so it taxes a solve that never fires it.
+        bool edge_finding = false;
+
+        /// The two halves of \ref edge_finding, separately switchable. Both on
+        /// by default, so the rule is symmetric unless something asks for
+        /// otherwise; a run with one of them off measures what the other is
+        /// worth on its own, which is the only way to find out that a symmetric
+        /// rule is not symmetric in what it buys. On the cumulative side the
+        /// two halves came out at 2.2% and 51%.
+        bool edge_finding_lb = true;
+        bool edge_finding_ub = true;
+
         /// Refuse an overload conflict whose smallest window holds more than
         /// this many tasks; zero, the default, takes every conflict. Measured
         /// on generated RCPSP (#730), every cap closes fewer instances *and*
@@ -197,8 +228,11 @@ namespace gcs
      * by another. On top of that, <em>detectable precedences</em> order the
      * pairs whose ordering the bounds already force &mdash; which needs no
      * mandatory part on either task, so it prunes where time-tabling cannot.
-     * Stronger reasoning (an overload check, not-first / not-last,
-     * edge-finding) is left for future work.
+     * An <em>overload check</em> and <em>edge-finding</em> reason about the
+     * energy of a whole set of tasks in a window; both are off by default,
+     * since each costs a sweep that a solve never firing them still pays.
+     * Not-first / not-last is left for future work (#752), as is the set-based
+     * form of detectable precedences (#754).
      *
      * A task whose presence is still undecided is left out of the profile and
      * out of every push, in either role: it blocks nothing, and nothing is

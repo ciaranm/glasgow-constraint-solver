@@ -5,14 +5,31 @@ backed by VeriPB. The propagator runs time-table consistency
 specialised to `h_i = 1`, `capacity = 1`
 (see [`cumulative-proof-logging.md`](cumulative-proof-logging.md) for
 the general time-table proof machinery) plus **detectable
-precedences**, but the *proofs* do not use the time-indexed vocabulary
-at all: at unit heights and capacity, every inference the propagator
-makes is a statement about one **pair** of tasks, and is justified
-directly against the declarative pairwise OPB encoding. There is no
-per-(task, time) scaffolding anywhere — no flags, no proof-only
-variables, no prefix emitted before search (a previous design bridged
-to cumulative-style time-indexed flags at `O(n × horizon)` cost; #495
-has the measurements from removing it).
+precedences**, and behind flags an **overload check** (#730, #737–#741)
+and **edge-finding** (#751).
+
+**The declarative OPB encoding is the same whatever the rules say**, and
+it is purely pairwise: no per-(task, time) rows, no proof-only variables,
+no prefix emitted before search. What differs between the rules is the
+*justification*, and that splits in two.
+
+The pairwise rules — every `h = 1`, `c = 1` time-table inference, and
+detectable precedences — do not use a time index at all: each is a
+statement about one **pair** of tasks, justified directly against the
+encoding's own reified rows. That is what #495 measured and what the
+rewrite bought (a previous design bridged to cumulative-style
+time-indexed flags at `O(n × horizon)` cost *in the model*, before
+search, whether or not anything used them).
+
+The energetic rules cannot be pairwise — a *set* of tasks blocks an
+interval — so they re-encode time **inside the proof**, per firing: an
+activity flag per (task, time) minted by `red` over order literals the
+encoding already has, and the pairwise separation rows folded into a
+per-time at-most-one. The distinction that matters is not
+"time-indexed or not" but **where the time index lives**: in the model
+and paid for unconditionally, or in the proof and paid for only by the
+firings that want it. The OPB is genuinely untouched, which is the
+interesting part.
 
 For the constraint itself — semantics, propagator, the strict / non-strict
 flag — read `gcs/constraints/disjunctive/disjunctive.{hh,cc}`.
@@ -309,6 +326,134 @@ justification pins the involved escapes false first (one RUP under
 reason each, from `lb(l) ≥ 1`), and the separation clauses reduce to
 their before-flag disjunctions for the rest of the derivation.
 
+## Edge-finding, and the guarded window-energy row (#751)
+
+The rule: for a window `[a, b)` and the set `Θ` of tasks it contains
+(`est_i ≥ a`, `lct_i ≤ b`), a task `j` with **one** end inside that
+cannot fit alongside `Θ` is pushed out of the window:
+
+```
+est(Θ ∪ {j}) + p(Θ) + p_j > lct(Θ)      detection
+
+lb(s_j) ← a + p(Θ)                      j starts inside, ends after
+ub(s_j) ← b − p_j − p(Θ)                j ends inside, starts before
+```
+
+This is the capacity-one case of `CumulativeRules::edge_finding`, where
+`rest = energy − (capacity − h_j)·width` collapses to `p(Θ)`. A task with
+*neither* end inside spans the window and no closed form pushes it: its
+guaranteed energy is a hump in its start rather than monotone, which is
+what #752 exists for. `DisjunctiveRules::edge_finding`, off by default —
+the sweep is cubic, so a solve that never fires it still pays, which is
+the trade #742 records on the cumulative side.
+
+**The certificate is the overload check's, emitted under the negated
+conclusion.** Same window, same activity flags, same bridge, same fold.
+One step differs, and it is the whole of what a *pruning* rule needs
+that a conflict-only one does not.
+
+### Why `energy_pol` cannot serve
+
+The overload check's `energy_pol` sums a task's backward rows and
+resolves the order literals the telescope leaves over **against the
+current bounds**, one reason-wrapped RUP each. That is exactly right for
+a conflict: a conflict-only rule never has to keep a row past the
+firing. It is no use here for two reasons — a pruning rule has to carry
+the *negated conclusion* into the row, and a row good for one node is
+not worth deriving at all when the same window recurs.
+
+So the survivors are weakened onto **two guards** instead, along the
+order encoding's own monotonicity, giving
+
+```
+Σ_{t∈[a,b)} act_{i,t} + c_lo·¬[s_i ≥ L] + c_hi·[s_i ≥ Hg]  ≥  p_i
+```
+
+which holds for every value of `s_i`. It cites nothing but the flags'
+own backward `red`s and rows of the form `[s ≥ u] → [s ≥ v]`, both facts
+about the model, so it lives at `overload_vocabulary_at` with the rest
+of the vocabulary and is cited rather than re-derived.
+
+**That is `derive_guarded_window_energy`, the same lemma the cumulative
+energy rules cite** (`gcs/constraints/innards/window_energy.hh`). The
+two encodings reach it differently and share everything after: there,
+three bridges over fully reified `before` / `after` / `active` flags;
+here, the reverse half of an activity flag reified straight onto the two
+order literals, which *is* the statement those bridges are built to
+produce. `WindowRows` is the seam. Sharing it is not tidiness — the
+telescope's guard arithmetic is easy to get subtly wrong in a way that
+still verifies (see below), and one copy is one thing to get right.
+
+### The conclusion is derived, not assumed
+
+A firing discharges whichever guards its reason refutes. A contained
+task is inside the window whichever way the push goes, so both of its
+guards fall. The pushed task's are asymmetric: one is refuted by the
+reason, and **the other is the negated conclusion and is left standing**.
+What the summed `pol` lands on is therefore
+
+```
+bound·[s_j ≥ push]  ≥  p(Θ) + bound − (b − a)      > 0
+```
+
+so the `pol` *derives* the pushed literal and the framework's wrapping
+RUP only reads it off. The negated conclusion never enters the proof as
+an assumption.
+
+### Clipping is not a separate mechanism
+
+`j` has one end outside, so it is guaranteed less than `p_j` inside the
+window. That falls out with nothing added: the guard sits past
+`b − p_j + 1`, so the leftover thresholds between the two cannot be
+weakened onto it — the implication runs the wrong way — and each is
+discharged by its own literal axiom at a unit of the bound. The count is
+exactly `p_j − (b − push + 1)`.
+
+The invariant that keeps this honest: **the propagator asks
+`window_energy_bound` for exactly the guards the derivation will be
+given**, not for the state's bounds. The row is a model fact; the state
+is looser in one direction and tighter in the other, and either way the
+rule would fire on energy the certificate does not establish. There is
+no mutation lane that catches this — citing a row at a threshold the
+reason still entails yields a *stronger* row, which verifies happily —
+so it has to be read rather than tested. `disjunctive_mutations.hh`
+records the lane that was written for it and why it was removed.
+
+### What it costs, and what caches
+
+Per firing: the fold, one guard-discharge RUP per guard, and one `pol`.
+Everything else is cited. Per (task, window), measured on the standalone
+simulation (`~/claude/tmp/disj-ef-751/`, and the comment on #751):
+
+| row | derivation | cache key | stable? |
+|---|---|---|---|
+| contained task `i` | 5–7 lines | `(i, a, b)` — its guards are `(a, b − p_i + 1)`, a function of task and window | yes |
+| pushed task `j` | `p_j + 3` lines | `(j, a, b, push)`, and `push = a + p(Θ)` moves with the contained set | no |
+
+So `|Θ|` of the `|Θ| + 1` rows are keyed exactly as the bridge is and
+cache on the same terms; only the pushed task's guard moves. Deferring
+its ladder walk to the citation would buy a stable key for about one
+proof line, which is why there is one code path and not two.
+
+### Testing
+
+`disjunctive_edge_finding_test`, and the shape of it is decided by the
+rule being a *push*: once the reason context extended with the negated
+conclusion has gone contradictory, every RUP under it is vacuously
+valid, so **a corruption that merely shortens the derivation verifies**.
+The `+1` on the conclusion is the signature test, and the fixtures put
+exactly one unit between a valid push and a false one. Five lanes, all
+rejected; `sharp` measures the lb push and `mirror` the ub push, because
+measuring one half of a symmetric rule tells you almost nothing. Each
+fixture carries a control with the rule off — no task has a mandatory
+part and no pair's ordering is bounds-forced, so time-tabling and
+detectable precedences are both silent, and the control is what keeps
+that true as the rest of the propagator changes.
+
+`--search` generates instances and verifies a proof per instance, which
+is the lane that matters: hand-built fixtures are symmetric and generous
+and verify straight through certificate bugs.
+
 ## Strict-mode zero-length tasks
 
 Strict mode forbids a zero-length task from sitting strictly inside
@@ -401,7 +546,10 @@ would take from *this* encoding:
   larger when the predecessors cannot all fit before it. That is an
   energy statement about a set, so it is the same obstacle as the
   overload check below, not a variation on the pairwise proof.
-- **An overload check** (#730). The conclusion,
+- ~~**An overload check** (#730)~~ — done, #737–#741, and
+  ~~**edge-finding** (#733)~~ — done, #751. Kept here in outline because
+  the shape of the obstacle is what the two sections above are answers
+  to. The conclusion,
   `Σ_{i∈Ω} p_i > lct(Ω) − est(Ω)`, is already in this document's
   vocabulary; the derivation is the problem, and giving `Disjunctive`
   per-time `active_{i,t}` flags to reach it would reintroduce exactly
@@ -409,9 +557,15 @@ would take from *this* encoding:
   construction that avoids them — a proof-only comparator network over
   bit-encoded wires — verified for `k = 3 … 8` at equal durations, and
   a refutation rather than a propagator so far.
-- **Not-first / not-last, and edge-finding** (#732, #733). The first
-  genuinely set-based *pruning* rules, and they need whatever the
-  overload check settles on first.
+- **Not-first / not-last** (#752). The thresholds are the contained
+  set's own `min ect` and `max lst` rather than a figure computed from
+  the leftover energy. On the cumulative side this was edge-finding's
+  certificate *unchanged* — a different threshold and a different guard,
+  both already parameters of the guarded lemma — so expect the same
+  here, and expect it not to be worth its scan (0.997x there, closing
+  fewer instances). Do not inherit #746's weakening silently: at
+  capacity one the papers' standing assumption may be easier to
+  discharge, which would be a result rather than a caveat.
 - **Optional tasks for `Disjunctive2D`.** The 1D form has them
   (#735, above); the 2D 4-way separation clause would take the same
   two disjuncts per pair, but nothing asks for it yet.

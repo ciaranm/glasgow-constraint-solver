@@ -239,6 +239,69 @@ auto gcs::innards::window_energy::derive_window_energy(ProofLogger & logger, con
     return WindowEnergy{sum.emit(logger, level), shape.bound, shape.a, shape.b};
 }
 
+namespace
+{
+    // Everything the guarded derivation does once it has one row per time point
+    // saying `active_t \/ [s >= t+1] \/ ~[s >= t - p + 1]`: the telescope, the
+    // two guard weakenings, and the clipping. Shared between the two encodings,
+    // which differ only in where that row comes from --- three bridges over
+    // Cumulative's fully reified flags, or the reverse half of a Disjunctive
+    // activity flag reified straight onto the two order literals.
+    auto guarded_from_rows(ProofLogger & logger, SimpleIntegerVariableID start, const Shape & shape, const vector<ProofLine> & per_time,
+        Integer low_guard, Integer high_guard, Integer length_guard, Integer length_coeff, ProofLevel level) -> optional<GuardedWindowEnergy>
+    {
+        auto & tracker = logger.names_and_ids_tracker();
+
+        PolBuilder sum;
+        for (const auto & line : per_time)
+            sum.add(line);
+
+        // Each ~[s >= u] is cancelled by the order encoding's own monotonicity
+        // rather than by a bound: `[s >= u] \/ ~[s >= low_guard]` turns it into
+        // ~[s >= low_guard], so the survivors collapse onto one literal carrying
+        // their whole count. A survivor *above* the guard cannot be weakened onto
+        // it --- the implication runs the wrong way --- so it is discharged by its
+        // own literal axiom, at the cost of one unit of the bound.
+        auto low_coeff = 0_i, kept_u = 0_i;
+        for (Integer u = shape.u_lo; u <= shape.u_hi; ++u) {
+            if (u > low_guard)
+                sum.add(tracker.xliteral_for_ensuring(start >= u), tracker);
+            else {
+                // The survivor that *is* the guard needs no implication of its
+                // own, and adding one would discharge it at a unit's cost
+                // instead.
+                if (u != low_guard)
+                    sum.add(order_implication(logger, tracker, start, u, low_guard, level));
+                ++low_coeff;
+                ++kept_u;
+            }
+        }
+
+        // Mirror image at the other end, and where the clipping comes from: the
+        // bound falls by exactly the number of time points the threshold puts out
+        // of reach.
+        auto lost_v = 0_i;
+        for (Integer v = shape.v_lo; v <= shape.v_hi; ++v) {
+            if (v < high_guard) {
+                sum.add(! tracker.xliteral_for_ensuring(start >= v), tracker);
+                ++lost_v;
+            }
+            else if (v != high_guard)
+                sum.add(order_implication(logger, tracker, start, high_guard, v, level));
+        }
+
+        // What the emission built must be what shape_of predicted: the citer
+        // scales this line by a height and expects a specific total, so a
+        // disagreement would surface only as a rejected proof a long way from
+        // here.
+        if (kept_u - lost_v != shape.bound)
+            throw ProofError{"guarded window energy derivation and its predicted bound disagree"};
+
+        return GuardedWindowEnergy{
+            sum.emit(logger, level), shape.bound, shape.a, shape.b, low_guard, low_coeff, high_guard, length_guard, length_coeff};
+    }
+}
+
 auto gcs::innards::window_energy::derive_guarded_window_energy(ProofLogger & logger, const Task & task, Integer lo, Integer hi, Integer low_guard,
     Integer high_guard, ProofLevel level) -> optional<GuardedWindowEnergy>
 {
@@ -248,59 +311,27 @@ auto gcs::innards::window_energy::derive_guarded_window_energy(ProofLogger & log
     if (shape.empty() || shape.bound <= 0_i)
         return nullopt;
 
-    auto & tracker = logger.names_and_ids_tracker();
-    IntegerVariableID start = task.start;
-
     // No length line, so a variable length's `~[l >= p]` stays in every per-time
     // clause and the sum below carries one copy per time point. That is more
     // than the bound, and the citer pays for all of them; making it exactly the
     // bound would need the sum divided, which the leftover order literals do
     // not survive.
     auto per_time = emit_per_time_bridges(logger, task, shape, nullopt, level);
-
-    PolBuilder sum;
-    for (const auto & line : per_time)
-        sum.add(line);
-
-    // Each ~[s >= u] is cancelled by the order encoding's own monotonicity
-    // rather than by a bound: `[s >= u] \/ ~[s >= low_guard]` turns it into
-    // ~[s >= low_guard], so the survivors collapse onto one literal carrying
-    // their whole count. A survivor *above* the guard cannot be weakened onto
-    // it --- the implication runs the wrong way --- so it is discharged by its
-    // own literal axiom, at the cost of one unit of the bound.
-    auto low_coeff = 0_i, kept_u = 0_i;
-    for (Integer u = shape.u_lo; u <= shape.u_hi; ++u) {
-        if (u > low_guard)
-            sum.add(tracker.xliteral_for_ensuring(task.start >= u), tracker);
-        else {
-            // The survivor that *is* the guard needs no implication of its own,
-            // and adding one would discharge it at a unit's cost instead.
-            if (u != low_guard)
-                sum.add(order_implication(logger, tracker, start, u, low_guard, level));
-            ++low_coeff;
-            ++kept_u;
-        }
-    }
-
-    // Mirror image at the other end, and where the clipping comes from: the
-    // bound falls by exactly the number of time points the threshold puts out
-    // of reach.
-    auto lost_v = 0_i;
-    for (Integer v = shape.v_lo; v <= shape.v_hi; ++v) {
-        if (v < high_guard) {
-            sum.add(! tracker.xliteral_for_ensuring(task.start >= v), tracker);
-            ++lost_v;
-        }
-        else if (v != high_guard)
-            sum.add(order_implication(logger, tracker, start, high_guard, v, level));
-    }
-
-    // What the emission built must be what shape_of predicted: the citer scales
-    // this line by a height and expects a specific total, so a disagreement
-    // would surface only as a rejected proof a long way from here.
-    if (kept_u - lost_v != shape.bound)
-        throw ProofError{"guarded window energy derivation and its predicted bound disagree"};
-
     auto length_coeff = task.length_variable ? shape.b - shape.a : 0_i;
-    return GuardedWindowEnergy{sum.emit(logger, level), shape.bound, shape.a, shape.b, low_guard, low_coeff, high_guard, task.length, length_coeff};
+    return guarded_from_rows(logger, task.start, shape, per_time, low_guard, high_guard, task.length, length_coeff, level);
+}
+
+auto gcs::innards::window_energy::derive_guarded_window_energy(ProofLogger & logger, const WindowRows & rows, Integer lo, Integer hi,
+    Integer low_guard, Integer high_guard, ProofLevel level) -> optional<GuardedWindowEnergy>
+{
+    auto shape = shape_of(rows.length, rows.rows_t_lo, rows.rows_size, lo, hi, pair{low_guard, high_guard - 1_i});
+    if (shape.empty() || shape.bound <= 0_i)
+        return nullopt;
+
+    vector<ProofLine> per_time;
+    per_time.reserve(static_cast<size_t>((shape.b - shape.a).raw_value));
+    for (Integer t = shape.a; t < shape.b; ++t)
+        per_time.push_back(rows.row(t));
+
+    return guarded_from_rows(logger, rows.start, shape, per_time, low_guard, high_guard, 0_i, 0_i, level);
 }
