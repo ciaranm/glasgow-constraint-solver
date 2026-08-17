@@ -435,6 +435,46 @@ cache on the same terms; only the pushed task's guard moves. Deferring
 its ladder walk to the citation would buy a stable key for about one
 proof line, which is why there is one code path and not two.
 
+### What it is worth, and which half is worth it
+
+Generated RCPSP with a unary machine (`--machine-fraction 0.8`, without
+which hardly any resource has capacity one and the rule never fires),
+sizes 8–30, 68 instances at a 60 s timeout. Ratios are over the 36
+instances **every arm closed** that needed at least a hundred
+recursions — an arm that timed out contributes a lower bound rather
+than a count, and a ratio of 98/98 is not evidence.
+
+| arm | summed | median | geomean | better than off |
+|---|---|---|---|---|
+| off | 1.000x | 1.000x | 1.000x | — |
+| lb push only | 0.655x | 0.758x | 0.418x | 34/36 |
+| ub push only | 0.273x | 0.242x | 0.172x | 35/36 |
+| **both** | **0.169x** | **0.127x** | **0.099x** | **36/36** |
+
+and 46 of the 68 close within the timeout against 41 with the rule off,
+so unlike cumulative not-first/not-last this pays for itself rather than
+being a table row. Three statistics rather than one because the summed
+ratio is a division and not a sample: the largest instance carries 37%
+of the summed recursions on its own, and dropping it moves the summed
+figure (0.169x to 0.129x) far more than the median (0.127x to 0.123x).
+
+**The two halves are not worth the same, and by a factor of three.**
+That is the whole reason both are separately switchable and both are in
+the table: a run measuring only the lb push would have reported 0.758x
+and concluded the rule was marginal. Which half dominates is a property
+of the instance family rather than of the rule — the cumulative side
+found the same asymmetry with the roles reversed — so the number to
+quote for a new family is one measured on it.
+
+Adding the lb half to the ub half is a small loss on exactly one of the
+36 (233 recursions against 286). It is worth knowing that a stronger
+rule can cost search, and not worth acting on.
+
+Across every instance more than one arm closed, all arms proved the
+**same optimum**. That is the check the proof lanes cannot make: a rule
+that removed a solution would still emit perfectly valid proofs of the
+pushes it did make.
+
 ### Testing
 
 `disjunctive_edge_finding_test`, and the shape of it is decided by the
