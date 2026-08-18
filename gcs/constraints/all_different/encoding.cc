@@ -39,15 +39,16 @@ auto gcs::innards::define_clique_not_equals_encoding(
 }
 
 template <typename Hint_>
-auto gcs::innards::install_clique_duplicate_contradiction_initialiser(Propagators & propagators, const Hint_ & hint) -> void
+auto gcs::innards::install_clique_duplicate_contradiction_initialiser(Propagators & propagators, const ConstraintID & constraint_id,
+    const string & constraint_type, const string & what_is_wrong, const Hint_ & hint) -> void
 {
-    propagators.install_initialiser(
-        [hint](State &, auto & inference, ProofLogger * const logger) -> void { inference.contradiction(logger, JustifyUsingRUP{hint}, NoReason{}); },
-        InitialiserPriority::SimpleDefinition);
+    propagators.install_initial_contradiction(constraint_id, constraint_type, what_is_wrong, JustifyUsingRUP{hint});
 }
 
-template auto gcs::innards::install_clique_duplicate_contradiction_initialiser(Propagators &, const hints::AllDifferent &) -> void;
-template auto gcs::innards::install_clique_duplicate_contradiction_initialiser(Propagators &, const hints::AllDifferentExcept &) -> void;
+template auto gcs::innards::install_clique_duplicate_contradiction_initialiser(
+    Propagators &, const ConstraintID &, const string &, const string &, const hints::AllDifferent &) -> void;
+template auto gcs::innards::install_clique_duplicate_contradiction_initialiser(
+    Propagators &, const ConstraintID &, const string &, const string &, const hints::AllDifferentExcept &) -> void;
 
 auto gcs::innards::define_clique_not_equals_except_encoding(
     ProofModel & model, const vector<gcs::IntegerVariableID> & vars, const vector<gcs::Integer> & excluded) -> map<IntegerVariableID, ProofFlag>

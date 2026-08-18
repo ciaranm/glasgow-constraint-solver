@@ -131,7 +131,9 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
     // keeps -- see define_proof_model), the rows need the per-value inferences
     // of the general duplicate path below to reach the wipeout.
     if (_has_duplicates && _excluded.empty()) {
-        install_clique_duplicate_contradiction_initialiser(propagators, hints::AllDifferentExcept{constraint_id()});
+        install_clique_duplicate_contradiction_initialiser(propagators, constraint_id(), constraint_type(),
+            "An AllDifferentExcept constraint with no excluded values was posted with the same variable more than once",
+            hints::AllDifferentExcept{constraint_id()});
         return;
     }
 
