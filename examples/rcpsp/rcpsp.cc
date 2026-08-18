@@ -456,6 +456,13 @@ auto main(int argc, char * argv[]) -> int
                 "measurement is made: that detection is worth 0.6% of the summed recursions and "  //
                 "nothing at the median, so it is deliberately uncertified and throws rather than " //
                 "propagating under --prove (#757)")                                                //
+            ("disjunctive-detectable-precedences-set",
+                "Push a detectable precedence to the set's earliest completion time rather than " //
+                "to the latest single predecessor's earliest end, and the mirror --- Vilim's "    //
+                "rule rather than the pairwise one. Worth 0.386x the median recursions on its "   //
+                "own, and better on 23 of 36 on top of edge-finding. Certified over a window "    //
+                "the negated conclusion derives; off by default because those windows share "     //
+                "nothing with the energetic sweep's, which has not been measured (#754)")         //
             ("disjunctive-overload",
                 "Give every posted Disjunctive the overload check, off by default because its "   //
                 "certificate is expensive enough that whether it pays is what #730 is measuring") //
@@ -771,6 +778,7 @@ auto main(int argc, char * argv[]) -> int
         disjunctive_rules.not_first_not_last = true;
         disjunctive_rules.not_first_not_last_published = true;
     }
+    disjunctive_rules.detectable_precedences_set = options_vars["disjunctive-detectable-precedences-set"].as<bool>();
     disjunctive_rules.overload = options_vars["disjunctive-overload"].as<bool>();
     disjunctive_rules.overload_max_window = options_vars["disjunctive-overload-max-window"].as<std::size_t>();
     if (options_vars["disjunctive-overload-temporary"].as<bool>())

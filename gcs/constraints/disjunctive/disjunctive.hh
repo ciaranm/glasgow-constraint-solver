@@ -68,6 +68,41 @@ namespace gcs
         /// successor's latest start less its own duration.
         bool detectable_precedences = true;
 
+        /// Push a detectable precedence to the *set's* earliest completion
+        /// time rather than to the latest single predecessor's earliest end.
+        ///
+        /// \ref detectable_precedences pushes `lb(s_j)` to
+        /// `max_{k} ect_k` over the detected predecessors. Vilim's rule pushes
+        /// to `ect(Omega) = max_{Omega' subset Omega} (est(Omega') +
+        /// p(Omega'))`, which is larger exactly when the predecessors cannot
+        /// all fit before that point --- the set needs `p(Omega')` of room
+        /// after `est(Omega')`, and if that runs past every individual `ect_k`
+        /// then `j` cannot start until it clears. The mirror lowers `ub(s_j)`
+        /// to `lst(Omega) - p_j`, `lst(Omega)` being the set's latest start.
+        /// Computed by a left-cut scan rather than by a Theta-tree, this being
+        /// a measurement rather than a competitive implementation.
+        ///
+        /// Measured before being certified, the way
+        /// \ref not_first_not_last_published was, and unlike that one **this
+        /// was worth building**: on its own it is 0.386x the median recursions
+        /// and closes three more instances, and on top of \ref edge_finding it
+        /// is better on 23 of 36 at a median of 0.941x, closing one instance no
+        /// other arm closes. Set that against not-first/not-last's 1 of 36.
+        ///
+        /// **Certified, and by \ref not_first_not_last_published's mechanism
+        /// mirrored** (#757). The window is *derived* rather than enumerated:
+        /// `[est(Omega'), T - 1)` for the lb push, whose right edge the negated
+        /// conclusion supplies, and `[L + 1, lct(Omega'))` for the ub push,
+        /// whose left edge it does. Either way the rows cited are the standard
+        /// contained-task guarded ones, and what is new is that one of the two
+        /// guards is discharged by a *derived two-literal clause* rather than
+        /// by the reason --- the clause carrying the conclusion literal along
+        /// at that guard's coefficient, so the conclusion accumulates across
+        /// the cut and the summed pol derives it. Off by default only because
+        /// the derived windows share nothing with the sweep's, which is a cost
+        /// nobody has measured yet.
+        bool detectable_precedences_set = false;
+
         /// The overload check: a window whose fully-contained tasks carry more
         /// duration than the window is wide is infeasible. Conflict-only, and
         /// the capacity-one case of what CumulativeRules::overload does.
