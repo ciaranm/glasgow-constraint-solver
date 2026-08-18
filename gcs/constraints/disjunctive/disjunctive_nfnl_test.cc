@@ -12,13 +12,13 @@
  * before adding a fixture (`dev_docs/disjunctive-proof-logging.md` has the
  * measurement behind them):
  *
- *  - **Where the rule adds a push, that push is never tight.** Searching
- *    800,000 random unary instances found no firing whose target was the bound
- *    enumeration gives unless time-tabling or detectable precedences already
- *    reached it. So a fixture the rule is load-bearing on cannot also be one
- *    where one-past-the-conclusion is false, and the `tight_nf` / `tight_nl`
- *    fixtures below --- which do land exactly on the enumerated bound --- have
- *    the pairwise rules turned off to get there.
+ *  - **Where the rule adds a push, that push is never tight.** Of 800,000 random
+ *    unary instances, 615,263 survive time-tabling and detectable precedences;
+ *    those carry 35,189 firings that push past them, and **not one** has a
+ *    target equal to the bound enumeration gives. So a fixture the rule is
+ *    load-bearing on cannot also be one where one-past-the-conclusion is false,
+ *    and the `tight_nf` / `tight_nl` fixtures below --- which do land exactly on
+ *    the enumerated bound --- have the pairwise rules turned off to get there.
  *  - **At one contained task the push is exactly a detectable precedence's**,
  *    to that task's earliest end, under a weaker detection condition. That is
  *    where the tight pushes are, which is the same fact from the other side.

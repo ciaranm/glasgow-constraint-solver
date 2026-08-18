@@ -343,7 +343,8 @@ This is the capacity-one case of `CumulativeRules::edge_finding`, where
 `rest = energy − (capacity − h_j)·width` collapses to `p(Θ)`. A task with
 *neither* end inside spans the window and no closed form pushes it: its
 guaranteed energy is a hump in its start rather than monotone, which is
-what #752 exists for. `DisjunctiveRules::edge_finding`, off by default —
+what [not-first / not-last](#not-first--not-last-752) is for, below.
+`DisjunctiveRules::edge_finding`, off by default —
 the sweep is cubic, so a solve that never fires it still pays, which is
 the trade #742 records on the cumulative side.
 
@@ -494,6 +495,153 @@ that true as the rest of the propagator changes.
 is the lane that matters: hand-built fixtures are symmetric and generous
 and verify straight through certificate bugs.
 
+## Not-first / not-last (#752)
+
+The rule: for the same window `[a, b)` and contained set `Θ`, and a task
+`j ∉ Θ`,
+
+```
+lb(s_j) ← min_{i∈Θ} ect_i        j cannot start before all of Θ has ended
+ub(s_j) ← max_{i∈Θ} lst_i − p_j  j cannot end after all of Θ has started
+```
+
+`DisjunctiveRules::not_first_not_last`, off by default, with
+`not_first` and `not_last` separately switchable.
+
+**The certificate is edge-finding's, unchanged.** Not a rewrite of it, not
+a variation on it: `edge_finding_justification` already takes the pushed
+task's two guards and a flag saying which of them the reason discharges,
+which is the entire difference. Not-first puts the negated conclusion on
+the high guard at `min ect` and lets the reason discharge the low one;
+not-last is the mirror, with the negated conclusion on the low guard at
+`max lst − p_j + 1` and `ub(s_j) + 1` as the high one. The first generated
+proof verified, and the five mutation lanes are edge-finding's own with
+nothing added.
+
+So this section is about the *firing set*, which is the only part that is
+new.
+
+### The `continue` this rule exists for
+
+Edge-finding's sweep carries
+
+```cpp
+if (starts_inside == (j.lct <= b))
+    continue;
+```
+
+— a task with **neither** end inside the window spans it, its guaranteed
+energy inside is a hump in its start rather than monotone, and no closed
+form pushes it. Restricting the start to one side of a threshold is what
+makes a hump's minimum say something, and that is exactly what these two
+thresholds do. So the rule shares the sweep rather than adding one, and
+turning it on turns that sweep on whether or not edge-finding is set.
+
+Where `j` has one end inside, the two rules overlap and edge-finding's
+threshold is the furthest an energy argument over that window can reach,
+so its push subsumes this one and the live-bound tests drop the
+duplicate. The rule is still run over those tasks, because it is
+separately switchable and has to be worth measuring on its own.
+
+### What the lemma gives, which is not the overlap
+
+The propagator asks `window_energy_bound` for the pushed task's
+contribution rather than computing an overlap, and the two are **not the
+same number**. The guarded row states one bound uniformly over the whole
+negation range using only its two guard literals: it keeps the "ends by
+`t`" survivors the low guard decides and concedes a unit for every "starts
+after `t`" survivor the high guard does not. Those are two worst cases
+that need not occur at the same start value, so where the true minimum
+overlap sits in the middle of the range the row is strictly weaker than
+it.
+
+A propagator that fired on the overlap would be firing on energy its own
+certificate does not establish, and would emit a *rejected proof* rather
+than an unsound push. This is the same invariant edge-finding records, and
+it bites harder here, because not-first's range runs from outside the
+window to inside it and so straddles the hump.
+
+### Two facts about the rule, and what they cost the test
+
+Both came out of scanning random unary instances, and both are worth
+knowing before writing a fixture:
+
+- **Where the rule adds a push, the push is never tight.** Of 800,000
+  random instances, 615,263 survive time-tabling and detectable
+  precedences; those carry 35,189 firings that push past them, and **not
+  one** has a target equal to the bound enumeration gives.
+- **At one contained task the push is exactly a detectable precedence's**,
+  to that task's earliest end, under a weaker detection condition. Which
+  is the same fact from the other side: the exact pushes are the ones the
+  pairwise rule already makes.
+
+So a fixture cannot be both load-bearing and exact. `disjunctive_nfnl_test`
+splits the difference: `sharp` and `mirror` push a spanning task where
+nothing else does (and their controls say so), while `tight_nf` and
+`tight_nl` land on the enumerated bound with the pairwise rules turned
+off.
+
+The mutation lanes needed a third kind of fixture again, and a
+**generated** one. On every hand-built fixture at least one route
+corruption still verified — the instances are small enough that the
+closing RUP finishes from whatever the corrupted derivation left, which is
+sound and VeriPB is right to accept. Scanning found 222 generated
+instances that fired the rule and exactly one that rejected all five
+lanes. `drop_contained` (35 of 222) and `drop_pushed` (20) are the fragile
+ones, and the reason is this rule's own: `min ect` and `max lst` are
+quantities pairwise reasoning can often reach by itself, where
+edge-finding's `a + p(Θ)` is not. That is a sharper form of a finding
+#731 left behind: the fixture that best *demonstrates* a rule is not the
+fixture that makes its mutations bite.
+
+### What it is worth: it fires everywhere and buys nothing
+
+The same generated RCPSP as edge-finding's table above, and deliberately the
+same 68 instances and the same 60 s timeout, so the two are read together. Six
+arms, because "against nothing" is not the question a reader has: this rule
+shares edge-finding's sweep and its firing sets overlap, so what matters is what
+it adds *on top of* edge-finding.
+
+| arm | against | summed | median | geomean | better | closed |
+|---|---|---|---|---|---|---|
+| off | — | 1.000x | 1.000x | 1.000x | — | 41/68 |
+| not-first only | off | 0.893x | 0.884x | 0.760x | 34/36 | 41/68 |
+| not-last only | off | 0.712x | 0.796x | 0.644x | 33/36 | 41/68 |
+| **both** | off | **0.676x** | **0.668x** | **0.536x** | 36/36 | 42/68 |
+| edge-finding | off | 0.169x | 0.127x | 0.099x | 36/36 | 46/68 |
+| **edge-finding + both** | **edge-finding** | **1.024x** | **1.000x** | **1.001x** | **1/36** | **46/68** |
+
+Edge-finding's row reproduces the table above exactly — same 36 of 68 in the
+common set, same three ratios — which is the check that the two measurements are
+comparable and that #752 changed nothing about #751.
+
+**On its own the rule is worth real search**: two thirds of the recursions,
+better on 36 of 36, and one more instance closed. Both halves pay, with not-last
+the stronger — the same direction edge-finding's asymmetry runs on this family,
+which is a small piece of evidence that the asymmetry belongs to the instances
+rather than to either rule.
+
+**On top of edge-finding it is worth nothing at all.** The median is exactly
+1.000x and it is better on 1 of 36. It changes the search on **4** of the 36:
+two by a handful of recursions in either direction, and two for the worse, by
+0.7% and by 4.7%. That last one is the 1.024x summed figure on its own — it
+carries 37% of the summed recursions, and dropping it takes the summed ratio to
+1.000x. Neither arm closes a different set of instances.
+
+**And it is not that the rule does not fire.** Propagation counts differ on 57
+of the 68, so it fires nearly everywhere and reaches the same fixpoint by a
+different route — sometimes in fewer propagator invocations, sometimes more.
+Every bound it moves is a bound edge-finding was going to move.
+
+That is a sharper verdict than the cumulative side's 0.997x, and the same one:
+**certifiable for nothing, and worth nothing once the stronger rule is on.**
+Hence off by default, and hence a table row rather than a recommendation. A rung
+that is free to certify and measurably not worth running is a better row than a
+gap, which is the whole reason it is here.
+
+Across every instance more than one arm closed, all six arms proved the same
+optimum — the check no proof lane can make.
+
 ## Strict-mode zero-length tasks
 
 Strict mode forbids a zero-length task from sitting strictly inside
@@ -597,15 +745,12 @@ would take from *this* encoding:
   construction that avoids them — a proof-only comparator network over
   bit-encoded wires — verified for `k = 3 … 8` at equal durations, and
   a refutation rather than a propagator so far.
-- **Not-first / not-last** (#752). The thresholds are the contained
-  set's own `min ect` and `max lst` rather than a figure computed from
-  the leftover energy. On the cumulative side this was edge-finding's
-  certificate *unchanged* — a different threshold and a different guard,
-  both already parameters of the guarded lemma — so expect the same
-  here, and expect it not to be worth its scan (0.997x there, closing
-  fewer instances). Do not inherit #746's weakening silently: at
-  capacity one the papers' standing assumption may be easier to
-  discharge, which would be a result rather than a caveat.
+- ~~**Not-first / not-last** (#752)~~ — done, and its own section
+  above. It did inherit #746's weakening, deliberately: the guarded row
+  is what the detection may use, and at capacity one that turns out to
+  cost more than it does on `Cumulative`, since the negation range
+  straddles the hump. What the published unary rule detects instead, and
+  whether the pairwise encoding can certify *that*, is #757.
 - **Optional tasks for `Disjunctive2D`.** The 1D form has them
   (#735, above); the 2D 4-way separation clause would take the same
   two disjuncts per pair, but nothing asks for it yet.
