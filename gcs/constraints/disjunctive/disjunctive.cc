@@ -1,12 +1,14 @@
 #include <gcs/constraints/disjunctive/disjunctive.hh>
 #include <gcs/constraints/disjunctive/hints.hh>
 #include <gcs/constraints/innards/task_presence.hh>
+#include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/am1_from_pairs.hh>
 #include <gcs/innards/proofs/comparator_network.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
+#include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -16,6 +18,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -375,6 +378,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // three things and on nothing else, so they are reusable on exactly
             // the same terms.
             bridge = make_shared<map<tuple<size_t, size_t, long long, long long, long long>, ProofLine>>(),
+            // Edge-finding's window-energy rows, on the same terms: the row is
+            // a fact about the model, so it is keyed on the task, the window,
+            // the two guards and the duration it was counted at, and on nothing
+            // the search state can move.
+            guarded = make_shared<map<tuple<size_t, long long, long long, long long, long long, long long>, window_energy::GuardedWindowEnergy>>(),
             floors = make_shared<map<size_t, ProofLine>>(), escapes = make_shared<map<size_t, ProofLine>>(),
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Current guaranteed (min) and possible (max) duration of task i:
@@ -596,6 +604,36 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 return line;
             };
 
+            // The window's per-time at-most-ones: one bridge row per ordered
+            // pair and time, folded by recover_am1_from_pairs. Shared between
+            // the overload check and edge-finding, which want the same rows
+            // over the same encoding and differ only in what they add them to.
+            //
+            // Every bridge first and then every fold, rather than interleaved,
+            // because that is the order the overload check has always emitted
+            // them in and its proofs are diffed against it.
+            auto fold_at_most_ones = [&](const vector<size_t> & tasks, Integer lo, Integer hi, bool skip_fold) -> vector<ProofLine> {
+                map<Integer, vector<vector<ProofLine>>> at_most_ones;
+                for (Integer t = lo; t < hi; ++t) {
+                    auto & tri = at_most_ones[t];
+                    tri.resize(tasks.size());
+                    for (size_t y = 0; y < tasks.size(); ++y)
+                        for (size_t x = 0; x < y; ++x)
+                            tri[y].push_back(bridge_pair(tasks[x], tasks[y], t));
+                }
+                vector<ProofLine> folds;
+                if (skip_fold)
+                    return folds;
+                folds.reserve(static_cast<size_t>((hi - lo).raw_value));
+                for (Integer t = lo; t < hi; ++t) {
+                    vector<ProofLiteralOrFlag> members;
+                    for (auto i : tasks)
+                        members.push_back(activity_flag(i, t).flag);
+                    folds.push_back(recover_am1_from_pairs(*logger, members, at_most_ones[t], ProofLevel::Temporary));
+                }
+                return folds;
+            };
+
             // A task in the window occupies at least lb(l) of its time points.
             // Summing the backward rows telescopes --- each order literal
             // appears once positively and once negatively --- and what is left
@@ -612,6 +650,50 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 for (Integer v = hi - energy_len(i) + 1_i; v <= hi; ++v)
                     pol.add(logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[i] < v) >= 1_i, ProofLevel::Temporary));
                 return pol.emit(*logger, ProofLevel::Temporary);
+            };
+
+            // A task's activity over a window, as a row that says nothing about
+            // the current bounds. `energy_pol` above resolves its leftover
+            // order literals against the reason, which is exactly right for the
+            // overload check --- a conflict-only rule never has to keep a row
+            // past the firing --- and no use at all to a rule that moves a
+            // bound: edge-finding has to carry the *negated conclusion* into
+            // the row, and the row has to outlive the firing to be worth
+            // deriving.
+            //
+            // So this weakens the survivors onto two guard literals instead,
+            // along the order encoding's own monotonicity, and that is
+            // `derive_guarded_window_energy` --- the same lemma Cumulative's
+            // energy rules cite. The two encodings differ only in where the
+            // per-time row comes from: three bridges over fully reified flags
+            // there, and here the reverse half of an activity flag reified
+            // straight onto the two order literals, which is the same statement
+            // those bridges are built to produce.
+            //
+            // The row range given is the window itself rather than the task's
+            // possible-active interval, so the lemma does no clipping of its
+            // own: unlike Cumulative's, these flags are minted on demand and
+            // exist for whatever time is asked for. The clipping that does
+            // happen is the one that matters --- a guard falling inside the
+            // survivors' range, which is what turns a contained task's whole
+            // duration into a pushed task's guaranteed overlap.
+            auto guarded_energy = [&](size_t i, Integer lo, Integer hi, Integer low_guard,
+                                      Integer high_guard) -> const window_energy::GuardedWindowEnergy & {
+                auto key = make_tuple(i, lo.raw_value, hi.raw_value, low_guard.raw_value, high_guard.raw_value, energy_len(i).raw_value);
+                if (auto found = guarded->find(key); found != guarded->end())
+                    return found->second;
+                const auto * simple = std::get_if<SimpleIntegerVariableID>(&starts[i]);
+                if (! simple)
+                    throw ProofError{"disjunctive edge-finding wants a simple start variable for task " + std::to_string(i)};
+                std::function<auto(Integer)->ProofLine> row = [&](Integer t) -> ProofLine { return activity_flag(i, t).backward; };
+                auto derived = window_energy::derive_guarded_window_energy(*logger,
+                    window_energy::WindowRows{*simple, energy_len(i), lo, static_cast<size_t>((hi - lo).raw_value), row}, lo, hi, low_guard,
+                    high_guard, rules.overload_vocabulary_at);
+                if (! derived)
+                    throw ProofError{"disjunctive edge-finding: task " + std::to_string(i) + " has no derivable window energy over [" +
+                        std::to_string(lo.raw_value) + "," + std::to_string(hi.raw_value) + ") guarded by [" + std::to_string(low_guard.raw_value) +
+                        "," + std::to_string(high_guard.raw_value) + ")"};
+                return guarded->emplace(key, *derived).first->second;
             };
 
             // --- the overload certificate as a sorting network -----------------
@@ -708,6 +790,86 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 for (auto r : tasks)
                     if (zero[r])
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * *zero[r] <= 0_i, ProofLevel::Temporary);
+            };
+
+            // Edge-finding's certificate: the overload check's, emitted under
+            // the negated conclusion. Over the same window, the contained
+            // tasks' energy plus what the pushed task must still occupy if the
+            // conclusion were false, against the same per-time at-most-ones.
+            // That needs more of the window than the window has.
+            //
+            // Every guard but one is discharged by the reason. The one left
+            // standing is the negated conclusion, so what the pol lands on is
+            // `bound * [conclusion] >= something positive` --- which is to say
+            // the pol *derives* the conclusion rather than assuming it, and the
+            // framework's wrapping RUP has only to read it off.
+            //
+            // Every energy row is a guarded one, so it says nothing about the
+            // current bounds and is cited rather than re-derived. What a firing
+            // pays is the fold, the guard discharges, and one pol.
+            auto edge_finding_justification = [&](Integer a, Integer b, const vector<size_t> & inside, size_t pushed, Integer pushed_low_guard,
+                                                  Integer pushed_high_guard, bool discharge_low) {
+                return [&, a, b, inside, pushed, pushed_low_guard, pushed_high_guard, discharge_low](const ReasonLiterals & reason) -> void {
+                    logger->emit_proof_comment("disjunctive edge-finding w=" + std::to_string(inside.size()) +
+                        " span=" + std::to_string((b - a).raw_value) + (discharge_low ? " lb" : " ub"));
+                    if (std::holds_alternative<disjunctive_proof_mutation::EdgeFindingEmitNothing>(mutation))
+                        return;
+
+                    auto tasks = inside;
+                    tasks.push_back(pushed);
+                    pin_escapes(reason, tasks);
+
+                    // A Temporary vocabulary does not outlive the firing that
+                    // made it, so what the caches hold from last time has been
+                    // deleted and citing it would be citing a dead row.
+                    if (ProofLevel::Top != rules.overload_vocabulary_at) {
+                        activity->clear();
+                        bridge->clear();
+                        floors->clear();
+                        escapes->clear();
+                        guarded->clear();
+                    }
+
+                    for (auto i : tasks)
+                        for (Integer t = a; t < b; ++t)
+                            (void)activity_flag(i, t);
+
+                    PolBuilder total;
+                    for (auto line :
+                        fold_at_most_ones(tasks, a, b, std::holds_alternative<disjunctive_proof_mutation::SkipEdgeFindingFold>(mutation)))
+                        total.add(line);
+
+                    auto cite = [&](size_t i, Integer low_guard, Integer high_guard, bool do_low, bool do_high) {
+                        const auto & row = guarded_energy(i, a, b, low_guard, high_guard);
+                        total.add(row.line);
+                        // The row carries low_coeff copies of ~[s >= low_guard]
+                        // and `bound` copies of [s >= high_guard]; discharging
+                        // one means adding that many copies of the literal the
+                        // reason refutes it with.
+                        if (do_low && row.low_coeff > 0_i)
+                            total.add(logger->emit_rup_proof_line_under_reason(
+                                          reason, WPBSum{} + 1_i * (starts[i] >= row.low_guard) >= 1_i, ProofLevel::Temporary),
+                                row.low_coeff);
+                        if (do_high && row.bound > 0_i)
+                            total.add(logger->emit_rup_proof_line_under_reason(
+                                          reason, WPBSum{} + 1_i * (starts[i] < row.high_guard) >= 1_i, ProofLevel::Temporary),
+                                row.bound);
+                    };
+
+                    // A contained task is inside the window whichever way the
+                    // push goes, so the reason refutes both its guards: it
+                    // starts at or after the window does, and it starts early
+                    // enough to end inside it.
+                    for (auto i : inside) {
+                        if (std::holds_alternative<disjunctive_proof_mutation::DropContainedEnergy>(mutation) && i == inside.front())
+                            continue;
+                        cite(i, a, b - energy_len(i) + 1_i, true, true);
+                    }
+                    if (! std::holds_alternative<disjunctive_proof_mutation::DropPushedEnergy>(mutation))
+                        cite(pushed, pushed_low_guard, pushed_high_guard, discharge_low, ! discharge_low);
+
+                    total.emit(*logger, ProofLevel::Temporary);
+                };
             };
 
             // Time-table consistency, specialised to heights = 1 and
@@ -1298,6 +1460,124 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // since either way the node is refuted inside the same
                 // propagation fixpoint.
                 //
+                // Edge-finding. For a window [a, b) and the set Theta of tasks
+                // it contains, a task j with one end outside that cannot fit
+                // alongside Theta is pushed away from the window. At capacity
+                // one the cumulative form's `rest = energy - (capacity - h_j) *
+                // width` collapses to p(Theta), so the two thresholds are
+                //
+                //     starts inside, ends after   lb(s_j) -> a + p(Theta)
+                //     ends inside, starts before  ub(s_j) -> b - p_j - p(Theta)
+                //
+                // and they are mirror images over the same sweep. A task with
+                // *neither* end inside spans the window, and no closed form
+                // pushes it: its guaranteed energy is a hump in its start
+                // rather than monotone, which is the case #752 exists for.
+                //
+                // Before the overload check rather than after it, because this
+                // rule prunes where that one only refutes, and a window this
+                // has already emptied is not one the overload check has to pay
+                // a certificate for.
+                if (rules.edge_finding) {
+                    struct EdgeTask
+                    {
+                        size_t task;
+                        Integer est, lct, duration;
+                    };
+
+                    vector<EdgeTask> candidates;
+                    candidates.reserve(active_tasks.size());
+                    for (auto i : active_tasks) {
+                        // As for the overload check: a task with no guaranteed
+                        // duration carries no energy, and one not known present
+                        // might not be here to carry any.
+                        if (energy_len(i) == 0_i || ! is_present(i))
+                            continue;
+                        auto [s_lo, s_hi] = state.bounds(starts[i]);
+                        candidates.push_back(EdgeTask{i, s_lo, s_hi + energy_len(i), energy_len(i)});
+                    }
+                    sort(candidates, [](const EdgeTask & x, const EdgeTask & y) { return x.lct < y.lct; });
+
+                    vector<Integer> window_starts;
+                    window_starts.reserve(candidates.size());
+                    for (const auto & c : candidates)
+                        window_starts.push_back(c.est);
+                    sort(window_starts);
+
+                    auto reason_vars = starts;
+                    for (auto i : active_tasks)
+                        if (is_var_len(i))
+                            reason_vars.push_back(length_vars[i]);
+
+                    for (size_t w = 0; w < window_starts.size(); ++w) {
+                        if (w > 0 && window_starts[w] == window_starts[w - 1])
+                            continue;
+                        auto a = window_starts[w];
+
+                        Integer energy = 0_i;
+                        vector<size_t> inside;
+                        for (size_t c = 0; c < candidates.size(); ++c) {
+                            if (candidates[c].est < a)
+                                continue;
+                            energy += candidates[c].duration;
+                            inside.push_back(candidates[c].task);
+                            auto b = candidates[c].lct;
+                            // Candidates are in lct order, so `inside` is every
+                            // task the window contains only once the last of a
+                            // run of equal lcts has been taken.
+                            if (c + 1 < candidates.size() && candidates[c + 1].lct == b && candidates[c + 1].est >= a)
+                                continue;
+                            // A window its own contained tasks overload is a
+                            // conflict rather than a push, and the overload
+                            // check below owns it: the arithmetic here would
+                            // put the threshold past the window entirely, where
+                            // the pushed task's clipped energy is zero and
+                            // there is nothing to certify with.
+                            if (energy > b - a)
+                                continue;
+
+                            for (const auto & j : candidates) {
+                                if (j.lct <= b && j.est >= a)
+                                    continue;
+                                auto p_j = j.duration;
+                                auto starts_inside = j.est >= a;
+                                // Neither end inside: the task spans the
+                                // window, and an energy argument over it has no
+                                // closed-form push (#752).
+                                if (starts_inside == (j.lct <= b))
+                                    continue;
+                                if (! (starts_inside ? rules.edge_finding_lb : rules.edge_finding_ub))
+                                    continue;
+
+                                auto low_guard = starts_inside ? a : b - p_j - energy + 1_i;
+                                auto high_guard = starts_inside ? a + energy : b - p_j + 1_i;
+                                // Ask the lemma for exactly what the row it will
+                                // cite establishes, rather than for the state's
+                                // own figure: the row is a model fact, and firing
+                                // on more energy than it carries is a rejected
+                                // proof rather than an unsound push.
+                                auto clipped = window_energy::window_energy_bound(
+                                    p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, high_guard - 1_i});
+                                if (clipped <= 0_i || energy + clipped <= b - a)
+                                    continue;
+
+                                auto [j_lo, j_hi] = state.bounds(starts[j.task]);
+                                if (starts_inside ? high_guard <= j_lo : low_guard - 1_i >= j_hi)
+                                    continue;
+
+                                auto one_too_far = std::holds_alternative<disjunctive_proof_mutation::EdgeFindingOneTooFar>(mutation);
+                                auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, high_guard, starts_inside);
+                                if (starts_inside)
+                                    inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? high_guard + 1_i : high_guard,
+                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                else
+                                    inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
+                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                            }
+                        }
+                    }
+                }
+
                 if (rules.overload) {
                     // Measuring what a firing would cost means measuring the
                     // *smallest* window that refutes the state, since the
@@ -1458,15 +1738,6 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 // row plus the two operands' order-literal
                                 // definitions cancels the starts and lands on
                                 // degree p_x + (t - p_x + 1) - t = 1.
-                                map<Integer, vector<vector<ProofLine>>> at_most_ones;
-                                for (Integer t = lo; t < hi; ++t) {
-                                    auto & tri = at_most_ones[t];
-                                    tri.resize(tasks.size());
-                                    for (size_t b = 0; b < tasks.size(); ++b)
-                                        for (size_t a = 0; a < b; ++a)
-                                            tri[b].push_back(bridge_pair(tasks[a], tasks[b], t));
-                                }
-
                                 // (3) The fold, and (4) the energies, summed:
                                 // the folds say at most one task occupies each
                                 // of the window's hi - lo times, the energies
@@ -1474,13 +1745,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 // that, and the framework's closing RUP has
                                 // nothing left to do.
                                 PolBuilder total;
-                                if (! std::holds_alternative<disjunctive_proof_mutation::SkipOverloadFold>(mutation))
-                                    for (Integer t = lo; t < hi; ++t) {
-                                        vector<ProofLiteralOrFlag> members;
-                                        for (auto i : tasks)
-                                            members.push_back(activity_flag(i, t).flag);
-                                        total.add(recover_am1_from_pairs(*logger, members, at_most_ones[t], ProofLevel::Temporary));
-                                    }
+                                for (auto line :
+                                    fold_at_most_ones(tasks, lo, hi, std::holds_alternative<disjunctive_proof_mutation::SkipOverloadFold>(mutation)))
+                                    total.add(line);
                                 if (! std::holds_alternative<disjunctive_proof_mutation::SkipOverloadEnergy>(mutation))
                                     for (auto i : tasks)
                                         total.add(energy_pol(i, lo, hi, reason));

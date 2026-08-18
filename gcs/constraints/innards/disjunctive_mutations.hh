@@ -115,12 +115,63 @@ namespace gcs::innards
         struct RupOverloadBridge
         {
         };
+
+        /// Emit no edge-finding certificate at all, leaving the push to the
+        /// framework's wrapping RUP. The control for that rule.
+        struct EdgeFindingEmitNothing
+        {
+        };
+
+        /// Leave the per-time at-most-ones out of edge-finding's endgame, so
+        /// nothing says the window can hold only one task at a time.
+        struct SkipEdgeFindingFold
+        {
+        };
+
+        /// Leave one contained task's guarded energy row out, so the window is
+        /// charged less work than the detection counted.
+        struct DropContainedEnergy
+        {
+        };
+
+        /// Push the bound one unit past where the energy argument reaches.
+        /// **The signature test for this rule**: unlike the overload check,
+        /// whose destination makes every route valid, edge-finding prunes, so
+        /// corrupting the conclusion is what a mutation has to do. Corruptions
+        /// that merely shorten the route verify happily once the reason context
+        /// extended with the negated conclusion has gone contradictory.
+        struct EdgeFindingOneTooFar
+        {
+        };
+
+        /// Leave the *pushed* task's guarded energy row out, so nothing says
+        /// the task has to be in the window at all and the contained tasks'
+        /// energy alone has to overflow it --- which, the window having been
+        /// checked not to be overloaded, it cannot.
+        struct DropPushedEnergy
+        {
+        };
+
+        // Deliberately absent: citing the pushed task's row at the *unclipped*
+        // threshold, as if the window contained it. It was written, and it
+        // verified. A row derived at a threshold the reason still entails is a
+        // sound row --- a *stronger* one --- so a proof that cites it closes
+        // just the same, and the mutation tests nothing. What it would have
+        // been aimed at is the propagator firing on more energy than the row it
+        // cites establishes, and `cumulative-proof-logging.md` records the same
+        // conclusion: no mutation lane can catch that, so the propagator asks
+        // `window_energy_bound` for exactly the guards the derivation will be
+        // given instead, and that invariant is what has to be read rather than
+        // tested.
     }
 
     using DisjunctiveProofMutation = std::variant<disjunctive_proof_mutation::None, disjunctive_proof_mutation::EmitNothing,
         disjunctive_proof_mutation::SkipRefutation, disjunctive_proof_mutation::SkipTargetFold, disjunctive_proof_mutation::LooseDetectionBound,
         disjunctive_proof_mutation::PushOneTooFar, disjunctive_proof_mutation::OverloadEmitNothing, disjunctive_proof_mutation::SkipOverloadFold,
-        disjunctive_proof_mutation::SkipOverloadEnergy, disjunctive_proof_mutation::RupOverloadBridge>;
+        disjunctive_proof_mutation::SkipOverloadEnergy, disjunctive_proof_mutation::RupOverloadBridge,
+        disjunctive_proof_mutation::EdgeFindingEmitNothing, disjunctive_proof_mutation::SkipEdgeFindingFold,
+        disjunctive_proof_mutation::DropContainedEnergy, disjunctive_proof_mutation::EdgeFindingOneTooFar,
+        disjunctive_proof_mutation::DropPushedEnergy>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,

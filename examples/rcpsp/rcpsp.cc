@@ -424,6 +424,19 @@ auto main(int argc, char * argv[]) -> int
                 "default, so every resource is handled the same way and a variant comparison " //
                 "is not confounded by which resources happen to be unary) or disjunctive",     //
                 cxxopts::value<string>()->default_value("cumulative"))                         //
+            ("disjunctive-edge-finding",
+                "Give every posted Disjunctive edge-finding, both directions: a task with one end " //
+                "inside a window its contained tasks already fill is pushed out of it. Off by "     //
+                "default because the sweep is cubic, so a solve that never fires it still pays "    //
+                "for it (#751, and #742 for the same trade on the cumulative side)")                //
+            ("disjunctive-edge-finding-lb-only",
+                "Restrict edge-finding to the direction that raises a lower bound, and "      //
+                "--disjunctive-edge-finding-ub-only to the one that lowers an upper bound. "  //
+                "Measuring one half of a symmetric rule tells you almost nothing --- on the " //
+                "cumulative side the two came out at 2.2% and 51% --- so both halves are "    //
+                "separately switchable and the table has a row for each")                     //
+            ("disjunctive-edge-finding-ub-only",
+                "See --disjunctive-edge-finding-lb-only") //
             ("disjunctive-overload",
                 "Give every posted Disjunctive the overload check, off by default because its "   //
                 "certificate is expensive enough that whether it pays is what #730 is measuring") //
@@ -717,6 +730,15 @@ auto main(int argc, char * argv[]) -> int
     // Off unless asked for: the overload check has no certificate, so this is a
     // measurement switch rather than a model choice. See #730.
     DisjunctiveRules disjunctive_rules;
+    disjunctive_rules.edge_finding = options_vars["disjunctive-edge-finding"].as<bool>();
+    if (options_vars["disjunctive-edge-finding-lb-only"].as<bool>()) {
+        disjunctive_rules.edge_finding = true;
+        disjunctive_rules.edge_finding_ub = false;
+    }
+    if (options_vars["disjunctive-edge-finding-ub-only"].as<bool>()) {
+        disjunctive_rules.edge_finding = true;
+        disjunctive_rules.edge_finding_lb = false;
+    }
     disjunctive_rules.overload = options_vars["disjunctive-overload"].as<bool>();
     disjunctive_rules.overload_max_window = options_vars["disjunctive-overload-max-window"].as<std::size_t>();
     if (options_vars["disjunctive-overload-temporary"].as<bool>())

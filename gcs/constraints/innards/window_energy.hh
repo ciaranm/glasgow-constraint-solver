@@ -8,6 +8,8 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <cstddef>
+#include <functional>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -63,6 +65,44 @@ namespace gcs::innards::window_energy
         /// <code>length_variable &ge; length</code> is what it needs to bridge
         /// back onto <code>start</code>'s order literals.
         std::optional<SimpleIntegerVariableID> length_variable = std::nullopt;
+    };
+
+    /**
+     * \brief The per-time facts the lemma telescopes, for a caller that mints
+     * them itself rather than through \ref Task's three fully reified flags.
+     *
+     * <code>Disjunctive</code>'s encoding has no time index at all, so its
+     * certificates re-encode one inside the proof: an activity flag reified
+     * directly on a conjunction of two order literals, whose reverse half
+     * <em>is</em> the per-time fact below. That is the same statement
+     * \ref Task's three bridges are built to produce, so everything after it
+     * --- the telescope, the guard weakening, the clipping --- is shared, and
+     * the two encodings cite one lemma rather than two copies of it.
+     *
+     * <code>row(t)</code> must return a line reading
+     *
+     * <blockquote>
+     * <code>active_t &or; [start &ge; t+1] &or; ~[start &ge; t - length + 1]</code>
+     * </blockquote>
+     *
+     * and is called once per time point of the <em>clipped</em> window, in
+     * increasing order of <code>t</code>. <code>length</code> must be a length
+     * the task is guaranteed to run for, and must be the one the rows were
+     * built at --- a row minted at a different length has different order
+     * literals in it and the telescope will not close.
+     *
+     * There is no length guard here. A caller minting its own rows states the
+     * length in the flag's own definition, so it has already chosen one; if
+     * that choice is to be reason-free it must be the declared lower bound,
+     * exactly as it must be for \ref Task.
+     */
+    struct WindowRows
+    {
+        SimpleIntegerVariableID start;
+        Integer length;
+        Integer rows_t_lo;
+        std::size_t rows_size;
+        const std::function<auto(Integer)->ProofLine> & row;
     };
 
     /**
@@ -211,6 +251,18 @@ namespace gcs::innards::window_energy
      */
     [[nodiscard]] auto derive_guarded_window_energy(
         ProofLogger &, const Task &, Integer lo, Integer hi, Integer low_guard, Integer high_guard, ProofLevel) -> std::optional<GuardedWindowEnergy>;
+
+    /**
+     * \brief The same derivation over caller-minted per-time rows.
+     *
+     * Everything the \ref Task form does after its bridges: the telescope, the
+     * two guard weakenings, and the clipping that falls out of a guard sitting
+     * inside the survivors' range. See \ref WindowRows for what the rows have
+     * to say. <code>length_guard</code> and <code>length_coeff</code> come back
+     * zero, there being no length term in a row the caller minted.
+     */
+    [[nodiscard]] auto derive_guarded_window_energy(ProofLogger &, const WindowRows &, Integer lo, Integer hi, Integer low_guard, Integer high_guard,
+        ProofLevel) -> std::optional<GuardedWindowEnergy>;
 }
 
 #endif
