@@ -1427,26 +1427,84 @@ end** of the negated conclusion's start range; this takes `window_energy_bound`
 over the whole range, i.e. the minimum over both, because that is exactly what
 `derive_guarded_window_energy` can derive and the certificate then cites. Where
 each paper's setting makes the overlap monotone across that range the two
-coincide; where it does not, we fire less --- 3535 published-only firings
-against 7 of ours on one seed. #746 has the measurements and the open question,
-which is whether the divergence is a standing assumption on the task set that
-the transcription drops, or a genuine argument the window-energy lemma cannot
-make.
+coincide; where it does not, they diverge --- 3535 published-only firings
+against 7 of ours on one seed, so the two conditions are **incomparable**, each
+firing where the other does not.
 
-**The disjunctive side has since answered its own version of that question, and
-the answer is the second one.** #752 carried the same weakening onto
-`Disjunctive`, where it is worse — every one of our firings is also a published
-firing and 1,145 of 4,218 are theirs alone — and #757 found where the extra
-strength comes from: not a different lemma but a different **window**. The
-published unary argument runs over `[ect_j, lct(Ω))`, whose left edge is
-*derived from the negated conclusion* rather than carried by the reason, and a
-task is put inside it by a pairwise ordering that #734's own refutation pol
-supplies as a two-literal clause. The certificate is machine-checked in
-`~/claude/tmp/disj-derived-757/`. Whether that transfers here is not obvious —
-the pairwise separation clause it turns on is exactly what a cumulative encoding
-does not have — but "the window-energy lemma is complete for what it computes,
-and the extra detection comes from arguing over a narrower window" is the shape
-of the answer #746 was looking for.
+**The disjunctive side answered its own version of that question first.** #752
+carried the same weakening onto `Disjunctive`, where it is worse --- every one
+of our firings is also a published firing and 1,145 of 4,218 are theirs alone
+--- and #757 found where the extra strength comes from there: not a different
+lemma but a different **window**. The published unary argument runs over
+`[ect_j, lct(Ω))`, whose left edge is *derived from the negated conclusion*
+rather than carried by the reason, and a task is put inside it by a pairwise
+ordering that #734's own refutation pol supplies as a two-literal clause. That
+certificate is machine-checked, and was measured and then declined (#760).
+
+### #746, settled: the published argument is not a window-energy one
+
+**Both papers are sound as printed, and neither carries a standing assumption
+the transcription drops.** Suppose the not-first conclusion fails, so some
+schedule has `s_i < ECT(Ω)`. Every task in `Ω` has `ect_j > s_i`, so its actual
+end is after `s_i` --- which means any `j` with energy *before* `s_i` satisfies
+`s_j < s_i < s_j + p_j` and so is **running at `s_i`**, beside `i`. The capacity
+row at that one time point gives `Σ c_j ≤ C − c_i` over exactly those tasks, so
+across the whole prefix `[est(Ω), s_i)` the set can use `C − c_i` per unit and
+not `C`; over `[s_i, u)` with `u = min(ect_i, lct(Ω))` task `i` runs throughout,
+so the same holds; and `[u, lct(Ω))` supplies the full `C`. All of `e_Ω` lies in
+the window, so
+
+```
+e_Ω  ≤  (C − c_i)(u − est(Ω)) + C(lct(Ω) − u)
+     =   C(lct(Ω) − est(Ω)) − c_i(u − est(Ω))
+```
+
+which is the negation of the published condition. Mirrored for not-last, where
+the step reads: every `j` starts before `i` ends, so any `j` with energy after
+`i`'s end is running at `i`'s last time unit --- the remark Schutt & Wolf make
+when they motivate their pseudo-tasks.
+
+**That step is contiguity plus `ECT(Ω)` at a single time point**, and it lowers
+the capacity available to the set across a *prefix* of the window.
+`derive_guarded_window_energy` cannot see it: it bounds, per task, how much of
+*that task* must fall inside a window, and it is complete for that. So the
+divergence is real, and closing it is a different lemma rather than different
+thresholds.
+
+Checked as well as argued, in `~/claude/tmp/nfnl-746/`: every `(i, Ω)` pair on
+8,874 tiny CuSPs, each conclusion tested against the **complete** solution set.
+~4,800 published firings, none removing a solution --- including the ~2,000 that
+depend on the unclamped end. Two further numbers shape the work item:
+
+- **~95% of the divergence is the unclamped end** and ~5% the endpoint choice,
+  so sub-windowing alone was never going to close it;
+- but **97% of published firings are derivable over *some* window anyway**
+  (622/642 not-first, 564/578 not-last, usually not the paper's own) --- #757's
+  derived-window mechanism. The residue is reachable by no window and no task
+  set at all.
+
+### And what the gap is worth, which is why it stays open
+
+`CumulativeRules::not_first_not_last_published` fires the published condition
+verbatim, uncertified, so the difference can be priced the way #757 priced its
+own. Over `data_bl` + `data_pack` at 60 s, the same 37 instances:
+
+| arm | vs the detection we certify | better | worse |
+|---|---|---|---|
+| published, over edge-finding | 0.991x summed, 0.999x median | 23 of 37 | 0 |
+| published, over TTEF | 0.999x summed, 1.000x median | 13 of 37 | 3 |
+
+The largest instance carries **46%** of the summed saving; without it the ratio
+is 0.995x. So the published detection is genuinely stronger here --- it never
+loses on top of edge-finding, where our own rule changes the search on 5
+instances and it changes 23 --- and it is worth **under 1% of the search**,
+which is what #757 concluded on the other encoding by a different route. Neither
+detection pays for its own sweep: at 60 s the published arm closes 38 instances
+against plain edge-finding's 39.
+
+**That is the paper claim, now on both encodings.** Where a rule certifies a
+weaker detection than the literature states, the gap is priced rather than
+confessed: 0.6% of the search on `Disjunctive`, under 1% here.
 
 Testing is `cumulative_nfnl_test`, whose fixtures were searched the same way
 TTEF's were and against the same two conditions --- the rule must move a bound
