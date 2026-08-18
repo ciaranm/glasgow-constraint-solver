@@ -723,6 +723,97 @@ one measured here to be worth nothing. That is not a reason to close
 #754, whose gap is against a different rule's fixpoint rather than a
 weaker form of its own, but it is the number to beat before building it.
 
+## The set-based detectable precedence, measured before it is certified (#754)
+
+#734 pushes `lb(s_j)` to `max_{k∈Ω} ect_k` over the detected
+predecessors — the latest *single* predecessor's earliest end. Vilím's
+rule pushes to the **set's** earliest completion time,
+
+```
+ect(Ω) = max_{Ω' ⊆ Ω} ( est(Ω') + p(Ω') )        lb(s_j) ← ect(Ω)
+lst(Ω) = min_{Ω' ⊆ Ω} ( lct(Ω') − p(Ω') )        ub(s_j) ← lst(Ω) − p_j
+```
+
+which is larger exactly when the predecessors **cannot all fit** before
+that point. `DisjunctiveRules::detectable_precedences_set`, off by
+default, computed by a left-cut scan rather than a Θ-tree: the maximum
+over subsets is attained at a cut, since taking every predecessor with
+`est ≥ a` never lowers `est(Ω')` below `a` and only adds duration, so
+one pass over the ests sorted descending gives it.
+
+**It is deliberately uncertified and throws under `--prove`**, and only
+when the target it takes is past what #734's pairwise justification
+supports — a target the domain clip caps is one that justification still
+covers. This is #757's discipline: a stronger rule with no certificate
+is measured before it is built, because the certificate is the expensive
+part and a detection gap need not be a search gap.
+
+### It is sound, checked against enumeration
+
+A rule that removed a solution would measure as a large win, so the
+sweep cannot make this check. Both left-cut scans were transcribed back
+out of the propagator and every push reaching past the pairwise target
+checked against a **full enumeration** of its instance's solutions:
+
+| draw | pushes | past the pairwise target | removed a solution |
+|---|---|---|---|
+| 30,000 instances, 4 tasks | 125,060 | 33,307 | **0** |
+| 20,000 instances, 5 tasks | 114,500 | 41,566 | **0** |
+| 12,000 instances, 6 tasks | 87,214 | 37,710 | **0** |
+
+### And unlike #757 it is worth building
+
+The same 68 instances and 60 s timeout as the tables above:
+
+| arm | against | summed | median | geomean | better | closed |
+|---|---|---|---|---|---|---|
+| **set-based** | pairwise | **0.547x** | **0.386x** | **0.289x** | 34/36 | **44/68** |
+| ef | pairwise | 0.169x | 0.127x | 0.099x | 36/36 | 46/68 |
+| **ef + set-based** | ef | **0.820x** | **0.941x** | **0.824x** | **23/36** | **47/68** |
+| ef + nfnl | ef | 1.024x | 1.000x | 1.001x | 1/36 | 46/68 |
+| ef + nfnl + set-based | ef + nfnl | 0.807x | 0.955x | 0.827x | 23/36 | 46/68 |
+
+`ef` and `ef + nfnl` reproduce their earlier rows to the digit.
+
+**On its own it is worth nearly half the search** and closes three more
+instances, which is a lot for a rule that adds a linear scan rather than
+edge-finding's cubic one.
+
+**On top of edge-finding it is the first rung here that adds anything.**
+Better on **23 of 36**, worse on 6, unchanged on 7, and it closes one
+more instance — including `--size 18 --seed 5`, which *no other arm
+closes at all*. Set that against not-first/not-last's 1 of 36 and the
+published detection's 4 of 36, both at a median of exactly 1.000x.
+
+Quote the median and the geomean, not the summed figure: the largest
+instance carries **52%** of the summed total by itself, and dropping it
+takes 0.820x to 0.971x. The rule's real size is 0.941x at the median
+with a long tail — the best instance goes to 0.128x.
+
+### What the certificate wants
+
+Not edge-finding's at another threshold: **#757's shape**, which is why
+that issue was measured first. Writing `Ω'` for the maximising left cut
+and `T = est(Ω') + p(Ω')`:
+
+1. Each `i ∈ Ω'` is a detected predecessor, so `before_{i,j}` follows
+   from the reason by #734's own refutation pol, giving `s_i + l_i ≤ s_j`.
+2. Under the negated conclusion `s_j ≤ T − 1` that gives
+   `s_i ≤ T − 1 − p_i`, i.e. the two-literal clause
+   `[s_j ≥ T] ∨ ¬[s_i ≥ T − p_i]` — and `T − p_i` is exactly the **high
+   guard** of `i`'s guarded window-energy row over `[est(Ω'), T − 1)`.
+3. Cite `guarded_energy(i, est(Ω'), T − 1, est(Ω'), T − p_i)` per
+   `i ∈ Ω'`; the low guard falls to the reason (`est_i ≥ est(Ω')` is what
+   a left cut means) and the high guard to step 2's clause, which leaves
+   `[s_j ≥ T]` standing at that row's coefficient; fold the per-time
+   at-most-ones over the window and sum.
+
+The window is `p(Ω') − 1` wide and `Ω'` needs `p(Ω')` of it, so the pol
+lands on `(Σ coeffs)·[s_j ≥ T] ≥ 1` and **derives** the conclusion rather
+than assuming it. The window is derived rather than enumerated, and the
+edge derived is the *right* one here where #757 derives the left — the
+same mechanism mirrored.
+
 ## Strict-mode zero-length tasks
 
 Strict mode forbids a zero-length task from sitting strictly inside

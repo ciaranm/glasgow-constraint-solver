@@ -68,6 +68,35 @@ namespace gcs
         /// successor's latest start less its own duration.
         bool detectable_precedences = true;
 
+        /// Push a detectable precedence to the *set's* earliest completion
+        /// time rather than to the latest single predecessor's earliest end.
+        ///
+        /// \ref detectable_precedences pushes `lb(s_j)` to
+        /// `max_{k} ect_k` over the detected predecessors. Vilim's rule pushes
+        /// to `ect(Omega) = max_{Omega' subset Omega} (est(Omega') +
+        /// p(Omega'))`, which is larger exactly when the predecessors cannot
+        /// all fit before that point --- the set needs `p(Omega')` of room
+        /// after `est(Omega')`, and if that runs past every individual `ect_k`
+        /// then `j` cannot start until it clears. The mirror lowers `ub(s_j)`
+        /// to `lst(Omega) - p_j`, `lst(Omega)` being the set's latest start.
+        /// Computed by a left-cut scan rather than by a Theta-tree, this being
+        /// a measurement rather than a competitive implementation.
+        ///
+        /// **Uncertified for now**, and throws rather than propagating under
+        /// proof logging --- but only where the target it takes is past what
+        /// \ref detectable_precedences' own justification supports, a target
+        /// the domain clip caps being one that justification still covers.
+        /// Measured before being certified, the way
+        /// \ref not_first_not_last_published was, and unlike that one **this
+        /// is worth building**: on its own it is 0.386x the median recursions
+        /// and closes three more instances, and on top of \ref edge_finding it
+        /// is better on 23 of 36 at a median of 0.941x, closing one instance no
+        /// other arm closes. Set that against not-first/not-last's 1 of 36.
+        /// See `dev_docs/disjunctive-proof-logging.md`, which also carries the
+        /// certificate the rule wants (#757's shape, mirrored: a window whose
+        /// *right* edge the negated conclusion derives).
+        bool detectable_precedences_set = false;
+
         /// The overload check: a window whose fully-contained tasks carry more
         /// duration than the window is wide is infeasible. Conflict-only, and
         /// the capacity-one case of what CumulativeRules::overload does.

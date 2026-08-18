@@ -1392,20 +1392,61 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // has no zero-length escape to pin false.
                         optional<size_t> predecessor, successor;
                         Integer predecessor_eet = 0_i, successor_lst = 0_i;
+                        // The whole detected sets, for the set-based rule
+                        // below: (est, p) for the predecessors and (lct, p)
+                        // for the successors. Only collected when something
+                        // asks for them.
+                        vector<pair<Integer, Integer>> predecessors, successors;
                         for (auto k : active_tasks) {
                             if (k == j || min_len(k) == 0_i || ! is_present(k))
                                 continue;
                             auto [k_lb, k_ub] = state.bounds(starts[k]);
                             auto eet_k = k_lb + min_len(k);
-                            if (cur_lb + min_len(j) > k_ub && (! predecessor || eet_k > predecessor_eet)) {
-                                predecessor = k;
-                                predecessor_eet = eet_k;
+                            if (cur_lb + min_len(j) > k_ub) {
+                                if (! predecessor || eet_k > predecessor_eet) {
+                                    predecessor = k;
+                                    predecessor_eet = eet_k;
+                                }
+                                if (rules.detectable_precedences_set)
+                                    predecessors.emplace_back(k_lb, min_len(k));
                             }
-                            if (eet_k > cur_ub && (! successor || k_ub < successor_lst)) {
-                                successor = k;
-                                successor_lst = k_ub;
+                            if (eet_k > cur_ub) {
+                                if (! successor || k_ub < successor_lst) {
+                                    successor = k;
+                                    successor_lst = k_ub;
+                                }
+                                if (rules.detectable_precedences_set)
+                                    successors.emplace_back(k_ub + min_len(k), min_len(k));
                             }
                         }
+
+                        // Vilim's set-based thresholds, by a left-cut scan
+                        // rather than a Theta-tree. The maximum over subsets
+                        // is attained at a cut --- for a candidate `a` among
+                        // the ests, taking every predecessor with `est >= a`
+                        // never lowers `est(Omega')` below `a` and only adds
+                        // duration --- so sorting by est descending and
+                        // accumulating gives it in one pass.
+                        auto set_ect = [&]() -> Integer {
+                            sort(predecessors, [](const auto & x, const auto & y) { return x.first > y.first; });
+                            Integer best = predecessor_eet, running = 0_i;
+                            for (const auto & [est_k, p_k] : predecessors) {
+                                running += p_k;
+                                best = max(best, est_k + running);
+                            }
+                            return best;
+                        };
+                        // The mirror: `lst(Omega)` is the smallest
+                        // `lct(Omega') - p(Omega')`, so sort by lct ascending.
+                        auto set_lst = [&]() -> Integer {
+                            sort(successors, [](const auto & x, const auto & y) { return x.first < y.first; });
+                            Integer best = successor_lst, running = 0_i;
+                            for (const auto & [lct_k, p_k] : successors) {
+                                running += p_k;
+                                best = min(best, lct_k - running);
+                            }
+                            return best;
+                        };
 
                         auto one_too_far = std::holds_alternative<disjunctive_proof_mutation::PushOneTooFar>(mutation);
 
@@ -1414,7 +1455,14 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // domain is a contradiction, and the target has to
                         // stay somewhere the order literal exists.
                         if (predecessor) {
-                            auto target = min(predecessor_eet, cur_ub + 1_i) + (one_too_far ? 1_i : 0_i);
+                            auto reach = rules.detectable_precedences_set ? set_ect() : predecessor_eet;
+                            auto target = min(reach, cur_ub + 1_i) + (one_too_far ? 1_i : 0_i);
+                            // Only what the set rule reaches *past* the
+                            // pairwise one lacks a certificate --- and only
+                            // after the clip, since a target the domain caps
+                            // is one the pairwise justification still covers.
+                            if (logger && target > min(predecessor_eet, cur_ub + 1_i) + (one_too_far ? 1_i : 0_i))
+                                throw UnimplementedException{"disjunctive set-based detectable precedences have no certificate yet (#754)"};
                             if (target > cur_lb) {
                                 auto justify = [&, j, k = *predecessor, cur_lb, target](const ReasonLiterals & reason) -> void {
                                     logger->emit_proof_comment(
@@ -1434,7 +1482,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // runs, the state holds the pushed bound, which the
                         // reason does not support.
                         if (successor) {
-                            auto target = max(successor_lst - min_len(j), cur_lb - 1_i) - (one_too_far ? 1_i : 0_i);
+                            auto reach = rules.detectable_precedences_set ? set_lst() : successor_lst;
+                            auto target = max(reach - min_len(j), cur_lb - 1_i) - (one_too_far ? 1_i : 0_i);
+                            if (logger && target < max(successor_lst - min_len(j), cur_lb - 1_i) - (one_too_far ? 1_i : 0_i))
+                                throw UnimplementedException{"disjunctive set-based detectable precedences have no certificate yet (#754)"};
                             if (target < cur_ub) {
                                 auto justify = [&, j, k = *successor, cur_ub, target](const ReasonLiterals & reason) -> void {
                                     logger->emit_proof_comment(
