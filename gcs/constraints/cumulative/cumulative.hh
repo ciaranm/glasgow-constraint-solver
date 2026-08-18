@@ -225,9 +225,9 @@ namespace gcs
      * horizontally elastic overload rungs, edge-finding, its time-table and
      * energetic forms, and not-first / not-last --- is behind the flags in
      * \ref CumulativeRules, off by default because each costs a sweep that a
-     * solve never firing it still pays. All of them are certified but \ref
-     * CumulativeRules::energetic_edge_finding, which refuses to run against a
-     * proof logger.
+     * solve never firing it still pays. Whether a rule is certified is stated
+     * on its own flag, and one that is not refuses to run against a proof
+     * logger rather than emit a proof VeriPB would reject.
      *
      * A task whose presence is still undecided is left out of the profile and
      * out of the overload check's energy set entirely, and its own start bounds

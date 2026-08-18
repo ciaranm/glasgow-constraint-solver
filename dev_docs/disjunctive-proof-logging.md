@@ -888,7 +888,7 @@ gap, which is the whole reason it is here.
 Across every instance more than one arm closed, all six arms proved the same
 optimum — the check no proof lane can make.
 
-### The published detection, and what it is worth: 37% more firings, 0.6% less search (#757)
+### The published detection, and what it is worth: 1.6-1.7x the firings, 0.6% less search (#757)
 
 What the section above certifies is a **strict weakening** of the rule as
 published (Baptiste, Le Pape and Nuijten; Vilím's Θ-tree presentation).
@@ -915,17 +915,19 @@ is one of theirs, by arithmetic rather than by observation. Counting them
 over the same transcribed sweep, and checking every published firing
 against a full enumeration of its instance's solutions:
 
-| draw | ours | published | only ours | firings that removed a solution |
-|---|---|---|---|---|
-| 20,000 instances, 4 tasks | 44,720 | 75,806 | **0** | **0** |
-| 20,000 instances, 5 tasks | 89,039 | 143,525 | **0** | **0** |
+| draw | ours | published | published / ours | theirs alone | only ours | firings that removed a solution |
+|---|---|---|---|---|---|---|
+| 20,000 instances, 4 tasks | 44,720 | 75,806 | **1.70×** | 41% | **0** | **0** |
+| 20,000 instances, 5 tasks | 89,039 | 143,525 | **1.61×** | 38% | **0** | **0** |
 
-So the published condition detects **1.7×** as much. The question #757
-exists to answer is whether that is worth a certificate, and the
-certificate is not free: `[ect_j, lct(Θ))` is keyed on `j`'s own lower
-bound, so its activity flags, bridge rows, folds and guarded rows share
-with nothing the sweep already derives — #737's caching result is about
-windows the *instance* gives, and these move with the search.
+So the published condition detects **1.7×** as much at four tasks and
+**1.6×** at five, and 38-41% of its firings are ones ours never makes.
+The question #757 exists to answer is whether that is worth a
+certificate, and the certificate is not free: `[ect_j, lct(Θ))` is keyed
+on `j`'s own lower bound, so its activity flags, bridge rows, folds and
+guarded rows share with nothing the sweep already derives — #737's
+caching result is about windows the *instance* gives, and these move with
+the search.
 
 **It is not worth it.** The same 68 instances and the same 60 s timeout
 as the two tables above, so all three read together:
@@ -939,10 +941,10 @@ as the two tables above, so all three read together:
 | **ef + nfnl published** | **ef** | **1.026x** | **1.000x** | **1.036x** | 4/36 | 46/68 |
 
 Three of those rows reproduce the earlier tables to the digit, which is
-the check that the runs are comparable. **The 37% detection gap buys
-0.6% of the summed recursions and nothing at all at the median.** It is
-not that the stronger detection sits idle — propagation counts differ on
-**64 of 68** instances, and it changes the search on 21 of the 36 — but
+the check that the runs are comparable. **That 1.6-1.7× detection gap
+buys 0.6% of the summed recursions and nothing at all at the median.** It
+is not that the stronger detection sits idle — propagation counts differ
+on **64 of 68** instances, and it changes the search on 21 of the 36 — but
 every change is small and they run both ways: the best instance goes to
 0.965x and the worst to 1.060x. On top of edge-finding it is a small
 loss, and the 1.026x is one instance at 4.05x carrying it.
@@ -956,11 +958,12 @@ The result is worth more than the propagator would have been. #746 asks,
 on the cumulative side, whether certifying a weaker detection than the
 literature states costs anything real, and could not answer it. **This is
 that answer, on the encoding where the gap is cleanest**: the weakening
-is strict, it is 37% of the firings, and it is worth 0.6% of the search.
-What is certifiable here is not what the rule can detect but what
-detection is *worth* — and a rule that fires 1.7× as often reaching the
-same fixpoint is the same finding as not-first/not-last reaching
-edge-finding's fixpoint by a different route, one rung further down.
+is strict, it gives up 38-41% of the published firings, and it is worth
+0.6% of the search. What is certifiable here is not what the rule can
+detect but what detection is *worth* — and a rule that fires 1.6-1.7× as
+often reaching the same fixpoint is the same finding as not-first/not-last
+reaching edge-finding's fixpoint by a different route, one rung further
+down.
 
 It also prices #754. Set-based detectable precedences want the same
 derived-window mechanism, and their stage zero found `ect(Ω)` reaching

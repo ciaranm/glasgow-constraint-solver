@@ -1433,13 +1433,15 @@ firing where the other does not.
 
 **The disjunctive side answered its own version of that question first.** #752
 carried the same weakening onto `Disjunctive`, where it is worse --- every one
-of our firings is also a published firing and 1,145 of 4,218 are theirs alone
---- and #757 found where the extra strength comes from there: not a different
-lemma but a different **window**. The published unary argument runs over
-`[ect_j, lct(Ω))`, whose left edge is *derived from the negated conclusion*
-rather than carried by the reason, and a task is put inside it by a pairwise
-ordering that #734's own refutation pol supplies as a two-literal clause. That
-certificate is machine-checked, and was measured and then declined (#760).
+of our firings is also a published firing, and over #757's wider draw (20,000
+random instances at each of four and five tasks) 38-41% of the published firings
+are theirs alone --- and #757 found where the extra strength comes from there:
+not a different lemma but a different **window**. The published unary argument
+runs over `[ect_j, lct(Ω))`, whose left edge is *derived from the negated
+conclusion* rather than carried by the reason, and a task is put inside it by a
+pairwise ordering that #734's own refutation pol supplies as a two-literal
+clause. That certificate is machine-checked, and was measured and then declined
+(#760).
 
 ### #746, settled: the published argument is not a window-energy one
 

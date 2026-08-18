@@ -456,7 +456,7 @@ auto main(int argc, char * argv[]) -> int
             ("disjunctive-not-first-not-last-published",
                 "Detect not-first / not-last by the published unary condition rather than by the " //
                 "guarded window-energy one: the published rule argues over a narrower window "     //
-                "whose left edge the negated conclusion derives, and fires 1.7x as often. "        //
+                "whose left edge the negated conclusion derives, and fires 1.6-1.7x as often. "    //
                 "Implies --disjunctive-not-first-not-last. A measurement switch, and the "         //
                 "measurement is made: that detection is worth 0.6% of the summed recursions and "  //
                 "nothing at the median, so it is deliberately uncertified and throws rather than " //
