@@ -130,6 +130,11 @@ namespace gcs
         /// whether or not \ref edge_finding is set. Off by default for the same
         /// reason, and because it is measurably not worth running: see
         /// `dev_docs/disjunctive-proof-logging.md`.
+        ///
+        /// The detection is a strict weakening of the rule as published, and
+        /// deliberately so --- see \ref not_first_not_last_published, which
+        /// measures what that weakening costs, and answers: 0.6% of the summed
+        /// recursions, nothing at the median.
         bool not_first_not_last = false;
 
         /// The two halves of \ref not_first_not_last, separately switchable, as
@@ -137,6 +142,45 @@ namespace gcs
         /// lower bound and not-last lowers an upper bound.
         bool not_first = true;
         bool not_last = true;
+
+        /// Detect \ref not_first_not_last by the published unary condition
+        /// rather than by the guarded window-energy one.
+        ///
+        /// #752 inherits `Cumulative`'s detection, which asks whether the
+        /// window `[a, b)` the sweep enumerates is overfilled by the contained
+        /// set plus whatever of `j` must lie in it under the negated
+        /// conclusion. The rule as published (Baptiste, Le Pape and Nuijten;
+        /// Vilim's Theta-tree presentation) argues over a *different* window
+        /// instead --- for not-first, `[ect_j, lct(Theta))`, whose left edge
+        /// the negated conclusion derives:
+        ///
+        ///     p(Theta) > lct(Theta) - ect_j          not-first
+        ///     p(Theta) > ub(s_j) - est(Theta)        not-last, the mirror
+        ///
+        /// Ours is a strict subset of that --- the window-energy figure at
+        /// `s_j = lb(s_j)` is at most `ect_j - a`, so every firing of ours is
+        /// one of these --- and measured over 30,000 random unary instances the
+        /// published condition fires 37% more often (#757).
+        ///
+        /// **Deliberately uncertified**, and it throws rather than
+        /// propagating when proof logging is on: a rule that quietly weakened
+        /// itself under `--prove` would confound the very comparison this
+        /// switch exists to make. The certificate is settled in simulation ---
+        /// it is \ref edge_finding's, with the low guard discharged by a
+        /// derived two-literal clause rather than by the reason --- and was
+        /// **not built**, because this switch is what decided that:
+        /// **37% more detection is worth 0.6% of the summed recursions and
+        /// nothing at the median**, and a little worse than nothing on top of
+        /// edge-finding. Not for want of firing --- propagation counts differ
+        /// on 64 of 68 instances. See `dev_docs/disjunctive-proof-logging.md`.
+        ///
+        /// So this exists to reproduce a measurement, in the way
+        /// \ref overload_max_window does, and not because it is expected to
+        /// pay. What it establishes is worth more than the propagator would
+        /// have been: it prices, on the encoding where the gap is cleanest,
+        /// what #746 asks and cannot answer --- how much certifying a weaker
+        /// detection than the literature states actually costs.
+        bool not_first_not_last_published = false;
 
         /// Refuse an overload conflict whose smallest window holds more than
         /// this many tasks; zero, the default, takes every conflict. Measured

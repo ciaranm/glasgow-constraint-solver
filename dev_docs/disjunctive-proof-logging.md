@@ -642,6 +642,87 @@ gap, which is the whole reason it is here.
 Across every instance more than one arm closed, all six arms proved the same
 optimum — the check no proof lane can make.
 
+### The published detection, and what it is worth: 37% more firings, 0.6% less search (#757)
+
+What the section above certifies is a **strict weakening** of the rule as
+published (Baptiste, Le Pape and Nuijten; Vilím's Θ-tree presentation).
+The published conditions do not ask about the enumerated window at all:
+
+```
+p(Θ) > lct(Θ) − ect_j            not-first
+p(Θ) > ub(s_j) − est(Θ)          not-last
+```
+
+Under the negated conclusion `s_j < min ect(Θ)`, every `i ∈ Θ` has
+`s_j < ect_i`, so `j` cannot be *after* `i`, so `j` is *before* it — and
+then all of `Θ` has to fit in `[ect_j, lct(Θ))`, a **narrower** window
+than `[a, b)`, whose left edge the negated conclusion *derives* rather
+than the reason carrying it. `DisjunctiveRules::not_first_not_last_published`
+is that detection, over the same sweep, the same contained sets and the
+same thresholds — the condition is the only thing that differs, which is
+what makes the two comparable.
+
+**Ours is a subset of it, and not by luck.** The window-energy figure
+over `[a, b)` at `s_j = lb(s_j)` is at most `ect_j − a`, so
+`p(Θ) + clipped > b − a` implies `p(Θ) > b − ect_j`: every firing of ours
+is one of theirs, by arithmetic rather than by observation. Counting them
+over the same transcribed sweep, and checking every published firing
+against a full enumeration of its instance's solutions:
+
+| draw | ours | published | only ours | firings that removed a solution |
+|---|---|---|---|---|
+| 20,000 instances, 4 tasks | 44,720 | 75,806 | **0** | **0** |
+| 20,000 instances, 5 tasks | 89,039 | 143,525 | **0** | **0** |
+
+So the published condition detects **1.7×** as much. The question #757
+exists to answer is whether that is worth a certificate, and the
+certificate is not free: `[ect_j, lct(Θ))` is keyed on `j`'s own lower
+bound, so its activity flags, bridge rows, folds and guarded rows share
+with nothing the sweep already derives — #737's caching result is about
+windows the *instance* gives, and these move with the search.
+
+**It is not worth it.** The same 68 instances and the same 60 s timeout
+as the two tables above, so all three read together:
+
+| arm | against | summed | median | geomean | better | closed |
+|---|---|---|---|---|---|---|
+| nfnl | off | 0.676x | 0.668x | 0.536x | 36/36 | 42/68 |
+| **nfnl published** | **nfnl** | **0.994x** | **1.000x** | **1.002x** | 9/36 | 42/68 |
+| ef | off | 0.169x | 0.127x | 0.099x | 36/36 | 46/68 |
+| ef + nfnl | ef | 1.024x | 1.000x | 1.001x | 1/36 | 46/68 |
+| **ef + nfnl published** | **ef** | **1.026x** | **1.000x** | **1.036x** | 4/36 | 46/68 |
+
+Three of those rows reproduce the earlier tables to the digit, which is
+the check that the runs are comparable. **The 37% detection gap buys
+0.6% of the summed recursions and nothing at all at the median.** It is
+not that the stronger detection sits idle — propagation counts differ on
+**64 of 68** instances, and it changes the search on 21 of the 36 — but
+every change is small and they run both ways: the best instance goes to
+0.965x and the worst to 1.060x. On top of edge-finding it is a small
+loss, and the 1.026x is one instance at 4.05x carrying it.
+
+So the certificate is **not built**, and the switch is here as the record
+of why. It throws rather than propagating under `--prove`: a rule that
+quietly weakened itself when proof logging came on would confound exactly
+the comparison it exists to make.
+
+The result is worth more than the propagator would have been. #746 asks,
+on the cumulative side, whether certifying a weaker detection than the
+literature states costs anything real, and could not answer it. **This is
+that answer, on the encoding where the gap is cleanest**: the weakening
+is strict, it is 37% of the firings, and it is worth 0.6% of the search.
+What is certifiable here is not what the rule can detect but what
+detection is *worth* — and a rule that fires 1.7× as often reaching the
+same fixpoint is the same finding as not-first/not-last reaching
+edge-finding's fixpoint by a different route, one rung further down.
+
+It also prices #754. Set-based detectable precedences want the same
+derived-window mechanism, and their stage zero found `ect(Ω)` reaching
+past everything else running on 2.9% of nodes — a *smaller* gap than the
+one measured here to be worth nothing. That is not a reason to close
+#754, whose gap is against a different rule's fixpoint rather than a
+weaker form of its own, but it is the number to beat before building it.
+
 ## Strict-mode zero-length tasks
 
 Strict mode forbids a zero-length task from sitting strictly inside
