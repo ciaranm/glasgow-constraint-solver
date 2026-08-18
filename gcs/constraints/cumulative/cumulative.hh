@@ -176,12 +176,9 @@ namespace gcs
         /// **incomparable** --- each fires where the other does not --- so this
         /// replaces the rule rather than strengthening it.
         ///
-        /// **Deliberately uncertified**, and \ref Cumulative::define_proof_model
-        /// throws rather than propagating when it is set: the published
-        /// condition is sound (see below), but its argument is not one
-        /// `derive_guarded_window_energy` can make, and a rule that quietly
-        /// weakened itself under `--prove` would confound the comparison this
-        /// switch exists to make.
+        /// **Certified, and not by the window-energy lemma.** Its argument is
+        /// not one `derive_guarded_window_energy` can make --- which is what
+        /// #746 asked --- and what it is instead is contiguity.
         ///
         /// **Why it is sound, which is #746's answer.** Suppose the not-first
         /// conclusion fails, so some schedule has `s_i < ECT(Omega)`. Every
@@ -205,7 +202,18 @@ namespace gcs
         /// and the certifiable one is worth **under 1% of the search**, which
         /// is what #757 found on the disjunctive encoding by a different route.
         /// Neither detection pays for its own sweep: at 60 s both close fewer
-        /// instances than leaving the rule off.
+        /// instances than leaving the rule off --- which is why this is off by
+        /// default, and the only reason it is.
+        ///
+        /// **What the certificate costs.** One row per (contained task, prefix
+        /// time) saying a task running earlier is still running at the meeting
+        /// point, plus a pin putting the pushed task there beside it. Where
+        /// `ect_j >= ECT(Omega)` one pol does the whole rule. Where it does
+        /// not, no single time point is where both are running --- the meeting
+        /// point is `s_j` itself, which is a variable --- and the derivation
+        /// becomes a chain walking the bound up `p_j` at a time, in the way the
+        /// time-table push already does. The mirror reads the same sentence
+        /// backwards, over `LST(Omega)` and the suffix.
         bool not_first_not_last_published = false;
     };
 

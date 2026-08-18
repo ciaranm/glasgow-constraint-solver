@@ -1526,11 +1526,10 @@ depend on the unclamped end. Two further numbers shape the work item:
   derived-window mechanism. The residue is reachable by no window and no task
   set at all.
 
-### And what the gap is worth, which is why it stays open
+### And what the gap is worth
 
 `CumulativeRules::not_first_not_last_published` fires the published condition
-verbatim, uncertified, so the difference can be priced the way #757 priced its
-own. Over `data_bl` + `data_pack` at 60 s, the same 37 instances:
+verbatim, so the difference can be priced the way #757 priced its own. Over `data_bl` + `data_pack` at 60 s, the same 37 instances:
 
 | arm | vs the detection we certify | better | worse |
 |---|---|---|---|
@@ -1548,6 +1547,63 @@ against plain edge-finding's 39.
 **That is the paper claim, now on both encodings.** Where a rule certifies a
 weaker detection than the literature states, the gap is priced rather than
 confessed: 0.6% of the search on `Disjunctive`, under 1% here.
+
+### Certifying the published condition, by contiguity (#746)
+
+The measurement above is a reason to leave the switch off by default, not a
+reason to leave it unprovable, so the certificate is built. It is not the
+window-energy lemma's --- §"#746, settled" above is the proof that it cannot
+be --- and what it is instead is the contiguity argument written down there,
+turned into rows.
+
+Over the contained set's own window `[est(Ω), lct(Ω))`, and for not-first:
+
+```
+active_{k,u}  ⟹  active_{k,v}        for k ∈ Ω and u ≤ v < ECT(Ω)
+```
+
+because `before` is monotone in the model and `after_{k,v}` follows from the
+reason's `s_k ≥ est_k` and `l_k ≥ p_k`, `ect_k` reaching `ECT(Ω)` by definition
+of `Ω`. So Ω's whole load over the prefix is capped by its load at one time
+point, and if the pushed task is running *there* the capacity row at that point
+caps the prefix at `C − c_j` rather than `C`. Summed over the window that is
+exactly the published inequality.
+
+The pushed task is running at `v` when `s_j ≤ v` — the negated conclusion,
+which reaches `ECT(Ω) − 1` — and `s_j + l_j ≥ v + 1`, which the reason reaches
+at `ect_j`. Both hold at `v = ECT(Ω) − 1` exactly when `ect_j ≥ ECT(Ω)`, and
+then **one pol does the whole rule**. Where `ect_j < ECT(Ω)` no fixed time
+point works: the meeting point is `s_j` itself, a variable. The derivation
+becomes a **chain**, walking the bound up `p_j` at a time in the way the
+time-table push already does, each rung weakened by its own conclusion and
+deposited under the reason for the next rung's unit propagation. Every rung
+charges the window at least what the detection counted --- rung `i` caps
+`[est(Ω), min(r_i + p_j, lct(Ω)))` and `r_i ≥ lb(s_j)` --- so the first already
+suffices and the rest only carry the bound the rest of the way. The chain stops
+at the target or at a running bound the reason already contradicts, whichever
+comes first; walking past the pushed task's own domain was a real bug the
+`--random` lane found.
+
+Not-last is the same sentence backwards: Ω's activity is monotone *down* from
+`LST(Ω)`, the suffix rather than the prefix is capped, and it is the pushed
+task's own upper bound rather than its lower one that puts it beside them.
+
+Everything is stated in **activity** space rather than in the bit-linearised
+contribution space the capacity rows use, because contiguity is a statement
+about activity. A variable-height task's capacity term is converted back with
+the same `guaranteed_contribution` line `energy_contribution` would have used to
+convert the other way, so the line count is the same either way.
+
+**What the mutation lanes say, and what they cannot.** `emit_nothing` is
+rejected on 171 of 238 firing instances, so the derivation is load-bearing;
+`drop_pin`, `drop` and `toofar` all bite. Dropping the *contiguity rows* does
+not, in either a one-row or an every-row form, on any of ~1,700 instances: the
+detection's own margin absorbs `lb(h_k)` units per row, and what the pol no
+longer reaches the wrapping RUP finishes. `cumulative_mutations.hh` records
+that as deliberately absent rather than shipping a lane that always passes. The
+rows stay because without them the pol's arithmetic cannot reach the published
+threshold at all, and a proof whose pol stops short of its own claim is not a
+certificate of the published rule however VeriPB finishes it.
 
 Testing is `cumulative_nfnl_test`, whose fixtures were searched the same way
 TTEF's were and against the same two conditions --- the rule must move a bound

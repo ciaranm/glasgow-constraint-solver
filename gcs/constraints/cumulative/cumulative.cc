@@ -42,6 +42,7 @@ using std::make_unique;
 using std::max;
 using std::min;
 using std::move;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::size_t;
@@ -349,11 +350,6 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
 
 auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
 {
-    // A propagator that infers what it cannot justify is worse than one that
-    // declines: refuse here rather than emit a proof VeriPB will reject.
-    if (_rules.not_first_not_last_published)
-        throw UnimplementedException{"the published not-first / not-last detection is not certified: see #746"};
-
     // Time-table OPB encoding:
     //   for each task i and each time point t in its possible-active range:
     //     before_{i,t}  ⇔  starts[i] ≤ t
@@ -1049,6 +1045,255 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         return {contrib_line, 1_i};
     };
 
+    // --- #746: the published not-first / not-last detection -----------------
+    //
+    // `not_first_not_last` above asks what the guarded window-energy lemma can
+    // *derive*: the least overlap the pushed task can have with the window over
+    // the negated conclusion's whole start range. Schutt & Wolf (CP 2010,
+    // Proposition 1) and Kameugne et al. (CPAIOR 2018, rule (NF)) charge the
+    // overlap at *one end* of that range instead, over the contained set's own
+    // window `[est(Omega), lct(Omega))`:
+    //
+    //     e(Omega) + c_j * (min(ect_j, lct(Omega)) - est(Omega))
+    //         > C * (lct(Omega) - est(Omega))         =>  s_j >= ECT(Omega)
+    //
+    // and the mirror. That is more than the lemma derives, so it is not a
+    // window-energy argument at all, and this is what it is instead.
+    //
+    // **Contiguity.** Every task in Omega has `ect_k >= ECT(Omega)`, so it
+    // cannot finish before `ECT(Omega)`: if it is running at any time in
+    // `[est(Omega), ECT(Omega))` it is still running at the end of that
+    // interval. In the encoding that is one line per (task, time),
+    //
+    //     active_{k,u}  =>  active_{k,v}      for  u <= v < ECT(Omega)
+    //
+    // since `before` is monotone in the model and `after_{k,v}` follows from
+    // the reason's `s_k >= est_k` and `l_k >= p_k`. So the whole prefix's load
+    // from Omega is capped by the load at one time point --- and if the pushed
+    // task is running *there*, the capacity row at that one point caps the
+    // prefix at `C - c_j` rather than `C`. Summed over the window that is
+    // exactly the published inequality, which is #746's answer to why the rule
+    // is sound: contiguity plus `ECT` at a single time point, not window
+    // energy.
+    //
+    // **Where the pushed task is running.** It is running at `v` when
+    // `s_j <= v` (the negated conclusion, which gives `s_j <= ECT(Omega) - 1`)
+    // and `s_j + l_j >= v + 1` (the reason's `s_j >= lb(s_j)`, which reaches
+    // `ect_j`). Both hold at `v = ECT(Omega) - 1` exactly when
+    // `ect_j >= ECT(Omega)`, and then one pol does the whole rule. When
+    // `ect_j < ECT(Omega)` no single time point works --- the meeting point is
+    // `s_j` itself, which is a variable --- so the derivation becomes a chain,
+    // walking the bound up `p_j` at a time in the way the time-table push
+    // already does, each rung's row weakened by that rung's own conclusion and
+    // deposited under the reason for the next rung's unit propagation. Every
+    // rung charges the window at least what the detection counted, so the first
+    // one already suffices and the rest only carry the bound the rest of the
+    // way.
+    //
+    // Everything is stated in *activity* space rather than in the
+    // bit-linearised contribution space the capacity rows use, because
+    // contiguity is a statement about activity. A variable-height task's
+    // capacity term is converted back with the same `guaranteed_contribution`
+    // line `energy_contribution` would have used to convert the other way; the
+    // count is the same either way.
+    struct PublishedTask
+    {
+        std::size_t task;
+        Integer est, ub, length;
+    };
+
+    // active_{k,v} >= active_{k,u}: task k, running at u, is still running at
+    // v. `forward` is not-first's direction (u <= v, the far end pinned by
+    // `after`); its mirror pins `before` instead. nullopt when one of the two
+    // times is outside k's flag range, where there is no activity term to
+    // bound and nothing to say.
+    auto contiguity_applies = [&](const PublishedTask & k, Integer u, Integer v) {
+        auto t_lo = per_task_t_lo[k.task], t_hi = per_task_t_hi[k.task];
+        return u >= t_lo && u <= t_hi && v >= t_lo && v <= t_hi;
+    };
+    auto published_contiguity = [&](const ReasonLiterals & reason, const PublishedTask & k, Integer u, Integer v, bool forward) -> ProofLine {
+        auto t_lo = per_task_t_lo[k.task];
+        auto fu = static_cast<size_t>((u - t_lo).raw_value), fv = static_cast<size_t>((v - t_lo).raw_value);
+        if (forward) {
+            // s_k + l_k >= est_k + p_k = ect_k >= ECT(Omega) > v.
+            materialise_after_sum(k.task, k.est);
+            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flags[k.task][fv] >= 1_i, ProofLevel::Temporary);
+        }
+        else
+            // s_k <= ub(s_k) <= LST(Omega) <= v.
+            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flags[k.task][fv] >= 1_i, ProofLevel::Temporary);
+        return logger->emit_rup_proof_line_under_reason(
+            reason, WPBSum{} + 1_i * active_flags[k.task][fv] + 1_i * ! active_flags[k.task][fu] >= 1_i, ProofLevel::Temporary);
+    };
+
+    // The pushed task pinned active at t, in activity space: `pin_pushed`'s
+    // three lines, but returning the `active` one rather than the contribution
+    // one, since this rule's capacity rows have been converted to match.
+    auto published_pin = [&](const ReasonLiterals & reason, size_t j_idx, Integer t, const ExtLits & ext, Integer s_lo_after) -> ProofLine {
+        // The chain's own stop rules keep every rung inside the pushed task's
+        // flag range, so a time outside it means the rung arithmetic and the
+        // flags have come apart. Worth saying here rather than as a rejected
+        // proof, or a flag lookup that reads past the end.
+        if (t < per_task_t_lo[j_idx] || t > per_task_t_hi[j_idx])
+            throw ProofError{
+                "cumulative published not-first / not-last: task " + std::to_string(j_idx) + " has no flag at time " + std::to_string(t.raw_value)};
+        auto fj = static_cast<size_t>((t - per_task_t_lo[j_idx]).raw_value);
+        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * before_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        materialise_after_sum(j_idx, s_lo_after);
+        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * after_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        return logger->emit_rup_proof_line_under_reason(
+            reason, plus_ext(WPBSum{} + 1_i * active_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
+    };
+
+    auto published_nfnl_justification = [&](Integer a2, Integer b, const vector<PublishedTask> & theta, size_t j, Integer j_lb, Integer j_ub,
+                                            Integer boundary, bool not_first) {
+        return [&, a2, b, theta, j, j_lb, j_ub, boundary, not_first](const ReasonLiterals & reason) -> void {
+            if (! logger)
+                return;
+            logger->emit_proof_comment("cumulative published not-" + string{not_first ? "first" : "last"} + " w=" + std::to_string(theta.size()) +
+                " span=" + std::to_string((b - a2).raw_value));
+
+            if (std::holds_alternative<cumulative_proof_mutation::PublishedEmitNothing>(mutation))
+                return;
+
+            auto p_j = llb(j), h_j = hlb(j);
+            auto drop_pin = std::holds_alternative<cumulative_proof_mutation::DropPublishedPin>(mutation);
+            auto drop_task = std::holds_alternative<cumulative_proof_mutation::DropContainedTask>(mutation);
+            auto omit_capacity = std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation);
+
+            // A capacity line with the contained set's and the pushed task's
+            // contributions converted back into activity, so contiguity has
+            // something to cancel against. Any other task's ride through as the
+            // negative terms they already are.
+            auto capacity_at = [&](PolBuilder & pol, Integer t, Integer coeff) {
+                if (omit_capacity && t == b - 1_i)
+                    return;
+                auto line = capacity_lines.find(t);
+                if (line == capacity_lines.end())
+                    return;
+                pol.add(line->second, coeff);
+                auto convert = [&](size_t i) {
+                    if (h_is_var(i) && t >= per_task_t_lo[i] && t <= per_task_t_hi[i])
+                        pol.add(guaranteed_contribution(reason, i, t), coeff);
+                };
+                for (const auto & k : theta)
+                    convert(k.task);
+                convert(j);
+            };
+
+            // The contained set's energy over [a2, b), in activity space: the
+            // same guarded rows edge-finding cites, at the same guards, over a
+            // window keyed on est(Omega) rather than on the swept one.
+            auto add_theta_energy = [&](PolBuilder & pol) {
+                for (const auto & k : theta) {
+                    if (drop_task && k.task == theta.front().task)
+                        continue;
+                    const auto & row =
+                        guarded_energy(k.task, a2, b, clipped_window_start(k.task, a2), clipped_window_end(k.task, b) - k.length + 1_i);
+                    pol.add(row.line, hlb(k.task));
+                    if (row.low_coeff > 0_i)
+                        pol.add(logger->emit_rup_proof_line_under_reason(
+                                    reason, WPBSum{} + 1_i * (starts[k.task] >= row.low_guard) >= 1_i, ProofLevel::Temporary),
+                            hlb(k.task) * row.low_coeff);
+                    if (row.bound > 0_i)
+                        pol.add(logger->emit_rup_proof_line_under_reason(
+                                    reason, WPBSum{} + 1_i * (starts[k.task] < row.high_guard) >= 1_i, ProofLevel::Temporary),
+                            hlb(k.task) * row.bound);
+                    if (row.length_coeff > 0_i)
+                        pol.add(logger->emit_rup_proof_line_under_reason(
+                                    reason, WPBSum{} + 1_i * (lengths_var[k.task] >= row.length_guard) >= 1_i, ProofLevel::Temporary),
+                            hlb(k.task) * row.length_coeff);
+                }
+            };
+
+            // The published charge. Non-positive means the detection fired on
+            // the contained set alone overflowing the window, where there is no
+            // pushed task to place and the energy rows against the capacity
+            // rows are the whole argument.
+            auto charge = not_first ? min(j_lb + p_j, b) - a2 : b - max(j_ub, a2);
+            if (charge <= 0_i) {
+                PolBuilder pol;
+                add_theta_energy(pol);
+                for (Integer t = a2; t < b; ++t)
+                    capacity_at(pol, t, 1_i);
+                pol.emit(*logger, ProofLevel::Temporary);
+                return;
+            }
+
+            // One rung of the chain. `meet` is the time point the capped range
+            // is compared against, `capped` the half-open range the rung caps
+            // at `C - c_j`, and `ext` the rung's own conclusion, which every
+            // line it lays down is weakened by.
+            auto rung = [&](Integer meet, Integer capped_lo, Integer capped_hi, const ExtLits & ext, Integer s_lo_after) {
+                PolBuilder pol;
+                add_theta_energy(pol);
+
+                auto multiplicity = not_first ? meet + 1_i - a2 : b - meet;
+                capacity_at(pol, meet, multiplicity);
+                if (! drop_pin)
+                    pol.add(published_pin(reason, j, meet, ext, s_lo_after), multiplicity * h_j);
+
+                for (const auto & k : theta) {
+                    auto from = not_first ? a2 : meet + 1_i, to = not_first ? meet : b;
+                    for (Integer u = from; u < to; ++u)
+                        // A time outside the task's flag range has no activity
+                        // term in the capacity row either, so there is nothing
+                        // to bound and nothing to say.
+                        if (contiguity_applies(k, u, meet))
+                            pol.add(published_contiguity(reason, k, u, meet, not_first), hlb(k.task));
+                }
+
+                // The times the rung does not reach through `meet`: the pushed
+                // task is running at each of them under the rung's own case, so
+                // each is capped directly.
+                for (Integer u = not_first ? meet + 1_i : capped_lo; u < (not_first ? capped_hi : meet); ++u) {
+                    capacity_at(pol, u, 1_i);
+                    if (! drop_pin)
+                        pol.add(published_pin(reason, j, u, ext, s_lo_after), h_j);
+                }
+
+                // And the rest of the window, at the full capacity.
+                for (Integer u = a2; u < b; ++u)
+                    if (not_first ? u >= capped_hi : u < capped_lo)
+                        capacity_at(pol, u, 1_i);
+
+                pol.emit(*logger, ProofLevel::Temporary);
+            };
+
+            // The chain, walking the bound `p_j` at a time. It stops on
+            // whichever comes first: the target, or a running bound the reason
+            // already contradicts --- the deposits and the reason are then
+            // jointly unsatisfiable, so the framework's wrapping RUP has
+            // everything it needs and a further rung would be asking for an
+            // order literal outside the task's own domain.
+            if (not_first) {
+                auto running = j_lb;
+                while (true) {
+                    auto meet = min(running + p_j - 1_i, boundary - 1_i);
+                    auto next = meet + 1_i;
+                    rung(meet, a2, min(running + p_j, b), ExtLits{starts[j] >= next}, running);
+                    if (next >= boundary || next > j_ub)
+                        break;
+                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[j] >= next) >= 1_i, ProofLevel::Temporary);
+                    running = next;
+                }
+            }
+            else {
+                auto running = j_ub;
+                auto target = boundary - p_j + 1_i;
+                while (true) {
+                    auto meet = max(running, boundary);
+                    auto next = meet - p_j + 1_i;
+                    rung(meet, max(a2, running), b, ExtLits{starts[j] < next}, next);
+                    if (next <= target || next <= j_lb)
+                        break;
+                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[j] < next) >= 1_i, ProofLevel::Temporary);
+                    running = next - 1_i;
+                }
+            }
+        };
+    };
+
     // Time-table consistency. The mandatory part of task i is the
     // half-open interval [lst_i, eet_i) where lst_i = ub(s_i) and
     // eet_i = lb(s_i) + l_i. Summing heights over mandatory parts
@@ -1347,12 +1592,20 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             // the same growing contained set the energy accumulates over.
             Integer energy = 0_i, inside_mandatory = 0_i, min_ect = 0_i, max_lst = 0_i, min_est = 0_i;
             vector<size_t> inside_tasks;
+            // The same set again, with the bounds the published condition's
+            // certificate argues about, and only collected when something asks
+            // for them. Captured here rather than read back out of `state` in
+            // the justification: by then an earlier push has landed, and the
+            // state holds a bound the reason does not support.
+            vector<PublishedTask> published_theta;
             for (const auto & c : candidates) {
                 if (c.est < a)
                     continue;
                 energy += c.energy;
                 inside_mandatory += c.mandatory;
                 inside_tasks.push_back(c.task);
+                if (rules.not_first_not_last_published && logger)
+                    published_theta.push_back(PublishedTask{c.task, c.est, c.lct - c.length, c.length});
                 if (elastic_rules)
                     join_elastic(c);
                 min_ect = inside_tasks.size() == 1 ? c.est + c.length : min(min_ect, c.est + c.length);
@@ -1584,19 +1837,25 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         // term is the overlap at one end of the negated
                         // conclusion's start range, unclamped against j's far
                         // bound, so it is neither above nor below what the
-                        // lemma derives. Measurement only, hence the refusal in
-                        // define_proof_model --- see
-                        // CumulativeRules::not_first_not_last_published, which
-                        // carries both why it is sound and what it is worth.
+                        // lemma derives --- and it is certified by contiguity
+                        // rather than by that lemma. See
+                        // `published_nfnl_justification`, and
+                        // CumulativeRules::not_first_not_last_published for
+                        // both why it is sound and what it is worth.
                         if (rules.not_first_not_last_published) {
                             auto ect_j = s_lo + p_j, lst_j = j.lct - p_j;
                             auto span = b - min_est;
-                            if (s_lo < min_ect && energy + h_j * (min(ect_j, b) - min_est) > capacity * span)
-                                inference.infer_greater_than_or_equal(
-                                    logger, starts[j.task], min_ect, JustifyUsingRUP{hints::Cumulative{owner}}, reason_with_presence());
-                            if (max_lst < j.lct && energy + h_j * (b - max(lst_j, min_est)) > capacity * span)
-                                inference.infer_less_than(
-                                    logger, starts[j.task], max_lst - p_j + 1_i, JustifyUsingRUP{hints::Cumulative{owner}}, reason_with_presence());
+                            auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
+                            if (s_lo < min_ect && energy + h_j * (min(ect_j, b) - min_est) > capacity * span) {
+                                auto justify = published_nfnl_justification(min_est, b, published_theta, j.task, s_lo, s_hi, min_ect, true);
+                                inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
+                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                            }
+                            if (max_lst < j.lct && energy + h_j * (b - max(lst_j, min_est)) > capacity * span) {
+                                auto justify = published_nfnl_justification(min_est, b, published_theta, j.task, s_lo, s_hi, max_lst, false);
+                                inference.infer_less_than(logger, starts[j.task], one_too_far ? max_lst - p_j : max_lst - p_j + 1_i,
+                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                            }
                             continue;
                         }
 
