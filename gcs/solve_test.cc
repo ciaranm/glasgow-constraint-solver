@@ -1,9 +1,15 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/difference.hh>
+#include <gcs/constraints/divide.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/in.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/modulus.hh>
 #include <gcs/constraints/plus.hh>
+#include <gcs/constraints/power.hh>
+#include <gcs/constraints/table.hh>
 #include <gcs/expression.hh>
 #include <gcs/presolver.hh>
 #include <gcs/presolvers/auto_table.hh>
@@ -26,8 +32,10 @@ using namespace gcs;
 using namespace gcs::innards;
 using namespace gcs::test_innards;
 
+using std::function;
 using std::nullopt;
 using std::optional;
+using std::string;
 using std::vector;
 
 namespace
@@ -747,4 +755,66 @@ TEST_CASE("A caller's AutoTable stats block is the one that gets filled in and r
     CHECK(block->ran);
     CHECK(block->tuples == 4);
     CHECK(component_named(stats, "auto_table").get() == static_cast<const ComponentStats *>(block.get()));
+}
+
+TEST_CASE("A constraint that is trivially unsatisfiable at install time says which one, and why")
+{
+    // Six sites --- seven constraints, Divide and Modulus sharing one --- work
+    // out while installing that what they encode is the empty relation, and
+    // install a contradiction initialiser instead of a propagator. Each has
+    // always passed an explanation of what was wrong with it; the parameter that
+    // took it was unnamed and dropped it (#722), so the whole visible
+    // consequence of `x div 0` was an unsatisfiable answer that looks exactly
+    // like a model whose constraints genuinely conflict.
+    struct Case
+    {
+        string component;
+        string mentions;
+        function<auto(Problem &, IntegerVariableID, IntegerVariableID)->void> post;
+    };
+
+    const vector<Case> cases{
+        {"table", "no tuples", [](Problem & p, IntegerVariableID x, IntegerVariableID y) { p.post(Table{{x, y}, SimpleTuples{}}); }},
+        {"in", "no values", [](Problem & p, IntegerVariableID x, IntegerVariableID) { p.post(In{x, vector<Integer>{}}); }},
+        {"element", "zero-length dimension",
+            [](Problem & p, IntegerVariableID x, IntegerVariableID y) { p.post(Element{x, y, vector<IntegerVariableID>{}}); }},
+        {"power", "overflow", [](Problem & p, IntegerVariableID x, IntegerVariableID) { p.post(Power{0_c, constant_variable(-1_i), x}); }},
+        {"divide", "divisor of constant zero", [](Problem & p, IntegerVariableID x, IntegerVariableID y) { p.post(Divide{x, 0_c, y}); }},
+        {"modulus", "divisor of constant zero", [](Problem & p, IntegerVariableID x, IntegerVariableID y) { p.post(Modulus{x, 0_c, y}); }},
+        {"difference", "strictly less than itself", [](Problem & p, IntegerVariableID x, IntegerVariableID) {
+             p.post(DifferenceConstraints{vector<DifferenceEdge>{DifferenceEdge{x, x, -1_i}}});
+         }}};
+
+    for (const auto & c : cases) {
+        INFO("constraint type " << c.component);
+
+        Problem p;
+        auto x = p.create_integer_variable(0_i, 3_i);
+        auto y = p.create_integer_variable(0_i, 3_i);
+        c.post(p, x, y);
+
+        Recorder recorder;
+        auto stats =
+            solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }, .stats_report = recorder.callback()});
+
+        CHECK(0 == stats.solutions);
+
+        // Exactly one note, and Important: the reader it is for is the
+        // non-expert who cannot otherwise tell "your constraints conflict" from
+        // "one of them was empty", and who is reading a solve that got no
+        // further than installing this constraint.
+        auto important = recorder.at_level(StatsLevel::Important);
+        REQUIRE(important.size() == 1);
+        CHECK(important[0].component == c.component);
+        CHECK(important[0].constraint == ConstraintID{NumberedConstraint{1}});
+
+        // The text names what kind of constraint it was and what was wrong with
+        // it, since at Important the component label is not rendered; the
+        // consequence is there too, because "unsatisfiable" is the thing the
+        // reader is trying to account for. The identity is the note's own field
+        // rather than words, and render() is what puts it into the line.
+        CHECK(important[0].text.contains(c.mentions));
+        CHECK(important[0].text.ends_with(", so the model is unsatisfiable before search starts"));
+        CHECK(render(important[0]).ends_with(" (_1)"));
+    }
 }

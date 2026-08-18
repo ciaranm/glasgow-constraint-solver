@@ -238,7 +238,9 @@ auto DifferenceConstraints::install_propagators(Propagators & propagators) -> vo
         // view offset, and the half-reified counterpart's `!cond' likewise. So
         // this is DifferenceConstraints' own row and its own contradiction, and
         // it belongs where the edges it came from were posted.
-        propagators.install_initial_contradiction("difference constraint x - x <= d with d < 0", JustifyUsingRUP{}, NoReason{});
+        propagators.install_initial_contradiction(constraint_id(), constraint_type(),
+            "Edge " + to_string(*_root_contradiction_posted_index) + " of a difference constraint says an expression is strictly less than itself",
+            JustifyUsingRUP{}, NoReason{});
         return;
     }
 

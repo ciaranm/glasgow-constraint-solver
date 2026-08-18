@@ -169,7 +169,8 @@ auto Table::define_proof_model(ProofModel & model, const State &) -> void
 auto Table::install_propagators(Propagators & propagators) -> void
 {
     if (_has_no_tuples) {
-        propagators.install_initial_contradiction("Empty table constraint from table", JustifyUsingRUP{hints::Table{constraint_id()}});
+        propagators.install_initial_contradiction(
+            constraint_id(), constraint_type(), "A Table constraint was posted with no tuples", JustifyUsingRUP{hints::Table{constraint_id()}});
         return;
     }
 

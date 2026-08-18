@@ -143,8 +143,8 @@ auto In::define_proof_model(ProofModel & model, const State &) -> void
 auto In::install_propagators(Propagators & propagators) -> void
 {
     if (_has_no_values) {
-        propagators.install_initial_contradiction(
-            "No values or variables present for an 'In' constraint", JustifyUsingRUP{hints::In{constraint_id()}});
+        propagators.install_initial_contradiction(constraint_id(), constraint_type(),
+            "An In constraint was posted with no values for its variable to take", JustifyUsingRUP{hints::In{constraint_id()}});
         return;
     }
 

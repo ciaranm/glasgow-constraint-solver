@@ -1187,11 +1187,17 @@ namespace
     // off, where those line handles are nullopt and the stages filter on their terms
     // alone.
     template <typename Hint_>
-    auto install_propagators_divide_modulus(InstallState & st, const ConstraintID & owner, bool expose_quotient, const IntegerVariableID & x,
-        const IntegerVariableID & y, const IntegerVariableID & out, Propagators & propagators) -> void
+    auto install_propagators_divide_modulus(InstallState & st, const ConstraintID & owner, const string & constraint_type, bool expose_quotient,
+        const IntegerVariableID & x, const IntegerVariableID & y, const IntegerVariableID & out, Propagators & propagators) -> void
     {
         if (st.zero_divisor) {
-            propagators.install_initial_contradiction("division by constant zero", JustifyUsingRUP{Hint_{owner}});
+            // expose_quotient is this file's Divide-versus-Modulus discriminator
+            // everywhere else too; constraint_type is the same distinction in the
+            // .scp's lower-case spelling, which is the note's component rather
+            // than its prose.
+            propagators.install_initial_contradiction(owner, constraint_type,
+                string{expose_quotient ? "A Divide" : "A Modulus"} + " constraint was posted with a divisor of constant zero",
+                JustifyUsingRUP{Hint_{owner}});
             return;
         }
 
@@ -1316,7 +1322,7 @@ auto Divide::define_proof_model(ProofModel & model, const State &) -> void
 
 auto Divide::install_propagators(Propagators & propagators) -> void
 {
-    install_propagators_divide_modulus<hints::Divide>(_install, constraint_id(), true, _x, _y, _quotient, propagators);
+    install_propagators_divide_modulus<hints::Divide>(_install, constraint_id(), constraint_type(), true, _x, _y, _quotient, propagators);
 }
 
 auto Divide::constraint_type() const -> std::string
@@ -1362,7 +1368,7 @@ auto Modulus::define_proof_model(ProofModel & model, const State &) -> void
 
 auto Modulus::install_propagators(Propagators & propagators) -> void
 {
-    install_propagators_divide_modulus<hints::Modulus>(_install, constraint_id(), false, _x, _y, _remainder, propagators);
+    install_propagators_divide_modulus<hints::Modulus>(_install, constraint_id(), constraint_type(), false, _x, _y, _remainder, propagators);
 }
 
 auto Modulus::constraint_type() const -> std::string

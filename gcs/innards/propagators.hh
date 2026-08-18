@@ -535,7 +535,7 @@ namespace gcs::innards
         /**
          * Install an initialiser whose only job is to immediately raise a
          * contradiction with the given Justification (RUP, explicit, or
-         * none) and Reason. Convenience wrapper around
+         * none) and Reason, and say so. Convenience wrapper around
          * install_initialiser; intended for cases where the OPB encoding
          * emitted by define_proof_model collapses to a trivially-false
          * constraint and we want propagation to detect that up front.
@@ -544,11 +544,37 @@ namespace gcs::innards
          * a typed assertion hint (JustifyUsingRUP{hints::Foo{owner}}) and the
          * up-front contradiction names the constraint it came from, exactly as
          * the constraint's in-search inferences do.
+         *
+         * A constraint that works out at install time that it is the empty
+         * relation is the solver answering correctly, so this is a note and not
+         * an exception --- but it is the one answer a non-expert cannot tell
+         * apart from "your constraints genuinely conflict", which is what
+         * StatsLevel::Important is for. So `what_is_wrong` is reported as a
+         * StatsNote at Important, here, before the initialiser is installed:
+         * the model is broken whether or not the initialiser is ever reached,
+         * an earlier one having got there first.
+         *
+         * Write `what_is_wrong` for that reader --- name the kind of constraint
+         * and what is wrong with it, and stop. The consequence is appended
+         * here, since it belongs to installing an initial contradiction rather
+         * than to any one thing that was wrong, and the constraint's identity is
+         * added by render() from the ConstraintID.
+         *
+         * `constraint_type` is the note's component. A constraint has no
+         * ComponentStats block of its own, and its Constraint::constraint_type()
+         * --- `table`, `power`, `element_2d` --- is what "which component said
+         * it" means for one. It is rendered only below Important, which is where
+         * a reader who knows what a `table` is would be reading.
          */
         template <typename Justification_>
-        auto install_initial_contradiction(const std::string &, Justification_ why, Reason reason = NoReason{},
-            InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void
+        auto install_initial_contradiction(const ConstraintID & constraint, const std::string & constraint_type, const std::string & what_is_wrong,
+            Justification_ why, Reason reason = NoReason{}, InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void
         {
+            report(StatsNote{.level = StatsLevel::Important,
+                .component = constraint_type,
+                .constraint = constraint,
+                .text = what_is_wrong + ", so the model is unsatisfiable before search starts"});
+
             install_initialiser([why = std::move(why), reason = std::move(reason)](const State &, auto & inference,
                                     ProofLogger * const logger) -> void { inference.contradiction(logger, why, reason); },
                 priority);
