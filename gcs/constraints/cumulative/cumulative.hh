@@ -110,9 +110,13 @@ namespace gcs
         /// also exactly what the window-energy lemma derives, so unlike the
         /// mandatory-part form it needs no per-(task, time) pins.
         ///
-        /// Only tasks eligible for the overload check contribute, since the
-        /// lemma wants a constant length and height. Takes precedence over
-        /// \ref time_table_edge_finding when both are set.
+        /// Only tasks eligible for the overload check contribute --- which
+        /// asks that a task's start (and a variable length) be a plain
+        /// variable with an order encoding for the lemma's bridges to cancel
+        /// against, and *not* that its length and height be constants: since
+        /// #689 a variable length is counted over `[start, start + lb(length))`
+        /// and a variable height at its guaranteed contribution. Takes
+        /// precedence over \ref time_table_edge_finding when both are set.
         ///
         /// \warning Not yet certified. A propagator with this set refuses to
         /// run against a proof logger.
@@ -172,8 +176,15 @@ namespace gcs
      * demands (lb(height)) over mandatory parts gives a load profile; if that
      * profile exceeds the largest allowed capacity (ub) anywhere, the
      * constraint is infeasible. Each task's bounds are pushed away from any
-     * time point where placing it would force the load over capacity. Stronger
-     * reasoning (edge-finding, energetic) is left for future work.
+     * time point where placing it would force the load over capacity. On top of
+     * that an <em>overload check</em> runs by default, strengthened by the
+     * profile (rule (TTOC)). Stronger reasoning still --- the knapsack and
+     * horizontally elastic overload rungs, edge-finding, its time-table and
+     * energetic forms, and not-first / not-last --- is behind the flags in
+     * \ref CumulativeRules, off by default because each costs a sweep that a
+     * solve never firing it still pays. All of them are certified but \ref
+     * CumulativeRules::energetic_edge_finding, which refuses to run against a
+     * proof logger.
      *
      * A task whose presence is still undecided is left out of the profile and
      * out of the overload check's energy set entirely, and its own start bounds

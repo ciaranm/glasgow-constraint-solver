@@ -336,8 +336,11 @@ namespace gcs
      * An <em>overload check</em>, <em>edge-finding</em> and
      * <em>not-first / not-last</em> reason about the energy of a whole set of
      * tasks in a window; all three are off by default, since each costs a sweep
-     * that a solve never firing them still pays. The set-based form of
-     * detectable precedences is left for future work (#754).
+     * that a solve never firing them still pays. A <em>set-based</em> form of
+     * detectable precedences (#754) reasons about a set too, and is off by
+     * default for its own reason: its windows are derived from the conclusion
+     * rather than swept, so it shares nothing with the sweep the others pay
+     * for.
      *
      * A task whose presence is still undecided is left out of the profile and
      * out of every push, in either role: it blocks nothing, and nothing is

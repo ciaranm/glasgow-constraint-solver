@@ -5,8 +5,9 @@ backed by VeriPB. The propagator runs time-table consistency
 specialised to `h_i = 1`, `capacity = 1`
 (see [`cumulative-proof-logging.md`](cumulative-proof-logging.md) for
 the general time-table proof machinery) plus **detectable
-precedences**, and behind flags an **overload check** (#730, #737–#741)
-and **edge-finding** (#751).
+precedences**, and behind flags an **overload check** (#730, #737–#741),
+**edge-finding** (#751), **not-first / not-last** (#752) and the
+**set-based form of detectable precedences** (#754).
 
 **The declarative OPB encoding is the same whatever the rules say**, and
 it is purely pairwise: no per-(task, time) rows, no proof-only variables,
@@ -325,6 +326,251 @@ guaranteed duration, so its `zw` escape flag is false. The
 justification pins the involved escapes false first (one RUP under
 reason each, from `lb(l) ≥ 1`), and the separation clauses reduce to
 their before-flag disjunctions for the rest of the derivation.
+
+## The overload check (#730, #737–#741)
+
+The rule: a window `[a, b)` whose fully contained tasks (`est_i ≥ a`,
+`lct_i ≤ b`) carry more work than it can hold,
+
+```
+Σ_{i∈Θ} p_i  >  b − a          contradiction
+```
+
+is the capacity-one case of `CumulativeRules::overload`.
+`DisjunctiveRules::overload`, off by default: the sweep costs a solve
+that never fires it, and until #737 the rule had no certificate at all.
+
+**This is the first inference here that cannot be pairwise.** A *set* of
+tasks blocks an interval; no statement about one pair of tasks says so.
+The encoding does not change for it — the OPB is the same pairwise
+shape whatever the rules say, because the model is the statement being
+verified and a model that moved with a rule selection would be a
+different problem per setting. So the re-encoding goes in the *proof*,
+per firing, and there are **two** of them, chosen per firing by the
+window's shape. Neither dominates.
+
+### The time-indexed certificate (#737)
+
+Four steps, and the middle one is the one with no counterpart in
+`Cumulative`.
+
+**(1) Vocabulary.** An activity flag says a task occupies a time point:
+
+```
+act_{i,t}  <->  s_i ≥ t − p_i + 1  AND  s_i < t + 1
+```
+
+a conjunction of two order literals the encoding already mints, so it
+costs three `red`s and adds nothing to the model. It is *three*, not
+one: `create_proof_flag_reifying` on a conjunction gives one row
+carrying **both** conjuncts, and the bridge below cancels one literal
+per operand, so the other survives and the `pol` never closes. Two
+forward-reifying `red`s, one per conjunct, and one reverse-reifying
+`red` on the conjunction for the backward clause.
+
+**(2) The bridge.** Two tasks cannot both occupy time `t`:
+
+```
+¬act_{i,t} ∨ ¬act_{j,t}
+```
+
+`Cumulative` never derives this — its OPB states the capacity row
+outright. Here each direction is the `before` flag's `[r]` row plus the
+two operands' order-literal definitions; the starts cancel and the
+degree lands on `p_x + (t − p_x + 1) − t = 1`. The two directions plus
+the separation clause pair the `before` literals off into a constant,
+and halving is exact.
+
+**Getting from the pairwise encoding to a statement about a time point
+is arithmetic, not propagation.** The `RupOverloadBridge` mutation lane
+concludes each at-most-one by bare `rup` instead, and VeriPB rejects it.
+That is the single most transferable fact about this certificate.
+
+**(3) The fold.** `recover_am1_from_pairs` turns the `w(w−1)/2` pairwise
+rows at each time point into one at-most-one over the window's activity
+flags. Shared with edge-finding, which wants the same rows over the same
+encoding and differs only in what it adds them to.
+
+**(4) The energy.** A task in the window occupies at least `lb(l)` of
+its time points: summing its backward rows telescopes, each order
+literal appearing once positively and once negatively, and what is left
+at the two ends are the thresholds below the window (which hold because
+the task starts inside it) and above (which fail because it finishes
+inside), one reason-wrapped RUP each. The folds say the window holds at
+most one task per time, the energies say the tasks need more than that,
+and the framework's closing RUP has nothing left to do.
+
+Per firing that is `O(w²)` bridges per time point, so `O(w²H)` in the
+window's span — or `O(wH)` once the pairs have been seen, which is what
+the caching below is for.
+
+### The sorting-network certificate (#738–#740)
+
+The other way to certify the same conflict: rather than re-encoding
+time, **sort the window's tasks inside the proof** and telescope the
+sorted order. Proof-only wires introduced by `red`, selection-sorted by
+start; pairwise separation carried across each comparator; the sorted
+chain telescopes to a span the window cannot accommodate.
+`gcs/innards/proofs/comparator_network.{hh,cc}` is the whole of it —
+comparators mux a duration alongside a start, and the lemmas are gap,
+dominance, preservation, positivity, bound and transfer.
+
+`O(w³)` and **flat in the window's span** but for the wires' bit widths,
+where the time-indexed route is linear in it. That is the whole of why
+both exist.
+
+Three things are worth carrying away from it:
+
+- **Unequal durations need a preservation equality as well as the
+  telescope.** Each wire carries a second muxed record, its duration, so
+  `hi − lo ≥ P` becomes `hi − lo − d_lo ≥ 0`; and each comparator needs
+  `d_lo + d_hi − d_A − d_B ≥ 0`, which equal durations get for free.
+  Every wire also needs `d ≥ 1`: subtracting the duration out of the
+  separation row drops its degree to zero, and "A starts at or after B
+  so A is not first" is then invalid.
+- **A wire reads the model variable's own bit encoding**, with no copy
+  layer. Two consequences: a two's-complement sign bit sits at index
+  *zero* with coefficient `−2^(k+1)`, so a signed start is refused
+  rather than read as a magnitude; and a reification's big-M is per
+  **direction**, not per pair — `before_{i,j}` and `before_{j,i}` differ
+  whenever the durations or widths do, and raising both by the same
+  amount leaves one short and every later division rounds instead of
+  cancelling.
+- **The reason guard has to be uniform.** A window is a fact about the
+  search state, so every bound the network derives from it is guarded by
+  the inference's reason; the guard is taken **once**, at the network's
+  own coefficient, and put on both sides (`ComparatorNetwork::assume`).
+  Two rows guarded by the same reason at *different* coefficients cancel
+  no better than two rows guarded by different reasons.
+
+Not every window can take it: a variable duration, a view or signed
+start, or a width past 40 bits all refuse, and **a refused window falls
+back to the time-indexed certificate rather than declining the
+conflict** — a certificate that is merely more expensive is not a reason
+to lose an inference.
+
+### Where the time index lives, and what caches
+
+The distinction that matters is not "time-indexed or not" but *where*
+the time index lives, and for how long.
+
+`DisjunctiveRules::overload_vocabulary_at` places the activity flags and
+their at-most-ones at `Top` (derive once, cite forever, pay a standing
+database) or `Temporary` (derive per firing, let backtracking delete
+them, pay again every time). The received objection to `Top` is that
+hint-free RUP costs `O(live database)` — but measured, that tax is flat
+to within noise from 4,692 to 38,460 standing rows, and `Top` wins on
+lines and on checking time by a margin that grows with the firing count.
+Hence the default. (Caveat for any write-up: the RUPs measured conflict
+after a few watch updates, so that is the cheap end of the RUP cost
+distribution, not an expensive one.)
+
+`DisjunctiveRules::overload_cache_bridge` keeps each per-time
+at-most-one and cites it again. The row is about a pair of tasks, a
+time, and their durations, and about **nothing else** — the same
+property that lets the flags live at `Top` — so a firing cites what an
+earlier firing derived. On generated RCPSP the reuse is ~99%:
+
+| size/seed | firings | derived | reused | saving |
+|---|---|---|---|---|
+| 15/2 | 154 | 2,899 | 236,956 | 14.0× |
+| 20/1 | 311 | 7,210 | 857,553 | 19.5× |
+| 25/2 | 539 | 11,410 | 2,278,514 | 25.7× |
+| 30/2 | 673 | 16,836 | 5,018,289 | 31.6× |
+
+Rising with instance size, because bigger searches fire more often over
+the same pairs.
+
+### The crossover, and the measurement it invalidated
+
+`DisjunctiveRules::overload_certificate` is
+`{TimeIndexed, SortingNetwork, Cheaper}`, with `Cheaper` the default:
+the network is emitted once the window's span exceeds
+`overload_crossover` times the number of tasks in it.
+
+Priced **one firing of each**, the two certificates cross at a span of
+about `7w`. That number is wrong for a solve, and the reason it is wrong
+is the reusable lesson here:
+
+> **A per-firing cost comparison is the wrong measurement when one side
+> amortises and the other cannot.**
+
+Nothing on the network's side is ever reusable — a window's wires are
+about that window, and everything it emits is `Temporary`. Once the
+at-most-ones are kept, the time-indexed route's marginal cost falls by
+an order of magnitude and the crossing moves out to **~300w**:
+
+| window span / w | 5 | 20 | 80 | 320 |
+|---|---|---|---|---|
+| time-indexed cheaper by | 30.6× | 9.7× | 2.3× | 0.79× |
+
+The artefact does not pin it either: on generated RCPSP the time-indexed
+certificate wins at every horizon where both certificates fit a proof
+budget at all (16.6× at horizon 140, 9.25× at 275, 5.92× at 542), and
+past that the network does not produce a complete proof to compare
+against. So three hundred stands as a figure high enough never to pick
+the network wrongly, rather than as a measured crossing point — and
+`overload_crossover = 7` alongside `overload_cache_bridge = false` is
+the setting pair that reproduces the older number. **The two settings
+belong together.**
+
+### Variable durations, at the declared floor
+
+A variable-duration task's separation row carries a duration *term*, so
+something must say how short the task can be before the bridge can
+cancel it. The obvious candidate — the duration's current lower bound —
+is a **state** fact, so citing it makes the bridge row reason-backed,
+and the reason's literals then sit inside the per-time at-most-ones,
+where `recover_am1_from_pairs` adds `m` of them to `m−1` copies of its
+running row and divides by `m`.
+
+**A uniform guard survives a case split's division — that is exactly
+what `ComparatorNetwork::assume` exploits — but not this fold's
+induction:** the coefficient grows, roughly `(2m−1)c/m`, instead of
+cancelling. So the pairs must be clean and the floor must be
+reason-free. It is the duration's **declared** lower bound, a model
+fact, as one cached RUP per task cited by every bridge; the non-strict
+zero-length escape is pinned false the same way, by the model's own
+bound row. The price is that a task the search has lengthened is counted
+at what it was declared to be.
+
+Two smaller traps in the same place: the activity-flag and bridge caches
+key on the **duration** as well as the task and the time, since a
+variable duration moves the flag's own definition and a later firing
+citing a flag defined at a shorter one builds a `pol` whose terms no
+longer cancel (a rejected proof, not an unsound one). And the sorting
+network declines variable durations outright and falls back; it could
+take the same route, pinning the wire to the declared floor and citing
+the same row.
+
+### The window cap, which exists to reproduce a result
+
+`DisjunctiveRules::overload_max_window` refuses a conflict whose
+smallest window holds more than that many tasks; zero, the default,
+takes every conflict. Measured on generated RCPSP, **every cap closes
+fewer instances *and* costs more proof lines than no cap** — declining a
+conflict defers the work rather than removing it, and the big windows
+are where the information is. The switch stays so that measurement can
+be repeated rather than believed, which is the same reason
+`not_first_not_last_published` and the `Temporary` placement stay.
+
+### What the rule is worth
+
+Generated RCPSP, `--machine-fraction 0.8`, sizes 15–35: **41 of 50
+instances close only with the rule on**, and on the 8 that close either
+way, 12,169,134 recursions become 3,916 and 59.9 s becomes 0.043 s.
+Unusually for the rules in this document, the propagation is textbook
+and the *proof* was the part in doubt.
+
+### Testing
+
+`disjunctive_overload_test.cc`, with lanes in
+`innards/disjunctive_mutations.hh`: `OverloadEmitNothing` as the control
+(and unlike a presence falsification, an overload's reason context is
+*not* contradictory until the argument makes it so, which is why route
+mutations bite here where they cannot in the pairwise rules),
+`SkipOverloadFold`, `SkipOverloadEnergy`, and `RupOverloadBridge`. All
+rejected; the control fails everywhere.
 
 ## Edge-finding, and the guarded window-energy row (#751)
 
@@ -957,16 +1203,17 @@ proof *strategy* along with its parameters.
 The standard suite's remaining rungs are tracked by #729. What each
 would take from *this* encoding:
 
-- **The set-based form of detectable precedences.** The rule above
-  pushes to `max_k eet_k` over the detected predecessors; Vilím's
-  pushes to `ect(Ω)`, the *set's* earliest completion time, which is
-  larger when the predecessors cannot all fit before it. That is an
-  energy statement about a set, so it is the same obstacle as the
-  overload check below, not a variation on the pairwise proof.
+- ~~**The set-based form of detectable precedences**~~ — done, #754,
+  and its own section above. It was listed here as the same obstacle as
+  the overload check: an energy statement about a set rather than a
+  variation on the pairwise proof. It did not need the overload check's
+  machinery in the end — #757's derived window certifies it, in both
+  orientations.
 - ~~**An overload check** (#730)~~ — done, #737–#741, and
   ~~**edge-finding** (#733)~~ — done, #751. Kept here in outline because
   the shape of the obstacle is what the two sections above are answers
-  to. The conclusion,
+  to; the overload check's own section has what was built. The
+  conclusion,
   `Σ_{i∈Ω} p_i > lct(Ω) − est(Ω)`, is already in this document's
   vocabulary; the derivation is the problem, and giving `Disjunctive`
   per-time `active_{i,t}` flags to reach it would reintroduce exactly

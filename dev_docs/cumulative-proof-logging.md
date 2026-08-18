@@ -1224,7 +1224,16 @@ that gap is now named rather than hidden.
 
 ## Edge-finding, and the reason-free window-energy row
 
-The rule (#733): at a window `[a, b)` with `Theta` the tasks contained in it,
+**A note on the issue numbers in this document.** #733 and #732 were
+filed against `Disjunctive` --- "certified edge-finding for Disjunctive,
+then Cumulative" and its not-first/not-last counterpart --- and were
+closed by the *cumulative* PRs #743 and #745, which is why an earlier
+version of this document credited two cumulative rules to disjunctive
+issues. The disjunctive halves were done separately and later, as #751
+and #752; where a rule here shares a certificate with one there, this
+document says so and names both.
+
+The rule (PR #743): at a window `[a, b)` with `Theta` the tasks contained in it,
 `energy = sum p_i h_i` over `Theta` and `width` the window's occupiable slots, a
 task `j` with one end inside the window and one outside is pushed away from it.
 Writing `rest = energy - (capacity - h_j) * width` for the contained energy that
@@ -1356,7 +1365,7 @@ logger while it is set — and it is in the tree to be measured, not to be used:
 the row above is what it buys, and the propagation cost of recomputing the sum
 per window is not paid for on this family.
 
-## Not-first / not-last: the same certificate, different thresholds (#732)
+## Not-first / not-last: the same certificate, different thresholds (PR #745)
 
 A task that cannot start before every task the window contains has ended must
 start after the earliest of those ends; and a task that cannot end after every
