@@ -358,7 +358,8 @@ auto main(int argc, char * argv[]) -> int
             ("cumulative-energetic-edge-finding",                                                        //
                 "Strengthen edge-finding with every task's guaranteed energy inside the window, rather " //
                 "than only the contained tasks' whole energy (subsumes TTEF). Implies "                  //
-                "--cumulative-edge-finding. Not certified yet, so a run with --prove will refuse it",    //
+                "--cumulative-edge-finding. Certified, and unlike TTEF it needs no pins: every "         //
+                "contribution is a guarded window-energy row (#755)",                                    //
                 cxxopts::value<bool>()->default_value("false"))                                          //
             ("cumulative-not-first-not-last",                                                            //
                 "Run not-first / not-last on every posted Cumulative, alongside edge-finding. Implies "  //
