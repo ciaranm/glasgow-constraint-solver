@@ -8,6 +8,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_scaffolding_scope.hh>
+#include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/presolvers/inferred_cumulative/inferred_cumulative.hh>
 #include <gcs/presolvers/innards/makespan_links.hh>
@@ -33,11 +34,13 @@ using std::map;
 using std::max;
 using std::min;
 using std::move;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::set;
 using std::shared_ptr;
 using std::size_t;
+using std::string;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
@@ -420,7 +423,11 @@ namespace
 }
 
 InferredCumulative::InferredCumulative(shared_ptr<InferredCumulativeStats> stats) :
-    _stats(move(stats)), _max_covers(100), _max_posted(5), _maximum_capacity(1000), _max_lifting_calls(20000), _max_programme_states(100000),
+    // Always a block, whether or not anyone asked for one: the default
+    // experience was silent because nothing was allocated, not because the
+    // channel was wrong.
+    _stats(stats ? move(stats) : make_shared<InferredCumulativeStats>()), _max_covers(100), _max_posted(5), _maximum_capacity(1000),
+    _max_lifting_calls(20000), _max_programme_states(100000),
     // Energy only: a valid cut holds at every 0/1 point the donor's row allows,
     // so no time-tabling verdict about a single time point can differ.
     _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true}), _mutation(inferred_cumulative_mutation::None{})
@@ -472,10 +479,21 @@ auto InferredCumulative::with_makespan(IntegerVariableID makespan) -> InferredCu
 
 auto InferredCumulative::run(Problem & problem, Propagators & propagators, State & state, ProofLogger * const logger) -> bool
 {
-    auto bump = [&](size_t InferredCumulativeStats::* field, size_t by = 1) {
-        if (_stats)
-            (*_stats).*field += by;
+    // Before the loop, and unconditionally: a presolver that found no Cumulative
+    // to look at is the case worth being able to see, and it is the one every
+    // other check passes without noticing.
+    propagators.add_component_stats(_stats);
+
+    auto bump = [&](size_t InferredCumulativeStats::* field, size_t by = 1) { (*_stats).*field += by; };
+
+    auto note = [&](StatsLevel level, optional<ConstraintID> constraint, string text) {
+        propagators.report(StatsNote{.level = level, .component = _stats->component_name(), .constraint = move(constraint), .text = move(text)});
     };
+
+    // This run's own tally, rather than the block's: a block shared across two
+    // solves would otherwise have the first solve's drops counted into the
+    // second's Important note.
+    size_t cuts_unposted_this_run = 0, cuts_uncertifiable_this_run = 0;
 
     // What the model says about the makespan, if the caller named one: the rows
     // saying each task finishes by it, which are what a bound on it is derived
@@ -506,8 +524,8 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         // until that has a rule of its own rather than a hopeful `pol`.
         if (! donor.presences().empty()) {
             bump(&InferredCumulativeStats::declined_optional);
-            if (logger)
-                logger->emit_proof_comment("presolve lifted cover: declining " + as_string(donor.constraint_id()) + ", optional tasks");
+            note(StatsLevel::General, donor.constraint_id(),
+                "passed over: it has optional tasks, whose presence conjuncts do not yet cancel across a bridge between donors");
             continue;
         }
 
@@ -521,8 +539,8 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         auto view = cumulative_donor_view(donor, state, logger);
         if (! view) {
             bump(&InferredCumulativeStats::declined_irreducible_capacity);
-            if (logger)
-                logger->emit_proof_comment("presolve lifted cover: declining " + as_string(donor.constraint_id()) + ", capacity is not reducible");
+            note(StatsLevel::General, donor.constraint_id(),
+                "passed over: its capacity is a view, which cannot be reduced to a number to lift a cut out of");
             continue;
         }
         if (! view->set_aside.empty())
@@ -720,7 +738,11 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         return a.support < b.support;
     });
     if (cuts.size() > _max_posted) {
-        bump(&InferredCumulativeStats::dropped_over_budget, cuts.size() - _max_posted);
+        cuts_unposted_this_run = cuts.size() - _max_posted;
+        bump(&InferredCumulativeStats::dropped_over_budget, cuts_unposted_this_run);
+        note(StatsLevel::General, nullopt,
+            to_string(cuts_unposted_this_run) + " of " + to_string(cuts.size()) +
+                " inferred constraints left unposted, against an output budget of " + to_string(_max_posted) + ", see with_budgets");
         cuts.erase(cuts.begin() + static_cast<long>(_max_posted), cuts.end());
     }
 
@@ -741,9 +763,18 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         cut.validated = move(validity.cut);
         if (! cut.validated) {
             bump(validity.over_state_budget ? &InferredCumulativeStats::dropped_over_state_budget : &InferredCumulativeStats::cuts_uncertifiable);
-            if (logger)
-                logger->emit_proof_comment("presolve lifted cover: dropping an inferred constraint over " + to_string(cut.support.size()) +
-                    " tasks, " + (validity.over_state_budget ? "its dynamic programme is over budget" : "it does not follow from the rows"));
+            if (validity.over_state_budget) {
+                ++cuts_uncertifiable_this_run;
+                note(StatsLevel::General, nullopt,
+                    "an inferred constraint over " + to_string(cut.support.size()) +
+                        " tasks was dropped: the dynamic programme that would derive it needs more than " + to_string(_max_programme_states) +
+                        " states, see with_programme_state_budget");
+            }
+            else
+                note(StatsLevel::General, nullopt,
+                    "an inferred constraint over " + to_string(cut.support.size()) +
+                        " tasks was dropped: it does not in fact follow from the rows, so the published method would have posted something "
+                        "unsound");
             continue;
         }
         accepted.push_back(move(cut));
@@ -830,8 +861,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 // built, seeded before any of this ran.
                 auto cached = recipe.programmes->find(present);
                 if (cached == recipe.programmes->end()) {
-                    if (recipe.stats)
-                        ++recipe.stats->restricted_rows_rebuilt;
+                    ++recipe.stats->restricted_rows_rebuilt;
                     cached = recipe.programmes
                                  ->emplace(present,
                                      validate_lifted_cover_cut(present_demands, coefficients, capacities, recipe.rhs, recipe.state_budget).cut)
@@ -972,7 +1002,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             .makespan_links = links,
             .makespan_bound_reached =
                 [stats = _stats](Integer bound) {
-                    if (stats && bound > stats->certified_makespan_bound)
+                    if (bound > stats->certified_makespan_bound)
                         stats->certified_makespan_bound = bound;
                 },
             .makespan_mutation = std::holds_alternative<inferred_cumulative_mutation::ClaimHigherMakespanBound>(_mutation)
@@ -990,12 +1020,30 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             bump(&InferredCumulativeStats::non_unit_cuts_posted);
         if (cut.validated->row_indices.size() > 1)
             bump(&InferredCumulativeStats::multi_resource_cuts_posted);
-        if (_stats && cut.bound() > _stats->largest_capacity_bound)
+        if (cut.bound() > _stats->largest_capacity_bound)
             _stats->largest_capacity_bound = cut.bound();
         if (logger)
             logger->emit_proof_comment("presolve lifted cover: inferred a cut over " + to_string(cut.support.size()) + " tasks on " +
                 to_string(cut.validated->row_indices.size()) + " resources with capacity " + to_string(cut.rhs.raw_value) + ", makespan bound " +
                 to_string(cut.bound().raw_value));
+    }
+
+    // The model-level consequence, for a reader who does not know what this
+    // presolver is: a limit stopped it doing what it was asked to do, so the
+    // configuration being run is not the one that was asked for. The figures
+    // and the option that raises them are in the General notes above; this one
+    // names neither, because naming them is what makes a message unreadable to
+    // the person it is for. A constraint that simply does not follow from the
+    // rows is not on this rung: nothing was limited, and there is no knob.
+    if (0 != cuts_unposted_this_run || 0 != cuts_uncertifiable_this_run) {
+        string what;
+        if (0 != cuts_unposted_this_run)
+            what = to_string(cuts_unposted_this_run) + " inferred constraints were never posted";
+        if (0 != cuts_uncertifiable_this_run)
+            what += (what.empty() ? string{} : string{", and "}) + to_string(cuts_uncertifiable_this_run) + " were dropped for want of a derivation";
+        note(StatsLevel::Important, nullopt,
+            "Inferring lifted cover cuts was cut short because a size limit was reached: " + what +
+                "; answers are still correct, but search may be slower");
     }
 
     return true;
@@ -1012,5 +1060,54 @@ auto InferredCumulative::clone() const -> unique_ptr<Presolver>
     result->with_proof_mutation(_mutation);
     if (_makespan)
         result->with_makespan(*_makespan);
+    return result;
+}
+
+auto InferredCumulativeStats::component_name() const -> std::string
+{
+    return "inferred_cumulative";
+}
+
+auto InferredCumulativeStats::summary() const -> std::string
+{
+    if (0 == donors_seen)
+        return "no posted Cumulative to look at";
+
+    if (0 == cuts_posted)
+        return "nothing inferred, of " + to_string(covers_considered) + " covers over " + to_string(tasks) + " tasks from " + to_string(donors_seen) +
+            " posted Cumulative" + (1 == donors_seen ? "" : "s") + " looked at";
+
+    return to_string(cuts_posted) + " constraint" + (1 == cuts_posted ? "" : "s") + " inferred from " + to_string(donors_seen) +
+        " posted Cumulative" + (1 == donors_seen ? "" : "s") + ", " + to_string(non_unit_cuts_posted) +
+        " of them with a coefficient above one, the best worth a makespan bound of " + to_string(largest_capacity_bound.raw_value);
+}
+
+auto InferredCumulativeStats::entries() const -> vector<StatsEntry>
+{
+    vector<StatsEntry> result;
+    auto add = [&](const char * name, size_t value) { result.push_back(StatsEntry{name, static_cast<long long>(value)}); };
+
+    add("donors_seen", donors_seen);
+    add("tasks", tasks);
+    add("covers_considered", covers_considered);
+    add("lifting_subproblems", lifting_subproblems);
+    add("lifting_subproblems_over_budget", lifting_subproblems_over_budget);
+    add("cuts_found", cuts_found);
+    add("cuts_uncertifiable", cuts_uncertifiable);
+    add("cuts_posted", cuts_posted);
+    add("non_unit_cuts_posted", non_unit_cuts_posted);
+    add("multi_resource_cuts_posted", multi_resource_cuts_posted);
+    add("restricted_rows_rebuilt", restricted_rows_rebuilt);
+    result.push_back(StatsEntry{"largest_capacity_bound", largest_capacity_bound.raw_value});
+    result.push_back(StatsEntry{"certified_makespan_bound", certified_makespan_bound.raw_value});
+    add("declined_optional", declined_optional);
+    add("declined_irreducible_capacity", declined_irreducible_capacity);
+    add("donors_with_set_aside_tasks", donors_with_set_aside_tasks);
+    add("converted_heights", converted_heights);
+    add("dropped_dominated", dropped_dominated);
+    add("dropped_over_budget", dropped_over_budget);
+    add("dropped_over_state_budget", dropped_over_state_budget);
+    add("declined_by_install", declined_by_install);
+
     return result;
 }

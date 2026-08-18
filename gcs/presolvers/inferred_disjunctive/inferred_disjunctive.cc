@@ -13,6 +13,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_scaffolding_scope.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
+#include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/presolvers/inferred_disjunctive/inferred_disjunctive.hh>
 #include <gcs/presolvers/innards/makespan_links.hh>
@@ -30,14 +31,17 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::make_unique;
 using std::map;
 using std::move;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::set;
 using std::shared_ptr;
 using std::size_t;
+using std::string;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
@@ -118,7 +122,10 @@ namespace
 }
 
 InferredDisjunctive::InferredDisjunctive(shared_ptr<InferredDisjunctiveStats> stats) :
-    _stats(move(stats)), _max_candidates(100), _max_posted(5), _min_clique_size(3),
+    // Always a block, whether or not anyone asked for one: the default
+    // experience was silent because nothing was allocated, not because the
+    // channel was wrong.
+    _stats(stats ? move(stats) : make_shared<InferredDisjunctiveStats>()), _max_candidates(100), _max_posted(5), _min_clique_size(3),
     // Energy only: a conflicting pair is already kept apart by the resource
     // that witnesses it, so an inferred constraint's time-tabling is redundant.
     _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true}), _mutation(inferred_disjunctive_mutation::None{})
@@ -158,10 +165,21 @@ auto InferredDisjunctive::with_rules(CumulativeRules rules) -> InferredDisjuncti
 
 auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, State & state, ProofLogger * const logger) -> bool
 {
-    auto bump = [&](size_t InferredDisjunctiveStats::* field, size_t by = 1) {
-        if (_stats)
-            (*_stats).*field += by;
+    // Before the loop, and unconditionally: a presolver that found no Cumulative
+    // to look at is the case worth being able to see, and it is the one every
+    // other check passes without noticing.
+    propagators.add_component_stats(_stats);
+
+    auto bump = [&](size_t InferredDisjunctiveStats::* field, size_t by = 1) { (*_stats).*field += by; };
+
+    auto note = [&](StatsLevel level, optional<ConstraintID> constraint, string text) {
+        propagators.report(StatsNote{.level = level, .component = _stats->component_name(), .constraint = move(constraint), .text = move(text)});
     };
+
+    // This run's own tally, rather than the block's: a block shared across two
+    // solves would otherwise have the first solve's drops counted into the
+    // second's Important note.
+    size_t pairs_ungrown_this_run = 0, cliques_unposted_this_run = 0;
 
     // What the model says about the makespan, if the caller named one: the rows
     // saying each task finishes by it, which are what a bound on it is derived
@@ -194,8 +212,8 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         // until that has a rule of its own rather than a hopeful `pol`.
         if (! donor.presences().empty()) {
             bump(&InferredDisjunctiveStats::declined_optional);
-            if (logger)
-                logger->emit_proof_comment("presolve disjunctive: declining " + as_string(donor.constraint_id()) + ", optional tasks");
+            note(StatsLevel::General, donor.constraint_id(),
+                "passed over: it has optional tasks, whose presence conjuncts do not yet cancel across a bridge between donors");
             continue;
         }
 
@@ -210,8 +228,8 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         auto view = cumulative_donor_view(donor, state, logger);
         if (! view) {
             bump(&InferredDisjunctiveStats::declined_irreducible_capacity);
-            if (logger)
-                logger->emit_proof_comment("presolve disjunctive: declining " + as_string(donor.constraint_id()) + ", capacity is not reducible");
+            note(StatsLevel::General, donor.constraint_id(),
+                "passed over: its capacity is a view, which cannot be reduced to a number to argue conflicts against");
             continue;
         }
         if (! view->set_aside.empty())
@@ -355,10 +373,11 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     size_t considered = 0;
     for (const auto & [u, v] : candidate_pairs) {
         if (considered >= _max_candidates) {
-            bump(&InferredDisjunctiveStats::dropped_over_candidate_budget, candidate_pairs.size() - considered);
-            if (logger)
-                logger->emit_proof_comment("presolve disjunctive: " + to_string(candidate_pairs.size() - considered) +
-                    " candidate pairs left ungrown, against a budget of " + to_string(_max_candidates));
+            pairs_ungrown_this_run = candidate_pairs.size() - considered;
+            bump(&InferredDisjunctiveStats::dropped_over_candidate_budget, pairs_ungrown_this_run);
+            note(StatsLevel::General, nullopt,
+                to_string(pairs_ungrown_this_run) + " candidate pairs left ungrown, against a budget of " + to_string(_max_candidates) +
+                    ", see with_budgets");
             break;
         }
         ++considered;
@@ -486,9 +505,8 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         }
 
         if (accepted.size() >= _max_posted) {
+            ++cliques_unposted_this_run;
             bump(&InferredDisjunctiveStats::dropped_over_posting_budget);
-            if (logger)
-                logger->emit_proof_comment("presolve disjunctive: a clique beyond the output budget of " + to_string(_max_posted) + " was dropped");
             continue;
         }
 
@@ -505,6 +523,14 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
 
         accepted.push_back(move(clique));
     }
+
+    // One note for the lot rather than one per clique: the figure a caller acts
+    // on is how many were dropped, and a dense conflict graph produces enough
+    // of them to bury everything else this presolver has to say.
+    if (0 != cliques_unposted_this_run)
+        note(StatsLevel::General, nullopt,
+            to_string(cliques_unposted_this_run) + " cliques left unposted, against an output budget of " + to_string(_max_posted) +
+                ", see with_budgets");
 
     for (const auto & clique : accepted) {
         // Each member's flags come from its first appearance; the certificate
@@ -593,8 +619,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
 
                     auto line = recover_conjunction_flag_bridge(recipe_logger, std::get<2>(*from), {std::get<0>(*from), std::get<1>(*from)},
                         std::get<2>(*to), {std::get<0>(*to), std::get<1>(*to)}, ProofLevel::Temporary);
-                    if (stats)
-                        ++stats->bridges_derived;
+                    ++stats->bridges_derived;
                     bridges.emplace(key, line);
                     return line;
                 };
@@ -697,7 +722,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
             .makespan_links = links,
             .makespan_bound_reached =
                 [stats = _stats](Integer bound) {
-                    if (stats && bound > stats->certified_makespan_bound)
+                    if (bound > stats->certified_makespan_bound)
                         stats->certified_makespan_bound = bound;
                 },
             .makespan_mutation = std::holds_alternative<inferred_disjunctive_mutation::ClaimHigherMakespanBound>(_mutation)
@@ -713,7 +738,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         bump(&InferredDisjunctiveStats::cliques_posted);
         bump(&InferredDisjunctiveStats::clique_members_posted, clique.size());
         auto bound = capacity_bound(clique);
-        if (_stats && bound > _stats->largest_capacity_bound)
+        if (bound > _stats->largest_capacity_bound)
             _stats->largest_capacity_bound = bound;
         if (logger)
             logger->emit_proof_comment(
@@ -729,6 +754,23 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
             bump(&InferredDisjunctiveStats::cross_donor_pairs);
     }
 
+    // The model-level consequence, for a reader who does not know what this
+    // presolver is: a limit stopped it doing what it was asked to do, so the
+    // configuration being run is not the one that was asked for. The figures
+    // and the option that raises them are in the General notes above; this one
+    // names neither, because naming them is what makes a message unreadable to
+    // the person it is for.
+    if (0 != pairs_ungrown_this_run || 0 != cliques_unposted_this_run) {
+        string what;
+        if (0 != pairs_ungrown_this_run)
+            what = to_string(pairs_ungrown_this_run) + " pairs of tasks were never grown into a clique";
+        if (0 != cliques_unposted_this_run)
+            what += (what.empty() ? string{} : string{", and "}) + to_string(cliques_unposted_this_run) + " cliques were found and not posted";
+        note(StatsLevel::Important, nullopt,
+            "Inferring Disjunctives was cut short because a size limit was reached: " + what +
+                "; answers are still correct, but search may be slower");
+    }
+
     return true;
 }
 
@@ -741,5 +783,55 @@ auto InferredDisjunctive::clone() const -> unique_ptr<Presolver>
     result->with_proof_mutation(_mutation);
     if (_makespan)
         result->with_makespan(*_makespan);
+    return result;
+}
+
+auto InferredDisjunctiveStats::component_name() const -> std::string
+{
+    return "inferred_disjunctive";
+}
+
+auto InferredDisjunctiveStats::summary() const -> std::string
+{
+    if (0 == donors_seen)
+        return "no posted Cumulative to look at";
+
+    if (0 == cliques_posted)
+        return "nothing inferred, of " + to_string(conflicting_pairs) + " conflicting pairs over " + to_string(tasks) + " tasks from " +
+            to_string(donors_seen) + " posted Cumulative" + (1 == donors_seen ? "" : "s") + " looked at";
+
+    return to_string(cliques_posted) + " clique" + (1 == cliques_posted ? "" : "s") + " posted over " + to_string(clique_members_posted) +
+        " task appearances, from " + to_string(donors_seen) + " posted Cumulative" + (1 == donors_seen ? "" : "s") +
+        ", the best of them worth a makespan bound of " + to_string(largest_capacity_bound.raw_value);
+}
+
+auto InferredDisjunctiveStats::entries() const -> vector<StatsEntry>
+{
+    vector<StatsEntry> result;
+    auto add = [&](const char * name, size_t value) { result.push_back(StatsEntry{name, static_cast<long long>(value)}); };
+
+    add("donors_seen", donors_seen);
+    add("tasks", tasks);
+    add("conflicting_pairs", conflicting_pairs);
+    add("cross_donor_pairs", cross_donor_pairs);
+    add("cliques_found", cliques_found);
+    add("cliques_posted", cliques_posted);
+    add("clique_members_posted", clique_members_posted);
+    result.push_back(StatsEntry{"largest_capacity_bound", largest_capacity_bound.raw_value});
+    result.push_back(StatsEntry{"certified_makespan_bound", certified_makespan_bound.raw_value});
+    add("resources_with_set_aside_tasks", resources_with_set_aside_tasks);
+    add("converted_heights", converted_heights);
+    add("bridges_derived", bridges_derived);
+    add("declined_optional", declined_optional);
+    add("declined_irreducible_capacity", declined_irreducible_capacity);
+    add("dropped_too_small", dropped_too_small);
+    add("dropped_subset", dropped_subset);
+    add("dropped_dominated", dropped_dominated);
+    add("dropped_over_candidate_budget", dropped_over_candidate_budget);
+    add("dropped_over_posting_budget", dropped_over_posting_budget);
+    add("dropped_disagreeing_length", dropped_disagreeing_length);
+    add("dropped_duplicate_appearance", dropped_duplicate_appearance);
+    add("declined_by_install", declined_by_install);
+
     return result;
 }

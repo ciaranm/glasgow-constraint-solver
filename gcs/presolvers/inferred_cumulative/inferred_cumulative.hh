@@ -5,11 +5,14 @@
 #include <gcs/integer.hh>
 #include <gcs/presolver.hh>
 #include <gcs/presolvers/innards/inferred_cumulative_mutations.hh>
+#include <gcs/stats.hh>
 
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <string>
 #include <variant>
+#include <vector>
 
 namespace gcs
 {
@@ -23,9 +26,14 @@ namespace gcs
      * separates this from the capacity-one stage before it: a cut with every
      * coefficient one is something InferredDisjunctive could also have found.
      *
+     * The presolver allocates one of these whether or not a caller asked for
+     * one, so the block reaches Stats::components() --- and, through it,
+     * `%%%mzn-stat` --- and says what happened even when nobody was interested
+     * enough to pass a handle in.
+     *
      * \ingroup Presolvers
      */
-    struct InferredCumulativeStats
+    struct InferredCumulativeStats final : ComponentStats
     {
         /// Posted Cumulatives the presolver looked at.
         std::size_t donors_seen = 0;
@@ -179,6 +187,10 @@ namespace gcs
         std::size_t dropped_over_state_budget = 0;
         std::size_t declined_by_install = 0;
         ///@}
+
+        [[nodiscard]] virtual auto component_name() const -> std::string override;
+        [[nodiscard]] virtual auto summary() const -> std::string override;
+        [[nodiscard]] virtual auto entries() const -> std::vector<StatsEntry> override;
     };
 
     /**

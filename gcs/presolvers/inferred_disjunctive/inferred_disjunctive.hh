@@ -5,11 +5,14 @@
 #include <gcs/integer.hh>
 #include <gcs/presolver.hh>
 #include <gcs/presolvers/innards/inferred_disjunctive_mutations.hh>
+#include <gcs/stats.hh>
 
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <string>
 #include <variant>
+#include <vector>
 
 namespace gcs
 {
@@ -24,9 +27,14 @@ namespace gcs
      * find ones: a budget that silently swallowed every candidate looks exactly
      * like a conflict graph with no cliques in it.
      *
+     * The presolver allocates one of these whether or not a caller asked for
+     * one, so the block reaches Stats::components() --- and, through it,
+     * `%%%mzn-stat` --- and says what happened even when nobody was interested
+     * enough to pass a handle in.
+     *
      * \ingroup Presolvers
      */
-    struct InferredDisjunctiveStats
+    struct InferredDisjunctiveStats final : ComponentStats
     {
         /// Posted Cumulatives the presolver looked at.
         std::size_t donors_seen = 0;
@@ -158,6 +166,10 @@ namespace gcs
         std::size_t dropped_duplicate_appearance = 0;
         std::size_t declined_by_install = 0;
         ///@}
+
+        [[nodiscard]] virtual auto component_name() const -> std::string override;
+        [[nodiscard]] virtual auto summary() const -> std::string override;
+        [[nodiscard]] virtual auto entries() const -> std::vector<StatsEntry> override;
     };
 
     /**
