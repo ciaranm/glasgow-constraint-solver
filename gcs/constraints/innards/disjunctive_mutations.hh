@@ -191,6 +191,46 @@ namespace gcs::innards
         {
         };
 
+        /// Emit no certificate at all for the *published* not-first / not-last
+        /// condition, leaving the push to the framework's wrapping RUP. The
+        /// control for that rule.
+        struct PublishedEmitNothing
+        {
+        };
+
+        /// Leave the per-time at-most-ones out of the published rule's endgame,
+        /// so nothing says the derived window can hold only one task at a time
+        /// and the contained set's duration has no supply to exceed.
+        struct SkipPublishedFold
+        {
+        };
+
+        /// Leave one contained task's guarded energy row out of the published
+        /// rule's endgame, so the derived window is charged less work than
+        /// `p(Theta)` puts in it.
+        struct DropPublishedEnergy
+        {
+        };
+
+        /// Leave out the derived two-literal clause that puts the contained set
+        /// inside the *derived* window. **The mutation for what is new in this
+        /// rule**: the published condition's window has an edge the negated
+        /// conclusion supplies rather than one the sweep enumerated, and this
+        /// clause is the only thing that supplies it. Without it the guarded
+        /// rows are guarded by something nothing discharges and the conclusion
+        /// never enters the sum.
+        struct DropPublishedClause
+        {
+        };
+
+        /// Conclude that clause by bare `rup` rather than by the pairwise pols,
+        /// as \ref RupSetPrecedenceClause does for #754's. The same question,
+        /// asked where the derived edge comes from the pushed task's own bound
+        /// rather than from a cut's.
+        struct RupPublishedClause
+        {
+        };
+
         // Deliberately absent: citing the pushed task's row at the *unclipped*
         // threshold, as if the window contained it. It was written, and it
         // verified. A row derived at a threshold the reason still entails is a
@@ -212,7 +252,10 @@ namespace gcs::innards
         disjunctive_proof_mutation::DropContainedEnergy, disjunctive_proof_mutation::EdgeFindingOneTooFar,
         disjunctive_proof_mutation::DropPushedEnergy, disjunctive_proof_mutation::SetPrecedenceEmitNothing,
         disjunctive_proof_mutation::SkipSetPrecedenceFold, disjunctive_proof_mutation::DropSetPrecedenceEnergy,
-        disjunctive_proof_mutation::DropSetPrecedenceClause, disjunctive_proof_mutation::RupSetPrecedenceClause>;
+        disjunctive_proof_mutation::DropSetPrecedenceClause, disjunctive_proof_mutation::RupSetPrecedenceClause,
+        disjunctive_proof_mutation::PublishedEmitNothing, disjunctive_proof_mutation::SkipPublishedFold,
+        disjunctive_proof_mutation::DropPublishedEnergy, disjunctive_proof_mutation::DropPublishedClause,
+        disjunctive_proof_mutation::RupPublishedClause>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,
