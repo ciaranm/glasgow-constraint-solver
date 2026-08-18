@@ -80,7 +80,9 @@ namespace gcs::innards
         /// Push the bound one unit past where the detected precedence puts it,
         /// which is false. The "bound + 1 must fail" check for this rule:
         /// it corrupts the conclusion rather than the route to it, which is
-        /// what a margin of exactly one unit is there to expose.
+        /// what a margin of exactly one unit is there to expose. Serves the
+        /// set-based form (#754) as well, which takes its target from the same
+        /// place and derives the honest one in its certificate.
         struct PushOneTooFar
         {
         };
@@ -152,6 +154,43 @@ namespace gcs::innards
         {
         };
 
+        /// Emit no set-based-precedence certificate at all, leaving the push
+        /// to the framework's wrapping RUP. The control for that rule.
+        struct SetPrecedenceEmitNothing
+        {
+        };
+
+        /// Leave the per-time at-most-ones out of the set-based precedence's
+        /// endgame, so nothing says the derived window can hold only one task
+        /// at a time.
+        struct SkipSetPrecedenceFold
+        {
+        };
+
+        /// Leave one cut task's guarded energy row out, so the derived window
+        /// is charged less work than the cut actually puts in it.
+        struct DropSetPrecedenceEnergy
+        {
+        };
+
+        /// Leave out the derived two-literal clause that discharges the guard
+        /// the reason cannot. **The mutation for what is new in this rule**:
+        /// without it the guarded row's guard is never discharged and the
+        /// conclusion never enters the sum, so if VeriPB accepts this the
+        /// derived window is doing no work.
+        struct DropSetPrecedenceClause
+        {
+        };
+
+        /// Conclude that clause by bare `rup` rather than by the pairwise
+        /// pols. Asks whether unit propagation can reach a statement that
+        /// relates two tasks' starts through a third's bound --- which is the
+        /// pairwise encoding's cross-variable limit, and the same question
+        /// \ref RupOverloadBridge asks of the bridge.
+        struct RupSetPrecedenceClause
+        {
+        };
+
         // Deliberately absent: citing the pushed task's row at the *unclipped*
         // threshold, as if the window contained it. It was written, and it
         // verified. A row derived at a threshold the reason still entails is a
@@ -171,7 +210,9 @@ namespace gcs::innards
         disjunctive_proof_mutation::SkipOverloadEnergy, disjunctive_proof_mutation::RupOverloadBridge,
         disjunctive_proof_mutation::EdgeFindingEmitNothing, disjunctive_proof_mutation::SkipEdgeFindingFold,
         disjunctive_proof_mutation::DropContainedEnergy, disjunctive_proof_mutation::EdgeFindingOneTooFar,
-        disjunctive_proof_mutation::DropPushedEnergy>;
+        disjunctive_proof_mutation::DropPushedEnergy, disjunctive_proof_mutation::SetPrecedenceEmitNothing,
+        disjunctive_proof_mutation::SkipSetPrecedenceFold, disjunctive_proof_mutation::DropSetPrecedenceEnergy,
+        disjunctive_proof_mutation::DropSetPrecedenceClause, disjunctive_proof_mutation::RupSetPrecedenceClause>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,

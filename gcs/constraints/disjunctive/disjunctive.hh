@@ -82,19 +82,25 @@ namespace gcs
         /// Computed by a left-cut scan rather than by a Theta-tree, this being
         /// a measurement rather than a competitive implementation.
         ///
-        /// **Uncertified for now**, and throws rather than propagating under
-        /// proof logging --- but only where the target it takes is past what
-        /// \ref detectable_precedences' own justification supports, a target
-        /// the domain clip caps being one that justification still covers.
         /// Measured before being certified, the way
         /// \ref not_first_not_last_published was, and unlike that one **this
-        /// is worth building**: on its own it is 0.386x the median recursions
+        /// was worth building**: on its own it is 0.386x the median recursions
         /// and closes three more instances, and on top of \ref edge_finding it
         /// is better on 23 of 36 at a median of 0.941x, closing one instance no
         /// other arm closes. Set that against not-first/not-last's 1 of 36.
-        /// See `dev_docs/disjunctive-proof-logging.md`, which also carries the
-        /// certificate the rule wants (#757's shape, mirrored: a window whose
-        /// *right* edge the negated conclusion derives).
+        ///
+        /// **Certified, and by \ref not_first_not_last_published's mechanism
+        /// mirrored** (#757). The window is *derived* rather than enumerated:
+        /// `[est(Omega'), T - 1)` for the lb push, whose right edge the negated
+        /// conclusion supplies, and `[L + 1, lct(Omega'))` for the ub push,
+        /// whose left edge it does. Either way the rows cited are the standard
+        /// contained-task guarded ones, and what is new is that one of the two
+        /// guards is discharged by a *derived two-literal clause* rather than
+        /// by the reason --- the clause carrying the conclusion literal along
+        /// at that guard's coefficient, so the conclusion accumulates across
+        /// the cut and the summed pol derives it. Off by default only because
+        /// the derived windows share nothing with the sweep's, which is a cost
+        /// nobody has measured yet.
         bool detectable_precedences_set = false;
 
         /// The overload check: a window whose fully-contained tasks carry more

@@ -741,12 +741,10 @@ over subsets is attained at a cut, since taking every predecessor with
 `est ≥ a` never lowers `est(Ω')` below `a` and only adds duration, so
 one pass over the ests sorted descending gives it.
 
-**It is deliberately uncertified and throws under `--prove`**, and only
-when the target it takes is past what #734's pairwise justification
-supports — a target the domain clip caps is one that justification still
-covers. This is #757's discipline: a stronger rule with no certificate
-is measured before it is built, because the certificate is the expensive
-part and a detection gap need not be a search gap.
+Measured before it was certified, which is #757's discipline: a stronger
+rule ships as a switch first, because the certificate is the expensive
+part and a detection gap need not be a search gap. Unlike #757 the answer
+came back yes, so it **is** certified — see below.
 
 ### It is sound, checked against enumeration
 
@@ -820,12 +818,25 @@ than assuming it.
 
 Simulated standalone before any C++, as #730, #751 and #757 all were:
 126 lines, veripb exit 0, every load-bearing row on its predicted shape,
-and **all seven mutation lanes rejected** (`emit_nothing`, `drop_folds`,
-`drop_omega_energy`, `over_push`, `drop_clause`, `rup_clause`,
-`rup_fold`) on a generated four-predecessor fixture. As #731, #752 and
-#757 all found, the demonstration fixture is not the one the lanes bite
-on: over two predecessors the fold is a single bridge row the closing RUP
-reconstructs, so the mutation fixture needs `|Ω'| ≥ 3`.
+and **all seven mutation lanes rejected** on a generated four-predecessor
+fixture. Then built, and `disjunctive_set_precedences_test` carries the
+same battery in the solver — six lanes (`emit_nothing`, `skip_fold`,
+`drop_energy`, `drop_clause`, `rup_clause`, `one_too_far`), all
+rejected — plus a `--search` lane that generated 60 instances, verified a
+proof for each, and found the rule firing on 51.
+
+`drop_clause` and `rup_clause` are the two aimed at what is actually new.
+The first leaves out the derived clause, so the guard is never discharged
+and the conclusion never enters the sum; the second asks whether unit
+propagation can reach that clause on its own, and it cannot — the same
+cross-variable limit `RupOverloadBridge` finds for the bridge.
+
+As #731, #752 and #757 all found, the demonstration fixture is not the
+one the lanes bite on: on `sharp` only four of the six do, because with
+two tasks in the derived window the fold is a single bridge row the
+closing RUP reconstructs. **`|Ω'| ≥ 3` is the threshold**, the same one
+the simulation found, and the mutation fixture is a generated instance
+with a cut of three.
 
 **Steps 1 and 2 are not load-bearing, and step 3 is.** Replacing the
 detection pol and the separation clause with a bare `rup b_ij ≥ 1`
@@ -840,9 +851,25 @@ two pols: it cannot cheaply tell which case it is in, and the cost is two
 lines.
 
 Unlike #757 the final division is **not** load-bearing here — the
-surplus is exactly one, so saturation alone lands on the unit clause.
-Divide anyway: a surplus of one is a property of the tight case, not of
-the rule.
+surplus is exactly one, so the propagator leaves the closing RUP to read
+the pol off, exactly as edge-finding's does.
+
+### The trap the build hit, which no sweep would have caught
+
+The first version read the bounds its arithmetic needed back out of
+`state` inside the justification, and **every generated proof above a
+handful of tasks was rejected**. By the time a justification runs, an
+earlier push in the same propagation has landed, so the state holds a
+bound the reason does not support — and a `pol` built on it is arithmetic
+about a fact nothing has established. The ub push already carried a
+comment recording exactly this for #734's own certificate.
+
+The fix is that every bound the arithmetic reads is captured at
+*detection* time and carried into the closure, which is why `SetTask`
+holds `lb` and `ub` beside the edge its cut is sorted by. Worth stating
+as a rule: **a justification may read the reason and the model, and
+nothing else.** Anything else it reads out of `state` is a bound that has
+since moved.
 
 ## Strict-mode zero-length tasks
 

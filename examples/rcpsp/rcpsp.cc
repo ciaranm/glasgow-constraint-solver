@@ -457,12 +457,12 @@ auto main(int argc, char * argv[]) -> int
                 "nothing at the median, so it is deliberately uncertified and throws rather than " //
                 "propagating under --prove (#757)")                                                //
             ("disjunctive-detectable-precedences-set",
-                "Push a detectable precedence to the set's earliest completion time rather than "  //
-                "to the latest single predecessor's earliest end, and the mirror --- Vilim's "     //
-                "rule rather than the pairwise one. Worth 0.386x the median recursions on its "    //
-                "own, and better on 23 of 36 on top of edge-finding. Off by default only because " //
-                "that push has no certificate yet, so it throws rather than propagating under "    //
-                "--prove (#754)")                                                                  //
+                "Push a detectable precedence to the set's earliest completion time rather than " //
+                "to the latest single predecessor's earliest end, and the mirror --- Vilim's "    //
+                "rule rather than the pairwise one. Worth 0.386x the median recursions on its "   //
+                "own, and better on 23 of 36 on top of edge-finding. Certified over a window "    //
+                "the negated conclusion derives; off by default because those windows share "     //
+                "nothing with the energetic sweep's, which has not been measured (#754)")         //
             ("disjunctive-overload",
                 "Give every posted Disjunctive the overload check, off by default because its "   //
                 "certificate is expensive enough that whether it pays is what #730 is measuring") //

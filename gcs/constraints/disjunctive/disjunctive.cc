@@ -443,9 +443,15 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // `duration_floor`, when given, replaces the duration's current
             // bound row with one the caller has: the overload certificate
             // needs a *reason-free* floor, and cites the model's declared one.
+            //
+            // `divisor`, when given, divides before saturating. A caller that
+            // only wants the row *cited* wants it saturated at whatever degree
+            // it came out with; a caller that wants to add it to something else
+            // wants a clause, and saturation alone leaves the coefficients at
+            // the degree rather than at one. #754 is the second kind.
             auto emit_before_pol = [&](size_t a, size_t b, const optional<IntegerVariableCondition> & cond_a,
-                                       const optional<IntegerVariableCondition> & cond_b,
-                                       const optional<ProofLine> & duration_floor = nullopt) -> ProofLine {
+                                       const optional<IntegerVariableCondition> & cond_b, const optional<ProofLine> & duration_floor = nullopt,
+                                       const optional<Integer> & divisor = nullopt) -> ProofLine {
                 auto & tracker = logger->names_and_ids_tracker();
                 PolBuilder pol;
                 pol.add(before_flags.at(make_pair(a, b)).forward_line);
@@ -471,6 +477,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     add_defining_row(length_vars[a] >= state.lower_bound(length_vars[a]));
                 if (cond_b)
                     add_defining_row(*cond_b);
+                if (divisor)
+                    pol.divide_by(*divisor);
                 return pol.saturate().emit(*logger, ProofLevel::Temporary);
             };
 
@@ -868,6 +876,184 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     }
                     if (! std::holds_alternative<disjunctive_proof_mutation::DropPushedEnergy>(mutation))
                         cite(pushed, pushed_low_guard, pushed_high_guard, discharge_low, ! discharge_low);
+
+                    total.emit(*logger, ProofLevel::Temporary);
+                };
+            };
+
+            // --- #754: the set-based detectable precedence -------------------
+            //
+            // #734 pushes lb(s_j) to the latest single predecessor's earliest
+            // end. Vilim's rule pushes to the *set's* earliest completion time
+            // `ect(Omega) = max over cuts of (est(Omega') + p(Omega'))`, which
+            // is larger exactly when the predecessors cannot all fit before it.
+            //
+            // The certificate is #757's mechanism, and both of its halves.
+            // Under the negated conclusion every task in the maximising cut is
+            // squeezed into a window one unit too narrow for it:
+            //
+            //   lb push, threshold T = est(Omega') + p(Omega'):
+            //       s_j < T  and  k before j  =>  s_k < T - p_k
+            //       so Omega' lies in [est(Omega'), T - 1), p(Omega') - 1 wide
+            //
+            //   ub push, threshold L = lst(Omega') = lct(Omega') - p(Omega'):
+            //       s_j > L - p_j  and  j before k  =>  s_k >= L + 1
+            //       so Omega' lies in [L + 1, lct(Omega')), p(Omega') - 1 wide
+            //
+            // Either way the guarded rows are the *standard contained-task*
+            // ones --- guards `(a, b - p_k + 1)` over the derived window, the
+            // same call edge-finding makes --- and what is new is only how one
+            // of the two guards is discharged. In the lb push the low guard
+            // falls to the reason (`est_k >= est(Omega')` is what a left cut
+            // means) and the high one does not; in the ub push it is the other
+            // way round. So the window is derived rather than enumerated, and
+            // #757's is the left edge where this is the right one, or the other
+            // way round for the mirror.
+            //
+            // `precedence_clause` is what discharges the guard the reason
+            // cannot. It carries the conclusion literal along at that guard's
+            // coefficient, so the conclusion accumulates across Omega' and the
+            // summed pol *derives* it rather than assuming it.
+            //
+            // Every bound the arithmetic reads is one the *caller* captured at
+            // detection time, never one read back out of `state` here. By the
+            // time a justification runs, an earlier push in the same
+            // propagation has landed and the state holds a bound the reason
+            // does not support --- the trap the ub push below already records,
+            // and it produces a rejected proof rather than a wrong one.
+            struct SetTask
+            {
+                std::size_t task;
+                Integer edge, duration, lb, ub;
+            };
+            auto precedence_clause = [&](const SetTask & k, std::size_t j, Integer j_lb, Integer j_ub, Integer p_j, Integer threshold, bool lb_push,
+                                         const ReasonLiterals & reason) -> ProofLine {
+                // 1. The detection, as a row: the ordering the rule found is
+                // the one the bounds refute, and this is #734's own refutation
+                // pol. Its degree is positive exactly when the precedence is
+                // detectable, which is the same statement.
+                //
+                // Divided rather than merely saturated, because this row is
+                // going to be *added* to another: saturation alone would leave
+                // its coefficients at the degree.
+                if (std::holds_alternative<disjunctive_proof_mutation::RupSetPrecedenceClause>(mutation)) {
+                    // Can unit propagation reach the clause on its own? If it
+                    // can, the pairwise pols are decoration and this rule needs
+                    // no new step.
+                    auto lit = lb_push ? (starts[j] >= threshold) : (starts[j] < threshold - p_j + 1_i);
+                    auto other = lb_push ? (starts[k.task] < threshold - k.duration) : (starts[k.task] >= threshold + 1_i);
+                    return logger->emit_rup_proof_line(WPBSum{} + 1_i * lit + 1_i * other >= 1_i, ProofLevel::Temporary);
+                }
+
+                auto [refuted_from, refuted_to] = lb_push ? pair{j, k.task} : pair{k.task, j};
+                auto from_lb = lb_push ? j_lb : k.lb;
+                auto to_ub = lb_push ? k.ub : j_ub;
+                auto degree = lb_push ? p_j + j_lb - k.ub : k.duration + k.lb - j_ub;
+                if (degree <= 0_i)
+                    throw ProofError{"disjunctive set-based precedence: the ordering is not detectable"};
+                PolBuilder refute;
+                refute.add(
+                    emit_before_pol(refuted_from, refuted_to, starts[refuted_from] >= from_lb, starts[refuted_to] < to_ub + 1_i, nullopt, degree));
+                // What the divided row still carries is the two bounds the
+                // reason holds, one on each task.
+                if (! is_constant_variable(starts[refuted_from]))
+                    refute.add(logger->emit_rup_proof_line_under_reason(
+                        reason, WPBSum{} + 1_i * (starts[refuted_from] >= from_lb) >= 1_i, ProofLevel::Temporary));
+                if (! is_constant_variable(starts[refuted_to]))
+                    refute.add(logger->emit_rup_proof_line_under_reason(
+                        reason, WPBSum{} + 1_i * (starts[refuted_to] < to_ub + 1_i) >= 1_i, ProofLevel::Temporary));
+                auto refutation = refute.saturate().emit(*logger, ProofLevel::Temporary);
+
+                // 2. The pair's separation clause then forces the other
+                // ordering. A zero-length escape would survive into it, where
+                // the step below has no use for it.
+                PolBuilder forced;
+                forced.add(clause_lines.at(make_pair(min(j, k.task), max(j, k.task))));
+                forced.add(refutation);
+                for (auto r : {j, k.task})
+                    if (auto row = escape_is_false(r))
+                        forced.add(*row);
+                auto ordering = forced.saturate().emit(*logger, ProofLevel::Temporary);
+
+                // 3. That ordering's own arithmetic, against the two
+                // thresholds, cancels the starts and comes out at degree
+                // exactly one --- and 4. discharging the ordering leaves the
+                // two-literal clause the guarded row wants.
+                PolBuilder clause;
+                if (lb_push)
+                    clause.add(emit_before_pol(k.task, j, starts[k.task] >= threshold - k.duration, starts[j] < threshold));
+                else
+                    clause.add(emit_before_pol(j, k.task, starts[j] >= threshold - p_j + 1_i, starts[k.task] < threshold + 1_i));
+                clause.add(ordering);
+                return clause.saturate().emit(*logger, ProofLevel::Temporary);
+            };
+
+            // One set-based push. `a` and `b` are the derived window, `omega`
+            // the maximising cut, and `threshold` the bound being derived: `T`
+            // for the lb push and `L` for the ub one.
+            auto set_precedence_justification = [&](Integer a, Integer b, const vector<SetTask> & omega, size_t j, Integer j_lb, Integer j_ub,
+                                                    Integer p_j, Integer threshold, bool lb_push) {
+                return [&, a, b, omega, j, j_lb, j_ub, p_j, threshold, lb_push](const ReasonLiterals & reason) -> void {
+                    logger->emit_proof_comment("disjunctive set-based detectable precedence w=" + std::to_string(omega.size()) +
+                        " span=" + std::to_string((b - a).raw_value) + (lb_push ? " lb" : " ub"));
+                    if (std::holds_alternative<disjunctive_proof_mutation::SetPrecedenceEmitNothing>(mutation))
+                        return;
+
+                    vector<size_t> members;
+                    for (const auto & k : omega)
+                        members.push_back(k.task);
+                    auto tasks = members;
+                    tasks.push_back(j);
+                    pin_escapes(reason, tasks);
+
+                    // As edge-finding: a Temporary vocabulary does not outlive
+                    // the firing that made it, so what the caches hold has been
+                    // deleted and citing it would be citing a dead row.
+                    if (ProofLevel::Top != rules.overload_vocabulary_at) {
+                        activity->clear();
+                        bridge->clear();
+                        floors->clear();
+                        escapes->clear();
+                        guarded->clear();
+                    }
+
+                    for (auto i : members)
+                        for (Integer t = a; t < b; ++t)
+                            (void)activity_flag(i, t);
+
+                    PolBuilder total;
+                    // j is not in this window, so the at-most-ones are over the
+                    // cut alone --- unlike edge-finding's, whose pushed task is
+                    // inside the window it argues about.
+                    for (auto line :
+                        fold_at_most_ones(members, a, b, std::holds_alternative<disjunctive_proof_mutation::SkipSetPrecedenceFold>(mutation)))
+                        total.add(line);
+
+                    for (const auto & k : omega) {
+                        if (std::holds_alternative<disjunctive_proof_mutation::DropSetPrecedenceEnergy>(mutation) && k.task == omega.front().task)
+                            continue;
+                        const auto & row = guarded_energy(k.task, a, b, a, b - k.duration + 1_i);
+                        total.add(row.line);
+                        // The guard the reason holds, and the guard only the
+                        // negated conclusion holds. Which is which is the whole
+                        // difference between the two halves.
+                        if (lb_push) {
+                            if (row.low_coeff > 0_i)
+                                total.add(logger->emit_rup_proof_line_under_reason(
+                                              reason, WPBSum{} + 1_i * (starts[k.task] >= row.low_guard) >= 1_i, ProofLevel::Temporary),
+                                    row.low_coeff);
+                            if (row.bound > 0_i && ! std::holds_alternative<disjunctive_proof_mutation::DropSetPrecedenceClause>(mutation))
+                                total.add(precedence_clause(k, j, j_lb, j_ub, p_j, threshold, true, reason), row.bound);
+                        }
+                        else {
+                            if (row.low_coeff > 0_i && ! std::holds_alternative<disjunctive_proof_mutation::DropSetPrecedenceClause>(mutation))
+                                total.add(precedence_clause(k, j, j_lb, j_ub, p_j, threshold, false, reason), row.low_coeff);
+                            if (row.bound > 0_i)
+                                total.add(logger->emit_rup_proof_line_under_reason(
+                                              reason, WPBSum{} + 1_i * (starts[k.task] < row.high_guard) >= 1_i, ProofLevel::Temporary),
+                                    row.bound);
+                        }
+                    }
 
                     total.emit(*logger, ProofLevel::Temporary);
                 };
@@ -1393,10 +1579,14 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         optional<size_t> predecessor, successor;
                         Integer predecessor_eet = 0_i, successor_lst = 0_i;
                         // The whole detected sets, for the set-based rule
-                        // below: (est, p) for the predecessors and (lct, p)
-                        // for the successors. Only collected when something
-                        // asks for them.
-                        vector<pair<Integer, Integer>> predecessors, successors;
+                        // below, and only collected when something asks for
+                        // them. `edge` is a predecessor's est and a successor's
+                        // lct, which is what each left cut is ordered by; the
+                        // bounds are captured here rather than read back out of
+                        // `state` in the justification, since by then an earlier
+                        // push has landed and the state holds a bound the reason
+                        // does not support.
+                        vector<SetTask> predecessors, successors;
                         for (auto k : active_tasks) {
                             if (k == j || min_len(k) == 0_i || ! is_present(k))
                                 continue;
@@ -1408,7 +1598,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     predecessor_eet = eet_k;
                                 }
                                 if (rules.detectable_precedences_set)
-                                    predecessors.emplace_back(k_lb, min_len(k));
+                                    predecessors.push_back(SetTask{k, k_lb, min_len(k), k_lb, k_ub});
                             }
                             if (eet_k > cur_ub) {
                                 if (! successor || k_ub < successor_lst) {
@@ -1416,7 +1606,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     successor_lst = k_ub;
                                 }
                                 if (rules.detectable_precedences_set)
-                                    successors.emplace_back(k_ub + min_len(k), min_len(k));
+                                    successors.push_back(SetTask{k, k_ub + min_len(k), min_len(k), k_lb, k_ub});
                             }
                         }
 
@@ -1427,23 +1617,50 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // never lowers `est(Omega')` below `a` and only adds
                         // duration --- so sorting by est descending and
                         // accumulating gives it in one pass.
-                        auto set_ect = [&]() -> Integer {
-                            sort(predecessors, [](const auto & x, const auto & y) { return x.first > y.first; });
-                            Integer best = predecessor_eet, running = 0_i;
-                            for (const auto & [est_k, p_k] : predecessors) {
-                                running += p_k;
-                                best = max(best, est_k + running);
+                        //
+                        // Returns the cut as well as the threshold, since the
+                        // certificate argues about the cut's own window; and
+                        // nullopt where no cut beats the pairwise rule, which
+                        // is what says to take #734's certificate instead.
+                        struct SetCut
+                        {
+                            Integer threshold, edge;
+                            vector<SetTask> cut;
+                        };
+                        auto set_ect = [&]() -> optional<SetCut> {
+                            sort(predecessors, [](const auto & x, const auto & y) { return x.edge > y.edge; });
+                            optional<SetCut> best;
+                            Integer running = 0_i;
+                            for (size_t n = 0; n < predecessors.size(); ++n) {
+                                running += predecessors[n].duration;
+                                auto est_k = predecessors[n].edge;
+                                // Only the last of a run of equal ests is a cut:
+                                // an earlier one leaves a task with the same est
+                                // out of a set it belongs to.
+                                if (n + 1 < predecessors.size() && predecessors[n + 1].edge == est_k)
+                                    continue;
+                                auto threshold = est_k + running;
+                                if (threshold <= predecessor_eet || (best && threshold <= best->threshold))
+                                    continue;
+                                best = SetCut{threshold, est_k, vector<SetTask>{predecessors.begin(), predecessors.begin() + n + 1}};
                             }
                             return best;
                         };
                         // The mirror: `lst(Omega)` is the smallest
                         // `lct(Omega') - p(Omega')`, so sort by lct ascending.
-                        auto set_lst = [&]() -> Integer {
-                            sort(successors, [](const auto & x, const auto & y) { return x.first < y.first; });
-                            Integer best = successor_lst, running = 0_i;
-                            for (const auto & [lct_k, p_k] : successors) {
-                                running += p_k;
-                                best = min(best, lct_k - running);
+                        auto set_lst = [&]() -> optional<SetCut> {
+                            sort(successors, [](const auto & x, const auto & y) { return x.edge < y.edge; });
+                            optional<SetCut> best;
+                            Integer running = 0_i;
+                            for (size_t n = 0; n < successors.size(); ++n) {
+                                running += successors[n].duration;
+                                auto lct_k = successors[n].edge;
+                                if (n + 1 < successors.size() && successors[n + 1].edge == lct_k)
+                                    continue;
+                                auto threshold = lct_k - running;
+                                if (threshold >= successor_lst || (best && threshold >= best->threshold))
+                                    continue;
+                                best = SetCut{threshold, lct_k, vector<SetTask>{successors.begin(), successors.begin() + n + 1}};
                             }
                             return best;
                         };
@@ -1455,16 +1672,23 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // domain is a contradiction, and the target has to
                         // stay somewhere the order literal exists.
                         if (predecessor) {
-                            auto reach = rules.detectable_precedences_set ? set_ect() : predecessor_eet;
-                            auto target = min(reach, cur_ub + 1_i) + (one_too_far ? 1_i : 0_i);
-                            // Only what the set rule reaches *past* the
-                            // pairwise one lacks a certificate --- and only
-                            // after the clip, since a target the domain caps
-                            // is one the pairwise justification still covers.
-                            if (logger && target > min(predecessor_eet, cur_ub + 1_i) + (one_too_far ? 1_i : 0_i))
-                                throw UnimplementedException{"disjunctive set-based detectable precedences have no certificate yet (#754)"};
+                            auto cut = rules.detectable_precedences_set ? set_ect() : nullopt;
+                            auto pairwise_target = min(predecessor_eet, cur_ub + 1_i) + (one_too_far ? 1_i : 0_i);
+                            auto target = cut ? min(cut->threshold, cur_ub + 1_i) + (one_too_far ? 1_i : 0_i) : pairwise_target;
+                            // A target the domain clip caps is one #734's own
+                            // justification still covers, so the set-based
+                            // certificate is emitted only where the set rule
+                            // actually reaches further.
+                            auto set_based = target > pairwise_target;
                             if (target > cur_lb) {
-                                auto justify = [&, j, k = *predecessor, cur_lb, target](const ReasonLiterals & reason) -> void {
+                                auto p_j = min_len(j);
+                                auto justify = [&, j, k = *predecessor, cur_lb, cur_ub, p_j, target, set_based, cut](
+                                                   const ReasonLiterals & reason) -> void {
+                                    if (set_based) {
+                                        set_precedence_justification(
+                                            cut->edge, cut->threshold - 1_i, cut->cut, j, cur_lb, cur_ub, p_j, cut->threshold, true)(reason);
+                                        return;
+                                    }
                                     logger->emit_proof_comment(
                                         "disjunctive detectable precedence " + std::to_string(k) + "<<" + std::to_string(j) + " push=lb");
                                     pin_escapes(reason, {j, k});
@@ -1482,12 +1706,19 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // runs, the state holds the pushed bound, which the
                         // reason does not support.
                         if (successor) {
-                            auto reach = rules.detectable_precedences_set ? set_lst() : successor_lst;
-                            auto target = max(reach - min_len(j), cur_lb - 1_i) - (one_too_far ? 1_i : 0_i);
-                            if (logger && target < max(successor_lst - min_len(j), cur_lb - 1_i) - (one_too_far ? 1_i : 0_i))
-                                throw UnimplementedException{"disjunctive set-based detectable precedences have no certificate yet (#754)"};
+                            auto cut = rules.detectable_precedences_set ? set_lst() : nullopt;
+                            auto pairwise_target = max(successor_lst - min_len(j), cur_lb - 1_i) - (one_too_far ? 1_i : 0_i);
+                            auto target = cut ? max(cut->threshold - min_len(j), cur_lb - 1_i) - (one_too_far ? 1_i : 0_i) : pairwise_target;
+                            auto set_based = target < pairwise_target;
                             if (target < cur_ub) {
-                                auto justify = [&, j, k = *successor, cur_ub, target](const ReasonLiterals & reason) -> void {
+                                auto p_j = min_len(j);
+                                auto justify = [&, j, k = *successor, cur_lb, cur_ub, p_j, target, set_based, cut](
+                                                   const ReasonLiterals & reason) -> void {
+                                    if (set_based) {
+                                        set_precedence_justification(
+                                            cut->threshold + 1_i, cut->edge, cut->cut, j, cur_lb, cur_ub, p_j, cut->threshold, false)(reason);
+                                        return;
+                                    }
                                     logger->emit_proof_comment(
                                         "disjunctive detectable precedence " + std::to_string(j) + "<<" + std::to_string(k) + " push=ub");
                                     pin_escapes(reason, {j, k});
