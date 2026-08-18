@@ -194,8 +194,9 @@ namespace gcs
         ///
         /// Ours is a strict subset of that --- the window-energy figure at
         /// `s_j = lb(s_j)` is at most `ect_j - a`, so every firing of ours is
-        /// one of these --- and measured over 30,000 random unary instances the
-        /// published condition fires 37% more often (#757).
+        /// one of these --- and over 20,000 random unary instances at each of
+        /// four and five tasks the published condition fires 1.7x and 1.6x as
+        /// often (#757).
         ///
         /// **Deliberately uncertified**, and it throws rather than
         /// propagating when proof logging is on: a rule that quietly weakened
@@ -204,7 +205,7 @@ namespace gcs
         /// it is \ref edge_finding's, with the low guard discharged by a
         /// derived two-literal clause rather than by the reason --- and was
         /// **not built**, because this switch is what decided that:
-        /// **37% more detection is worth 0.6% of the summed recursions and
+        /// **1.6-1.7x the detection is worth 0.6% of the summed recursions and
         /// nothing at the median**, and a little worse than nothing on top of
         /// edge-finding. Not for want of firing --- propagation counts differ
         /// on 64 of 68 instances. See `dev_docs/disjunctive-proof-logging.md`.
