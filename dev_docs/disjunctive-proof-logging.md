@@ -790,11 +790,17 @@ instance carries **52%** of the summed total by itself, and dropping it
 takes 0.820x to 0.971x. The rule's real size is 0.941x at the median
 with a long tail — the best instance goes to 0.128x.
 
-### What the certificate wants
+### The certificate, settled in simulation
 
-Not edge-finding's at another threshold: **#757's shape**, which is why
-that issue was measured first. Writing `Ω'` for the maximising left cut
-and `T = est(Ω') + p(Ω')`:
+Not edge-finding's at another threshold: **#757's shape, mirrored**.
+That window has its *left* edge derived from the negated conclusion;
+this one has its **right** edge derived, and is one unit too narrow for
+`Ω'` exactly when the rule fires. So the guard the reason cannot
+discharge is the **high** one rather than the low one, and everything
+else is inherited — the simulation's `SetPrecedence` subclasses #751's
+`Certificate` and adds two methods, as #757's `DerivedWindow` added one.
+
+Writing `Ω'` for the maximising left cut and `T = est(Ω') + p(Ω')`:
 
 1. Each `i ∈ Ω'` is a detected predecessor, so `before_{i,j}` follows
    from the reason by #734's own refutation pol, giving `s_i + l_i ≤ s_j`.
@@ -810,9 +816,33 @@ and `T = est(Ω') + p(Ω')`:
 
 The window is `p(Ω') − 1` wide and `Ω'` needs `p(Ω')` of it, so the pol
 lands on `(Σ coeffs)·[s_j ≥ T] ≥ 1` and **derives** the conclusion rather
-than assuming it. The window is derived rather than enumerated, and the
-edge derived is the *right* one here where #757 derives the left — the
-same mechanism mirrored.
+than assuming it.
+
+Simulated standalone before any C++, as #730, #751 and #757 all were:
+126 lines, veripb exit 0, every load-bearing row on its predicted shape,
+and **all seven mutation lanes rejected** (`emit_nothing`, `drop_folds`,
+`drop_omega_energy`, `over_push`, `drop_clause`, `rup_clause`,
+`rup_fold`) on a generated four-predecessor fixture. As #731, #752 and
+#757 all found, the demonstration fixture is not the one the lanes bite
+on: over two predecessors the fold is a single bridge row the closing RUP
+reconstructs, so the mutation fixture needs `|Ω'| ≥ 3`.
+
+**Steps 1 and 2 are not load-bearing, and step 3 is.** Replacing the
+detection pol and the separation clause with a bare `rup b_ij ≥ 1`
+verifies on **27 of 27** generated firings — which is not a corruption
+surviving but the same fact reached another way: `before_{i,j}` is
+RUP-available from the bounds the reason carries, because #734's
+detection condition and its refuting pol's positive degree are the same
+statement. Asking the same question of the *clause* (`rup_clause`) is
+rejected, so the arithmetic in step 3 does need its pol. A propagator
+should still emit all of it, for the reason #734 records about its own
+two pols: it cannot cheaply tell which case it is in, and the cost is two
+lines.
+
+Unlike #757 the final division is **not** load-bearing here — the
+surplus is exactly one, so saturation alone lands on the unit clause.
+Divide anyway: a surplus of one is a property of the tight case, not of
+the rule.
 
 ## Strict-mode zero-length tasks
 
