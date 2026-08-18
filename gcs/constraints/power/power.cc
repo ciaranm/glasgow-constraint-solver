@@ -260,7 +260,9 @@ auto Power::define_proof_model(ProofModel & model, const State & initial_state) 
 auto Power::install_propagators(Propagators & propagators) -> void
 {
     if (_no_representable_result) {
-        propagators.install_initial_contradiction("no representable power result", JustifyUsingRUP{hints::Power{constraint_id()}});
+        propagators.install_initial_contradiction(constraint_id(), constraint_type(),
+            "A Power constraint was posted with constant arguments whose result would overflow, or with a zero base and a negative exponent",
+            JustifyUsingRUP{hints::Power{constraint_id()}});
         return;
     }
 

@@ -240,7 +240,8 @@ template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagators & propagators) -> void
 {
     if (_has_empty_dim) {
-        propagators.install_initial_contradiction("NDimensionalElement constraint with no values", JustifyUsingRUP{hints::Element{constraint_id()}});
+        propagators.install_initial_contradiction(constraint_id(), constraint_type(),
+            "An Element constraint was posted over an array with a zero-length dimension", JustifyUsingRUP{hints::Element{constraint_id()}});
         return;
     }
 
