@@ -53,6 +53,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::size_t;
+using std::string;
 using std::tuple;
 using std::unique_ptr;
 using std::vector;
@@ -808,9 +809,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // current bounds and is cited rather than re-derived. What a firing
             // pays is the fold, the guard discharges, and one pol.
             auto edge_finding_justification = [&](Integer a, Integer b, const vector<size_t> & inside, size_t pushed, Integer pushed_low_guard,
-                                                  Integer pushed_high_guard, bool discharge_low) {
-                return [&, a, b, inside, pushed, pushed_low_guard, pushed_high_guard, discharge_low](const ReasonLiterals & reason) -> void {
-                    logger->emit_proof_comment("disjunctive edge-finding w=" + std::to_string(inside.size()) +
+                                                  Integer pushed_high_guard, bool discharge_low, const char * rule = "edge-finding") {
+                return [&, a, b, inside, pushed, pushed_low_guard, pushed_high_guard, discharge_low, rule](const ReasonLiterals & reason) -> void {
+                    logger->emit_proof_comment("disjunctive " + string{rule} + " w=" + std::to_string(inside.size()) +
                         " span=" + std::to_string((b - a).raw_value) + (discharge_low ? " lb" : " ub"));
                     if (std::holds_alternative<disjunctive_proof_mutation::EdgeFindingEmitNothing>(mutation))
                         return;
@@ -1472,13 +1473,16 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // and they are mirror images over the same sweep. A task with
                 // *neither* end inside spans the window, and no closed form
                 // pushes it: its guaranteed energy is a hump in its start
-                // rather than monotone, which is the case #752 exists for.
+                // rather than monotone. Restricting the start to one side of a
+                // threshold is what makes such a hump's minimum say something,
+                // and that is not-first / not-last, below, which shares this
+                // sweep and so shares its gate.
                 //
-                // Before the overload check rather than after it, because this
-                // rule prunes where that one only refutes, and a window this
-                // has already emptied is not one the overload check has to pay
+                // Before the overload check rather than after it, because these
+                // rules prune where that one only refutes, and a window they
+                // have already emptied is not one the overload check has to pay
                 // a certificate for.
-                if (rules.edge_finding) {
+                if (rules.edge_finding || rules.not_first_not_last) {
                     struct EdgeTask
                     {
                         size_t task;
@@ -1514,13 +1518,20 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             continue;
                         auto a = window_starts[w];
 
-                        Integer energy = 0_i;
+                        // min_ect and max_lst are not-first / not-last's
+                        // thresholds, over the same growing contained set the
+                        // energy accumulates over.
+                        Integer energy = 0_i, min_ect = 0_i, max_lst = 0_i;
                         vector<size_t> inside;
                         for (size_t c = 0; c < candidates.size(); ++c) {
                             if (candidates[c].est < a)
                                 continue;
                             energy += candidates[c].duration;
                             inside.push_back(candidates[c].task);
+                            min_ect = inside.size() == 1 ? candidates[c].est + candidates[c].duration
+                                                         : min(min_ect, candidates[c].est + candidates[c].duration);
+                            max_lst = inside.size() == 1 ? candidates[c].lct - candidates[c].duration
+                                                         : max(max_lst, candidates[c].lct - candidates[c].duration);
                             auto b = candidates[c].lct;
                             // Candidates are in lct order, so `inside` is every
                             // task the window contains only once the last of a
@@ -1536,44 +1547,124 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             if (energy > b - a)
                                 continue;
 
-                            for (const auto & j : candidates) {
-                                if (j.lct <= b && j.est >= a)
-                                    continue;
-                                auto p_j = j.duration;
-                                auto starts_inside = j.est >= a;
-                                // Neither end inside: the task spans the
-                                // window, and an energy argument over it has no
-                                // closed-form push (#752).
-                                if (starts_inside == (j.lct <= b))
-                                    continue;
-                                if (! (starts_inside ? rules.edge_finding_lb : rules.edge_finding_ub))
-                                    continue;
+                            if (rules.edge_finding)
+                                for (const auto & j : candidates) {
+                                    if (j.lct <= b && j.est >= a)
+                                        continue;
+                                    auto p_j = j.duration;
+                                    auto starts_inside = j.est >= a;
+                                    // Neither end inside: the task spans the
+                                    // window, and no closed form pushes it.
+                                    // That is not-first / not-last's firing
+                                    // set, and this `continue` is the whole of
+                                    // it.
+                                    if (starts_inside == (j.lct <= b))
+                                        continue;
+                                    if (! (starts_inside ? rules.edge_finding_lb : rules.edge_finding_ub))
+                                        continue;
 
-                                auto low_guard = starts_inside ? a : b - p_j - energy + 1_i;
-                                auto high_guard = starts_inside ? a + energy : b - p_j + 1_i;
-                                // Ask the lemma for exactly what the row it will
-                                // cite establishes, rather than for the state's
-                                // own figure: the row is a model fact, and firing
-                                // on more energy than it carries is a rejected
-                                // proof rather than an unsound push.
-                                auto clipped = window_energy::window_energy_bound(
-                                    p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, high_guard - 1_i});
-                                if (clipped <= 0_i || energy + clipped <= b - a)
-                                    continue;
+                                    auto low_guard = starts_inside ? a : b - p_j - energy + 1_i;
+                                    auto high_guard = starts_inside ? a + energy : b - p_j + 1_i;
+                                    // Ask the lemma for exactly what the row it
+                                    // will cite establishes, rather than for the
+                                    // state's own figure: the row is a model
+                                    // fact, and firing on more energy than it
+                                    // carries is a rejected proof rather than an
+                                    // unsound push.
+                                    auto clipped = window_energy::window_energy_bound(
+                                        p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, high_guard - 1_i});
+                                    if (clipped <= 0_i || energy + clipped <= b - a)
+                                        continue;
 
-                                auto [j_lo, j_hi] = state.bounds(starts[j.task]);
-                                if (starts_inside ? high_guard <= j_lo : low_guard - 1_i >= j_hi)
-                                    continue;
+                                    auto [j_lo, j_hi] = state.bounds(starts[j.task]);
+                                    if (starts_inside ? high_guard <= j_lo : low_guard - 1_i >= j_hi)
+                                        continue;
 
-                                auto one_too_far = std::holds_alternative<disjunctive_proof_mutation::EdgeFindingOneTooFar>(mutation);
-                                auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, high_guard, starts_inside);
-                                if (starts_inside)
-                                    inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? high_guard + 1_i : high_guard,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
-                                else
-                                    inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
-                            }
+                                    auto one_too_far = std::holds_alternative<disjunctive_proof_mutation::EdgeFindingOneTooFar>(mutation);
+                                    auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, high_guard, starts_inside);
+                                    if (starts_inside)
+                                        inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? high_guard + 1_i : high_guard,
+                                            JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                    else
+                                        inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
+                                            JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                }
+
+                            // Not-first / not-last. Edge-finding asks how far a
+                            // task can be pushed and answers with a closed form;
+                            // this asks a different question --- can j start
+                            // before every task the window contains has
+                            // finished, or end after every one of them has
+                            // started --- and takes its thresholds from the
+                            // contained set rather than from the leftover
+                            // energy.
+                            //
+                            // Where j has one end inside the window the two
+                            // overlap, and edge-finding's threshold is the
+                            // furthest an energy argument over this window can
+                            // reach, so its push subsumes this one and the
+                            // live-bound tests below drop the duplicate. What is
+                            // new is a j that SPANS the window, which
+                            // edge-finding skips: its guaranteed energy is a
+                            // hump in its start rather than monotone, and
+                            // restricting the start to one side of a threshold
+                            // is exactly what makes the hump's minimum say
+                            // something.
+                            if (rules.not_first_not_last)
+                                for (const auto & j : candidates) {
+                                    if (j.est >= a && j.lct <= b)
+                                        continue;
+
+                                    auto p_j = j.duration;
+                                    auto [s_lo, s_hi] = state.bounds(starts[j.task]);
+                                    auto one_too_far = std::holds_alternative<disjunctive_proof_mutation::EdgeFindingOneTooFar>(mutation);
+
+                                    // Not-first: refute "j starts before every
+                                    // contained task has ended". The guarded
+                                    // row's low guard is what the reason
+                                    // discharges and its high guard is the
+                                    // threshold, which is the negated
+                                    // conclusion.
+                                    //
+                                    // Any low guard at or past the window's
+                                    // start discharges every survivor the ladder
+                                    // has, so where j's own lower bound is
+                                    // inside the window the window's start does
+                                    // just as well --- and it is a fact about
+                                    // the window rather than about the search,
+                                    // so the row it derives is shared with
+                                    // edge-finding's rather than keyed on a
+                                    // bound that moves.
+                                    if (rules.not_first && min_ect > s_lo) {
+                                        auto low_guard = min(s_lo, a);
+                                        auto clipped = window_energy::window_energy_bound(
+                                            p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, min_ect - 1_i});
+                                        if (clipped > 0_i && energy + clipped > b - a) {
+                                            auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, min_ect, true, "not-first");
+                                            inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
+                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                        }
+                                    }
+
+                                    // Not-last: the mirror. Refute "j ends after
+                                    // every contained task has started", so the
+                                    // negated conclusion lands on the low guard
+                                    // and j's own upper bound is what the reason
+                                    // discharges --- which, unlike not-first's,
+                                    // is a bound that moves, so this row is the
+                                    // one place the rule cannot share a key with
+                                    // edge-finding.
+                                    if (rules.not_last && max_lst - p_j < s_hi) {
+                                        auto low_guard = max_lst - p_j + 1_i;
+                                        auto clipped = window_energy::window_energy_bound(
+                                            p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, s_hi});
+                                        if (clipped > 0_i && energy + clipped > b - a) {
+                                            auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, s_hi + 1_i, false, "not-last");
+                                            inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
+                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                        }
+                                    }
+                                }
                         }
                     }
                 }

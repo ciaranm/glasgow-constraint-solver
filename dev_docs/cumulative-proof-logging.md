@@ -1424,6 +1424,21 @@ which is whether the divergence is a standing assumption on the task set that
 the transcription drops, or a genuine argument the window-energy lemma cannot
 make.
 
+**The disjunctive side has since answered its own version of that question, and
+the answer is the second one.** #752 carried the same weakening onto
+`Disjunctive`, where it is worse — every one of our firings is also a published
+firing and 1,145 of 4,218 are theirs alone — and #757 found where the extra
+strength comes from: not a different lemma but a different **window**. The
+published unary argument runs over `[ect_j, lct(Ω))`, whose left edge is
+*derived from the negated conclusion* rather than carried by the reason, and a
+task is put inside it by a pairwise ordering that #734's own refutation pol
+supplies as a two-literal clause. The certificate is machine-checked in
+`~/claude/tmp/disj-derived-757/`. Whether that transfers here is not obvious —
+the pairwise separation clause it turns on is exactly what a cumulative encoding
+does not have — but "the window-energy lemma is complete for what it computes,
+and the extra detection comes from arguing over a narrower window" is the shape
+of the answer #746 was looking for.
+
 Testing is `cumulative_nfnl_test`, whose fixtures were searched the same way
 TTEF's were and against the same two conditions --- the rule must move a bound
 that time-tabling, the overload check, edge-finding and TTEF together do not,

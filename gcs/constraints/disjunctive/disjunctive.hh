@@ -112,6 +112,32 @@ namespace gcs
         bool edge_finding_lb = true;
         bool edge_finding_ub = true;
 
+        /// Not-first / not-last: for a window `[a, b)` and the set Theta it
+        /// contains, a task `j` that cannot start before every task in Theta has
+        /// ended is pushed up to `min_{i} ect_i`, and one that cannot end after
+        /// every task in Theta has started is pushed down to
+        /// `max_{i} lst_i - p_j`. Both directions, and the capacity-one case of
+        /// what CumulativeRules::not_first_not_last does.
+        ///
+        /// The certificate is \ref edge_finding's, unchanged: a different
+        /// threshold and a different guard carrying the negated conclusion, both
+        /// already parameters of the guarded window-energy lemma. What is new is
+        /// the *firing set* --- edge-finding's closed form needs a task with one
+        /// end inside the window, and this rule is what a task **spanning** the
+        /// window gets instead.
+        ///
+        /// Shares edge-finding's sweep, so turning this on turns that sweep on
+        /// whether or not \ref edge_finding is set. Off by default for the same
+        /// reason, and because it is measurably not worth running: see
+        /// `dev_docs/disjunctive-proof-logging.md`.
+        bool not_first_not_last = false;
+
+        /// The two halves of \ref not_first_not_last, separately switchable, as
+        /// \ref edge_finding_lb and \ref edge_finding_ub are: not-first raises a
+        /// lower bound and not-last lowers an upper bound.
+        bool not_first = true;
+        bool not_last = true;
+
         /// Refuse an overload conflict whose smallest window holds more than
         /// this many tasks; zero, the default, takes every conflict. Measured
         /// on generated RCPSP (#730), every cap closes fewer instances *and*
@@ -228,11 +254,11 @@ namespace gcs
      * by another. On top of that, <em>detectable precedences</em> order the
      * pairs whose ordering the bounds already force &mdash; which needs no
      * mandatory part on either task, so it prunes where time-tabling cannot.
-     * An <em>overload check</em> and <em>edge-finding</em> reason about the
-     * energy of a whole set of tasks in a window; both are off by default,
-     * since each costs a sweep that a solve never firing them still pays.
-     * Not-first / not-last is left for future work (#752), as is the set-based
-     * form of detectable precedences (#754).
+     * An <em>overload check</em>, <em>edge-finding</em> and
+     * <em>not-first / not-last</em> reason about the energy of a whole set of
+     * tasks in a window; all three are off by default, since each costs a sweep
+     * that a solve never firing them still pays. The set-based form of
+     * detectable precedences is left for future work (#754).
      *
      * A task whose presence is still undecided is left out of the profile and
      * out of every push, in either role: it blocks nothing, and nothing is

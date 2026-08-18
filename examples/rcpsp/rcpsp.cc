@@ -437,6 +437,17 @@ auto main(int argc, char * argv[]) -> int
                 "separately switchable and the table has a row for each")                     //
             ("disjunctive-edge-finding-ub-only",
                 "See --disjunctive-edge-finding-lb-only") //
+            ("disjunctive-not-first-not-last",
+                "Give every posted Disjunctive not-first / not-last, both directions: a task that " //
+                "spans a window its contained tasks already fill cannot start before all of them "  //
+                "have ended, nor end after all of them have started. Shares edge-finding's sweep, " //
+                "so this turns that sweep on whether or not --disjunctive-edge-finding is given "   //
+                "(#752)")                                                                           //
+            ("disjunctive-not-first-only",
+                "Restrict not-first / not-last to the half that raises a lower bound, and " //
+                "--disjunctive-not-last-only to the half that lowers an upper bound")       //
+            ("disjunctive-not-last-only",
+                "See --disjunctive-not-first-only") //
             ("disjunctive-overload",
                 "Give every posted Disjunctive the overload check, off by default because its "   //
                 "certificate is expensive enough that whether it pays is what #730 is measuring") //
@@ -738,6 +749,15 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars["disjunctive-edge-finding-ub-only"].as<bool>()) {
         disjunctive_rules.edge_finding = true;
         disjunctive_rules.edge_finding_lb = false;
+    }
+    disjunctive_rules.not_first_not_last = options_vars["disjunctive-not-first-not-last"].as<bool>();
+    if (options_vars["disjunctive-not-first-only"].as<bool>()) {
+        disjunctive_rules.not_first_not_last = true;
+        disjunctive_rules.not_last = false;
+    }
+    if (options_vars["disjunctive-not-last-only"].as<bool>()) {
+        disjunctive_rules.not_first_not_last = true;
+        disjunctive_rules.not_first = false;
     }
     disjunctive_rules.overload = options_vars["disjunctive-overload"].as<bool>();
     disjunctive_rules.overload_max_window = options_vars["disjunctive-overload-max-window"].as<std::size_t>();
