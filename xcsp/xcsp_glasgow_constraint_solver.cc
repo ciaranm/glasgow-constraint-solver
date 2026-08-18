@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
@@ -87,6 +88,19 @@ namespace
 {
     atomic<bool> abort_flag{false};
     atomic<bool> was_terminated{false};
+
+    // A ComponentStats entry's name in the XCSP idiom: `difference_logic` and
+    // `edges_lifted` make `DIFFERENCE LOGIC EDGES LIFTED`, which is exactly
+    // what the hand-written list here used to spell, so nothing parsing this
+    // output sees a name change. fzn_glasgow.cc's mzn_stat_name is the same
+    // function in the MiniZinc idiom.
+    [[nodiscard]] auto xcsp_stat_name(const string & component, const string & entry) -> string
+    {
+        string result;
+        for (auto c : component + "_" + entry)
+            result += ('_' == c) ? ' ' : static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        return result;
+    }
 
     auto sig_int_or_term_handler(int) -> void
     {
@@ -2078,25 +2092,16 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars.contains("all"))
         cout << "d FOUND SOLUTIONS " << stats.solutions << endl;
 
-    // A presolver that lifts nothing preserves the solution set, adds no OPB
-    // content and leaves every proof verifying, so these counts are the only way
-    // to tell "it worked" from "it silently did nothing" --- which is why a test
-    // asserts on them.
-    if (difference_logic_stats) {
-        cout << "d DIFFERENCE LOGIC EDGES LIFTED " << difference_logic_stats->edges_lifted << endl;
-        cout << "d DIFFERENCE LOGIC COMPARISON EDGES LIFTED " << difference_logic_stats->comparison_edges_lifted << endl;
-        cout << "d DIFFERENCE LOGIC HALF REIFIED EDGES LIFTED " << difference_logic_stats->half_reified_edges_lifted << endl;
-        cout << "d DIFFERENCE LOGIC NODES " << difference_logic_stats->nodes << endl;
-        cout << "d DIFFERENCE LOGIC SKIPPED NOT TWO TERMS " << difference_logic_stats->skipped_not_two_terms << endl;
-        cout << "d DIFFERENCE LOGIC SKIPPED COEFFICIENTS " << difference_logic_stats->skipped_coefficients << endl;
-        cout << "d DIFFERENCE LOGIC SKIPPED REIFIED " << difference_logic_stats->skipped_reified << endl;
-        cout << "d DIFFERENCE LOGIC SKIPPED NEGATED VIEW " << difference_logic_stats->skipped_negated_view << endl;
-        cout << "d DIFFERENCE LOGIC SKIPPED DEGENERATE " << difference_logic_stats->skipped_degenerate << endl;
-        cout << "d DIFFERENCE LOGIC SKIPPED UNCITABLE ROW " << difference_logic_stats->skipped_uncitable_row << endl;
-        cout << "d DIFFERENCE LOGIC SIMPLIFY RAN " << (difference_simplification_stats->ran ? 1 : 0) << endl;
-        cout << "d DIFFERENCE LOGIC SIMPLIFY REDUNDANT EDGES REMOVED " << difference_simplification_stats->redundant_edges_removed << endl;
-        cout << "d DIFFERENCE LOGIC SIMPLIFY CONDITIONS FIXED " << difference_simplification_stats->conditions_fixed << endl;
-    }
+    // Every component that registered a block, rendered without this file
+    // knowing which components exist. A presolver that lifts nothing preserves
+    // the solution set, adds no OPB content and leaves every proof verifying, so
+    // these counts are the only way to tell "it worked" from "it silently did
+    // nothing" --- and listing them by hand here is how ten of
+    // DifferenceLogicStats' twelve fields, and three of the simplification
+    // block's fourteen, were the whole of what this frontend reported.
+    for (const auto & component : stats.components())
+        for (const auto & entry : component->entries())
+            cout << "d " << xcsp_stat_name(component->component_name(), entry.name) << " " << entry.value << endl;
 
     return actually_aborted ? EXIT_FAILURE : EXIT_SUCCESS;
 }
