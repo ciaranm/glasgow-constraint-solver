@@ -940,6 +940,183 @@ auto main(int argc, char * argv[]) -> int
         println(cerr, "an optional-task donor is declined");
     }
 
+    /* The diagnostics channel (#662, #723). What a counter says is how many,
+     * and what a note says is which one and with what figures --- and a note's
+     * *level* is exactly what rendering throws away, so one drifting from
+     * Important down to Detailed would still appear in a dump, still say the
+     * right words, and be read by nobody. Hence assertions on the notes rather
+     * than on rendered output.
+     */
+    {
+        auto names_of = [](const ComponentStats & block) -> vector<string> {
+            vector<string> result;
+            for (const auto & entry : block.entries())
+                result.push_back(entry.name);
+            return result;
+        };
+
+        auto joined = [](const vector<string> & names) -> string {
+            string result;
+            for (const auto & name : names)
+                result += (result.empty() ? "" : ", ") + name;
+            return result;
+        };
+
+        auto component_named = [](const Stats & stats, const string & name) -> shared_ptr<const ComponentStats> {
+            for (const auto & component : stats.components())
+                if (component->component_name() == name)
+                    return component;
+            return nullptr;
+        };
+
+        struct Recorded
+        {
+            Stats stats;
+            vector<StatsNote> notes;
+        };
+
+        auto solve_recording = [](Problem & p) -> Recorded {
+            auto notes = make_shared<vector<StatsNote>>();
+            auto stats = solve_with(p,
+                SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; },
+                    .stats_report = [notes](const StatsNote & note) -> void { notes->push_back(note); }},
+                nullopt);
+            return Recorded{move(stats), move(*notes)};
+        };
+
+        auto notes_at = [](const Recorded & recorded, StatsLevel level) -> vector<StatsNote> {
+            vector<StatsNote> result;
+            for (const auto & note : recorded.notes)
+                if (note.level == level)
+                    result.push_back(note);
+            return result;
+        };
+
+        // The flat view's names are public: fzn-glasgow camel-cases
+        // component_name() onto each of them to make a %%%mzn-stat name, so
+        // renaming a field or dropping one from entries() is a user-visible
+        // change to statistics output. Asserted as an ordered list rather than
+        // a count so that a rename fails as a rename.
+        if (InferredCumulativeStats{}.component_name() != "inferred_cumulative")
+            fail("the block calls itself '" + InferredCumulativeStats{}.component_name() +
+                "', which is the first half of every %%%mzn-stat name it produces");
+
+        const vector<string> expected_names{"donors_seen", "tasks", "covers_considered", "lifting_subproblems", "lifting_subproblems_over_budget",
+            "cuts_found", "cuts_uncertifiable", "cuts_posted", "non_unit_cuts_posted", "multi_resource_cuts_posted", "restricted_rows_rebuilt",
+            "largest_capacity_bound", "certified_makespan_bound", "declined_optional", "declined_irreducible_capacity", "donors_with_set_aside_tasks",
+            "converted_heights", "dropped_dominated", "dropped_over_budget", "dropped_over_state_budget", "declined_by_install"};
+        if (names_of(InferredCumulativeStats{}) != expected_names)
+            fail("the flat view is [" + joined(names_of(InferredCumulativeStats{})) + "], expected [" + joined(expected_names) +
+                "]. These names are public, so this is a user-visible change and not a tidy-up.");
+
+        // And that the list is all of them. Every field of this block is eight
+        // bytes wide --- a std::size_t or an Integer --- and the only other
+        // thing in the object is the vtable pointer ComponentStats brings, so
+        // sizeof counts the fields. A field added without a matching entries()
+        // line moves one side of this and not the other.
+        if (8 == sizeof(std::size_t)) {
+            auto fields = (sizeof(InferredCumulativeStats) - sizeof(void *)) / sizeof(std::size_t);
+            if (expected_names.size() != fields)
+                fail("the block has " + to_string(fields) + " fields and " + to_string(expected_names.size()) +
+                    " of them reach the flat view: add the new one to entries() and to the list here, rather than to neither");
+        }
+
+        // A *default-constructed* presolver --- one nobody passed a block to ---
+        // reaches Stats::components() with the figures in it. That is the
+        // always-allocate path, and the part with no other observable effect:
+        // every other check this presolver has to pass is passed just as well
+        // while its block is invisible.
+        {
+            Problem p;
+            post(p, lifted_instance(10), Setup{});
+            auto recorded = solve_recording(p);
+
+            auto component = component_named(recorded.stats, "inferred_cumulative");
+            if (! component)
+                fail("a default-constructed presolver did not register a stats block");
+            if (component->summary().empty())
+                fail("the registered block had nothing to say");
+            if (string::npos == component->summary().find("makespan bound of 11"))
+                fail("the registered block was not the one the presolver filled in: " + component->summary());
+
+            println(cerr, "diagnostics: `{}`, {} entries", component->summary(), component->entries().size());
+        }
+
+        // And that a block the *caller* supplied is the one registered, by
+        // identity. Problem::add_presolver stores a clone and run() happens on
+        // that, so a clone allocating its own would leave the caller's handle
+        // reading zero while everything above carried on passing.
+        {
+            auto block = make_shared<InferredCumulativeStats>();
+            Problem p;
+            post(p, lifted_instance(10), Setup{.stats = block});
+            auto recorded = solve_recording(p);
+
+            if (component_named(recorded.stats, "inferred_cumulative").get() != static_cast<const ComponentStats *>(block.get()))
+                fail("the caller's stats block is not the one that was registered");
+            if (block->cuts_posted == 0)
+                fail("the caller's stats block was not the one that was filled in");
+        }
+
+        // A decline: General, naming the constraint it is about, and not
+        // Important --- nothing was limited, and a donor this presolver cannot
+        // bridge across is not a configuration the caller can change. If
+        // everything is Important then nothing is.
+        {
+            Problem p;
+            vector<IntegerVariableID> starts, presences;
+            for (int i = 0; i < 4; ++i) {
+                starts.push_back(p.create_integer_variable(0_i, 3_i));
+                presences.push_back(p.create_integer_variable(0_i, 1_i));
+            }
+            vector<IntegerVariableID> lengths(4, constant_variable(2_i)),
+                heights{constant_variable(5_i), constant_variable(2_i), constant_variable(2_i), constant_variable(2_i)};
+            p.post(Cumulative{starts, lengths, heights, presences, constant_variable(5_i)});
+            p.add_presolver(InferredCumulative{});
+            auto recorded = solve_recording(p);
+
+            auto general = notes_at(recorded, StatsLevel::General);
+            if (general.size() != 1)
+                fail("an optional-task decline reported " + to_string(general.size()) + " General notes, not one");
+            if (! general[0].constraint)
+                fail("the note does not carry the constraint it is about, so nothing can filter on it");
+            if (general[0].component != "inferred_cumulative")
+                fail("the note is not attributed to this presolver");
+            if (string::npos == general[0].text.find("optional"))
+                fail("the note does not say what was wrong: " + general[0].text);
+            if (! notes_at(recorded, StatsLevel::Important).empty())
+                fail("an optional-task decline raised an Important note");
+        }
+
+        // The output budget, which does carry a figure a caller would act on,
+        // reported at both levels: the figures and the option at General, and
+        // what it means at Important.
+        {
+            Problem p;
+            post(p, lifted_instance_with_spare(13), Setup{.max_posted = 0});
+            auto recorded = solve_recording(p);
+
+            auto general = notes_at(recorded, StatsLevel::General);
+            auto has_figures = false;
+            for (const auto & note : general)
+                if (string::npos != note.text.find("output budget of 0") && string::npos != note.text.find("with_budgets"))
+                    has_figures = true;
+            if (! has_figures)
+                fail("the output budget's figures and option are not in any General note");
+
+            auto important = notes_at(recorded, StatsLevel::Important);
+            if (important.size() != 1)
+                fail("an output-budget decline raised " + to_string(important.size()) + " Important notes, not one");
+            if (important[0].constraint)
+                fail("the Important note names a constraint, which is not what it is for");
+            if (string::npos == important[0].text.find("never posted") || string::npos == important[0].text.find("search may be slower"))
+                fail("the Important note does not say what was cut short, or what it costs: " + important[0].text);
+
+            println(cerr, "diagnostics: Important note is `{}`", important[0].text);
+        }
+    }
+    println(cerr, "the report and the notes say what happened, at the level for who is reading");
+
     if (! proofs) {
         println(cerr, "veripb is not available, so the proof-level checks are skipped");
         return EXIT_SUCCESS;

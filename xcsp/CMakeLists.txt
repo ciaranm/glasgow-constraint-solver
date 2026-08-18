@@ -83,12 +83,21 @@ add_xcsp_test(cumulative_var)
 # the peephole's doing --- without it they would arrive as comparisons
 # over invented auxiliaries instead --- and SKIPPED UNCITABLE ROW 0 says
 # no donor of the right shape was dropped for want of a citable OPB row.
+#
+# These names are also the contract between ComponentStats::entries() and the
+# generic loop in xcsp_glasgow_constraint_solver.cc: each is component_name()
+# and an entry name upper-cased together, so a rename on either side fails here
+# rather than in whatever is parsing the output. DIFFERENCE LOGIC PROPAGATOR
+# INSTALLED is one of the two fields that were filled in and reported to nobody
+# until the loop replaced the hand-written list, and is here so that stays
+# fixed --- as differenceLogicPropagatorInstalled is in minizinc/CMakeLists.txt.
 add_xcsp_test(difference_logic "--difference-logic"
     "^d DIFFERENCE LOGIC EDGES LIFTED 4$"
     "^d DIFFERENCE LOGIC COMPARISON EDGES LIFTED 0$"
     "^d DIFFERENCE LOGIC NODES 4$"
     "^d DIFFERENCE LOGIC SKIPPED NOT TWO TERMS 1$"
     "^d DIFFERENCE LOGIC SKIPPED UNCITABLE ROW 0$"
+    "^d DIFFERENCE LOGIC PROPAGATOR INSTALLED 1$"
     "^d DIFFERENCE LOGIC SIMPLIFY RAN 1$")
 add_xcsp_test(disjunctive)
 add_xcsp_test(no_overlap_var)
