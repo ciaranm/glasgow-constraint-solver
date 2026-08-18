@@ -1520,8 +1520,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 
                         // min_ect and max_lst are not-first / not-last's
                         // thresholds, over the same growing contained set the
-                        // energy accumulates over.
-                        Integer energy = 0_i, min_ect = 0_i, max_lst = 0_i;
+                        // energy accumulates over. min_est is est(Theta), which
+                        // the published not-last condition wants and which is
+                        // not `a`: `a` is an est the sweep enumerates, and a
+                        // task holding it need not be contained.
+                        Integer energy = 0_i, min_ect = 0_i, max_lst = 0_i, min_est = 0_i;
                         vector<size_t> inside;
                         for (size_t c = 0; c < candidates.size(); ++c) {
                             if (candidates[c].est < a)
@@ -1532,6 +1535,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                                          : min(min_ect, candidates[c].est + candidates[c].duration);
                             max_lst = inside.size() == 1 ? candidates[c].lct - candidates[c].duration
                                                          : max(max_lst, candidates[c].lct - candidates[c].duration);
+                            min_est = inside.size() == 1 ? candidates[c].est : min(min_est, candidates[c].est);
                             auto b = candidates[c].lct;
                             // Candidates are in lct order, so `inside` is every
                             // task the window contains only once the last of a
@@ -1636,13 +1640,32 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     // edge-finding's rather than keyed on a
                                     // bound that moves.
                                     if (rules.not_first && min_ect > s_lo) {
-                                        auto low_guard = min(s_lo, a);
-                                        auto clipped = window_energy::window_energy_bound(
-                                            p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, min_ect - 1_i});
-                                        if (clipped > 0_i && energy + clipped > b - a) {
-                                            auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, min_ect, true, "not-first");
-                                            inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
-                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                        // The published detection instead, over
+                                        // the narrower window
+                                        // [ect_j, lct(Theta)): under the
+                                        // negated conclusion j is before every
+                                        // contained task, so all of Theta lies
+                                        // in it. Measurement only, hence the
+                                        // throw --- see
+                                        // DisjunctiveRules::not_first_not_last_published.
+                                        if (rules.not_first_not_last_published) {
+                                            if (logger)
+                                                throw UnimplementedException{
+                                                    "disjunctive not-first by the published condition has no certificate yet (#757)"};
+                                            if (energy > b - (s_lo + p_j))
+                                                inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
+                                                    JustifyUsingRUP{hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                        }
+                                        else {
+                                            auto low_guard = min(s_lo, a);
+                                            auto clipped = window_energy::window_energy_bound(
+                                                p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, min_ect - 1_i});
+                                            if (clipped > 0_i && energy + clipped > b - a) {
+                                                auto justify =
+                                                    edge_finding_justification(a, b, inside, j.task, low_guard, min_ect, true, "not-first");
+                                                inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
+                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                            }
                                         }
                                     }
 
@@ -1656,12 +1679,26 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     // edge-finding.
                                     if (rules.not_last && max_lst - p_j < s_hi) {
                                         auto low_guard = max_lst - p_j + 1_i;
-                                        auto clipped = window_energy::window_energy_bound(
-                                            p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, s_hi});
-                                        if (clipped > 0_i && energy + clipped > b - a) {
-                                            auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, s_hi + 1_i, false, "not-last");
-                                            inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
-                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                        // The mirror, over [est(Theta), ub(s_j)):
+                                        // under the negated conclusion every
+                                        // contained task ends by s_j.
+                                        if (rules.not_first_not_last_published) {
+                                            if (logger)
+                                                throw UnimplementedException{
+                                                    "disjunctive not-last by the published condition has no certificate yet (#757)"};
+                                            if (energy > s_hi - min_est)
+                                                inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
+                                                    JustifyUsingRUP{hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                        }
+                                        else {
+                                            auto clipped = window_energy::window_energy_bound(
+                                                p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, s_hi});
+                                            if (clipped > 0_i && energy + clipped > b - a) {
+                                                auto justify =
+                                                    edge_finding_justification(a, b, inside, j.task, low_guard, s_hi + 1_i, false, "not-last");
+                                                inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
+                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                            }
                                         }
                                     }
                                 }

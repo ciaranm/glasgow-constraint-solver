@@ -448,6 +448,14 @@ auto main(int argc, char * argv[]) -> int
                 "--disjunctive-not-last-only to the half that lowers an upper bound")       //
             ("disjunctive-not-last-only",
                 "See --disjunctive-not-first-only") //
+            ("disjunctive-not-first-not-last-published",
+                "Detect not-first / not-last by the published unary condition rather than by the " //
+                "guarded window-energy one: the published rule argues over a narrower window "     //
+                "whose left edge the negated conclusion derives, and fires 1.7x as often. "        //
+                "Implies --disjunctive-not-first-not-last. A measurement switch, and the "         //
+                "measurement is made: that detection is worth 0.6% of the summed recursions and "  //
+                "nothing at the median, so it is deliberately uncertified and throws rather than " //
+                "propagating under --prove (#757)")                                                //
             ("disjunctive-overload",
                 "Give every posted Disjunctive the overload check, off by default because its "   //
                 "certificate is expensive enough that whether it pays is what #730 is measuring") //
@@ -758,6 +766,10 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars["disjunctive-not-last-only"].as<bool>()) {
         disjunctive_rules.not_first_not_last = true;
         disjunctive_rules.not_first = false;
+    }
+    if (options_vars["disjunctive-not-first-not-last-published"].as<bool>()) {
+        disjunctive_rules.not_first_not_last = true;
+        disjunctive_rules.not_first_not_last_published = true;
     }
     disjunctive_rules.overload = options_vars["disjunctive-overload"].as<bool>();
     disjunctive_rules.overload_max_window = options_vars["disjunctive-overload-max-window"].as<std::size_t>();
