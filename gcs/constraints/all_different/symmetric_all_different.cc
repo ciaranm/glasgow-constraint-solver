@@ -110,7 +110,8 @@ auto SymmetricAllDifferent::define_proof_model(ProofModel & model, const State &
 auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> void
 {
     if (_has_duplicate_vars) {
-        install_clique_duplicate_contradiction_initialiser(propagators, hints::AllDifferent{constraint_id()});
+        install_clique_duplicate_contradiction_initialiser(propagators, constraint_id(), constraint_type(),
+            "A SymmetricAllDifferent constraint was posted with the same variable more than once", hints::AllDifferent{constraint_id()});
         return;
     }
 

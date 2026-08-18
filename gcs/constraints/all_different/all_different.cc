@@ -142,7 +142,8 @@ auto AllDifferent::define_proof_model(ProofModel & model, const State &) -> void
 auto AllDifferent::install_propagators(Propagators & propagators) -> void
 {
     if (_has_duplicate_vars) {
-        install_clique_duplicate_contradiction_initialiser(propagators, hints::AllDifferent{constraint_id()});
+        install_clique_duplicate_contradiction_initialiser(propagators, constraint_id(), constraint_type(),
+            "An AllDifferent constraint was posted with the same variable more than once", hints::AllDifferent{constraint_id()});
         return;
     }
 

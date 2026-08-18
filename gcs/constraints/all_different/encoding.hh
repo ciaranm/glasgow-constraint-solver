@@ -40,8 +40,17 @@ namespace gcs
         // caller (AllDifferent's gac/vc/symmetric propagators, AllDifferentExcept)
         // names the contradiction with its own constraint. Instantiated in
         // encoding.cc for hints::AllDifferent and hints::AllDifferentExcept.
+        //
+        // What is shared here is the *proof* argument --- the pair rows collapse
+        // to units, so the contradiction is bare RUP with no reason --- and not
+        // the diagnostic, which names a kind of constraint and so belongs to the
+        // caller. Take the type from Constraint::constraint_type() rather than
+        // from Hint_: SymmetricAllDifferent justifies with hints::AllDifferent,
+        // correctly, since the proof step is the clique one, and a note taking
+        // its component from the hint would call it an all_different.
         template <typename Hint_>
-        auto install_clique_duplicate_contradiction_initialiser(Propagators & propagators, const Hint_ & hint) -> void;
+        auto install_clique_duplicate_contradiction_initialiser(Propagators & propagators, const ConstraintID & constraint_id,
+            const std::string & constraint_type, const std::string & what_is_wrong, const Hint_ & hint) -> void;
     }
 }
 

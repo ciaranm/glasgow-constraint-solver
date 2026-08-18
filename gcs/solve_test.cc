@@ -759,13 +759,19 @@ TEST_CASE("A caller's AutoTable stats block is the one that gets filled in and r
 
 TEST_CASE("A constraint that is trivially unsatisfiable at install time says which one, and why")
 {
-    // Six sites --- seven constraints, Divide and Modulus sharing one --- work
-    // out while installing that what they encode is the empty relation, and
-    // install a contradiction initialiser instead of a propagator. Each has
-    // always passed an explanation of what was wrong with it; the parameter that
-    // took it was unnamed and dropped it (#722), so the whole visible
-    // consequence of `x div 0` was an unsatisfiable answer that looks exactly
-    // like a model whose constraints genuinely conflict.
+    // Seven sites --- ten constraints --- work out while installing that what
+    // they encode is the empty relation, and install a contradiction initialiser
+    // instead of a propagator. Each has always passed an explanation of what was
+    // wrong with it; the parameter that took it was unnamed and dropped it
+    // (#722), so the whole visible consequence of `x div 0` was an unsatisfiable
+    // answer that looks exactly like a model whose constraints genuinely
+    // conflict.
+    //
+    // Divide and Modulus share install_propagators_divide_modulus; the three
+    // AllDifferent-family constraints share
+    // install_clique_duplicate_contradiction_initialiser, which is why they were
+    // not in #722's census -- that was a grep for install_initial_contradiction,
+    // and this one goes through the same wrapper only since #767.
     struct Case
     {
         string component;
@@ -781,9 +787,20 @@ TEST_CASE("A constraint that is trivially unsatisfiable at install time says whi
         {"power", "overflow", [](Problem & p, IntegerVariableID x, IntegerVariableID) { p.post(Power{0_c, constant_variable(-1_i), x}); }},
         {"divide", "divisor of constant zero", [](Problem & p, IntegerVariableID x, IntegerVariableID y) { p.post(Divide{x, 0_c, y}); }},
         {"modulus", "divisor of constant zero", [](Problem & p, IntegerVariableID x, IntegerVariableID y) { p.post(Modulus{x, 0_c, y}); }},
-        {"difference", "strictly less than itself", [](Problem & p, IntegerVariableID x, IntegerVariableID) {
-             p.post(DifferenceConstraints{vector<DifferenceEdge>{DifferenceEdge{x, x, -1_i}}});
-         }}};
+        {"difference", "strictly less than itself",
+            [](Problem & p, IntegerVariableID x, IntegerVariableID) {
+                p.post(DifferenceConstraints{vector<DifferenceEdge>{DifferenceEdge{x, x, -1_i}}});
+            }},
+        {"all_different", "same variable more than once",
+            [](Problem & p, IntegerVariableID x, IntegerVariableID) { p.post(AllDifferent{vector<IntegerVariableID>{x, x}}); }},
+        // With no excluded values, and only then: with any, the duplicate is a
+        // propagation route rather than an install-time verdict.
+        {"all_different_except", "no excluded values",
+            [](Problem & p, IntegerVariableID x, IntegerVariableID) {
+                p.post(AllDifferentExcept{vector<IntegerVariableID>{x, x}, vector<Integer>{}});
+            }},
+        {"symmetric_all_different", "same variable more than once",
+            [](Problem & p, IntegerVariableID x, IntegerVariableID) { p.post(SymmetricAllDifferent{vector<IntegerVariableID>{x, x}}); }}};
 
     for (const auto & c : cases) {
         INFO("constraint type " << c.component);
