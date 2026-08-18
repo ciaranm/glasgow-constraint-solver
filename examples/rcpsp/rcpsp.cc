@@ -364,6 +364,11 @@ auto main(int argc, char * argv[]) -> int
                 "Run not-first / not-last on every posted Cumulative, alongside edge-finding. Implies "  //
                 "--cumulative-edge-finding",                                                             //
                 cxxopts::value<bool>()->default_value("false"))                                          //
+            ("cumulative-not-first-not-last-published",                                                  //
+                "Run the published not-first / not-last detection instead of the one we certify, to "    //
+                "price the difference (#746). Deliberately uncertified, so a run with --prove refuses. " //
+                "Implies --cumulative-not-first-not-last, which it replaces",                            //
+                cxxopts::value<bool>()->default_value("false"))                                          //
             ("mutate-makespan-bound",                                                                    //
                 "Claim a makespan one larger than the inferred constraints' energy supports. For "       //
                 "validating the bound only: VeriPB must reject the resulting proof, and a run that "     //
@@ -687,7 +692,8 @@ auto main(int argc, char * argv[]) -> int
     auto cumulative_rules = CumulativeRules{};
     cumulative_rules.time_table_edge_finding = options_vars["cumulative-time-table-edge-finding"].as<bool>();
     cumulative_rules.energetic_edge_finding = options_vars["cumulative-energetic-edge-finding"].as<bool>();
-    cumulative_rules.not_first_not_last = options_vars["cumulative-not-first-not-last"].as<bool>();
+    cumulative_rules.not_first_not_last_published = options_vars["cumulative-not-first-not-last-published"].as<bool>();
+    cumulative_rules.not_first_not_last = options_vars["cumulative-not-first-not-last"].as<bool>() || cumulative_rules.not_first_not_last_published;
     cumulative_rules.edge_finding = options_vars["cumulative-edge-finding"].as<bool>() || cumulative_rules.time_table_edge_finding ||
         cumulative_rules.energetic_edge_finding || cumulative_rules.not_first_not_last;
     cumulative_rules.knapsack_overload = options_vars["cumulative-knapsack-overload"].as<bool>();

@@ -147,6 +147,49 @@ namespace gcs
         /// take the overlap at one end of that range. So this is a weakening of
         /// them, sound and certified but firing less often. See #746.
         bool not_first_not_last = false;
+
+        /// Run the **published** not-first / not-last detection instead of
+        /// \ref not_first_not_last's, over the papers' own window.
+        ///
+        /// Schutt &amp; Wolf (CP 2010, Proposition 1) and Kameugne et al.
+        /// (CPAIOR 2018, rule (NF)) take the pushed task's overlap at *one end*
+        /// of the negated conclusion's start range, and do not clamp it against
+        /// the task's own far bound; ours is the least overlap over that whole
+        /// range, which is what the window-energy lemma derives. The two are
+        /// **incomparable** --- each fires where the other does not --- so this
+        /// replaces the rule rather than strengthening it.
+        ///
+        /// **Deliberately uncertified**, and \ref Cumulative::define_proof_model
+        /// throws rather than propagating when it is set: the published
+        /// condition is sound (see below), but its argument is not one
+        /// `derive_guarded_window_energy` can make, and a rule that quietly
+        /// weakened itself under `--prove` would confound the comparison this
+        /// switch exists to make.
+        ///
+        /// **Why it is sound, which is #746's answer.** Suppose the not-first
+        /// conclusion fails, so some schedule has `s_i < ECT(Omega)`. Every
+        /// task in `Omega` has `ect_j > s_i`, so any of them with energy before
+        /// `s_i` is *running at* `s_i` beside `i` --- and the capacity row at
+        /// that one time point then caps what `Omega` may use across the whole
+        /// prefix at `C - c_i` rather than `C`. Summing that over the window is
+        /// exactly the published inequality. It is a contiguity-plus-`ECT`
+        /// argument at a single time point, not a window-energy one, and it is
+        /// the mirror of the remark Schutt &amp; Wolf make about their
+        /// pseudo-tasks. Neither paper states a standing assumption, and none
+        /// is needed.
+        ///
+        /// **What the gap is worth**, measured here against
+        /// \ref not_first_not_last over `data_bl` + `data_pack`: **0.991x the
+        /// summed recursions, 0.999x the median**, better on 23 of the 37
+        /// instances every arm closes and worse on none --- and on top of
+        /// \ref time_table_edge_finding, 0.999x summed and 1.000x median,
+        /// better on 13 and *worse on 3*. The single largest instance carries
+        /// 46% of the summed saving. So the gap between the published detection
+        /// and the certifiable one is worth **under 1% of the search**, which
+        /// is what #757 found on the disjunctive encoding by a different route.
+        /// Neither detection pays for its own sweep: at 60 s both close fewer
+        /// instances than leaving the rule off.
+        bool not_first_not_last_published = false;
     };
 
     /**

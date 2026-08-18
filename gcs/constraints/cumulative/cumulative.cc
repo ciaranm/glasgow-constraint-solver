@@ -353,6 +353,8 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
     // declines: refuse here rather than emit a proof VeriPB will reject.
     if (_rules.energetic_edge_finding)
         throw UnimplementedException{"energetic edge-finding is not yet certified"};
+    if (_rules.not_first_not_last_published)
+        throw UnimplementedException{"the published not-first / not-last detection is not certified: see #746"};
 
     // Time-table OPB encoding:
     //   for each task i and each time point t in its possible-active range:
@@ -1296,7 +1298,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
 
             // min_ect and max_lst are not-first / not-last's thresholds, over
             // the same growing contained set the energy accumulates over.
-            Integer energy = 0_i, inside_mandatory = 0_i, min_ect = 0_i, max_lst = 0_i;
+            Integer energy = 0_i, inside_mandatory = 0_i, min_ect = 0_i, max_lst = 0_i, min_est = 0_i;
             vector<size_t> inside_tasks;
             for (const auto & c : candidates) {
                 if (c.est < a)
@@ -1307,6 +1309,9 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 if (elastic_rules)
                     join_elastic(c);
                 min_ect = inside_tasks.size() == 1 ? c.est + c.length : min(min_ect, c.est + c.length);
+                // The papers' window is the contained set's own [est, lct), not
+                // the swept one: only the published arm below reads this.
+                min_est = inside_tasks.size() == 1 ? c.est : min(min_est, c.est);
                 max_lst = inside_tasks.size() == 1 ? c.lct - c.length : max(max_lst, c.lct - c.length);
 
                 auto b = c.lct;
@@ -1507,6 +1512,27 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         auto h_j = j.height, p_j = j.length;
                         auto other_energy = window_total - own_contribution(j);
                         auto [s_lo, s_hi] = state.bounds(starts[j.task]);
+
+                        // The published detection instead, verbatim, over the
+                        // papers' own window [est(Omega), lct(Omega)). Their
+                        // term is the overlap at one end of the negated
+                        // conclusion's start range, unclamped against j's far
+                        // bound, so it is neither above nor below what the
+                        // lemma derives. Measurement only, hence the refusal in
+                        // define_proof_model --- see
+                        // CumulativeRules::not_first_not_last_published, which
+                        // carries both why it is sound and what it is worth.
+                        if (rules.not_first_not_last_published) {
+                            auto ect_j = s_lo + p_j, lst_j = j.lct - p_j;
+                            auto span = b - min_est;
+                            if (s_lo < min_ect && energy + h_j * (min(ect_j, b) - min_est) > capacity * span)
+                                inference.infer_greater_than_or_equal(
+                                    logger, starts[j.task], min_ect, JustifyUsingRUP{hints::Cumulative{owner}}, reason_with_presence());
+                            if (max_lst < j.lct && energy + h_j * (b - max(lst_j, min_est)) > capacity * span)
+                                inference.infer_less_than(
+                                    logger, starts[j.task], max_lst - p_j + 1_i, JustifyUsingRUP{hints::Cumulative{owner}}, reason_with_presence());
+                            continue;
+                        }
 
                         // Not-first: refute "j starts before every contained
                         // task has ended". The guarded row's low guard is what
