@@ -99,6 +99,12 @@ one) already had. On the instance above, edge-finding's lb half passes over
 412: the two halves do very different amounts of redundant work, which is
 invisible in a recursion count and is why the halves have a row each.
 
+## Reading them off a sweep
+
+`tools/scheduling_sweep.py` collects these alongside the search shape, one JSONL
+row per (instance, arm), and because they are inert it is the same run that
+gives the recursion count. See `tools/README.md`.
+
 ## Adding a rule
 
 `gcs/constraints/innards/rule_counters.hh`. Add an entry to the constraint's
