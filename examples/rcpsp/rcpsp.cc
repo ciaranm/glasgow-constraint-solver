@@ -98,6 +98,7 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/difference.hh>
 #include <gcs/constraints/disjunctive.hh>
+#include <gcs/constraints/element.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/presolvers/difference_logic.hh>
 #include <gcs/presolvers/inferred_cumulative/inferred_cumulative.hh>
@@ -396,6 +397,12 @@ auto main(int argc, char * argv[]) -> int
                 "one, so this is the instance family --unary=disjunctive actually posts a Disjunctive "  //
                 "for; no RCPSP collection has a unary resource at all",                                  //
                 cxxopts::value<string>())                                                                //
+            ("mm",                                                                                       //
+                "Read a multi-mode RCPSP instance from PATH, in the PSPLIB .mm format (the j10, j12, "   //
+                "j14, j16, j18, j20 and j30 multi-mode sets). Each activity picks a mode, and the mode " //
+                "fixes both its duration and its demands, so this is the only instance family where "    //
+                "Cumulative is handed variable lengths and heights rather than constants (#748, #749)",  //
+                cxxopts::value<string>())                                                                //
             ("max-lag-density",
                 "Probability that a pair joined by a precedence path also gets a maximum time " //
                 "lag, which is what turns this into an RCPSP/max instance. Zero, the default, " //
@@ -553,15 +560,18 @@ auto main(int argc, char * argv[]) -> int
 
     rcpsp::Instance instance;
     try {
-        auto named = (options_vars.contains("file") ? 1 : 0) + (options_vars.contains("dzn") ? 1 : 0) + (options_vars.contains("jss") ? 1 : 0);
+        auto named = (options_vars.contains("file") ? 1 : 0) + (options_vars.contains("dzn") ? 1 : 0) + (options_vars.contains("jss") ? 1 : 0) +
+            (options_vars.contains("mm") ? 1 : 0);
         if (named > 1)
-            throw std::runtime_error{"--file, --dzn and --jss each name an instance; give only one"};
+            throw std::runtime_error{"--file, --dzn, --jss and --mm each name an instance; give only one"};
         if (options_vars.contains("file"))
             instance = rcpsp::read_file(options_vars["file"].as<string>());
         else if (options_vars.contains("dzn"))
             instance = rcpsp::read_dzn_file(options_vars["dzn"].as<string>());
         else if (options_vars.contains("jss"))
             instance = rcpsp::read_jss_file(options_vars["jss"].as<string>());
+        else if (options_vars.contains("mm"))
+            instance = rcpsp::read_mm_file(options_vars["mm"].as<string>());
         else {
             rcpsp::GeneratorOptions gen_opts;
             gen_opts.n_tasks = options_vars["size"].as<int>();
@@ -606,12 +616,26 @@ auto main(int argc, char * argv[]) -> int
     // Note the fallback is only a *proven* upper bound when there are no maximum
     // lags: RCPSP/max feasibility is NP-hard, and there is no cheap valid
     // horizon. See rcpsp::default_horizon.
-    auto greedy = rcpsp::serial_schedule(instance);
-    auto greedy_makespan = rcpsp::makespan_of(instance, greedy);
-    if (! rcpsp::is_feasible(instance, greedy)) {
-        if (! rcpsp::has_maximum_lags(instance))
-            println(cerr, "Warning: the greedy schedule did not check out, falling back to a serial horizon.");
-        greedy_makespan = rcpsp::default_horizon(instance);
+    //
+    // A multi-mode instance takes neither route. serial_schedule() would have to
+    // pick a mode per activity before it could place anything, and whether *any*
+    // mode selection fits the non-renewable budgets is itself NP-hard --- so a
+    // greedy that ignored the budgets would not have produced a schedule, and
+    // one that respected them could not be trusted to have found the shortest it
+    // could. Running every activity in its longest mode, one after another, is
+    // feasible for the precedences and the renewable resources whatever the
+    // modes turn out to be, and needs no such search. See multi_mode_horizon().
+    long long greedy_makespan = 0;
+    if (rcpsp::is_multi_mode(instance))
+        greedy_makespan = rcpsp::multi_mode_horizon(instance);
+    else {
+        auto greedy = rcpsp::serial_schedule(instance);
+        greedy_makespan = rcpsp::makespan_of(instance, greedy);
+        if (! rcpsp::is_feasible(instance, greedy)) {
+            if (! rcpsp::has_maximum_lags(instance))
+                println(cerr, "Warning: the greedy schedule did not check out, falling back to a serial horizon.");
+            greedy_makespan = rcpsp::default_horizon(instance);
+        }
     }
 
     auto critical_path = rcpsp::critical_path_length(instance);
@@ -644,9 +668,100 @@ auto main(int argc, char * argv[]) -> int
 
     auto makespan = problem.create_integer_variable(0_i, Integer{horizon}, "makespan");
 
+    // Multi-mode: an activity picks one of several modes, and the mode fixes
+    // both how long it runs and how much of each resource it takes while it
+    // does. So a duration and a demand are *decisions* here, tied to the mode
+    // by an element constraint, and what Cumulative is handed is a vector of
+    // variables rather than one of constants --- which is the case #748 and
+    // #749 taught it to reason about, and the one no single-mode instance can
+    // reach.
+    //
+    // Where the mode makes no difference to a figure, the constant goes in
+    // directly: an element over an array of equal values is the same constraint
+    // and a bigger encoding, and the dummy source and sink have one mode at all.
+    vector<IntegerVariableID> mode_vars, duration_vars;
+    vector<vector<IntegerVariableID>> demand_vars, nonrenewable_vars;
+    if (rcpsp::is_multi_mode(instance)) {
+        auto link = [&](const vector<Integer> & vals, IntegerVariableID mode, const string & name) -> IntegerVariableID {
+            if (all_of(vals.begin(), vals.end(), [&](const Integer & v) { return v == vals.front(); }))
+                return constant_variable(vals.front());
+            auto [lo, hi] = minmax_element(vals.begin(), vals.end());
+            auto var = problem.create_integer_variable(*lo, *hi, name);
+            problem.post(ElementConstantArray{var, mode, vals});
+            return var;
+        };
+
+        demand_vars.assign(instance.capacities.size(), {});
+        nonrenewable_vars.assign(instance.nonrenewable_capacities.size(), {});
+        for (int i = 0; i < instance.n_tasks; ++i) {
+            const auto & modes = instance.modes[static_cast<std::size_t>(i)];
+            auto mode = modes.size() == 1
+                ? constant_variable(0_i)
+                : problem.create_integer_variable(0_i, Integer{static_cast<long long>(modes.size()) - 1}, "mode" + to_string(i));
+            mode_vars.push_back(mode);
+
+            vector<Integer> vals;
+            vals.reserve(modes.size());
+            for (const auto & m : modes)
+                vals.push_back(m.duration);
+            duration_vars.push_back(link(vals, mode, "duration" + to_string(i)));
+
+            for (std::size_t r = 0; r < instance.capacities.size(); ++r) {
+                vals.clear();
+                for (const auto & m : modes)
+                    vals.push_back(m.demands[r]);
+                demand_vars[r].push_back(link(vals, mode, "demand" + to_string(r) + "_" + to_string(i)));
+            }
+
+            for (std::size_t k = 0; k < instance.nonrenewable_capacities.size(); ++k) {
+                vals.clear();
+                for (const auto & m : modes)
+                    vals.push_back(m.nonrenewable[k]);
+                nonrenewable_vars[k].push_back(link(vals, mode, "nonrenewable" + to_string(k) + "_" + to_string(i)));
+            }
+        }
+
+        // A non-renewable resource is a budget drawn on once by each activity
+        // and spent over the whole project, not a rate held at each time point,
+        // so it is one linear inequality rather than a Cumulative. It is also
+        // the only thing stopping the mode choice decomposing into "give every
+        // activity its shortest mode", which is why an instance without one is
+        // a plain RCPSP with extra steps.
+        //
+        // A fixed draw comes off the budget rather than into the sum: a
+        // constant term in a linear is just a smaller right-hand side.
+        for (std::size_t k = 0; k < instance.nonrenewable_capacities.size(); ++k) {
+            WeightedSum consumption;
+            auto budget = instance.nonrenewable_capacities[k];
+            for (const auto & v : nonrenewable_vars[k]) {
+                if (is_constant_variable(v))
+                    budget -= constant_value_of(v);
+                else
+                    consumption += 1_i * v;
+            }
+
+            if (budget < 0_i) {
+                println(cerr, "Error: the activities with no choice of mode already exceed non-renewable resource {}.", k);
+                return EXIT_FAILURE;
+            }
+            if (! consumption.terms.empty())
+                problem.post(LinearLessThanEqual{consumption, budget});
+        }
+    }
+
     auto unary_variant = options_vars["unary"].as<string>();
     if (unary_variant != "cumulative" && unary_variant != "disjunctive") {
         println(cerr, "Error: unknown --unary value '{}'. Supported: cumulative, disjunctive.", unary_variant);
+        return EXIT_FAILURE;
+    }
+    // Rejected rather than ignored. Disjunctive carries no demands, so it can
+    // only stand in for a capacity-one resource over the tasks that use it ---
+    // and with a variable demand, whether a task uses one is itself a decision.
+    // Accepting the flag and posting a Cumulative anyway would be a silent
+    // no-op, which is the shape of thing that passes every check.
+    if (unary_variant == "disjunctive" && rcpsp::is_multi_mode(instance)) {
+        println(cerr, "Error: --unary disjunctive cannot be used with --mm: a mode decides whether a task uses a resource,");
+        println(cerr, "       and Disjunctive has no demands to make that conditional on.");
         return EXIT_FAILURE;
     }
 
@@ -675,7 +790,40 @@ auto main(int argc, char * argv[]) -> int
     // The temporal network. --variant decides how it reaches the solver, over
     // the identical edge list in the identical order, so a comparison between
     // the three is between the handling and nothing else.
-    auto edges = model_edges(instance, starts, makespan);
+    // For a multi-mode instance a precedence is *not* a difference constraint:
+    // its weight is the predecessor's duration, and that is a decision. So each
+    // one becomes a three-term linear `s_j - s_i - d_i >= 0` instead, and the
+    // same for the makespan bound --- getting this wrong is not a modelling
+    // preference but a wrong answer, since an edge weighted by the shortest
+    // mode lets a successor start while its predecessor is still running.
+    //
+    // Where the mode makes no difference to a duration it *is* a difference
+    // constraint, and goes into the same edge list every --variant handles;
+    // the dummy source and sink are always in that case. So --variant still
+    // selects how the difference part of the network is posted, over however
+    // much of it stays difference-shaped.
+    vector<ModelEdge> edges;
+    vector<WeightedSum> variable_precedences;
+    if (rcpsp::is_multi_mode(instance)) {
+        auto duration_of = [&](int i) { return duration_vars[static_cast<std::size_t>(i)]; };
+        for (const auto & [i, j] : instance.precedences) {
+            auto d = duration_of(i);
+            if (is_constant_variable(d))
+                edges.push_back(ModelEdge{starts[static_cast<std::size_t>(i)], starts[static_cast<std::size_t>(j)], constant_value_of(d)});
+            else
+                variable_precedences.push_back(
+                    WeightedSum{} + 1_i * starts[static_cast<std::size_t>(j)] + -1_i * starts[static_cast<std::size_t>(i)] + -1_i * d);
+        }
+        for (int i = 0; i < instance.n_tasks; ++i) {
+            auto d = duration_of(i);
+            if (is_constant_variable(d))
+                edges.push_back(ModelEdge{starts[static_cast<std::size_t>(i)], makespan, constant_value_of(d)});
+            else
+                variable_precedences.push_back(WeightedSum{} + 1_i * makespan + -1_i * starts[static_cast<std::size_t>(i)] + -1_i * d);
+        }
+    }
+    else
+        edges = model_edges(instance, starts, makespan);
     auto presolver_stats = std::make_shared<DifferenceLogicStats>();
 
     // --machine=difference puts the machine into that same network, as the
@@ -765,6 +913,13 @@ auto main(int argc, char * argv[]) -> int
         break;
     }
 
+    // The precedences and makespan bounds whose weight is a decision, which no
+    // --variant can take: they are not difference constraints. Posted after the
+    // switch above so that the difference part of the network keeps the posting
+    // order it has always had.
+    for (const auto & sum : variable_precedences)
+        problem.post(LinearGreaterThanEqual{sum, 0_i});
+
     // A .sch instance's dummy source is pinned at time zero: the file's arc
     // weights are all relative to it.
     if (instance.source_task)
@@ -817,6 +972,28 @@ auto main(int argc, char * argv[]) -> int
     }
 
     for (std::size_t r = 0; r < instance.capacities.size(); ++r) {
+        // Multi-mode: the durations and demands are variables, so this resource
+        // gets the element-linked ones rather than the instance's numbers. A
+        // task is left out when *no* mode has it both running and using this
+        // resource --- the same "it can never occupy this" test as the
+        // single-mode case below, which now has to hold across every mode
+        // instead of for the one.
+        if (rcpsp::is_multi_mode(instance)) {
+            vector<IntegerVariableID> task_starts, task_durations, task_demands;
+            for (int i = 0; i < instance.n_tasks; ++i) {
+                const auto & modes = instance.modes[static_cast<std::size_t>(i)];
+                if (any_of(modes.begin(), modes.end(), [&](const rcpsp::Mode & m) { return m.duration > 0_i && m.demands[r] > 0_i; })) {
+                    task_starts.push_back(starts[i]);
+                    task_durations.push_back(duration_vars[static_cast<std::size_t>(i)]);
+                    task_demands.push_back(demand_vars[r][static_cast<std::size_t>(i)]);
+                }
+            }
+            if (! task_starts.empty())
+                problem.post(
+                    Cumulative{task_starts, task_durations, task_demands, constant_variable(instance.capacities[r])}.with_rules(cumulative_rules));
+            continue;
+        }
+
         // A task that runs for no time never occupies a resource, so leaving it
         // out changes nothing but keeps the propagator and the proof smaller.
         // Every generated duration is at least one, so nothing is ever dropped
@@ -936,7 +1113,18 @@ auto main(int argc, char * argv[]) -> int
     // tasks at once. The reified linear forms do infer their condition, which is
     // why --machine=pairwise is sound without them; relying on that here would
     // be relying on the very thing this variant is meant to exercise.
+    // Which mode each activity runs in is half the decision on a multi-mode
+    // instance, and it comes first: fixing the modes leaves a plain RCPSP
+    // behind, where fixing the starts first would leave the solver reporting a
+    // "solution" in which the durations were still a range. The element
+    // constraints then determine every duration and demand from the mode, so
+    // those need no branching of their own --- and if one ever failed to,
+    // reading the solution would throw rather than print a schedule that is not
+    // one.
     auto branch_vars = machine_order_vars;
+    for (const auto & v : mode_vars)
+        if (! is_constant_variable(v))
+            branch_vars.push_back(v);
     branch_vars.insert(branch_vars.end(), starts.begin(), starts.end());
     branch_vars.push_back(makespan);
 
@@ -952,7 +1140,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     optional<Integer> best_makespan;
-    vector<Integer> best_starts;
+    vector<Integer> best_starts, best_modes, best_durations;
     bool proven = false;
 
     auto stats = bench::solve_with_timeout(options_vars["timeout"].as<double>(), problem,
@@ -961,6 +1149,16 @@ auto main(int argc, char * argv[]) -> int
                            best_starts.clear();
                            for (auto & v : starts)
                                best_starts.push_back(s(v));
+                           // A multi-mode schedule is not checkable from its
+                           // start times alone: which mode each activity ran in
+                           // is half the decision, and is what fixes its
+                           // duration and its demands.
+                           best_modes.clear();
+                           best_durations.clear();
+                           for (auto & v : mode_vars)
+                               best_modes.push_back(s(v));
+                           for (auto & v : duration_vars)
+                               best_durations.push_back(s(v));
                            // Optimising or enumerating, so keep going and let
                            // the solver prove this is the best (or that there
                            // are no more); deciding, so the first schedule that
@@ -1035,6 +1233,18 @@ auto main(int argc, char * argv[]) -> int
         for (auto & v : best_starts)
             print(" {}", v);
         println("");
+        if (rcpsp::is_multi_mode(instance)) {
+            // One-based, as the .mm file numbers them, so that a line here can
+            // be read against the file it came from without arithmetic.
+            print("modes:");
+            for (auto & v : best_modes)
+                print(" {}", v + 1_i);
+            println("");
+            print("durations:");
+            for (auto & v : best_durations)
+                print(" {}", v);
+            println("");
+        }
     }
     println("solutions: {}", stats.solutions);
     println("recursions: {}", stats.recursions);
