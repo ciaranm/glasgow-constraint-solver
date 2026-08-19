@@ -46,6 +46,11 @@ detection count everywhere would mean evaluating each condition for candidates
 the rule currently skips — the expensive half of the sweep — and every solve
 would pay for a number only a measurement wants.
 
+Every rule that can skip a candidate counts it, including the time-table
+pushes, so `already_true = 0` on a row with firings means *measured* zero and
+not "no counter here". A row with contradictions and no calls, or firings and no
+counter, is a wiring bug.
+
 **This is the trap to avoid when quoting them.** A firing count from a
 standalone simulation of a rule (`~/claude/tmp/nfnl-746/survey.py` and friends)
 counts detections on random draws; `firings` here counts bound moves on a
