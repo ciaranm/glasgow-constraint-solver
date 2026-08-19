@@ -4,7 +4,7 @@
 #include <utility>
 
 #include <version>
-#ifdef __cpp_lib_format
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 #include <print>
 #else
 #include <fmt/core.h>
@@ -20,7 +20,7 @@ using std::initializer_list;
 using std::move;
 using std::string;
 
-#ifdef __cpp_lib_format
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::println;
 #else
 using fmt::println;
