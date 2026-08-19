@@ -1,5 +1,6 @@
 #include <gcs/constraints/disjunctive/disjunctive.hh>
 #include <gcs/constraints/disjunctive/hints.hh>
+#include <gcs/constraints/innards/rule_counters.hh>
 #include <gcs/constraints/innards/task_presence.hh>
 #include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/exception.hh>
@@ -75,6 +76,44 @@ namespace
      * public API: this measures a design question, and goes away with the
      * answer. Printed at exit when GCS_DISJUNCTIVE_OVERLOAD_STATS is set.
      */
+    /**
+     * Per-rule firing counters (#729), the sibling of the same thing in
+     * `cumulative.cc`. Separate from OverloadInstrumentation below, which
+     * measures what an overload *certificate* costs; these measure what each
+     * rule is worth, which is a different question with a different lifetime.
+     *
+     * The lb and ub halves are counted apart, because measuring one half of a
+     * symmetric rule and doubling has been wrong here before.
+     *
+     * \note Unlike `Cumulative`, edge-finding on this encoding evaluates its
+     * energy condition *before* testing the live bound, so for those two rows
+     * `firings + already_true` really is a detection count. For every other row
+     * here, and for all of `Cumulative`, the live-bound test comes first and
+     * `already_true` counts candidates rather than detections. The difference
+     * is an accident of which test is cheaper on each encoding, not a
+     * difference between the rules.
+     */
+    enum DisjunctiveRule
+    {
+        rule_mandatory_overlap,
+        rule_time_table_lb,
+        rule_time_table_ub,
+        rule_presence,
+        rule_detectable_precedences_lb,
+        rule_detectable_precedences_ub,
+        rule_edge_finding_lb,
+        rule_edge_finding_ub,
+        rule_not_first,
+        rule_not_last,
+        rule_overload,
+        rule_zero_length_escape,
+        rule_count
+    };
+
+    RuleInstrumentation disjunctive_counters{"disjunctive",
+        {"mandatory_overlap", "time_table_lb", "time_table_ub", "presence", "detectable_precedences_lb", "detectable_precedences_ub",
+            "edge_finding_lb", "edge_finding_ub", "not_first", "not_last", "overload", "zero_length_escape"}};
+
     struct OverloadInstrumentation
     {
         unsigned long long calls = 0, windows_examined = 0, firings = 0, declined = 0, sorted = 0;
@@ -1418,6 +1457,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // running would not be a weakening of propagation but a solver
                 // that reports assignments violating the constraint. Only the
                 // bound pushes below are time-tabling's to switch off.
+                ++disjunctive_counters[rule_mandatory_overlap].calls;
                 for (auto idx = 0; idx < range; ++idx)
                     if (mand_load[idx] > 1) {
                         auto violating_t = t_lo + Integer{idx};
@@ -1467,12 +1507,16 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             reason_vars.push_back(length_vars[pi]);
                         if (is_var_len(pj))
                             reason_vars.push_back(length_vars[pj]);
+                        ++disjunctive_counters[rule_mandatory_overlap].contradictions;
                         inference.contradiction(
                             logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
                         return PropagatorState::DisableUntilBacktrack;
                     }
 
                 if (rules.time_table) {
+                    ++disjunctive_counters[rule_time_table_lb].calls;
+                    ++disjunctive_counters[rule_time_table_ub].calls;
+                    ++disjunctive_counters[rule_presence].calls;
                     // One step of an lb/ub-push chain: a single blocking task and
                     // the start bound the pair dichotomy advances to (the
                     // blocker's mandatory end for an lb-push, its latest start
@@ -1649,6 +1693,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 }
                             };
 
+                            ++disjunctive_counters[rule_presence].firings;
                             inference.infer_equal(logger, *presence[j], 0_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
                                 reason_over(push_reason_vars));
                             continue;
@@ -1677,6 +1722,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 }
                             };
 
+                            ++disjunctive_counters[rule_time_table_lb].firings;
                             inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
                                 JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(push_reason_vars));
                         }
@@ -1712,6 +1758,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 }
                             };
 
+                            ++disjunctive_counters[rule_time_table_ub].firings;
                             inference.infer_less_than(logger, starts[j], new_ub + 1_i,
                                 JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(push_reason_vars));
                         }
@@ -1763,6 +1810,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // presence literals inside the pols rather than only in the
                 // reason; the falsification above is the only place presence
                 // reaches a proof line here.
+                if (rules.detectable_precedences) {
+                    ++disjunctive_counters[rule_detectable_precedences_lb].calls;
+                    ++disjunctive_counters[rule_detectable_precedences_ub].calls;
+                }
                 if (rules.detectable_precedences)
                     for (auto j : active_tasks) {
                         if (min_len(j) == 0_i || ! is_present(j))
@@ -1903,6 +1954,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     pin_escapes(reason, {j, k});
                                     emit_lb_dichotomy(j, k, cur_lb, target, mutation);
                                 };
+                                ++disjunctive_counters[rule_detectable_precedences_lb].firings;
                                 inference.infer_greater_than_or_equal(logger, starts[j], target,
                                     JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(push_reason_vars));
                             }
@@ -1933,6 +1985,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     pin_escapes(reason, {j, k});
                                     emit_ub_dichotomy(j, k, cur_ub, target, mutation);
                                 };
+                                ++disjunctive_counters[rule_detectable_precedences_ub].firings;
                                 inference.infer_less_than(logger, starts[j], target + 1_i,
                                     JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(push_reason_vars));
                             }
@@ -1974,6 +2027,14 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // have already emptied is not one the overload check has to pay
                 // a certificate for.
                 if (rules.edge_finding || rules.not_first_not_last) {
+                    if (rules.edge_finding) {
+                        ++disjunctive_counters[rule_edge_finding_lb].calls;
+                        ++disjunctive_counters[rule_edge_finding_ub].calls;
+                    }
+                    if (rules.not_first_not_last) {
+                        ++disjunctive_counters[rule_not_first].calls;
+                        ++disjunctive_counters[rule_not_last].calls;
+                    }
                     struct EdgeTask
                     {
                         size_t task;
@@ -2082,8 +2143,12 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                         continue;
 
                                     auto [j_lo, j_hi] = state.bounds(starts[j.task]);
-                                    if (starts_inside ? high_guard <= j_lo : low_guard - 1_i >= j_hi)
+                                    auto & ef_counters = disjunctive_counters[starts_inside ? rule_edge_finding_lb : rule_edge_finding_ub];
+                                    if (starts_inside ? high_guard <= j_lo : low_guard - 1_i >= j_hi) {
+                                        ++ef_counters.already_true;
                                         continue;
+                                    }
+                                    ++ef_counters.firings;
 
                                     auto one_too_far = std::holds_alternative<disjunctive_proof_mutation::EdgeFindingOneTooFar>(mutation);
                                     auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, high_guard, starts_inside);
@@ -2140,7 +2205,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     // so the row it derives is shared with
                                     // edge-finding's rather than keyed on a
                                     // bound that moves.
-                                    if (rules.not_first && min_ect > s_lo) {
+                                    if (rules.not_first && min_ect <= s_lo)
+                                        ++disjunctive_counters[rule_not_first].already_true;
+                                    else if (rules.not_first) {
                                         // The published detection instead, over
                                         // the narrower window
                                         // [ect_j, lct(Theta)): under the
@@ -2152,6 +2219,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                         if (rules.not_first_not_last_published) {
                                             auto ect_j = s_lo + p_j;
                                             if (energy > b - ect_j) {
+                                                ++disjunctive_counters[rule_not_first].firings;
                                                 auto justify =
                                                     published_justification(ect_j, b, inside_published, j.task, s_lo, s_hi, p_j, min_ect, true);
                                                 inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
@@ -2163,6 +2231,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                             auto clipped = window_energy::window_energy_bound(
                                                 p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, min_ect - 1_i});
                                             if (clipped > 0_i && energy + clipped > b - a) {
+                                                ++disjunctive_counters[rule_not_first].firings;
                                                 auto justify =
                                                     edge_finding_justification(a, b, inside, j.task, low_guard, min_ect, true, "not-first");
                                                 inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
@@ -2179,7 +2248,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     // is a bound that moves, so this row is the
                                     // one place the rule cannot share a key with
                                     // edge-finding.
-                                    if (rules.not_last && max_lst - p_j < s_hi) {
+                                    if (rules.not_last && max_lst - p_j >= s_hi)
+                                        ++disjunctive_counters[rule_not_last].already_true;
+                                    else if (rules.not_last) {
                                         auto low_guard = max_lst - p_j + 1_i;
                                         // The mirror, over [est(Theta), ub(s_j)):
                                         // under the negated conclusion every
@@ -2188,6 +2259,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                         // the conclusion supplies.
                                         if (rules.not_first_not_last_published) {
                                             if (energy > s_hi - min_est) {
+                                                ++disjunctive_counters[rule_not_last].firings;
                                                 auto justify = published_justification(
                                                     min_est, s_hi, inside_published, j.task, s_lo, s_hi, p_j, low_guard, false);
                                                 inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
@@ -2198,6 +2270,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                             auto clipped = window_energy::window_energy_bound(
                                                 p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, s_hi});
                                             if (clipped > 0_i && energy + clipped > b - a) {
+                                                ++disjunctive_counters[rule_not_last].firings;
                                                 auto justify =
                                                     edge_finding_justification(a, b, inside, j.task, low_guard, s_hi + 1_i, false, "not-last");
                                                 inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
@@ -2211,6 +2284,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 }
 
                 if (rules.overload) {
+                    ++disjunctive_counters[rule_overload].calls;
                     // Measuring what a firing would cost means measuring the
                     // *smallest* window that refutes the state, since the
                     // certificate is cubic in it: hence the full O(n^2) sweep
@@ -2388,6 +2462,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 total.emit(*logger, ProofLevel::Temporary);
                             };
 
+                            ++disjunctive_counters[rule_overload].contradictions;
                             inference.contradiction(
                                 logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
                             return PropagatorState::DisableUntilBacktrack;
@@ -2419,6 +2494,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             for (auto z : active_tasks) {
                 if (! strict)
                     break;
+                ++disjunctive_counters[rule_zero_length_escape].calls;
                 if (max_len(z) > 0_i)
                     continue;
                 if (! state.has_single_value(starts[z]) || ! is_present(z))
@@ -2437,6 +2513,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             reason_vars.push_back(length_vars[z]);
                         if (is_var_len(k))
                             reason_vars.push_back(length_vars[k]);
+                        ++disjunctive_counters[rule_zero_length_escape].contradictions;
                         inference.contradiction(logger, JustifyUsingRUP{hints::Disjunctive{owner}}, reason_over(reason_vars));
                         return PropagatorState::DisableUntilBacktrack;
                     }

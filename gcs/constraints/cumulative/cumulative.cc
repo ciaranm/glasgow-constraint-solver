@@ -2,6 +2,7 @@
 #include <gcs/constraints/cumulative/hints.hh>
 #include <gcs/constraints/cumulative/propagate.hh>
 #include <gcs/constraints/innards/guaranteed_contribution.hh>
+#include <gcs/constraints/innards/rule_counters.hh>
 #include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -64,6 +65,37 @@ using fmt::print;
 
 namespace
 {
+    /**
+     * Per-rule firing counters (#729). Labelled by rule *family* and
+     * direction, not by strengthening: TTEF and the energetic accounting share
+     * edge-finding's call site, and the published not-first / not-last shares
+     * the window-energy one, because a strengthening changes what the rule
+     * detects rather than where it infers. Exactly one arm of each family can
+     * be live in a run, so which arm a row's numbers belong to is settled by
+     * the run's own flags and does not need a label here.
+     *
+     * The lb and ub halves are counted apart. Measuring one half of a symmetric
+     * rule and doubling has been wrong here before --- on this constraint the
+     * two halves came out at 2.2% and 51% --- so the halves get a row each.
+     */
+    enum CumulativeRule
+    {
+        rule_time_table_lb,
+        rule_time_table_ub,
+        rule_time_table_overflow,
+        rule_presence,
+        rule_overload,
+        rule_edge_finding_lb,
+        rule_edge_finding_ub,
+        rule_not_first,
+        rule_not_last,
+        rule_count
+    };
+
+    RuleInstrumentation cumulative_counters{"cumulative",
+        {"time_table_lb", "time_table_ub", "time_table_overflow", "presence", "overload", "edge_finding_lb", "edge_finding_ub", "not_first",
+            "not_last"}};
+
     // The variable-height contribution h_i·active is linearised over cake's
     // per-bit contribution flags cc_k (weight 2^k): contrib = Σ 2^k · cc_k.
     auto contrib_sum_of(const vector<ProofFlag> & cc) -> WPBSum
@@ -1335,6 +1367,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 mand_load[(t - t_lo).raw_value] += hlb(i);
     }
 
+    if (rules.time_table)
+        ++cumulative_counters[rule_time_table_overflow].calls;
     for (auto idx = 0; rules.time_table && idx < range; ++idx)
         if (mand_load[idx] > capacity) {
             auto violating_t = t_lo + Integer{idx};
@@ -1368,6 +1402,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 pol.emit(*logger, ProofLevel::Temporary);
             };
 
+            ++cumulative_counters[rule_time_table_overflow].contradictions;
             inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
             return PropagatorState::DisableUntilBacktrack;
         }
@@ -1396,6 +1431,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // general), and only eligible tasks (see prepare_overload_check)
     // may join I(a, b).
     if (rules.overload && ! overload_tasks.empty() && is_constant_variable(capacity_var)) {
+        ++cumulative_counters[rule_overload].calls;
         vector<Integer> mand_prefix(static_cast<size_t>(range) + 1, 0_i);
         for (auto idx = 0; idx < range; ++idx)
             mand_prefix[static_cast<size_t>(idx) + 1] = mand_prefix[static_cast<size_t>(idx)] + mand_load[static_cast<size_t>(idx)];
@@ -1459,6 +1495,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         vector<size_t> by_height;
         Integer tallest = 0_i, heaviest = 0_i;
         if (rules.edge_finding) {
+            ++cumulative_counters[rule_edge_finding_lb].calls;
+            ++cumulative_counters[rule_edge_finding_ub].calls;
             by_height.resize(candidates.size());
             for (size_t i = 0; i < candidates.size(); ++i)
                 by_height[i] = i;
@@ -1785,13 +1823,18 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         auto low_guard = starts_inside ? clipped_window_start(j.task, a) : b - p_j - step + 1_i;
                         auto high_guard = starts_inside ? a + step : clipped_window_end(j.task, b) - p_j + 1_i;
 
-                        if (starts_inside ? high_guard <= state.lower_bound(starts[j.task]) : low_guard - 1_i >= state.upper_bound(starts[j.task]))
+                        auto & counters = cumulative_counters[starts_inside ? rule_edge_finding_lb : rule_edge_finding_ub];
+                        if (starts_inside ? high_guard <= state.lower_bound(starts[j.task]) : low_guard - 1_i >= state.upper_bound(starts[j.task])) {
+                            ++counters.already_true;
                             continue;
+                        }
 
                         auto clipped = window_energy::window_energy_bound(
                             p_j, per_task_t_lo[j.task], active_flag_count(j.task), a, b, pair{low_guard, high_guard - 1_i});
                         if (clipped <= 0_i || other_energy + h_j * clipped <= supply)
                             continue;
+
+                        ++counters.firings;
 
                         auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
                         auto justify = edge_finding_justification(a, b, inside_tasks, j.task, low_guard, high_guard,
@@ -1824,6 +1867,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 // Restricting the start to one side of a threshold is exactly
                 // what makes the hump's minimum say something.
                 if (rules.not_first_not_last && ! inside_tasks.empty() && window_total <= supply) {
+                    ++cumulative_counters[rule_not_first].calls;
+                    ++cumulative_counters[rule_not_last].calls;
                     for (const auto & j : candidates) {
                         if (j.est >= a && j.lct <= b)
                             continue;
@@ -1846,12 +1891,18 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                             auto ect_j = s_lo + p_j, lst_j = j.lct - p_j;
                             auto span = b - min_est;
                             auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
-                            if (s_lo < min_ect && energy + h_j * (min(ect_j, b) - min_est) > capacity * span) {
+                            if (s_lo >= min_ect)
+                                ++cumulative_counters[rule_not_first].already_true;
+                            else if (energy + h_j * (min(ect_j, b) - min_est) > capacity * span) {
+                                ++cumulative_counters[rule_not_first].firings;
                                 auto justify = published_nfnl_justification(min_est, b, published_theta, j.task, s_lo, s_hi, min_ect, true);
                                 inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
                                     JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
                             }
-                            if (max_lst < j.lct && energy + h_j * (b - max(lst_j, min_est)) > capacity * span) {
+                            if (max_lst >= j.lct)
+                                ++cumulative_counters[rule_not_last].already_true;
+                            else if (energy + h_j * (b - max(lst_j, min_est)) > capacity * span) {
+                                ++cumulative_counters[rule_not_last].firings;
                                 auto justify = published_nfnl_justification(min_est, b, published_theta, j.task, s_lo, s_hi, max_lst, false);
                                 inference.infer_less_than(logger, starts[j.task], one_too_far ? max_lst - p_j : max_lst - p_j + 1_i,
                                     JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
@@ -1871,11 +1922,14 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         // rather than about the search, so the row it derives is
                         // shared with edge-finding's rather than keyed on a
                         // bound that moves.
-                        if (min_ect > s_lo) {
+                        if (min_ect <= s_lo)
+                            ++cumulative_counters[rule_not_first].already_true;
+                        else {
                             auto low_guard = min(s_lo, clipped_window_start(j.task, a));
                             auto clipped = window_energy::window_energy_bound(
                                 p_j, per_task_t_lo[j.task], active_flag_count(j.task), a, b, pair{low_guard, min_ect - 1_i});
                             if (clipped > 0_i && other_energy + h_j * clipped > supply) {
+                                ++cumulative_counters[rule_not_first].firings;
                                 auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
                                 auto justify = edge_finding_justification(
                                     a, b, inside_tasks, j.task, low_guard, min_ect, GuardToDischarge::Low, energetic_contributors);
@@ -1888,11 +1942,14 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         // contained task has started", so the negated conclusion
                         // lands on the low guard and j's own upper bound is what
                         // the reason discharges.
-                        if (max_lst - p_j < s_hi) {
+                        if (max_lst - p_j >= s_hi)
+                            ++cumulative_counters[rule_not_last].already_true;
+                        else {
                             auto low_guard = max_lst - p_j + 1_i;
                             auto clipped = window_energy::window_energy_bound(
                                 p_j, per_task_t_lo[j.task], active_flag_count(j.task), a, b, pair{low_guard, s_hi});
                             if (clipped > 0_i && other_energy + h_j * clipped > supply) {
+                                ++cumulative_counters[rule_not_last].firings;
                                 auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
                                 auto justify = edge_finding_justification(
                                     a, b, inside_tasks, j.task, low_guard, s_hi + 1_i, GuardToDischarge::High, energetic_contributors);
@@ -2253,6 +2310,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                     pol.emit(*logger, ProofLevel::Temporary);
                 };
 
+                ++cumulative_counters[rule_overload].contradictions;
                 inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, reason_with_presence());
                 return PropagatorState::DisableUntilBacktrack;
             }
@@ -2264,6 +2322,10 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // time-table reasoning too.
     if (! rules.time_table)
         return PropagatorState::Enable;
+
+    ++cumulative_counters[rule_time_table_lb].calls;
+    ++cumulative_counters[rule_time_table_ub].calls;
+    ++cumulative_counters[rule_presence].calls;
 
     // One step of a bound-push proof chain: a blocked time t and the
     // tasks (≠ j) whose mandatory parts cover t. Used by both
@@ -2433,6 +2495,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 }
             };
 
+            ++cumulative_counters[rule_presence].firings;
             inference.infer_equal(
                 logger, *presence[j], 0_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
             continue;
@@ -2450,6 +2513,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         step + 1 < chain.size(), reason);
             };
 
+            ++cumulative_counters[rule_time_table_lb].firings;
             inference.infer_greater_than_or_equal(
                 logger, starts[j], new_lb, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
         }
@@ -2484,6 +2548,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         chain[step].s_lo_after, step + 1 < chain.size(), reason);
             };
 
+            ++cumulative_counters[rule_time_table_ub].firings;
             inference.infer_less_than(
                 logger, starts[j], new_ub + 1_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
         }
