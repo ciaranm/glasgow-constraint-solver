@@ -42,6 +42,12 @@ library. For an introduction to *using* the solver, start with the top-level
   instances: the `XCSPCallbacks` class, the intension tree walker, the
   cache-based test harness with ACE cross-checking, and the recipe for
   adding a new constraint binding.
+- [Running the scheduling experiments elsewhere](cluster-experiments.md) —
+  the runbook for producing the certified-scheduling measurements on a
+  machine that has only this repository and a network connection: build,
+  fetch the three instance families from their upstreams, check the build
+  against published optima before spending anything, then the sweeps.
+  Start here rather than at the sweep harness.
 - [Per-rule firing counters](rule-counters.md) — what
   `GCS_SCHEDULING_RULE_STATS` prints for each `Cumulative` and
   `Disjunctive` propagation rule, what the four numbers mean, and the one

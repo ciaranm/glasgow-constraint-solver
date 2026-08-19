@@ -111,3 +111,22 @@ how the flags work and how a row has to be read. Disjunctive arms have to carry
 `--unary disjunctive --machine disjunctive` themselves --- without them nothing
 posts a `Disjunctive` on a file-read instance, and the arm would measure an
 unchanged model very convincingly.
+
+## fetch_scheduling_instances.bash and check_scheduling_readers.py
+
+The two steps that come before a sweep on a machine with no local instance data.
+The first fetches the three families from their upstreams (MiniZinc benchmarks,
+the OR-Library, PSPLIB) into a directory; the second solves instances whose
+optimal makespans other people have published and compares, exiting non-zero on
+any disagreement.
+
+```shell
+tools/fetch_scheduling_instances.bash scheduling-instances
+tools/check_scheduling_readers.py --binary build/rcpsp --instances scheduling-instances
+```
+
+Run the check every time before a long sweep. A reader that is subtly wrong does
+not crash --- it produces a slightly *better* optimum, which is the one thing
+nobody double-checks, and every number the sweep goes on to produce inherits it.
+
+`dev_docs/cluster-experiments.md` is the runbook these two belong to.
