@@ -351,8 +351,6 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
 {
     // A propagator that infers what it cannot justify is worse than one that
     // declines: refuse here rather than emit a proof VeriPB will reject.
-    if (_rules.energetic_edge_finding)
-        throw UnimplementedException{"energetic edge-finding is not yet certified"};
     if (_rules.not_first_not_last_published)
         throw UnimplementedException{"the published not-first / not-last detection is not certified: see #746"};
 
@@ -861,6 +859,26 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         High
     };
 
+    // What the energetic form charges a window with: one task, and the two
+    // guards its own bounds put on the row that says how much of it the window
+    // must contain. Unlike the contained-task rows the other forms cite, these
+    // are keyed on bounds that move --- a contained task's guards come from the
+    // window and are the same at every node, a non-contained one's do not ---
+    // which is the reuse question #755 leaves open and this deliberately does
+    // not try to answer. Correctness first: the guards are exactly the start
+    // bounds `guaranteed()` asked `window_energy_bound` about, so the row
+    // establishes exactly the energy the detection counted.
+    struct EnergeticContributor
+    {
+        std::size_t task;
+        Integer low_guard, high_guard;
+        /// Whether the window contains this task, which is what tells the two
+        /// mutation lanes apart: dropping a contained task's row corrupts a
+        /// row plain edge-finding would have cited too, and dropping a
+        /// non-contained one corrupts the only energy this rule adds.
+        bool contained;
+    };
+
     // Edge-finding's certificate, in both directions. It is the overload
     // check's, emitted under the negated conclusion: the contained tasks'
     // energy, plus what the pushed task must still occupy if the conclusion
@@ -872,8 +890,9 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // bounds and is cited rather than re-derived. What a firing pays is the
     // guard discharges and one pol.
     auto edge_finding_justification = [&](Integer a, Integer b, const vector<size_t> & inside_tasks, size_t pushed, Integer pushed_low_guard,
-                                          Integer pushed_high_guard, GuardToDischarge discharge) {
-        return [&, a, b, inside_tasks, pushed, pushed_low_guard, pushed_high_guard, discharge](const ReasonLiterals & reason) -> void {
+                                          Integer pushed_high_guard, GuardToDischarge discharge,
+                                          const vector<EnergeticContributor> & energetic = {}) {
+        return [&, a, b, inside_tasks, pushed, pushed_low_guard, pushed_high_guard, discharge, energetic](const ReasonLiterals & reason) -> void {
             if (! logger)
                 return;
 
@@ -909,18 +928,46 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         hlb(i) * row.length_coeff);
             };
 
-            // A contained task is inside the window whichever way the push
-            // goes, so both its guards are refuted by the reason. Its high
-            // guard is the first start that would take it out of the window,
-            // stated against the *clipped* window since that is where the
-            // lemma's sum stops; where the two differ the guard is refuted by
-            // the task's declared bounds rather than by the search, and the RUP
-            // closes on those just the same.
-            for (auto i : inside_tasks) {
-                if (std::holds_alternative<cumulative_proof_mutation::DropContainedTask>(mutation) && i == inside_tasks.front())
-                    continue;
-                cite(i, clipped_window_start(i, a), clipped_window_end(i, b) - llb(i) + 1_i, true, true);
+            // The energetic form charges the window every task's guaranteed
+            // energy, so it cites a row per candidate rather than a row per
+            // contained task plus a pin per profile time point. Both of each
+            // row's guards are the task's own current bounds, which the reason
+            // carries whether or not the window contains it --- so unlike
+            // TTEF's profile term this needs no pins at all, which is what
+            // #755 said it would not.
+            //
+            // The bounds are the ones the sweep captured when it built its
+            // candidates, not the live ones: an earlier push in the same sweep
+            // may have tightened them, and a guard at the stale bound is one
+            // the reason still entails. It is also the bound the detection's
+            // arithmetic used, so the row establishes neither more nor less
+            // than was counted.
+            if (! energetic.empty()) {
+                auto skip_outside = std::holds_alternative<cumulative_proof_mutation::DropEnergeticContributor>(mutation);
+                auto skip_inside = std::holds_alternative<cumulative_proof_mutation::DropContainedTask>(mutation);
+                for (const auto & e : energetic) {
+                    if (e.task == pushed)
+                        continue;
+                    if (e.contained ? skip_inside : skip_outside) {
+                        (e.contained ? skip_inside : skip_outside) = false;
+                        continue;
+                    }
+                    cite(e.task, e.low_guard, e.high_guard, true, true);
+                }
             }
+            else
+                // A contained task is inside the window whichever way the push
+                // goes, so both its guards are refuted by the reason. Its high
+                // guard is the first start that would take it out of the
+                // window, stated against the *clipped* window since that is
+                // where the lemma's sum stops; where the two differ the guard
+                // is refuted by the task's declared bounds rather than by the
+                // search, and the RUP closes on those just the same.
+                for (auto i : inside_tasks) {
+                    if (std::holds_alternative<cumulative_proof_mutation::DropContainedTask>(mutation) && i == inside_tasks.front())
+                        continue;
+                    cite(i, clipped_window_start(i, a), clipped_window_end(i, b) - llb(i) + 1_i, true, true);
+                }
 
             // TTEF: the tasks the window does not contain still put their
             // mandatory-part load into it, and that load is pinned exactly the
@@ -934,7 +981,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             // the sweep pushes bounds around, so the pins claim at least what
             // the firing's arithmetic counted, and a pol carrying more energy
             // than it needs closes just the same.
-            if (rules.time_table_edge_finding) {
+            if (rules.time_table_edge_finding && energetic.empty()) {
                 vector<bool> contained(starts.size(), false);
                 for (auto i : inside_tasks)
                     contained[i] = true;
@@ -1371,6 +1418,25 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                                         : 0_i;
                 };
 
+                // The rows the energetic certificate cites, one per candidate
+                // the window can reach. Built once per window rather than once
+                // per push: every push over this window cites the same set,
+                // minus the task it is pushing.
+                //
+                // A task with a non-positive bound is left out rather than
+                // cited at zero, which is the same clamp `guaranteed` applies:
+                // the lemma has nothing to derive for a task the window cannot
+                // reach, and would decline to emit a row at all.
+                vector<EnergeticContributor> energetic_contributors;
+                if (rules.energetic_edge_finding && logger)
+                    for (const auto & c2 : candidates) {
+                        auto low_guard = c2.est, high_guard = c2.lct - c2.length + 1_i;
+                        if (window_energy::window_energy_bound(
+                                c2.length, per_task_t_lo[c2.task], active_flag_count(c2.task), a, b, pair{low_guard, high_guard - 1_i}) <= 0_i)
+                            continue;
+                        energetic_contributors.push_back(EnergeticContributor{c2.task, low_guard, high_guard, c2.est >= a && c2.lct <= b});
+                    }
+
                 // Edge-finding. A task j that starts inside [a, b) but is not
                 // contained in it can be pushed when the window has no room
                 // left: if everything contained plus the whole of j cannot fit,
@@ -1475,8 +1541,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                             continue;
 
                         auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
-                        auto justify = edge_finding_justification(
-                            a, b, inside_tasks, j.task, low_guard, high_guard, starts_inside ? GuardToDischarge::Low : GuardToDischarge::High);
+                        auto justify = edge_finding_justification(a, b, inside_tasks, j.task, low_guard, high_guard,
+                            starts_inside ? GuardToDischarge::Low : GuardToDischarge::High, energetic_contributors);
                         if (starts_inside) {
                             inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? high_guard + 1_i : high_guard,
                                 JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
@@ -1552,7 +1618,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 p_j, per_task_t_lo[j.task], active_flag_count(j.task), a, b, pair{low_guard, min_ect - 1_i});
                             if (clipped > 0_i && other_energy + h_j * clipped > supply) {
                                 auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
-                                auto justify = edge_finding_justification(a, b, inside_tasks, j.task, low_guard, min_ect, GuardToDischarge::Low);
+                                auto justify = edge_finding_justification(
+                                    a, b, inside_tasks, j.task, low_guard, min_ect, GuardToDischarge::Low, energetic_contributors);
                                 inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
                                     JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
                             }
@@ -1568,7 +1635,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 p_j, per_task_t_lo[j.task], active_flag_count(j.task), a, b, pair{low_guard, s_hi});
                             if (clipped > 0_i && other_energy + h_j * clipped > supply) {
                                 auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
-                                auto justify = edge_finding_justification(a, b, inside_tasks, j.task, low_guard, s_hi + 1_i, GuardToDischarge::High);
+                                auto justify = edge_finding_justification(
+                                    a, b, inside_tasks, j.task, low_guard, s_hi + 1_i, GuardToDischarge::High, energetic_contributors);
                                 inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
                                     JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
                             }

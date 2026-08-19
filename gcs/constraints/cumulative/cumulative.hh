@@ -118,8 +118,25 @@ namespace gcs
         /// and a variable height at its guaranteed contribution. Takes
         /// precedence over \ref time_table_edge_finding when both are set.
         ///
-        /// \warning Not yet certified. A propagator with this set refuses to
-        /// run against a proof logger.
+        /// **Certified**, and more cheaply than \ref time_table_edge_finding:
+        /// every contribution is one guarded window-energy row, guarded by the
+        /// task's own bounds, which the reason carries whether or not the
+        /// window contains the task. Where TTEF pays 2.93 reason-backed pin
+        /// lines per firing for its profile term, this pays none.
+        ///
+        /// The rows it cites for a task the window does *not* contain are
+        /// keyed on bounds that move, where a contained task's guards come
+        /// from the window and are the same at every node. So they are derived
+        /// far more often than they are reused, and whether weakening them
+        /// deliberately --- buying reuse at the price of a looser bound --- is
+        /// worth it is the experiment #755 leaves open.
+        ///
+        /// Off by default because it is a sweep a solve that never fires it
+        /// still pays, not because it is weak: on `data_bl` + `data_pack` it
+        /// is the strongest arm in the table at **0.667x** edge-finding's
+        /// recursions against TTEF's 0.749x. Those are recursions rather than
+        /// wall times, and `dev_docs/cumulative-proof-logging.md` records that
+        /// recomputing the sum per window is not paid for on that family.
         bool energetic_edge_finding = false;
 
         /// Not-first / not-last: a task that cannot start before every task the

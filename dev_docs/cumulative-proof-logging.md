@@ -1360,10 +1360,51 @@ are fixed by `(task, time)` alone, which is why the reuse is so high.
 `CumulativeRules::energetic_edge_finding` is the same rule with every task's
 *guaranteed* energy in the window in place of contained-energy-plus-profile.
 That is what `window_energy_bound` computes anyway, so it needs no pins at all,
-and it is stronger. It is **not certified** — `define_proof_model` refuses a
-logger while it is set — and it is in the tree to be measured, not to be used:
-the row above is what it buys, and the propagation cost of recomputing the sum
-per window is not paid for on this family.
+and it is stronger. The row above is what it buys, and the propagation cost of
+recomputing the sum per window is not paid for on this family, so it stays off
+by default.
+
+### Certifying it: the same certificate, a different set of rows (#755)
+
+It is edge-finding's certificate with the cited rows swapped, and nothing else
+changes: the same capacity lines over the window, the same closing pol, the
+same negated-conclusion guard on the pushed task's row. What differs is which
+rows go in.
+
+| arm | rows cited | pins |
+|---|---|---|
+| edge-finding | one per contained task, guarded by the *window* | none |
+| TTEF | the same, plus the profile term | 2.93 per firing |
+| energetic | one per candidate, guarded by the task's *own bounds* | none |
+
+The guards a non-contained task's row carries are exactly the start bounds
+`guaranteed()` asked `window_energy_bound` about, so the row establishes
+neither more nor less than the detection counted — which is the invariant that
+keeps the propagator honest here, as it does everywhere else in this rule
+family. Both guards are discharged by the reason, because the reason carries
+every task's bounds whether or not the window contains it. That is why the
+profile term's pins have no counterpart: a pin exists to say "this task is
+*here*, at this time point", and a guarded energy row says the same thing about
+a whole window in one line.
+
+The bounds cited are the ones the sweep captured when it built its candidates,
+not the live ones. An earlier push in the same sweep may have tightened them,
+and a guard at a stale bound is one the reason still entails — and it is also
+the bound the detection's arithmetic used, so the two cannot drift apart.
+
+**What is left open, and it is the cache key.** A contained task's guards come
+from the window, so its row is the same at every node and is cited over and
+over. A non-contained task's come from bounds that move, so its row is derived
+far more often than it is reused. Weakening those guards deliberately — buying
+reuse at the price of a looser bound — is the experiment, and it is not made
+here.
+
+**Mutation lanes.** `drop_energetic` is the one this rule needs: it leaves out
+the row of a task the window does *not* contain, which is the only energy plain
+edge-finding would not have cited. `drop` removes a contained task's row and so
+says nothing about what is new, which is why the two are separate lanes rather
+than one. Both are rejected on the fixtures, along with `toofar` and
+`capacity`.
 
 ## Not-first / not-last: the same certificate, different thresholds (PR #745)
 
@@ -1695,12 +1736,12 @@ per time point. Same trade as #742 for edge-finding's scan, and the same answer
   alone, so it would cache the way the contained rows do --- and the same row
   would amortise `(TTOC)`'s pins, which the merged overload check also
   re-derives every firing.
-- **Certifying the energetic form.** `energetic_edge_finding` measures better
-  than TTEF and needs *no* pins, since every task's contribution is a guarded
-  window-energy row. What is unresolved is the cache key: a contained task's
-  guards come from the window, a non-contained one's from its current bounds, so
-  the rows would repeat far less. Weakening the guards deliberately, to buy
-  reuse at the price of a looser bound, is the experiment.
+- **The energetic form's cache key.** `energetic_edge_finding` is certified now
+  (#755) and needs no pins, since every task's contribution is a guarded
+  window-energy row. What is still unresolved is the cache key: a contained
+  task's guards come from the window, a non-contained one's from its current
+  bounds, so the latter repeat far less. Weakening the guards deliberately, to
+  buy reuse at the price of a looser bound, is the experiment.
 - **Edge-finding's scan (#742).** The rule is certified and its inferences cost
   nothing measurable, but the window x task sweep that finds them is O(n^3) and
   taxes the solve about 1.5x at identical search. Propagation performance, not

@@ -107,12 +107,25 @@ namespace gcs::innards
         {
         };
 
+        /// Energetic edge-finding: leave out the guarded energy row of one task
+        /// the window does *not* contain. **The mutation this rule exists for**
+        /// --- charging a window every task's guaranteed energy rather than a
+        /// contained task's whole energy plus a non-contained one's mandatory
+        /// part is the whole of what makes the rule stronger, and this is the
+        /// only lane that can tell whether that extra energy is in the proof or
+        /// only in the propagator. \ref DropContainedTask drops a row plain
+        /// edge-finding would have cited too, so it says nothing about this.
+        struct DropEnergeticContributor
+        {
+        };
+
     }
 
     using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
         cumulative_proof_mutation::OmitCapacityLine, cumulative_proof_mutation::ShrinkLemmaWindow, cumulative_proof_mutation::DropContainedTask,
         cumulative_proof_mutation::PushOneTooFar, cumulative_proof_mutation::DropProfilePin, cumulative_proof_mutation::DropProfilePins,
-        cumulative_proof_mutation::ClaimOneBetterAvailability, cumulative_proof_mutation::StrengthenOneFewer>;
+        cumulative_proof_mutation::ClaimOneBetterAvailability, cumulative_proof_mutation::StrengthenOneFewer,
+        cumulative_proof_mutation::DropEnergeticContributor>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,
