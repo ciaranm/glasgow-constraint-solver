@@ -949,10 +949,13 @@ every change is small and they run both ways: the best instance goes to
 0.965x and the worst to 1.060x. On top of edge-finding it is a small
 loss, and the 1.026x is one instance at 4.05x carrying it.
 
-So the certificate is **not built**, and the switch is here as the record
-of why. It throws rather than propagating under `--prove`: a rule that
-quietly weakened itself when proof logging came on would confound exactly
-the comparison it exists to make.
+The switch is here as the record of why, and it was for a long time the
+one rule in the suite that threw rather than propagating under `--prove`.
+That is no longer true. **The certificate is built** (see "The published
+condition's certificate", below): a solver that cannot prove one of its
+own rules is a worse thing to have than a rule that does not pay for its
+sweep, and the measurement above is a reason to leave the switch off by
+default, not a reason to leave it unprovable.
 
 The result is worth more than the propagator would have been. #746 asks,
 on the cumulative side, whether certifying a weaker detection than the
@@ -971,6 +974,63 @@ past everything else running on 2.9% of nodes — a *smaller* gap than the
 one measured here to be worth nothing. That is not a reason to close
 #754, whose gap is against a different rule's fixpoint rather than a
 weaker form of its own, but it is the number to beat before building it.
+
+### The published condition's certificate
+
+The window follows the detection. Ours argues over the window the sweep
+enumerated; the published one argues over a window the negated conclusion
+*derives*, and the certificate is the same shape over that window
+instead:
+
+```
+not-first   [ect_j, lct(Θ))          left edge from the conclusion
+not-last    [est(Θ), ub(s_j))        right edge from the conclusion
+```
+
+Take not-first, and suppose the conclusion `s_j ≥ ECT(Θ)` fails. Then for
+every `k ∈ Θ`, `s_j < ECT(Θ) ≤ ect_k = est_k + p_k ≤ s_k + p_k`, so `k`
+does not run before `j`; the pair's separation clause therefore puts `j`
+before `k`, and `s_k ≥ s_j + p_j ≥ lb(s_j) + p_j = ect_j`. Every contained
+task is inside `[ect_j, lct(Θ))`, which the detection says is too narrow
+to hold them all. The mirror reads the same sentence backwards.
+
+So the rows cited are the **standard contained-task guarded ones** over
+that window — the same `derive_guarded_window_energy` call edge-finding
+makes — and what is new is only how one of each row's two guards is
+discharged: by a *derived two-literal clause* rather than by the reason,
+the clause carrying the conclusion literal at that guard's coefficient so
+the conclusion accumulates across Θ and the summed pol derives it. That
+is #754's mechanism, and this is where it was first worked out; #754
+built it first because it was the rule worth having. Which guard is which
+is the whole difference between the two halves, and it is the **opposite
+way round** from #754's:
+
+| | low guard `[s_k ≥ ·]` | high guard `[s_k < ·]` |
+|---|---|---|
+| not-first | `ect_j`, derived | `lct(Θ) − p_k + 1`, from the reason |
+| not-last | `est(Θ)`, from the reason | `ub(s_j) − p_k + 1`, derived |
+
+**The shortcut, which is not a corner case.** The derived window is
+narrower than the sweep's by construction, so a contained task too long
+to fit inside it at all is common rather than exotic. There the two
+guards on that one task are already contradictory — "starts at or after
+`ect_j`" against the reason's "starts at or before `lct(Θ) − p_k`" — and
+the whole derivation is the clause taken at the task's own far bound plus
+the reason's row for that bound. No energy argument, no at-most-ones, no
+activity flags. It is also the only place the energy path could otherwise
+ask the lemma for a window it cannot fill, so the two paths are exhaustive
+rather than merely convenient.
+
+**What the mutation lanes say.** Six lanes, `emit_nothing` /
+`skip_fold` / `drop_energy` / `drop_clause` / `rup_clause` /
+`one_too_far`. Over 300 generated instances, 172 fired the rule and 24 of
+those rejected every lane. The fragile ones are `skip_fold` (36 of 172)
+and `drop_energy` (58), for this rule family's usual reason — the
+thresholds are `min ect` and `max lst`, quantities pairwise reasoning can
+often reach on its own. The two aimed at what is *new* hold up much
+better: `drop_clause` 127 and `rup_clause` 130. In particular unit
+propagation cannot reach the clause on its own, which is the same
+cross-variable limit `RupOverloadBridge` finds in the bridge.
 
 ## The set-based detectable precedence, measured before it is certified (#754)
 

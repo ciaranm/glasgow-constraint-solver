@@ -84,7 +84,7 @@ namespace gcs
         ///
         /// Measured before being certified, the way
         /// \ref not_first_not_last_published was, and unlike that one **this
-        /// was worth building**: on its own it is 0.386x the median recursions
+        /// pays for itself**: on its own it is 0.386x the median recursions
         /// and closes three more instances, and on top of \ref edge_finding it
         /// is better on 23 of 36 at a median of 0.941x, closing one instance no
         /// other arm closes. Set that against not-first/not-last's 1 of 36.
@@ -198,24 +198,38 @@ namespace gcs
         /// four and five tasks the published condition fires 1.7x and 1.6x as
         /// often (#757).
         ///
-        /// **Deliberately uncertified**, and it throws rather than
-        /// propagating when proof logging is on: a rule that quietly weakened
-        /// itself under `--prove` would confound the very comparison this
-        /// switch exists to make. The certificate is settled in simulation ---
-        /// it is \ref edge_finding's, with the low guard discharged by a
-        /// derived two-literal clause rather than by the reason --- and was
-        /// **not built**, because this switch is what decided that:
+        /// **Certified**, over the window the negated conclusion derives:
+        /// `[ect_j, lct(Theta))` for not-first, whose *left* edge the
+        /// conclusion supplies, and `[est(Theta), ub(s_j))` for not-last,
+        /// whose right edge it does. Either way the rows cited are the
+        /// standard contained-task guarded ones, and what is new --- exactly
+        /// as in \ref detectable_precedences_set, whose mechanism this is ---
+        /// is that one of each row's two guards is discharged by a *derived
+        /// two-literal clause* rather than by the reason, the clause carrying
+        /// the conclusion literal at that guard's coefficient so the
+        /// conclusion accumulates across Theta and the summed pol derives it.
+        /// Which guard is which is the whole difference between the halves,
+        /// and it is the opposite way round from #754's.
+        ///
+        /// A contained task too long for the derived window --- which the
+        /// narrower window makes common rather than exotic --- takes a
+        /// shortcut instead: its two guards are already contradictory, so the
+        /// clause plus the reason's row for the bound it contradicts is the
+        /// whole derivation, with no energy argument at all.
+        ///
+        /// Off by default because it is measurably not worth running, which is
+        /// what this switch established before it was certified:
         /// **1.6-1.7x the detection is worth 0.6% of the summed recursions and
         /// nothing at the median**, and a little worse than nothing on top of
         /// edge-finding. Not for want of firing --- propagation counts differ
         /// on 64 of 68 instances. See `dev_docs/disjunctive-proof-logging.md`.
         ///
-        /// So this exists to reproduce a measurement, in the way
-        /// \ref overload_max_window does, and not because it is expected to
-        /// pay. What it establishes is worth more than the propagator would
-        /// have been: it prices, on the encoding where the gap is cleanest,
-        /// what #746 asks and cannot answer --- how much certifying a weaker
-        /// detection than the literature states actually costs.
+        /// That measurement is what the switch was built for, and it prices,
+        /// on the encoding where the gap is cleanest, what #746 asks and
+        /// cannot answer: how much certifying a weaker detection than the
+        /// literature states actually costs. The certificate came afterwards,
+        /// because a solver that cannot prove one of its own rules is a worse
+        /// thing to have than a rule that does not pay for its sweep.
         bool not_first_not_last_published = false;
 
         /// Refuse an overload conflict whose smallest window holds more than

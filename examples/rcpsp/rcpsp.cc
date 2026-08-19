@@ -457,10 +457,10 @@ auto main(int argc, char * argv[]) -> int
                 "Detect not-first / not-last by the published unary condition rather than by the " //
                 "guarded window-energy one: the published rule argues over a narrower window "     //
                 "whose left edge the negated conclusion derives, and fires 1.6-1.7x as often. "    //
-                "Implies --disjunctive-not-first-not-last. A measurement switch, and the "         //
-                "measurement is made: that detection is worth 0.6% of the summed recursions and "  //
-                "nothing at the median, so it is deliberately uncertified and throws rather than " //
-                "propagating under --prove (#757)")                                                //
+                "Implies --disjunctive-not-first-not-last. Certified over that derived window, "   //
+                "by the same mechanism --disjunctive-detectable-precedences-set uses. Off by "     //
+                "default because the measurement is made: that detection is worth 0.6% of the "    //
+                "summed recursions and nothing at the median (#757)")                              //
             ("disjunctive-detectable-precedences-set",
                 "Push a detectable precedence to the set's earliest completion time rather than " //
                 "to the latest single predecessor's earliest end, and the mirror --- Vilim's "    //

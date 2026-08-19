@@ -1059,6 +1059,215 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 };
             };
 
+            // --- #757: the published not-first / not-last condition ----------
+            //
+            // `not_first_not_last` above asks whether the window the sweep
+            // enumerated is overfilled by the contained set plus whatever of
+            // `j` must lie in it under the negated conclusion. The rule as
+            // published (Baptiste, Le Pape and Nuijten; Vilim's Theta-tree
+            // presentation) argues over a window the negated conclusion
+            // *derives* instead:
+            //
+            //     p(Theta) > lct(Theta) - ect_j      not-first
+            //     p(Theta) > ub(s_j) - est(Theta)    not-last, the mirror
+            //
+            // and the certificate follows the window. For not-first it is
+            // `[ect_j, lct(Theta))`, whose *left* edge the conclusion supplies;
+            // for not-last `[est(Theta), ub(s_j))`, whose *right* edge it does.
+            // Either way the rows cited are the standard contained-task guarded
+            // ones over that window, and what is new --- exactly as in #754,
+            // whose mechanism this is --- is that one of each row's two guards
+            // is discharged by a *derived two-literal clause* rather than by
+            // the reason, the clause carrying the conclusion literal along at
+            // that guard's coefficient so the conclusion accumulates across
+            // Theta and the summed pol derives it.
+            //
+            // Which guard is which is the whole difference between the two
+            // halves, and it is the opposite way round from #754's:
+            //
+            //     not-first  low guard  [s_k >= ect_j]      derived
+            //                high guard [s_k < b - p_k + 1] from the reason
+            //     not-last   low guard  [s_k >= est(Theta)] from the reason
+            //                high guard [s_k < ub(s_j) - p_k + 1] derived
+            //
+            // Why the derived guard follows. Take not-first, and suppose the
+            // conclusion `s_j >= ECT(Theta)` fails. Then for every k in Theta,
+            // `s_j < ECT(Theta) <= ect_k = est_k + p_k <= s_k + p_k`, so k does
+            // not run before j; the pair's separation clause therefore puts j
+            // before k, and `s_k >= s_j + p_j >= lb(s_j) + p_j = ect_j`. Every
+            // contained task is in `[ect_j, lct(Theta))`, which the detection
+            // says is too narrow to hold them. The mirror reads the same
+            // sentence backwards.
+            //
+            // As everywhere else here, every bound the arithmetic reads is one
+            // the *caller* captured at detection time. By the time a
+            // justification runs an earlier push has landed, and the state
+            // holds a bound the reason does not support.
+            struct PublishedTask
+            {
+                std::size_t task;
+                Integer duration, lb, ub;
+            };
+
+            // The two-literal clause. `conclusion` is the threshold being
+            // derived --- `[s_j >= conclusion]` for not-first and
+            // `[s_j < conclusion]` for not-last --- and `edge` the guard
+            // literal's own threshold, which is the derived window edge for the
+            // main path and the task's own far bound for the shortcut below.
+            auto published_clause = [&](const PublishedTask & k, std::size_t j, Integer j_lb, Integer j_ub, Integer p_j, Integer conclusion,
+                                        Integer edge, bool not_first, const ReasonLiterals & reason) -> ProofLine {
+                if (std::holds_alternative<disjunctive_proof_mutation::RupPublishedClause>(mutation)) {
+                    // Can unit propagation reach the clause on its own? If it
+                    // can, the pairwise pols below are decoration.
+                    auto lit = not_first ? (starts[j] >= conclusion) : (starts[j] < conclusion);
+                    auto other = not_first ? (starts[k.task] >= edge) : (starts[k.task] < edge);
+                    return logger->emit_rup_proof_line(WPBSum{} + 1_i * lit + 1_i * other >= 1_i, ProofLevel::Temporary);
+                }
+
+                // 1. The ordering the negated conclusion rules out, refuted by
+                // #734's own pol --- except that here one of the two bounds it
+                // resolves against is the negated conclusion rather than the
+                // reason, so that literal is *kept* rather than discharged.
+                // That is the whole of what makes the window derived.
+                //
+                // Divided rather than merely saturated, because this row is
+                // going to be added to another.
+                auto [refuted_from, refuted_to] = not_first ? pair{k.task, j} : pair{j, k.task};
+                auto from_lit = not_first ? (starts[k.task] >= k.lb) : (starts[j] >= conclusion);
+                auto to_lit = not_first ? (starts[j] < conclusion) : (starts[k.task] < k.ub + 1_i);
+                auto degree = not_first ? k.duration + k.lb - conclusion + 1_i : p_j + conclusion - k.ub;
+                if (degree <= 0_i)
+                    throw ProofError{"disjunctive published not-first / not-last: the negated conclusion does not refute the ordering"};
+                PolBuilder refute;
+                refute.add(emit_before_pol(refuted_from, refuted_to, from_lit, to_lit, nullopt, degree));
+                // Only the reason's half is discharged. The conclusion's stays
+                // in, and is what the guarded row will eventually be paid with.
+                auto kept_side_is_from = ! not_first;
+                if (! kept_side_is_from && ! is_constant_variable(starts[refuted_from]))
+                    refute.add(logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * from_lit >= 1_i, ProofLevel::Temporary));
+                if (kept_side_is_from && ! is_constant_variable(starts[refuted_to]))
+                    refute.add(logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * to_lit >= 1_i, ProofLevel::Temporary));
+                auto refutation = refute.saturate().emit(*logger, ProofLevel::Temporary);
+
+                // 2. The pair's separation clause then forces the other
+                // ordering, still carrying the conclusion literal.
+                PolBuilder forced;
+                forced.add(clause_lines.at(make_pair(min(j, k.task), max(j, k.task))));
+                forced.add(refutation);
+                for (auto r : {j, k.task})
+                    if (auto row = escape_is_false(r))
+                        forced.add(*row);
+                auto ordering = forced.saturate().emit(*logger, ProofLevel::Temporary);
+
+                // 3. That ordering's own arithmetic against the window edge
+                // comes out at degree exactly one, and 4. discharging the
+                // ordering leaves the two-literal clause the guarded row wants.
+                PolBuilder clause;
+                if (not_first) {
+                    clause.add(emit_before_pol(j, k.task, starts[j] >= j_lb, starts[k.task] < edge));
+                    if (! is_constant_variable(starts[j]))
+                        clause.add(
+                            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[j] >= j_lb) >= 1_i, ProofLevel::Temporary));
+                }
+                else {
+                    clause.add(emit_before_pol(k.task, j, starts[k.task] >= edge, starts[j] < j_ub + 1_i));
+                    if (! is_constant_variable(starts[j]))
+                        clause.add(logger->emit_rup_proof_line_under_reason(
+                            reason, WPBSum{} + 1_i * (starts[j] < j_ub + 1_i) >= 1_i, ProofLevel::Temporary));
+                }
+                clause.add(ordering);
+                return clause.saturate().emit(*logger, ProofLevel::Temporary);
+            };
+
+            // One published-condition push. `[lo, hi)` is the derived window
+            // and `omega` the contained set, whose whole duration the detection
+            // says will not fit in it.
+            auto published_justification = [&](Integer lo, Integer hi, const vector<PublishedTask> & omega, std::size_t j, Integer j_lb, Integer j_ub,
+                                               Integer p_j, Integer conclusion, bool not_first) {
+                return [&, lo, hi, omega, j, j_lb, j_ub, p_j, conclusion, not_first](const ReasonLiterals & reason) -> void {
+                    logger->emit_proof_comment("disjunctive published not-" + string{not_first ? "first" : "last"} +
+                        " w=" + std::to_string(omega.size()) + " span=" + std::to_string((hi - lo).raw_value));
+                    if (std::holds_alternative<disjunctive_proof_mutation::PublishedEmitNothing>(mutation))
+                        return;
+
+                    // A contained task with no room for itself in the derived
+                    // window needs no energy argument: its two guards are
+                    // already contradictory, so the clause taken at the task's
+                    // own far bound plus the reason's row for that bound is the
+                    // whole derivation. This is not a corner case bolted on ---
+                    // it is where the published condition fires hardest, the
+                    // window being narrower than the sweep's by construction,
+                    // and it is also the only place the energy path could ask
+                    // the lemma for a window it cannot fill.
+                    for (const auto & k : omega)
+                        if (lo + k.duration > hi) {
+                            auto edge = not_first ? hi - k.duration + 1_i : lo;
+                            PolBuilder pol;
+                            pol.add(published_clause(k, j, j_lb, j_ub, p_j, conclusion, edge, not_first, reason));
+                            pol.add(logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * (not_first ? (starts[k.task] < edge) : (starts[k.task] >= edge)) >= 1_i, ProofLevel::Temporary));
+                            pol.saturate().emit(*logger, ProofLevel::Temporary);
+                            return;
+                        }
+
+                    vector<std::size_t> members;
+                    for (const auto & k : omega)
+                        members.push_back(k.task);
+                    auto tasks = members;
+                    tasks.push_back(j);
+                    pin_escapes(reason, tasks);
+
+                    // As edge-finding: a Temporary vocabulary does not outlive
+                    // the firing that made it, so what the caches hold has been
+                    // deleted and citing it would be citing a dead row.
+                    if (ProofLevel::Top != rules.overload_vocabulary_at) {
+                        activity->clear();
+                        bridge->clear();
+                        floors->clear();
+                        escapes->clear();
+                        guarded->clear();
+                    }
+
+                    for (auto i : members)
+                        for (Integer t = lo; t < hi; ++t)
+                            (void)activity_flag(i, t);
+
+                    PolBuilder total;
+                    // j is not in this window --- it is what the window is
+                    // derived *from* --- so the at-most-ones are over the
+                    // contained set alone, as #754's are over its cut.
+                    for (auto line :
+                        fold_at_most_ones(members, lo, hi, std::holds_alternative<disjunctive_proof_mutation::SkipPublishedFold>(mutation)))
+                        total.add(line);
+
+                    for (const auto & k : omega) {
+                        if (std::holds_alternative<disjunctive_proof_mutation::DropPublishedEnergy>(mutation) && k.task == omega.front().task)
+                            continue;
+                        const auto & row = guarded_energy(k.task, lo, hi, lo, hi - k.duration + 1_i);
+                        total.add(row.line);
+                        auto drop_clause = std::holds_alternative<disjunctive_proof_mutation::DropPublishedClause>(mutation);
+                        if (not_first) {
+                            if (row.low_coeff > 0_i && ! drop_clause)
+                                total.add(published_clause(k, j, j_lb, j_ub, p_j, conclusion, row.low_guard, true, reason), row.low_coeff);
+                            if (row.bound > 0_i)
+                                total.add(logger->emit_rup_proof_line_under_reason(
+                                              reason, WPBSum{} + 1_i * (starts[k.task] < row.high_guard) >= 1_i, ProofLevel::Temporary),
+                                    row.bound);
+                        }
+                        else {
+                            if (row.low_coeff > 0_i)
+                                total.add(logger->emit_rup_proof_line_under_reason(
+                                              reason, WPBSum{} + 1_i * (starts[k.task] >= row.low_guard) >= 1_i, ProofLevel::Temporary),
+                                    row.low_coeff);
+                            if (row.bound > 0_i && ! drop_clause)
+                                total.add(published_clause(k, j, j_lb, j_ub, p_j, conclusion, row.high_guard, false, reason), row.bound);
+                        }
+                    }
+
+                    total.emit(*logger, ProofLevel::Temporary);
+                };
+            };
+
             // Time-table consistency, specialised to heights = 1 and
             // capacity = 1. Mandatory part of task i is [lst_i, eet_i)
             // where lst_i = ub(s_i) and eet_i = lb(s_i) + l_i: the slice it
@@ -1808,11 +2017,21 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // task holding it need not be contained.
                         Integer energy = 0_i, min_ect = 0_i, max_lst = 0_i, min_est = 0_i;
                         vector<size_t> inside;
+                        // The same set again, with the bounds the published
+                        // condition's certificate argues about, and only
+                        // collected when something asks for them. Captured here
+                        // rather than read back out of `state` in the
+                        // justification: by then an earlier push has landed and
+                        // the state holds a bound the reason does not support.
+                        vector<PublishedTask> inside_published;
                         for (size_t c = 0; c < candidates.size(); ++c) {
                             if (candidates[c].est < a)
                                 continue;
                             energy += candidates[c].duration;
                             inside.push_back(candidates[c].task);
+                            if (rules.not_first_not_last_published)
+                                inside_published.push_back(PublishedTask{
+                                    candidates[c].task, candidates[c].duration, candidates[c].est, candidates[c].lct - candidates[c].duration});
                             min_ect = inside.size() == 1 ? candidates[c].est + candidates[c].duration
                                                          : min(min_ect, candidates[c].est + candidates[c].duration);
                             max_lst = inside.size() == 1 ? candidates[c].lct - candidates[c].duration
@@ -1927,16 +2146,17 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                         // [ect_j, lct(Theta)): under the
                                         // negated conclusion j is before every
                                         // contained task, so all of Theta lies
-                                        // in it. Measurement only, hence the
-                                        // throw --- see
-                                        // DisjunctiveRules::not_first_not_last_published.
+                                        // in it. Certified over that derived
+                                        // window --- see `published_justification`
+                                        // and DisjunctiveRules::not_first_not_last_published.
                                         if (rules.not_first_not_last_published) {
-                                            if (logger)
-                                                throw UnimplementedException{
-                                                    "disjunctive not-first by the published condition has no certificate yet (#757)"};
-                                            if (energy > b - (s_lo + p_j))
+                                            auto ect_j = s_lo + p_j;
+                                            if (energy > b - ect_j) {
+                                                auto justify =
+                                                    published_justification(ect_j, b, inside_published, j.task, s_lo, s_hi, p_j, min_ect, true);
                                                 inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
-                                                    JustifyUsingRUP{hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                            }
                                         }
                                         else {
                                             auto low_guard = min(s_lo, a);
@@ -1963,14 +2183,16 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                         auto low_guard = max_lst - p_j + 1_i;
                                         // The mirror, over [est(Theta), ub(s_j)):
                                         // under the negated conclusion every
-                                        // contained task ends by s_j.
+                                        // contained task ends by s_j, so this
+                                        // time it is the window's *right* edge
+                                        // the conclusion supplies.
                                         if (rules.not_first_not_last_published) {
-                                            if (logger)
-                                                throw UnimplementedException{
-                                                    "disjunctive not-last by the published condition has no certificate yet (#757)"};
-                                            if (energy > s_hi - min_est)
+                                            if (energy > s_hi - min_est) {
+                                                auto justify = published_justification(
+                                                    min_est, s_hi, inside_published, j.task, s_lo, s_hi, p_j, low_guard, false);
                                                 inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
-                                                    JustifyUsingRUP{hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, reason_over(reason_vars));
+                                            }
                                         }
                                         else {
                                             auto clipped = window_energy::window_energy_bound(
