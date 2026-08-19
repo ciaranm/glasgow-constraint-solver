@@ -62,9 +62,23 @@ it is to put them in one sentence. Say which is which.
 The increments are unconditional adds on a vector element — no environment
 lookup, no map, no atomic, no lock — and the environment variable is read once,
 at exit, to decide whether to print. Nothing here changes what is propagated.
-That is checked two ways: `rcpsp_rule_counters_inert` pins the recursion count
-with the counters compiled in, and the same instance's `.opb` and `.pbp` are
-byte-identical to the ones the same commit's parent produces.
+That the change was inert is checked by proof identity: `rcpsp --size 12 --seed
+3 --max-lag-density 0.3 --prove` and the `--unary disjunctive` lane both produce
+an `.opb` and a `.pbp` byte-identical to the ones the parent commit produces.
+Worth repeating on any change to a counted rule --- stash, rebuild, regenerate,
+`cmp`.
+
+That check cannot be a ctest, because there is no build without the counters to
+compare against: the increments are unconditional and the environment variable
+only decides whether to print. What the two ctest lanes assert instead is that a
+rule switched off reports four zeroes and the same rule switched on reports
+firings, which is what pins each counter to the rule it is named after.
+
+**The counts are not portable.** They are stable for a given build, but macOS and
+ubuntu-24.04 each produce different figures from this machine --- and so does the
+plain recursion count of the same instance. So exact figures belong in comments
+and in a sweep's output, never in an assertion, and a table of them has to say
+which build produced it.
 
 So a counter run and a timing run are the same run, and the numbers can be read
 off the same sweep that produces the recursion counts.

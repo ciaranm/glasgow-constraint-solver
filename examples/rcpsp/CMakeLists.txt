@@ -101,30 +101,27 @@ add_test(NAME rcpsp_all COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_ver
 add_test(NAME rcpsp_unary COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_unary
     $<TARGET_FILE:rcpsp> --size 10 --seed 4 --resources 1 --capacity 1 --max-demand 1 --unary disjunctive)
 
-# The per-rule firing counters (#729). Pinned to exact figures rather than to
-# "some rule fired something", because what this lane is for is an increment
-# that stops happening --- a counter wired to the wrong branch, or left behind
-# when a rule is restructured, reports a plausible number for ever and nothing
-# says so. Exact numbers make that a failure instead.
+# The per-rule firing counters (#729), as a pair: a rule that is switched off
+# must report four zeroes, and the same rule switched on must report firings.
+# Together they say the counter is wired to the rule it is named after, which is
+# the failure that matters --- an increment in the wrong branch reports a
+# plausible number for ever and nothing says so.
 #
-# What they say about this instance is also the reason the counters exist:
-# edge-finding's lb half skips 21346 candidates whose conclusion already held to
-# make 370 pushes, and its ub half skips 5754 to make 412. A rule doing 58 times
-# as much looking as pushing is not visible in a recursion count.
-#
-# These change whenever propagation changes, which is the point: update them
-# from the run, having checked the run was right to change.
-add_test(NAME rcpsp_rule_counters COMMAND ${CMAKE_COMMAND} -E env GCS_SCHEDULING_RULE_STATS=1
-    $<TARGET_FILE:rcpsp> --size 12 --seed 3 --machine-fraction 0.8 --machine disjunctive --disjunctive-edge-finding)
-set_tests_properties(rcpsp_rule_counters PROPERTIES PASS_REGULAR_EXPRESSION
-    "disjunctive_edge_finding_lb: calls=500 firings=370 already_true=21346 contradictions=0")
+# Deliberately not pinned to exact figures. The obvious version of this lane
+# asserted the numbers this machine produces, and macOS and ubuntu-24.04 both
+# reported different ones: the counts are stable for a given build but not
+# across toolchains, and neither is the plain recursion count of this instance.
+# That is why the exact figures in this file live in comments and never in an
+# assertion.
+add_test(NAME rcpsp_rule_counters_off COMMAND ${CMAKE_COMMAND} -E env GCS_SCHEDULING_RULE_STATS=1
+    $<TARGET_FILE:rcpsp> --size 12 --seed 3 --machine-fraction 0.8 --machine disjunctive)
+set_tests_properties(rcpsp_rule_counters_off PROPERTIES PASS_REGULAR_EXPRESSION
+    "disjunctive_edge_finding_lb: calls=0 firings=0 already_true=0 contradictions=0")
 
-# And that having them switched on changes nothing about the search, which is
-# what makes a counter run and a timing run comparable. Same instance, same
-# recursion count, counters off.
-add_test(NAME rcpsp_rule_counters_inert COMMAND $<TARGET_FILE:rcpsp>
-    --size 12 --seed 3 --machine-fraction 0.8 --machine disjunctive --disjunctive-edge-finding --stats)
-set_tests_properties(rcpsp_rule_counters_inert PROPERTIES PASS_REGULAR_EXPRESSION "recursions: 963")
+add_test(NAME rcpsp_rule_counters_on COMMAND ${CMAKE_COMMAND} -E env GCS_SCHEDULING_RULE_STATS=1
+    $<TARGET_FILE:rcpsp> --size 12 --seed 3 --machine-fraction 0.8 --machine disjunctive --disjunctive-edge-finding)
+set_tests_properties(rcpsp_rule_counters_on PROPERTIES PASS_REGULAR_EXPRESSION
+    "disjunctive_edge_finding_lb: calls=[1-9][0-9]* firings=[1-9][0-9]* already_true=[1-9][0-9]* contradictions=0")
 
 # The temporal network through the global propagator, and through the presolver
 # that lifts it back out of the decomposition, on the same maximum-lag instance
