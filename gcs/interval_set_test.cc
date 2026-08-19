@@ -3,6 +3,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstddef>
+#include <set>
 
 using namespace gcs;
 
@@ -457,6 +459,124 @@ TEST_CASE("Insert at end range")
 
     set.insert_at_end(10, 12); // gap — starts new interval
     CHECK(intervals_of(set) == vector<pair<int, int>>{{3, 8}, {10, 12}});
+}
+
+namespace
+{
+    // Assert the class invariant: intervals are sorted, disjoint, and non-touching
+    // (so adjacency is always merged). Returns the flattened membership for
+    // cross-checks.
+    auto checked_members(const IntervalSet<int> & set) -> vector<int>
+    {
+        auto ivs = intervals_of(set);
+        for (std::size_t i = 0; i < ivs.size(); ++i) {
+            CHECK(ivs[i].first <= ivs[i].second);
+            if (i + 1 < ivs.size())
+                CHECK(ivs[i].second + 1 < ivs[i + 1].first); // strictly gapped, never touching
+        }
+        vector<int> members;
+        for (auto v : set.each())
+            members.push_back(v);
+        return members;
+    }
+}
+
+TEST_CASE("Insert general position: out-of-order stays sorted and merged")
+{
+    IntervalSet<int> set;
+
+    set.insert(5);
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{5, 5}});
+
+    set.insert(3); // strictly before, with a gap
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{3, 3}, {5, 5}});
+
+    set.insert(4); // bridges the gap between 3 and 5 -> one interval
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{3, 5}});
+
+    set.insert(1); // extends lower end downward (no left neighbour)
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 1}, {3, 5}});
+
+    set.insert(2); // bridges 1 and 3..5
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 5}});
+
+    set.insert(9); // new singleton beyond the end
+    set.insert(7); // new singleton, gap on both sides
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 5}, {7, 7}, {9, 9}});
+
+    set.insert(8); // bridges 7 and 9
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 5}, {7, 9}});
+
+    set.insert(6); // adjacent above 5 and below 7 -> merges all into one
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 9}});
+}
+
+TEST_CASE("Insert is idempotent for values already present")
+{
+    IntervalSet<int> set;
+    set.insert(4);
+    set.insert(5);
+    set.insert(6);
+    for (int v : {4, 5, 6})
+        set.insert(v); // all already present
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{4, 6}});
+    // a value strictly inside an interval is also a no-op
+    IntervalSet<int> wide(1, 10);
+    wide.insert(5);
+    CHECK(intervals_of(wide) == vector<pair<int, int>>{{1, 10}});
+}
+
+TEST_CASE("Insert reproduces the hoist bucket hazard: descending ids into a bucket with a larger tail")
+{
+    // The move_proof_lines_to_level scenario: a bucket already holds a large line
+    // id (a resident nogood clause / an earlier-hoisted def), then smaller def ids
+    // arrive out of order. insert_at_end would append them past the larger tail and
+    // corrupt the ordering; insert keeps the bucket a valid sorted interval set.
+    IntervalSet<long long> bucket;
+    bucket.insert_at_end(100); // resident tail
+    bucket.insert(51);         // hoisted def half, smaller than the tail
+    bucket.insert(50);         // its sibling half, smaller still and out of order
+    bucket.insert(35);         // an earlier literal's def, hoisted later
+    bucket.insert(36);
+    vector<pair<long long, long long>> expected{{35, 36}, {50, 51}, {100, 100}};
+    vector<pair<long long, long long>> got;
+    for (auto [l, u] : bucket.each_interval())
+        got.emplace_back(l, u);
+    CHECK(got == expected);
+}
+
+TEST_CASE("Insert brute-force cross-check against a reference set under many orders")
+{
+    // Insert the same value multiset in several permutations (including reverse and
+    // interleaved) and confirm the result always equals the sorted unique set and
+    // always satisfies the class invariant.
+    const vector<vector<int>> orders{{1, 2, 3, 4, 5, 6, 7, 8}, {8, 7, 6, 5, 4, 3, 2, 1}, {4, 2, 6, 1, 8, 3, 7, 5},
+        {5, 5, 1, 8, 8, 3, 3, 2}, // with duplicates
+        {-3, -1, -2, 4, 2, 0, -5, 5}};
+    for (const auto & order : orders) {
+        IntervalSet<int> set;
+        std::set<int> reference;
+        for (int v : order) {
+            set.insert(v);
+            reference.insert(v);
+        }
+        auto members = checked_members(set);
+        CHECK(members == vector<int>(reference.begin(), reference.end()));
+    }
+}
+
+TEST_CASE("Insert then delete-style walk matches insert_at_end for ascending input")
+{
+    // For strictly ascending input, insert must produce exactly what insert_at_end
+    // does -- the same merged interval set -- so switching the move helper over is
+    // behaviour-preserving on the in-order path.
+    IntervalSet<int> via_insert, via_append;
+    for (int v : {2, 3, 4, 7, 8, 10}) {
+        via_insert.insert(v);
+        via_append.insert_at_end(v);
+    }
+    CHECK(intervals_of(via_insert) == intervals_of(via_append));
+    CHECK(intervals_of(via_insert) == vector<pair<int, int>>{{2, 4}, {7, 8}, {10, 10}});
 }
 
 TEST_CASE("Each yields values in order")

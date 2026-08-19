@@ -1,0 +1,3 @@
+add_executable(order_deletion_bench order_deletion_bench.cc)
+target_link_libraries(order_deletion_bench PRIVATE glasgow_constraint_solver)
+target_link_libraries(order_deletion_bench PRIVATE cxxopts)

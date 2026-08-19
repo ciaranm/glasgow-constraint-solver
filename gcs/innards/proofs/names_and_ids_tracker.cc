@@ -316,6 +316,17 @@ struct NamesAndIDsTracker::Imp
     // permutation variables, whose eq atoms are OPB constraint terms/guards (matching
     // cake) and so are forced model-time under @i labels.
     std::set<SimpleOrProofOnlyIntegerVariableID> vars_recover_labels;
+    // Real variables whose order encoding must stay RESIDENT (every ge definition at
+    // Top, tagged level 0) even under OrderEncodingDeletion::Literals, because a
+    // permanent (Top) constraint names their ges: deleting a def on backtrack would
+    // leave that Top line naming a deleted literal, which VeriPB rejects. Populated at
+    // model-build time by note_order_encoding_stays_resident, called from
+    // ProofModel::register_state_variable_bits_in_proof for the in-proof-bit auxiliary
+    // magnitudes (divide/modulus), whose ges the product-justification caches pin at Top.
+    // The other resident class -- a view's underlying variable, named by the always-at-Top
+    // view-bridge pol lines -- is detected directly from views_of_variable in need_gevar,
+    // not carried here.
+    std::set<SimpleOrProofOnlyIntegerVariableID> order_encoding_stays_resident;
     // The values with ge atoms, per variable, in value order: need_gevar's
     // order-encoding chain links join each new atom to its neighbours, which
     // needs ordered iteration. The atoms' literals and defining lines live in
@@ -384,6 +395,74 @@ struct NamesAndIDsTracker::Imp
     bool verbose_names;
     bool use_compact_boolean_encoding = false;
     AssertionLevel assertion_level = AssertionLevel::Off;
+
+    // Whether (and how) order-encoding chain links are deleted on backtrack.
+    OrderEncodingDeletion order_link_deletion_mode = OrderEncodingDeletion::None;
+    // Chain-length gate for OrderEncodingDeletion::Literals (order_encoding_deletion_min_chain):
+    // a real variable's interior ge def is only emitted deletable-at-Current once the number
+    // of ge thresholds ever named for it exceeds this value; at or below the gate the def is
+    // kept resident at Top, exactly like the boundary/view/aux paths. 0 disables the gate --
+    // deletion fires from the first threshold, byte-identically to the pre-gate behaviour.
+    // Read once here (not re-read per call), like order_link_deletion_mode.
+    int order_encoding_deletion_min_chain = 0;
+    // Set while a chain-link pol is being built. Building the pol re-enters
+    // need_gevar (via add_for_literal -> need_pol_item_defining_literal) for the
+    // two thresholds it references; this guard stops the fast path from cascading
+    // link re-emission back through those calls. The pol only needs the resident
+    // (Top) ge definitions, which the suppressed need_gevar still returns.
+    bool building_order_link = false;
+    // When order-link deletion is on: for each real variable, the adjacent-threshold
+    // chain links currently present in the proof, keyed by the (lower, higher)
+    // threshold pair and tagged with the proof level they were emitted at. Model-time
+    // links are tagged 0 (Top, never forgotten); proof-time links are tagged with the
+    // active proof level, so forget_proof_level deletes and forget_order_links_at_level
+    // drops them together. Left empty and untouched when the mode is off.
+    map<SimpleIntegerVariableID, map<pair<Integer, Integer>, int>> live_order_links;
+    // Level index over live_order_links: for each proof level, the (id, {lo, hi})
+    // links recorded at it, appended on emit. forget_order_links_at_level walks only
+    // the bucket for the forgotten level (O(links-at-level)) instead of scanning every
+    // variable. A link is only re-emitted after being forgotten (removed from both
+    // structures), so it is never double-indexed within a level's bucket. Bucket 0
+    // holds Top links and is never forgotten.
+    map<int, vector<pair<SimpleIntegerVariableID, pair<Integer, Integer>>>> order_links_by_level;
+
+    // --- Literals mode (OrderEncodingDeletion::Literals) ---
+    // For each real variable, the currently-live ge thresholds, each tagged with the
+    // proof level at which its definition was recorded. Level 0 means a Top literal
+    // (a model-time atom or a boundary literal, whose def stays resident and is never
+    // forgotten); a positive level means a search-introduced interior literal whose
+    // def lives at ProofLevel::Current and is deleted when that level is forgotten.
+    // Left empty and untouched unless the mode is Literals.
+    map<SimpleIntegerVariableID, map<Integer, int>> live_order_literals;
+    // Level index over live_order_literals holding only the deletable (Current)
+    // thresholds: for each proof level, the (id, threshold) literals whose defs were
+    // recorded at it. forget_order_literals_at_level walks just the forgotten level's
+    // bucket (O(deleted)) to stitch and prune, instead of scanning every variable.
+    // Level-0 (Top) literals are never indexed here, so they are never forgotten.
+    map<int, vector<pair<SimpleIntegerVariableID, Integer>>> order_literals_by_level;
+
+    // --- GCS_ORDER_ENCODING_STATS pin-apportionment diagnostic (Literals mode only) ---
+    // Everything below is touched ONLY when collect_order_encoding_stats is true
+    // (Literals mode AND the env var set). It is pure bookkeeping -- no proof bytes are
+    // emitted -- swept and printed to stderr once at proof end (dump_order_encoding_stats).
+    // Cheap map ops at rare events, so it can run whenever the diagnostic is requested
+    // without perturbing the proof.
+    bool collect_order_encoding_stats = false;
+    // For every real-variable proof-time ge threshold ever recorded live: its Top
+    // residency cause once it reaches Top (first-cause-wins), or nullopt while it is a
+    // deletable literal (currently at a positive level, or deleted). Key presence means
+    // "seen"; the entry persists across delete/reintroduce, so the map size is the count
+    // of distinct real-var ge atoms seen over the whole proof.
+    map<SimpleIntegerVariableID, map<Integer, optional<OrderEncodingResidencyCause>>> stats_ge_top_cause;
+    // Event counters.
+    long long stats_deletes = 0;                                    // literals dropped by forget_order_literals_at_level.
+    long long stats_stitches = 0;                                   // forget-path skip-link emissions (emit_order_stitch).
+    long long stats_reintroductions = 0;                            // reintroduce_order_literal calls.
+    long long stats_dup_top_stitches = 0;                           // Top-level stitch clauses re-emitted for an already-linked pair.
+    map<OrderEncodingResidencyCause, long long> stats_hoist_events; // actual hoist events, by cause.
+    // Top-level (level-0) stitch pairs already emitted per variable, for cheap
+    // duplicate-Top-stitch detection.
+    map<SimpleIntegerVariableID, std::set<pair<Integer, Integer>>> stats_top_stitch_pairs;
 };
 
 NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) : _imp(make_unique<Imp>())
@@ -391,6 +470,17 @@ NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) : _im
     _imp->verbose_names = proof_options.verbose_names;
     _imp->use_compact_boolean_encoding = proof_options.use_compact_boolean_encoding;
     _imp->assertion_level = proof_options.assertion_level;
+    _imp->order_link_deletion_mode = proof_options.order_encoding_deletion;
+    _imp->order_encoding_deletion_min_chain = proof_options.order_encoding_deletion_min_chain;
+
+    // The pin-apportionment diagnostic collects only under OrderEncodingDeletion::Literals
+    // (the only mode with deletable/hoistable order literals) AND when GCS_ORDER_ENCODING_STATS
+    // holds any non-empty value. Cached once here; gates every stats hook so nothing runs on
+    // the default (deletion-off) path or when the diagnostic is not requested.
+    if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Literals) {
+        const auto * const stats_env = std::getenv("GCS_ORDER_ENCODING_STATS");
+        _imp->collect_order_encoding_stats = stats_env != nullptr && *stats_env != '\0';
+    }
 
     if (proof_options.proof_file_names.variables_map_file) {
         _imp->variables_map_file_name = *proof_options.proof_file_names.variables_map_file;
@@ -826,6 +916,16 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
 
     _imp->atoms_for(id).eq_defs.try_emplace(v.raw_value, pair{forwards_line, reverse_line});
 
+    // Literals order-encoding-deletion mode: this eq atom's definition was emitted at
+    // ProofLevel::Top (permanent) above, and names ge(v) and ge(v+1). The
+    // need_all_proof_names_in inside that emission has made both live; but for an
+    // interior threshold their def lands at Current, so a later backtrack forget would
+    // delete it -- leaving this surviving Top eq def (and any solx / backtrack clause /
+    // value-branch guess over the eq atom) naming a deleted ge, which rejects in VeriPB
+    // (the failure this mode showed on eq-heavy instances). Hoist both ge defs to Top so
+    // they stay resident for the eq atom's whole lifetime.
+    hoist_ges_named_by_top_atom(id, v, v + 1_i, OrderEncodingResidencyCause::EqHoist);
+
     // If `id` is a view's proof-only var, eagerly emit the
     // eq-atom-level link `V=v <=> X=k_x` as two RUP lines. The GE-atom
     // links + the V- and X-side eq Defs are already in F at this point
@@ -918,11 +1018,113 @@ auto NamesAndIDsTracker::definitional_label_base(const SimpleOrProofOnlyIntegerV
 
 auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
 {
-    if (_imp->find_condition(id >= v))
+    if (_imp->find_condition(id >= v)) {
+        // Fast path: the ge atom and its definition already exist, so they are never
+        // recreated. With order-link deletion on, though, a previous backtrack may
+        // have deleted some of this variable's chain links; reconnect its whole order
+        // chain so any order reasoning a RUP needs is available. Only real variables
+        // carry deletable chain links. building_order_link suppresses this while a
+        // chain-link pol is being built (those need_gevar calls only want the resident
+        // definitions).
+        if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Links && _imp->logger && ! _imp->building_order_link) {
+            if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id))
+                ensure_order_chain_connected(*sid_ptr);
+        }
+        else if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Literals && _imp->logger && _imp->assertion_level == AssertionLevel::Off &&
+            ! _imp->building_order_link) {
+            // Literals mode: the atom is permanent, but its definition may have been
+            // deleted by an earlier backtrack. If this threshold is no longer live,
+            // re-introduce it (re-emit its def at Current and re-link it to its current
+            // live neighbours). Boundary / model-time literals are tagged level 0 and
+            // never leave the live set, so this only fires for interior literals. A
+            // ge aliased to a preserved bit (DirectOnly {0,1}) is skipped: it has no
+            // proof-time reification to delete or re-introduce, and re-emitting one would
+            // put the preserved bit in a red witness -- rejected at a derived level.
+            if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id)) {
+                auto live_it = _imp->live_order_literals.find(*sid_ptr);
+                if ((live_it == _imp->live_order_literals.end() || ! live_it->second.contains(v)) && ! order_literal_aliased_to_bit(id, v))
+                    reintroduce_order_literal(*sid_ptr, v);
+            }
+        }
         return;
+    }
 
     auto gevar = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::GreaterEqual, v);
     _imp->store_condition(id >= v, gevar);
+
+    // Literals order-encoding-deletion mode: a real variable's non-boundary ge
+    // definition is emitted at ProofLevel::Current, so a backtrack deletes it and a
+    // later reference re-introduces it. Boundary literals (whose bound pin makes them
+    // trivially true/false and which serve as permanent chain anchors) and model-time
+    // atoms (logger not yet attached) keep their def resident at Top, tagged level 0.
+    // Computed here because the def is emitted just below, before the fix_bound block.
+    bool literals_real = _imp->order_link_deletion_mode == OrderEncodingDeletion::Literals && _imp->assertion_level == AssertionLevel::Off &&
+        std::holds_alternative<SimpleIntegerVariableID>(id);
+    bool literals_proof_time = literals_real && _imp->logger != nullptr;
+    bool def_at_current = false;
+    // Stats: the born-Top cause for this ge, set below alongside the def_at_current
+    // decision (nullopt for a born-deletable interior literal). Only ever read under the
+    // collect guard; kept in step with the residency logic it mirrors.
+    optional<OrderEncodingResidencyCause> stats_born_cause;
+    if (literals_proof_time) {
+        auto b = _imp->integer_variable_definition_bounds.find(id);
+        bool trivial_boundary = ! _imp->bounds_not_trivially_derivable.contains(id);
+        bool boundary = trivial_boundary && b != _imp->integer_variable_definition_bounds.end() && (b->second.first >= v || b->second.second < v);
+        def_at_current = ! boundary;
+        // Two classes of real variable keep their WHOLE order encoding resident (def at
+        // Top, like the deletion-off mode), because a permanent (Top) constraint names
+        // their ges and a deleted def would strand that Top line on a deleted literal
+        // (VeriPB rejects the resulting proofgoal):
+        //  - an in-proof-bit auxiliary magnitude (register_state_variable_bits_in_proof),
+        //    whose ges the divide/modulus product-justification caches pin at Top;
+        //  - a view's underlying variable (views_of_variable), whose ge definition lines
+        //    the always-at-Top view-bridge pol lines cite by number.
+        // views_of_variable is only ever populated at model-build time (need_view rejects
+        // a proof-phase view), so this decision is stable for every proof-time ge.
+        bool aux_resident = _imp->order_encoding_stays_resident.contains(id);
+        bool view_resident = _imp->views_of_variable.contains(std::get<SimpleIntegerVariableID>(id));
+        if (def_at_current && (aux_resident || view_resident))
+            def_at_current = false;
+        // Chain-length gate (order_encoding_deletion_min_chain): below/at the gate keep
+        // this interior ge resident at Top -- exactly like the boundary/view/aux paths --
+        // so a propagation-strong model that never builds a long chain pays no deletion
+        // churn. The gate crosses PERMANENTLY (ge_defs only ever grows) once the variable
+        // has named more than min_chain ge thresholds: its ge_defs entry count taken
+        // HERE, before v is emplaced below, i.e. "chain length" in the natural sense with
+        // model-time atoms included. ge_defs (not gevar_values) is the count that matches
+        // the definitions this gate governs, and it is the one still missing v at this
+        // point -- gevar_values gains v further down, in the chain-link block.
+        // min_chain == 0 disables the gate (the `> 0` short-circuits before the count), so
+        // the default path is byte-identical to the pre-gate Literals behaviour. Lowest
+        // residency priority: a boundary/aux/view literal is resident for its own
+        // structural reason regardless of chain length, so this only fires for an
+        // otherwise-deletable interior literal.
+        if (def_at_current && _imp->order_encoding_deletion_min_chain > 0) {
+            const auto * atoms = _imp->find_atoms(id);
+            long long ever_named = atoms ? static_cast<long long>(atoms->ge_defs.size()) : 0;
+            if (ever_named <= _imp->order_encoding_deletion_min_chain)
+                def_at_current = false;
+        }
+        // Stats attribution, matching the branches just taken. Priority (first-cause-wins):
+        // boundary > aux > view > gate; every case is reached only when the earlier ones
+        // did not fire, and (boundary, aux, view, gate) are the only ways !def_at_current
+        // holds here, so the trailing else is exactly the gate case.
+        if (_imp->collect_order_encoding_stats && ! def_at_current) {
+            if (boundary)
+                stats_born_cause = OrderEncodingResidencyCause::Boundary;
+            else if (aux_resident)
+                stats_born_cause = OrderEncodingResidencyCause::AuxPin;
+            else if (view_resident)
+                stats_born_cause = OrderEncodingResidencyCause::ViewPin;
+            else
+                stats_born_cause = OrderEncodingResidencyCause::GateResident;
+        }
+    }
+    else if (literals_real && _imp->collect_order_encoding_stats) {
+        // Model-build-time creation (logger not yet attached): born Top, tagged model_time.
+        stats_born_cause = OrderEncodingResidencyCause::ModelTime;
+    }
+    auto ge_def_level = def_at_current ? ProofLevel::Current : ProofLevel::Top;
 
     // gevar -> bits
     if (_imp->logger && _imp->assertion_level > AssertionLevel::Definitions) {
@@ -931,7 +1133,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     }
     else if (_imp->logger) {
         auto def_lines = visit(
-            [&](const auto & id) { return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::Top); }, id);
+            [&](const auto & id) { return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ge_def_level); }, id);
         _imp->atoms_for(id).ge_defs.try_emplace(v.raw_value, def_lines);
     }
     else {
@@ -969,6 +1171,22 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                     },
                     id);
             });
+    }
+
+    // Literals mode: record this real variable's ge literal as live *now*, before
+    // fix_bound and the link blocks run. Those emit proof lines whose
+    // need_all_proof_names_in re-enters need_gevar(id, v); recording first means that
+    // re-entry sees v as live and does not spuriously re-introduce it (which would also
+    // wrongly re-tag a boundary literal as deletable). Linking to neighbours is done
+    // after the blocks, once v is already in the live set. Model-time atoms and boundary
+    // literals are tagged level 0 (def resident at Top); interior literals at Current.
+    if (literals_real) {
+        const auto & sid = std::get<SimpleIntegerVariableID>(id);
+        record_live_order_literal(sid, v, ! def_at_current);
+        // Stats: register the ge as seen and attribute any born-Top residency. For a
+        // born-deletable literal stats_born_cause is nullopt (recorded seen, no Top cause).
+        if (_imp->collect_order_encoding_stats)
+            stats_note_ge_recorded(sid, v, stats_born_cause);
     }
 
     // is it a bound?
@@ -1025,18 +1243,6 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     auto this_gevar = other_gevars.insert(v).first;
     auto higher_gevar = next(this_gevar);
 
-    // Returns a shared PolBuilder (rather than a rendered string) so the line
-    // references resolve to *relative* indices at emit time -- a workflow-2
-    // requirement: under cake_pb_cp the OPB has a different constraint count, so
-    // an absolute `pol 50 ...` would point at the wrong (or deleted) constraint.
-    // emit_proof_line_now_or_at_start may defer the lambda to proof start, hence
-    // the shared_ptr capture (the std::function it stores must stay copyable).
-    auto make_pol_chain_line = [&](IntegerVariableCondition cond1, IntegerVariableCondition cond2) -> shared_ptr<PolBuilder> {
-        auto b = make_shared<PolBuilder>();
-        b->add_for_literal(*this, ! cond1).add_for_literal(*this, ! cond2).saturate();
-        return b;
-    };
-
     // implied by the next highest gevar, if there is one?
     auto link_hint = AssertionAnnotation{.hint_name = hints::BoundLink::hint_name};
     if (higher_gevar != other_gevars.end()) {
@@ -1060,10 +1266,12 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                     emit_proof_line_now_or_at_start(
                         [c = chain_con, link_hint](ProofLogger * const logger) { logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint); });
                 }
-                else {
-                    auto pol = make_pol_chain_line(id >= v, ! (id >= *higher_gevar));
-                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                else if (! literals_proof_time) {
+                    emit_and_maybe_track_order_link(id, v, *higher_gevar);
                 }
+                // In Literals mode at proof time, this real variable's ge literal is
+                // linked to its live neighbours (not its gevars neighbours, which may
+                // have been deleted) after both blocks below.
             } //
         }
             .visit(id);
@@ -1092,14 +1300,22 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                         logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint);
                     });
                 }
-                else {
-                    auto pol = make_pol_chain_line(id >= *prev(this_gevar), ! (id >= v));
-                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                else if (! literals_proof_time) {
+                    emit_and_maybe_track_order_link(id, *prev(this_gevar), v);
                 }
+                // Literals-mode proof-time linking is handled once, below.
             } //
         }
             .visit(id);
     }
+
+    // Literals order-encoding-deletion mode: link this real variable's ge literal to its
+    // immediate *live* neighbours (it was recorded live above). Linking to live
+    // neighbours (rather than the gevars neighbours used by the blocks above) keeps the
+    // chain valid even when neighbouring thresholds have been deleted by an earlier
+    // backtrack. Only at proof time; model-time links are emitted by the blocks above.
+    if (literals_proof_time)
+        link_order_literal_to_live_neighbours(std::get<SimpleIntegerVariableID>(id), v);
 
     // If `id` is a view's proof-only var, eagerly pol-derive the
     // atom-level link to the corresponding X-atom so propagator inferences
@@ -1188,6 +1404,655 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     }
 }
 
+auto NamesAndIDsTracker::make_pol_chain_line(IntegerVariableCondition cond1, IntegerVariableCondition cond2) -> shared_ptr<PolBuilder>
+{
+    // Returns a shared PolBuilder (rather than a rendered string) so the line
+    // references resolve to *relative* indices at emit time -- a workflow-2
+    // requirement: under cake_pb_cp the OPB has a different constraint count, so
+    // an absolute `pol 50 ...` would point at the wrong (or deleted) constraint.
+    // emit_proof_line_now_or_at_start may defer the lambda to proof start, hence
+    // the shared_ptr capture (the std::function it stores must stay copyable).
+    auto b = make_shared<PolBuilder>();
+    b->add_for_literal(*this, ! cond1).add_for_literal(*this, ! cond2).saturate();
+    return b;
+}
+
+auto NamesAndIDsTracker::emit_and_maybe_track_order_link(const SimpleIntegerVariableID & id, Integer lo, Integer hi) -> void
+{
+    // During proof logging with the mode on, land the link at Current so a backtrack
+    // deletes it; otherwise (mode off, or model building where the logger is not yet
+    // attached and the emission is deferred to proof start) keep it at Top exactly as
+    // before -- hence the _imp->logger guard.
+    auto level = (_imp->order_link_deletion_mode == OrderEncodingDeletion::Links && _imp->logger) ? ProofLevel::Current : ProofLevel::Top;
+
+    // The adjacent-threshold chain link is the clause (id >= lo) OR ~(id >= hi),
+    // i.e. ge(hi) -> ge(lo); make_pol_chain_line derives it from the two resident
+    // (Top) ge definitions, so it stays sound to (re-)emit at any level even after
+    // the previous copy was deleted. Suppress fast-path re-emission while the pol is
+    // built (it re-enters need_gevar for lo and hi) so it does not recurse back here.
+    auto saved = _imp->building_order_link;
+    _imp->building_order_link = true;
+    auto pol = make_pol_chain_line(id >= lo, ! (id >= hi));
+    _imp->building_order_link = saved;
+
+    emit_proof_line_now_or_at_start([pol, level](ProofLogger * const logger) { pol->emit(*logger, level); });
+
+    // Record the link as live, tagged with the level it was emitted at, so the fast
+    // path can tell it is present and forget_order_links_at_level can drop it when
+    // that level is forgotten. Top links are tagged 0 (never forgotten) so the fast
+    // path does not needlessly re-emit a permanent link. Also index it under its level
+    // so forget is O(links-at-level). Only track when the mode is on, to keep the
+    // mode-off path a pure no-op.
+    if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Links) {
+        auto tag = (level == ProofLevel::Current) ? _imp->logger->proof_level() : 0;
+        _imp->live_order_links[id][pair{lo, hi}] = tag;
+        _imp->order_links_by_level[tag].emplace_back(id, pair{lo, hi});
+    }
+}
+
+auto NamesAndIDsTracker::ensure_order_chain_connected(const SimpleIntegerVariableID & id) -> void
+{
+    auto gevars_it = _imp->gevar_values.find(SimpleOrProofOnlyIntegerVariableID{id});
+    if (gevars_it == _imp->gevar_values.end())
+        return;
+    const auto & gevars = gevars_it->second;
+    if (gevars.size() < 2)
+        return;
+
+    // Reconnect the variable's entire order chain: every consecutive threshold pair
+    // whose link is not currently live gets re-emitted, so a RUP that needs multi-hop
+    // order propagation across this variable has the full chain available (matching
+    // what the baseline keeps permanently resident). Emission only fires for
+    // genuinely-missing links, so this stays cheap once the chain is connected.
+    // gevar_values is not modified here (the atoms already exist), and inserting
+    // into live_order_links never invalidates `links`, so both references stay valid
+    // across the emissions below.
+    auto & links = _imp->live_order_links[id];
+    for (auto lower = gevars.begin(), higher = next(lower); higher != gevars.end(); ++lower, ++higher)
+        if (! links.contains(pair{*lower, *higher}))
+            emit_and_maybe_track_order_link(id, *lower, *higher);
+}
+
+auto NamesAndIDsTracker::forget_order_links_at_level(int level) -> void
+{
+    if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Literals) {
+        forget_order_literals_at_level(level);
+        return;
+    }
+
+    if (_imp->order_link_deletion_mode == OrderEncodingDeletion::None)
+        return;
+
+    // Links mode: walk only the links recorded at this level (their `del`s are emitted
+    // by ProofLogger::forget_proof_level's own loop). Drop each from the live set so a
+    // later need_gevar re-emits it if needed, then clear the level's bucket (keeping
+    // its capacity for when the level is re-entered). Bucket 0 (Top) is never passed
+    // here.
+    auto bucket_it = _imp->order_links_by_level.find(level);
+    if (bucket_it == _imp->order_links_by_level.end())
+        return;
+    for (const auto & [id, lohi] : bucket_it->second)
+        if (auto links_it = _imp->live_order_links.find(id); links_it != _imp->live_order_links.end())
+            links_it->second.erase(lohi);
+    bucket_it->second.clear();
+}
+
+auto NamesAndIDsTracker::record_live_order_literal(const SimpleIntegerVariableID & id, Integer v, bool top) -> void
+{
+    // Tag a Top literal (model-time atom or boundary) as level 0 -- permanent, never
+    // forgotten, so it is not indexed for deletion. A search-introduced interior
+    // literal is tagged with the active proof level and indexed under it, so a later
+    // forget of that level deletes and stitches it.
+    int level = top ? 0 : _imp->logger->proof_level();
+    _imp->live_order_literals[id][v] = level;
+    if (! top)
+        _imp->order_literals_by_level[level].emplace_back(id, v);
+}
+
+auto NamesAndIDsTracker::link_order_literal_to_live_neighbours(const SimpleIntegerVariableID & id, Integer v) -> void
+{
+    // Emit the two chain links joining v to its immediate live neighbours. A link between
+    // two RESIDENT (level 0) literals lands at Top so it survives every backtrack, keeping
+    // a fully-resident chain (an aux magnitude's or a view underlying's, whose every ge is
+    // kept at Top) intact -- a Current-level link there would be del'd on the next forget
+    // with no re-stitch (forget_order_literals_at_level only stitches around deleted, not
+    // resident, thresholds), orphaning the resident definition. Every other link -- an
+    // ordinary search-introduced literal (v is the deepest live threshold, its level the
+    // current proof level) and an isolated boundary literal linked to a deletable interior
+    // neighbour alike -- lands at Current, exactly as before this change (so a mode-on
+    // proof of an instance with no resident interior chain, e.g. an eq-free bound-branching
+    // one, is byte-for-byte unchanged). v must already be present in live_order_literals
+    // (recorded by the caller before this call), so its neighbours are prev(v) and next(v)
+    // in the live map. building_order_link suppresses re-introduction while
+    // make_pol_chain_line re-enters need_gevar for v and each neighbour (all resident/live).
+    auto & live = _imp->live_order_literals[id];
+    auto it = live.find(v);
+    if (it == live.end())
+        return;
+    int v_level = it->second;
+    auto current = _imp->logger->proof_level();
+
+    // Top only when BOTH endpoints are resident; otherwise Current (the pre-change level).
+    // lo < hi is the threshold pair the link is over (for the stats dup-Top check).
+    auto emit_link = [&](const shared_ptr<PolBuilder> & pol, int neighbour_level, Integer lo, Integer hi) {
+        int landed;
+        if (v_level == 0 && neighbour_level == 0 && current != 0) {
+            _imp->logger->enter_proof_level(0);
+            pol->emit(*_imp->logger, ProofLevel::Current);
+            _imp->logger->enter_proof_level(current);
+            landed = 0;
+        }
+        else {
+            pol->emit(*_imp->logger, ProofLevel::Current);
+            landed = current;
+        }
+        if (_imp->collect_order_encoding_stats)
+            stats_note_stitch_emitted(id, lo, hi, landed, /*forget_path=*/false);
+    };
+
+    auto saved = _imp->building_order_link;
+    _imp->building_order_link = true;
+    if (auto higher = next(it); higher != live.end()) {
+        // ge(hi) -> ge(v): clause ge(v) OR ~ge(hi).
+        auto pol = make_pol_chain_line(id >= v, ! (id >= higher->first));
+        emit_link(pol, higher->second, v, higher->first);
+    }
+    if (it != live.begin()) {
+        auto lower = prev(it);
+        // ge(v) -> ge(lo): clause ge(lo) OR ~ge(v).
+        auto pol = make_pol_chain_line(id >= lower->first, ! (id >= v));
+        emit_link(pol, lower->second, lower->first, v);
+    }
+    _imp->building_order_link = saved;
+}
+
+auto NamesAndIDsTracker::reintroduce_order_literal(const SimpleIntegerVariableID & id, Integer v) -> void
+{
+    // The atom already exists but its Current-level definition was deleted on an
+    // earlier backtrack, and the search has genuinely re-touched it. Re-emit the
+    // reification def at Current, overwrite the stale def lines, re-record as live at
+    // Current, then re-link to live neighbours. Only interior literals reach here
+    // (level-0 literals never leave the live set), and in practice only *unpinned*
+    // ones: a ge pinned by a surviving Top constraint -- in particular a ge named by an
+    // eq atom's permanent (Top) definition -- is hoisted to Top when that atom is
+    // created and is thereafter never deleted, so it never reaches reintroduction. That
+    // is why the fresh `red` VeriPB accepts here never collides with a pin against its
+    // falsify-witness: pinned literals are hoisted, not reintroduced. Only genuinely
+    // re-touched unpinned interior literals reintroduce, and they verify.
+    SimpleOrProofOnlyIntegerVariableID key{id};
+    // The re-emitted `red` reifies against `id >= v` itself, so rendering it resolves
+    // that very condition through xliteral_for_ensuring -- which, under this mode, calls
+    // back into need_gevar to re-introduce a non-live literal. v is not live again until
+    // record_live_order_literal below, so without this guard the call recurses forever.
+    // building_order_link is the existing "we are emitting order-encoding machinery, do
+    // not recursively re-introduce" flag, used the same way by emit_order_stitch.
+    auto saved_building = _imp->building_order_link;
+    _imp->building_order_link = true;
+    auto def_lines = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::Current);
+    _imp->building_order_link = saved_building;
+    auto & entry = _imp->atoms_for(key).ge_defs.at(v.raw_value);
+    entry.first = def_lines.first;
+    entry.second = def_lines.second;
+
+    if (_imp->collect_order_encoding_stats)
+        ++_imp->stats_reintroductions;
+
+    record_live_order_literal(id, v, /*top=*/false);
+    link_order_literal_to_live_neighbours(id, v);
+}
+
+auto NamesAndIDsTracker::emit_order_stitch(const SimpleIntegerVariableID & id, Integer lo, Integer hi, int at_level, int restore_level) -> void
+{
+    // Derive the skip link ge(hi) -> ge(lo) (clause ge(lo) OR ~ge(hi)) from the two
+    // survivors' resident defs, exactly as an adjacent chain link -- it is sound for a
+    // skip (lo, hi more than one threshold apart) identically. Record it at at_level =
+    // max(level(lo), level(hi)) so it is deleted together with the deeper of its two
+    // endpoints (levels are forgotten deepest-first). building_order_link suppresses
+    // re-introduction while make_pol_chain_line re-enters need_gevar for lo and hi.
+    auto saved = _imp->building_order_link;
+    _imp->building_order_link = true;
+    auto pol = make_pol_chain_line(id >= lo, ! (id >= hi));
+    _imp->building_order_link = saved;
+
+    _imp->logger->enter_proof_level(at_level);
+    pol->emit(*_imp->logger, ProofLevel::Current);
+    _imp->logger->enter_proof_level(restore_level);
+
+    if (_imp->collect_order_encoding_stats)
+        stats_note_stitch_emitted(id, lo, hi, at_level, /*forget_path=*/true);
+}
+
+auto NamesAndIDsTracker::forget_order_literals_at_level(int level) -> void
+{
+    // Called from forget_order_links_at_level, itself called by
+    // ProofLogger::forget_proof_level after it has emitted the `del`s for every line
+    // recorded at `level` (which include the deleted literals' def and link lines).
+    auto bucket_it = _imp->order_literals_by_level.find(level);
+    if (bucket_it == _imp->order_literals_by_level.end())
+        return;
+
+    // Group the thresholds deleted at this level by variable.
+    map<SimpleIntegerVariableID, vector<Integer>> deleted_by_var;
+    for (const auto & [id, v] : bucket_it->second)
+        deleted_by_var[id].push_back(v);
+
+    auto restore_level = _imp->logger->proof_level();
+    for (auto & [id, dvals] : deleted_by_var) {
+        auto live_it = _imp->live_order_literals.find(id);
+        if (live_it == _imp->live_order_literals.end())
+            continue;
+        auto & live = live_it->second;
+
+        // Walk the live thresholds in order. For each maximal contiguous run of
+        // level-`level` thresholds, stitch the nearest surviving neighbour below (lo)
+        // to the nearest above (hi) -- both necessarily at a level < `level`, since
+        // deeper levels are forgotten first -- so the chain stays complete over the
+        // survivors. A run at a chain end (no survivor on one side) gets no stitch
+        // there. The stitch lands at max(level(lo), level(hi)).
+        for (auto it = live.begin(); it != live.end();) {
+            if (it->second != level) {
+                ++it;
+                continue;
+            }
+            optional<Integer> lo, hi;
+            int lo_level = 0, hi_level = 0;
+            if (it != live.begin()) {
+                auto p = prev(it);
+                lo = p->first;
+                lo_level = p->second;
+            }
+            auto run_end = it;
+            while (run_end != live.end() && run_end->second == level)
+                ++run_end;
+            if (run_end != live.end()) {
+                hi = run_end->first;
+                hi_level = run_end->second;
+            }
+            if (lo && hi)
+                emit_order_stitch(id, *lo, *hi, max(lo_level, hi_level), restore_level);
+            it = run_end;
+        }
+
+        // The deleted literals' def+link lines were del'd by forget_proof_level's own
+        // loop; drop the thresholds from the live set so a later need_gevar
+        // re-introduces them.
+        if (_imp->collect_order_encoding_stats)
+            _imp->stats_deletes += static_cast<long long>(dvals.size());
+        for (auto v : dvals)
+            live.erase(v);
+        if (live.empty())
+            _imp->live_order_literals.erase(live_it);
+    }
+
+    _imp->order_literals_by_level.erase(bucket_it);
+}
+
+auto NamesAndIDsTracker::stitch_hoisted_order_literal(const SimpleIntegerVariableID & id, Integer v, int target_level, bool immediate_neighbours)
+    -> void
+{
+    auto & live = _imp->live_order_literals[id];
+    auto it = live.find(v);
+    if (it == live.end())
+        return;
+
+    // Choose the neighbours to re-link v to. In the immediate-neighbours policy the
+    // *nearest* live neighbour on each side is taken, at whatever level, and the link is
+    // recorded at max(target_level, neighbour_level). Otherwise (the backtrack/nogood
+    // hoist, whose caller is about to forget every deeper level) the nearest neighbour
+    // whose level is <= target_level is taken -- the survivor v will end up adjacent to
+    // -- and the link is recorded at target_level. See the header for why immediate
+    // neighbours are needed when the deeper levels are NOT being forgotten.
+    optional<Integer> lo, hi;
+    int lo_level = target_level, hi_level = target_level;
+    for (auto j = it; j != live.begin();) {
+        --j;
+        if (immediate_neighbours || j->second <= target_level) {
+            lo = j->first;
+            lo_level = j->second;
+            break;
+        }
+    }
+    for (auto j = next(it); j != live.end(); ++j)
+        if (immediate_neighbours || j->second <= target_level) {
+            hi = j->first;
+            hi_level = j->second;
+            break;
+        }
+
+    // Emit each link at max(target_level, neighbour_level): enter that level, emit at
+    // Current, restore. building_order_link suppresses re-introduction while
+    // make_pol_chain_line re-enters need_gevar for v and each neighbour (all resident
+    // and live).
+    auto restore_level = _imp->logger->proof_level();
+    auto saved = _imp->building_order_link;
+    _imp->building_order_link = true;
+    if (lo) {
+        // ge(lo) -> nothing; the link is ge(lo) OR ~ge(v), i.e. ge(v) -> ge(lo).
+        auto pol = make_pol_chain_line(id >= *lo, ! (id >= v));
+        auto landed = max(target_level, lo_level);
+        _imp->logger->enter_proof_level(landed);
+        pol->emit(*_imp->logger, ProofLevel::Current);
+        if (_imp->collect_order_encoding_stats)
+            stats_note_stitch_emitted(id, *lo, v, landed, /*forget_path=*/false);
+    }
+    if (hi) {
+        // ge(v) OR ~ge(hi), i.e. ge(hi) -> ge(v).
+        auto pol = make_pol_chain_line(id >= v, ! (id >= *hi));
+        auto landed = max(target_level, hi_level);
+        _imp->logger->enter_proof_level(landed);
+        pol->emit(*_imp->logger, ProofLevel::Current);
+        if (_imp->collect_order_encoding_stats)
+            stats_note_stitch_emitted(id, v, *hi, landed, /*forget_path=*/false);
+    }
+    _imp->logger->enter_proof_level(restore_level);
+    _imp->building_order_link = saved;
+}
+
+auto NamesAndIDsTracker::hoist_order_literal_to_level(const SimpleIntegerVariableID & id, Integer v, int target_level, bool immediate_neighbours,
+    optional<OrderEncodingResidencyCause> stats_cause) -> void
+{
+    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+        throw ProofError{"hoist_order_literal_to_level requires OrderEncodingDeletion::Literals"};
+    if (! _imp->logger)
+        throw ProofError{"hoist_order_literal_to_level requires the logger to be attached"};
+
+    auto live_it = _imp->live_order_literals.find(id);
+    if (live_it == _imp->live_order_literals.end())
+        throw ProofError{"hoist of an order literal for an untracked variable"};
+    auto lvl_it = live_it->second.find(v);
+    if (lvl_it == live_it->second.end())
+        throw ProofError{"hoist of a non-live order literal"};
+
+    int cur_level = lvl_it->second;
+    if (cur_level == target_level)
+        return;
+
+    // Stats: an actual hoist is about to happen. Count it by cause, and -- for a hoist
+    // that lands the def at Top -- attribute the literal's Top residency to this cause
+    // (first-cause-wins; GuessHoist targets a positive level and is never a Top cause).
+    if (_imp->collect_order_encoding_stats && stats_cause) {
+        ++_imp->stats_hoist_events[*stats_cause];
+        if (target_level == 0 && *stats_cause != OrderEncodingResidencyCause::GuessHoist) {
+            auto & slot = _imp->stats_ge_top_cause[id][v];
+            if (! slot)
+                slot = stats_cause;
+        }
+    }
+
+    // Part 1: relocate the two reification proof lines of ge(v)'s definition from
+    // their current (deep) level bucket to target_level's bucket. Pure bookkeeping
+    // -- emits nothing -- so there is no re-asserted witness to collide with a pin.
+    SimpleOrProofOnlyIntegerVariableID key{id};
+    auto & entry = _imp->atoms_for(key).ge_defs.at(v.raw_value);
+    vector<ProofLine> def_lines;
+    if (auto p = std::get_if<ProofLine>(&entry.first))
+        def_lines.push_back(*p);
+    if (auto p = std::get_if<ProofLine>(&entry.second))
+        def_lines.push_back(*p);
+    _imp->logger->move_proof_lines_to_level(def_lines, cur_level, target_level);
+
+    // Retag v in the tracker's live/level bookkeeping: drop it from its old level's
+    // deletion index and, unless it is now permanent at Top, index it under the
+    // target level so a later forget of that level deletes and stitches it.
+    if (cur_level != 0) {
+        auto & old_bucket = _imp->order_literals_by_level[cur_level];
+        std::erase_if(old_bucket, [&](const pair<SimpleIntegerVariableID, Integer> & e) { return e.first.index == id.index && e.second == v; });
+    }
+    lvl_it->second = target_level;
+    if (target_level != 0)
+        _imp->order_literals_by_level[target_level].emplace_back(id, v);
+
+    // Part 2: re-stitch v into the target level's chain (see above).
+    stitch_hoisted_order_literal(id, v, target_level, immediate_neighbours);
+}
+
+auto NamesAndIDsTracker::hoist_order_literal_to_top(const SimpleIntegerVariableID & id, Integer v, optional<OrderEncodingResidencyCause> stats_cause)
+    -> void
+{
+    hoist_order_literal_to_level(id, v, 0, /*immediate_neighbours=*/false, stats_cause);
+}
+
+auto NamesAndIDsTracker::hoist_order_literal_to_top_if_live(
+    const SimpleIntegerVariableID & id, Integer v, optional<OrderEncodingResidencyCause> stats_cause) -> void
+{
+    // A permanent (Top) eq definition eq(v) <=> ge(v) & ~ge(v+1) names ge(v) and
+    // ge(v+1); this makes those two ge defs resident at Top so the eq def -- and any
+    // later solx / backtrack clause over the eq atom -- never names a ge whose
+    // Current-level def a backtrack forget deleted. Only fires for a threshold that is
+    // actually a live, deletable order literal for id: a boundary/model-time literal is
+    // already at Top (level 0), and a threshold the eq def does not name (the ge absent
+    // from the compact-encoding form) is simply not live here, so both are skipped.
+    auto live_it = _imp->live_order_literals.find(id);
+    if (live_it == _imp->live_order_literals.end())
+        return;
+    auto lvl_it = live_it->second.find(v);
+    if (lvl_it == live_it->second.end() || lvl_it->second == 0)
+        return;
+    // immediate_neighbours: this hoist happens mid-search (an eq/interval def naming
+    // this ge), NOT before a forget of the deeper levels, so interior survivors between
+    // v and its nearest Top neighbour must stay chained -- link to the immediate live
+    // neighbours, not only the Top ones.
+    hoist_order_literal_to_level(id, v, 0, /*immediate_neighbours=*/true, stats_cause);
+}
+
+auto NamesAndIDsTracker::order_literal_aliased_to_bit(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> bool
+{
+    // Aliasing (proof_model.cc set_up_direct_only_variable_encoding) only ever happens
+    // for a single-bit DirectOnly {0,1} variable, so a >1-bit variable is excluded up
+    // front (cheap). For a one-bit variable, the ge is aliased iff id >= v's xliteral
+    // *is* that bit's xliteral (a Bits-encoded {0,1} variable instead mints a distinct
+    // ge1 atom, whose xliteral differs, so it returns false and stays reintroducible).
+    if (! has_bit_representation(id) || num_bits(id) != 1_i)
+        return false;
+    auto cond = _imp->find_condition(id >= v);
+    return cond && *cond == get_bit(id, 0_i).second;
+}
+
+auto NamesAndIDsTracker::hoist_ges_named_by_top_atom(
+    SimpleOrProofOnlyIntegerVariableID id, Integer lower_ge, Integer upper_ge, optional<OrderEncodingResidencyCause> stats_cause) -> void
+{
+    // Same guard the ge-def deletion in need_gevar uses: only proof-time, real-variable,
+    // assertions-off Literals mode tracks deletable ge defs at all.
+    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger || _imp->assertion_level != AssertionLevel::Off)
+        return;
+    if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id)) {
+        hoist_order_literal_to_top_if_live(*sid_ptr, lower_ge, stats_cause);
+        hoist_order_literal_to_top_if_live(*sid_ptr, upper_ge, stats_cause);
+    }
+}
+
+auto NamesAndIDsTracker::hoist_live_order_literals_toward_level(
+    const std::vector<Literal> & lits, int target_level, optional<OrderEncodingResidencyCause> stats_cause) -> void
+{
+    // Only the Literals mode has anything to hoist; other modes keep the whole
+    // encoding resident at Top, and with no logger there is nothing emitted yet.
+    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger)
+        return;
+
+    for (const auto & lit : lits) {
+        // Only a plain integer-variable condition can name an order literal.
+        const auto * cond = std::get_if<IntegerVariableCondition>(&lit);
+        if (! cond)
+            continue;
+        // ge(v) is named by `X >= v` (GreaterEqual, threshold v) and by `X < v`
+        // (Less, threshold v -- the negated ge atom). `X <= v` / `X > v` are lowered
+        // to Less(v+1) / GreaterEqual(v+1), so their threshold is likewise the value.
+        // Any other operator (eq, range, ...) is not an order literal here.
+        if (cond->op != VariableConditionOperator::GreaterEqual && cond->op != VariableConditionOperator::Less)
+            continue;
+        // Views and constants are not what the Literals mode tracks (only real
+        // SimpleIntegerVariableIDs carry deletable order-literal definitions).
+        const auto * sid = std::get_if<SimpleIntegerVariableID>(&cond->var);
+        if (! sid)
+            continue;
+
+        // Hoist only a currently-live literal whose definition is deeper than the
+        // target: a boundary/model-time literal (level 0) or one already at or above
+        // the target needs nothing, and hoisting never sinks a definition deeper.
+        auto live_it = _imp->live_order_literals.find(*sid);
+        if (live_it == _imp->live_order_literals.end())
+            continue;
+        auto lvl_it = live_it->second.find(cond->value);
+        if (lvl_it == live_it->second.end())
+            continue;
+        if (lvl_it->second > target_level)
+            hoist_order_literal_to_level(*sid, cond->value, target_level, /*immediate_neighbours=*/false, stats_cause);
+    }
+}
+
+auto NamesAndIDsTracker::stats_note_ge_recorded(const SimpleIntegerVariableID & id, Integer v, optional<OrderEncodingResidencyCause> born_cause)
+    -> void
+{
+    // Register v as seen (inserts a nullopt entry on first sight; a re-record of an
+    // already-seen literal leaves the existing entry alone). If born Top, attribute the
+    // residency -- first-cause-wins, so a cause is only ever set when none is present.
+    auto & slot = _imp->stats_ge_top_cause[id][v];
+    if (born_cause && ! slot)
+        slot = born_cause;
+}
+
+auto NamesAndIDsTracker::stats_note_stitch_emitted(const SimpleIntegerVariableID & id, Integer lo, Integer hi, int at_level, bool forget_path) -> void
+{
+    if (forget_path)
+        ++_imp->stats_stitches;
+    // A chain-link/stitch clause landing at Top over a pair already Top-linked re-adds a
+    // constraint that is still resident: the known duplicate-Top-stitch inefficiency.
+    if (at_level == 0 && ! _imp->stats_top_stitch_pairs[id].emplace(lo, hi).second)
+        ++_imp->stats_dup_top_stitches;
+}
+
+auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
+{
+    if (! _imp->collect_order_encoding_stats)
+        return;
+
+    using Cause = OrderEncodingResidencyCause;
+
+    // Sweep the per-literal cause map: distinct real-var ge atoms seen over the proof,
+    // and the Top-resident count broken down by first-cause.
+    long long seen = 0, top_resident = 0;
+    map<Cause, long long> by_cause;
+    for (const auto & [id, vs] : _imp->stats_ge_top_cause)
+        for (const auto & [v, cause] : vs) {
+            ++seen;
+            if (cause) {
+                ++top_resident;
+                ++by_cause[*cause];
+            }
+        }
+
+    // Per-variable "chain length" = the number of distinct ge thresholds ever named for a
+    // real variable (its stats_ge_top_cause row size) -- exactly the quantity the min_chain
+    // gate tests. Report the distribution so a measurement can see WHY a given gate does or
+    // does not suppress a model's deletion churn: a model whose chains are all short
+    // (median a few, max tens) is fully held resident by a modest gate, whereas a
+    // weak-propagation large-domain model builds chains of hundreds that a modest gate
+    // barely touches.
+    vector<long long> chain_lens;
+    chain_lens.reserve(_imp->stats_ge_top_cause.size());
+    for (const auto & [id, vs] : _imp->stats_ge_top_cause)
+        chain_lens.push_back(static_cast<long long>(vs.size()));
+    sort(chain_lens);
+    auto pctile = [&](double q) -> long long {
+        if (chain_lens.empty())
+            return 0;
+        auto idx = static_cast<std::size_t>(q * static_cast<double>(chain_lens.size() - 1) + 0.5);
+        return chain_lens[idx];
+    };
+    long long chain_max = chain_lens.empty() ? 0 : chain_lens.back();
+
+    // Live snapshot at proof end (a Top literal is never deleted, so live-at-Top equals
+    // top_resident; a positive-level literal is a still-open deletable one).
+    long long live_top = 0, live_positive = 0;
+    for (const auto & [id, vs] : _imp->live_order_literals)
+        for (const auto & [v, lvl] : vs)
+            ((lvl == 0) ? live_top : live_positive) += 1;
+    long long net_deleted = seen - live_top - live_positive;
+
+    // Per-variable classification: view/aux structurally, then ordinary variables by
+    // whether any of their ges are hoist-pinned (eq/invar/nogood/soli); a variable with
+    // no hoist pins but some gate-held (below-min_chain-resident) ge is its own class, so
+    // the fully-deletable count is not inflated by gate-held variables.
+    long long n_view = 0, n_aux = 0, n_mixed = 0, n_gate_held = 0, n_deletable = 0;
+    for (const auto & [id, vs] : _imp->stats_ge_top_cause) {
+        if (_imp->views_of_variable.contains(id)) {
+            ++n_view;
+            continue;
+        }
+        if (_imp->order_encoding_stays_resident.contains(SimpleOrProofOnlyIntegerVariableID{id})) {
+            ++n_aux;
+            continue;
+        }
+        bool any_hoist_pin = false, any_gate = false;
+        for (const auto & [v, cause] : vs) {
+            if (cause && (*cause == Cause::EqHoist || *cause == Cause::InvarHoist || *cause == Cause::NogoodHoist || *cause == Cause::SoliHoist))
+                any_hoist_pin = true;
+            if (cause && *cause == Cause::GateResident)
+                any_gate = true;
+        }
+        if (any_hoist_pin)
+            ++n_mixed;
+        else if (any_gate)
+            ++n_gate_held;
+        else
+            ++n_deletable;
+    }
+
+    auto get = [](const map<Cause, long long> & m, Cause k) -> long long {
+        auto it = m.find(k);
+        return it == m.end() ? 0 : it->second;
+    };
+    auto pct = [&](long long x) -> double { return top_resident > 0 ? 100.0 * static_cast<double>(x) / static_cast<double>(top_resident) : 0.0; };
+
+    long long view_pin = get(by_cause, Cause::ViewPin), aux_pin = get(by_cause, Cause::AuxPin);
+    long long eq_h = get(by_cause, Cause::EqHoist), invar_h = get(by_cause, Cause::InvarHoist);
+    long long nogood_h = get(by_cause, Cause::NogoodHoist), soli_h = get(by_cause, Cause::SoliHoist);
+    long long boundary = get(by_cause, Cause::Boundary), model_time = get(by_cause, Cause::ModelTime);
+    long long gate_resident = get(by_cause, Cause::GateResident);
+    long long would_free = view_pin + aux_pin;
+    long long would_not_free = eq_h + invar_h + nogood_h + soli_h;
+    long long structural = boundary + model_time;
+
+    stringstream o;
+    auto emit = [&](const string & s) { o << "%% oed-stats: " << s << "\n"; };
+    emit(format("order-encoding-deletion pin apportionment (mode=Literals, min_chain={})", _imp->order_encoding_deletion_min_chain));
+    emit(format("real-var ge atoms seen (proof-time): {}", seen));
+    emit(format("chain length (distinct ge thresholds per real var, n={}): median={} p90={} p99={} max={}", chain_lens.size(), pctile(0.5),
+        pctile(0.9), pctile(0.99), chain_max));
+    emit(format("  currently live at Top: {}", live_top));
+    emit(format("  currently live at positive levels: {}", live_positive));
+    emit(format("  net deleted: {}", net_deleted));
+    emit(format("Top-resident breakdown by cause (of {} Top-resident):", top_resident));
+    emit(format("  step-3-WOULD-free (view_pin + aux_pin): {} ({:.1f}%)", would_free, pct(would_free)));
+    emit(format("      view_pin:     {} ({:.1f}%)", view_pin, pct(view_pin)));
+    emit(format("      aux_pin:      {} ({:.1f}%)", aux_pin, pct(aux_pin)));
+    emit(format("  step-3-would-NOT-free (eq + invar + nogood + soli hoist): {} ({:.1f}%)", would_not_free, pct(would_not_free)));
+    emit(format("      eq_hoist:     {} ({:.1f}%)", eq_h, pct(eq_h)));
+    emit(format("      invar_hoist:  {} ({:.1f}%)", invar_h, pct(invar_h)));
+    emit(format("      nogood_hoist: {} ({:.1f}%)", nogood_h, pct(nogood_h)));
+    emit(format("      soli_hoist:   {} ({:.1f}%)", soli_h, pct(soli_h)));
+    emit(format("  structural (boundary + model_time): {} ({:.1f}%)", structural, pct(structural)));
+    emit(format("      boundary:     {} ({:.1f}%)", boundary, pct(boundary)));
+    emit(format("      model_time:   {} ({:.1f}%)", model_time, pct(model_time)));
+    emit(format("  gate-held (below min_chain gate): {} ({:.1f}%)", gate_resident, pct(gate_resident)));
+    emit("events:");
+    emit(format("  deletes: {}", _imp->stats_deletes));
+    emit(format("  stitches (forget-path): {}", _imp->stats_stitches));
+    emit(format("  reintroductions: {}", _imp->stats_reintroductions));
+    emit(format("  duplicate-Top-stitches: {}", _imp->stats_dup_top_stitches));
+    emit(format("  hoists: eq={} invar={} nogood={} soli={} guess={}", get(_imp->stats_hoist_events, Cause::EqHoist),
+        get(_imp->stats_hoist_events, Cause::InvarHoist), get(_imp->stats_hoist_events, Cause::NogoodHoist),
+        get(_imp->stats_hoist_events, Cause::SoliHoist), get(_imp->stats_hoist_events, Cause::GuessHoist)));
+    emit("variables by class:");
+    emit(format("  fully-resident-by-view: {}", n_view));
+    emit(format("  fully-resident-by-aux:  {}", n_aux));
+    emit(format("  mixed (some eq/invar/nogood/soli-hoisted resident): {}", n_mixed));
+    emit(format("  gate-held (no hoist pins, some ge below min_chain gate): {}", n_gate_held));
+    emit(format("  fully-deletable (no hoist pins): {}", n_deletable));
+
+    print(stderr, "{}", o.str());
+}
+
 auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
 {
     if (! _imp->logger || _imp->logger->get_assertion_level() > AssertionLevel::Links) // Should be unreachable at AssertionLevel::Links anyway
@@ -1274,6 +2139,14 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
         : make_pair(ProofLine{}, ProofLine{});
 
     _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
+
+    // Literals order-encoding-deletion mode: this interval atom's definition was emitted
+    // at ProofLevel::Top (permanent) above, and names ge(lo) and ge(hi+1) (id > hi is
+    // id >= hi+1). Keep those ge defs resident at Top so a backtrack forget never
+    // deletes a ge underneath this surviving Top atom -- otherwise a later covering /
+    // solx / need_direct_encoding_for over this partition would name (or try to
+    // pinned-re-introduce) a deleted ge, which VeriPB rejects.
+    hoist_ges_named_by_top_atom(id, lo, hi + 1_i, OrderEncodingResidencyCause::InvarHoist);
 
     // No containment tree apparatus needed at higher assertion levels.
     if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
@@ -1656,6 +2529,11 @@ auto NamesAndIDsTracker::note_bounds_not_trivially_derivable(const SimpleOrProof
     _imp->bounds_not_trivially_derivable.insert(id);
 }
 
+auto NamesAndIDsTracker::note_order_encoding_stays_resident(const SimpleOrProofOnlyIntegerVariableID & id) -> void
+{
+    _imp->order_encoding_stays_resident.insert(id);
+}
+
 auto NamesAndIDsTracker::note_recover_atom_labels_in_proof(const SimpleOrProofOnlyIntegerVariableID & id) -> void
 {
     _imp->vars_recover_labels.insert(id);
@@ -1843,6 +2721,20 @@ auto NamesAndIDsTracker::xliteral_for_ensuring(const VariableConditionFrom<Simpl
         f = _imp->find_condition(cond);
         if (! f)
             throw ProofError{"still can't find literals for cond after introducing it"};
+    }
+    else if (_imp->order_link_deletion_mode != OrderEncodingDeletion::None && _imp->logger && ! _imp->building_order_link) {
+        // Under order-encoding deletion an existing atom is NOT enough: atom identity is
+        // permanent, but the atom's *definition* may have been deleted by a backtrack, and
+        // a line naming a literal whose definition is gone does not verify. So go through
+        // need_proof_name anyway -- need_gevar's fast path re-introduces a deleted
+        // definition (and reconnects the chain) before this line names the literal. This
+        // is what the old need_all_proof_names_in pre-pass did unconditionally; the fused
+        // renderer skips it for known atoms, which is right for every other mode.
+        // Deletion off (the default) keeps the single-lookup path untouched.
+        // The XLiteral itself never changes -- re-introduction re-emits definition lines
+        // and rewrites their line numbers, it never re-mints the atom -- so the value
+        // found above stays correct.
+        need_proof_name(cond);
     }
     return *f;
 }

@@ -44,6 +44,29 @@ namespace gcs
     };
 
     /**
+     * \brief Which parts of a variable's order encoding are emitted at
+     * ProofLevel::Current (and so deleted on backtrack and re-emitted on demand)
+     * rather than resident at ProofLevel::Top.
+     *
+     * \c None keeps everything resident at Top, as always. \c Links (the earlier,
+     * unsound experiment) emits only the derived adjacent-threshold chain links at
+     * Current, keeping the ge atom definitions resident. \c Literals deletes whole
+     * search-introduced order literals -- each real variable's non-boundary ge
+     * *definition* together with its chain links is emitted at Current, so a
+     * backtrack deletes it; when an interior literal between two surviving
+     * neighbours is deleted a *stitch* link ge(hi) -> ge(lo) is emitted first so
+     * the chain stays complete (just coarser) over the survivors, and a later
+     * reference re-introduces the deleted literal on demand. Boundary literals and
+     * model-time atoms always stay resident at Top.
+     */
+    enum class OrderEncodingDeletion
+    {
+        None,     /// Everything resident at Top, as always (the default)
+        Links,    /// Emit the order-encoding chain links at Current; delete on backtrack, re-emit on demand (unsound; dormant)
+        Literals, /// Delete whole search-introduced order literals (def + links) on backtrack, stitching the chain over survivors
+    };
+
+    /**
      * \brief Options for a Problem telling it how to produce a proof.
      *
      * \sa Problem
@@ -61,12 +84,46 @@ namespace gcs
         bool use_compact_boolean_encoding = false; ///< Drop the trivial constant boundary literals (ge_lower, ge_ub+1) from eq-atom definitions
         AssertionLevel assertion_level = AssertionLevel::Off;
         bool assertion_level_set_explicitly = false; ///< Was assertion_level set in code (so it overrides the env var)?
+        OrderEncodingDeletion order_encoding_deletion = OrderEncodingDeletion::None; ///< Which order-encoding parts to delete on backtrack
+        bool order_encoding_deletion_set_explicitly = false; ///< Was order_encoding_deletion set in code (so it overrides the env var)?
+        // Chain-length gate for OrderEncodingDeletion::Literals: a real variable's
+        // interior ge definition is only emitted deletable-at-Current once the number of
+        // ge thresholds ever named for that variable exceeds this value; below/at the
+        // gate the def is kept resident at Top (as in mode None), so a propagation-strong
+        // model that never builds long chains pays no deletion churn. 0 disables the gate
+        // entirely -- deletion fires from the first threshold, byte-identical to the
+        // pre-gate Literals behaviour; use 0 when regression-testing the deletion
+        // machinery (tiny test domains never cross a nonzero gate). The default of 16 is
+        // the measured sweet spot: short-chain models are held fully resident (often
+        // byte-identical to mode None) while the large-domain win keeps most of its value
+        // (d1000 11.3x of the ungated 17.9x); see dev_docs/order-encoding-deletion.md.
+        int order_encoding_deletion_min_chain = 16;                    ///< Min ge chain length before Literals-mode deletion engages (0 = gate off)
+        bool order_encoding_deletion_min_chain_set_explicitly = false; ///< Was the gate set in code (so it overrides the env var)?
 
         /// Write annotated assertions instead of full justifications.
         ProofOptions & set_assertion_level(AssertionLevel a = AssertionLevel::Inferences)
         {
             assertion_level = a;
             assertion_level_set_explicitly = true;
+            return *this;
+        }
+        /// Emit selected parts of the order encoding at ProofLevel::Current so they
+        /// are deleted on backtrack and re-emitted on demand, keeping later RUP
+        /// unit-propagation closures smaller. Default (None) is unchanged behaviour.
+        ProofOptions & set_order_encoding_deletion(OrderEncodingDeletion d = OrderEncodingDeletion::Literals)
+        {
+            order_encoding_deletion = d;
+            order_encoding_deletion_set_explicitly = true;
+            return *this;
+        }
+        /// Set the chain-length gate for OrderEncodingDeletion::Literals: interior ge
+        /// definitions are only made deletable once a variable has named more than \p m
+        /// ge thresholds. 0 (the default) disables the gate, deleting from the first
+        /// threshold exactly as the pre-gate Literals mode did.
+        ProofOptions & set_order_encoding_deletion_min_chain(int m)
+        {
+            order_encoding_deletion_min_chain = m;
+            order_encoding_deletion_min_chain_set_explicitly = true;
             return *this;
         }
         /// Always write the full variable encoding to the OPB file.
