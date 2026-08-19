@@ -1699,7 +1699,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             continue;
                         }
 
-                        if (new_lb > cur_lb) {
+                        if (new_lb <= cur_lb)
+                            ++disjunctive_counters[rule_time_table_lb].already_true;
+                        else {
                             vector<ChainStep> chain;
                             if (logger) {
                                 Integer bound = cur_lb;
@@ -1735,7 +1737,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         auto new_ub = cur_ub;
                         while (new_ub >= cur_lb && ! fits_at(new_ub))
                             --new_ub;
-                        if (new_ub < cur_ub) {
+                        if (new_ub >= cur_ub)
+                            ++disjunctive_counters[rule_time_table_ub].already_true;
+                        else {
                             vector<ChainStep> chain;
                             if (logger) {
                                 Integer bound = cur_ub;

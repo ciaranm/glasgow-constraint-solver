@@ -2502,7 +2502,9 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         }
 
         // lb-push: chain through blocked t's up to the first placement that fits.
-        if (new_lb > cur_lb) {
+        if (new_lb <= cur_lb)
+            ++cumulative_counters[rule_time_table_lb].already_true;
+        else {
             auto chain = build_lb_chain(new_lb);
 
             auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
@@ -2524,7 +2526,9 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         auto new_ub = cur_ub;
         while (new_ub >= cur_lb && ! fits_at(new_ub))
             --new_ub;
-        if (new_ub < cur_ub) {
+        if (new_ub >= cur_ub)
+            ++cumulative_counters[rule_time_table_ub].already_true;
+        else {
             vector<ChainStep> chain;
             Integer running_bound = cur_ub;
             while (running_bound > new_ub) {
