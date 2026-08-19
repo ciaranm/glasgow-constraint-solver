@@ -67,6 +67,22 @@ namespace rcpsp
         gcs::Integer d;
     };
 
+    /// One execution mode of an activity: how long it takes, and what it needs
+    /// of each renewable and each non-renewable resource while it does. A
+    /// renewable demand is a rate, held for the whole duration; a non-renewable
+    /// one is a lump drawn once from a project-wide budget.
+    struct Mode
+    {
+        gcs::Integer duration;
+
+        /// One per renewable resource, in the same order as Instance::capacities.
+        std::vector<gcs::Integer> demands;
+
+        /// One per non-renewable resource, in the same order as
+        /// Instance::nonrenewable_capacities.
+        std::vector<gcs::Integer> nonrenewable;
+    };
+
     struct Instance
     {
         int n_tasks = 0;
@@ -93,6 +109,26 @@ namespace rcpsp
         /// The tasks that also need the single unary machine, ascending.
         std::vector<int> machine_tasks;
 
+        /// modes[i] is task i's execution modes, in file order. **Empty unless
+        /// the instance is multi-mode**, and everything that special-cases
+        /// multi-mode keys off that emptiness rather than off a flag, exactly
+        /// as `lags` does for RCPSP/max. When it is non-empty there is one
+        /// entry per task and every entry has at least one mode.
+        ///
+        /// `durations[i]` and `demands[r][i]` then hold the *smallest* figure
+        /// over modes[i]. That is what keeps earliest_starts(), tails() and
+        /// critical_path_length() valid: they are lower bounds, and the
+        /// smallest duration is the only one every mode selection admits.
+        /// Anything wanting an upper bound has to ask max_durations().
+        std::vector<std::vector<Mode>> modes;
+
+        /// Capacity of each non-renewable resource: a budget drawn on once by
+        /// each activity and spent over the whole project, rather than a rate
+        /// held at each time point. Only a multi-mode instance has any, and
+        /// they are what makes choosing the modes a problem in its own right
+        /// rather than "give every activity its shortest mode".
+        std::vector<gcs::Integer> nonrenewable_capacities;
+
         /// The task, if any, pinned to time zero. Set for a .sch instance, whose
         /// format carries a dummy source; left unset for a generated one, where
         /// minimising the makespan pins the schedule anyway.
@@ -109,6 +145,48 @@ namespace rcpsp
             if (l.d < gcs::Integer{0})
                 return true;
         return false;
+    }
+
+    /// Whether this instance gives its activities a choice of execution mode.
+    [[nodiscard]] inline auto is_multi_mode(const Instance & inst) -> bool
+    {
+        return ! inst.modes.empty();
+    }
+
+    /// The longest each task can take, over the modes it may be run in. On a
+    /// single-mode instance this is just the durations.
+    [[nodiscard]] inline auto max_durations(const Instance & inst) -> std::vector<gcs::Integer>
+    {
+        if (! is_multi_mode(inst))
+            return inst.durations;
+
+        std::vector<gcs::Integer> longest;
+        longest.reserve(inst.modes.size());
+        for (const auto & task_modes : inst.modes) {
+            auto d = task_modes.front().duration;
+            for (const auto & m : task_modes)
+                d = std::max(d, m.duration);
+            longest.push_back(d);
+        }
+        return longest;
+    }
+
+    /// A horizon for a multi-mode instance: run every activity in its longest
+    /// mode, one after another. That is feasible for the *precedences and the
+    /// renewable resources* whatever modes are chosen, so it is a genuine upper
+    /// bound on the optimal makespan of any mode selection.
+    ///
+    /// It does not depend on finding a mode selection the non-renewable budgets
+    /// allow, which is why this is used rather than a greedy schedule: deciding
+    /// whether any such selection exists is itself NP-hard, so a greedy that
+    /// went looking for one could not be trusted to have found the best it
+    /// could, and one that ignored the budgets would not be a schedule.
+    [[nodiscard]] inline auto multi_mode_horizon(const Instance & inst) -> long long
+    {
+        long long total = 0;
+        for (const auto & d : max_durations(inst))
+            total += d.raw_value;
+        return total;
     }
 
     /// Parameters for generate(). The defaults are the small instance the
@@ -634,6 +712,265 @@ namespace rcpsp
                 throw std::runtime_error{"malformed .sch file: a negative capacity"};
 
         return inst;
+    }
+
+    /// Read a multi-mode RCPSP instance in the PSPLIB `.mm` format, the one the
+    /// `j10`, `j12`, `j14`, `j16`, `j18`, `j20` and `j30` multi-mode sets are
+    /// distributed in.
+    ///
+    /// The file is a sequence of `****`-separated sections. Three are read: the
+    /// resource counts, `PRECEDENCE RELATIONS:` (one line per job, giving its
+    /// mode count and its one-based successors) and `REQUESTS/DURATIONS:` (one
+    /// line per *mode*, giving its duration and its demand on each renewable and
+    /// each non-renewable resource, with the job number written only on the
+    /// first of a job's modes). `RESOURCEAVAILABILITIES:` closes it with one
+    /// capacity per resource, renewables first. Job 1 is a dummy source and job
+    /// n a dummy sink, both single-mode and of zero duration.
+    ///
+    /// \par What multi-mode adds, and why it is the point
+    ///
+    /// An activity chooses one of several modes, and the mode fixes both how
+    /// long it runs and how much of each resource it takes while it does. So a
+    /// task's duration and its demands are **decisions**, not data --- which is
+    /// exactly the case #748 and #749 taught `Cumulative` to reason about, and
+    /// the case no single-mode instance can exercise. A shorter mode generally
+    /// costs more of some resource, so the trade-off is real.
+    ///
+    /// **Non-renewable resources** are what stop the answer being "give every
+    /// activity its shortest mode". A renewable resource is a rate, capped at
+    /// each time point, and is what a `Cumulative` says; a non-renewable one is
+    /// a lump sum drawn once per activity from a project-wide budget, and is one
+    /// linear inequality over the whole instance. Without them the mode choice
+    /// would decompose and the instance would be a plain RCPSP with extra steps.
+    ///
+    /// \par Modes that cannot run
+    ///
+    /// A mode whose renewable demand exceeds that resource's capacity, or whose
+    /// non-renewable demand exceeds that budget on its own, can never be
+    /// selected in any feasible schedule, so it is dropped as the file is read.
+    /// This is what the literature does and it keeps the mode variables' domains
+    /// honest. An activity all of whose modes go that way makes the instance
+    /// infeasible for a reason that has nothing to do with scheduling, and is
+    /// reported as a malformed instance rather than passed on to the solver.
+    [[nodiscard]] inline auto read_mm_stream(std::istream & in, const std::string & description) -> Instance
+    {
+        std::vector<std::string> lines;
+        for (std::string line; std::getline(in, line);)
+            lines.push_back(line);
+
+        // A data line in this format is digits, space and sign and nothing
+        // else. That is what tells the numbers apart from the column headings
+        // and the rows of dashes that sit above them, without this reader having
+        // to know how many heading lines each section has: a row of dashes
+        // carries no digit, so it is not a data line whether or not a sign is
+        // allowed in one.
+        //
+        // Signs are allowed here precisely so that a file with a negative
+        // duration in it is *read* and then rejected by the check that says so.
+        // Treating that line as a heading instead would skip it, shift every
+        // number after it by one, and report whatever the shifted stream
+        // happened to violate first.
+        auto numeric_line = [](const std::string & line) {
+            bool any_digit = false;
+            for (auto & c : line) {
+                if (c >= '0' && c <= '9')
+                    any_digit = true;
+                else if (c != ' ' && c != '\t' && c != '\r' && c != '-' && c != '+')
+                    return false;
+            }
+            return any_digit;
+        };
+
+        // The integer at the end of a `name : value` line, which is how the
+        // counts at the top of the file are written.
+        auto field = [&](const std::string & name) -> long long {
+            for (const auto & line : lines) {
+                auto at = line.find(name);
+                if (at == std::string::npos)
+                    continue;
+                auto colon = line.find(':', at);
+                if (colon == std::string::npos)
+                    continue;
+                std::istringstream vs{line.substr(colon + 1)};
+                long long v = 0;
+                if (vs >> v)
+                    return v;
+            }
+            throw std::runtime_error{"not a PSPLIB .mm file: no '" + name + "' line"};
+        };
+
+        // Every number in the section a marker opens, up to the `****` that
+        // closes it.
+        auto section = [&](const std::string & marker) -> std::vector<long long> {
+            std::size_t at = 0;
+            while (at != lines.size() && lines[at].find(marker) == std::string::npos)
+                ++at;
+            if (at == lines.size())
+                throw std::runtime_error{"not a PSPLIB .mm file: no '" + marker + "' section"};
+
+            std::vector<long long> out;
+            for (++at; at != lines.size() && lines[at].find("***") == std::string::npos; ++at) {
+                if (! numeric_line(lines[at]))
+                    continue;
+                std::istringstream ls{lines[at]};
+                for (long long v; ls >> v;)
+                    out.push_back(v);
+            }
+            return out;
+        };
+
+        auto n_tasks = field("jobs (incl. supersource/sink )");
+        auto n_renewable = field("- renewable");
+        auto n_nonrenewable = field("- nonrenewable");
+        if (field("- doubly constrained") != 0)
+            throw std::runtime_error{"unsupported .mm instance: doubly-constrained resources are not modelled here"};
+        if (n_tasks < 2 || n_tasks > 1000000)
+            throw std::runtime_error{"not a PSPLIB .mm file: implausible job count"};
+        if (n_renewable < 0 || n_nonrenewable < 0 || n_renewable > 1000 || n_nonrenewable > 1000)
+            throw std::runtime_error{"not a PSPLIB .mm file: implausible resource count"};
+
+        Instance inst;
+        inst.n_tasks = static_cast<int>(n_tasks);
+        auto un = static_cast<std::size_t>(n_tasks);
+        auto ur = static_cast<std::size_t>(n_renewable), uk = static_cast<std::size_t>(n_nonrenewable);
+
+        // A cursor over a section's numbers, so that a file which ends early
+        // says so rather than reading zeroes.
+        struct Cursor
+        {
+            const std::vector<long long> & vals;
+            std::size_t at = 0;
+            const char * what;
+            auto next() -> long long
+            {
+                if (at == vals.size())
+                    throw std::runtime_error{std::string{"malformed .mm file: the "} + what + " section ended early"};
+                return vals[at++];
+            }
+        };
+
+        auto precedence_vals = section("PRECEDENCE RELATIONS:");
+        Cursor prec{precedence_vals, 0, "precedence"};
+        std::vector<long long> mode_counts;
+        mode_counts.reserve(un);
+        for (std::size_t i = 0; i != un; ++i) {
+            if (prec.next() != static_cast<long long>(i) + 1)
+                throw std::runtime_error{"malformed .mm file: the precedence block's jobs are out of order"};
+            auto n_modes = prec.next();
+            if (n_modes < 1 || n_modes > 1000)
+                throw std::runtime_error{"malformed .mm file: job " + std::to_string(i + 1) + " has an implausible mode count"};
+            mode_counts.push_back(n_modes);
+
+            auto n_successors = prec.next();
+            if (n_successors < 0 || n_successors > static_cast<long long>(un))
+                throw std::runtime_error{"malformed .mm file: job " + std::to_string(i + 1) + " has an implausible successor count"};
+            for (long long s = 0; s != n_successors; ++s) {
+                auto j = static_cast<int>(prec.next()) - 1;
+                if (j < 0 || j >= inst.n_tasks)
+                    throw std::runtime_error{"malformed .mm file: a precedence to a nonexistent job"};
+                // earliest_starts(), tails() and longest_paths() all walk the
+                // tasks in index order and need that to be topological. PSPLIB
+                // numbers its jobs that way; a file that did not would give
+                // silently wrong bounds rather than an error, so check it.
+                if (j <= static_cast<int>(i))
+                    throw std::runtime_error{"malformed .mm file: job " + std::to_string(j + 1) + " is a successor of job " + std::to_string(i + 1) +
+                        ", so the jobs are not in topological order; this reader needs them to be"};
+                inst.precedences.emplace_back(static_cast<int>(i), j);
+            }
+        }
+
+        auto capacity_vals = section("RESOURCEAVAILABILITIES:");
+        Cursor caps{capacity_vals, 0, "resource availabilities"};
+        for (std::size_t r = 0; r != ur; ++r) {
+            auto c = caps.next();
+            if (c < 0)
+                throw std::runtime_error{"malformed .mm file: a negative renewable capacity"};
+            inst.capacities.push_back(gcs::Integer{c});
+        }
+        for (std::size_t k = 0; k != uk; ++k) {
+            auto c = caps.next();
+            if (c < 0)
+                throw std::runtime_error{"malformed .mm file: a negative non-renewable capacity"};
+            inst.nonrenewable_capacities.push_back(gcs::Integer{c});
+        }
+
+        // The job number is written only on the first of a job's modes, so the
+        // records are not all the same width. Knowing each job's mode count from
+        // the precedence block above is what makes a flat stream unambiguous.
+        auto request_vals = section("REQUESTS/DURATIONS:");
+        Cursor req{request_vals, 0, "requests/durations"};
+        inst.modes.assign(un, {});
+        for (std::size_t i = 0; i != un; ++i) {
+            for (long long m = 0; m != mode_counts[i]; ++m) {
+                if (m == 0 && req.next() != static_cast<long long>(i) + 1)
+                    throw std::runtime_error{"malformed .mm file: the requests block's jobs are out of order"};
+                if (req.next() != m + 1)
+                    throw std::runtime_error{"malformed .mm file: job " + std::to_string(i + 1) + "'s modes are not numbered 1 upwards"};
+
+                auto duration = req.next();
+                if (duration < 0)
+                    throw std::runtime_error{"malformed .mm file: job " + std::to_string(i + 1) + " has a negative duration"};
+                Mode mode{gcs::Integer{duration}, {}, {}};
+
+                bool possible = true;
+                for (std::size_t r = 0; r != ur; ++r) {
+                    auto d = req.next();
+                    if (d < 0)
+                        throw std::runtime_error{"malformed .mm file: a negative renewable demand"};
+                    if (gcs::Integer{d} > inst.capacities[r])
+                        possible = false;
+                    mode.demands.push_back(gcs::Integer{d});
+                }
+                for (std::size_t k = 0; k != uk; ++k) {
+                    auto d = req.next();
+                    if (d < 0)
+                        throw std::runtime_error{"malformed .mm file: a negative non-renewable demand"};
+                    if (gcs::Integer{d} > inst.nonrenewable_capacities[k])
+                        possible = false;
+                    mode.nonrenewable.push_back(gcs::Integer{d});
+                }
+
+                if (possible)
+                    inst.modes[i].push_back(std::move(mode));
+            }
+
+            if (inst.modes[i].empty())
+                throw std::runtime_error{
+                    "job " + std::to_string(i + 1) + " has no mode a resource capacity allows, so the instance is infeasible before any scheduling"};
+        }
+
+        // The smallest figure over the modes, which is what every bound derived
+        // from `durations` and `demands` is allowed to assume. See Instance::modes.
+        inst.durations.reserve(un);
+        inst.demands.assign(ur, std::vector<gcs::Integer>(un, gcs::Integer{0}));
+        for (std::size_t i = 0; i != un; ++i) {
+            auto shortest = inst.modes[i].front().duration;
+            for (const auto & m : inst.modes[i])
+                shortest = std::min(shortest, m.duration);
+            inst.durations.push_back(shortest);
+
+            for (std::size_t r = 0; r != ur; ++r) {
+                auto least = inst.modes[i].front().demands[r];
+                for (const auto & m : inst.modes[i])
+                    least = std::min(least, m.demands[r]);
+                inst.demands[r][i] = least;
+            }
+        }
+
+        std::size_t total_modes = 0;
+        for (const auto & task_modes : inst.modes)
+            total_modes += task_modes.size();
+        inst.description = description + " n=" + std::to_string(inst.n_tasks) + " renewable=" + std::to_string(n_renewable) +
+            " nonrenewable=" + std::to_string(n_nonrenewable) + " modes=" + std::to_string(total_modes);
+        return inst;
+    }
+
+    [[nodiscard]] inline auto read_mm_file(const std::string & path) -> Instance
+    {
+        std::ifstream in{path};
+        if (! in)
+            throw std::runtime_error{"could not open instance file: " + path};
+        return read_mm_stream(in, "mm " + path);
     }
 
     /// Read a job-shop scheduling instance in the standard OR-Library layout,
