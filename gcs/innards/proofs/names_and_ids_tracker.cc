@@ -443,6 +443,7 @@ auto NamesAndIDsTracker::switch_from_model_to_proof(ProofLogger * const logger) 
 
 auto NamesAndIDsTracker::emit_delayed_proof_steps() -> void
 {
+    DefinitionRecordingScope definitions{_imp->logger};
     for (const auto & step : _imp->delayed_proof_steps)
         step(_imp->logger);
     _imp->delayed_proof_steps.clear();
@@ -466,6 +467,7 @@ auto NamesAndIDsTracker::track_variable_takes_at_least_one_value(const SimpleOrP
 
 auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
 {
+    DefinitionRecordingScope definitions{_imp->logger};
     return overloaded{
         [&](const ConstantIntegerVariableID &) -> ProofLine { throw UnimplementedException{}; }, //
         [&](const SimpleIntegerVariableID & var) -> ProofLine {
@@ -735,6 +737,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     if (_imp->find_condition(id == v))
         return;
 
+    DefinitionRecordingScope definitions{_imp->logger};
+
     auto eqvar = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, v);
     _imp->store_condition(id == v, eqvar);
 
@@ -920,6 +924,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
 {
     if (_imp->find_condition(id >= v))
         return;
+
+    DefinitionRecordingScope definitions{_imp->logger};
 
     auto gevar = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::GreaterEqual, v);
     _imp->store_condition(id >= v, gevar);
@@ -1384,6 +1390,8 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
 {
     if (lo > hi)
         return FalseLiteral{};
+
+    DefinitionRecordingScope definitions{_imp->logger};
 
     if (lo == hi) {
         need_direct_encoding_for(id, lo);
