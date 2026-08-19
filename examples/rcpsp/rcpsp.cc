@@ -366,8 +366,8 @@ auto main(int argc, char * argv[]) -> int
                 "--cumulative-edge-finding",                                                             //
                 cxxopts::value<bool>()->default_value("false"))                                          //
             ("cumulative-not-first-not-last-published",                                                  //
-                "Run the published not-first / not-last detection instead of the one we certify, to "    //
-                "price the difference (#746). Deliberately uncertified, so a run with --prove refuses. " //
+                "Run the published not-first / not-last detection instead of the window-energy one, "    //
+                "to price the difference (#746). Certified by contiguity rather than by that lemma. "    //
                 "Implies --cumulative-not-first-not-last, which it replaces",                            //
                 cxxopts::value<bool>()->default_value("false"))                                          //
             ("mutate-makespan-bound",                                                                    //

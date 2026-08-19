@@ -119,13 +119,52 @@ namespace gcs::innards
         {
         };
 
+        /// The published not-first / not-last detection: emit no certificate
+        /// at all, leaving the push to the framework's wrapping RUP. Not a
+        /// corruption but a control: if VeriPB accepts this, the derivation is
+        /// decoration and no mutation of it can be caught.
+        struct PublishedEmitNothing
+        {
+        };
+
+        /// The published not-first / not-last detection: leave out the pin
+        /// that says the pushed task is running at the time the prefix is
+        /// compared against. Contiguity caps the prefix by what runs at that
+        /// one point, and this is what puts the pushed task there beside it ---
+        /// so this is the half of that argument a mutation can reach.
+        struct DropPublishedPin
+        {
+        };
+
+        // Deliberately absent: dropping the published rule's *contiguity* rows,
+        // the other half of that argument. It was written, in both a one-row
+        // and an every-row form, and neither can be made to fail. Two reasons,
+        // and the second is the interesting one:
+        //
+        //   * the detection's own margin absorbs them. Dropping a contiguity
+        //     row costs the pol lb(h_k) units of degree, and a rule firing at
+        //     `> supply` has at least one to spare and usually many more;
+        //   * what the pol no longer reaches, the framework's wrapping RUP
+        //     finishes, which is the same finding `dev_docs` records elsewhere
+        //     as "a pol only has to get close".
+        //
+        // Measured over roughly 1,700 firing instances, in neither form, on
+        // none of them --- while `PublishedEmitNothing` is rejected on 171 of
+        // 238, so the derivation as a whole is load-bearing and it is this one
+        // corruption that cannot be caught. The contiguity rows stay because
+        // without them the pol's arithmetic cannot reach the published
+        // threshold at all, and a proof whose *pol* stops short of its own
+        // claim is not a certificate of the published rule however VeriPB
+        // finishes it.
+
     }
 
     using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
         cumulative_proof_mutation::OmitCapacityLine, cumulative_proof_mutation::ShrinkLemmaWindow, cumulative_proof_mutation::DropContainedTask,
         cumulative_proof_mutation::PushOneTooFar, cumulative_proof_mutation::DropProfilePin, cumulative_proof_mutation::DropProfilePins,
         cumulative_proof_mutation::ClaimOneBetterAvailability, cumulative_proof_mutation::StrengthenOneFewer,
-        cumulative_proof_mutation::DropEnergeticContributor>;
+        cumulative_proof_mutation::DropEnergeticContributor, cumulative_proof_mutation::PublishedEmitNothing,
+        cumulative_proof_mutation::DropPublishedPin>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,
