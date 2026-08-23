@@ -508,6 +508,14 @@ if(GCS_BUILD_TESTS)
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test>)
     add_cumulative_test_with_recovery(cumulative_published_nfnl_random
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test> --random 7)
+    # The same net over variable lengths and heights, which is what a mode gives
+    # this rule and what nothing here gave it until #778: not-last's contiguity
+    # rows are then stated over `s + l` rather than over `s`, which is a
+    # derivation unit propagation cannot finish on its own. Seed 9 is picked for
+    # rejecting at its sixth instance without that fix, under the runtime caps
+    # this lane runs with, so a regression fails it early rather than late.
+    add_cumulative_test_with_recovery(cumulative_published_nfnl_random_var
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test> --random-var 9)
     # All five still discriminate on the startcheckpoint arm, checked one at a
     # time. `drop_pin` is the one aimed at what #746 added, and it survives.
     foreach(mutation emit_nothing drop_pin toofar roomy_toofar roomy_drop_pin)
