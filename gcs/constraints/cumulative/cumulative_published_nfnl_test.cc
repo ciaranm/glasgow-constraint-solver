@@ -20,6 +20,12 @@
  * no single time point is where both the contained set and the pushed task are
  * running, and the derivation becomes a chain that walks the bound up `p_j` at
  * a time. Both are fixtured.
+ *
+ * Lengths and heights are ranges here rather than constants, because over a
+ * variable length this is a *different* derivation and not a wider one: `after`
+ * is then reified on `s + l` rather than on `s`, and not-last's contiguity rows
+ * run backwards over it, which is what #778 was. Everything this rule had ever
+ * been run against gave it constants.
  */
 
 #include <gcs/constraints/cumulative.hh>
@@ -76,46 +82,110 @@ using namespace gcs::test_innards;
 
 namespace
 {
+    // A length and a height are each a range: `{v, v}` is a constant, and
+    // `{v, w}` with v < w a decision variable, which the rule counts at `v` ---
+    // what the task guarantees. A variable length is what a mode gives this
+    // rule and what nothing else here did (#778): the contiguity rows are then
+    // stated over `s_k + l_k` rather than over `s_k` alone, which is a
+    // different derivation and not merely a wider one.
     struct Instance
     {
         vector<pair<int, int>> start_ranges;
-        vector<int> lengths;
-        vector<int> heights;
+        vector<pair<int, int>> lengths;
+        vector<pair<int, int>> heights;
         int capacity;
     };
 
-    auto is_satisfying(const Instance & inst, const vector<int> & starts) -> bool
+    auto length_is_var(const Instance & inst, size_t i) -> bool
+    {
+        return inst.lengths[i].first != inst.lengths[i].second;
+    }
+
+    auto height_is_var(const Instance & inst, size_t i) -> bool
+    {
+        return inst.heights[i].first != inst.heights[i].second;
+    }
+
+    // Every variable an assignment has to fix, in the order the solutions carry
+    // them: the starts, then the variable lengths and then the variable
+    // heights, each in task order.
+    auto all_ranges(const Instance & inst) -> vector<pair<int, int>>
+    {
+        auto ranges = inst.start_ranges;
+        for (size_t i = 0; i < inst.lengths.size(); ++i)
+            if (length_is_var(inst, i))
+                ranges.push_back(inst.lengths[i]);
+        for (size_t i = 0; i < inst.heights.size(); ++i)
+            if (height_is_var(inst, i))
+                ranges.push_back(inst.heights[i]);
+        return ranges;
+    }
+
+    auto is_satisfying(const Instance & inst, const vector<int> & vals) -> bool
     {
         auto n = inst.start_ranges.size();
+        vector<int> l(n), h(n);
+        size_t k = n;
+        for (size_t i = 0; i < n; ++i)
+            l[i] = length_is_var(inst, i) ? vals.at(k++) : inst.lengths[i].first;
+        for (size_t i = 0; i < n; ++i)
+            h[i] = height_is_var(inst, i) ? vals.at(k++) : inst.heights[i].first;
+
         int t_lo = INT_MAX, t_hi = INT_MIN;
         for (size_t i = 0; i < n; ++i) {
-            t_lo = min(t_lo, starts[i]);
-            t_hi = max(t_hi, starts[i] + inst.lengths[i] - 1);
+            t_lo = min(t_lo, vals[i]);
+            t_hi = max(t_hi, vals[i] + l[i] - 1);
         }
         for (int t = t_lo; t <= t_hi; ++t) {
             int load = 0;
             for (size_t i = 0; i < n; ++i)
-                if (starts[i] <= t && t < starts[i] + inst.lengths[i])
-                    load += inst.heights[i];
+                if (vals[i] <= t && t < vals[i] + l[i])
+                    load += h[i];
             if (load > inst.capacity)
                 return false;
         }
         return true;
     }
 
-    auto post(Problem & p, const Instance & inst, CumulativeRules rules, CumulativeProofMutation mutation = cumulative_proof_mutation::None{})
-        -> vector<IntegerVariableID>
+    /// What posting an instance created: the starts, which is what the bound
+    /// measurements read, and every decision variable, which is what an
+    /// enumeration has to be told about.
+    struct Posted
     {
-        vector<IntegerVariableID> starts;
-        vector<Integer> lengths, heights;
+        vector<IntegerVariableID> starts, all_vars;
+    };
+
+    auto post(Problem & p, const Instance & inst, CumulativeRules rules, CumulativeProofMutation mutation = cumulative_proof_mutation::None{})
+        -> Posted
+    {
+        Posted posted;
+        vector<IntegerVariableID> lengths, heights;
         for (size_t i = 0; i < inst.start_ranges.size(); ++i) {
-            starts.push_back(
+            posted.starts.push_back(
                 p.create_integer_variable(Integer{inst.start_ranges[i].first}, Integer{inst.start_ranges[i].second}, "start" + std::to_string(i)));
-            lengths.push_back(Integer{inst.lengths[i]});
-            heights.push_back(Integer{inst.heights[i]});
+            posted.all_vars.push_back(posted.starts.back());
         }
-        p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(rules).with_proof_mutation(mutation));
-        return starts;
+        for (size_t i = 0; i < inst.lengths.size(); ++i) {
+            if (! length_is_var(inst, i))
+                lengths.push_back(constant_variable(Integer{inst.lengths[i].first}));
+            else {
+                lengths.push_back(
+                    p.create_integer_variable(Integer{inst.lengths[i].first}, Integer{inst.lengths[i].second}, "length" + std::to_string(i)));
+                posted.all_vars.push_back(lengths.back());
+            }
+        }
+        for (size_t i = 0; i < inst.heights.size(); ++i) {
+            if (! height_is_var(inst, i))
+                heights.push_back(constant_variable(Integer{inst.heights[i].first}));
+            else {
+                heights.push_back(
+                    p.create_integer_variable(Integer{inst.heights[i].first}, Integer{inst.heights[i].second}, "height" + std::to_string(i)));
+                posted.all_vars.push_back(heights.back());
+            }
+        }
+        p.post(
+            Cumulative{posted.starts, lengths, heights, constant_variable(Integer{inst.capacity})}.with_rules(rules).with_proof_mutation(mutation));
+        return posted;
     }
 
     /// The bounds each start is left with once root propagation has run. TTEF
@@ -125,7 +195,7 @@ namespace
         -> optional<vector<pair<int, int>>>
     {
         Problem p;
-        auto starts = post(p, inst, rules, mutation);
+        auto starts = post(p, inst, rules, mutation).starts;
 
         optional<vector<pair<int, int>>> bounds;
         solve_with(p,
@@ -156,7 +226,9 @@ namespace
     }
 
     /// "starts lo:hi,... / lengths / heights / capacity", so that a fixture
-    /// found by --search can be handed straight back in.
+    /// found by --search can be handed straight back in. A length or a height
+    /// is `v` for a constant and `lo:hi` for a variable one, so the specs
+    /// written before this rule was given variable arguments still parse.
     auto parse_instance(const string & spec) -> Instance
     {
         vector<string> parts;
@@ -184,29 +256,38 @@ namespace
             return out;
         };
 
-        Instance inst{{}, {}, {}, std::stoi(parts[3])};
-        for (const auto & r : split(parts[0])) {
+        auto range = [](const string & r) {
             auto colon = r.find(':');
-            inst.start_ranges.emplace_back(std::stoi(r.substr(0, colon)), std::stoi(r.substr(colon + 1)));
-        }
+            if (colon == string::npos)
+                return pair<int, int>{std::stoi(r), std::stoi(r)};
+            return pair<int, int>{std::stoi(r.substr(0, colon)), std::stoi(r.substr(colon + 1))};
+        };
+
+        Instance inst{{}, {}, {}, std::stoi(parts[3])};
+        for (const auto & r : split(parts[0]))
+            inst.start_ranges.push_back(range(r));
         for (const auto & l : split(parts[1]))
-            inst.lengths.push_back(std::stoi(l));
+            inst.lengths.push_back(range(l));
         for (const auto & h : split(parts[2]))
-            inst.heights.push_back(std::stoi(h));
+            inst.heights.push_back(range(h));
         return inst;
     }
 
     auto show_instance(const Instance & inst) -> string
     {
+        auto show = [](const pair<int, int> & r) {
+            return r.first == r.second ? std::to_string(r.first) : std::to_string(r.first) + ":" + std::to_string(r.second);
+        };
+
         string out;
         for (size_t i = 0; i < inst.start_ranges.size(); ++i)
             out += (i ? "," : "") + std::to_string(inst.start_ranges[i].first) + ":" + std::to_string(inst.start_ranges[i].second);
         out += "/";
         for (size_t i = 0; i < inst.lengths.size(); ++i)
-            out += (i ? "," : "") + std::to_string(inst.lengths[i]);
+            out += (i ? "," : "") + show(inst.lengths[i]);
         out += "/";
         for (size_t i = 0; i < inst.heights.size(); ++i)
-            out += (i ? "," : "") + std::to_string(inst.heights[i]);
+            out += (i ? "," : "") + show(inst.heights[i]);
         return out + "/" + std::to_string(inst.capacity);
     }
 
@@ -216,8 +297,8 @@ namespace
     /// corrupted proof --- which is a fact about the fixture, not about the
     /// rule. So: TTEF must move a bound edge-finding does not, and some solution
     /// must sit exactly on the bound it moves to.
-    auto search_for_fixture(
-        const CumulativeRules & without_rule, const CumulativeRules & with_rule, unsigned long long seed_from, unsigned long long candidates) -> void
+    auto search_for_fixture(const CumulativeRules & without_rule, const CumulativeRules & with_rule, unsigned long long seed_from,
+        unsigned long long candidates, bool variable_arguments) -> void
     {
         std::mt19937 rand(static_cast<unsigned>(seed_from));
         for (unsigned long long attempt = 0; attempt < candidates; ++attempt) {
@@ -226,11 +307,12 @@ namespace
             Instance inst{{}, {}, {}, capacity};
             for (size_t i = 0; i < n; ++i) {
                 auto len = 1 + static_cast<int>(rand() % 5);
+                auto height = 1 + static_cast<int>(rand() % capacity);
                 auto lo = static_cast<int>(rand() % 6);
                 auto slack = static_cast<int>(rand() % 7);
                 inst.start_ranges.emplace_back(lo, lo + slack);
-                inst.lengths.push_back(len);
-                inst.heights.push_back(1 + static_cast<int>(rand() % capacity));
+                inst.lengths.emplace_back(len, len + (variable_arguments ? static_cast<int>(rand() % 3) : 0));
+                inst.heights.emplace_back(height, min(capacity, height + (variable_arguments ? static_cast<int>(rand() % 3) : 0)));
             }
 
             auto without = root_bounds(inst, without_rule, cumulative_proof_mutation::None{}, nullopt);
@@ -239,7 +321,7 @@ namespace
                 continue;
 
             set<vector<int>> solutions;
-            build_expected(solutions, [&](const vector<int> & starts) { return is_satisfying(inst, starts); }, inst.start_ranges);
+            build_expected(solutions, [&](const vector<int> & vals) { return is_satisfying(inst, vals); }, all_ranges(inst));
             if (solutions.empty())
                 continue;
 
@@ -269,12 +351,12 @@ namespace
         cerr << flush;
 
         set<vector<int>> expected, actual;
-        build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(inst, starts); }, inst.start_ranges);
+        build_expected(expected, [&](const vector<int> & vals) { return is_satisfying(inst, vals); }, all_ranges(inst));
         println(cerr, " expecting {} solutions", expected.size());
 
         Problem p;
-        auto starts = post(p, inst, rules);
-        solve_for_tests(p, proof_name, actual, tuple{starts});
+        auto all_vars = post(p, inst, rules).all_vars;
+        solve_for_tests(p, proof_name, actual, tuple{all_vars});
         check_results(proof_name, expected, actual);
     }
 }
@@ -322,17 +404,17 @@ auto main(int argc, char * argv[]) -> int
     // solutions, and the push is the published detection's alone: everything
     // else certified --- time-tabling, the overload check, edge-finding and
     // TTEF --- leaves it at 5.
-    const Instance sharp{{{2, 7}, {1, 5}, {4, 6}, {5, 7}}, {5, 4, 1, 2}, {2, 2, 3, 1}, 3};
+    const Instance sharp{{{2, 7}, {1, 5}, {4, 6}, {5, 7}}, {{5, 5}, {4, 4}, {1, 1}, {2, 2}}, {{2, 2}, {2, 2}, {3, 3}, {1, 1}}, 3};
 
     // The mirror, where task 0's upper bound falls 5 -> 1 over 2 solutions, so
     // the argument runs backwards: the contained set's activity is monotone
     // *down* from `max lst` rather than up to `min ect`, and it is the pushed
     // task's own upper bound rather than its lower one that puts it beside them.
-    const Instance sharp_mirror{{{1, 5}, {3, 9}, {3, 6}}, {5, 3, 2}, {3, 2, 2}, 3};
+    const Instance sharp_mirror{{{1, 5}, {3, 9}, {3, 6}}, {{5, 5}, {3, 3}, {2, 2}}, {{3, 3}, {2, 2}, {2, 2}}, 3};
 
     // A roomier one, 20 solutions, so the enumeration check has something to
     // enumerate. Task 1's upper bound falls 6 -> 4.
-    const Instance roomy{{{1, 4}, {0, 6}, {1, 7}}, {1, 3, 5}, {1, 2, 2}, 2};
+    const Instance roomy{{{1, 4}, {0, 6}, {1, 7}}, {{1, 1}, {3, 3}, {5, 5}}, {{1, 1}, {2, 2}, {2, 2}}, 2};
 
     // Describe one instance: what edge-finding leaves, what TTEF leaves, and
     // whether the bound it moves to is one a solution sits on. This is how a
@@ -347,7 +429,7 @@ auto main(int argc, char * argv[]) -> int
             if (! without || ! with)
                 fail("describe: nothing was reached at the root");
             set<vector<int>> solutions;
-            build_expected(solutions, [&](const vector<int> & starts) { return is_satisfying(inst, starts); }, inst.start_ranges);
+            build_expected(solutions, [&](const vector<int> & vals) { return is_satisfying(inst, vals); }, all_ranges(inst));
             println(cerr, "{} solutions {}", show_instance(inst), solutions.size());
             for (size_t i = 0; i < inst.start_ranges.size(); ++i) {
                 auto tight = [&](int v) { return any_of(solutions, [&](const vector<int> & s) { return s[i] == v; }); };
@@ -359,17 +441,33 @@ auto main(int argc, char * argv[]) -> int
             return EXIT_SUCCESS;
         }
 
-    // Fixture search: print instances on which TTEF moves a bound
-    // edge-finding does not, and moves it somewhere a solution actually sits.
+    // Replay one instance spec end to end: enumerate it against the oracle and
+    // verify its proof. This is how an instance --random-var stopped on gets
+    // shrunk into a fixture small enough to write down here.
     for (int a = 1; a < argc; ++a)
-        if (string{argv[a]} == "--search") {
+        if (string{argv[a]}.starts_with("--enumerate=")) {
+            string arg = argv[a];
+            auto inst = parse_instance(arg.substr(arg.find('=') + 1));
+            check_enumeration("enumerate", inst, with_rule, proofs ? make_optional("cumulative_published_nfnl_enumerate") : nullopt);
+            return EXIT_SUCCESS;
+        }
+
+    // Fixture search: print instances on which the rule moves a bound
+    // edge-finding does not, and moves it somewhere a solution actually sits.
+    // `--search-var` is the same draw with variable lengths and heights, for a
+    // fixture that wants the rule to move a bound over one. (The
+    // `variable_length` fixture below is not one of those: it came from
+    // `--random-var` and `--enumerate`, because what it demonstrates fires
+    // below the root rather than at it.)
+    for (int a = 1; a < argc; ++a)
+        if (string{argv[a]} == "--search" || string{argv[a]} == "--search-var") {
             unsigned long long from = 1, count = 2000;
             auto number = [&](int at) { return at < argc && argv[at][0] >= '0' && argv[at][0] <= '9'; };
             if (number(a + 1))
                 from = std::stoull(argv[a + 1]);
             if (number(a + 2))
                 count = std::stoull(argv[a + 2]);
-            search_for_fixture(without_rule, with_rule, from, count);
+            search_for_fixture(without_rule, with_rule, from, count, string{argv[a]} == "--search-var");
             return EXIT_SUCCESS;
         }
 
@@ -379,21 +477,35 @@ auto main(int argc, char * argv[]) -> int
     // show up --- a rung walking past the pushed task's own domain is not
     // something a hand-built fixture reaches, and was a real bug this lane
     // found.
+    //
+    // --random-var is the same net with variable lengths and heights drawn as
+    // well. It is a separate mode rather than a widening of the draw above,
+    // because the constant-argument sequence is the one that found that bug and
+    // is worth keeping exactly as it is. Variable arguments are a different
+    // derivation and not a wider one: `after` is then reified on `s + l` rather
+    // than on `s` alone, which is what #778 was.
     for (int a = 1; a < argc; ++a)
-        if (string{argv[a]} == "--random") {
+        if (string{argv[a]} == "--random" || string{argv[a]} == "--random-var") {
+            auto variable_arguments = string{argv[a]} == "--random-var";
             std::mt19937 rand(a + 1 < argc ? static_cast<unsigned>(std::stoul(argv[a + 1])) : 1u);
             for (auto attempt = 0; attempt < 40; ++attempt) {
                 auto n = 3 + static_cast<size_t>(rand() % 4);
                 auto capacity = 2 + static_cast<int>(rand() % 4);
                 Instance inst{{}, {}, {}, capacity};
                 for (size_t i = 0; i < n; ++i) {
-                    inst.lengths.push_back(1 + static_cast<int>(rand() % 6));
+                    auto len = 1 + static_cast<int>(rand() % 6);
+                    inst.lengths.emplace_back(len, len + (variable_arguments ? static_cast<int>(rand() % 3) : 0));
                     auto lo = static_cast<int>(rand() % 8);
                     inst.start_ranges.emplace_back(lo, lo + static_cast<int>(rand() % 8));
-                    inst.heights.push_back(1 + static_cast<int>(rand() % capacity));
+                    auto height = 1 + static_cast<int>(rand() % capacity);
+                    inst.heights.emplace_back(height, min(capacity, height + (variable_arguments ? static_cast<int>(rand() % 3) : 0)));
                 }
-                check_enumeration("random " + std::to_string(attempt), inst, with_rule,
-                    proofs ? make_optional("cumulative_published_nfnl_random_" + std::to_string(attempt)) : nullopt);
+                // A distinct basename per mode: ctest runs its lanes in one
+                // working directory and in parallel, so two lanes writing
+                // `..._random_5.pbp` would be reading each other's proof.
+                auto basename = string{variable_arguments ? "cumulative_published_nfnl_random_var_" : "cumulative_published_nfnl_random_"};
+                check_enumeration(string{variable_arguments ? "random var " : "random "} + std::to_string(attempt), inst, with_rule,
+                    proofs ? make_optional(basename + std::to_string(attempt)) : nullopt);
             }
             return EXIT_SUCCESS;
         }
@@ -475,8 +587,17 @@ auto main(int argc, char * argv[]) -> int
     // Soundness, over instances small enough to enumerate: the rule may not
     // lose a solution, with or without a proof being written.
     for (const auto & [name, inst] : vector<pair<string, Instance>>{{"sharp", sharp}, {"sharp_mirror", sharp_mirror}, {"roomy", roomy},
-             {"tight", Instance{{{0, 3}, {0, 3}, {1, 2}, {0, 5}}, {2, 2, 3, 2}, {1, 1, 1, 1}, 2}},
-             {"mixed_heights", Instance{{{0, 4}, {0, 4}, {1, 2}, {0, 6}}, {3, 2, 4, 2}, {2, 1, 1, 2}, 3}}}) {
+             {"tight", Instance{{{0, 3}, {0, 3}, {1, 2}, {0, 5}}, {{2, 2}, {2, 2}, {3, 3}, {2, 2}}, {{1, 1}, {1, 1}, {1, 1}, {1, 1}}, 2}},
+             {"mixed_heights", Instance{{{0, 4}, {0, 4}, {1, 2}, {0, 6}}, {{3, 3}, {2, 2}, {4, 4}, {2, 2}}, {{2, 2}, {1, 1}, {1, 1}, {2, 2}}, 3}},
+             // #778: task 0's length is a decision variable, so its `after`
+             // flags are reified on `s_0 + l_0` and not on `s_0`. Not-last's
+             // contiguity rows run backwards --- `active at u` implies `active
+             // at v` for u > v --- and over a sum unit propagation cannot see
+             // that for itself, so the row needs the bridge that cancels the
+             // sum. Without it veripb rejects one, on every seed tried: the
+             // rule fires below the root here rather than at it, so this is an
+             // enumeration fixture and not a bound-measurement one.
+             {"variable_length", Instance{{{3, 4}, {4, 4}, {2, 6}}, {{2, 4}, {4, 4}, {1, 1}}, {{1, 1}, {2, 2}, {3, 3}}, 3}}}) {
         check_enumeration(name, inst, with_rule, nullopt);
         if (proofs)
             check_enumeration(name, inst, with_rule, make_optional("cumulative_published_nfnl_enum_" + name));

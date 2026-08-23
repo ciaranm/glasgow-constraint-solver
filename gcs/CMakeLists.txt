@@ -393,6 +393,14 @@ if(GCS_BUILD_TESTS)
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test>)
     add_test(NAME cumulative_published_nfnl_random
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test> --random 7)
+    # The same net over variable lengths and heights, which is what a mode gives
+    # this rule and what nothing here gave it until #778: not-last's contiguity
+    # rows are then stated over `s + l` rather than over `s`, which is a
+    # derivation unit propagation cannot finish on its own. Seed 9 is picked for
+    # rejecting at its sixth instance without that fix, under the runtime caps
+    # this lane runs with, so a regression fails it early rather than late.
+    add_test(NAME cumulative_published_nfnl_random_var
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test> --random-var 9)
     foreach(mutation emit_nothing drop_pin drop toofar roomy_toofar roomy_drop_pin)
         add_test(NAME cumulative_published_nfnl_mutation_${mutation}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
