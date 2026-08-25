@@ -641,13 +641,19 @@ if(GCS_BUILD_TESTS)
 
     # #780's progress bar: the cumulative lanes that are *not* on the
     # `startcheckpoint` arm because a rule they fire still reads the per-time
-    # block. **It is empty.** Every rule is converted, and every lane that
-    # exercises one runs with the block deleted from the model.
+    # block. **It is empty.**
     #
-    # That is the condition for the time-indexed block to go, which is the next
-    # step of #780 and is deliberately not this one: deleting it means flipping
-    # the default, retiring the other arms, and pinning the scp_chain_cumulative*
-    # cases to the time-indexed encoding, none of which is a test registration.
+    # Read that precisely: every *rule* is converted, not every *shape*. Nothing
+    # reads capacity_lines directly any more --- it all goes through
+    # capacity_row --- but capacity_row still falls back to the model row for a
+    # Cumulative the recovery cannot speak about: a variable length, a variable
+    # height, a variable capacity, or an optional task. Those keep the per-time
+    # block and use it for everything, and they are not rare: 146 of the 424
+    # proofs the cumulative test binaries write under this arm still contain
+    # cap_ rows. So the block cannot be *deleted*; it can only stop being
+    # emitted for constraints that qualify, which is what this arm already does.
+    # Extending the recovery to those shapes is separate work, and
+    # checkpoint_recovery.hh says what each would take.
     #
     # Lanes that are off the arm but are *not* part of the bar, all of them
     # mutation lanes that stop discriminating once the per-time block is gone
