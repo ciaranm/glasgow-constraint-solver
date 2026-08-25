@@ -2109,13 +2109,17 @@ that the OPB contains *no* `cap_` row and does contain `scap_` ones. A model tha
 falls back fails it by name.
 
 Run against the bare cumulative lanes, the arm reports the remaining work
-exactly: 57 of 70 pass, and the 11 genuine failures are `cumulative_kaoc`
-(the knapsack / elastic availability lines), `cumulative_edge_finding`,
+exactly. It began at 11 genuine failures; `cumulative_kaoc` came off when the
+availability lines moved (above), leaving `cumulative_edge_finding`,
 `cumulative_ttef`, `cumulative_energetic{,_random}` (edge-finding's window rows),
 `cumulative_nfnl`, `cumulative_published_nfnl{,_random}` (not-first / not-last),
 and `derived_cumulative` with the two presolver lanes that reach it. That list
 lives in `gcs/CMakeLists.txt` and is #780's progress bar: **when it is empty, the
 time-indexed block can go.**
+
+Those lanes fail by *aborting*, not by a quiet mismatch: they verify inline, so
+the harness throws `UnexpectedException{"veripb verification failed"}` the moment
+a pol comes up short of supply. Loud, and with the offending proof line named.
 
 Two lanes are off the arm for a different reason and are not part of the bar:
 `cumulative_optional_mutation_wrong_task` and
@@ -2126,6 +2130,54 @@ propagation to reach. They are not unconverted; the arm just cannot hold them.
 The arm is not vacuous on the lanes that are on it: under it, 59 of
 `cumulative_test`'s 77 proofs and 37 of `cumulative_overload_test`'s 115 contain
 no `cap_` row at all.
+
+### Citing the recovered row: the elastic and knapsack availability lines
+
+`(TTHE-OC)` and `(KAOC)` cap what a window supplies one time point at a time,
+which is why their certificate sums a *line per time point* rather than one bulk
+supply term. Each of those lines is built from the capacity row at `t`, with
+every compulsory contribution pinned off it and every term that is not a
+contained task's optional one weakened away, and then --- where the conflict
+needs it --- put through the subset-sum strengthening.
+
+So unlike the overload check, which sums rows straight into one pol, this uses
+the row as the *base of a per-point sub-derivation*. That turns out not to
+matter: a recovered row is the same inequality as the model's, over the same
+candidates at `t` and the same activity flags, so the pins land on the same terms
+and the weakenings remove the same ones. The change is the same one-line swap.
+
+Two things about the loop are worth writing down, because both are easy to get
+wrong in the direction of "tidier but different".
+
+**The row lookup is also the "does the encoding say anything about `t`" test**,
+and it has to stay above the horizontally elastic branch even though that branch
+does not use the row. Moving it below --- which is tempting, since under the
+recovery *asking is what derives the row*, and a point that takes the elastic
+branch has then paid for a row it never cites --- would let a time point with no
+row take that branch, where today it is skipped outright. That changes what
+`pol_supply` accumulates. The cost of leaving it where it is is bounded: rows are
+cached per time point for the whole constraint. It was not worth changing
+behaviour on a branch no fixture currently reaches.
+
+**`pol_supply` is cross-checked against what the detection computed**, and
+throws a `ProofError` if they disagree. That is the backstop that makes the
+paragraph above a matter of tidiness rather than of soundness --- but it is a
+backstop, not a reason to lean on it.
+
+All nine `cumulative_kaoc_mutation_*` lanes still discriminate under the
+start-checkpoint arm and are registered there. `capacity` is the one that earns
+it: it omits a row from a per-time availability line, which on that arm is a
+recovered row, so it is the negative test over exactly the path this moved.
+
+**A coverage gap this turned up, which predates it.** `(TTHE-OC)` --- the
+elastic cap with *no* time point strengthened --- is never fired by any lane in
+the suite, under any encoding: sweeping every cumulative test binary for the
+rule label finds `oc`, `ttoc` and `kaoc` and never `ttheoc`. The certificate
+code is shared, and the non-strengthened per-point branch is exercised whenever a
+`kaoc` firing leaves some points unstrengthened, so this is a gap in *detection*
+coverage rather than in the certificate's. The `elastic` rule set in
+`cumulative_kaoc_test.cc` is used for decline-checks, which is why the fixtures
+there all go on to fire `kaoc` instead. Worth a fixture; nobody has written one.
 
 ### What it costs in lines
 
