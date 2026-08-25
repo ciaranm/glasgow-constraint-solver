@@ -458,14 +458,17 @@ if(GCS_BUILD_TESTS)
     add_test(NAME gac_global_cardinality_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:gac_global_cardinality_test>)
     add_cumulative_test_converted(cumulative_constraint ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
     add_cumulative_test_converted(cumulative_overload ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_overload_test>)
-    add_cumulative_test_with_recovery(cumulative_edge_finding ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_edge_finding_test>)
+    add_cumulative_test_converted(cumulative_edge_finding ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_edge_finding_test>)
+    # All five still discriminate on the startcheckpoint arm, checked one at a
+    # time. `capacity` is the direct negative test for #780's step 7: it omits a
+    # row from the window supply, which on that arm is a recovered row.
     foreach(mutation drop toofar capacity mirror_drop mirror_toofar)
-        add_cumulative_test(cumulative_edge_finding_mutation_${mutation}
+        add_cumulative_test_converted_no_recovery(cumulative_edge_finding_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_edge_finding_mutation_${mutation} $<TARGET_FILE:cumulative_edge_finding_test> --mutate=${mutation})
     endforeach()
-    add_cumulative_test_with_recovery(cumulative_ttef ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_ttef_test>)
-    add_cumulative_test_with_recovery(cumulative_nfnl ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_nfnl_test>)
+    add_cumulative_test_converted(cumulative_ttef ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_ttef_test>)
+    add_cumulative_test_converted(cumulative_nfnl ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_nfnl_test>)
     add_cumulative_test_converted(cumulative_kaoc ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_kaoc_test>)
     # On the startcheckpoint arm as well, each checked to still discriminate
     # there. `capacity` is the one that earns it: it omits a row from the
@@ -479,11 +482,16 @@ if(GCS_BUILD_TESTS)
                     --mutate=${mutation} --fixture=${fixture})
         endforeach()
     endforeach()
-    foreach(mutation toofar drop roomy_toofar roomy_drop)
-        add_cumulative_test(cumulative_nfnl_mutation_${mutation}
+    foreach(mutation toofar drop roomy_toofar)
+        add_cumulative_test_converted_no_recovery(cumulative_nfnl_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_nfnl_mutation_${mutation} $<TARGET_FILE:cumulative_nfnl_test> --mutate=${mutation})
     endforeach()
+    # Not on the startcheckpoint arm, for the same reason the ttef pin lanes are
+    # not: veripb accepts the corruption once the per-time block is gone.
+    add_cumulative_test(cumulative_nfnl_mutation_roomy_drop
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            --basename cumulative_nfnl_mutation_roomy_drop $<TARGET_FILE:cumulative_nfnl_test> --mutate=roomy_drop)
     # The detection as published (#746), certified by contiguity rather than by
     # the window-energy lemma. `emit_nothing` is the control and `drop_pin` the
     # lane aimed at what is new; dropping the contiguity rows themselves cannot
@@ -504,7 +512,17 @@ if(GCS_BUILD_TESTS)
     add_test(NAME cumulative_published_nfnl_mutation_drop
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
             --basename cumulative_published_nfnl_mutation_drop $<TARGET_FILE:cumulative_published_nfnl_test> --mutate=drop)
-    foreach(mutation pins pin drop toofar mirror_pins mirror_pin mirror_toofar)
+    foreach(mutation pins drop toofar mirror_pins mirror_toofar)
+        add_cumulative_test_converted_no_recovery(cumulative_ttef_mutation_${mutation}
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                --basename cumulative_ttef_mutation_${mutation} $<TARGET_FILE:cumulative_ttef_test> --mutate=${mutation})
+    endforeach()
+    # Not on the startcheckpoint arm: `pin` drops a single (task, time) pin, and
+    # with the per-time block gone the checkpoint rows relate the starts
+    # directly, which is enough for the wrapping RUP to close without it. veripb
+    # accepts the corrupted proof, so the lane would stop discriminating. It
+    # still says what it always said about the other encodings.
+    foreach(mutation pin mirror_pin)
         add_cumulative_test(cumulative_ttef_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_ttef_mutation_${mutation} $<TARGET_FILE:cumulative_ttef_test> --mutate=${mutation})
@@ -514,15 +532,23 @@ if(GCS_BUILD_TESTS)
     # mandatory part. `drop_energetic` is the lane that matters: it removes the
     # row of a task the window does not contain, which is the only energy plain
     # edge-finding would not have cited.
-    add_cumulative_test_with_recovery(cumulative_energetic
+    add_cumulative_test_converted(cumulative_energetic
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test>)
-    add_cumulative_test_with_recovery(cumulative_energetic_random
+    add_cumulative_test_converted(cumulative_energetic_random
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test> --random 17)
-    foreach(mutation drop_energetic drop toofar capacity mirror_drop_energetic mirror_toofar)
-        add_cumulative_test(cumulative_energetic_mutation_${mutation}
+    foreach(mutation drop_energetic drop toofar capacity mirror_toofar)
+        add_cumulative_test_converted_no_recovery(cumulative_energetic_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_energetic_mutation_${mutation} $<TARGET_FILE:cumulative_energetic_test> --mutate=${mutation})
     endforeach()
+    # Not on the startcheckpoint arm: same shape again --- veripb accepts the
+    # dropped row once the per-time block is gone. The forward `drop_energetic`
+    # lane, which is the one that matters for #755, does still discriminate and
+    # is on the arm above.
+    add_cumulative_test(cumulative_energetic_mutation_mirror_drop_energetic
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            --basename cumulative_energetic_mutation_mirror_drop_energetic $<TARGET_FILE:cumulative_energetic_test>
+            --mutate=mirror_drop_energetic)
     add_cumulative_test_with_recovery(derived_cumulative ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:derived_cumulative_test>)
     # Mutation lanes: each writes a deliberately corrupted proof of the
     # sharp-margin fixture, and passes only if veripb rejects it. Distinct
@@ -617,11 +643,6 @@ if(GCS_BUILD_TESTS)
     # Confirmed by running each under GCS_CUMULATIVE_ENCODING=start-checkpoint;
     # they fail, and they fail loudly.
     #
-    #   cumulative_edge_finding            edge-finding's window rows
-    #   cumulative_ttef                    (same, via the profile term)
-    #   cumulative_energetic               (same, energetic form)
-    #   cumulative_energetic_random
-    #   cumulative_nfnl                    not-first / not-last
     #   cumulative_published_nfnl          published not-first / not-last
     #   cumulative_published_nfnl_random
     #   derived_cumulative                 derived_cumulative.cc: donor rows and

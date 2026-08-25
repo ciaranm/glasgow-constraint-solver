@@ -868,12 +868,15 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // and both bound pushes --- and so do the overload check's (OC)/(TTOC)
     // window supply and the (TTHE-OC)/(KAOC) per-time availability lines, the
     // latter being the only citer that uses a row as the base of a per-point
-    // sub-derivation rather than summing it straight into a pol. What is left
-    // --- edge-finding's window rows, published not-first / not-last, and
-    // derived_cumulative.cc --- still reads capacity_lines directly, and moving
-    // them over one at a time, each its own commit and each verified on its
-    // own, is the rest of #780. A lane whose every rule has moved joins the
-    // `startcheckpoint` ctest arm, which is where that progress is measured.
+    // sub-derivation rather than summing it straight into a pol, and so does
+    // edge-finding's window supply --- and with it TTEF, the energetic form and
+    // our own not-first / not-last, which is certified by edge-finding's
+    // certificate unchanged. What is left --- the *published* not-first /
+    // not-last, which has its own citer, and derived_cumulative.cc --- still
+    // reads capacity_lines directly, and moving them over one at a time, each
+    // its own commit and each verified on its own, is the rest of #780. A lane
+    // whose every rule has moved joins the `startcheckpoint` ctest arm, which
+    // is where that progress is measured.
     auto capacity_row = [&](Integer t) -> std::optional<ProofLine> {
         if (logger && inputs.checkpoint_recovery)
             if (auto recovered = recover_cumulative_capacity_row(*logger, inputs, *inputs.checkpoint_recovery, t))
@@ -1143,8 +1146,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             for (Integer t = a; t < b; ++t) {
                 if (std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation) && t == b - 1_i)
                     continue;
-                if (auto line = capacity_lines.find(t); line != capacity_lines.end())
-                    pol.add(line->second);
+                if (auto line = capacity_row(t))
+                    pol.add(*line);
             }
 
             auto cite = [&](size_t i, Integer low_guard, Integer high_guard, bool discharge_low, bool discharge_high) {
