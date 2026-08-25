@@ -43,15 +43,25 @@ namespace
     }
 }
 
+auto gcs::innards::cumulative_shape_supports_checkpoint_recovery(const vector<size_t> & active_tasks,
+    const vector<optional<IntegerVariableID>> & presence, const vector<IntegerVariableID> & lengths, const vector<IntegerVariableID> & heights,
+    IntegerVariableID capacity) -> bool
+{
+    if (active_tasks.empty())
+        return false;
+    if (! is_constant_variable(capacity))
+        return false;
+    for (auto i : active_tasks)
+        if (presence[i] || ! is_constant_variable(lengths[i]) || ! is_constant_variable(heights[i]))
+            return false;
+    return true;
+}
+
 auto gcs::innards::cumulative_checkpoint_recovery_applies(const CumulativeInputs & inputs, const ProofLogger & logger) -> bool
 {
-    if (inputs.active_tasks.empty())
-        return false;
-    if (! is_constant_variable(inputs.capacity))
+    if (! cumulative_shape_supports_checkpoint_recovery(inputs.active_tasks, inputs.presence, inputs.lengths, inputs.heights, inputs.capacity))
         return false;
     for (auto i : inputs.active_tasks) {
-        if (inputs.presence[i] || ! is_constant_variable(inputs.lengths[i]) || ! is_constant_variable(inputs.heights[i]))
-            return false;
         // The block has to be in the model to be recovered from. Asking for one
         // task's row is enough: the encoding writes them for every active task
         // or for none.
