@@ -2112,9 +2112,11 @@ Run against the bare cumulative lanes, the arm reports the remaining work
 exactly. It began at 11 genuine failures; `cumulative_kaoc` came off when the
 availability lines moved, and `cumulative_edge_finding`, `cumulative_ttef`,
 `cumulative_energetic{,_random}` and `cumulative_nfnl` came off together when
-edge-finding's window rows did. `cumulative_published_nfnl` and its random twin followed.
-What is left is `derived_cumulative` and the two presolver lanes that reach it
---- and see the note below about those failing softly rather than loudly. That list
+edge-finding's window rows did. `cumulative_published_nfnl` and its random twin followed,
+and `derived_cumulative` with the presolver lanes that reach it went last.
+**The list is empty**: every rule is converted, and every lane that exercises one
+runs with the per-time block deleted from the model. That is the condition for
+deleting the block, which is the next step and not this one. That list
 lives in `gcs/CMakeLists.txt` and is #780's progress bar: **when it is empty, the
 time-indexed block can go.**
 
@@ -2254,6 +2256,71 @@ consequences. First, `derived_cumulative`, `inferred_cumulative_presolver` and
 step 9 moves that lookup onto the recovery like every other citer. Second, this
 is a good argument for those lanes keeping assertions about what they infer, and
 not only about whether the proof checks.
+
+### Citing the recovered row: derived Cumulatives, and how a constraint asks another
+
+The last citer, and the only one outside `cumulative.cc`. A derived Cumulative
+adds nothing to the OPB; it establishes its own per-time rows inside the proof,
+from its donors', by a recipe. It found those donors' rows by *label* --- and
+under the start-checkpoint encoding a donor has none, so the recipe declined and
+the whole derived constraint was never installed.
+
+**Why this one needed a mechanism and the others did not.** Every citer so far
+was inside the donor's own propagator, where `capacity_row(t)` closes over the
+constraint's `CumulativeInputs` and recovery cache. A derived Cumulative is set
+up by a presolver, which reaches its donors as `ConstraintID`s and a
+`CumulativeDonorView`, and has no route to either. So the donor has to be able
+to *publish* the ability to derive a row, and the consumer to ask for one by
+constraint identity.
+
+`NamesAndIDsTracker::publish_derived_line_family` /
+`find_or_derive_line_in_family` are that: a constraint registers a deriver for an
+integer-indexed family of lines, a consumer asks for member `t`, and the tracker
+memoises. Cumulative publishes one from an install initialiser --- the earliest
+point with a logger, and before presolvers run (#658) --- over a copy of its
+inputs sharing the same `CheckpointRecoveryCache`, so a row derived through the
+family and one derived by the propagator are the same row, paid for once.
+`derived_cumulative.cc` tries the label first, since where it exists it costs
+nothing and a derivation is `O(n^3)` lines.
+
+**What kind of state this is, since it was worth getting right.** Not
+"constraint data preserved across `clone()`", which is for posted arguments;
+not backtrackable state either. It is the constraint's own mutable,
+non-backtrackable, **per-install** state, made reachable from outside the
+propagator by constraint identity. Per-install is load-bearing rather than
+incidental: everything in it is a position in *one particular proof file*, so
+hanging it off the `Cumulative` object and carrying it across `clone()` --- the
+first design tried here --- would have promoted it to per-*Problem*, and under
+parallel search two threads would then share one memo and cite one proof's line
+numbers in another's. Install runs once per `create_propagators`, so per-install
+is per-solve is per-proof, and both parallel search and an LNS restart with a
+fresh proof get fresh state by construction.
+
+The publication carries one invariant nothing checks: **whatever the deriver
+emits must live at `ProofLevel::Top`.** The memo hands the same line number out
+for the rest of the proof, and a line emitted lower is deleted on backtracking,
+after which the memo is a dangling reference.
+
+**A known wart, recorded rather than fixed.** This is the third variation on "a
+per-solve, constraint-keyed memo of proof lines" in the tracker, beside
+`publish_derived_line` and `boundary_pin_line`, and each arrived for one caller.
+The tracker is meant to provide general facilities rather than a drawer of
+specific ones. #780's step 10 wants a fourth --- the same thing for *flags*
+rather than lines --- and the deliberate decision is to let that one arrive
+before generalising, on the grounds that three examples are what tells you what
+the fourth needs.
+
+**What it costs, which is the real trade.** A derived Cumulative resolves a row
+for every time point in its window up front, so that it can decline cleanly
+rather than install a propagator whose inferences it cannot justify. Each
+recovery is `~2m^3` lines against the per-time block's `O(n)` rows per point, so
+on a wide horizon the derivations can cost more lines than the block they
+replace. Three things bound it: the donor's cache is shared with its own
+propagation, so points it cites anyway are paid once; the window is the derived
+constraint's, not the donor's horizon; and a donor with a variable height or an
+optional task does not qualify for the recovery at all, keeps its block, and is
+found by label as before. Making the resolution lazy would avoid paying for
+points never cited, but would cost the clean decline, which is deliberate.
 
 ### What it costs in lines
 
