@@ -2003,13 +2003,12 @@ anything from them.
 
 The mode is deliberately narrow: it refuses any model whose proof still cites a
 per-time row, so a model can only go in it once every rule it fires has moved
-over. Two are there --- the minimal two-task overflow, and four tasks with four
-different durations, which fires both bound pushes and exercises the weakening
-path where the candidate set changes from one time point to the next. The third
-case, three tasks whose mandatory parts are all empty so that the overload
-check is what refutes them, stays in `prefix` until the overload certificate
-moves across. When the last citer moves, every case is `whole`, and that is
-what says the time-indexed block can go.
+over. Two went in with the time-table family --- the minimal two-task overflow,
+and four tasks with four different durations, which fires both bound pushes and
+exercises the weakening path where the candidate set changes from one time point
+to the next --- and the third, three tasks whose mandatory parts are all empty so
+that the overload check is what refutes them, joined them when that check moved
+across (below).
 
 **Transitivity is load-bearing**, which #780 predicted and this confirms:
 dropping the transitivity pols makes the `e`-lifting rups fail, and with them
@@ -2023,6 +2022,66 @@ invalid one: citing `C^start_{j+1}` where the case wanted `C^start_j` still
 produces a valid line, and the implication check is what rejects it. Both that
 corruption and a recovered row claimed one tighter than `cap_t` are caught
 there; only dropping transitivity fails earlier, as an invalid rup.
+
+### Citing the recovered row: the overload check's window
+
+The overload check's `(OC)`/`(TTOC)` certificate opens by summing a capacity row
+at *every time point of the window* before the contained tasks' energy cancels
+against it. Moving it over is the same one-line change as the time-table
+family's --- it reads `capacity_row(t)` instead of `capacity_lines` --- but it is
+the first citer that wants a row at more than one point, and so the first place
+the recovery is asked for many rows at once.
+
+Two things make that cheaper than the per-point cost suggests. The rows are
+keyed on `t` alone and cached for the constraint, so overlapping windows share
+them: three firings on `cumulative_overload_enum_f1_twin` over `[2,7)`, `[1,6)`
+and `[1,5)` are fourteen row citations across six distinct time points, and only
+the first citation of each point pays anything. And the rows live at
+`ProofLevel::Top`, so backtracking does not lose them and a window re-derived at
+another node pays nothing either.
+
+The cancellation is unaffected by which of the two produced the row, because a
+recovered row is the *same inequality* as the model's: the encoding writes
+`Sum_i h_i * cact_{i,t} <= capacity` over the tasks with a flag at `t`, and the
+recovery's target is built over exactly that candidate set, from exactly those
+flags. Where the model writes no row at all --- no task can be active at `t` ---
+the recovery returns nullopt on the same condition, so the two agree on the
+empty case too.
+
+`checkpoint_recovery_overload.scp` is `whole` from here, and a fourth case,
+`checkpoint_recovery_ttoc.scp`, goes in beside it for the other arm. That one is
+built so that `(OC)` alone cannot refute it: capacity 3 over `[0,4)`, contained
+tasks carrying `6 + 6 = 12` against a supply of `12`, and a task the window does
+not contain whose mandatory part `[3,4)` at height 2 is what tips it to `14 >
+12`. So it fires `(TTOC)` and nothing weaker, and it passes `whole` --- the
+profile-strengthened certificate, too, stands with every `cap_t` row deleted.
+
+All four registered cases are now `whole`, which says something narrower than it
+looks: the *default* rule set --- time-tabling, the overload check, and its
+`(TTOC)` strengthening --- is fully converted, and a default-rules model's whole
+refutation now stands with every `cap_t` row deleted. It does not say the
+time-indexed block can go.
+
+The three overload mutation lanes (`energy`, `capacity`, `window`) are twinned
+onto the recovering arm at the same time, having been checked one at a time to
+still fail there. `capacity` is the one that matters for this step: it omits a
+row from the window supply, which is now a *recovered* row rather than a model
+one, so without the twin the recovering arm would have no negative test over the
+path this moved.
+
+**The bar has run out of road here, and that is worth stating plainly.** The
+citers that remain --- the elastic and knapsack availability lines,
+edge-finding's window rows, published not-first / not-last --- all sit behind
+`CumulativeRules` fields that are off by default, and the leak check's vehicle is
+an `.scp` model run through `glasgow_scp_solver`, which builds a plain
+`Cumulative` and has no flag for the rules. So no case that *could* stay in
+`prefix` and mark them outstanding can be written in this vehicle at all: the
+next rule to move over has no test that can express its own completion. Closing
+that needs either a way to select rules from the scp path, or the same
+strip-and-recheck applied to the proofs a C++ lane writes under
+`GCS_PRESERVE_PROOF_FILES` --- 34 of `cumulative_overload_test`'s 115 proofs
+already run the recovery, so the material is there. Until one exists, the
+remaining steps are tracked by #780 and not by this bar.
 
 ### What it costs in lines
 

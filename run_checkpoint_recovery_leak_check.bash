@@ -21,9 +21,12 @@
 # In `whole` mode the proof is not cut at all, so what is checked is the *whole*
 # certificate standing without the per-time block --- which is the end state
 # #780 is walking towards, and which only holds for a model whose every firing
-# rule has been moved over to the recovered rows. Today that is the time-table
-# overflow contradiction and nothing else, so a `whole` model has to be one that
-# fires only that. Each rule moved over is another model that can go in here.
+# rule has been moved over to the recovered rows. That is now the whole of the
+# default rule set: time-tabling, the overload check and its (TTOC)
+# strengthening. Every registered case is `whole`; `prefix` stays supported for
+# a model that cannot be, but there is no longer one that can be written here
+# --- the citers that remain are all behind CumulativeRules fields an .scp model
+# has no way to set. See the note in gcs/CMakeLists.txt.
 #
 # Exits 77 (ctest SKIP_RETURN_CODE) when veripb is missing.
 
