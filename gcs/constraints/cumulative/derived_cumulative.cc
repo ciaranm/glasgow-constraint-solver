@@ -194,10 +194,22 @@ auto gcs::innards::install_derived_cumulative(
             if (! covered)
                 continue;
 
+            // The donor's own OPB row where it wrote one; failing that, ask the
+            // donor to derive it (#780). Under
+            // CumulativeEncoding::StartCheckpoint there is no `cap_<t>` label
+            // to find, and the label lookup alone would come back empty, the
+            // recipe would decline, and this whole constraint would go --- with
+            // no proof failure to say so, since declining is a supported
+            // outcome here. The label is tried first because where it exists it
+            // costs nothing, while a derivation is `O(n^3)` lines.
             DerivedCumulativeRows rows;
-            for (const auto & donor : spec.row_donors)
+            for (const auto & donor : spec.row_donors) {
                 if (auto row = tracker.constraint_row_label(donor, ConstraintProofModelData<Cumulative>::capacity_row_role(t)))
                     rows.emplace(donor, *row);
+                else if (auto derived =
+                             tracker.find_or_derive_line_in_family(donor, ConstraintProofModelData<Cumulative>::capacity_row_family(), t, *logger))
+                    rows.emplace(donor, *derived);
+            }
             rows_by_time.emplace_back(t, move(rows));
         }
     }

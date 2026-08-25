@@ -558,6 +558,24 @@ namespace gcs
         [[nodiscard]] static auto capacity_row_role(Integer t) -> std::string;
 
         /**
+         * \brief The family name under which a Cumulative publishes a deriver
+         * for its per-time capacity rows, indexed by time point.
+         *
+         * Under CumulativeEncoding::StartCheckpoint there is no `cap_<t>` row
+         * to find a label for, and a citer outside the propagator --- a derived
+         * Cumulative building on a donor's rows --- has to be able to ask for
+         * one to be derived instead. Pair with
+         * NamesAndIDsTracker::find_or_derive_line_in_family, and try
+         * \ref capacity_row_role first: a donor that still writes the block
+         * has a label, which costs nothing to cite.
+         *
+         * Published only where innards::cumulative_checkpoint_recovery_applies
+         * would say yes, so a nullopt from the family means the same thing a
+         * missing label does.
+         */
+        [[nodiscard]] static auto capacity_row_family() -> std::string;
+
+        /**
          * \name The keys of the per-(task, time) flags.
          *
          * `before` is `start[i] <= t`, `after` is `start[i] + length[i] > t`,
