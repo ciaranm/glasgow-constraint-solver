@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Usage: run_checkpoint_recovery_leak_check.bash SOLVER MODEL.scp [prefix|whole]
+# Usage: run_checkpoint_recovery_leak_check.bash SOLVER MODEL.scp [prefix|whole|no-block]
 #
 # Issue #780: check that Cumulative's start-checkpoint recovery never leans on a
 # per-time capacity row.
@@ -24,9 +24,23 @@
 # rule has been moved over to the recovered rows. That is now the whole of the
 # default rule set: time-tabling, the overload check and its (TTOC)
 # strengthening. Every registered case is `whole`; `prefix` stays supported for
-# a model that cannot be, but there is no longer one that can be written here
-# --- the citers that remain are all behind CumulativeRules fields an .scp model
-# has no way to set. See the note in gcs/CMakeLists.txt.
+# a model that cannot be.
+#
+# `no-block` is the third mode and the one that matters most now. It solves
+# under GCS_CUMULATIVE_ENCODING=start-checkpoint, where the per-time rows are
+# never written in the first place, and requires that the OPB contain none of
+# them and that veripb still verify. Two reasons it exists beside `whole`:
+#
+#   - It is the end state itself rather than a reconstruction of it. `whole`
+#     deletes rows from a finished OPB and rechecks; this never emits them.
+#   - It guards the `startcheckpoint` ctest arm (gcs/CMakeLists.txt) against
+#     going vacuous. That arm is only worth anything if the encoding really does
+#     drop the block for the fixtures it runs --- and the encoding falls back to
+#     the per-time rows for any Cumulative the recovery cannot speak about, so
+#     "no cap_ rows were emitted" is a real thing to assert and not a tautology.
+#     If a change to cumulative_shape_supports_checkpoint_recovery ever made
+#     everything fall back, every lane on that arm would still pass while
+#     checking nothing new. This fails instead.
 #
 # Exits 77 (ctest SKIP_RETURN_CODE) when veripb is missing.
 
@@ -45,7 +59,40 @@ export PATH=$HOME/.cargo/bin:$PATH
 [[ -x "$solver" ]] || { echo "SKIP: solver not built at '$solver'"; exit 77; }
 command -v veripb >/dev/null 2>&1 || { echo "SKIP: veripb not on PATH"; exit 77; }
 
-base=$(basename "$scp" .scp).leakcheck
+# The mode is part of the basename: the same model is registered in more than
+# one mode, the lanes share a working directory, and ctest runs them in
+# parallel --- so without this they race over one set of proof files (#562).
+base=$(basename "$scp" .scp).${mode}.leakcheck
+
+if [[ $mode == no-block ]] ; then
+    GCS_CUMULATIVE_ENCODING=start-checkpoint "$solver" --all --prove --proof-files-basename "$base" "$scp" > /dev/null || {
+        echo "FAIL: the solve itself failed"; exit 1; }
+
+    # The whole claim: the block was never written.
+    caps=$(grep -c '\[cap_' "${base}.opb")
+    if [[ $caps -gt 0 ]] ; then
+        echo "FAIL: ${caps} per-time capacity rows in the OPB under start-checkpoint;"
+        echo "      this model must have fallen back (a variable height, an optional task, ...),"
+        echo "      so the startcheckpoint arm checks nothing on it"
+        exit 1
+    fi
+
+    # And that the replacement is actually there, so an encoder that emitted
+    # nothing at all would not pass this.
+    scaps=$(grep -c '\[scap_' "${base}.opb")
+    [[ $scaps -gt 0 ]] || { echo "FAIL: no start-checkpoint rows in the OPB either"; exit 1; }
+
+    out=$(veripb "${base}.opb" "${base}.pbp" 2>&1)
+    if ! grep -qE '^s VERIFIED' <<< "$out"; then
+        echo "FAIL: the proof does not stand with the per-time block never emitted"
+        tail -8 <<< "$out"
+        exit 1
+    fi
+
+    echo "OK (no-block): ${scaps} start-checkpoint rows, no per-time capacity row emitted at all"
+    dispose_proof "${base}"
+    exit 0
+fi
 
 GCS_CUMULATIVE_ENCODING=both-recovering "$solver" --all --prove --proof-files-basename "$base" "$scp" > /dev/null || {
     echo "FAIL: the solve itself failed"; exit 1; }

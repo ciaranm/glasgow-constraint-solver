@@ -11,6 +11,7 @@
 #include <optional>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 namespace gcs::innards
 {
@@ -40,6 +41,22 @@ namespace gcs::innards
         /// The recovered capacity row for each time point asked for.
         std::map<Integer, ProofLine> recovered;
     };
+
+    /**
+     * \brief Whether the recovery could speak about a Cumulative of this
+     * *shape*, without asking whether the checkpoint block is in the model.
+     *
+     * The half of \ref cumulative_checkpoint_recovery_applies that can be
+     * answered before any row has been written, which is what
+     * CumulativeEncoding::StartCheckpoint needs: it has to decide whether to
+     * emit the time-indexed block at all, and it makes that decision while
+     * building the model. Splitting it keeps one statement of what the shape
+     * requirement is, rather than a copy in the encoder that could drift from
+     * the one the recovery enforces.
+     */
+    [[nodiscard]] auto cumulative_shape_supports_checkpoint_recovery(const std::vector<std::size_t> & active_tasks,
+        const std::vector<std::optional<IntegerVariableID>> & presence, const std::vector<IntegerVariableID> & lengths,
+        const std::vector<IntegerVariableID> & heights, IntegerVariableID capacity) -> bool;
 
     /**
      * \brief Whether recover_cumulative_capacity_row can speak about this

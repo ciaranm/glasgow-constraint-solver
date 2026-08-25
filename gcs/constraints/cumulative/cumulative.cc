@@ -89,6 +89,8 @@ namespace
                 return CumulativeEncoding::Both;
             else if (spelling == "both-recovering")
                 return CumulativeEncoding::BothRecovering;
+            else if (spelling == "start-checkpoint")
+                return CumulativeEncoding::StartCheckpoint;
             throw UnexpectedException{"unrecognised GCS_CUMULATIVE_ENCODING value '" + spelling + "'"};
         }();
         return value;
@@ -503,7 +505,22 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
         }
     }
 
-    for (Integer t = global_lo; t <= global_hi; ++t) {
+    // #780: under CumulativeEncoding::StartCheckpoint the per-time capacity
+    // rows are not written at all, so that a rule which still reads
+    // `capacity_lines` finds nothing and its certificate fails loudly rather
+    // than quietly keeping a dependency on a block that is going away. Only
+    // where the recovery can actually supply a replacement, though --- a
+    // variable height or an optional task has no recovered row to fall back on,
+    // and dropping the model's would leave the constraint with no capacity row
+    // at all rather than merely an unconverted one.
+    //
+    // Note this gates the capacity *rows* only. The per-(task, time) flags
+    // above stay: every rule's activity vocabulary is still stated over them,
+    // and moving them to lazily-minted objects is its own step of #780.
+    auto omit_per_time_capacity_rows = _encoding.value_or(default_cumulative_encoding()) == CumulativeEncoding::StartCheckpoint &&
+        cumulative_shape_supports_checkpoint_recovery(_active_tasks, _presence, _lengths, _heights, _capacity);
+
+    for (Integer t = global_lo; t <= global_hi && ! omit_per_time_capacity_rows; ++t) {
         WPBSum load;
         bool any = false;
         for (auto i : _active_tasks) {
@@ -768,8 +785,10 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 
     // One cache, shared between the differential check below and the
     // propagator, so an inference cites the line the check passed on.
-    auto recovery_cache =
-        _encoding.value_or(default_cumulative_encoding()) == CumulativeEncoding::BothRecovering ? make_shared<CheckpointRecoveryCache>() : nullptr;
+    auto encoding = _encoding.value_or(default_cumulative_encoding());
+    auto recovery_cache = (encoding == CumulativeEncoding::BothRecovering || encoding == CumulativeEncoding::StartCheckpoint)
+        ? make_shared<CheckpointRecoveryCache>()
+        : nullptr;
 
     CumulativeInputs inputs{.owner = constraint_id(),
         .starts = move(_starts),
@@ -801,7 +820,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
     // the one the model still carries. A copy of the inputs rather than a
     // reference into the propagator's, which is about to be moved from --- the
     // check runs once, before search, and the copy dies with it.
-    if (_encoding.value_or(default_cumulative_encoding()) == CumulativeEncoding::BothRecovering)
+    if (encoding == CumulativeEncoding::BothRecovering)
         propagators.install_initialiser(
             [recovery_inputs = make_shared<CumulativeInputs>(inputs)](State &, auto &, ProofLogger * const logger) -> void {
                 if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
