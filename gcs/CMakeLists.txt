@@ -513,29 +513,36 @@ if(GCS_BUILD_TESTS)
     # And the other half of what the recovering arm has to be held to: that the
     # recovery stands on the start-checkpoint rows *alone*. Every lane above
     # runs with both blocks in the model, where a rup inside the recovery could
-    # be closing against the very row it claims to derive and nothing would
-    # say so. This one cuts the proof at the recovery's own marker and rechecks
-    # the prefix against an OPB with the per-time rows stripped out. The model
-    # is four tasks with four different durations, so the candidate set differs
-    # from one time point to the next and the weakening path is exercised.
-    add_test(NAME cumulative_checkpoint_recovery_leak_check
-        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_checkpoint_recovery_leak_check.bash
-            $<TARGET_FILE:glasgow_scp_solver> ${CMAKE_CURRENT_SOURCE_DIR}/constraints/cumulative/checkpoint_recovery_leak_check.scp)
-    set_tests_properties(cumulative_checkpoint_recovery_leak_check PROPERTIES SKIP_RETURN_CODE 77
-        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering)
-
-    # And the end state, on a model small enough to have reached it: every rule
-    # that fires here has moved over to the recovered rows, so the *whole*
-    # certificate is checked against an OPB with no per-time capacity block at
-    # all. Today that means a model whose only firing rule is the time-table
-    # overflow contradiction --- two tasks that must overlap and do not fit.
-    # Each further rule moved over is another model that can be listed here,
-    # and when the last one is, this is what says the block can go.
-    add_test(NAME cumulative_checkpoint_recovery_whole_proof
-        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_checkpoint_recovery_leak_check.bash
-            $<TARGET_FILE:glasgow_scp_solver> ${CMAKE_CURRENT_SOURCE_DIR}/constraints/cumulative/checkpoint_recovery_overflow_only.scp whole)
-    set_tests_properties(cumulative_checkpoint_recovery_whole_proof PROPERTIES SKIP_RETURN_CODE 77
-        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering)
+    # be closing against the very row it claims to derive and nothing would say
+    # so. These cut the proof at the recovery's own marker (`prefix`) or leave
+    # it whole (`whole`), and recheck against an OPB with the per-time capacity
+    # rows stripped out.
+    #
+    # `whole` is the stronger claim and the one that measures progress: it
+    # refuses any model whose proof still cites a per-time row, so a model can
+    # only go in that mode once every rule it fires has been moved over to the
+    # recovered rows. The time-table family has; the overload check and the
+    # rules above it have not, which is what keeps the third case in `prefix`.
+    # When the last citer moves, every case here is `whole` and the block can go.
+    function(add_checkpoint_recovery_leak_check case mode)
+        add_test(NAME cumulative_checkpoint_recovery_${case}_${mode}
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_checkpoint_recovery_leak_check.bash
+                $<TARGET_FILE:glasgow_scp_solver>
+                ${CMAKE_CURRENT_SOURCE_DIR}/constraints/cumulative/checkpoint_recovery_${case}.scp ${mode})
+        set_tests_properties(cumulative_checkpoint_recovery_${case}_${mode} PROPERTIES SKIP_RETURN_CODE 77
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering)
+    endfunction()
+    # Two tasks that must overlap and do not fit: the overflow contradiction and
+    # nothing else, which is the minimal end-state regression.
+    add_checkpoint_recovery_leak_check(overflow_only whole)
+    # Four tasks with four different durations, so the candidate set differs
+    # from one time point to the next and the weakening path is exercised. Fires
+    # both bound pushes as well as the overflow check.
+    add_checkpoint_recovery_leak_check(leak_check whole)
+    # Three tasks whose mandatory parts are all empty, so time-tabling sees
+    # nothing and the overload check is what refutes it. Moves to `whole` when
+    # the overload check's certificate moves over.
+    add_checkpoint_recovery_leak_check(overload prefix)
 
     # One ctest entry per mode, each writing proofs under its own basename, so a
     # parallel run does not have two entries racing over one set of files.

@@ -845,10 +845,11 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // it. The recovery declines a Cumulative it cannot yet speak about (a
     // variable height, an optional task), and the model row is what is left.
     //
-    // Only the time-table overflow contradiction goes through this so far.
-    // Every other citer still reads capacity_lines directly, and moving them
-    // over one at a time --- each its own commit, each verified on its own ---
-    // is the rest of #780.
+    // The time-table family goes through this: the overflow contradiction and
+    // both bound pushes. Every other citer --- the overload check and its
+    // rungs, edge-finding's window rows, published not-first / not-last ---
+    // still reads capacity_lines directly, and moving them over one at a time,
+    // each its own commit and each verified on its own, is the rest of #780.
     auto capacity_row = [&](Integer t) -> std::optional<ProofLine> {
         if (logger && inputs.checkpoint_recovery)
             if (auto recovered = recover_cumulative_capacity_row(*logger, inputs, *inputs.checkpoint_recovery, t))
@@ -2520,7 +2521,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         // cancellation the pol is dominated by (load − capacity)·Σext,
         // forcing the ext disjunction under the reason context.
         PolBuilder pol;
-        pol.add(capacity_lines.at(t));
+        pol.add(*capacity_row(t));
         for (auto i : contributing) {
             auto [line, coeff] = pin_contributor(reason, i, t);
             pol.add(line, coeff);
