@@ -2114,9 +2114,28 @@ availability lines moved, and `cumulative_edge_finding`, `cumulative_ttef`,
 `cumulative_energetic{,_random}` and `cumulative_nfnl` came off together when
 edge-finding's window rows did. `cumulative_published_nfnl` and its random twin followed,
 and `derived_cumulative` with the presolver lanes that reach it went last.
-**The list is empty**: every rule is converted, and every lane that exercises one
-runs with the per-time block deleted from the model. That is the condition for
-deleting the block, which is the next step and not this one. That list
+**The list is empty** --- every rule is converted, and every lane that exercises
+one runs green with the per-time block deleted from the model.
+
+Read that precisely: every *rule*, not every *shape*. `capacity_row` still falls
+back to the model row for a Cumulative the recovery cannot speak about --- a
+variable length, a variable height, a variable capacity, an optional task ---
+and those keep the block and use it for everything. It is not a corner: **146 of
+the 424 proofs** the cumulative test binaries write under this arm still contain
+`cap_` rows, concentrated in `cumulative_overload_test` (83 of 115) and
+`cumulative_optional_test` (18 of 35). So the block cannot be deleted, only
+skipped where the recovery reaches.
+
+Two things follow for the default flip. The checkpoint block is **not**
+shape-gated on emission, so under this arm a non-qualifying constraint gets
+*both*: a variable-duration model measures 146 OPB lines against the
+time-indexed encoding's 105. Gating the checkpoint block on
+`cumulative_shape_supports_checkpoint_recovery` is a prerequisite for flipping
+the default, not an optimisation. And extending the recovery to those shapes is
+what would let the block go entirely --- a variable length moves the diagonal
+off the row and onto a flag, a variable height replaces a coefficient with a bit
+sum, a presence adds a conjunct to every activity flag, and a variable capacity
+is not written down anywhere yet. That list
 lives in `gcs/CMakeLists.txt` and is #780's progress bar: **when it is empty, the
 time-indexed block can go.**
 
