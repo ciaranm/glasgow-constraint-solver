@@ -524,6 +524,19 @@ if(GCS_BUILD_TESTS)
     set_tests_properties(cumulative_checkpoint_recovery_leak_check PROPERTIES SKIP_RETURN_CODE 77
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering)
 
+    # And the end state, on a model small enough to have reached it: every rule
+    # that fires here has moved over to the recovered rows, so the *whole*
+    # certificate is checked against an OPB with no per-time capacity block at
+    # all. Today that means a model whose only firing rule is the time-table
+    # overflow contradiction --- two tasks that must overlap and do not fit.
+    # Each further rule moved over is another model that can be listed here,
+    # and when the last one is, this is what says the block can go.
+    add_test(NAME cumulative_checkpoint_recovery_whole_proof
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_checkpoint_recovery_leak_check.bash
+            $<TARGET_FILE:glasgow_scp_solver> ${CMAKE_CURRENT_SOURCE_DIR}/constraints/cumulative/checkpoint_recovery_overflow_only.scp whole)
+    set_tests_properties(cumulative_checkpoint_recovery_whole_proof PROPERTIES SKIP_RETURN_CODE 77
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering)
+
     # One ctest entry per mode, each writing proofs under its own basename, so a
     # parallel run does not have two entries racing over one set of files.
     foreach(mode enumerate falsify bijection objective)

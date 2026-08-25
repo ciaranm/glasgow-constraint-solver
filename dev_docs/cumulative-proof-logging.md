@@ -1855,8 +1855,9 @@ enumeration lane. It also checks that every new flag is UP-derivable
 from a full assignment, which the same rule demands.
 
 It cannot check *sufficiency* --- that the checkpoints imply the
-per-time rows --- because nothing derives from them. That gap is not
-theoretical, and the asymmetry is sharp. Four deliberate corruptions of
+per-time rows --- because nothing derives from them. (Under
+`BothRecovering`, where something does, see the whole-proof lane below.) That
+gap is not theoretical, and the asymmetry is sharp. Four deliberate corruptions of
 the encoding, run against `cumulative_constraint`,
 `cumulative_optional_constraint_enumerate`, `cumulative_overload` and
 `derived_cumulative`:
@@ -1901,9 +1902,9 @@ coverage of its own.
 The derivation below has been run against real OPBs, with **every `cap_t` row
 deleted from the model**, for `n = 3` to `6` and at every time point the
 encoding writes a row for. That deletion is the point: nothing in it can lean
-on a row the encoding is meant to lose. It is not yet in the solver ---
-`tmp/issue780-recovery/` outside the repo holds the generator that produced
-the proofs, and is the executable spec for the C++.
+on a row the encoding is meant to lose. `tmp/issue780-recovery/` outside the
+repo holds the generator that produced those first proofs, and was the
+executable spec for the C++ below.
 
 Fix a time point `t` and let the *candidates* be the tasks with flags at `t`
 (their possible-active windows differ, so this is not every task; a task with
@@ -1979,6 +1980,29 @@ OPB with every per-time capacity row stripped out --- the only thing that says
 the recovery is not quietly closing one of its rups against the very row it
 claims to be deriving. Both fail loudly if the recovery stops running at all,
 rather than passing vacuously.
+
+### Citing the recovered row: the time-table overflow contradiction
+
+`propagate_cumulative` has one accessor, `capacity_row(t)`, for the row saying
+the load at `t` is within the capacity. It returns the recovered row where the
+recovery is on and can speak about the constraint, and the model's own row
+otherwise --- a variable height or an optional task still falls back, which is
+why the two live side by side rather than one replacing the other.
+
+The time-table overflow contradiction is the first and so far only citer
+through it. On two tasks that must overlap and do not fit, the refutation
+cites the per-time capacity row **once** under `Both` and **not at all** under
+`BothRecovering` --- and the whole proof then verifies against an OPB with
+every `cap_t` row deleted. That is `cumulative_checkpoint_recovery_whole_proof`,
+and it is the first thing in this project to check *sufficiency* rather than
+soundness: what it says is that for that model the certificate stands on the
+start-checkpoint rows alone, which is the end state #780 is walking towards.
+
+The lane is deliberately narrow. It refuses any model whose proof still cites a
+per-time row, so it can only be pointed at models firing rules that have moved
+over --- today, that rule and no other. Each further citer moved across is
+another model that can be listed there, and when the last one is, that lane is
+what says the time-indexed block can go.
 
 **Transitivity is load-bearing**, which #780 predicted and this confirms:
 dropping the transitivity pols makes the `e`-lifting rups fail, and with them

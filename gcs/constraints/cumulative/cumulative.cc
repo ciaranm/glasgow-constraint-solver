@@ -766,6 +766,11 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         }
     });
 
+    // One cache, shared between the differential check below and the
+    // propagator, so an inference cites the line the check passed on.
+    auto recovery_cache =
+        _encoding.value_or(default_cumulative_encoding()) == CumulativeEncoding::BothRecovering ? make_shared<CheckpointRecoveryCache>() : nullptr;
+
     CumulativeInputs inputs{.owner = constraint_id(),
         .starts = move(_starts),
         .lengths = move(_lengths),
@@ -781,6 +786,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .per_task_t_hi = move(_per_task_t_hi),
         .end_ge_lines = end_ge_lines,
         .capacity_lines = move(_capacity_lines),
+        .checkpoint_recovery = recovery_cache,
         .rules = _rules,
         .proof_mutation = _proof_mutation,
         .presence_mutation = _presence_mutation,
@@ -800,7 +806,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             [recovery_inputs = make_shared<CumulativeInputs>(inputs)](State &, auto &, ProofLogger * const logger) -> void {
                 if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                     return;
-                check_recovered_cumulative_capacity_rows(*logger, *recovery_inputs);
+                check_recovered_cumulative_capacity_rows(*logger, *recovery_inputs, *recovery_inputs->checkpoint_recovery);
             });
 
     propagators.install(
@@ -830,6 +836,28 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     const auto & per_task_t_hi = inputs.per_task_t_hi;
     const auto & end_ge_lines = inputs.end_ge_lines;
     const auto & capacity_lines = inputs.capacity_lines;
+
+    // Where a citer gets the row saying the load at `t` is within the capacity.
+    // Today that is the OPB row the time-indexed block wrote, unless #780's
+    // recovery is on, in which case it is derived from the start-checkpoint
+    // rows instead --- once per time point, cached, and reason-free at Top, so
+    // the second citer of a point pays nothing and backtracking does not lose
+    // it. The recovery declines a Cumulative it cannot yet speak about (a
+    // variable height, an optional task), and the model row is what is left.
+    //
+    // Only the time-table overflow contradiction goes through this so far.
+    // Every other citer still reads capacity_lines directly, and moving them
+    // over one at a time --- each its own commit, each verified on its own ---
+    // is the rest of #780.
+    auto capacity_row = [&](Integer t) -> std::optional<ProofLine> {
+        if (logger && inputs.checkpoint_recovery)
+            if (auto recovered = recover_cumulative_capacity_row(*logger, inputs, *inputs.checkpoint_recovery, t))
+                return recovered;
+        auto line = capacity_lines.find(t);
+        if (line == capacity_lines.end())
+            return std::nullopt;
+        return line->second;
+    };
     const auto & rules = inputs.rules;
     const auto & mutation = inputs.proof_mutation;
     const auto & presence = inputs.presence;
@@ -1554,7 +1582,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 // reason context (the pinned loads already exceed
                 // ub(capacity)), closing the framework's wrapping RUP.
                 PolBuilder pol;
-                pol.add(capacity_lines.at(violating_t));
+                pol.add(*capacity_row(violating_t));
                 for (auto i : contributing) {
                     auto [line, coeff] = pin_contributor(reason, i, violating_t);
                     pol.add(line, coeff);
