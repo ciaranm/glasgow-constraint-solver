@@ -845,11 +845,14 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // it. The recovery declines a Cumulative it cannot yet speak about (a
     // variable height, an optional task), and the model row is what is left.
     //
-    // The time-table family goes through this: the overflow contradiction and
-    // both bound pushes. Every other citer --- the overload check and its
-    // rungs, edge-finding's window rows, published not-first / not-last ---
-    // still reads capacity_lines directly, and moving them over one at a time,
-    // each its own commit and each verified on its own, is the rest of #780.
+    // The time-table family goes through this --- the overflow contradiction
+    // and both bound pushes --- and so does the overload check's (OC)/(TTOC)
+    // window supply, which is the first citer to want a row at every time point
+    // of a window rather than at one. What is left --- the elastic and knapsack
+    // availability lines, edge-finding's window rows, published not-first /
+    // not-last --- still reads capacity_lines directly, and moving them over
+    // one at a time, each its own commit and each verified on its own, is the
+    // rest of #780.
     auto capacity_row = [&](Integer t) -> std::optional<ProofLine> {
         if (logger && inputs.checkpoint_recovery)
             if (auto recovered = recover_cumulative_capacity_row(*logger, inputs, *inputs.checkpoint_recovery, t))
@@ -2433,13 +2436,25 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                     // terms in the capacity lines, leaving a constraint
                     // with nothing but negative coefficients on the
                     // left and a positive right hand side.
+                    //
+                    // The rows come from `capacity_row`, so under #780's
+                    // recovering encoding the whole window is supplied from the
+                    // start-checkpoint block. The cancellation is unaffected
+                    // either way: a recovered row is the *same inequality* as
+                    // the model's, over the same candidates at `t` and the same
+                    // activity flags, so what a contained task cancels against
+                    // does not depend on which of the two produced it. This is
+                    // the first citer to want a row at every point of a window
+                    // rather than at one, so it is where the recovery's
+                    // per-point cost is first paid many times over --- but each
+                    // row is derived once for the constraint and cached, so a
+                    // second window overlapping the first pays nothing.
                     PolBuilder pol;
                     for (Integer t = a; t < b; ++t) {
                         if (omit_capacity_line && t == b - 1_i)
                             continue;
-                        auto line = capacity_lines.find(t);
-                        if (line != capacity_lines.end())
-                            pol.add(line->second);
+                        if (auto line = capacity_row(t))
+                            pol.add(*line);
                     }
 
                     for (auto i : inside_tasks) {

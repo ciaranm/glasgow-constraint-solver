@@ -493,8 +493,17 @@ if(GCS_BUILD_TESTS)
     # Mutation lanes: each writes a deliberately corrupted proof of the
     # sharp-margin fixture, and passes only if veripb rejects it. Distinct
     # basenames so the lanes do not race over one set of proof files.
+    #
+    # These three are twinned onto the recovering arm as well, which most
+    # mutation lanes are not: adding model rows gives unit propagation more to
+    # reach, so a lane that discriminates under one encoding need not under
+    # another, and each twin goes on only once it has been shown to still fail.
+    # These have been, and it matters here specifically --- since the overload
+    # check's window supply moved onto the recovered rows (#780), `capacity`
+    # corrupts a *derived* row rather than a model one, and without the twin the
+    # recovering arm would have no negative test over that path at all.
     foreach(mutation energy capacity window)
-        add_cumulative_test(cumulative_overload_mutation_${mutation}
+        add_cumulative_test_with_recovery(cumulative_overload_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_overload_mutation_${mutation} $<TARGET_FILE:cumulative_overload_test> --mutate=${mutation})
     endforeach()
@@ -521,9 +530,21 @@ if(GCS_BUILD_TESTS)
     # `whole` is the stronger claim and the one that measures progress: it
     # refuses any model whose proof still cites a per-time row, so a model can
     # only go in that mode once every rule it fires has been moved over to the
-    # recovered rows. The time-table family has; the overload check and the
-    # rules above it have not, which is what keeps the third case in `prefix`.
-    # When the last citer moves, every case here is `whole` and the block can go.
+    # recovered rows.
+    #
+    # Every case here is now `whole`, which says something narrower than it
+    # looks: it says the *default* rule set --- time-tabling, the overload check
+    # and its (TTOC) strengthening --- is fully converted. It does not say the
+    # time-indexed block can go. The citers that are left (the elastic and
+    # knapsack availability lines, edge-finding's window rows, published
+    # not-first / not-last) all sit behind CumulativeRules fields that are off by
+    # default, and an .scp model has no way to turn them on --- the reader builds
+    # a plain Cumulative and glasgow_scp_solver has no flag for the rules. So no
+    # case that could stay in `prefix` and mark them outstanding can be written
+    # in this vehicle at all. Reaching them needs a way to select rules from the
+    # scp path, or the same strip-and-recheck applied to the proofs a C++ lane
+    # writes under GCS_PRESERVE_PROOF_FILES; until one of those exists, the
+    # remaining steps of #780 are tracked by the issue and not by this bar.
     function(add_checkpoint_recovery_leak_check case mode)
         add_test(NAME cumulative_checkpoint_recovery_${case}_${mode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_checkpoint_recovery_leak_check.bash
@@ -540,9 +561,16 @@ if(GCS_BUILD_TESTS)
     # both bound pushes as well as the overflow check.
     add_checkpoint_recovery_leak_check(leak_check whole)
     # Three tasks whose mandatory parts are all empty, so time-tabling sees
-    # nothing and the overload check is what refutes it. Moves to `whole` when
-    # the overload check's certificate moves over.
-    add_checkpoint_recovery_leak_check(overload prefix)
+    # nothing and the overload check is what refutes it. This is the (OC) arm:
+    # the contained tasks' own energy is what overflows the window.
+    add_checkpoint_recovery_leak_check(overload whole)
+    # And the (TTOC) arm, which supplies the same window and then adds the
+    # mandatory load of a task the window does *not* contain. Capacity 3 over
+    # [0,4): S1 (fixed at 0) and S2 are contained and carry 6 + 6 = 12 against a
+    # supply of 12, so (OC) alone finds nothing --- S0, which is not contained,
+    # has mandatory part [3,4) at height 2, and that is what tips it to 14 > 12.
+    # So the case cannot pass by accident on the plain overload check.
+    add_checkpoint_recovery_leak_check(ttoc whole)
 
     # One ctest entry per mode, each writing proofs under its own basename, so a
     # parallel run does not have two entries racing over one set of files.
