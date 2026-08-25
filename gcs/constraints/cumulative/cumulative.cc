@@ -871,12 +871,12 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // sub-derivation rather than summing it straight into a pol, and so does
     // edge-finding's window supply --- and with it TTEF, the energetic form and
     // our own not-first / not-last, which is certified by edge-finding's
-    // certificate unchanged. What is left --- the *published* not-first /
-    // not-last, which has its own citer, and derived_cumulative.cc --- still
-    // reads capacity_lines directly, and moving them over one at a time, each
-    // its own commit and each verified on its own, is the rest of #780. A lane
-    // whose every rule has moved joins the `startcheckpoint` ctest arm, which
-    // is where that progress is measured.
+    // certificate unchanged, and so does the published not-first / not-last,
+    // the only citer that scales the row rather than adding it at one. That is
+    // every citer in this file. What is left is outside it:
+    // derived_cumulative.cc still looks its donors' rows up by label, which is
+    // the rest of #780. A lane whose every rule has moved joins the
+    // `startcheckpoint` ctest arm, which is where that progress is measured.
     auto capacity_row = [&](Integer t) -> std::optional<ProofLine> {
         if (logger && inputs.checkpoint_recovery)
             if (auto recovered = recover_cumulative_capacity_row(*logger, inputs, *inputs.checkpoint_recovery, t))
@@ -1418,10 +1418,10 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             auto capacity_at = [&](PolBuilder & pol, Integer t, Integer coeff) {
                 if (omit_capacity && t == b - 1_i)
                     return;
-                auto line = capacity_lines.find(t);
-                if (line == capacity_lines.end())
+                auto line = capacity_row(t);
+                if (! line)
                     return;
-                pol.add(line->second, coeff);
+                pol.add(*line, coeff);
                 auto convert = [&](size_t i) {
                     if (h_is_var(i) && t >= per_task_t_lo[i] && t <= per_task_t_hi[i])
                         pol.add(guaranteed_contribution(reason, i, t), coeff);

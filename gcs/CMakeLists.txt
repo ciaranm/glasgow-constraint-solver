@@ -496,19 +496,22 @@ if(GCS_BUILD_TESTS)
     # the window-energy lemma. `emit_nothing` is the control and `drop_pin` the
     # lane aimed at what is new; dropping the contiguity rows themselves cannot
     # be caught, and cumulative_mutations.hh records why.
-    add_cumulative_test_with_recovery(cumulative_published_nfnl
+    add_cumulative_test_converted(cumulative_published_nfnl
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test>)
-    add_cumulative_test_with_recovery(cumulative_published_nfnl_random
+    add_cumulative_test_converted(cumulative_published_nfnl_random
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test> --random 7)
+    # All five still discriminate on the startcheckpoint arm, checked one at a
+    # time. `drop_pin` is the one aimed at what #746 added, and it survives.
     foreach(mutation emit_nothing drop_pin toofar roomy_toofar roomy_drop_pin)
-        add_cumulative_test(cumulative_published_nfnl_mutation_${mutation}
+        add_cumulative_test_converted_no_recovery(cumulative_published_nfnl_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_published_nfnl_mutation_${mutation} $<TARGET_FILE:cumulative_published_nfnl_test> --mutate=${mutation})
     endforeach()
     # Not twinned (#780): `drop` removes a contiguity row, and the start-
     # checkpoint rows put back enough for the wrapping RUP to close without it,
-    # so veripb accepts the corrupted proof under `both`. The lane still says
-    # what it always said about the time-indexed encoding.
+    # so veripb accepts the corrupted proof under `both` --- and, for the same
+    # reason, under the startcheckpoint arm. The lane still says what it always
+    # said about the time-indexed encoding.
     add_test(NAME cumulative_published_nfnl_mutation_drop
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
             --basename cumulative_published_nfnl_mutation_drop $<TARGET_FILE:cumulative_published_nfnl_test> --mutate=drop)
@@ -643,12 +646,20 @@ if(GCS_BUILD_TESTS)
     # Confirmed by running each under GCS_CUMULATIVE_ENCODING=start-checkpoint;
     # they fail, and they fail loudly.
     #
-    #   cumulative_published_nfnl          published not-first / not-last
-    #   cumulative_published_nfnl_random
     #   derived_cumulative                 derived_cumulative.cc: donor rows and
     #                                      the makespan bound
     #   inferred_cumulative_presolver      (reach derived_cumulative)
     #   cumulative_strengthening_presolver
+    #
+    # Those last three are the one place the arm does *not* fail loudly, and it
+    # is worth knowing before relying on it. derived_cumulative.cc reads its
+    # donors' per-time rows by label, and a donor that wrote none makes the
+    # derivation decline --- which is a supported outcome, not an error, so the
+    # constraint is simply not installed and propagation quietly weakens. What
+    # notices is the lanes' own assertions about what got posted ("posted 0 cuts
+    # with a coefficient above one"), not veripb. Step 9 has to move that
+    # lookup onto the recovery like every other citer; until it does, do not
+    # read those three passing as evidence of anything.
     #
     # Move a lane onto the arm by changing its add_cumulative_test_with_recovery
     # to add_cumulative_test_converted, and delete its line here. **When this

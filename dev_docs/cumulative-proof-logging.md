@@ -2112,9 +2112,9 @@ Run against the bare cumulative lanes, the arm reports the remaining work
 exactly. It began at 11 genuine failures; `cumulative_kaoc` came off when the
 availability lines moved, and `cumulative_edge_finding`, `cumulative_ttef`,
 `cumulative_energetic{,_random}` and `cumulative_nfnl` came off together when
-edge-finding's window rows did. What is left is `cumulative_published_nfnl` and
-its random twin, and `derived_cumulative` with the two presolver lanes that reach
-it. That list
+edge-finding's window rows did. `cumulative_published_nfnl` and its random twin followed.
+What is left is `derived_cumulative` and the two presolver lanes that reach it
+--- and see the note below about those failing softly rather than loudly. That list
 lives in `gcs/CMakeLists.txt` and is #780's progress bar: **when it is empty, the
 time-indexed block can go.**
 
@@ -2216,6 +2216,44 @@ weakens the mutation lanes, because both effects come from having more in the
 database for unit propagation to reach. Neither arm dominates the other, which is
 why every lane is registered on the arms it still discriminates under, one at a
 time, on evidence.
+
+### Citing the recovered row: published not-first / not-last
+
+The last of the propagator's citers, and the only one that scales the row: its
+`capacity_at` helper adds the capacity line at `t` with a coefficient, and
+converts the contained set's and the pushed task's variable-height contributions
+back into activity so that contiguity has something to cancel against. Scaling
+a recovered row is the same as scaling the model's, so again the swap is one
+line. `cumulative_published_nfnl` and its random twin come off the bar, and all
+eight of its fixtures run checkpoint-only.
+
+Five of its six mutation lanes still discriminate on the arm and are registered
+there, `drop_pin` --- the one aimed at what #746 added --- among them.
+`cumulative_published_nfnl_mutation_drop` does not, which is not news: it was
+already off the `Both` arm for exactly this reason, since dropping a contiguity
+row is something the checkpoint rows put back.
+
+### The one place the arm does not fail loudly
+
+Worth knowing before relying on it, and it took a confusing failure to notice.
+
+`inferred_cumulative_presolver` under the start-checkpoint arm does not fail
+veripb --- its proof verifies. It fails its own assertion, with *"posted 0 cuts
+with a coefficient above one, not the one the fixture is about"*. The cause is
+`derived_cumulative.cc`, which looks its donors' per-time rows up by label; under
+this arm a donor wrote none, so the derivation **declines**. Declining is a
+supported outcome there and not rare --- "a cut spanning several donors reaches
+time points one of them wrote no row for" --- so the constraint is simply not
+installed, and propagation quietly weakens.
+
+So for step 9's citers the arm's blunt-and-total property does not hold: the leak
+is soft. What notices is a lane asserting what got posted, and a lane without
+such an assertion would pass while silently losing propagation strength. Two
+consequences. First, `derived_cumulative`, `inferred_cumulative_presolver` and
+`cumulative_strengthening_presolver` passing must not be read as evidence until
+step 9 moves that lookup onto the recovery like every other citer. Second, this
+is a good argument for those lanes keeping assertions about what they infer, and
+not only about whether the proof checks.
 
 ### What it costs in lines
 
