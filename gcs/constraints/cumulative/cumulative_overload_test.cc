@@ -503,6 +503,11 @@ auto main(int argc, char * argv[]) -> int
                 mutation = cumulative_proof_mutation::OmitCapacityLine{};
             else if (arg == "--mutate=window")
                 mutation = cumulative_proof_mutation::ShrinkLemmaWindow{};
+            // Only does anything under GCS_CUMULATIVE_ENCODING=both-recovering,
+            // which the ctest entry for it sets; under any other encoding the
+            // recovery does not run and the proof comes out honest.
+            else if (arg == "--mutate=recover_wrong_checkpoint")
+                mutation = cumulative_proof_mutation::RecoverFromWrongCheckpoint{};
             else if (arg == "--proof-files-basename" && a + 1 < argc)
                 proof_basename = argv[++a];
         }
