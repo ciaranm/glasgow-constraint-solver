@@ -1885,6 +1885,77 @@ the solver's proof against *cake's* OPB, which has no checkpoint rows
 in it at all --- but that also means they give the new encoding no
 coverage of its own.
 
+### Recovering `C_t` from the checkpoints
+
+The derivation below has been run against real OPBs, with **every `cap_t` row
+deleted from the model**, for `n = 3` to `6` and at every time point the
+encoding writes a row for. That deletion is the point: nothing in it can lean
+on a row the encoding is meant to lose. It is not yet in the solver ---
+`tmp/issue780-recovery/` outside the repo holds the generator that produced
+the proofs, and is the executable spec for the C++.
+
+Fix a time point `t` and let the *candidates* be the tasks with flags at `t`
+(their possible-active windows differ, so this is not every task; a task with
+no flag at `t` is not in `C_t` and takes no part). Write `cb_i`, `ca_i`,
+`cact_i` for the per-time flags and `sb`, `sa`, `sact` for the pairwise ones.
+
+**The argument.** Let `j` be the candidate with the largest start among those
+that have started by `t`. Every candidate `i` active at `t` has `s_i <= t <=
+s_j`, so `sb_{i,j}`; and `s_i + l_i >= t + 1 >= s_j + 1`, so `sa_{i,j}`; so
+`sact_{i,j}`. `C^start_j` then caps exactly the load at `t`. Note `j` need not
+itself be *active* at `t` --- only started --- which is what keeps the case
+split over "started by `t`" rather than over the active set, and it is why the
+walk below never has to know which tasks are running.
+
+**The steps.** Reason-free, at `Top`, all of them:
+
+| step | shape | count | cacheable on |
+|---|---|---|---|
+| totality `sb_{i,j} \/ sb_{j,i}` | one `pol`: the two `[f]` halves, starts cancelling, divide by 2, saturate | `m(m-1)/2` | nothing, time-free |
+| transitivity | one `pol`: two `[r]` halves and one `[f]`, all three starts cancelling | `m(m-1)(m-2)` | nothing, time-free |
+| `ca_{i,t} /\ cb_{j,t} -> sa_{i,j}` | one `pol`: `ca[r] + cb[r] + sa[f]`, saturate at degree 1 | `m(m-1)` | `t` |
+| `e_{i,j} <-> (~cb_{i,t} \/ sb_{i,j})` | two `red` | `m(m-1)` | `t` |
+| `e_{i,j} /\ sb_{j,k} -> e_{i,k}` | one `rup`, on transitivity | `m(m-1)(m-2)` | `t` |
+| `N_k`, `W_{j,k}` | two `red` each | `O(m^2)` | `t` |
+| the scan `A_k` | `rup` per step, resolved by `pol` | `O(m^2)` | `t` |
+| `W_j -> C_t` | `rup` per pair, then one `pol` on `C^start_j` | `O(m^2)` | `t` |
+
+`W_{j,k}` says "`j` has started by `t` and is the latest to have done so among
+the first `k+1` candidates"; `N_k` says none of the first `k+1` has started.
+`A_k : \/_{j<=k} W_{j,k} \/ N_k` is carried up the scan one candidate at a
+time, each step one `rup` per live `W` plus one for `N`, resolved together by a
+single `pol`. `A_{m-1}` is then resolved against the per-case clauses, and the
+target row comes out from behind the fully reified `F_t` the cases were routed
+through --- the issue's guard-relativized rendering of a case split whose
+target is a row rather than a clause.
+
+**Measured**, lines per time point, at every non-trivial `t`:
+
+| `m` | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|
+| lines | 74 | 153 | 280 | 467 |
+
+That is `~2m^3`, against #780's estimate of `4-5 m^2`. Half of it --- the
+transitivity pool --- is time-free and shared by every point; the other half,
+the `e`-lifting rups, is per point because `e` mentions `cb_{i,t}`. Emitting
+only the triples the scan actually resolves against would take a constant
+factor off it. Even unoptimised the cost argument holds with room to spare: at
+`n = 6` over the 60 points a complete refutation cites, this is under 30k lines
+against a 6.7M-line proof.
+
+**Transitivity is load-bearing**, which #780 predicted and this confirms:
+dropping the transitivity pols makes the `e`-lifting rups fail, and with them
+the whole scan. The cyclic tournament is real, and no amount of pairwise
+reasoning gets past it.
+
+**The differential.** The last line of the derivation is a syntactic
+implication check (`ia`) of the model's own `cap_t` row against the recovered
+line. It is what catches a recovery that derived the *wrong* row rather than an
+invalid one: citing `C^start_{j+1}` where the case wanted `C^start_j` still
+produces a valid line, and the implication check is what rejects it. Both that
+corruption and a recovered row claimed one tighter than `cap_t` are caught
+there; only dropping transitivity fails earlier, as an invalid rup.
+
 ### What it costs in lines
 
 The checkpoint block is `6n(n-1) + n` lines --- six per ordered pair
