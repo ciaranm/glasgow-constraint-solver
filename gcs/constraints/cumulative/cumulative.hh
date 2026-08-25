@@ -18,6 +18,49 @@
 namespace gcs
 {
     /**
+     * \brief Which OPB encoding a Cumulative writes.
+     *
+     * Unlike \ref CumulativeRules, this *does* change what goes into the OPB.
+     * It changes nothing else: the solutions found, the inferences made and
+     * the certificates emitted are the same whichever is chosen, because
+     * nothing yet derives anything from what the second arm adds.
+     *
+     * \ingroup Constraints
+     */
+    enum class CumulativeEncoding
+    {
+        /// The per-time family alone: three fully reified flags per (task,
+        /// time point) over each task's possible-active window, and one
+        /// capacity row per time point. `O(n x horizon)`, and what every
+        /// inference cites today.
+        TimeIndexed,
+
+        /// The per-time family, and the start-checkpoint family beside it:
+        /// per ordered pair of tasks, flags saying whether one is running when
+        /// the other starts, and one capacity row per task. `O(n^2)` and free
+        /// of the horizon, which is the point of issue #780.
+        ///
+        /// Emitting both is how the second is checked before anything is
+        /// derived from it --- a checkpoint row that says too much is a
+        /// solution veripb refuses --- and it is not a state to stay in.
+        /// Deriving the per-time rows from the checkpoints, and then dropping
+        /// the per-time family, is the rest of #780; a `StartCheckpoint` arm
+        /// arrives with that recovery, and cannot work before it, since an
+        /// unconverted inference would have no per-time row left to cite.
+        ///
+        /// **What it costs to have both.** More model is more for unit
+        /// propagation to reach, so a certificate step that was load-bearing
+        /// against the per-time family alone need not be against the two
+        /// together. That is not hypothetical: three of Cumulative's mutation
+        /// fixtures write corrupted proofs that veripb rejects under
+        /// \ref TimeIndexed and accepts under this. So a mutation lane is
+        /// registered here only where it still discriminates, and an honest
+        /// certificate developed under this arm has been checked more weakly
+        /// than one developed under \ref TimeIndexed.
+        Both
+    };
+
+    /**
      * \brief Which of Cumulative's propagation rules are enabled.
      *
      * All three are on by default. Turning one off weakens propagation but
@@ -305,6 +348,11 @@ namespace gcs
         std::vector<Integer> _per_task_t_lo;
         std::vector<Integer> _per_task_t_hi;
         CumulativeRules _rules;
+        // nullopt until with_encoding() is called, which is how "take the
+        // default" is told apart from "asked for the default": the default is
+        // the environment's, and resolving it here in the constructor would
+        // read it before a test had a chance to set it.
+        std::optional<CumulativeEncoding> _encoding;
         innards::CumulativeProofMutation _proof_mutation = innards::cumulative_proof_mutation::None{};
         // Overload checking, resolved in prepare(). _overload_tasks lists the
         // tasks the window-energy lemma can speak about (constant length and
@@ -379,6 +427,19 @@ namespace gcs
         /// default). Propagation strength only: the solutions found and the OPB
         /// encoding are the same whatever is selected.
         auto with_rules(CumulativeRules rules) -> Cumulative &;
+
+        /**
+         * \brief Select which OPB encoding is written (see
+         * CumulativeEncoding). Proof model only: the solutions found and the
+         * inferences made are the same either way.
+         *
+         * Takes precedence over the `GCS_CUMULATIVE_ENCODING` environment
+         * variable, which is what selects the encoding for a constraint that
+         * does not call this --- and so is how a whole fixture set is run
+         * under the other arm without touching the places it builds its
+         * Cumulatives.
+         */
+        auto with_encoding(CumulativeEncoding encoding) -> Cumulative &;
 
         /// Corrupt one step of the overload check's derivation. For tests
         /// only, which assert that VeriPB rejects the result; see
@@ -527,6 +588,83 @@ namespace gcs
          * definition along with everything else it asserts.
          */
         [[nodiscard]] static auto end_lower_bound_role(std::size_t task) -> std::string;
+
+        /**
+         * \name The start-checkpoint encoding (issue #780).
+         *
+         * A second, `O(n^2)` and horizon-free statement of the same
+         * constraint, emitted alongside the per-time family above: rather than
+         * checking the capacity at every time point, check it at every time
+         * point that is the start of a task which could occupy the resource.
+         * The load profile is a step function that only rises at such a start,
+         * so a time point over capacity is dominated by the last one at or
+         * before it, and checking every start checks every peak.
+         *
+         * Nothing cites these yet --- they are here to be checked against the
+         * family that is load-bearing before anything is derived from them.
+         * Deriving the per-time rows from these, and deleting the per-time
+         * block, is the rest of #780.
+         *
+         * These are not `cake_pb_cp`'s names, as
+         * \ref capacity_row_role and the contribution roles are: cake has no
+         * start-checkpoint encoder to conform to. When one is asked for, these
+         * are the names to offer it.
+         */
+        ///@{
+
+        /**
+         * \brief The role of the row saying the load at the time task `j`
+         * starts is within the capacity:
+         * `Sum_i heights[i] . active[i,j] <= capacity`.
+         *
+         * A row exists for each task that could raise the load profile at all;
+         * ask NamesAndIDsTracker::constraint_row_label whether this one did.
+         */
+        [[nodiscard]] static auto checkpoint_row_role(std::size_t task) -> std::string;
+
+        /**
+         * \name The keys of the per-(task, task) flags.
+         *
+         * `before[i,j]` is `start[i] <= start[j]`, `after[i,j]` is
+         * `start[i] + length[i] > start[j]`, and `active[i,j]` is their
+         * conjunction (with the presence of `i`, where it has one): task `i`
+         * is running at the moment task `j` starts.
+         *
+         * The diagonal is the exception. `before[j,j]` is a tautology and
+         * `after[j,j]` is `length[j] >= 1`, so neither is minted, and
+         * `active[j,j]` is minted only when it says something --- when `j` has
+         * a variable length, or a presence. Where it says nothing, task `j` is
+         * on its own row unconditionally and there is no flag to ask for. So
+         * nullopt from here carries its usual meaning for `i != j` (the
+         * constraint did not encode that pair) and means "the term is there
+         * without a flag" on the diagonal.
+         */
+        ///@{
+        [[nodiscard]] static auto pair_before_flag_key(std::size_t i, std::size_t j) -> innards::ProofFlagKey;
+        [[nodiscard]] static auto pair_after_flag_key(std::size_t i, std::size_t j) -> innards::ProofFlagKey;
+        [[nodiscard]] static auto pair_active_flag_key(std::size_t i, std::size_t j) -> innards::ProofFlagKey;
+        ///@}
+
+        /**
+         * \brief The key of one bit of a variable-height task's linearised
+         * load contribution at the moment task `j` starts, and the roles of
+         * the three rows defining it.
+         *
+         * The per-time family's counterparts, said over a pair of tasks rather
+         * than over a task and a time; see \ref contribution_flag_key and
+         * \ref contribution_ge_row_role for what they mean. A constant-height
+         * task has none, and neither does a variable-height task on a diagonal
+         * whose activity flag was not minted: its contribution is its height,
+         * unconditionally, and the row carries the height itself.
+         */
+        ///@{
+        [[nodiscard]] static auto pair_contribution_flag_key(std::size_t i, std::size_t j, Integer bit) -> innards::ProofFlagKey;
+        [[nodiscard]] static auto pair_contribution_ge_row_role(std::size_t i, std::size_t j) -> std::string;
+        [[nodiscard]] static auto pair_contribution_le_row_role(std::size_t i, std::size_t j) -> std::string;
+        [[nodiscard]] static auto pair_contribution_zero_row_role(std::size_t i, std::size_t j) -> std::string;
+        ///@}
+
+        ///@}
     };
 }
 

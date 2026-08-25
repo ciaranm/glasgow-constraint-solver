@@ -1781,6 +1781,127 @@ this keeps a flat array plus the incremental bitset (their Algorithm 3 shift-or)
 per time point. Same trade as #742 for edge-finding's scan, and the same answer
 --- what is missing is propagation performance, not proof content.
 
+## The start-checkpoint encoding, beside the time-indexed one (#780)
+
+The OPB above is `O(n x horizon)` and is paid unconditionally, before
+search, whether or not anything cites it. There is another encoding of
+the same constraint that is `O(n^2)` and free of the horizon: check the
+capacity only at the time points that are the *start of some task*.
+
+```
+before_{i,j} <-> s_i <= s_j
+after_{i,j}  <-> s_i + l_i >= s_j + 1
+active_{i,j} <-> before_{i,j} /\ after_{i,j}   [ /\ present_i ]
+
+C^start_j :  Sum_i h_i * active_{i,j}  <=  capacity
+```
+
+It says the same thing, because the load profile is a step function
+that only rises at the start of a task which could occupy the resource:
+a time point over capacity is dominated by the last such start at or
+before it, so checking every start checks every peak. Lengths, heights
+and the capacity are all non-negative already, so a checkpoint with
+nothing active is *satisfied* rather than merely vacuous.
+
+`CumulativeEncoding` selects which of the two is written.
+`TimeIndexed` is the per-time family alone and is the default;
+`Both` writes the checkpoints beside it. Nothing derives anything from
+the checkpoints yet, so `Both` changes no inference and no certificate
+--- deriving `C_t` from `C^start_*` and then dropping the per-time
+family is the rest of #780. A `StartCheckpoint` arm cannot exist before
+that recovery does, since an unconverted inference would have no
+per-time row left to cite.
+
+### Two details that are easy to get wrong
+
+**The diagonal.** `before_{j,j}` is a tautology and `after_{j,j}`
+reduces to `l_j >= 1`, so what is left of `active_{j,j}` is that
+conjunct and the presence. Both have to stay conjuncts: a bare `h_j` on
+the row charges a task for a resource it never takes when its length
+turns out to be zero or it turns out to be absent. Where *neither* says
+anything --- a constant length, which is at least 1 for a task that can
+raise the profile, and no presence --- the term genuinely is
+unconditional and goes on the row as itself, with no flag minted. That
+is what a nullopt from `pair_active_flag_key` means on a diagonal, and
+it is a different thing from what it means off one.
+
+**Which tasks get a checkpoint.** Sufficiency needs one at every task
+that can have positive height *and* positive duration, which is exactly
+`_active_tasks`. A checkpoint at an absent or zero-length task is
+harmless --- its start is still *some* time point, and the capacity
+holds at every time point --- it simply does not count towards
+sufficiency.
+
+### What running both arms checks, and what it cannot
+
+Every cumulative test lane is registered twice, the twin under
+`GCS_CUMULATIVE_ENCODING=both` in its own working directory (see
+`add_cumulative_test` in `gcs/CMakeLists.txt`). The twin's value is
+*soundness*: veripb's `solx` rule propagates the logged assignment and
+then requires every constraint in the database to be satisfied, so a
+checkpoint row that says too much is a solution veripb refuses, on any
+enumeration lane. It also checks that every new flag is UP-derivable
+from a full assignment, which the same rule demands.
+
+It cannot check *sufficiency* --- that the checkpoints imply the
+per-time rows --- because nothing derives from them. That gap is not
+theoretical, and the asymmetry is sharp. Four deliberate corruptions of
+the encoding, run against `cumulative_constraint`,
+`cumulative_optional_constraint_enumerate`, `cumulative_overload` and
+`derived_cumulative`:
+
+| corruption | direction | caught |
+|---|---|---|
+| diagonal as a bare constant | row too strong | 4 of 4 |
+| off-diagonal `active` without the presence conjunct | row too strong | 2 of 4 |
+| `after_{i,j}` off by one, task counted one tick long | row too strong | 4 of 4 |
+| `after_{i,j}` off by one, task counted one tick short | row too **weak** | **0 of 4** |
+
+Anything that makes a checkpoint row weaker is invisible until an
+inference tries to derive something from it. Sufficiency gets its first
+real test when the time-table overflow contradiction moves over.
+
+### What having both arms costs
+
+More model is more for unit propagation to reach, so a certificate step
+that was load-bearing against the per-time family alone need not be
+against the two together. Three mutation lanes ---
+`cumulative_published_nfnl_mutation_drop`,
+`cumulative_optional_mutation_wrong_task` and
+`cumulative_optional_mutation_emit_nothing` --- write corrupted proofs
+that veripb rejects under `TimeIndexed` and *accepts* under `Both`. In
+the published not-first / not-last case the checkpoints put back enough
+for the wrapping RUP to close without the dropped contiguity row; in
+the presence-falsification cases they relate the falsified task's start
+to every other task's directly, which is enough to close without the
+chain. Those three are registered bare rather than twinned. Every other
+mutation lane still discriminates under both arms.
+
+The general form of the hazard is worth stating plainly: while both
+encodings stand, an honest certificate developed under `Both` has been
+checked more weakly than one developed under `TimeIndexed`. The five
+`scp_chain_cumulative*` cases are a partial hedge, since they verify
+the solver's proof against *cake's* OPB, which has no checkpoint rows
+in it at all --- but that also means they give the new encoding no
+coverage of its own.
+
+### What it costs in lines
+
+The checkpoint block is `6n(n-1) + n` lines --- six per ordered pair
+(three flags at two reification halves each) and one row per task ---
+and is flat in the horizon. Measured through `fzn-glasgow --prove`:
+
+| | time-indexed | with checkpoints | delta |
+|---|---|---|---|
+| `n = 6`, `H = 50` | 2,086 lines | 2,272 | +186 |
+| `n = 6`, `H = 800` | 33,314 lines | 33,500 | +186 |
+| `n = 3`, `S = 9`, `D = 100` | 2,079 lines / 261 KB | 2,118 | +39 |
+| `n = 3`, `S = 9`, `D = 10000` | 190,179 lines / **25 MB** | 190,218 | +39 |
+
+The last row is the case for the whole exercise: 25 MB of per-time
+block, emitted unconditionally, next to 39 lines that say the same
+thing.
+
 ## Open follow-ups
 - **Cloutier & Quimper's Profile.** The doubly linked list over time points,
   which collapses the runs where the profile is constant and takes the sweep

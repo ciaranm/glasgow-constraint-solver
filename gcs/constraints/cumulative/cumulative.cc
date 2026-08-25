@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -64,6 +65,32 @@ using fmt::print;
 
 namespace
 {
+    // The encoding a Cumulative writes when with_encoding() was not called.
+    // The environment rather than a constructor argument because what it is
+    // for is running an existing fixture set --- which builds its Cumulatives
+    // in sixty places --- under the other arm without touching any of them.
+    //
+    // An unrecognised spelling throws, where GCS_ASSERTION_LEVEL's reader
+    // warns and carries on. The difference is what a mistake costs: a mistyped
+    // assertion level writes a proof at the wrong level, which shows up; a
+    // mistyped encoding silently runs the arm that was already covered, and
+    // the run goes green having checked nothing new.
+    auto default_cumulative_encoding() -> CumulativeEncoding
+    {
+        static const auto value = [] {
+            const auto * const env = std::getenv("GCS_CUMULATIVE_ENCODING");
+            if (! env || ! *env)
+                return CumulativeEncoding::TimeIndexed;
+            string spelling{env};
+            if (spelling == "time-indexed")
+                return CumulativeEncoding::TimeIndexed;
+            else if (spelling == "both")
+                return CumulativeEncoding::Both;
+            throw UnexpectedException{"unrecognised GCS_CUMULATIVE_ENCODING value '" + spelling + "'"};
+        }();
+        return value;
+    }
+
     // The variable-height contribution h_i·active is linearised over cake's
     // per-bit contribution flags cc_k (weight 2^k): contrib = Σ 2^k · cc_k.
     auto contrib_sum_of(const vector<ProofFlag> & cc) -> WPBSum
@@ -117,6 +144,12 @@ auto Cumulative::with_rules(CumulativeRules rules) -> Cumulative &
     return *this;
 }
 
+auto Cumulative::with_encoding(CumulativeEncoding encoding) -> Cumulative &
+{
+    _encoding = encoding;
+    return *this;
+}
+
 auto Cumulative::with_proof_mutation(CumulativeProofMutation mutation) -> Cumulative &
 {
     _proof_mutation = mutation;
@@ -134,6 +167,8 @@ auto Cumulative::clone() const -> unique_ptr<Constraint>
     auto result = _presences.empty() ? make_unique<Cumulative>(_starts, _lengths, _heights, _capacity)
                                      : make_unique<Cumulative>(_starts, _lengths, _heights, _presences, _capacity);
     result->with_rules(_rules);
+    if (_encoding)
+        result->with_encoding(*_encoding);
     result->with_proof_mutation(_proof_mutation);
     result->with_presence_mutation(_presence_mutation);
     return result;
@@ -493,6 +528,149 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
                                                         : model.add_labelled_constraint(_constraint_id, role, move(load) + -1_i * _capacity <= 0_i);
             _capacity_lines.emplace(t, line);
         }
+    }
+
+    if (_encoding.value_or(default_cumulative_encoding()) == CumulativeEncoding::TimeIndexed)
+        return;
+
+    // Start-checkpoint encoding (issue #780), emitted *alongside* the
+    // time-indexed block above rather than instead of it:
+    //   for each ordered pair (i, j) of tasks that can raise the profile:
+    //     sb_{i,j}   ⇔  starts[i] ≤ starts[j]
+    //     sa_{i,j}   ⇔  starts[i] + lengths[i] ≥ starts[j] + 1
+    //     sact_{i,j} ⇔  sb_{i,j} ∧ sa_{i,j} [ ∧ presences[i] = 1 ]
+    //   for each such task j:
+    //     Σ heights[i]·sact_{i,j} ≤ capacity
+    //
+    // It says the same thing the block above does, in O(n²) rows rather than
+    // O(n × horizon): the load profile is a step function that only rises at
+    // the start of a task which could occupy the resource, so a time point
+    // over capacity is dominated by the last such start at or before it, and
+    // checking every start checks every peak. Lengths, heights and the
+    // capacity are all non-negative (the constructor and prepare check that),
+    // so a checkpoint with nothing active is satisfied rather than merely
+    // vacuous. A checkpoint at a task that turns out to be absent, or to have
+    // length zero, is harmless --- its start is still *some* time point, and
+    // the capacity holds at every time point --- it just does not count
+    // towards sufficiency, which is why the checkpoints are over _active_tasks
+    // and not over every task.
+    //
+    // Nothing cites these yet, and no propagator or rule knows they exist.
+    // They are here to be checked against the family that *is* load-bearing
+    // before anything is derived from them: a checkpoint row that says too
+    // much is a solution VeriPB refuses on the `solx` line of any enumeration
+    // test, which is a soundness check the per-time block cannot dodge for
+    // them. What it does not check is sufficiency --- that these imply the
+    // per-time rows --- and that only gets tested as inferences move over.
+    // Deriving the per-time rows from these, and deleting the block above, is
+    // the rest of #780.
+    //
+    // Not windowed, unlike the block above: every ordered pair gets flags,
+    // including pairs that could never be active together. Whether pruning
+    // those is worth the recovery having to know a pair may be missing is a
+    // measurement, not something to guess at here.
+    for (auto j : _active_tasks) {
+        WPBSum load;
+        // What the diagonal contributes when it needs no flag: a constant
+        // height, taken unconditionally, which belongs on the right hand side
+        // rather than as a term.
+        Integer fixed_load = 0_i;
+        for (auto i : _active_tasks) {
+            std::vector<long long> ij{static_cast<long long>(i), static_cast<long long>(j)};
+            std::optional<ProofFlag> active;
+
+            if (i != j) {
+                auto before =
+                    model.create_proof_flag_values_fully_reifying(_constraint_id, ij, "sb", WPBSum{} + 1_i * _starts[i] + -1_i * _starts[j] <= 0_i);
+                // after_{i,j} ⇔ task i has not finished by the time j starts ⇔
+                // s_i + l_i ≥ s_j + 1. A constant length folds into the right
+                // hand side, exactly as it does per (i, t); a variable one
+                // stays on the left, which makes this a three-variable row.
+                // That costs nothing here --- a PB row does not care how many
+                // variables it names --- but it is why the per-(i,t) family
+                // needed the proof-only `end` proxy, and a pin of this flag
+                // will need the same treatment per pair rather than per time.
+                auto after = is_constant_variable(_lengths[i]) ? model.create_proof_flag_values_fully_reifying(_constraint_id, ij, "sa",
+                                                                     WPBSum{} + 1_i * _starts[i] + -1_i * _starts[j] >= 1_i - _length_vals[i])
+                                                               : model.create_proof_flag_values_fully_reifying(_constraint_id, ij, "sa",
+                                                                     WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] + -1_i * _starts[j] >= 1_i);
+                auto conjuncts = WPBSum{} + 1_i * before + 1_i * after;
+                auto arity = 2_i;
+                if (_presence[i]) {
+                    conjuncts += 1_i * (*_presence[i] == 1_i);
+                    arity = 3_i;
+                }
+                active = model.create_proof_flag_values_fully_reifying(_constraint_id, ij, "sact", move(conjuncts) >= arity);
+            }
+            else {
+                // The diagonal: is j running at the moment j starts? before is
+                // a tautology and after reduces to lengths[j] ≥ 1, so what is
+                // left is that conjunct and the presence. Both matter: a task
+                // that can have length zero, or that can be absent, must not
+                // be charged for a resource it never takes, which is what
+                // putting a bare h_j on the row would do.
+                //
+                // Where neither says anything --- a constant length, which is
+                // at least 1 for an active task, and no presence --- the term
+                // *is* unconditional, so it goes on the row as itself and no
+                // flag is minted. That is what the nullopt from
+                // pair_active_flag_key means on a diagonal.
+                auto conjuncts = WPBSum{};
+                auto arity = 0_i;
+                if (! is_constant_variable(_lengths[j])) {
+                    conjuncts += 1_i * _lengths[j];
+                    arity += 1_i;
+                }
+                if (_presence[j]) {
+                    // Scaled to the length's own arity so that one term cannot
+                    // stand in for the other: with a variable length the row
+                    // is lengths[j] + ub(lengths[j])·present ≥ 1 + ub, which
+                    // needs both.
+                    auto weight = (arity == 0_i) ? 1_i : _length_ub[j];
+                    conjuncts += weight * (*_presence[j] == 1_i);
+                    arity += weight;
+                }
+                if (arity > 0_i)
+                    active = model.create_proof_flag_values_fully_reifying(_constraint_id, ij, "sact", move(conjuncts) >= arity);
+            }
+
+            if (! active) {
+                // Unconditional: the height itself, constant or not.
+                if (is_constant_variable(_heights[i]))
+                    fixed_load += _height_vals[i];
+                else
+                    load += 1_i * _heights[i];
+                continue;
+            }
+
+            if (is_constant_variable(_heights[i]))
+                load += _height_vals[i] * *active;
+            else {
+                // A variable height's contribution is the product h_i·active,
+                // linearised over per-bit flags exactly as the per-(i,t) block
+                // does it; see there for what the three rows say.
+                auto highest_bit_shift = std::get<0>(get_bits_encoding_coeffs(0_i, _height_ub[i]));
+                std::vector<ProofFlag> cc;
+                for (Integer k = 0_i; k <= highest_bit_shift; ++k)
+                    cc.push_back(model.names_and_ids_tracker().create_proof_flag_values(
+                        _constraint_id, std::vector<long long>{static_cast<long long>(i), static_cast<long long>(j), k.raw_value}, "scc"));
+                auto contrib = contrib_sum_of(cc);
+                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::pair_contribution_ge_row_role(i, j),
+                    contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{*active});
+                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::pair_contribution_le_row_role(i, j),
+                    contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{*active});
+                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::pair_contribution_zero_row_role(i, j),
+                    contrib <= 0_i, HalfReifyOnConjunctionOf{! *active});
+                for (Integer k = 0_i; k.raw_value < static_cast<long long>(cc.size()); ++k)
+                    load += power2(k) * cc[k.raw_value];
+            }
+        }
+
+        auto role = ConstraintProofModelData<Cumulative>::checkpoint_row_role(j);
+        if (is_constant_variable(_capacity))
+            model.add_labelled_constraint(_constraint_id, role, move(load) <= _capacity_val - fixed_load);
+        else
+            model.add_labelled_constraint(_constraint_id, role, move(load) + -1_i * _capacity <= -fixed_load);
     }
 }
 
@@ -2569,6 +2747,47 @@ auto ConstraintProofModelData<Cumulative>::end_lower_bound_role(size_t task) -> 
 {
     // Must stay the string install_propagators' initialiser publishes under.
     return "end_ge_" + std::to_string(task);
+}
+
+auto ConstraintProofModelData<Cumulative>::checkpoint_row_role(size_t task) -> string
+{
+    // Must stay the string define_proof_model labels the row with.
+    return "scap_" + std::to_string(task);
+}
+
+auto ConstraintProofModelData<Cumulative>::pair_before_flag_key(size_t i, size_t j) -> ProofFlagKey
+{
+    return ProofFlagKey{{static_cast<long long>(i), static_cast<long long>(j)}, "sb"};
+}
+
+auto ConstraintProofModelData<Cumulative>::pair_after_flag_key(size_t i, size_t j) -> ProofFlagKey
+{
+    return ProofFlagKey{{static_cast<long long>(i), static_cast<long long>(j)}, "sa"};
+}
+
+auto ConstraintProofModelData<Cumulative>::pair_active_flag_key(size_t i, size_t j) -> ProofFlagKey
+{
+    return ProofFlagKey{{static_cast<long long>(i), static_cast<long long>(j)}, "sact"};
+}
+
+auto ConstraintProofModelData<Cumulative>::pair_contribution_flag_key(size_t i, size_t j, Integer bit) -> ProofFlagKey
+{
+    return ProofFlagKey{{static_cast<long long>(i), static_cast<long long>(j), bit.raw_value}, "scc"};
+}
+
+auto ConstraintProofModelData<Cumulative>::pair_contribution_ge_row_role(size_t i, size_t j) -> string
+{
+    return std::to_string(i) + "_" + std::to_string(j) + "_scge";
+}
+
+auto ConstraintProofModelData<Cumulative>::pair_contribution_le_row_role(size_t i, size_t j) -> string
+{
+    return std::to_string(i) + "_" + std::to_string(j) + "_scle";
+}
+
+auto ConstraintProofModelData<Cumulative>::pair_contribution_zero_row_role(size_t i, size_t j) -> string
+{
+    return std::to_string(i) + "_" + std::to_string(j) + "_scz";
 }
 
 auto Cumulative::constraint_type() const -> std::string
