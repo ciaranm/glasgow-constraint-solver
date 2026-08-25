@@ -1805,12 +1805,13 @@ nothing active is *satisfied* rather than merely vacuous.
 
 `CumulativeEncoding` selects which of the two is written.
 `TimeIndexed` is the per-time family alone and is the default;
-`Both` writes the checkpoints beside it. Nothing derives anything from
-the checkpoints yet, so `Both` changes no inference and no certificate
---- deriving `C_t` from `C^start_*` and then dropping the per-time
-family is the rest of #780. A `StartCheckpoint` arm cannot exist before
-that recovery does, since an unconverted inference would have no
-per-time row left to cite.
+`Both` writes the checkpoints beside it, and changed no inference and no
+certificate when it was the only other arm. `BothRecovering` adds the
+eager differential. `StartCheckpoint` writes the checkpoints *instead*
+--- it arrived once the recovery did, since before that an unconverted
+inference would have had no per-time row left to cite, and it is now how
+a converted rule is held to having really been converted. See "Just
+turning the old encoding off", below.
 
 ### Two details that are easy to get wrong
 
@@ -2069,19 +2070,62 @@ row from the window supply, which is now a *recovered* row rather than a model
 one, so without the twin the recovering arm would have no negative test over the
 path this moved.
 
-**The bar has run out of road here, and that is worth stating plainly.** The
-citers that remain --- the elastic and knapsack availability lines,
-edge-finding's window rows, published not-first / not-last --- all sit behind
-`CumulativeRules` fields that are off by default, and the leak check's vehicle is
-an `.scp` model run through `glasgow_scp_solver`, which builds a plain
-`Cumulative` and has no flag for the rules. So no case that *could* stay in
-`prefix` and mark them outstanding can be written in this vehicle at all: the
-next rule to move over has no test that can express its own completion. Closing
-that needs either a way to select rules from the scp path, or the same
-strip-and-recheck applied to the proofs a C++ lane writes under
-`GCS_PRESERVE_PROOF_FILES` --- 34 of `cumulative_overload_test`'s 115 proofs
-already run the recovery, so the material is there. Until one exists, the
-remaining steps are tracked by #780 and not by this bar.
+### Just turning the old encoding off
+
+The `whole` mode above reconstructs the end state: solve with both blocks in the
+model, then delete the `cap_t` rows from the finished OPB and re-check. It ran
+out of road as soon as the default rule set was converted, because its vehicle is
+an `.scp` model through `glasgow_scp_solver`, which builds a plain `Cumulative`
+--- and every citer that remains is behind a `CumulativeRules` field that is off
+by default. No `.scp` model can fire those rules, so none could be registered to
+mark them outstanding.
+
+`CumulativeEncoding::StartCheckpoint` replaces it by doing the obvious thing
+instead: **never emit the per-time block at all**. A rule that still reads
+`capacity_lines` finds nothing there, its pol loses the supply it was counting
+on, and veripb rejects. Nobody has to enumerate where the old rows are read from
+--- the arm asks the question everywhere at once, which is the check a careful
+reader would do by hand over every access to the old constraint IDs, done
+mechanically and without the reader having to be exhaustive.
+
+It is better than the strip-and-recheck on every axis that matters. It is the end
+state itself rather than a reconstruction of it. It needs no post-processing and
+no `.scp` vehicle, so it is available to every C++ test lane --- and therefore to
+every rule, including the off-by-default ones. And it fails loudly.
+
+**The per-time block still appears where the recovery cannot reach**: a variable
+height, a variable length, an optional task, a variable capacity. There would
+otherwise be no capacity row at all for such a constraint, and every rule over it
+would be *uncertifiable* rather than merely unconverted. So the arm is
+"start-checkpoint wherever the recovery reaches", which is what the eventual
+default has to be too; `cumulative_shape_supports_checkpoint_recovery` is the one
+statement of where that is, shared with the recovery's own guard so the two
+cannot drift.
+
+That fallback is also the arm's one way to go quietly vacuous --- a lane all of
+whose fixtures fall back would pass while checking nothing new. So the four
+leak-check models are registered a second time in `no-block` mode, which asserts
+that the OPB contains *no* `cap_` row and does contain `scap_` ones. A model that
+falls back fails it by name.
+
+Run against the bare cumulative lanes, the arm reports the remaining work
+exactly: 57 of 70 pass, and the 11 genuine failures are `cumulative_kaoc`
+(the knapsack / elastic availability lines), `cumulative_edge_finding`,
+`cumulative_ttef`, `cumulative_energetic{,_random}` (edge-finding's window rows),
+`cumulative_nfnl`, `cumulative_published_nfnl{,_random}` (not-first / not-last),
+and `derived_cumulative` with the two presolver lanes that reach it. That list
+lives in `gcs/CMakeLists.txt` and is #780's progress bar: **when it is empty, the
+time-indexed block can go.**
+
+Two lanes are off the arm for a different reason and are not part of the bar:
+`cumulative_optional_mutation_wrong_task` and
+`cumulative_optional_mutation_emit_nothing` stop discriminating under it, as they
+already do under `Both` and for the same reason --- more model is more for unit
+propagation to reach. They are not unconverted; the arm just cannot hold them.
+
+The arm is not vacuous on the lanes that are on it: under it, 59 of
+`cumulative_test`'s 77 proofs and 37 of `cumulative_overload_test`'s 115 contain
+no `cap_` row at all.
 
 ### What it costs in lines
 

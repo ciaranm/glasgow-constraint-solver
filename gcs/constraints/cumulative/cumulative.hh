@@ -77,7 +77,35 @@ namespace gcs
         /// than in a solve. It does nothing for a Cumulative the recovery
         /// cannot yet speak about --- see
         /// innards::cumulative_checkpoint_recovery_applies.
-        BothRecovering
+        BothRecovering,
+
+        /// The start-checkpoint family alone, with the per-time block *not*
+        /// written at all --- the end state #780 is walking towards, and today
+        /// the way a converted rule is held to having really been converted.
+        ///
+        /// The check it performs is blunt and total, which is the point: a rule
+        /// that still reads `capacity_lines` finds nothing there, its pol loses
+        /// the supply it was counting on, and veripb rejects the proof. So
+        /// running a fixture under this arm asks "does anything in this still
+        /// touch the old rows" without anyone having to enumerate where the old
+        /// rows are read from. That is what the leak-check script was
+        /// approximating by deleting `cap_t` rows from a finished OPB, and this
+        /// does it at the source instead --- no post-processing, no `.scp`-only
+        /// vehicle, and so available to every C++ test lane and every rule,
+        /// including the ones CumulativeRules leaves off by default.
+        ///
+        /// **The per-time block still appears for a Cumulative the recovery
+        /// cannot speak about** --- a variable height, a variable length, an
+        /// optional task, a variable capacity. There would otherwise be no
+        /// capacity row at all for such a constraint, and every rule over it
+        /// would be uncertifiable rather than merely unconverted. So this is
+        /// "start-checkpoint wherever the recovery reaches", which is also what
+        /// the eventual default has to be: see
+        /// innards::cumulative_shape_supports_checkpoint_recovery for exactly
+        /// where that is. A lane that wants the strict form should use a
+        /// fixture whose shape qualifies, and can confirm it did by the absence
+        /// of `cap_` labels in the OPB.
+        StartCheckpoint
     };
 
     /**
