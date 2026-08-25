@@ -57,7 +57,27 @@ namespace gcs
         /// registered here only where it still discriminates, and an honest
         /// certificate developed under this arm has been checked more weakly
         /// than one developed under \ref TimeIndexed.
-        Both
+        Both,
+
+        /// As \ref Both, and then derive every per-time capacity row from the
+        /// start-checkpoint rows and check it against the row the model still
+        /// carries beside it.
+        ///
+        /// The development arm for the middle of #780, and the answer to "did
+        /// the recovery derive the right thing". A recovery that is *invalid*
+        /// fails where it is emitted; a recovery that is valid but derives the
+        /// *wrong* row --- citing the neighbouring checkpoint, say --- emits a
+        /// perfectly good line, and only the implication check against the
+        /// model's own row rejects it. So the two encodings standing side by
+        /// side buy something here that neither buys alone.
+        ///
+        /// Deliberately eager, which the recovery itself is not meant to be:
+        /// this recovers every row rather than the ones a search cites, so it
+        /// is `O(horizon)` work in the proof and belongs in a test lane rather
+        /// than in a solve. It does nothing for a Cumulative the recovery
+        /// cannot yet speak about --- see
+        /// innards::cumulative_checkpoint_recovery_applies.
+        BothRecovering
     };
 
     /**

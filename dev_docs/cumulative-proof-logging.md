@@ -1836,7 +1836,18 @@ sufficiency.
 
 Every cumulative test lane is registered twice, the twin under
 `GCS_CUMULATIVE_ENCODING=both` in its own working directory (see
-`add_cumulative_test` in `gcs/CMakeLists.txt`). The twin's value is
+`add_cumulative_test` in `gcs/CMakeLists.txt`), and most of them a third time
+under `both-recovering`.
+
+One trap, since it cost a round of vacuous lanes here: the encoding **cannot**
+be set with `set_tests_properties(... PROPERTIES ENVIRONMENT ...)` at
+registration. The runtime-cap block further down `gcs/CMakeLists.txt` sets
+`ENVIRONMENT` on every test in the directory, and that *replaces* the property
+rather than adding to it, so anything set earlier is dropped and the twin
+silently runs the arm it was meant to be twinning against. Record the lane and
+`set_property(TEST ... APPEND PROPERTY ENVIRONMENT ...)` after that block,
+which is what the linear and disjunctive lanes already do. Nothing caught this
+except a mutation lane that must fail starting to pass. The twin's value is
 *soundness*: veripb's `solx` rule propagates the logged assignment and
 then requires every constraint in the database to be satisfied, so a
 checkpoint row that says too much is a solution veripb refuses, on any
@@ -1929,6 +1940,22 @@ target row comes out from behind the fully reified `F_t` the cases were routed
 through --- the issue's guard-relativized rendering of a case split whose
 target is a row rather than a clause.
 
+**In the solver.** `recover_cumulative_capacity_row`
+(`gcs/constraints/cumulative/checkpoint_recovery.cc`) is this derivation,
+keyed on `t` alone and reason-free at `Top`, with the order facts cached
+across time points and the recovered rows cached across citers. Two things
+it does that the hand-written version did not have to:
+
+- **A lone task's case comes out unguarded.** With one candidate there is no
+  pairwise term to pin, so the case's `pol` produces the target row with no
+  `~W_j` on it, and the scan then has nothing to cancel against. The guard
+  goes on as a literal axiom, which costs nothing where the arithmetic already
+  produced it --- saturation flattens the coefficient either way.
+- **The clause has to be a `pol` and not a `rup`.** The guarded row and the
+  target's reverse half conflict by *arithmetic*, not by unit propagation:
+  `sum ~cact_i >= 2` and `sum cact_i >= 3` over four literals each have slack,
+  so nothing propagates and a `rup` stalls. Adding them is what finds it.
+
 **Measured**, lines per time point, at every non-trivial `t`:
 
 | `m` | 3 | 4 | 5 | 6 |
@@ -1942,6 +1969,16 @@ only the triples the scan actually resolves against would take a constant
 factor off it. Even unoptimised the cost argument holds with room to spare: at
 `n = 6` over the 60 points a complete refutation cites, this is under 30k lines
 against a 6.7M-line proof.
+
+**Two things hold the solver's version to what the hand-written one showed.**
+`cumulative_overload_mutation_recover_wrong` recovers a row from the
+neighbouring task's checkpoint and requires veripb to reject it, which only the
+implication check does. And `cumulative_checkpoint_recovery_leak_check` cuts
+the proof at the marker the recovery emits and rechecks the prefix against an
+OPB with every per-time capacity row stripped out --- the only thing that says
+the recovery is not quietly closing one of its rups against the very row it
+claims to be deriving. Both fail loudly if the recovery stops running at all,
+rather than passing vacuously.
 
 **Transitivity is load-bearing**, which #780 predicted and this confirms:
 dropping the transitivity pols makes the `e`-lifting rups fail, and with them

@@ -1,3 +1,4 @@
+#include <gcs/constraints/cumulative/checkpoint_recovery.hh>
 #include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/constraints/cumulative/hints.hh>
 #include <gcs/constraints/cumulative/propagate.hh>
@@ -86,6 +87,8 @@ namespace
                 return CumulativeEncoding::TimeIndexed;
             else if (spelling == "both")
                 return CumulativeEncoding::Both;
+            else if (spelling == "both-recovering")
+                return CumulativeEncoding::BothRecovering;
             throw UnexpectedException{"unrecognised GCS_CUMULATIVE_ENCODING value '" + spelling + "'"};
         }();
         return value;
@@ -786,6 +789,19 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .time_slot_lo = _time_slot_lo,
         .guarded_energy =
             std::make_shared<std::map<std::tuple<size_t, Integer, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>()};
+
+    // #780's differential, under CumulativeEncoding::BothRecovering: derive
+    // every capacity row from the start-checkpoint rows and check it against
+    // the one the model still carries. A copy of the inputs rather than a
+    // reference into the propagator's, which is about to be moved from --- the
+    // check runs once, before search, and the copy dies with it.
+    if (_encoding.value_or(default_cumulative_encoding()) == CumulativeEncoding::BothRecovering)
+        propagators.install_initialiser(
+            [recovery_inputs = make_shared<CumulativeInputs>(inputs)](State &, auto &, ProofLogger * const logger) -> void {
+                if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
+                    return;
+                check_recovered_cumulative_capacity_rows(*logger, *recovery_inputs);
+            });
 
     propagators.install(
         constraint_id(),

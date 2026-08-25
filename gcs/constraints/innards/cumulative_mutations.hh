@@ -157,6 +157,22 @@ namespace gcs::innards
         // claim is not a certificate of the published rule however VeriPB
         // finishes it.
 
+        /// Recover a capacity row from the wrong task's checkpoint: cite the
+        /// next candidate's row where the case wanted this one's.
+        ///
+        /// The lane #780's differential exists for, and the one corruption in
+        /// this family that no `pol` failure catches. Every step of the
+        /// recovery still checks: the arithmetic is as valid over a
+        /// neighbour's row as over the right one, and what comes out is a
+        /// perfectly good line. It is simply not the row the model says. Only
+        /// asking whether the recovered line implies the model's own row ---
+        /// which is what CumulativeEncoding::BothRecovering does, and the only
+        /// thing the two encodings standing side by side buy that neither buys
+        /// alone --- rejects it. Needs that encoding: under any other, the
+        /// recovery does not run and this does nothing.
+        struct RecoverFromWrongCheckpoint
+        {
+        };
     }
 
     using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
@@ -164,7 +180,7 @@ namespace gcs::innards
         cumulative_proof_mutation::PushOneTooFar, cumulative_proof_mutation::DropProfilePin, cumulative_proof_mutation::DropProfilePins,
         cumulative_proof_mutation::ClaimOneBetterAvailability, cumulative_proof_mutation::StrengthenOneFewer,
         cumulative_proof_mutation::DropEnergeticContributor, cumulative_proof_mutation::PublishedEmitNothing,
-        cumulative_proof_mutation::DropPublishedPin>;
+        cumulative_proof_mutation::DropPublishedPin, cumulative_proof_mutation::RecoverFromWrongCheckpoint>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,
