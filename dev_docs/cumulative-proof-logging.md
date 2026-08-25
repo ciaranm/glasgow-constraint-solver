@@ -2110,10 +2110,11 @@ falls back fails it by name.
 
 Run against the bare cumulative lanes, the arm reports the remaining work
 exactly. It began at 11 genuine failures; `cumulative_kaoc` came off when the
-availability lines moved (above), leaving `cumulative_edge_finding`,
-`cumulative_ttef`, `cumulative_energetic{,_random}` (edge-finding's window rows),
-`cumulative_nfnl`, `cumulative_published_nfnl{,_random}` (not-first / not-last),
-and `derived_cumulative` with the two presolver lanes that reach it. That list
+availability lines moved, and `cumulative_edge_finding`, `cumulative_ttef`,
+`cumulative_energetic{,_random}` and `cumulative_nfnl` came off together when
+edge-finding's window rows did. What is left is `cumulative_published_nfnl` and
+its random twin, and `derived_cumulative` with the two presolver lanes that reach
+it. That list
 lives in `gcs/CMakeLists.txt` and is #780's progress bar: **when it is empty, the
 time-indexed block can go.**
 
@@ -2178,6 +2179,43 @@ code is shared, and the non-strengthened per-point branch is exercised whenever 
 coverage rather than in the certificate's. The `elastic` rule set in
 `cumulative_kaoc_test.cc` is used for decline-checks, which is why the fixtures
 there all go on to fire `kaoc` instead. Worth a fixture; nobody has written one.
+
+### Citing the recovered row: edge-finding's window rows
+
+The smallest change of the lot, and the one that bought the most. Edge-finding's
+certificate opens exactly as the overload check's does --- a capacity row summed
+at every time point of the window, against which the contained tasks' guarded
+energy cancels --- so it is the same one-line swap, and it moved five lanes at
+once: `cumulative_edge_finding`, `cumulative_ttef`, `cumulative_energetic` and
+its random twin, and `cumulative_nfnl`. The last of those is not an accident:
+our not-first / not-last is certified by edge-finding's certificate unchanged,
+so converting one converted both. (The *published* detection is not, and is
+still outstanding --- it has its own citer.)
+
+Worth recording, because the handoff for this step said otherwise:
+`window_energy::WindowRows` has nothing to do with it. That structure's
+`std::function<Integer -> ProofLine>` hands back a *task's activity* rows, for a
+caller minting its own, and Disjunctive is its only user. Edge-finding's capacity
+supply is a plain loop over `capacity_lines` like every other citer, and wants
+the same treatment as the rest.
+
+**Four mutation lanes stop discriminating and stay off the arm**, checked one at
+a time: `cumulative_ttef_mutation_{pin,mirror_pin}`,
+`cumulative_nfnl_mutation_roomy_drop` and
+`cumulative_energetic_mutation_mirror_drop_energetic`. All four drop a single row
+or pin, and with the per-time block gone the checkpoint rows relate the starts
+directly --- enough for the wrapping RUP to close without what was dropped, so
+veripb accepts the corrupted proof. They still say what they always said about
+the other encodings, and they are not part of the progress bar. The forward
+`drop_energetic` lane, which is the one #755 cares about, does still
+discriminate and is on the arm.
+
+That is the same hazard the `Both` arm has, arriving now in a place worth
+noticing: the arm that best checks *sufficiency* is also the arm that most
+weakens the mutation lanes, because both effects come from having more in the
+database for unit propagation to reach. Neither arm dominates the other, which is
+why every lane is registered on the arms it still discriminates under, one at a
+time, on evidence.
 
 ### What it costs in lines
 
