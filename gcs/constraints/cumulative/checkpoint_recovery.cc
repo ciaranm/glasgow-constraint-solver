@@ -308,7 +308,8 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     return recovered;
 }
 
-auto gcs::innards::check_recovered_cumulative_capacity_rows(ProofLogger & logger, const CumulativeInputs & inputs) -> void
+auto gcs::innards::check_recovered_cumulative_capacity_rows(ProofLogger & logger, const CumulativeInputs & inputs, CheckpointRecoveryCache & cache)
+    -> void
 {
     if (! cumulative_checkpoint_recovery_applies(inputs, logger))
         return;
@@ -319,7 +320,6 @@ auto gcs::innards::check_recovered_cumulative_capacity_rows(ProofLogger & logger
     // quietly leaning, through one of its rups, on a row the encoding is about
     // to lose.
     logger.emit_proof_comment("#780 checkpoint recovery begins");
-    CheckpointRecoveryCache cache;
     for (const auto & [t, model_row] : inputs.capacity_lines) {
         auto recovered = recover_cumulative_capacity_row(logger, inputs, cache, t);
         if (! recovered)

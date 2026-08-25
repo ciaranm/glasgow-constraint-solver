@@ -90,7 +90,7 @@ namespace gcs::innards
      * is to check every row, not to pay for only the ones a search cites. No-op
      * when \ref cumulative_checkpoint_recovery_applies says no.
      */
-    auto check_recovered_cumulative_capacity_rows(ProofLogger & logger, const CumulativeInputs & inputs) -> void;
+    auto check_recovered_cumulative_capacity_rows(ProofLogger & logger, const CumulativeInputs & inputs, CheckpointRecoveryCache & cache) -> void;
 }
 
 #endif
