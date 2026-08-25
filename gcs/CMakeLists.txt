@@ -306,18 +306,18 @@ if(GCS_BUILD_TESTS)
 
     add_executable(inferred_cumulative_presolver_test presolvers/inferred_cumulative/inferred_cumulative_test.cc)
     target_link_libraries(inferred_cumulative_presolver_test PRIVATE glasgow_constraint_solver)
-    add_cumulative_test_with_recovery(inferred_cumulative_presolver
+    add_cumulative_test_converted(inferred_cumulative_presolver
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_cumulative_presolver_test>)
 
     add_executable(inferred_disjunctive_presolver_test presolvers/inferred_disjunctive/inferred_disjunctive_test.cc)
     target_link_libraries(inferred_disjunctive_presolver_test PRIVATE glasgow_constraint_solver)
     # Twinned too: it cites a *Cumulative* donor's per-(task, time) flags.
-    add_cumulative_test_with_recovery(inferred_disjunctive_presolver
+    add_cumulative_test_converted(inferred_disjunctive_presolver
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_disjunctive_presolver_test>)
 
     add_executable(cumulative_strengthening_presolver_test presolvers/cumulative_strengthening/cumulative_strengthening_test.cc)
     target_link_libraries(cumulative_strengthening_presolver_test PRIVATE glasgow_constraint_solver)
-    add_cumulative_test_with_recovery(cumulative_strengthening_presolver
+    add_cumulative_test_converted(cumulative_strengthening_presolver
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_strengthening_presolver_test>)
 
     add_executable(constraint_enumeration_test constraint_enumeration_test.cc)
@@ -552,7 +552,7 @@ if(GCS_BUILD_TESTS)
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
             --basename cumulative_energetic_mutation_mirror_drop_energetic $<TARGET_FILE:cumulative_energetic_test>
             --mutate=mirror_drop_energetic)
-    add_cumulative_test_with_recovery(derived_cumulative ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:derived_cumulative_test>)
+    add_cumulative_test_converted(derived_cumulative ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:derived_cumulative_test>)
     # Mutation lanes: each writes a deliberately corrupted proof of the
     # sharp-margin fixture, and passes only if veripb rejects it. Distinct
     # basenames so the lanes do not race over one set of proof files.
@@ -640,39 +640,37 @@ if(GCS_BUILD_TESTS)
     add_checkpoint_recovery_leak_check(ttoc no-block)
 
     # #780's progress bar: the cumulative lanes that are *not* on the
-    # `startcheckpoint` arm, and what has to happen before they can be. Each is
-    # a lane whose proof still reads capacity_lines somewhere, so deleting the
-    # per-time rows leaves one of its pols short of supply and veripb rejects.
-    # Confirmed by running each under GCS_CUMULATIVE_ENCODING=start-checkpoint;
-    # they fail, and they fail loudly.
+    # `startcheckpoint` arm because a rule they fire still reads the per-time
+    # block. **It is empty.** Every rule is converted, and every lane that
+    # exercises one runs with the block deleted from the model.
     #
-    #   derived_cumulative                 derived_cumulative.cc: donor rows and
-    #                                      the makespan bound
-    #   inferred_cumulative_presolver      (reach derived_cumulative)
-    #   cumulative_strengthening_presolver
+    # That is the condition for the time-indexed block to go, which is the next
+    # step of #780 and is deliberately not this one: deleting it means flipping
+    # the default, retiring the other arms, and pinning the scp_chain_cumulative*
+    # cases to the time-indexed encoding, none of which is a test registration.
     #
-    # Those last three are the one place the arm does *not* fail loudly, and it
-    # is worth knowing before relying on it. derived_cumulative.cc reads its
-    # donors' per-time rows by label, and a donor that wrote none makes the
-    # derivation decline --- which is a supported outcome, not an error, so the
-    # constraint is simply not installed and propagation quietly weakens. What
-    # notices is the lanes' own assertions about what got posted ("posted 0 cuts
-    # with a coefficient above one"), not veripb. Step 9 has to move that
-    # lookup onto the recovery like every other citer; until it does, do not
-    # read those three passing as evidence of anything.
+    # Lanes that are off the arm but are *not* part of the bar, all of them
+    # mutation lanes that stop discriminating once the per-time block is gone
+    # --- each drops a row or a pin that the checkpoint rows then put back by
+    # relating the starts directly, so veripb accepts the corruption:
     #
-    # Move a lane onto the arm by changing its add_cumulative_test_with_recovery
-    # to add_cumulative_test_converted, and delete its line here. **When this
-    # list is empty, the time-indexed block can go.**
+    #   cumulative_optional_mutation_{wrong_task,emit_nothing}
+    #   cumulative_ttef_mutation_{pin,mirror_pin}
+    #   cumulative_nfnl_mutation_roomy_drop
+    #   cumulative_energetic_mutation_mirror_drop_energetic
+    #   cumulative_published_nfnl_mutation_drop
     #
-    # Two lanes are absent from the arm for a different reason and are not part
-    # of the bar: cumulative_optional_mutation_wrong_task and
-    # cumulative_optional_mutation_emit_nothing stop discriminating under it, as
-    # they already do under `both` and for the same reason --- more model is
-    # more for unit propagation to reach. They are not unconverted; the arm just
-    # cannot hold them. The scp_chain_cumulative* cases are out for the reason
-    # they are out of the recovering arm: they check our proof against cake's
-    # OPB, which has no start-checkpoint rows at all.
+    # They still say what they always said about the other encodings. The
+    # scp_chain_cumulative* cases are off for the older reason: they check our
+    # proof against cake's OPB, which has no start-checkpoint rows at all.
+    #
+    # One thing to keep in mind if this bar is ever rebuilt for another rule:
+    # the derived-cumulative lanes are the one place the arm does *not* fail
+    # loudly. derived_cumulative.cc reads its donors' rows and a donor with none
+    # makes the derivation *decline*, which is a supported outcome rather than
+    # an error --- so before step 9 those lanes failed on their own assertions
+    # about what got posted, not on veripb. A lane without such an assertion
+    # would have passed while silently losing propagation.
 
     # One ctest entry per mode, each writing proofs under its own basename, so a
     # parallel run does not have two entries racing over one set of files.

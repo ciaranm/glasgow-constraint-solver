@@ -815,6 +815,36 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .guarded_energy =
             std::make_shared<std::map<std::tuple<size_t, Integer, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>()};
 
+    // #780: let anyone who can name this constraint ask for a capacity row it
+    // no longer has an OPB label for. A derived Cumulative built on this one as
+    // a donor is the consumer that needs it --- under
+    // CumulativeEncoding::StartCheckpoint there is no `cap_<t>` row for it to
+    // find, and without this it would decline and take the presolver's whole
+    // inference with it, quietly, since a decline there is a supported outcome
+    // rather than an error.
+    //
+    // From an initialiser because that is the earliest point with a logger, and
+    // because initialisers run before presolvers (#658) --- the same timing
+    // publish_derived_line relies on. A copy of the inputs, as the differential
+    // below takes: the propagator's own is about to be moved from. The copy is
+    // read-only afterwards, and the cache it shares is a shared_ptr, so a row
+    // derived through here and one derived by the propagator are the same row
+    // and are paid for once.
+    //
+    // Published whenever the recovery is switched on at all, not only under
+    // StartCheckpoint: where the block is still written the label is found
+    // first and this is never reached, so there is nothing to gate.
+    if (recovery_cache)
+        propagators.install_initialiser([family_inputs = make_shared<CumulativeInputs>(inputs)](State &, auto &, ProofLogger * const logger) -> void {
+            if (! logger)
+                return;
+            logger->names_and_ids_tracker().publish_derived_line_family(family_inputs->owner,
+                ConstraintProofModelData<Cumulative>::capacity_row_family(),
+                [family_inputs](ProofLogger & deriver_logger, Integer t) -> std::optional<ProofLine> {
+                    return recover_cumulative_capacity_row(deriver_logger, *family_inputs, *family_inputs->checkpoint_recovery, t);
+                });
+        });
+
     // #780's differential, under CumulativeEncoding::BothRecovering: derive
     // every capacity row from the start-checkpoint rows and check it against
     // the one the model still carries. A copy of the inputs rather than a
@@ -2795,6 +2825,11 @@ auto Cumulative::capacity() const -> IntegerVariableID
 auto ConstraintProofModelData<Cumulative>::primary_row_role(const Cumulative &) -> std::optional<string>
 {
     return std::nullopt;
+}
+
+auto ConstraintProofModelData<Cumulative>::capacity_row_family() -> string
+{
+    return "cap";
 }
 
 auto ConstraintProofModelData<Cumulative>::capacity_row_role(Integer t) -> string

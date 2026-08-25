@@ -18,6 +18,7 @@
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -634,6 +635,60 @@ namespace gcs::innards
          * constraint publishes which role names the line a citer wants.
          */
         [[nodiscard]] auto find_derived_line(const ConstraintID & id, const std::string & role) const -> std::optional<ProofLine>;
+
+        /**
+         * \brief A constraint's promise that it can derive, on demand, any line
+         * in an integer-indexed family --- rather than publishing them all up
+         * front.
+         *
+         * \ref publish_derived_line is for a fact a constraint decides to
+         * establish once, whatever anyone does with it. This is for a family
+         * whose members are too numerous to derive speculatively and whose
+         * consumers are known only later: Cumulative's per-time capacity rows
+         * under the start-checkpoint encoding (#780) are the first, where each
+         * member costs `O(n^3)` proof lines and a horizon's worth of them would
+         * dwarf the OPB block the encoding exists to delete.
+         *
+         * The deriver is called at most once per `(id, family, index)` and the
+         * result memoised, so a second consumer of the same member pays
+         * nothing. It may return nullopt, meaning this constraint cannot speak
+         * about that member --- read exactly as nullopt from
+         * \ref find_derived_line: there is nothing to cite, so do not do the
+         * thing that would need citing.
+         *
+         * \warning **Whatever the deriver emits must live at ProofLevel::Top.**
+         * The memo hands the same line number out for the rest of the proof,
+         * and a line emitted at any lower level is deleted on backtracking ---
+         * after which the memo is a dangling reference and nothing here can
+         * tell. This is a promise the publisher makes and that nothing checks.
+         *
+         * Registered per install, like everything else that holds proof line
+         * numbers, so it never outlives the proof whose lines it hands out.
+         *
+         * \todo This, \ref publish_derived_line and \ref boundary_pin_line are
+         * three variations on "a per-solve, constraint-keyed memo of proof
+         * lines", and each arrived for one caller. The tracker is meant to
+         * provide general facilities rather than a drawer of specific ones, and
+         * this is the third; #780's step 10 wants a fourth, the same thing for
+         * *flags* rather than lines. Once that one exists there should be
+         * enough examples to see the general requirement, and these should
+         * collapse into it. Deliberately not generalised before then, on the
+         * grounds that three examples are what tells you what the fourth needs.
+         */
+        auto publish_derived_line_family(const ConstraintID & id, const std::string & family,
+            std::function<auto(ProofLogger &, Integer index)->std::optional<ProofLine>> deriver) -> void;
+
+        /**
+         * \brief The line for one member of a family published by
+         * \ref publish_derived_line_family, deriving it if this is the first
+         * ask.
+         *
+         * Nullopt when no deriver was published for `(id, family)` --- the
+         * constraint was not installed, or proofs are off, or it does not have
+         * this family --- or when the deriver itself declines.
+         */
+        [[nodiscard]] auto find_or_derive_line_in_family(const ConstraintID & id, const std::string & family, Integer index, ProofLogger & logger)
+            -> std::optional<ProofLine>;
 
         /**
          * Create a proof flag with a new identifier, named `f[index][stem]`.

@@ -203,6 +203,14 @@ struct NamesAndIDsTracker::Imp
     // written at the same point in the solve, before the search starts.
     map<string, ProofLine> published_derived_lines;
 
+    // #780: derivers for integer-indexed families of lines, and the memo of
+    // what each has produced. Same per-solve story as published_derived_lines
+    // above --- these hold proof line numbers --- but populated lazily, on the
+    // first ask for a member, rather than up front. See
+    // publish_derived_line_family.
+    map<string, function<auto(ProofLogger &, Integer)->optional<ProofLine>>> derived_line_families;
+    map<string, ProofLine> derived_family_lines;
+
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
     // Indexed by variable index (variables are allocated with sequential
     // indices, so these stay dense), one per id kind.
@@ -1718,6 +1726,36 @@ namespace
     {
         return as_string(id) + "[" + role + "]";
     }
+}
+
+auto NamesAndIDsTracker::publish_derived_line_family(
+    const ConstraintID & id, const string & family, function<auto(ProofLogger &, Integer)->optional<ProofLine>> deriver) -> void
+{
+    if (! _imp->derived_line_families.emplace(derived_line_key(id, family), std::move(deriver)).second)
+        throw ProofError{"two derivers published for the line family '" + derived_line_key(id, family) +
+            "': a family name must say which family it is, so that a member can be derived unambiguously"};
+}
+
+auto NamesAndIDsTracker::find_or_derive_line_in_family(const ConstraintID & id, const string & family, Integer index, ProofLogger & logger)
+    -> optional<ProofLine>
+{
+    auto member = derived_line_key(id, family) + "[" + to_string(index.raw_value) + "]";
+    if (auto already = _imp->derived_family_lines.find(member); already != _imp->derived_family_lines.end())
+        return already->second;
+
+    auto deriver = _imp->derived_line_families.find(derived_line_key(id, family));
+    if (deriver == _imp->derived_line_families.end())
+        return nullopt;
+
+    auto derived = deriver->second(logger, index);
+    if (! derived)
+        return nullopt;
+
+    // Memoised only on success: a deriver that declined once may well be asked
+    // again for a different reason, and caching the decline would turn "not
+    // this time" into "never".
+    _imp->derived_family_lines.emplace(member, *derived);
+    return derived;
 }
 
 auto NamesAndIDsTracker::publish_derived_line(const ConstraintID & id, const string & role, ProofLine line) -> void
