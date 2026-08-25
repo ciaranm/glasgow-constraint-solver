@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Usage: run_checkpoint_recovery_leak_check.bash SOLVER MODEL.scp
+# Usage: run_checkpoint_recovery_leak_check.bash SOLVER MODEL.scp [prefix|whole]
 #
 # Issue #780: check that Cumulative's start-checkpoint recovery never leans on a
 # per-time capacity row.
@@ -18,6 +18,13 @@
 # an OPB with every per-time capacity row stripped out. Anything the recovery
 # took from one of those rows fails here, and nothing else does.
 #
+# In `whole` mode the proof is not cut at all, so what is checked is the *whole*
+# certificate standing without the per-time block --- which is the end state
+# #780 is walking towards, and which only holds for a model whose every firing
+# rule has been moved over to the recovered rows. Today that is the time-table
+# overflow contradiction and nothing else, so a `whole` model has to be one that
+# fires only that. Each rule moved over is another model that can go in here.
+#
 # Exits 77 (ctest SKIP_RETURN_CODE) when veripb is missing.
 
 set -u
@@ -28,6 +35,7 @@ set -u
 
 solver=$1
 scp=$2
+mode=${3:-prefix}
 
 export PATH=$HOME/.cargo/bin:$PATH
 
@@ -45,12 +53,27 @@ GCS_CUMULATIVE_ENCODING=both-recovering "$solver" --all --prove --proof-files-ba
 ends=$(grep -n '^% #780 checkpoint recovery ends$' "${base}.pbp" | tail -1 | cut -d: -f1)
 [[ -n $ends ]] || { echo "FAIL: no recovery in ${base}.pbp; does the model qualify for it?"; exit 1; }
 
-head -n "$ends" "${base}.pbp" > "${base}.prefix.pbp"
-printf 'output NONE;\nconclusion NONE;\nend pseudo-Boolean proof;\n' >> "${base}.prefix.pbp"
+if [[ $mode == whole ]] ; then
+    cp "${base}.pbp" "${base}.prefix.pbp"
+else
+    head -n "$ends" "${base}.pbp" > "${base}.prefix.pbp"
+    printf 'output NONE;\nconclusion NONE;\nend pseudo-Boolean proof;\n' >> "${base}.prefix.pbp"
+fi
 
 # And that it recovered something: one implication check per row it derived.
 checks=$(grep -c '^ia ' "${base}.prefix.pbp")
 [[ $checks -gt 0 ]] || { echo "FAIL: the recovery derived no rows, so this checks nothing"; exit 1; }
+
+# In whole mode, that no rule cited a per-time row behind the recovery's back.
+# veripb would say so anyway --- the label is gone from the model it is given
+# --- but saying it here names what went wrong.
+if [[ $mode == whole ]] ; then
+    cites=$(grep -c '@c\[[^]]*\]\[cap_' "${base}.pbp")
+    if [[ $cites -gt 0 ]] ; then
+        echo "FAIL: ${cites} citations of a per-time capacity row; this model fires a rule that has not moved over"
+        exit 1
+    fi
+fi
 
 # `[cap_` does not match `[scap_`, so the start-checkpoint rows stay.
 grep -v '\[cap_' "${base}.opb" > "${base}.nocap.opb"
@@ -68,6 +91,6 @@ if ! grep -qE '^s VERIFIED' <<< "$out"; then
     exit 1
 fi
 
-echo "OK: ${checks} recovered rows, all standing without a per-time capacity row in the model"
+echo "OK (${mode}): ${checks} recovered rows, all standing without a per-time capacity row in the model"
 rm -f "${base}.prefix.pbp" "${base}.nocap.opb"
 dispose_proof "${base}"
