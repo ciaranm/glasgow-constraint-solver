@@ -865,13 +865,15 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // variable height, an optional task), and the model row is what is left.
     //
     // The time-table family goes through this --- the overflow contradiction
-    // and both bound pushes --- and so does the overload check's (OC)/(TTOC)
-    // window supply, which is the first citer to want a row at every time point
-    // of a window rather than at one. What is left --- the elastic and knapsack
-    // availability lines, edge-finding's window rows, published not-first /
-    // not-last --- still reads capacity_lines directly, and moving them over
-    // one at a time, each its own commit and each verified on its own, is the
-    // rest of #780.
+    // and both bound pushes --- and so do the overload check's (OC)/(TTOC)
+    // window supply and the (TTHE-OC)/(KAOC) per-time availability lines, the
+    // latter being the only citer that uses a row as the base of a per-point
+    // sub-derivation rather than summing it straight into a pol. What is left
+    // --- edge-finding's window rows, published not-first / not-last, and
+    // derived_cumulative.cc --- still reads capacity_lines directly, and moving
+    // them over one at a time, each its own commit and each verified on its
+    // own, is the rest of #780. A lane whose every rule has moved joins the
+    // `startcheckpoint` ctest arm, which is where that progress is measured.
     auto capacity_row = [&](Integer t) -> std::optional<ProofLine> {
         if (logger && inputs.checkpoint_recovery)
             if (auto recovered = recover_cumulative_capacity_row(*logger, inputs, *inputs.checkpoint_recovery, t))
@@ -2236,8 +2238,21 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                             for (Integer t = a; t < b; ++t) {
                                 if (omit_capacity_line && t == b - 1_i)
                                     continue;
-                                auto capacity_line = capacity_lines.find(t);
-                                if (capacity_line == capacity_lines.end())
+                                // Asked here rather than below the elastic
+                                // branch, which does not use the row: this is
+                                // also the test for whether the encoding says
+                                // anything about `t` at all, and moving it down
+                                // would let a time point with no row take that
+                                // branch where today it is skipped outright.
+                                // The cost of keeping it here is that a point
+                                // which then takes the elastic branch has paid
+                                // for a recovery it does not cite --- bounded,
+                                // since rows are cached per time point for the
+                                // whole constraint, and worth it against
+                                // changing behaviour on a branch no fixture
+                                // currently reaches.
+                                auto capacity_line = capacity_row(t);
+                                if (! capacity_line)
                                     continue;
 
                                 auto idx = static_cast<size_t>((t - t_lo).raw_value);
@@ -2284,7 +2299,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 }
 
                                 PolBuilder avail;
-                                avail.add(capacity_line->second);
+                                avail.add(*capacity_line);
                                 for (auto j : active_tasks) {
                                     if (t < per_task_t_lo[j] || t > per_task_t_hi[j])
                                         continue;

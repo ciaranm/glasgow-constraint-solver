@@ -287,6 +287,13 @@ if(GCS_BUILD_TESTS)
         add_cumulative_arm(${name} checkpoint ${CMAKE_CURRENT_BINARY_DIR}/cumulative_checkpoint ${ARGN})
         add_cumulative_arm(${name} recovering ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering ${ARGN})
     endfunction()
+    # As add_cumulative_test (no recovering arm, for a mutation lane that stops
+    # discriminating under it), plus the arm that deletes the per-time block.
+    function(add_cumulative_test_converted_no_recovery name)
+        add_test(NAME ${name} COMMAND ${ARGN})
+        add_cumulative_arm(${name} checkpoint ${CMAKE_CURRENT_BINARY_DIR}/cumulative_checkpoint ${ARGN})
+        add_cumulative_arm(${name} startcheckpoint ${CMAKE_CURRENT_BINARY_DIR}/cumulative_startcheckpoint ${ARGN})
+    endfunction()
     # For a lane every rule of which has moved over to the recovered rows: as
     # add_cumulative_test_with_recovery, plus the arm that deletes the per-time
     # block from the model entirely. See the note above about what that checks.
@@ -459,10 +466,14 @@ if(GCS_BUILD_TESTS)
     endforeach()
     add_cumulative_test_with_recovery(cumulative_ttef ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_ttef_test>)
     add_cumulative_test_with_recovery(cumulative_nfnl ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_nfnl_test>)
-    add_cumulative_test_with_recovery(cumulative_kaoc ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_kaoc_test>)
+    add_cumulative_test_converted(cumulative_kaoc ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_kaoc_test>)
+    # On the startcheckpoint arm as well, each checked to still discriminate
+    # there. `capacity` is the one that earns it: it omits a row from the
+    # per-time availability line, which under that arm is a *recovered* row, so
+    # this is the negative test over the path #780's step 6 moved.
     foreach(fixture cloutier_ex2 dp_path compulsory)
         foreach(mutation claim_one_better strengthen_one_fewer capacity)
-            add_cumulative_test(cumulative_kaoc_mutation_${fixture}_${mutation}
+            add_cumulative_test_converted_no_recovery(cumulative_kaoc_mutation_${fixture}_${mutation}
                 ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                     --basename cumulative_kaoc_mutation_${fixture}_${mutation} $<TARGET_FILE:cumulative_kaoc_test>
                     --mutate=${mutation} --fixture=${fixture})
@@ -606,8 +617,6 @@ if(GCS_BUILD_TESTS)
     # Confirmed by running each under GCS_CUMULATIVE_ENCODING=start-checkpoint;
     # they fail, and they fail loudly.
     #
-    #   cumulative_kaoc                    the knapsack / elastic per-time
-    #                                      availability lines
     #   cumulative_edge_finding            edge-finding's window rows
     #   cumulative_ttef                    (same, via the profile term)
     #   cumulative_energetic               (same, energetic form)
