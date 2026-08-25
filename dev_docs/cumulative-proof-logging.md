@@ -1989,19 +1989,26 @@ recovery is on and can speak about the constraint, and the model's own row
 otherwise --- a variable height or an optional task still falls back, which is
 why the two live side by side rather than one replacing the other.
 
-The time-table overflow contradiction is the first and so far only citer
-through it. On two tasks that must overlap and do not fit, the refutation
-cites the per-time capacity row **once** under `Both` and **not at all** under
-`BothRecovering` --- and the whole proof then verifies against an OPB with
-every `cap_t` row deleted. That is `cumulative_checkpoint_recovery_whole_proof`,
-and it is the first thing in this project to check *sufficiency* rather than
-soundness: what it says is that for that model the certificate stands on the
-start-checkpoint rows alone, which is the end state #780 is walking towards.
+The whole time-table family goes through it: the overflow contradiction and
+both bound pushes. On two tasks that must overlap and do not fit, the
+refutation cites a per-time capacity row **once** under `Both` and **not at
+all** under `BothRecovering` --- and the whole proof then verifies against an
+OPB with every `cap_t` row deleted.
 
-The lane is deliberately narrow. It refuses any model whose proof still cites a
-per-time row, so it can only be pointed at models firing rules that have moved
-over --- today, that rule and no other. Each further citer moved across is
-another model that can be listed there, and when the last one is, that lane is
+That is the `whole` mode of the leak-check lanes, and it is the first thing in
+this project to check *sufficiency* rather than soundness. Everything before it
+asked whether the checkpoint rows say too much, which solution checking
+answers; nothing asked whether they say enough, because nothing derived
+anything from them.
+
+The mode is deliberately narrow: it refuses any model whose proof still cites a
+per-time row, so a model can only go in it once every rule it fires has moved
+over. Two are there --- the minimal two-task overflow, and four tasks with four
+different durations, which fires both bound pushes and exercises the weakening
+path where the candidate set changes from one time point to the next. The third
+case, three tasks whose mandatory parts are all empty so that the overload
+check is what refutes them, stays in `prefix` until the overload certificate
+moves across. When the last citer moves, every case is `whole`, and that is
 what says the time-indexed block can go.
 
 **Transitivity is load-bearing**, which #780 predicted and this confirms:
