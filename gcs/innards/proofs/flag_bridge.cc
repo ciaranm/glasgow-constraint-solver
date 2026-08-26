@@ -36,15 +36,22 @@ namespace
         return tracker.pb_file_string_for(flag);
     }
 
-    [[nodiscard]] auto implies_condition(const NamesAndIDsTracker & tracker, const ProofFlag & flag) -> ProofLineLabel
+    [[nodiscard]] auto implies_condition(const NamesAndIDsTracker & tracker, const ProofFlag & flag) -> ProofLine
     {
-        return ProofLineLabel{label_base(tracker, flag) + "[r]"};
+        return reification_half(tracker, flag, ReificationHalf::Implies);
     }
 
-    [[nodiscard]] auto implied_by_condition(const NamesAndIDsTracker & tracker, const ProofFlag & flag) -> ProofLineLabel
+    [[nodiscard]] auto implied_by_condition(const NamesAndIDsTracker & tracker, const ProofFlag & flag) -> ProofLine
     {
-        return ProofLineLabel{label_base(tracker, flag) + "[f]"};
+        return reification_half(tracker, flag, ReificationHalf::ImpliedBy);
     }
+}
+
+auto gcs::innards::reification_half(const NamesAndIDsTracker & tracker, const ProofFlag & flag, ReificationHalf which) -> ProofLine
+{
+    if (auto in_proof = tracker.in_proof_reification(flag))
+        return which == ReificationHalf::Implies ? in_proof->first : in_proof->second;
+    return ProofLineLabel{label_base(tracker, flag) + (which == ReificationHalf::Implies ? "[r]" : "[f]")};
 }
 
 auto gcs::innards::recover_flag_bridge(ProofLogger & logger, const ProofFlag & from, const ProofFlag & to, ProofLevel level) -> ProofLine

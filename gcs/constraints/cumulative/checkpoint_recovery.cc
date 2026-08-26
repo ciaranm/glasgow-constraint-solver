@@ -1,5 +1,6 @@
 #include <gcs/constraints/cumulative/checkpoint_recovery.hh>
 #include <gcs/innards/power.hh>
+#include <gcs/innards/proofs/flag_bridge.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -25,13 +26,13 @@ namespace
 {
     using Data = ConstraintProofModelData<Cumulative>;
 
-    // The label of one half of a flag's reification. These flags all come from
-    // create_proof_flag_values_fully_reifying, whose halves are labelled off
-    // name_of --- not off pb_file_string_for, which is what the flags with no
-    // ConstraintID to key them use.
-    auto half_of(const NamesAndIDsTracker & tracker, const ProofFlag & flag, const string & which) -> ProofLineLabel
+    // One half of a flag's reification, as whatever it takes to cite it: a
+    // label where the halves are OPB rows, a line number where they were
+    // emitted inside the proof. reification_half is what knows the difference,
+    // and #780 step 10 is what makes there be one.
+    auto half_of(const NamesAndIDsTracker & tracker, const ProofFlag & flag, ReificationHalf which) -> ProofLine
     {
-        return ProofLineLabel{tracker.name_of(flag) + which};
+        return reification_half(tracker, flag, which);
     }
 
     // The reification coefficient a forward half was emitted with, which is
@@ -225,8 +226,8 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
             if (cache.totality.contains(make_pair(i, j)))
                 continue;
             PolBuilder pol;
-            pol.add(half_of(tracker, sb(i, j), "[f]"));
-            pol.add(half_of(tracker, sb(j, i), "[f]"));
+            pol.add(half_of(tracker, sb(i, j), ReificationHalf::ImpliedBy));
+            pol.add(half_of(tracker, sb(j, i), ReificationHalf::ImpliedBy));
             cache.totality.emplace(make_pair(i, j), pol.divide_by(2_i).saturate().emit(logger, ProofLevel::Top));
         }
 
@@ -242,9 +243,9 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
                 if (cache.transitivity.contains(make_tuple(a, b, c)))
                     continue;
                 PolBuilder pol;
-                pol.add(half_of(tracker, sb(a, b), "[r]"));
-                pol.add(half_of(tracker, sb(b, c), "[r]"));
-                pol.add(half_of(tracker, sb(a, c), "[f]"));
+                pol.add(half_of(tracker, sb(a, b), ReificationHalf::Implies));
+                pol.add(half_of(tracker, sb(b, c), ReificationHalf::Implies));
+                pol.add(half_of(tracker, sb(a, c), ReificationHalf::ImpliedBy));
                 cache.transitivity.emplace(make_tuple(a, b, c), pol.saturate().emit(logger, ProofLevel::Top));
             }
 
@@ -261,9 +262,9 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
             if (i == j)
                 continue;
             PolBuilder pol;
-            pol.add(half_of(tracker, ca(i), "[r]"));
-            pol.add(half_of(tracker, cb(j), "[r]"));
-            pol.add(half_of(tracker, sa(i, j), "[f]"));
+            pol.add(half_of(tracker, ca(i), ReificationHalf::Implies));
+            pol.add(half_of(tracker, cb(j), ReificationHalf::Implies));
+            pol.add(half_of(tracker, sa(i, j), ReificationHalf::ImpliedBy));
             pol.saturate().emit(logger, ProofLevel::Top);
         }
 
