@@ -1987,8 +1987,10 @@ rather than passing vacuously.
 `propagate_cumulative` has one accessor, `capacity_row(t)`, for the row saying
 the load at `t` is within the capacity. It returns the recovered row where the
 recovery is on and can speak about the constraint, and the model's own row
-otherwise --- a variable height or an optional task still falls back, which is
-why the two live side by side rather than one replacing the other.
+otherwise. The fallback is unreachable now that the recovery speaks about every
+shape, but the two still live side by side: the model row is what the differential
+arm checks each recovery against, and it is what a `TimeIndexed` or `Both` run
+cites.
 
 The whole time-table family goes through it: the overflow contradiction and
 both bound pushes. On two tasks that must overlap and do not fit, the
@@ -2093,14 +2095,14 @@ state itself rather than a reconstruction of it. It needs no post-processing and
 no `.scp` vehicle, so it is available to every C++ test lane --- and therefore to
 every rule, including the off-by-default ones. And it fails loudly.
 
-**The per-time block still appears where the recovery cannot reach**: a variable
-height, a variable length, an optional task, a variable capacity. There would
-otherwise be no capacity row at all for such a constraint, and every rule over it
-would be *uncertifiable* rather than merely unconverted. So the arm is
-"start-checkpoint wherever the recovery reaches", which is what the eventual
-default has to be too; `cumulative_shape_supports_checkpoint_recovery` is the one
-statement of where that is, shared with the recovery's own guard so the two
-cannot drift.
+**The per-time block used to appear where the recovery could not reach**: a
+variable height, a variable length, an optional task, a variable capacity. There
+would otherwise be no capacity row at all for such a constraint, and every rule
+over it would be *uncertifiable* rather than merely unconverted. The recovery
+reaches all four now, so the fallback is unreachable for any Cumulative with an
+active task; `cumulative_shape_supports_checkpoint_recovery` is still the one
+statement of where the recovery can speak, shared with the recovery's own guard
+so the two cannot drift, and it now declines only the empty constraint.
 
 That fallback is also the arm's one way to go quietly vacuous --- a lane all of
 whose fixtures fall back would pass while checking nothing new. So the four
@@ -2117,27 +2119,26 @@ and `derived_cumulative` with the presolver lanes that reach it went last.
 **The list is empty** --- every rule is converted, and every lane that exercises
 one runs green with the per-time block deleted from the model.
 
-Read that precisely: every *rule*, not every *shape*. `capacity_row` still falls
-back to the model row for a Cumulative the recovery cannot speak about --- a
-variable length, a variable height, a variable capacity, an optional task ---
-and those keep the block and use it for everything. It is not a corner: **146 of
-the 424 proofs** the cumulative test binaries write under this arm still contain
-`cap_` rows, concentrated in `cumulative_overload_test` (83 of 115) and
-`cumulative_optional_test` (18 of 35). So the block cannot be deleted, only
-skipped where the recovery reaches.
+That was once only half the story --- every *rule*, not every *shape* --- and it
+is not any more. When the arm was built, `capacity_row` still fell back to the
+model row for a Cumulative the recovery could not speak about (a variable
+length, height or capacity, or an optional task), and **149 of the 440 proofs**
+the cumulative test binaries write under this arm carried `cap_` rows because of
+it, concentrated in `cumulative_overload_test` (83 of 115) and
+`cumulative_optional_test` (18 of 35).
 
-Two things follow for the default flip. The checkpoint block is **not**
-shape-gated on emission, so under this arm a non-qualifying constraint gets
-*both*: a variable-duration model measures 146 OPB lines against the
-time-indexed encoding's 105. Gating the checkpoint block on
-`cumulative_shape_supports_checkpoint_recovery` is a prerequisite for flipping
-the default, not an optimisation. And extending the recovery to those shapes is
-what would let the block go entirely --- a variable length moves the diagonal
-off the row and onto a flag, a variable height replaces a coefficient with a bit
-sum, a presence adds a conjunct to every activity flag, and a variable capacity
-is not written down anywhere yet. That list
-lives in `gcs/CMakeLists.txt` and is #780's progress bar: **when it is empty, the
-time-indexed block can go.**
+Every one of those shapes has since been brought in, and the count went
+**149 -> 121 -> 95 -> 10 -> 0**. See "Every shape, and what each one took" below.
+`capacity_row`'s fallback is now unreachable for any Cumulative with an active
+task, and the block is not merely skipped where it is safe to skip --- it is
+replaceable outright.
+
+The other prerequisite for the default flip was that the checkpoint block was
+**not** shape-gated on emission, so a non-qualifying constraint got *both*
+blocks; it is gated now. What still blocks the flip is neither of these: it is
+the per-`(i, t)` flag family, which is where the `O(n x horizon)` lines actually
+live and which no part of this touches. See "What `StartCheckpoint` saves today"
+below for the measurement.
 
 Those lanes fail by *aborting*, not by a quiet mismatch: they verify inline, so
 the harness throws `UnexpectedException{"veripb verification failed"}` the moment
@@ -2334,12 +2335,16 @@ for every time point in its window up front, so that it can decline cleanly
 rather than install a propagator whose inferences it cannot justify. Each
 recovery is `~2m^3` lines against the per-time block's `O(n)` rows per point, so
 on a wide horizon the derivations can cost more lines than the block they
-replace. Three things bound it: the donor's cache is shared with its own
-propagation, so points it cites anyway are paid once; the window is the derived
-constraint's, not the donor's horizon; and a donor with a variable height or an
-optional task does not qualify for the recovery at all, keeps its block, and is
-found by label as before. Making the resolution lazy would avoid paying for
-points never cited, but would cost the clean decline, which is deliberate.
+replace. Two things bound it: the donor's cache is shared with its own
+propagation, so points it cites anyway are paid once, and the window is the
+derived constraint's rather than the donor's horizon. A third used to: a donor
+with a variable height or an optional task did not qualify for the recovery,
+kept its block and was found by label as before. That escape is gone now the
+recovery speaks about every shape, so a derived Cumulative pays the derivation
+wherever its donors do. (Derived Cumulatives take constant heights only in any
+case, so what changed for them in practice is optional and variable-length
+donors.) Making the resolution lazy would avoid paying for points never cited,
+but would cost the clean decline, which is deliberate.
 
 ### What it costs in lines
 
@@ -2357,6 +2362,106 @@ and is flat in the horizon. Measured through `fzn-glasgow --prove`:
 The last row is the case for the whole exercise: 25 MB of per-time
 block, emitted unconditionally, next to 39 lines that say the same
 thing.
+
+### Every shape, and what each one took
+
+The recovery was written for constant lengths, heights and capacity and no
+optional tasks, and the other four shapes were listed as "known extensions,
+none of them done". Doing them moved the fallback fraction from 149 of 440
+proofs to none. What they actually cost is worth recording, because the
+ordering of easy and hard was not the one the list implied.
+
+**Optional tasks, and variable lengths: the same one change, on the diagonal.**
+The scheduling argument never needed a task to be mandatory or its length
+fixed. `cact_{i,t}` carries the presence conjunct and so does `sact_{i,j}`, so
+"every candidate active at `t` has `sb` and `sa`, hence `sact`" holds as
+written, and the pins that say so stay RUP because the presence is the same atom
+on both sides. `sa_{i,j}` already reified on `s_i + l_i` directly when the
+length varied.
+
+What differs is the **diagonal**. With a constant length and no presence the
+encoder mints no `sact_{j,j}` --- before is a tautology, after reduces to
+`length >= 1` --- and folds `j`'s height into the checkpoint row's right hand
+side, which is why the recovery puts it back with a literal axiom rather than
+cancelling it. Give `j` a presence or a variable length and the flag exists,
+the height is on the row like everyone else's, and it has to be cancelled like
+everyone else's. So: pin the diagonal where the flag is there, axiomatise it
+where it is not. That one change is both shapes.
+
+*A pol that looked necessary is not.* The obvious next move is a diagonal
+counterpart to the `ca /\ cb -> sa` pol, with `sact_{j,j}` standing in for the
+`sa_{j,j}` the encoder never mints, on the grounds that getting `l_j >= 1` out
+of `s_j <= t` and `s_j + l_j >= t+1` is arithmetic and a rup asked to do
+arithmetic stalls. Written and measured, it changes nothing: the pin closes on
+its own, because unlike the off-diagonal fact this one is about a *single*
+task's variables, so `l_j <= 0` pushes `s_j` past `t` and propagation has its
+contradiction. The off-diagonal pol really is load-bearing --- deleting it fails
+five lanes --- which is what makes the difference between them a fact rather
+than a guess.
+
+**A variable height: the one that needed an argument.** A constant height is a
+coefficient on an activity flag, and the pin cancels it off the checkpoint row
+and leaves the same coefficient on `~cact` --- which *is* the load term the
+target's reverse half then cancels against, so the conversion and the arithmetic
+are one act. A variable height is a coefficient on neither flag: the checkpoint
+row carries the pair's bit-linearised contribution `scc_{i,j,k}` and the target
+carries the per-time one `cc_{i,t,k}`. The conversion is between two bit sums,
+`~cact` stops being the load, and it becomes a guard residue --- and a residue
+left on a case clause is a literal the scan cannot resolve away, which comes out
+as a recovered row weaker than the one asked for. That is how the first attempt
+failed, and the differential arm said so precisely.
+
+So the swap needs
+
+    Sum_k 2^k cc_{i,t,k}  <=  Sum_k 2^k scc_{i,j,k}
+
+with **no** `cact` guard, and that holds either side of `cact` for two different
+reasons: active at `t`, and both sides are `h_i`; not active, and the left is
+zero while the right is a sum of non-negative terms. Two reasons is a case
+split, and a case split whose target is a row rather than a clause gets
+relativized on a flag of its own --- the same technique, and the same reason for
+it, as the target row itself. The active case is the per-time `cle` row and the
+pair's `scge` row with `h_i` cancelling between them, the pair row's guard
+discharged by the pin; the inactive case is the `czero` row plus literal axioms
+for the right hand side; resolving the two leaves the goal holding under `w`
+alone, and it comes out from behind its flag exactly as the target does. The
+flagless diagonal is the same shape with `h_j` itself on the right and the
+height's non-negativity for the inactive case.
+
+**A variable capacity: nearly free, and this document said otherwise.** An
+earlier note here held that `degree = total - capacity` was "the degree the
+derivation saturates at" and that the guard coefficients were computed against
+it, so a capacity carried as a bit sum would have no single constant degree.
+Neither half is true. `degree` was only ever the test for the trivial case, and
+the capacity needs no handling of its own, because it **cancels between the
+checkpoint row and the target's own reverse half** exactly as the load does ---
+one carrying `+capacity`, the other `-capacity`. All it took was carrying the
+row in the encoder's own two forms, and giving up the trivial-case shortcut,
+which asks "does the most the candidates can take fit in what the resource
+supplies" and has no single number to ask that of. Skipping the shortcut costs a
+longer derivation on a row that happens to be slack, and nothing else.
+
+The wrong note is worth keeping in mind rather than just deleting: the argument
+was about *scheduling* and never mentioned the capacity's constancy, and
+guessing that PB arithmetic would be the obstacle --- without following the
+constant through the code to see what it actually reached --- produced a
+confident note pointing at the wrong thing.
+
+**How each was checked.** Not by the suite going green, which it did after every
+one of them, but by breaking the new step and counting what noticed:
+
+| change | sabotage | lanes that failed |
+|---|---|---|
+| optional tasks | diagonal falls back to the axiom always | 3, all `_recovering` |
+| variable lengths | the same, with lengths now in | 14, `_recovering` and `_startcheckpoint` |
+| variable heights | cite the pair `zero` row, not the per-time one | 7 |
+| variable capacity | off-by-one in the variable form of the row | 5 |
+
+The `_recovering` arm is what catches these. A recovery that is *invalid* fails
+where it is emitted; one that is valid but derives the *wrong row* emits a
+perfectly good line, and only the implication check against the row the model
+still carries beside it notices. The optional-task sabotage is the sharpest
+illustration: the `_startcheckpoint` lanes stayed green right through it.
 
 ### What `StartCheckpoint` saves today, and why the default cannot flip yet
 
