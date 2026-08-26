@@ -410,6 +410,13 @@ namespace gcs
         // the environment's, and resolving it here in the constructor would
         // read it before a test had a chance to set it.
         std::optional<CumulativeEncoding> _encoding;
+
+        /// #780 step 10: whether the per-(task, time) flags are defined inside
+        /// the proof rather than by OPB rows. Decided once, in
+        /// define_proof_model, and read again by install_propagators so that
+        /// the initialiser which emits those definitions and the encoder which
+        /// declines to cannot disagree.
+        bool _per_time_flags_in_proof = false;
         innards::CumulativeProofMutation _proof_mutation = innards::cumulative_proof_mutation::None{};
         // Overload checking, resolved in prepare(). _overload_tasks lists the
         // tasks the window-energy lemma can speak about (constant length and
