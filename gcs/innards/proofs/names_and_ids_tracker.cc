@@ -1766,6 +1766,13 @@ auto NamesAndIDsTracker::find_or_derive_line_in_family(const ConstraintID & id, 
     return derived;
 }
 
+auto NamesAndIDsTracker::constraint_row(const ConstraintID & id, const string & role) const -> optional<ProofLine>
+{
+    if (auto label = constraint_row_label(id, role))
+        return ProofLine{*label};
+    return find_derived_line(id, role);
+}
+
 auto NamesAndIDsTracker::register_in_proof_reification(const ProofFlag & flag, ProofLine implies, ProofLine implied_by) -> void
 {
     // Keyed on the flag's PB rendering, which is what a citer has in hand and

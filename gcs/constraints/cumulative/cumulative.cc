@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -271,11 +272,13 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     _length_lb.clear();
     _length_ub.clear();
     _height_vals.clear();
+    _height_lb.clear();
     _height_ub.clear();
     _length_vals.reserve(n);
     _length_lb.reserve(n);
     _length_ub.reserve(n);
     _height_vals.reserve(n);
+    _height_lb.reserve(n);
     _height_ub.reserve(n);
     for (const auto & l : _lengths) {
         _length_vals.push_back(is_constant_variable(l) ? constant_value_of(l) : 0_i);
@@ -284,10 +287,28 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     }
     for (const auto & h : _heights) {
         _height_vals.push_back(is_constant_variable(h) ? constant_value_of(h) : 0_i);
+        // The lower bound is the *declared* one, which is what decides whether
+        // the variable's bit encoding carries a sign bit --- and so whether
+        // bit k of it has weight 2^k, which #780 step 10 needs when it defines
+        // a contribution bit as a conjunction with one. Heights are
+        // non-negative by the time prepare is done, but a declared bound below
+        // zero would still shift every weight.
+        _height_lb.push_back(initial_state.lower_bound(h));
         _height_ub.push_back(initial_state.upper_bound(h));
     }
     if (is_constant_variable(_capacity))
         _capacity_val = constant_value_of(_capacity);
+
+    // #780: can every height's own bits be cited? A constant needs none; a
+    // plain variable with a declared lower bound of zero or more has bit k at
+    // weight 2^k; a view has no bits of its own, and a declared bound below
+    // zero puts a sign bit in and shifts every weight. Where the answer is no,
+    // a variable height's contribution stays linearised by three rows per
+    // pair, and the per-(task, time) family stays in the model --- see
+    // define_proof_model.
+    _height_bits_citable = std::ranges::all_of(std::views::iota(std::size_t{0}, _heights.size()), [&](std::size_t i) {
+        return is_constant_variable(_heights[i]) || (std::holds_alternative<SimpleIntegerVariableID>(_heights[i]) && _height_lb[i] >= 0_i);
+    });
 
     // Tasks whose length can only ever be 0, or whose height can only ever be 0,
     // or which are constantly absent, never raise the load profile.
@@ -440,12 +461,26 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
     // model objects: the per-time capacity rows are what mention them, and that
     // is the block this encoding does without.
     //
-    // Not yet where any task has a variable height. Such a task's contribution
-    // rows are OPB rows *half-reified on its activity flag*, so the flag has to
-    // be in the model for them to exist at all; moving those rows into the
-    // proof too is the next step and this declines rather than half-does it.
-    _per_time_flags_in_proof = _encoding.value_or(default_cumulative_encoding()) == CumulativeEncoding::StartCheckpoint &&
-        std::ranges::all_of(_active_tasks, [&](std::size_t i) { return is_constant_variable(_heights[i]); });
+    // A variable height's contribution bits come too. Out of the model they
+    // stop needing three rows at all: the product h_i * cact_{i,t} linearises
+    // bit by bit into a *conjunction*,
+    //
+    //     cc_{i,t,k}  <->  cact_{i,t}  /\  bit_k(h_i)
+    //
+    // which is one two-way reification of a fresh flag over literals that
+    // already exist --- the same primitive the activity flag itself uses. The
+    // three `cge` / `cle` / `cz` rows then fall out of those definitions rather
+    // than being asserted; see the initialiser, and the recovery's swap, which
+    // got shorter for it.
+    //
+    // It needs the height's own bits, which means a plain variable rather than
+    // a view, and no sign bit --- so a declared lower bound of zero or more.
+    // Heights are non-negative anyway (prepare checks), but a *declared* bound
+    // below zero would still put a sign bit in the encoding and shift every
+    // weight, so this asks rather than assumes. A constraint with a height it
+    // cannot ask about keeps the whole family in the model: the contribution
+    // rows are half-reified on the activity flag, so a mixture is not available.
+    _per_time_flags_in_proof = _encoding.value_or(default_cumulative_encoding()) == CumulativeEncoding::StartCheckpoint && _height_bits_citable;
 
     // Time-table OPB encoding:
     //   for each task i and each time point t in its possible-active range:
@@ -538,13 +573,15 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
                 // constraint (recover_constant_argument_row); the other two are
                 // labelled to keep the family whole rather than because
                 // anything cites them yet.
-                auto contrib = contrib_sum_of(cc);
-                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t),
-                    contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{active});
-                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_le_row_role(i, t),
-                    contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{active});
-                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_zero_row_role(i, t), contrib <= 0_i,
-                    HalfReifyOnConjunctionOf{! active});
+                if (! _per_time_flags_in_proof) {
+                    auto contrib = contrib_sum_of(cc);
+                    model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t),
+                        contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{active});
+                    model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_le_row_role(i, t),
+                        contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{active});
+                    model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_zero_row_role(i, t),
+                        contrib <= 0_i, HalfReifyOnConjunctionOf{! active});
+                }
                 _contrib_flags[i].push_back(move(cc));
             }
         }
@@ -732,18 +769,44 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
                 // A variable height's contribution is the product h_i·active,
                 // linearised over per-bit flags exactly as the per-(i,t) block
                 // does it; see there for what the three rows say.
+                // Bit by bit, `contrib = h_i * sact_{i,j}` *is* a conjunction:
+                // scc_{i,j,k} <-> sact_{i,j} /\ bit_k(h_i). Two reification
+                // halves per bit, where the three-row linearisation this
+                // replaced took `scge` / `scle` / `scz` per pair --- and, more
+                // to the point, the halves are what let the recovery swap a
+                // pair bit for a per-time one with a single rup per bit rather
+                // than a case split. The per-time family says the same thing
+                // about the same height, in the proof rather than the model;
+                // see the install initialiser.
+                //
+                // Bit k has weight 2^k because a height with a sign bit is
+                // turned away before we get here; see height_bits_citable.
                 auto highest_bit_shift = std::get<0>(get_bits_encoding_coeffs(0_i, _height_ub[i]));
                 std::vector<ProofFlag> cc;
-                for (Integer k = 0_i; k <= highest_bit_shift; ++k)
-                    cc.push_back(model.names_and_ids_tracker().create_proof_flag_values(
-                        _constraint_id, std::vector<long long>{static_cast<long long>(i), static_cast<long long>(j), k.raw_value}, "scc"));
-                auto contrib = contrib_sum_of(cc);
-                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::pair_contribution_ge_row_role(i, j),
-                    contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{*active});
-                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::pair_contribution_le_row_role(i, j),
-                    contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{*active});
-                model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::pair_contribution_zero_row_role(i, j),
-                    contrib <= 0_i, HalfReifyOnConjunctionOf{! *active});
+                if (_height_bits_citable) {
+                    auto height_var = std::get<SimpleIntegerVariableID>(_heights[i]);
+                    for (Integer k = 0_i; k <= highest_bit_shift; ++k)
+                        cc.push_back(model.create_proof_flag_values_fully_reifying(_constraint_id,
+                            std::vector<long long>{static_cast<long long>(i), static_cast<long long>(j), k.raw_value}, "scc",
+                            WPBSum{} + 1_i * *active + 1_i * ProofBitVariable{height_var, k, true} >= 2_i));
+                }
+                else {
+                    // No bits to conjoin with --- a view height, or one whose
+                    // declared bounds put a sign bit in the encoding --- so the
+                    // product is linearised the long way, three rows per pair.
+                    // The recovery declines such a constraint; see
+                    // CumulativeInputs::pair_contribution_bits_are_conjunctions.
+                    for (Integer k = 0_i; k <= highest_bit_shift; ++k)
+                        cc.push_back(model.names_and_ids_tracker().create_proof_flag_values(
+                            _constraint_id, std::vector<long long>{static_cast<long long>(i), static_cast<long long>(j), k.raw_value}, "scc"));
+                    auto contrib = contrib_sum_of(cc);
+                    model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::pair_contribution_ge_row_role(i, j),
+                        contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{*active});
+                    model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::pair_contribution_le_row_role(i, j),
+                        contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{*active});
+                    model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::pair_contribution_zero_row_role(i, j),
+                        contrib <= 0_i, HalfReifyOnConjunctionOf{! *active});
+                }
                 for (Integer k = 0_i; k.raw_value < static_cast<long long>(cc.size()); ++k)
                     load += power2(k) * cc[k.raw_value];
             }
@@ -794,8 +857,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 
     propagators.install_initialiser(
         [id = constraint_id(), starts = _starts, lengths = _lengths, ends = _end, active_tasks = _active_tasks, before_flags = _before_flags,
-            after_flags = _after_flags, active_flags = _active_flags, presence = _presence, per_task_t_lo = _per_task_t_lo,
-            in_proof = _per_time_flags_in_proof, end_ge_lines](State &, auto &, ProofLogger * const logger) -> void {
+            after_flags = _after_flags, active_flags = _active_flags, contrib_flags = _contrib_flags, task_heights = _heights, presence = _presence,
+            per_task_t_lo = _per_task_t_lo, in_proof = _per_time_flags_in_proof, end_ge_lines](State &, auto &, ProofLogger * const logger) -> void {
             if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                 return;
             auto & tracker = logger->names_and_ids_tracker();
@@ -819,6 +882,51 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         define(before_flags[i][k], per_time_before_says(starts[i], t));
                         define(after_flags[i][k], per_time_after_says(starts[i], lengths[i], t));
                         define(active_flags[i][k], per_time_active_says(before_flags[i][k], after_flags[i][k], presence[i]));
+
+                        // A variable height's contribution bits. In the model
+                        // these need three rows, because `contrib = h * cact`
+                        // is a product and the rows are what linearise it. Here
+                        // they need none: bit by bit the product *is* a
+                        // conjunction,
+                        //
+                        //     cc_{i,t,k}  <->  cact_{i,t}  /\  bit_k(h_i)
+                        //
+                        // --- if the task is active its contribution is its
+                        // height, so bit for bit; if it is not, every bit is
+                        // zero. Each one is then a two-way reification of a
+                        // fresh flag over literals that already exist, the same
+                        // primitive the activity flag above uses, and the three
+                        // rows fall out of these rather than being asserted
+                        // beside them.
+                        //
+                        // Weight 2^k is bit k because the gate on this requires
+                        // a height with no sign bit; see height_bits_citable.
+                        if (! is_constant_variable(task_heights[i])) {
+                            const auto & cc = contrib_flags[i][k];
+                            auto height_var = std::get<SimpleIntegerVariableID>(task_heights[i]);
+                            for (Integer b = 0_i; b.raw_value < static_cast<long long>(cc.size()); ++b)
+                                define(cc[b.raw_value], WPBSum{} + 1_i * active_flags[i][k] + 1_i * ProofBitVariable{height_var, b, true} >= 2_i);
+
+                            // And the `cge` row those definitions imply, for the
+                            // energy rules and donor_view, which ask for it by
+                            // role and should not have to know it is derived
+                            // here rather than asserted in the model.
+                            //
+                            //   ~cact \/ ~bit_b(h) \/ cc_b   (rup, off cc_b's
+                            //                                 own reverse half)
+                            //
+                            // summed at 2^b is `S.~cact - h + Sum cc >= 0`,
+                            // which is that row with S as its guard coefficient.
+                            PolBuilder cge;
+                            for (Integer b = 0_i; b.raw_value < static_cast<long long>(cc.size()); ++b)
+                                cge.add(logger->emit_rup_proof_line(WPBSum{} + 1_i * ! active_flags[i][k] +
+                                                    1_i * ! ProofBitVariable{height_var, b, true} + 1_i * cc[b.raw_value] >=
+                                                1_i,
+                                            ProofLevel::Top),
+                                    power2(b));
+                            tracker.publish_derived_line(
+                                id, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t), cge.emit(*logger, ProofLevel::Top));
+                        }
                     }
             // Bit-define each variable-duration end = s + l as a conservative
             // extension FIRST (introduce_bits_of needs end's bits fresh for its
@@ -892,6 +1000,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .end_ge_lines = end_ge_lines,
         .capacity_lines = move(_capacity_lines),
         .checkpoint_recovery = recovery_cache,
+        .pair_contribution_bits_are_conjunctions = _height_bits_citable,
         .rules = _rules,
         .proof_mutation = _proof_mutation,
         .presence_mutation = _presence_mutation,
@@ -1052,7 +1161,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // reached from here rather than from a donor view.
     auto guaranteed_contribution = [&](const ReasonLiterals & reason, size_t i, Integer t) -> ProofLine {
         auto & tracker = logger->names_and_ids_tracker();
-        auto row = tracker.constraint_row_label(owner, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t));
+        auto row = tracker.constraint_row(owner, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t));
         // Emitted alongside the flags, so a task with a window here has one.
         // Missing means the flags and the rows have come apart, which is worth
         // saying here rather than as a rejected proof later.

@@ -670,6 +670,23 @@ namespace gcs::innards
         [[nodiscard]] auto find_derived_line(const ConstraintID & id, const std::string & role) const -> std::optional<ProofLine>;
 
         /**
+         * \brief How to cite the row a constraint published under this role,
+         * however it was written.
+         *
+         * The row-side counterpart of \ref reification_half, and the same
+         * answer for the same reason: an OPB row gives its label, a row an
+         * install initialiser derived inside the proof gives its line, and
+         * ProofLine is already the variant of the two, so a citer needs to know
+         * neither. #780 moves Cumulative's per-(task, time) contribution rows
+         * from the first kind to the second under one encoding and not the
+         * others.
+         *
+         * nullopt means the same thing it means in both halves of that: there
+         * is nothing to cite, so do not do the thing that would need citing.
+         */
+        [[nodiscard]] auto constraint_row(const ConstraintID & id, const std::string & role) const -> std::optional<ProofLine>;
+
+        /**
          * \brief A constraint's promise that it can derive, on demand, any line
          * in an integer-indexed family --- rather than publishing them all up
          * front.
