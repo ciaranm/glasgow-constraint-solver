@@ -99,6 +99,50 @@ namespace
 
     // The variable-height contribution h_i·active is linearised over cake's
     // per-bit contribution flags cc_k (weight 2^k): contrib = Σ 2^k · cc_k.
+    // What the three per-(task, time) flags say. One statement each, because
+    // #780 defines them two ways --- as labelled OPB rows under the
+    // time-indexed encodings, and as `red` steps inside the proof under the
+    // start-checkpoint one --- and a second copy that drifted would make a flag
+    // mean one thing to the encoder and another to everything that cites it.
+    //
+    // `operator>=` renders as a WPBSumLE like `operator<=` does, so all three
+    // come back in the one type the reifying calls take.
+    auto per_time_before_says(const IntegerVariableID & start, Integer t) -> WPBSumLE
+    {
+        return WPBSum{} + 1_i * start <= t;
+    }
+
+    // after_{i,t} <-> task i not yet finished at t <-> s_i + l_i >= t + 1.
+    // Constant length: single-variable s_i >= t-l+1. Variable length: reify on
+    // s_i + l_i directly (any constant operand folds in), which matches
+    // cake_pb_cp's after <-> s + l >= t+1. The proof-only end (when both vary)
+    // is NOT used here; it is only the single-variable handle the propagator
+    // pins through, bridged to this flag by the lemma the initialiser emits.
+    auto per_time_after_says(const IntegerVariableID & start, const IntegerVariableID & length, Integer t) -> WPBSumLE
+    {
+        if (is_constant_variable(length))
+            return WPBSum{} + 1_i * start >= t - constant_value_of(length) + 1_i;
+        return WPBSum{} + 1_i * start + 1_i * length >= t + 1_i;
+    }
+
+    // active_{i,t} <-> before /\ after, plus the presence conjunct for an
+    // optional task. The presence literal is the {0,1} variable's single PB
+    // atom, so the three-way AND costs one more term in the same two
+    // reification halves --- no extra flag, and nothing else in the encoding
+    // has to know whether the task is optional. An absent task fails the AND at
+    // every t, so it drops out of every capacity row, which is exactly "an
+    // absent task consumes nothing".
+    auto per_time_active_says(const ProofFlag & before, const ProofFlag & after, const optional<IntegerVariableID> & presence) -> WPBSumLE
+    {
+        auto conjuncts = WPBSum{} + 1_i * before + 1_i * after;
+        auto arity = 2_i;
+        if (presence) {
+            conjuncts += 1_i * (*presence == 1_i);
+            arity = 3_i;
+        }
+        return move(conjuncts) >= arity;
+    }
+
     auto contrib_sum_of(const vector<ProofFlag> & cc) -> WPBSum
     {
         WPBSum sum;
@@ -391,6 +435,18 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
 
 auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
 {
+    // #780 step 10. The per-(task, time) flags move out of the OPB and into the
+    // proof under StartCheckpoint, which is where they stop being needed as
+    // model objects: the per-time capacity rows are what mention them, and that
+    // is the block this encoding does without.
+    //
+    // Not yet where any task has a variable height. Such a task's contribution
+    // rows are OPB rows *half-reified on its activity flag*, so the flag has to
+    // be in the model for them to exist at all; moving those rows into the
+    // proof too is the next step and this declines rather than half-does it.
+    _per_time_flags_in_proof = _encoding.value_or(default_cumulative_encoding()) == CumulativeEncoding::StartCheckpoint &&
+        std::ranges::all_of(_active_tasks, [&](std::size_t i) { return is_constant_variable(_heights[i]); });
+
     // Time-table OPB encoding:
     //   for each task i and each time point t in its possible-active range:
     //     before_{i,t}  ⇔  starts[i] ≤ t
@@ -442,31 +498,19 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
             // definitions (before ⇔ s≤t, after ⇔ s+l≥t+1, active ⇔ before∧after)
             // make this a naming conform with no propagator change.
             std::vector<long long> it{static_cast<long long>(i), t.raw_value};
-            auto before = model.create_proof_flag_values_fully_reifying(_constraint_id, it, "cb", WPBSum{} + 1_i * _starts[i] <= t);
-            // after_{i,t} ⇔ task i not yet finished at t ⇔ s_i + l_i ≥ t + 1.
-            // Constant length: single-variable s_i ≥ t−l+1. Variable length:
-            // reify on s_i + l_i directly (any constant operand folds in), which
-            // matches cake_pb_cp's after ⇔ s + l ≥ t+1. The proof-only end (when
-            // both vary) is NOT used in this reification; it is only the
-            // single-variable handle the propagator pins through, bridged to this
-            // flag by the lemma the initialiser emits.
-            auto after = is_constant_variable(_lengths[i])
-                ? model.create_proof_flag_values_fully_reifying(_constraint_id, it, "ca", WPBSum{} + 1_i * _starts[i] >= t - _length_vals[i] + 1_i)
-                : model.create_proof_flag_values_fully_reifying(_constraint_id, it, "ca", WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] >= t + 1_i);
-            // active_{i,t} ⇔ before ∧ after, plus the presence conjunct for an
-            // optional task. The presence literal is the {0,1} variable's single
-            // PB atom, so the three-way AND costs one more term in the same two
-            // reification halves --- no extra flag, and nothing else in the
-            // encoding has to know whether the task is optional. An absent task
-            // fails the AND at every t, so it drops out of every capacity row,
-            // which is exactly "an absent task consumes nothing".
-            auto active_conjuncts = WPBSum{} + 1_i * before + 1_i * after;
-            auto active_arity = 2_i;
-            if (_presence[i]) {
-                active_conjuncts += 1_i * (*_presence[i] == 1_i);
-                active_arity = 3_i;
-            }
-            auto active = model.create_proof_flag_values_fully_reifying(_constraint_id, it, "cact", move(active_conjuncts) >= active_arity);
+            // Named either way; *defined* here only where the definition is an
+            // OPB row. Under _per_time_flags_in_proof the two halves are
+            // emitted as `red` steps by the install initialiser instead, which
+            // is the whole of #780's step 10: these three rows per (task, time)
+            // are 99.9% of the OPB on the instances the encoding exists for.
+            auto mint = [&](const char * annotation, const WPBSumLE & says) {
+                if (_per_time_flags_in_proof)
+                    return model.names_and_ids_tracker().create_proof_flag_values(_constraint_id, it, annotation);
+                return model.create_proof_flag_values_fully_reifying(_constraint_id, it, annotation, says);
+            };
+            auto before = mint("cb", per_time_before_says(_starts[i], t));
+            auto after = mint("ca", per_time_after_says(_starts[i], _lengths[i], t));
+            auto active = mint("cact", per_time_active_says(before, after, _presence[i]));
             _before_flags[i].push_back(before);
             _after_flags[i].push_back(after);
             _active_flags[i].push_back(active);
@@ -748,59 +792,82 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
     // initialiser has not derived yet.
     auto end_ge_lines = make_shared<vector<std::optional<ProofLine>>>(_starts.size());
 
-    propagators.install_initialiser([id = constraint_id(), starts = _starts, lengths = _lengths, ends = _end, active_tasks = _active_tasks,
-                                        after_flags = _after_flags, end_ge_lines](State &, auto &, ProofLogger * const logger) -> void {
-        if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
-            return;
-        auto & tracker = logger->names_and_ids_tracker();
-        // Bit-define each variable-duration end = s + l as a conservative
-        // extension FIRST (introduce_bits_of needs end's bits fresh for its
-        // witnesses), caching end's {end_ge, end_le}. cake has no end variable,
-        // so this lives entirely in the proof --- nothing in the OPB to match.
-        //
-        // end_ge is published, because a derived Cumulative over this task pins
-        // its `after` flags the same way and through the same line; end_le is
-        // the bridge lemma's business alone, and stays here.
-        vector<std::optional<ProofLine>> end_le(starts.size());
-        for (auto i : active_tasks)
-            if (ends[i].has_value()) {
-                auto lines = logger->introduce_bits_of(WPBSum{} + 1_i * starts[i] + 1_i * lengths[i], *ends[i], ProofLevel::Top);
-                (*end_ge_lines)[i] = lines.first;
-                end_le[i] = lines.second;
-                tracker.publish_derived_line(id, ConstraintProofModelData<Cumulative>::end_lower_bound_role(i), lines.first);
+    propagators.install_initialiser(
+        [id = constraint_id(), starts = _starts, lengths = _lengths, ends = _end, active_tasks = _active_tasks, before_flags = _before_flags,
+            after_flags = _after_flags, active_flags = _active_flags, presence = _presence, per_task_t_lo = _per_task_t_lo,
+            in_proof = _per_time_flags_in_proof, end_ge_lines](State &, auto &, ProofLogger * const logger) -> void {
+            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
+                return;
+            auto & tracker = logger->names_and_ids_tracker();
+
+            // #780 step 10: where the per-(task, time) flags were only *named* by
+            // define_proof_model, this is where they are defined --- the same two
+            // halves the encoder would have written as OPB rows, emitted as `red`
+            // steps instead, and registered so that reification_half hands citers
+            // the lines rather than labels that do not exist.
+            //
+            // The order matters: every definition goes out before anything below
+            // cites one, and the bridge lemmas below cite `after`.
+            if (in_proof)
+                for (auto i : active_tasks)
+                    for (std::size_t k = 0; k < active_flags[i].size(); ++k) {
+                        auto t = per_task_t_lo[i] + Integer{static_cast<long long>(k)};
+                        auto define = [&](const ProofFlag & flag, const WPBSumLE & says) {
+                            auto [implies, implied_by] = logger->emit_red_proof_lines_reifying(says, flag, ProofLevel::Top);
+                            tracker.register_in_proof_reification(flag, implies, implied_by);
+                        };
+                        define(before_flags[i][k], per_time_before_says(starts[i], t));
+                        define(after_flags[i][k], per_time_after_says(starts[i], lengths[i], t));
+                        define(active_flags[i][k], per_time_active_says(before_flags[i][k], after_flags[i][k], presence[i]));
+                    }
+            // Bit-define each variable-duration end = s + l as a conservative
+            // extension FIRST (introduce_bits_of needs end's bits fresh for its
+            // witnesses), caching end's {end_ge, end_le}. cake has no end variable,
+            // so this lives entirely in the proof --- nothing in the OPB to match.
+            //
+            // end_ge is published, because a derived Cumulative over this task pins
+            // its `after` flags the same way and through the same line; end_le is
+            // the bridge lemma's business alone, and stays here.
+            vector<std::optional<ProofLine>> end_le(starts.size());
+            for (auto i : active_tasks)
+                if (ends[i].has_value()) {
+                    auto lines = logger->introduce_bits_of(WPBSum{} + 1_i * starts[i] + 1_i * lengths[i], *ends[i], ProofLevel::Top);
+                    (*end_ge_lines)[i] = lines.first;
+                    end_le[i] = lines.second;
+                    tracker.publish_derived_line(id, ConstraintProofModelData<Cumulative>::end_lower_bound_role(i), lines.first);
+                }
+            // Then, per (i, t), emit the bridge lemma `end ≥ t+1 → after`:
+            //   pol( @v[id][i_t][ca][f] : ¬after → s+l ≤ t )  +  ( end ≤ s+l )
+            //   = ( M·after − end + t ≥ 0 ).
+            // The s+l bits cancel exactly, leaving a single-variable-in-end handle
+            // that makes the propagator's after pin RUP-closable even though after
+            // is reified on the two-variable s+l. end_le is the cancelling term.
+            //
+            // These need no publishing at all: they go out at ProofLevel::Top over
+            // exactly the (i, t) pairs this constraint gave the task a window for,
+            // so unit propagation finds them for whoever pins one of those flags,
+            // and a citer that could ask about a wider window would already have
+            // been turned away by the flag lookup.
+            for (auto i : active_tasks) {
+                if (! ends[i].has_value())
+                    continue;
+                for (const auto & after : after_flags[i]) {
+                    PolBuilder lemma;
+                    // `name_of` and not `pb_file_string_for`, which is the other
+                    // base a flag's reification halves can be labelled under: these
+                    // flags come from create_proof_flag_values_fully_reifying, and
+                    // that is the overload whose `[r]` / `[f]` labels are built off
+                    // `name_of`. `pb_file_string_for` is the base
+                    // add_two_way_reified_constraint uses, for flags with no
+                    // ConstraintID to key them. Getting it the wrong way round is
+                    // loud --- there is no such label --- but it is worth not
+                    // having to find that out.
+                    lemma.add(reification_half(tracker, after, ReificationHalf::ImpliedBy));
+                    lemma.add(*end_le[i]);
+                    lemma.emit(*logger, ProofLevel::Top);
+                }
             }
-        // Then, per (i, t), emit the bridge lemma `end ≥ t+1 → after`:
-        //   pol( @v[id][i_t][ca][f] : ¬after → s+l ≤ t )  +  ( end ≤ s+l )
-        //   = ( M·after − end + t ≥ 0 ).
-        // The s+l bits cancel exactly, leaving a single-variable-in-end handle
-        // that makes the propagator's after pin RUP-closable even though after
-        // is reified on the two-variable s+l. end_le is the cancelling term.
-        //
-        // These need no publishing at all: they go out at ProofLevel::Top over
-        // exactly the (i, t) pairs this constraint gave the task a window for,
-        // so unit propagation finds them for whoever pins one of those flags,
-        // and a citer that could ask about a wider window would already have
-        // been turned away by the flag lookup.
-        for (auto i : active_tasks) {
-            if (! ends[i].has_value())
-                continue;
-            for (const auto & after : after_flags[i]) {
-                PolBuilder lemma;
-                // `name_of` and not `pb_file_string_for`, which is the other
-                // base a flag's reification halves can be labelled under: these
-                // flags come from create_proof_flag_values_fully_reifying, and
-                // that is the overload whose `[r]` / `[f]` labels are built off
-                // `name_of`. `pb_file_string_for` is the base
-                // add_two_way_reified_constraint uses, for flags with no
-                // ConstraintID to key them. Getting it the wrong way round is
-                // loud --- there is no such label --- but it is worth not
-                // having to find that out.
-                lemma.add(reification_half(tracker, after, ReificationHalf::ImpliedBy));
-                lemma.add(*end_le[i]);
-                lemma.emit(*logger, ProofLevel::Top);
-            }
-        }
-    });
+        });
 
     // One cache, shared between the differential check below and the
     // propagator, so an inference cites the line the check passed on.
