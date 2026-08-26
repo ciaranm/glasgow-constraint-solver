@@ -2363,6 +2363,12 @@ The last row is the case for the whole exercise: 25 MB of per-time
 block, emitted unconditionally, next to 39 lines that say the same
 thing.
 
+One correction to how that reads, from the long-task measurements below: the
+25 MB is *not* the per-time capacity rows. It is the per-`(i, t)` flag family,
+which those 39 lines do not replace and which `StartCheckpoint` does not touch.
+The capacity rows are about 9% of such a file. The exercise is still the right
+one; the line it deletes is not the line that makes the file big.
+
 ### Every shape, and what each one took
 
 The recovery was written for constant lengths, heights and capacity and no
@@ -2467,8 +2473,21 @@ illustration: the `_startcheckpoint` lanes stayed green right through it.
 
 That table is the cost of *adding* the checkpoint block. The question the
 default flip asks is a different one --- what does `StartCheckpoint` save,
-against `TimeIndexed`, on the same model --- and measured, the answer is
-**nothing, until the horizon reaches about `6n^2`**.
+against `TimeIndexed`, on the same model.
+
+**Read the next three subsections together, and note which regime each is in.**
+The first two sweep instances whose tasks are short, and find no saving until
+the horizon reaches about `6n^2`. That is a real result about that family, and
+it is *not* the family this encoding exists for --- which is a handful of tasks
+of very long duration, exactly the instances nobody could write an OPB for, and
+so exactly the instances no test or example covered. The third measures that
+regime, and the answer there differs in direction and, far more importantly, in
+what it implicates.
+
+#### Short tasks: no saving until `H ~= 6n^2`
+
+Measured, the answer in this family is **nothing, until the horizon reaches
+about `6n^2`**.
 
 Swept with `examples/cumulative --variant`, one generated instance per row,
 counting OPB lines:
@@ -2514,15 +2533,20 @@ crossing sits at `H ~= 6n^2` --- for `n = 40`, a horizon of about 9,600. No
 scheduling instance looks like that: `H` is normally a small multiple of `n`,
 which is the left-hand column of the first table, where the arm is *worst*.
 
-So **flipping the default today would make almost every real model larger**,
-by up to 1.9x at `H = n`. The flip is not blocked on anything about the
-capacity rows --- those are converted, and the progress bar is empty --- it is
-blocked on the per-`(i, t)` flags still being model objects. Minting them
-lazily, under the same keys and labels, is the step that removes the `6nH`
-term and makes the encoding horizon-free in fact rather than only in its
-capacity rows.
+So **flipping the default would make every model in this family larger**, by up
+to 1.9x at `H = n`. The flip is not blocked on anything about the capacity rows
+--- those are converted, and the progress bar is empty --- it is blocked on the
+per-`(i, t)` flags still being model objects. Minting them lazily, under the
+same keys and labels, is the step that removes the `6nH` term and makes the
+encoding horizon-free in fact rather than only in its capacity rows.
 
-### And the proof costs more than the model saves
+Every instance in that sweep has task lengths drawn from `1 .. 4`, which is the
+bias to hold on to: short tasks are what was solvable under the time-indexed
+encoding, and so the only thing anything in this repository measured, and they
+are not what #780 was opened for. `--max-length` and `--max-start` exist on
+`examples/cumulative` so that the other family can be reached at all.
+
+#### The proof, in that same family
 
 The OPB is the smaller half of the question, and the answer on the other half
 is worse. The encoding is proof-only --- at every point in the sweep below the
@@ -2558,7 +2582,7 @@ refutation cites, this is under 30k lines against a 6.7M-line proof" --- holds
 at `n = 6` and does not survive `n = 10`. `2m^3` is not negligible against a
 real proof once `m` is into double figures.
 
-### The same thing on real instances
+#### The same thing on real instances
 
 Both tables above are generated instances from `examples/cumulative`, so the
 conclusion is worth a second opinion from a model nobody wrote for this
@@ -2581,28 +2605,107 @@ Several small Cumulatives over a long horizon is the case the checkpoint
 encoding handles least well, and it is also the common one. Even at `H = 12n`
 the model is still 1.05x larger and the proof twice the size.
 
+#### Long tasks: the regime this encoding exists for
+
+The instances above are short-tasked because those are the ones that were
+solvable under the time-indexed encoding, which is a selection every measurement
+in this repository inherited. #780 was opened for the opposite case: a few tasks
+of very long duration, where the per-time block is linear in the duration and
+nobody could write the OPB at all, let alone compare anything.
+
+`--max-length` draws the lengths from a wider range and `--max-start` keeps the
+start domain small, which is what separates "expensive to encode" from
+"expensive to solve": a task of duration `D` has a possible-active window of
+about `D` however few start times it can take, so the per-time block is linear
+in `D` while the search stays trivial. Three tasks, nine possible starts,
+`--seed 7`:
+
+| `D` | time-indexed | start-checkpoint | ratio |
+|---|---|---|---|
+| 100 | 1,027 | 980 | 0.954 |
+| 1,000 | 8,725 | 7,976 | 0.914 |
+| 10,000 | 85,663 (8.3 MB) | 77,894 (7.8 MB) | 0.909 |
+| 100,000 | 854,945 (86 MB) | 776,984 (81 MB) | 0.909 |
+| 1,000,000 | 8,547,916 (**881 MB**) | 7,768,028 (**831 MB**) | 0.909 |
+
+**So the encoding is directionally right here and the sweep above does not
+generalise to it** --- `H` is enormous against `6n^2 = 54`, and start-checkpoint
+wins. And it wins by 9%. An 881 MB file becomes an 831 MB file. Whatever made
+the first unwritable makes the second unwritable.
+
+The row-kind decomposition says why, at `D = 10,000`:
+
+| | time-indexed | start-checkpoint |
+|---|---|---|
+| `cb` / `ca` / `cact`, per `(i, t)` | 51,892 / 51,892 / 33,754 | 51,892 / 51,892 / 25,946 |
+| `cap_<t>` | 7,808 | **0** |
+| the entire checkpoint block (`sb`, `sa`, `sact`, `scap_`) | 0 | **66** |
+
+Counting *defining lines* rather than mentions: of the 77,894 lines
+`StartCheckpoint` writes, **77,838 are per-`(i, t)` flag definitions and 56 are
+everything else** --- the whole checkpoint block, the makespan bounds, the lot.
+The flags are **99.9% of the file**.
+
+That is the number to carry. The per-time capacity rows that `StartCheckpoint`
+removes are the 9%; the per-`(i, t)` flags it leaves behind are the 99.9%. In
+general the saving is
+
+    (H - 6n^2) / (6nH + H)  ~=  1/(6n)   for large H
+
+so it is bounded by about `1/(6n)` however long the tasks get, and it *shrinks*
+as tasks are added. The horizon-freedom the encoding was designed for is real
+and is entirely in the 56 lines; none of it has been collected yet, because the
+`6nH` term was never in the capacity rows.
+
+**What step 10 is worth, then, is not a marginal flip.** Minting the per-`(i, t)`
+flags lazily takes the 77,838 out of the model and leaves them to be created in
+the proof only for the `(i, t)` pairs something actually reasons about --- a
+number bounded by search effort rather than by the horizon. Projected on the
+table above, the 831 MB OPB becomes a few kilobytes. That is the whole of #780's
+motivating case, and it is one step away.
+
+(The proof, in this regime, is not the constraint: at `D = 10,000` these solves
+write 42 lines under `TimeIndexed` and 115 under `StartCheckpoint`. The `~2m^3`
+recovery cost is paid per *cited* time point, and an easy instance cites almost
+none. The 2x proof ratios in the short-task family come from search-heavy
+instances, and neither figure generalises to the other regime.)
+
 ### What the flip actually needs
 
-Three things, and only the first is currently on the plan:
+**One thing above all others.** The per-`(i, t)` flags have to stop being model
+objects. They are 99.9% of the OPB in the regime the encoding exists for, and
+until they move, `StartCheckpoint` collects about `1/(6n)` of a win that is
+otherwise nearly total. Every other question below is secondary to it, and two
+of the three are questions only about the short-task family.
 
-1. The per-`(i, t)` flags minted lazily, which removes the `6nH` term. Without
-   it there is no model saving to weigh against anything.
-2. A cheaper recovery, or a reason to believe the `H * n^3` bill is affordable
-   for the instances that matter. Emitting only the triples the scan resolves
-   against would take a constant factor off; the `m^3` itself is structural.
-3. A rule for *when* to use it, rather than a global default. The encoding wins
-   on the model only at `H >~ 6n^2` and loses on the proof roughly everywhere,
-   so "always" is not the answer that measurement supports, and the shape gate
-   added for declined shapes is already the precedent for choosing per
-   constraint. Note the rule has to be per *constraint* and not per problem:
-   an RCPSP pays the `6n^2` once per resource over one shared horizon.
+1. **The per-`(i, t)` flags minted lazily**, which removes the `6nH` term. This
+   is not a prerequisite for a marginal flip --- it is where the benefit is.
+   831 MB to a few kilobytes, projected on the long-task table above.
+2. A rule for *when* to use it, rather than a global default. On short tasks the
+   encoding wins on the model only at `H >~ 6n^2` and loses on the proof; on
+   long ones it wins outright. So "always" is not what today's measurement
+   supports, and the shape gate is already the precedent for choosing per
+   constraint --- and per *constraint*, not per problem, an RCPSP paying the
+   `6n^2` once per resource over one shared horizon. **Re-take this after (1):**
+   the flags dominate both arms today, so every ratio measured now is mostly
+   measuring something neither encoding is responsible for.
+3. A cheaper recovery, if the `~2m^3` per cited point turns out to bite. It does
+   in the short-task family (2x proofs at `n = 10`), and it does not in the
+   long-task one (42 lines against 115), because the bill is per *cited* time
+   point and an easy instance cites almost none. Emitting only the triples the
+   scan resolves against would take a constant factor off; the `m^3` is
+   structural.
 
-None of that reopens what `StartCheckpoint` is for: the 25 MB case above is
-real, and a horizon-free encoding is the only answer to it. It says the flip is
-a measurement to re-take after step 1, not a milestone to tick off after the
-progress bar empties. `examples/cumulative --variant` is how to re-take it ---
-`--tasks` and `--horizon` move `n` and `H` independently, and the search is
-identical across arms, so any difference is the encoding's.
+None of this reopens what `StartCheckpoint` is for --- it sharpens it. The 25 MB
+case is real, a horizon-free encoding is the only answer to it, and the work so
+far has correctly moved every *rule* and every *shape* off the per-time capacity
+rows. What it has not yet done is make a single unwritable OPB writable, because
+the capacity rows were never where the size was.
+
+`examples/cumulative --variant` is how to re-take any of it. `--tasks` and
+`--horizon` move `n` and `H`; `--max-length` and `--max-start` reach the
+long-task family and keep it solvable while doing so. The search is identical
+across arms, so any difference is the encoding's.
 
 ## Open follow-ups
 - **Cloutier & Quimper's Profile.** The doubly linked list over time points,
