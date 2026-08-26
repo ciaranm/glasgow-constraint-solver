@@ -517,8 +517,9 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
     // Note this gates the capacity *rows* only. The per-(task, time) flags
     // above stay: every rule's activity vocabulary is still stated over them,
     // and moving them to lazily-minted objects is its own step of #780.
-    auto omit_per_time_capacity_rows = _encoding.value_or(default_cumulative_encoding()) == CumulativeEncoding::StartCheckpoint &&
-        cumulative_shape_supports_checkpoint_recovery(_active_tasks, _presence, _lengths, _heights, _capacity);
+    auto encoding = _encoding.value_or(default_cumulative_encoding());
+    auto shape_supports_recovery = cumulative_shape_supports_checkpoint_recovery(_active_tasks, _presence, _lengths, _heights, _capacity);
+    auto omit_per_time_capacity_rows = encoding == CumulativeEncoding::StartCheckpoint && shape_supports_recovery;
 
     for (Integer t = global_lo; t <= global_hi && ! omit_per_time_capacity_rows; ++t) {
         WPBSum load;
@@ -550,7 +551,24 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
         }
     }
 
-    if (_encoding.value_or(default_cumulative_encoding()) == CumulativeEncoding::TimeIndexed)
+    if (encoding == CumulativeEncoding::TimeIndexed)
+        return;
+
+    // #780: under CumulativeEncoding::StartCheckpoint a shape the recovery
+    // cannot speak about has just kept its per-time block, above. Writing the
+    // checkpoint block beside it as well would be pure growth: no rule can
+    // cite it, because every citer goes through a recovery that declines this
+    // shape before it looks at the model at all. So StartCheckpoint on a
+    // declined shape *is* TimeIndexed, which is what "start-checkpoint
+    // wherever the recovery reaches" has to mean once the default flips ---
+    // otherwise every variable-length, variable-height, variable-capacity or
+    // optional-task model would silently start paying for two encodings.
+    //
+    // Both and BothRecovering keep writing it for every shape. They are the
+    // differential arms, and a checkpoint row over a shape the recovery
+    // declines is still a row veripb checks against the solutions, which is
+    // how the block was soundness-checked in the first place.
+    if (encoding == CumulativeEncoding::StartCheckpoint && ! shape_supports_recovery)
         return;
 
     // Start-checkpoint encoding (issue #780), emitted *alongside* the
