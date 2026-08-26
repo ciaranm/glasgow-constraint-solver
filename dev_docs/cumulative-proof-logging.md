@@ -2453,6 +2453,29 @@ refutation cites, this is under 30k lines against a 6.7M-line proof" --- holds
 at `n = 6` and does not survive `n = 10`. `2m^3` is not negligible against a
 real proof once `m` is into double figures.
 
+### The same thing on real instances
+
+Both tables above are generated instances from `examples/cumulative`, so the
+conclusion is worth a second opinion from a model nobody wrote for this
+measurement. `GCS_CUMULATIVE_ENCODING` applies to any binary, so `examples/rcpsp`
+needs no changes:
+
+| `--size` / `--seed` / `--horizon` | OPB | `.pbp` |
+|---|---|---|
+| 8 / 0 / auto | 1,026 -> 1,597 (1.56x) | 2,044 -> 6,383 (3.12x) |
+| 10 / 0 / auto | 1,462 -> 2,304 (1.58x) | 1,610 -> 5,020 (3.12x) |
+| 12 / 3 / auto | 932 -> 1,528 (1.64x) | 3,549 -> 9,951 (2.80x) |
+| 14 / 0 / auto | 2,660 -> 4,113 (1.55x) | 226,985 -> 282,243 (1.24x) |
+| 10 / 0 / 60 | 5,862 -> 6,624 (1.13x) | 6,322 -> 18,709 (2.96x) |
+| 10 / 0 / 120 | 12,462 -> 13,104 (1.05x) | 12,622 -> 25,009 (1.98x) |
+
+Worse than the generated instances on both counts, and for a reason the
+generated ones cannot show: an RCPSP has *one Cumulative per resource*, so the
+`6n^2` is paid per constraint while the horizon they would each save is shared.
+Several small Cumulatives over a long horizon is the case the checkpoint
+encoding handles least well, and it is also the common one. Even at `H = 12n`
+the model is still 1.05x larger and the proof twice the size.
+
 ### What the flip actually needs
 
 Three things, and only the first is currently on the plan:
@@ -2466,7 +2489,8 @@ Three things, and only the first is currently on the plan:
    on the model only at `H >~ 6n^2` and loses on the proof roughly everywhere,
    so "always" is not the answer that measurement supports, and the shape gate
    added for declined shapes is already the precedent for choosing per
-   constraint.
+   constraint. Note the rule has to be per *constraint* and not per problem:
+   an RCPSP pays the `6n^2` once per resource over one shared horizon.
 
 None of that reopens what `StartCheckpoint` is for: the 25 MB case above is
 real, and a horizon-free encoding is the only answer to it. It says the flip is
