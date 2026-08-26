@@ -69,6 +69,34 @@ namespace gcs::innards
      * variable height replaces a task's coefficient with a bit sum, and a
      * presence adds a conjunct to every activity flag; each is a known
      * extension and none of them is done yet.
+     *
+     * **A variable capacity is the one whose extension is not merely undone
+     * but unwritten**, so what is known about it belongs here rather than in
+     * someone's head. The *model* side already handles it --- both the
+     * per-time rows and the checkpoint rows move it to the left as a
+     * `(-1) * capacity` term when it is not constant. It is the recovery that
+     * assumes a constant, in two places, and only one of them is clerical:
+     *
+     * - `target`, the row being recovered, becomes
+     *   `sum h_i * cact_i - capacity <= 0` rather than `... <= capacity`.
+     *   Mechanical: the checkpoint rows the derivation adds up carry the same
+     *   extra term, so it survives every `pol` unchanged.
+     * - `degree = total - capacity` does not survive, and it is load-bearing
+     *   twice over. It decides the trivial case (every candidate at once
+     *   fits, so the row is a tautology over the flags' own bounds and no
+     *   checkpoint is needed), and it is the degree the derivation saturates
+     *   at. With the capacity on the left as a bit sum there is no single
+     *   constant degree: saturating a row whose right-hand side is a number
+     *   and saturating one carrying the capacity's bit coefficients are not
+     *   the same operation, and the guard coefficients are computed against
+     *   it too.
+     *
+     * So the open question is precisely that one, and it is a question about
+     * saturation rather than about the scheduling argument, which does not
+     * change at all. The obvious first thing to try is the trivial case at
+     * `total <= lb(capacity)` and the general case relativized on the
+     * capacity's bits; nobody has tried it, and this note is not a claim that
+     * it works.
      */
     [[nodiscard]] auto cumulative_checkpoint_recovery_applies(const CumulativeInputs & inputs, const ProofLogger & logger) -> bool;
 
