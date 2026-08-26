@@ -1,4 +1,5 @@
 #include <gcs/constraints/cumulative/checkpoint_recovery.hh>
+#include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -41,6 +42,34 @@ namespace
     {
         return -tracker.reification_shape(ineq, HalfReifyOnConjunctionOf{{flag}}).reif_coefficient;
     }
+
+    // The load at `t` as the per-time capacity row states it: a coefficient on
+    // the activity flag for a constant height, and the bit-linearised
+    // contribution for a variable one.
+    //
+    // One function because it has two callers who must agree exactly --- the
+    // recovery, which derives this row, and the differential check, which
+    // asserts the derived row implies the model's. A copy that drifted would
+    // make the check compare the recovery against something the model does not
+    // say, which is the one failure the check exists to catch and the one it
+    // could not report.
+    auto per_time_load(const CumulativeInputs & inputs, Integer t) -> WPBSum
+    {
+        WPBSum load;
+        for (auto i : inputs.active_tasks) {
+            if (t < inputs.per_task_t_lo[i] || t > inputs.per_task_t_hi[i])
+                continue;
+            auto idx = (t - inputs.per_task_t_lo[i]).raw_value;
+            if (is_constant_variable(inputs.heights[i]))
+                load += constant_value_of(inputs.heights[i]) * inputs.active_flags[i][idx];
+            else {
+                const auto & bits = inputs.contrib_flags[i][idx];
+                for (Integer k = 0_i; k.raw_value < static_cast<long long>(bits.size()); ++k)
+                    load += power2(k) * bits[k.raw_value];
+            }
+        }
+        return load;
+    }
 }
 
 auto gcs::innards::cumulative_shape_supports_checkpoint_recovery(const vector<size_t> & active_tasks,
@@ -51,9 +80,9 @@ auto gcs::innards::cumulative_shape_supports_checkpoint_recovery(const vector<si
         return false;
     if (! is_constant_variable(capacity))
         return false;
-    for (auto i : active_tasks)
-        if (! is_constant_variable(heights[i]))
-            return false;
+    (void)heights;
+    (void)lengths;
+    (void)presence;
     return true;
 }
 
@@ -112,14 +141,45 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     // anyone else's. See Data::pair_active_flag_key.
     auto sact_diagonal = [&](size_t j) { return tracker.find_proof_flag_values(inputs.owner, Data::pair_active_flag_key(j, j)); };
 
+    // A variable height is not a coefficient on an activity flag: what is on
+    // every capacity row is the bit-linearised contribution, `cc` per (task,
+    // time) and `scc` per (task, task). See the encoding.
+    auto var_height = [&](size_t i) { return ! is_constant_variable(inputs.heights[i]); };
+    auto cc_bits = [&](size_t i) -> const vector<ProofFlag> & { return inputs.contrib_flags[i][(t - inputs.per_task_t_lo[i]).raw_value]; };
+    auto scc_bits = [&](size_t i, size_t j) {
+        vector<ProofFlag> bits;
+        for (Integer k = 0_i;; ++k) {
+            auto flag = tracker.find_proof_flag_values(inputs.owner, Data::pair_contribution_flag_key(i, j, k));
+            if (! flag)
+                break;
+            bits.push_back(*flag);
+        }
+        return bits;
+    };
+    auto bit_sum = [&](const vector<ProofFlag> & bits) {
+        WPBSum sum;
+        for (Integer k = 0_i; k.raw_value < static_cast<long long>(bits.size()); ++k)
+            sum += power2(k) * bits[k.raw_value];
+        return sum;
+    };
+    auto row = [&](const string & role) { return ProofLine{*tracker.constraint_row_label(inputs.owner, role)}; };
+
     // The row being recovered, as the model states it: the load at t is within
     // the capacity. In the form the derivation ends on, which is the negated
     // one, this has degree `total - capacity`.
-    WPBSum load;
+    auto load = per_time_load(inputs, t);
     Integer total = 0_i;
     for (auto i : candidates) {
-        load += height(i) * cact(i);
-        total += height(i);
+        if (var_height(i)) {
+            // The most the bits can say, which is all the trivial-case test
+            // below needs. Looser than ub(h_i) when the height's range does not
+            // fill its bits, which only ever costs a shortcut, never a wrong
+            // answer.
+            for (Integer k = 0_i; k.raw_value < static_cast<long long>(cc_bits(i).size()); ++k)
+                total += power2(k);
+        }
+        else
+            total += height(i);
     }
     auto degree = total - capacity;
 
@@ -307,12 +367,109 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
         // checkpoint term is dropped rather than pinned. Weakening, while the
         // checkpoint row is still the whole of the running total.
         for (auto i : inputs.active_tasks)
-            if (i != j && (t < inputs.per_task_t_lo[i] || t > inputs.per_task_t_hi[i]))
-                pol.weaken(sact(i, j), tracker);
+            if (i != j && (t < inputs.per_task_t_lo[i] || t > inputs.per_task_t_hi[i])) {
+                if (var_height(i))
+                    for (const auto & bit : scc_bits(i, j))
+                        pol.weaken(bit, tracker);
+                else
+                    pol.weaken(sact(i, j), tracker);
+            }
+        // Swapping each candidate's checkpoint term for its per-time one.
+        //
+        // A constant height is a coefficient on sact_{i,j}, and the pin cancels
+        // it and leaves the same coefficient on ~cact_{i,t}, which is the whole
+        // of the conversion: the load term the target's reverse half then
+        // cancels against *is* that ~cact term.
+        //
+        // A variable height is a coefficient on neither. What is on the
+        // checkpoint row is the pair's bit-linearised contribution and what is
+        // on the target is the per-time one, so the conversion is between two
+        // bit sums and the ~cact term is no longer the load --- it is a guard
+        // residue, and a residue left on the case clause is a literal the scan
+        // cannot resolve away, which comes out as a recovered row weaker than
+        // the one asked for. So it has to go, and getting rid of it needs the
+        // fact
+        //
+        //     Sum_k 2^k cc_{i,t,k}  <=  Sum_k 2^k scc_{i,j,k}          (*)
+        //
+        // *unguarded by cact*, which is true for two different reasons either
+        // side of that flag: active at t, and both sides are h_i; not active,
+        // and the left is zero while the right is a sum of non-negative terms.
+        // Two reasons is a case split, and a case split whose target is a row
+        // rather than a clause is relativized on a flag for it --- the same
+        // technique, and the same reason for it, as the target row itself a
+        // few lines down.
+        auto swap_var_height = [&](size_t i, optional<ProofLine> pin) {
+            // (*), or its diagonal form. Where the encoding minted no activity
+            // flag for j on the diagonal it put the *height itself* on the
+            // checkpoint row rather than a bit sum, so the right hand side is
+            // h_j and there are no pair bits.
+            auto pair = pin ? make_optional(scc_bits(i, j)) : optional<vector<ProofFlag>>{};
+            auto goal_sum = bit_sum(cc_bits(i));
+            if (pair)
+                for (Integer k = 0_i; k.raw_value < static_cast<long long>(pair->size()); ++k)
+                    goal_sum += -power2(k) * (*pair)[k.raw_value];
+            else
+                goal_sum += -1_i * inputs.heights[i];
+            auto goal = move(goal_sum) <= 0_i;
+            auto [g, g_forward, g_reverse] = logger.create_proof_flag_reifying(goal, "ckpg", ProofLevel::Top);
+
+            // Active at t: the per-time `le` row caps the left at h_i and, off
+            // the diagonal, the pair's `ge` row floors the right at the same
+            // h_i, so h_i cancels between them. The pair row's own guard is
+            // discharged by the pin, at the coefficient it was emitted with ---
+            // asked for, not assumed, for the same reason guard_coefficient
+            // exists.
+            PolBuilder active;
+            active.add(row(Data::contribution_le_row_role(i, t)));
+            if (pair) {
+                active.add(row(Data::pair_contribution_ge_row_role(i, j)));
+                active.add(*pin, guard_coefficient(tracker, bit_sum(*pair) + -1_i * inputs.heights[i] >= 0_i, sact(i, j)));
+            }
+            active.add(g_reverse);
+            active.saturate().emit(logger, ProofLevel::Top);
+
+            // Not active at t: the `zero` row says the left is zero, and the
+            // right is a sum of non-negative terms --- bits, or a height the
+            // constructor has already required to be non-negative --- which go
+            // on as literal axioms.
+            PolBuilder inactive;
+            inactive.add(row(Data::contribution_zero_row_role(i, t)));
+            if (pair)
+                for (Integer k = 0_i; k.raw_value < static_cast<long long>(pair->size()); ++k)
+                    inactive.add((*pair)[k.raw_value], power2(k), tracker);
+            else
+                inactive.add_for_literal(tracker, inputs.heights[i] >= 0_i);
+            inactive.add(g_reverse);
+            inactive.saturate().emit(logger, ProofLevel::Top);
+
+            // The two clauses differ only in the polarity of cact, so resolving
+            // them leaves the goal holding whatever it is --- guarded by w
+            // where the pin brought w in, and by nothing at all on a flagless
+            // diagonal.
+            auto everywhere = pin ? logger.emit_rup_proof_line(WPBSum{} + 1_i * g + 1_i * ! w >= 1_i, ProofLevel::Top)
+                                  : logger.emit_rup_proof_line(WPBSum{} + 1_i * g >= 1_i, ProofLevel::Top);
+
+            // And out from behind the flag, exactly as the target row is.
+            PolBuilder unwrap;
+            unwrap.add(g_forward);
+            unwrap.add(everywhere, guard_coefficient(tracker, goal, g));
+            pol.add(unwrap.emit(logger, ProofLevel::Top));
+        };
+
+        auto swap_term = [&](size_t i, optional<ProofLine> pin) {
+            if (var_height(i))
+                swap_var_height(i, pin);
+            else if (pin)
+                pol.add(*pin, height(i));
+            else
+                pol.add(! cact(i), height(i), tracker);
+        };
+
         size_t p = 0;
         for (auto i : candidates)
             if (i != j)
-                pol.add(pinned[p++], height(i));
+                swap_term(i, pinned[p++]);
         // And j's own term, by whichever of the two routes the encoding left
         // open. With a flag on the diagonal it cancels exactly as everyone
         // else's does, off the pin above. Without one, the checkpoint row
@@ -322,10 +479,7 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
         // as a literal axiom, which adds the term without moving the degree.
         // Either way what stands now is the target row, guarded by j being the
         // latest starter.
-        if (diagonal_pin)
-            pol.add(*diagonal_pin, height(j));
-        else
-            pol.add(! cact(j), height(j), tracker);
+        swap_term(j, diagonal_pin);
 
         // Turn that into the clause the scan can resolve against, by cancelling
         // the whole load away against the target's own reverse half. The degree
@@ -378,11 +532,7 @@ auto gcs::innards::check_recovered_cumulative_capacity_rows(ProofLogger & logger
         if (! recovered)
             continue;
 
-        WPBSum load;
-        for (auto i : inputs.active_tasks)
-            if (t >= inputs.per_task_t_lo[i] && t <= inputs.per_task_t_hi[i])
-                load += constant_value_of(inputs.heights[i]) * inputs.active_flags[i][(t - inputs.per_task_t_lo[i]).raw_value];
-        logger.emit(ImpliesProofRule{*recovered}, move(load) <= constant_value_of(inputs.capacity), ProofLevel::Top);
+        logger.emit(ImpliesProofRule{*recovered}, per_time_load(inputs, t) <= constant_value_of(inputs.capacity), ProofLevel::Top);
     }
     logger.emit_proof_comment("#780 checkpoint recovery ends");
 }
