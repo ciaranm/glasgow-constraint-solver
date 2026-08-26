@@ -52,7 +52,7 @@ auto gcs::innards::cumulative_shape_supports_checkpoint_recovery(const vector<si
     if (! is_constant_variable(capacity))
         return false;
     for (auto i : active_tasks)
-        if (presence[i] || ! is_constant_variable(lengths[i]) || ! is_constant_variable(heights[i]))
+        if (! is_constant_variable(lengths[i]) || ! is_constant_variable(heights[i]))
             return false;
     return true;
 }
@@ -104,6 +104,13 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     auto sb = [&](size_t i, size_t j) { return pair_flag(Data::pair_before_flag_key(i, j)); };
     auto sa = [&](size_t i, size_t j) { return pair_flag(Data::pair_after_flag_key(i, j)); };
     auto sact = [&](size_t i, size_t j) { return pair_flag(Data::pair_active_flag_key(i, j)); };
+    // The diagonal is the one pair whose activity flag may not exist: `j` is on
+    // its own checkpoint row unconditionally when it has a constant length and
+    // no presence, and then the encoding folds its height into the right hand
+    // side rather than minting a flag to carry it. Where the flag *is* there,
+    // `j`'s term is on the row like anyone else's and has to be cancelled like
+    // anyone else's. See Data::pair_active_flag_key.
+    auto sact_diagonal = [&](size_t j) { return tracker.find_proof_flag_values(inputs.owner, Data::pair_active_flag_key(j, j)); };
 
     // The row being recovered, as the model states it: the load at t is within
     // the capacity. In the form the derivation ends on, which is the negated
@@ -256,6 +263,19 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
             if (i != j)
                 pinned.push_back(logger.emit_rup_proof_line(WPBSum{} + 1_i * ! w + 1_i * ! cact(i) + 1_i * sact(i, j) >= 1_i, ProofLevel::Top));
 
+        // The diagonal, where the encoding minted a flag for it: `j` active at
+        // `t` means `j` is running when `j` starts, which is what sact_{j,j}
+        // says. The conjuncts it is defined over are a sub-list of cact_{j,t}'s
+        // --- a presence is literally the same atom, and a length is what
+        // cb_{j,t} and ca_{j,t} pin between them --- so unit propagation closes
+        // it, and no `w` is needed: this one holds whether or not `j` is the
+        // latest starter. It is written with the guard anyway, so that the
+        // arithmetic below can treat every candidate the same way.
+        auto diagonal = sact_diagonal(j);
+        optional<ProofLine> diagonal_pin;
+        if (diagonal)
+            diagonal_pin = logger.emit_rup_proof_line(WPBSum{} + 1_i * ! w + 1_i * ! cact(j) + 1_i * *diagonal >= 1_i, ProofLevel::Top);
+
         // Tests only: cite the next candidate's checkpoint instead of this
         // one's. Everything still checks --- see RecoverFromWrongCheckpoint.
         auto cite = j;
@@ -276,13 +296,19 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
         for (auto i : candidates)
             if (i != j)
                 pol.add(pinned[p++], height(i));
-        // j's own term is the one the checkpoint row folded into its right hand
-        // side, so nothing pins it and nothing cancels against it. It belongs on
-        // the row all the same --- j is one of the tasks whose load is being
-        // bounded --- so it goes on as a literal axiom, which adds the term
-        // without moving the degree. What stands now is the target row, guarded
-        // by j being the latest starter.
-        pol.add(! cact(j), height(j), tracker);
+        // And j's own term, by whichever of the two routes the encoding left
+        // open. With a flag on the diagonal it cancels exactly as everyone
+        // else's does, off the pin above. Without one, the checkpoint row
+        // folded j's height into its right hand side, so nothing pins it and
+        // nothing cancels against it --- it belongs on the row all the same,
+        // j being one of the tasks whose load is being bounded, so it goes on
+        // as a literal axiom, which adds the term without moving the degree.
+        // Either way what stands now is the target row, guarded by j being the
+        // latest starter.
+        if (diagonal_pin)
+            pol.add(*diagonal_pin, height(j));
+        else
+            pol.add(! cact(j), height(j), tracker);
 
         // Turn that into the clause the scan can resolve against, by cancelling
         // the whole load away against the target's own reverse half. The degree

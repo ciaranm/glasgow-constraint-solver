@@ -643,17 +643,25 @@ if(GCS_BUILD_TESTS)
     # `startcheckpoint` arm because a rule they fire still reads the per-time
     # block. **It is empty.**
     #
-    # Read that precisely: every *rule* is converted, not every *shape*. Nothing
-    # reads capacity_lines directly any more --- it all goes through
+    # Read that precisely: every *rule* is converted, and not yet every *shape*.
+    # Nothing reads capacity_lines directly any more --- it all goes through
     # capacity_row --- but capacity_row still falls back to the model row for a
     # Cumulative the recovery cannot speak about: a variable length, a variable
-    # height, a variable capacity, or an optional task. Those keep the per-time
-    # block and use it for everything, and they are not rare: 146 of the 424
-    # proofs the cumulative test binaries write under this arm still contain
-    # cap_ rows. So the block cannot be *deleted*; it can only stop being
-    # emitted for constraints that qualify, which is what this arm already does.
-    # Extending the recovery to those shapes is separate work, and
+    # height or a variable capacity. Those keep the per-time block and use it
+    # for everything, and they are not rare: 121 of the 440 proofs the
+    # cumulative test binaries write under this arm still contain cap_ rows. So
+    # the block cannot be *deleted* yet; it can only stop being emitted for
+    # constraints that qualify, which is what this arm already does. Extending
+    # the recovery to the rest is the remaining work, and
     # checkpoint_recovery.hh says what each would take.
+    #
+    # **Optional tasks are no longer on that list.** The recovery speaks about
+    # a presence now, so every one of cumulative_optional_test's 35 proofs is
+    # free of cap_ rows where 18 of them were not. The whole extension was the
+    # diagonal: with a presence the encoding mints sact_{j,j} and puts j's own
+    # height on the checkpoint row, where a constant-length task with no
+    # presence has it folded into the right hand side and needs a literal axiom
+    # instead.
     #
     # Lanes that are off the arm but are *not* part of the bar, all of them
     # mutation lanes that stop discriminating once the per-time block is gone
@@ -661,6 +669,8 @@ if(GCS_BUILD_TESTS)
     # relating the starts directly, so veripb accepts the corruption:
     #
     #   cumulative_optional_mutation_{wrong_task,emit_nothing}
+    #     (one_too_far was in this list and is not any more --- it rejects
+    #     under all four encodings, rechecked when optional tasks joined)
     #   cumulative_ttef_mutation_{pin,mirror_pin}
     #   cumulative_nfnl_mutation_roomy_drop
     #   cumulative_energetic_mutation_mirror_drop_energetic
@@ -686,9 +696,11 @@ if(GCS_BUILD_TESTS)
     endforeach()
     # Presence-falsification mutation lanes, the same shape as the overload
     # ones above: each writes a deliberately corrupted proof and passes only if
-    # veripb rejects it.
+    # veripb rejects it. one_too_far is on all four arms: checked one encoding
+    # at a time once the recovery learned to speak about optional tasks, and it
+    # still rejects under every one of them.
     foreach(mutation one_too_far)
-        add_cumulative_test(cumulative_optional_mutation_${mutation}
+        add_cumulative_test_converted(cumulative_optional_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_optional_mutation_${mutation} $<TARGET_FILE:cumulative_optional_test> --mutate=${mutation})
     endforeach()
