@@ -2358,6 +2358,123 @@ The last row is the case for the whole exercise: 25 MB of per-time
 block, emitted unconditionally, next to 39 lines that say the same
 thing.
 
+### What `StartCheckpoint` saves today, and why the default cannot flip yet
+
+That table is the cost of *adding* the checkpoint block. The question the
+default flip asks is a different one --- what does `StartCheckpoint` save,
+against `TimeIndexed`, on the same model --- and measured, the answer is
+**nothing, until the horizon reaches about `6n^2`**.
+
+Swept with `examples/cumulative --variant`, one generated instance per row,
+counting OPB lines:
+
+| | `H = n` | `H = 2n` | `H = 4n` | `H = 8n` |
+|---|---|---|---|---|
+| `n = 5` | 268 / 384 (1.43x) | 423 / 534 (1.26x) | 733 / 834 (1.14x) | 1,353 / 1,434 (1.06x) |
+| `n = 10` | 809 / 1,345 (1.66x) | 1,419 / 1,945 (1.37x) | 2,639 / 3,145 (1.19x) | 5,079 / 5,545 (1.09x) |
+| `n = 20` | 2,803 / 5,079 (1.81x) | 5,223 / 7,479 (1.43x) | 10,063 / 12,279 (1.22x) | 19,743 / 21,879 (1.11x) |
+| `n = 40` | 10,415 / 19,771 (1.90x) | 20,055 / 29,371 (1.46x) | 39,335 / 48,571 (1.23x) | 77,895 / 86,971 (1.12x) |
+
+(time-indexed / start-checkpoint, and the ratio.) Every entry is above one,
+and the ratio falls towards one as the horizon grows rather than crossing it.
+Pushing the horizon far past anything a real instance would carry finds the
+crossing exactly where the arithmetic says it is:
+
+| | `H` | time-indexed | start-checkpoint | delta | `6n^2` |
+|---|---|---|---|---|---|
+| `n = 10` | 400 | 24,599 | 24,745 | +146 | 600 |
+| `n = 10` | 600 | 36,799 | 36,745 | **-54** | 600 |
+| `n = 20` | 2,400 | 290,783 | 290,679 | **-104** | 2,400 |
+
+**The reason is that the arm does not remove the `O(n x horizon)` part.**
+Decomposing one model by row kind (`n = 20`, `H = 40`) says it plainly:
+
+| | time-indexed | start-checkpoint |
+|---|---|---|
+| `cb` / `ca` / `cact` rows (per `(i, t)`) | 3,396 / 3,396 / 1,742 | 3,396 / 3,396 / 1,698 |
+| `cap_<t>` rows | 44 | **0** |
+| `sb` / `sa` / `sact` rows (per `(i, j)`) | 0 | 1,520 / 1,520 / 780 |
+| `scap_<j>` rows | 0 | 20 |
+
+The per-`(i, t)` flag family is untouched, and it is where essentially all of
+the `O(n x horizon)` lines live: three fully reified flags per task and time
+point, at two reification halves each, is `6nH` rows against the block's `H`
+capacity rows. `StartCheckpoint` drops those `H` rows and adds `6n(n-1) + n`,
+so
+
+    lines(StartCheckpoint) - lines(TimeIndexed)  ~=  6n^2 - H
+
+which is why the delta above is flat in `H` at a fixed `n`, and why the
+crossing sits at `H ~= 6n^2` --- for `n = 40`, a horizon of about 9,600. No
+scheduling instance looks like that: `H` is normally a small multiple of `n`,
+which is the left-hand column of the first table, where the arm is *worst*.
+
+So **flipping the default today would make almost every real model larger**,
+by up to 1.9x at `H = n`. The flip is not blocked on anything about the
+capacity rows --- those are converted, and the progress bar is empty --- it is
+blocked on the per-`(i, t)` flags still being model objects. Minting them
+lazily, under the same keys and labels, is the step that removes the `6nH`
+term and makes the encoding horizon-free in fact rather than only in its
+capacity rows.
+
+### And the proof costs more than the model saves
+
+The OPB is the smaller half of the question, and the answer on the other half
+is worse. The encoding is proof-only --- at every point in the sweep below the
+two arms report *identical* recursions, failures and propagations, as they
+must --- so the whole difference in proof size is proof-logging cost:
+
+| | `H = n` | `H = 2n` | `H = 4n` |
+|---|---|---|---|
+| `n = 5` | 3,827 / 5,275 (1.38x) | 6,947 / 9,109 (1.31x) | 7,627 / 9,789 (1.28x) |
+| `n = 10` | 14,335 / 29,280 (2.04x) | 15,749 / 35,853 (2.28x) | 17,989 / 38,093 (2.12x) |
+| `n = 20` | 3,265 / 206,019 (**63x**) | 367,991 / 683,552 (1.86x) | 377,151 / 692,712 (1.84x) |
+
+(time-indexed / start-checkpoint `.pbp` lines.) This is the `~2m^3` per time
+point from the table above, showing up at the scale of a whole solve for the
+first time. The cache is per *install* --- one `CheckpointRecoveryCache` made
+in `install_propagators` and shared by every citer for the rest of the solve
+--- so a point is recovered once, not once per firing, and this is already the
+amortised figure. What it amortises over is the number of *distinct time
+points cited*, which grows with `H`, so the recovery bill grows about as
+`H * n^3` while the model saving grows as `H - 6n^2`.
+
+The `n = 20`, `H = n` cell is the shape of the problem in one instance rather
+than a freak. That instance is infeasible and refuted at the root in a single
+propagation: time-indexed cites one model capacity row and writes 3,265 lines;
+start-checkpoint has to *derive* that row first, and writes 206,019. Nothing is
+wrong there --- it is `2m^3` at `m = 20`, plus the time-free transitivity pool,
+for a proof that needed one row. It is a reminder that the recovery's cost is
+paid per cited point regardless of how much proof the search itself generates,
+so the ratio is worst exactly where the solver does best.
+
+The doc's original cost argument --- "at `n = 6` over the 60 points a complete
+refutation cites, this is under 30k lines against a 6.7M-line proof" --- holds
+at `n = 6` and does not survive `n = 10`. `2m^3` is not negligible against a
+real proof once `m` is into double figures.
+
+### What the flip actually needs
+
+Three things, and only the first is currently on the plan:
+
+1. The per-`(i, t)` flags minted lazily, which removes the `6nH` term. Without
+   it there is no model saving to weigh against anything.
+2. A cheaper recovery, or a reason to believe the `H * n^3` bill is affordable
+   for the instances that matter. Emitting only the triples the scan resolves
+   against would take a constant factor off; the `m^3` itself is structural.
+3. A rule for *when* to use it, rather than a global default. The encoding wins
+   on the model only at `H >~ 6n^2` and loses on the proof roughly everywhere,
+   so "always" is not the answer that measurement supports, and the shape gate
+   added for declined shapes is already the precedent for choosing per
+   constraint.
+
+None of that reopens what `StartCheckpoint` is for: the 25 MB case above is
+real, and a horizon-free encoding is the only answer to it. It says the flip is
+a measurement to re-take after step 1, not a milestone to tick off after the
+progress bar empties. `examples/cumulative --variant` is how to re-take it ---
+`--tasks` and `--horizon` move `n` and `H` independently, and the search is
+identical across arms, so any difference is the encoding's.
+
 ## Open follow-ups
 - **Cloutier & Quimper's Profile.** The doubly linked list over time points,
   which collapses the runs where the profile is constant and takes the sweep
