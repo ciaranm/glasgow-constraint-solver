@@ -218,12 +218,22 @@ struct NamesAndIDsTracker::Imp
     // a citer has to be told them. Per-solve state, like the two above and for
     // the same reason: a line number means nothing outside its own proof file.
     map<string, pair<ProofLine, ProofLine>> in_proof_reifications;
+    // As any_flag_definers below: reification_half runs on every citation of
+    // any flag's half, and where nothing was reified in the proof it should
+    // cost a bool rather than a map lookup.
+    bool any_in_proof_reifications = false;
 
     // #780 step 10: definers for keyed families of flags, and the set of keys
     // each has already been asked for. Same per-solve story as the two above.
     // See publish_flag_definer.
     map<string, function<auto(ProofLogger &, const ProofFlagKey &)->void>> flag_definers;
     std::set<string> defined_flag_keys;
+    // Whether *any* constraint has published a definer, so that
+    // ensure_flag_defined --- which every citation of anyone's flags now goes
+    // through --- can decline in one bool test rather than formatting a
+    // constraint name and looking it up. No encoding but StartCheckpoint
+    // publishes one, and the time-indexed arm is the benchmark baseline.
+    bool any_flag_definers = false;
 
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
     // Indexed by variable index (variables are allocated with sequential
@@ -1776,10 +1786,13 @@ auto NamesAndIDsTracker::publish_flag_definer(const ConstraintID & id, function<
 {
     if (! _imp->flag_definers.emplace(as_string(id), std::move(definer)).second)
         throw ProofError{"constraint published a flag definer twice"};
+    _imp->any_flag_definers = true;
 }
 
 auto NamesAndIDsTracker::ensure_flag_defined(const ConstraintID & id, const ProofFlagKey & key, ProofLogger & logger) -> void
 {
+    if (! _imp->any_flag_definers)
+        return;
     auto definer = _imp->flag_definers.find(as_string(id));
     if (definer == _imp->flag_definers.end())
         return;
@@ -1807,10 +1820,13 @@ auto NamesAndIDsTracker::register_in_proof_reification(const ProofFlag & flag, P
     auto [_, inserted] = _imp->in_proof_reifications.emplace(pb_file_string_for(flag), pair{implies, implied_by});
     if (! inserted)
         throw ProofError{"flag " + pb_file_string_for(flag) + " had its reification emitted in the proof twice"};
+    _imp->any_in_proof_reifications = true;
 }
 
 auto NamesAndIDsTracker::in_proof_reification(const ProofFlag & flag) const -> optional<pair<ProofLine, ProofLine>>
 {
+    if (! _imp->any_in_proof_reifications)
+        return nullopt;
     auto found = _imp->in_proof_reifications.find(pb_file_string_for(flag));
     if (found == _imp->in_proof_reifications.end())
         return nullopt;
