@@ -114,6 +114,15 @@ auto gcs::innards::cumulative_checkpoint_recovery_applies(const CumulativeInputs
         // or for none.
         if (! logger.names_and_ids_tracker().constraint_row_label(inputs.owner, Data::checkpoint_row_role(i)))
             return false;
+        // A variable height's swap is stated over the reification halves of the
+        // pair contribution bits, so it needs those bits to *be* reifications:
+        // conjunctions with the height's own bits. Where a height has no bits
+        // to conjoin with --- a view, or a declared lower bound below zero ---
+        // the encoding falls back to linearising the product with three rows
+        // per pair, and this declines rather than recovering a row it cannot
+        // state.
+        if (! is_constant_variable(inputs.heights[i]) && ! inputs.pair_contribution_bits_are_conjunctions)
+            return false;
     }
     return true;
 }
@@ -421,62 +430,46 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
         // rather than a clause is relativized on a flag for it --- the same
         // technique, and the same reason for it, as the target row itself a
         // few lines down.
+        // A variable height's checkpoint term is a bit sum and so is its
+        // per-time one, and swapping them is one `rup` per bit.
+        //
+        // That is what defining both families as *conjunctions* buys. Bit for
+        // bit, cc_{i,t,k} is `cact_{i,t} /\\ bit_k(h_i)` and scc_{i,j,k} is
+        // `sact_{i,j} /\\ bit_k(h_i)`, over the same height bit, so
+        //
+        //     ~w  \\/  ~cc_{i,t,k}  \\/  scc_{i,j,k}
+        //
+        // closes by unit propagation alone: cc_{i,t,k} gives cact and the
+        // height bit, the pin turns cact into sact under w, and sact with that
+        // same height bit is scc_{i,j,k}. Summed at 2^k the clauses come to
+        //
+        //     Sum scc - Sum cc + S.~w >= 0,
+        //
+        // which cancels the checkpoint row's bits and leaves the per-time ones
+        // exactly where a constant height's pin leaves ~cact. Guarded by w
+        // alone --- no residue on cact, and so none of the case split this
+        // replaced, which existed only because the three-row linearisation put
+        // a cact guard on the fact that the two agree.
+        //
+        // On a flagless diagonal there is no pair bit: the encoding put the
+        // height itself on the checkpoint row, and `~cc_{j,t,k} \\/ bit_k(h_j)`
+        // --- true with no guard at all, cc being a conjunction that includes
+        // that bit --- does the same job.
         auto swap_var_height = [&](size_t i, optional<ProofLine> pin) {
-            // (*), or its diagonal form. Where the encoding minted no activity
-            // flag for j on the diagonal it put the *height itself* on the
-            // checkpoint row rather than a bit sum, so the right hand side is
-            // h_j and there are no pair bits.
+            auto height_var = std::get<SimpleIntegerVariableID>(inputs.heights[i]);
+            const auto & cc = cc_bits(i);
             auto pair = pin ? make_optional(scc_bits(i, j)) : optional<vector<ProofFlag>>{};
-            auto goal_sum = bit_sum(cc_bits(i));
-            if (pair)
-                for (Integer k = 0_i; k.raw_value < static_cast<long long>(pair->size()); ++k)
-                    goal_sum += -power2(k) * (*pair)[k.raw_value];
-            else
-                goal_sum += -1_i * inputs.heights[i];
-            auto goal = move(goal_sum) <= 0_i;
-            auto [g, g_forward, g_reverse] = logger.create_proof_flag_reifying(goal, "ckpg", ProofLevel::Top);
-
-            // Active at t: the per-time `le` row caps the left at h_i and, off
-            // the diagonal, the pair's `ge` row floors the right at the same
-            // h_i, so h_i cancels between them. The pair row's own guard is
-            // discharged by the pin, at the coefficient it was emitted with ---
-            // asked for, not assumed, for the same reason guard_coefficient
-            // exists.
-            PolBuilder active;
-            active.add(row(Data::contribution_le_row_role(i, t)));
-            if (pair) {
-                active.add(row(Data::pair_contribution_ge_row_role(i, j)));
-                active.add(*pin, guard_coefficient(tracker, bit_sum(*pair) + -1_i * inputs.heights[i] >= 0_i, sact(i, j)));
+            for (Integer k = 0_i; k.raw_value < static_cast<long long>(cc.size()); ++k) {
+                WPBSum clause;
+                if (pin)
+                    clause += 1_i * ! w;
+                clause += 1_i * ! cc[k.raw_value];
+                if (pair)
+                    clause += 1_i * (*pair)[k.raw_value];
+                else
+                    clause += 1_i * ProofBitVariable{height_var, k, true};
+                pol.add(logger.emit_rup_proof_line(move(clause) >= 1_i, ProofLevel::Top), power2(k));
             }
-            active.add(g_reverse);
-            active.saturate().emit(logger, ProofLevel::Top);
-
-            // Not active at t: the `zero` row says the left is zero, and the
-            // right is a sum of non-negative terms --- bits, or a height the
-            // constructor has already required to be non-negative --- which go
-            // on as literal axioms.
-            PolBuilder inactive;
-            inactive.add(row(Data::contribution_zero_row_role(i, t)));
-            if (pair)
-                for (Integer k = 0_i; k.raw_value < static_cast<long long>(pair->size()); ++k)
-                    inactive.add((*pair)[k.raw_value], power2(k), tracker);
-            else
-                inactive.add_for_literal(tracker, inputs.heights[i] >= 0_i);
-            inactive.add(g_reverse);
-            inactive.saturate().emit(logger, ProofLevel::Top);
-
-            // The two clauses differ only in the polarity of cact, so resolving
-            // them leaves the goal holding whatever it is --- guarded by w
-            // where the pin brought w in, and by nothing at all on a flagless
-            // diagonal.
-            auto everywhere = pin ? logger.emit_rup_proof_line(WPBSum{} + 1_i * g + 1_i * ! w >= 1_i, ProofLevel::Top)
-                                  : logger.emit_rup_proof_line(WPBSum{} + 1_i * g >= 1_i, ProofLevel::Top);
-
-            // And out from behind the flag, exactly as the target row is.
-            PolBuilder unwrap;
-            unwrap.add(g_forward);
-            unwrap.add(everywhere, guard_coefficient(tracker, goal, g));
-            pol.add(unwrap.emit(logger, ProofLevel::Top));
         };
 
         auto swap_term = [&](size_t i, optional<ProofLine> pin) {

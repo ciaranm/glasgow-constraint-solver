@@ -259,7 +259,7 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
     for (const auto & [i, cc] : convert) {
         auto height = std::get<SimpleIntegerVariableID>(*view.height_bounded_by[i]);
         auto active = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(i, t));
-        auto contribution_row = tracker.constraint_row_label(donor, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t));
+        auto contribution_row = tracker.constraint_row(donor, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t));
         // The flags exist, so the donor gave this task a window here and both
         // of these went out with them. Missing means the donor is not the
         // Cumulative these keys were published by.

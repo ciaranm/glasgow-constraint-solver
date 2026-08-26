@@ -386,6 +386,7 @@ namespace gcs
         std::vector<Integer> _length_lb;
         std::vector<Integer> _length_ub;
         std::vector<Integer> _height_vals;
+        std::vector<Integer> _height_lb;
         std::vector<Integer> _height_ub;
         Integer _capacity_val;
         // Resolved in prepare(). nullopt for a task that is unconditionally
@@ -410,6 +411,17 @@ namespace gcs
         // the environment's, and resolving it here in the constructor would
         // read it before a test had a chance to set it.
         std::optional<CumulativeEncoding> _encoding;
+
+        /// #780: whether every active task's height has bits this encoding can
+        /// cite --- constant, or a plain variable (not a view) whose declared
+        /// lower bound is at least zero, so that bit `k` has weight `2^k` and no
+        /// sign bit shifts the weights. A view has no bits of its own at all.
+        ///
+        /// Decided in prepare(), where the declared bounds are read. It gates
+        /// two things that must agree: whether the pair contribution bits are
+        /// defined as conjunctions with those bits, and whether the per-(task,
+        /// time) family moves into the proof.
+        bool _height_bits_citable = false;
 
         /// #780 step 10: whether the per-(task, time) flags are defined inside
         /// the proof rather than by OPB rows. Decided once, in
