@@ -52,7 +52,7 @@ auto gcs::innards::cumulative_shape_supports_checkpoint_recovery(const vector<si
     if (! is_constant_variable(capacity))
         return false;
     for (auto i : active_tasks)
-        if (! is_constant_variable(lengths[i]) || ! is_constant_variable(heights[i]))
+        if (! is_constant_variable(heights[i]))
             return false;
     return true;
 }
@@ -185,6 +185,23 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
             pol.add(half_of(tracker, sa(i, j), "[f]"));
             pol.saturate().emit(logger, ProofLevel::Top);
         }
+
+    // **No diagonal counterpart, deliberately.** A variable-length task needs
+    // `cact_{j,t} -> sact_{j,j}`, which is `s_j <= t` and `s_j + l_j >= t+1`
+    // giving `l_j >= 1`, and it is tempting to write the pol above for it with
+    // sact_{j,j} standing in for the sa_{j,j} the encoding never mints. It is
+    // not needed: the pin below closes on its own, because that fact is about
+    // *one* task's variables --- with `l_j <= 0` the sum row pushes `s_j` past
+    // `t` and unit propagation has its contradiction. The pol above is needed
+    // precisely because its fact is not: it relates `s_i + l_i` to `s_j`, two
+    // tasks' starts, and no propagation reaches across them.
+    //
+    // That is measured, not assumed, and both halves of it: deleting the pol
+    // above fails five lanes (derived_cumulative_startcheckpoint, both
+    // leak-check lanes, both example encoding lanes), and a diagonal one added
+    // beside it changes nothing anywhere. Should a rup ever stall here, it
+    // fails loudly at the pin rather than quietly, and this comment says what
+    // to write.
 
     // --- e_{i,j}: i does not stand between j and being the latest starter -----
     std::map<pair<size_t, size_t>, ProofFlag> e;
