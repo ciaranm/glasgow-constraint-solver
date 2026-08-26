@@ -54,12 +54,15 @@ namespace
     // make the check compare the recovery against something the model does not
     // say, which is the one failure the check exists to catch and the one it
     // could not report.
-    auto per_time_load(const CumulativeInputs & inputs, Integer t) -> WPBSum
+    auto per_time_load(ProofLogger & logger, const CumulativeInputs & inputs, Integer t) -> WPBSum
     {
         WPBSum load;
         for (auto i : inputs.active_tasks) {
             if (t < inputs.per_task_t_lo[i] || t > inputs.per_task_t_hi[i])
                 continue;
+            // As flag_at: the row is stated over flags that may only be defined
+            // on demand, and stating it is an ask for them.
+            logger.names_and_ids_tracker().ensure_flag_defined(inputs.owner, Data::active_flag_key(i, t), logger);
             auto idx = (t - inputs.per_task_t_lo[i]).raw_value;
             if (is_constant_variable(inputs.heights[i]))
                 load += constant_value_of(inputs.heights[i]) * inputs.active_flags[i][idx];
@@ -76,9 +79,9 @@ namespace
     // constancy picks: a number on the right where it is constant, and a
     // (-1)*capacity term on the left where it is not, exactly as the encoder
     // writes it. Shared for the same reason per_time_load is.
-    auto per_time_capacity_row(const CumulativeInputs & inputs, Integer t) -> WPBSumLE
+    auto per_time_capacity_row(ProofLogger & logger, const CumulativeInputs & inputs, Integer t) -> WPBSumLE
     {
-        auto load = per_time_load(inputs, t);
+        auto load = per_time_load(logger, inputs, t);
         if (is_constant_variable(inputs.capacity))
             return move(load) <= constant_value_of(inputs.capacity);
         load += -1_i * inputs.capacity;
@@ -149,7 +152,12 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
         return nullopt;
 
     auto height = [&](size_t i) { return constant_value_of(inputs.heights[i]); };
+    // #780 step 10: the per-(task, time) flags may only be *defined* on demand,
+    // so asking for one at `t` asks for its definition first. Nothing happens
+    // where the constraint published no definer, which is every encoding whose
+    // flags are OPB rows. Every one of this file's uses goes through here.
     auto flag_at = [&](const vector<vector<ProofFlag>> & flags, size_t i) -> const ProofFlag & {
+        tracker.ensure_flag_defined(inputs.owner, Data::active_flag_key(i, t), logger);
         return flags[i][(t - inputs.per_task_t_lo[i]).raw_value];
     };
     auto cb = [&](size_t i) -> const ProofFlag & { return flag_at(inputs.before_flags, i); };
@@ -171,7 +179,10 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     // every capacity row is the bit-linearised contribution, `cc` per (task,
     // time) and `scc` per (task, task). See the encoding.
     auto var_height = [&](size_t i) { return ! is_constant_variable(inputs.heights[i]); };
-    auto cc_bits = [&](size_t i) -> const vector<ProofFlag> & { return inputs.contrib_flags[i][(t - inputs.per_task_t_lo[i]).raw_value]; };
+    auto cc_bits = [&](size_t i) -> const vector<ProofFlag> & {
+        tracker.ensure_flag_defined(inputs.owner, Data::active_flag_key(i, t), logger);
+        return inputs.contrib_flags[i][(t - inputs.per_task_t_lo[i]).raw_value];
+    };
     auto scc_bits = [&](size_t i, size_t j) {
         vector<ProofFlag> bits;
         for (Integer k = 0_i;; ++k) {
@@ -217,7 +228,7 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     // variable capacity simply takes the long way round, the derivation not
     // caring whether the row it proves happens to be slack.
     if (is_constant_variable(inputs.capacity) && total - constant_value_of(inputs.capacity) <= 0_i) {
-        auto trivial = logger.emit_rup_proof_line(per_time_capacity_row(inputs, t), ProofLevel::Top);
+        auto trivial = logger.emit_rup_proof_line(per_time_capacity_row(logger, inputs, t), ProofLevel::Top);
         cache.recovered.emplace(t, trivial);
         return trivial;
     }
@@ -358,7 +369,7 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     auto last = candidates.size() - 1;
 
     // --- literalise the target, so an n-way split over a row stays resolution -
-    auto target = per_time_capacity_row(inputs, t);
+    auto target = per_time_capacity_row(logger, inputs, t);
     auto [target_flag, target_forward, target_reverse] = logger.create_proof_flag_reifying(target, "ckpf", ProofLevel::Top);
 
     // --- each case implies the target ---------------------------------------
@@ -547,7 +558,7 @@ auto gcs::innards::check_recovered_cumulative_capacity_rows(ProofLogger & logger
         if (! recovered)
             continue;
 
-        logger.emit(ImpliesProofRule{*recovered}, per_time_capacity_row(inputs, t), ProofLevel::Top);
+        logger.emit(ImpliesProofRule{*recovered}, per_time_capacity_row(logger, inputs, t), ProofLevel::Top);
     }
     logger.emit_proof_comment("#780 checkpoint recovery ends");
 }
