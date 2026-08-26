@@ -646,22 +646,24 @@ if(GCS_BUILD_TESTS)
     # Read that precisely: every *rule* is converted, and not yet every *shape*.
     # Nothing reads capacity_lines directly any more --- it all goes through
     # capacity_row --- but capacity_row still falls back to the model row for a
-    # Cumulative the recovery cannot speak about: a variable length, a variable
-    # height or a variable capacity. Those keep the per-time block and use it
-    # for everything, and they are not rare: 121 of the 440 proofs the
+    # Cumulative the recovery cannot speak about: a variable height or a
+    # variable capacity. Those keep the per-time block and use it for
+    # everything, and they are not rare: 95 of the 440 proofs the
     # cumulative test binaries write under this arm still contain cap_ rows. So
     # the block cannot be *deleted* yet; it can only stop being emitted for
     # constraints that qualify, which is what this arm already does. Extending
     # the recovery to the rest is the remaining work, and
     # checkpoint_recovery.hh says what each would take.
     #
-    # **Optional tasks are no longer on that list.** The recovery speaks about
-    # a presence now, so every one of cumulative_optional_test's 35 proofs is
-    # free of cap_ rows where 18 of them were not. The whole extension was the
-    # diagonal: with a presence the encoding mints sact_{j,j} and puts j's own
-    # height on the checkpoint row, where a constant-length task with no
-    # presence has it folded into the right hand side and needs a literal axiom
-    # instead.
+    # **Optional tasks and variable lengths are no longer on that list.** Both
+    # came out of the same one change, the diagonal: give a task a presence or a
+    # variable length and the encoding mints sact_{j,j} and puts j's own height
+    # on the checkpoint row, where a constant-length task with no presence has
+    # it folded into the right hand side and needs a literal axiom instead. So
+    # the recovery pins the diagonal where the flag is there and axiomatises it
+    # where it is not. Every one of cumulative_optional_test's 35 proofs is now
+    # free of cap_ rows, where 18 were not, and the fallback fraction went
+    # 149 -> 121 -> 95 over the two.
     #
     # Lanes that are off the arm but are *not* part of the bar, all of them
     # mutation lanes that stop discriminating once the per-time block is gone
