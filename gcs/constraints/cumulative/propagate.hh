@@ -102,6 +102,15 @@ namespace gcs::innards
         /// two live side by side rather than one replacing the other.
         std::shared_ptr<CheckpointRecoveryCache> checkpoint_recovery;
 
+        /// #780: whether a variable-height task's *pair* contribution bits are
+        /// defined as conjunctions with the height's own bits (two reification
+        /// halves each) rather than linearised by three rows per pair. False
+        /// only where some height has no citable bits --- a view, or a declared
+        /// lower bound below zero --- and then the recovery declines any
+        /// constraint with a variable height, because the swap it does is
+        /// stated over those halves.
+        bool pair_contribution_bits_are_conjunctions = false;
+
         CumulativeRules rules;
         CumulativeProofMutation proof_mutation;
         CumulativePresenceMutation presence_mutation;
