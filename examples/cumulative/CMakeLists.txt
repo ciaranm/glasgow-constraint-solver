@@ -29,3 +29,14 @@ add_test(NAME cumulative_encoding_both_recovering COMMAND ${GCS_BASH} ${CMAKE_SO
 # without this entry they could rot unnoticed between measurements.
 add_test(NAME cumulative_generated_instance COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash
     --basename cumulative_generated_instance $<TARGET_FILE:cumulative> --tasks 8 --seed 1 --horizon 20)
+
+# The regime the start-checkpoint encoding exists for, which none of the
+# entries above reach: a few tasks of long duration, so that each task's
+# possible-active window --- and with it the time-indexed block --- is long
+# while the instance stays trivial to solve. --max-start is what separates
+# those two, and without an entry here nothing would notice if it stopped
+# doing so. 3 tasks at duration up to 500 is 3,182 OPB lines against the
+# built-in instance's 522, and still verifies in well under a second.
+add_test(NAME cumulative_long_duration COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash
+    --basename cumulative_long_duration $<TARGET_FILE:cumulative>
+    --variant start-checkpoint --tasks 3 --seed 2 --max-length 500 --max-start 5 --horizon 508)
