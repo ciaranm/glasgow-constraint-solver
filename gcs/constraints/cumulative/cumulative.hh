@@ -94,17 +94,26 @@ namespace gcs
         /// vehicle, and so available to every C++ test lane and every rule,
         /// including the ones CumulativeRules leaves off by default.
         ///
-        /// **The per-time block still appears for a Cumulative the recovery
-        /// cannot speak about** --- a variable height, a variable length, an
-        /// optional task, a variable capacity. There would otherwise be no
-        /// capacity row at all for such a constraint, and every rule over it
-        /// would be uncertifiable rather than merely unconverted. So this is
-        /// "start-checkpoint wherever the recovery reaches", which is also what
-        /// the eventual default has to be: see
+        /// **A Cumulative the recovery cannot speak about gets the per-time
+        /// block instead, and no checkpoint block at all** --- that is a
+        /// variable height, a variable length, an optional task or a variable
+        /// capacity. It keeps the per-time rows because there would otherwise
+        /// be no capacity row for it and every rule over it would be
+        /// uncertifiable rather than merely unconverted; it is denied the
+        /// checkpoint rows because nothing could cite them, every citer going
+        /// through a recovery that declines the shape before it looks at the
+        /// model. So on a declined shape this *is* \ref TimeIndexed, and the
+        /// mode as a whole is "start-checkpoint wherever the recovery reaches",
+        /// which is what a default has to mean: see
         /// innards::cumulative_shape_supports_checkpoint_recovery for exactly
         /// where that is. A lane that wants the strict form should use a
         /// fixture whose shape qualifies, and can confirm it did by the absence
         /// of `cap_` labels in the OPB.
+        ///
+        /// \ref Both and \ref BothRecovering write the checkpoint block for
+        /// every shape, declined ones included: they are the differential arms,
+        /// and a checkpoint row over a declined shape is still one veripb
+        /// checks against the solutions.
         StartCheckpoint
     };
 
