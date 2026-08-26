@@ -211,6 +211,14 @@ struct NamesAndIDsTracker::Imp
     map<string, function<auto(ProofLogger &, Integer)->optional<ProofLine>>> derived_line_families;
     map<string, ProofLine> derived_family_lines;
 
+    // #780 step 10: the two halves of a flag whose reification was emitted
+    // *inside the proof* rather than as OPB rows, keyed by the flag's own PB
+    // name. A model-side flag's halves carry `[r]` and `[f]` labels and are
+    // cited by name; a `red`-minted one has line numbers and nothing else, so
+    // a citer has to be told them. Per-solve state, like the two above and for
+    // the same reason: a line number means nothing outside its own proof file.
+    map<string, pair<ProofLine, ProofLine>> in_proof_reifications;
+
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
     // Indexed by variable index (variables are allocated with sequential
     // indices, so these stay dense), one per id kind.
@@ -1756,6 +1764,24 @@ auto NamesAndIDsTracker::find_or_derive_line_in_family(const ConstraintID & id, 
     // this time" into "never".
     _imp->derived_family_lines.emplace(member, *derived);
     return derived;
+}
+
+auto NamesAndIDsTracker::register_in_proof_reification(const ProofFlag & flag, ProofLine implies, ProofLine implied_by) -> void
+{
+    // Keyed on the flag's PB rendering, which is what a citer has in hand and
+    // what the model-side labels are built from, so the two ways of defining a
+    // flag are asked about identically.
+    auto [_, inserted] = _imp->in_proof_reifications.emplace(pb_file_string_for(flag), pair{implies, implied_by});
+    if (! inserted)
+        throw ProofError{"flag " + pb_file_string_for(flag) + " had its reification emitted in the proof twice"};
+}
+
+auto NamesAndIDsTracker::in_proof_reification(const ProofFlag & flag) const -> optional<pair<ProofLine, ProofLine>>
+{
+    auto found = _imp->in_proof_reifications.find(pb_file_string_for(flag));
+    if (found == _imp->in_proof_reifications.end())
+        return nullopt;
+    return found->second;
 }
 
 auto NamesAndIDsTracker::publish_derived_line(const ConstraintID & id, const string & role, ProofLine line) -> void

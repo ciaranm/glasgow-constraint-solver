@@ -616,6 +616,39 @@ namespace gcs::innards
         auto publish_derived_line(const ConstraintID & id, const std::string & role, ProofLine line) -> void;
 
         /**
+         * \brief Record that a flag's reification was emitted *inside the
+         * proof*, and under which two lines.
+         *
+         * A flag defined by ProofModel carries `[r]` and `[f]` labels on its
+         * two halves, and every citer references them by name. A flag defined
+         * by ProofLogger::emit_red_proof_lines_reifying has no labels at all,
+         * only line numbers, so a citer has to be told them --- which is what
+         * this is for, and what \ref reification_half then hides.
+         *
+         * The halves are in the order the labels read: `implies` is the `[r]`
+         * half, `flag -> ineq`, and `implied_by` is `[f]`, `ineq -> flag`.
+         *
+         * Per-solve state, like \ref publish_derived_line and for the same
+         * reason: a proof line number is meaningless outside the proof file it
+         * indexes. Registered per install, so it never outlives that.
+         *
+         * \throws ProofError if this flag has already been registered, which
+         * means its definition went out twice.
+         */
+        auto register_in_proof_reification(const ProofFlag & flag, ProofLine implies, ProofLine implied_by) -> void;
+
+        /**
+         * \brief The two halves of a flag reified inside the proof, if it was
+         * reified inside the proof.
+         *
+         * nullopt means it was not, which for a fully reified flag means its
+         * halves are OPB rows and carry labels. Prefer \ref reification_half,
+         * which answers "how do I cite this half" without the caller having to
+         * know which of the two it is.
+         */
+        [[nodiscard]] auto in_proof_reification(const ProofFlag & flag) const -> std::optional<std::pair<ProofLine, ProofLine>>;
+
+        /**
          * \brief The line a constraint published under this role, if it
          * published one.
          *

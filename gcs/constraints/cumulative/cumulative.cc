@@ -8,6 +8,7 @@
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/bits_encoding.hh>
+#include <gcs/innards/proofs/flag_bridge.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
@@ -794,7 +795,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                 // ConstraintID to key them. Getting it the wrong way round is
                 // loud --- there is no such label --- but it is worth not
                 // having to find that out.
-                lemma.add(ProofLineLabel{tracker.name_of(after) + "[f]"});
+                lemma.add(reification_half(tracker, after, ReificationHalf::ImpliedBy));
                 lemma.add(*end_le[i]);
                 lemma.emit(*logger, ProofLevel::Top);
             }
