@@ -70,20 +70,37 @@ namespace
         }
         return load;
     }
+
+    // And the whole row, in whichever of the two forms the capacity's
+    // constancy picks: a number on the right where it is constant, and a
+    // (-1)*capacity term on the left where it is not, exactly as the encoder
+    // writes it. Shared for the same reason per_time_load is.
+    auto per_time_capacity_row(const CumulativeInputs & inputs, Integer t) -> WPBSumLE
+    {
+        auto load = per_time_load(inputs, t);
+        if (is_constant_variable(inputs.capacity))
+            return move(load) <= constant_value_of(inputs.capacity);
+        load += -1_i * inputs.capacity;
+        return move(load) <= 0_i;
+    }
 }
 
-auto gcs::innards::cumulative_shape_supports_checkpoint_recovery(const vector<size_t> & active_tasks,
-    const vector<optional<IntegerVariableID>> & presence, const vector<IntegerVariableID> & lengths, const vector<IntegerVariableID> & heights,
-    IntegerVariableID capacity) -> bool
+auto gcs::innards::cumulative_shape_supports_checkpoint_recovery(const vector<size_t> & active_tasks, const vector<optional<IntegerVariableID>> &,
+    const vector<IntegerVariableID> &, const vector<IntegerVariableID> &, IntegerVariableID) -> bool
 {
-    if (active_tasks.empty())
-        return false;
-    if (! is_constant_variable(capacity))
-        return false;
-    (void)heights;
-    (void)lengths;
-    (void)presence;
-    return true;
+    // Every shape the encoder can write is now one the recovery can speak
+    // about: an optional task and a variable length through the diagonal, a
+    // variable height through the contribution swap, a variable capacity by
+    // carrying the capacity as a term the way the encoder does. What is left
+    // is the one thing that is not a shape --- a Cumulative with no active
+    // task has no checkpoint row to recover from, because the encoding writes
+    // them over the active tasks.
+    //
+    // The presence, length, height and capacity parameters stay in the
+    // signature: this is the question "could the recovery speak about a
+    // Cumulative of this shape", the answer happens to have stopped depending
+    // on them, and a caller should not have to know that.
+    return ! active_tasks.empty();
 }
 
 auto gcs::innards::cumulative_checkpoint_recovery_applies(const CumulativeInputs & inputs, const ProofLogger & logger) -> bool
@@ -122,7 +139,6 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
         return nullopt;
 
     auto height = [&](size_t i) { return constant_value_of(inputs.heights[i]); };
-    auto capacity = constant_value_of(inputs.capacity);
     auto flag_at = [&](const vector<vector<ProofFlag>> & flags, size_t i) -> const ProofFlag & {
         return flags[i][(t - inputs.per_task_t_lo[i]).raw_value];
     };
@@ -164,10 +180,8 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     };
     auto row = [&](const string & role) { return ProofLine{*tracker.constraint_row_label(inputs.owner, role)}; };
 
-    // The row being recovered, as the model states it: the load at t is within
-    // the capacity. In the form the derivation ends on, which is the negated
-    // one, this has degree `total - capacity`.
-    auto load = per_time_load(inputs, t);
+    // The most the candidates could take between them, which is all the
+    // trivial-case test below needs.
     Integer total = 0_i;
     for (auto i : candidates) {
         if (var_height(i)) {
@@ -181,12 +195,19 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
         else
             total += height(i);
     }
-    auto degree = total - capacity;
 
     // Nothing to argue about: even every candidate at once fits. The row is a
     // tautology over the flags' own bounds, so it needs no checkpoint at all.
-    if (degree <= 0_i) {
-        auto trivial = logger.emit_rup_proof_line(move(load) <= capacity, ProofLevel::Top);
+    //
+    // Only available against a constant capacity: the test is "does the most
+    // the candidates can take fit in what the resource supplies", and a
+    // variable capacity has no single number to be compared against. It could
+    // be asked of the capacity's lower bound, but that bound is not among the
+    // recovery's inputs and this is a shortcut rather than a step --- a
+    // variable capacity simply takes the long way round, the derivation not
+    // caring whether the row it proves happens to be slack.
+    if (is_constant_variable(inputs.capacity) && total - constant_value_of(inputs.capacity) <= 0_i) {
+        auto trivial = logger.emit_rup_proof_line(per_time_capacity_row(inputs, t), ProofLevel::Top);
         cache.recovered.emplace(t, trivial);
         return trivial;
     }
@@ -327,7 +348,7 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     auto last = candidates.size() - 1;
 
     // --- literalise the target, so an n-way split over a row stays resolution -
-    auto target = move(load) <= capacity;
+    auto target = per_time_capacity_row(inputs, t);
     auto [target_flag, target_forward, target_reverse] = logger.create_proof_flag_reifying(target, "ckpf", ProofLevel::Top);
 
     // --- each case implies the target ---------------------------------------
@@ -532,7 +553,7 @@ auto gcs::innards::check_recovered_cumulative_capacity_rows(ProofLogger & logger
         if (! recovered)
             continue;
 
-        logger.emit(ImpliesProofRule{*recovered}, per_time_load(inputs, t) <= constant_value_of(inputs.capacity), ProofLevel::Top);
+        logger.emit(ImpliesProofRule{*recovered}, per_time_capacity_row(inputs, t), ProofLevel::Top);
     }
     logger.emit_proof_comment("#780 checkpoint recovery ends");
 }
