@@ -645,20 +645,14 @@ if(GCS_BUILD_TESTS)
     #
     # Read that precisely: every *rule* is converted, and not yet every *shape*.
     # Nothing reads capacity_lines directly any more --- it all goes through
-    # capacity_row --- but capacity_row still falls back to the model row for a
-    # Cumulative the recovery cannot speak about, which is now only a variable
-    # capacity. Those keep the per-time block and use it for everything, and
-    # there are 10 such proofs out of the 440 the cumulative test binaries
-    # write under this arm --- every one of them named for a variable
-    # capacity. So
-    # the block cannot be *deleted* yet; it can only stop being emitted for
-    # constraints that qualify, which is what this arm already does. Extending
-    # the recovery to the rest is the remaining work, and
-    # checkpoint_recovery.hh says what each would take.
-    #
-    # **Optional tasks, variable lengths and variable heights have all come off
-    # that list**, and the fallback fraction with them: 149 -> 121 -> 95 -> 10
-    # out of 440. See dev_docs for what each took.
+    # capacity_row --- and **every shape is converted now too**. The recovery
+    # speaks about optional tasks, variable lengths, variable heights and a
+    # variable capacity, so capacity_row's fallback to the model row is
+    # unreachable for any Cumulative that has an active task at all: of the 440
+    # proofs the cumulative test binaries write under this arm, **none**
+    # contains a cap_ row, where 149 did when the arm was built. The per-time
+    # block is not merely skipped where it happens to be safe any more --- it
+    # is replaceable outright. See dev_docs for what each shape took.
     #
     # Lanes that are off the arm but are *not* part of the bar, all of them
     # mutation lanes that stop discriminating once the per-time block is gone
