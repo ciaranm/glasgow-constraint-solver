@@ -100,6 +100,19 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<long long>())                                                                       //
             ("capacity", "Resource capacity for a generated instance",                                             //
                 cxxopts::value<long long>()->default_value("3"))                                                   //
+            ("max-length",                                                                                         //
+                "Generated lengths are drawn from 1 .. this. The default of four keeps a generated "               //
+                "instance small enough to solve; the case the start-checkpoint encoding exists for is "            //
+                "the opposite one, a few tasks of very long duration, where the time-indexed block is "            //
+                "linear in the duration and the start-checkpoint one does not mention it",                         //
+                cxxopts::value<long long>()->default_value("4"))                                                   //
+            ("max-start",                                                                                          //
+                "Start times are drawn from 0 .. this. Zero, the default, uses the whole horizon, which "          //
+                "is what makes a long duration expensive to *solve* as well as to encode. Setting it "             //
+                "small separates the two: a task of duration 10000 whose start has nine possible values "          //
+                "still has a 10000-long window, and so a per-time block linear in the duration, but an "           //
+                "instance anyone can solve",                                                                       //
+                cxxopts::value<long long>()->default_value("0"))                                                   //
             ("horizon",                                                                                            //
                 "Override the planning horizon. The optimum does not depend on it once it is large "               //
                 "enough to hold one, but the time-indexed encoding is linear in it and the "                       //
@@ -162,15 +175,20 @@ auto main(int argc, char * argv[]) -> int
             return EXIT_FAILURE;
         }
 
+        auto max_length = options_vars["max-length"].as<long long>();
+        if (max_length < 1) {
+            println(cerr, "Error: --max-length must be at least 1, not {}.", max_length);
+            return EXIT_FAILURE;
+        }
+
         mt19937 rand(options_vars["seed"].as<unsigned>());
         lengths.clear();
         heights.clear();
         // Heights up to the capacity, so a task can be forced to run alone,
-        // and lengths from one to four: enough of a mix that the profile has
-        // peaks to check, without the instance's difficulty running away with
-        // n.
+        // and lengths from one to --max-length: enough of a mix that the
+        // profile has peaks to check.
         for (long long i = 0; i < n; ++i) {
-            lengths.push_back(Integer{uniform_int_distribution<long long>{1, 4}(rand)});
+            lengths.push_back(Integer{uniform_int_distribution<long long>{1, max_length}(rand)});
             heights.push_back(Integer{uniform_int_distribution<long long>{1, capacity.raw_value}(rand)});
         }
 
@@ -189,8 +207,24 @@ auto main(int argc, char * argv[]) -> int
         horizon = Integer{horizon_override};
     }
 
+    // The start domain, which --max-start separates from the horizon. They are
+    // the same thing by default, and a long duration then makes the instance
+    // expensive to solve as well as to encode --- which is the confound to
+    // avoid when the question is about the *encoding*: what makes the per-time
+    // block big is the task's possible-active window, which runs from the
+    // earliest start to the latest start plus the length, so a long task has a
+    // long window however few starts it can take.
+    auto max_start = horizon;
+    if (auto max_start_override = options_vars["max-start"].as<long long>(); max_start_override != 0) {
+        if (max_start_override < 0) {
+            println(cerr, "Error: --max-start must not be negative, not {}.", max_start_override);
+            return EXIT_FAILURE;
+        }
+        max_start = Integer{max_start_override};
+    }
+
     Problem p;
-    auto starts = p.create_integer_variable_vector(lengths.size(), 0_i, horizon, "s");
+    auto starts = p.create_integer_variable_vector(lengths.size(), 0_i, max_start, "s");
 
     auto cumulative = Cumulative{starts, lengths, heights, capacity};
     if (encoding)
