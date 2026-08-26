@@ -2475,6 +2475,12 @@ That table is the cost of *adding* the checkpoint block. The question the
 default flip asks is a different one --- what does `StartCheckpoint` save,
 against `TimeIndexed`, on the same model.
 
+> **All of the model measurements below were taken while the per-`(i, t)` flags
+> were still OPB rows, and step 10 has since moved them into the proof. They are
+> kept because the reasoning is what led to step 10 and the failure mode is worth
+> recognising --- but for what the encoding costs *now*, skip to "After step 10:
+> no crossover left". The proof measurements still stand.**
+
 **Read the next three subsections together, and note which regime each is in.**
 The first two sweep instances whose tasks are short, and find no saving until
 the horizon reaches about `6n^2`. That is a real result about that family, and
@@ -2484,7 +2490,7 @@ so exactly the instances no test or example covered. The third measures that
 regime, and the answer there differs in direction and, far more importantly, in
 what it implicates.
 
-#### Short tasks: no saving until `H ~= 6n^2`
+#### Short tasks: no saving until `H ~= 6n^2` (superseded)
 
 Measured, the answer in this family is **nothing, until the horizon reaches
 about `6n^2`**.
@@ -2760,6 +2766,41 @@ sign bit in and shifts every weight. That keeps the three-row form and makes the
 recovery decline; `prepare()` decides it once for the whole constraint, a
 mixture not being available.
 
+#### After step 10: no crossover left
+
+With the per-`(i, t)` flags out of the model the whole picture changes, and the
+two subsections above are superseded on the model side. Re-taken on the same
+instances, OPB lines, time-indexed against start-checkpoint:
+
+| | `H = n` | `H = 2n` | `H = 4n` | `H = 8n` |
+|---|---|---|---|---|
+| `n = 5` | 268 / 150 (0.56) | 423 / 150 (0.35) | 733 / 150 (0.20) | 1,353 / 150 (0.11) |
+| `n = 10` | 809 / 595 (0.74) | 1,419 / 595 (0.42) | 2,639 / 595 (0.23) | 5,079 / 595 (0.12) |
+| `n = 20` | 2,803 / 2,385 (0.85) | 5,223 / 2,385 (0.46) | 10,063 / 2,385 (0.24) | 19,743 / 2,385 (0.12) |
+| `n = 40` | 10,415 / 9,565 (0.92) | 20,055 / 9,565 (0.48) | 39,335 / 9,565 (0.24) | 77,895 / 9,565 (0.12) |
+
+**Smaller at every point, and the start-checkpoint column is constant in `H`**,
+which is what an `O(n^2)` encoding is supposed to look like and what it never
+looked like while the flags were still model objects. The `6n^2 - H` arithmetic
+above was correct about the encoding as it then stood, and it was measuring a
+term that belonged to neither encoding's capacity rows.
+
+On the long-task instances both halves are now flat:
+
+| `D` | time-indexed opb / pbp | start-checkpoint opb / pbp |
+|---|---|---|
+| 1,000 | 8,725 / 42 | 56 / 133 |
+| 10,000 | 85,663 / 42 | 56 / 133 |
+| 100,000 | 854,945 / 42 | 56 / 133 |
+| 1,000,000 | 8,547,916 (881 MB) / 42 | **56 / 133** |
+
+**What has not changed is the proof on search-heavy instances.** Where rules
+fire at nearly every time point the ratio is what it was --- 1.36 at `n = 5`,
+2.36 at `n = 10`, 1.87 at `n = 20` --- because those proofs are dominated by
+the recovery's `~2m^3` per cited point and never were dominated by flag
+definitions. That is the one cost the encoding still carries, and the one open
+question for the flip.
+
 ### What the flip actually needs
 
 **One thing above all others.** The per-`(i, t)` flags have to stop being model
@@ -2768,22 +2809,22 @@ until they move, `StartCheckpoint` collects about `1/(6n)` of a win that is
 otherwise nearly total. Every other question below is secondary to it, and two
 of the three are questions only about the short-task family.
 
-1. **The per-`(i, t)` flags out of the model**, which removes the `6nH` term.
-   Done: 881 MB to 12 KB, measured, in "Step 10" above. What is left of it is
-   making the definitions *lazy* so the proof does not inherit the cost.
-2. A rule for *when* to use it, rather than a global default. On short tasks the
-   encoding wins on the model only at `H >~ 6n^2` and loses on the proof; on
-   long ones it wins outright. So "always" is not what today's measurement
-   supports, and the shape gate is already the precedent for choosing per
-   constraint --- and per *constraint*, not per problem, an RCPSP paying the
-   `6n^2` once per resource over one shared horizon. **Re-take this after (1):**
-   the flags dominate both arms today, so every ratio measured now is mostly
-   measuring something neither encoding is responsible for.
-3. A cheaper recovery, if the `~2m^3` per cited point turns out to bite. It does
-   in the short-task family (2x proofs at `n = 10`), and it does not in the
-   long-task one (42 lines against 115), because the bill is per *cited* time
-   point and an easy instance cites almost none. Emitting only the triples the
-   scan resolves against would take a constant factor off; the `m^3` is
+1. ~~The per-`(i, t)` flags out of the model~~ --- **done**, definitions and
+   all. 881 MB of OPB to 56 lines, and the proof flat too: see "After step 10"
+   above. There is no crossover left on the model side.
+2. A rule for *when* to use it, rather than a global default --- **if one is
+   still wanted**. Re-taken after (1), the model answer is "always": smaller at
+   every point measured, and constant in the horizon. What is left to weigh is
+   the proof, which is 1.3-2.4x on search-heavy short-task instances and flat on
+   long ones. If that is judged acceptable the flip is unconditional; if not,
+   the rule has to be per *constraint* rather than per problem, an RCPSP paying
+   the `6n^2` once per resource over one shared horizon.
+3. A cheaper recovery, if the `~2m^3` per cited point turns out to bite. **This
+   is now the only cost the encoding still carries**, step 10 having removed the
+   other. It bites in the short-task family (2.4x proofs at `n = 10`) and not in
+   the long-task one (42 lines against 133), because the bill is per *cited*
+   time point and an easy instance cites almost none. Emitting only the triples
+   the scan resolves against would take a constant factor off; the `m^3` is
    structural.
 
 None of this reopens what `StartCheckpoint` is for --- it sharpens it. The 25 MB
