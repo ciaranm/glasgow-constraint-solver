@@ -2705,18 +2705,60 @@ horizon. Two things stand in the way, in this order:
 1. **The bridge-lemma loop**, in the same install initialiser. It emits
    `end >= t+1 -> after` per `(i, t)` and cites every `after` flag, so it forces
    every one of them into existence however lazy everything else becomes.
-2. **A variable height's contribution rows**, which are OPB rows *half-reified
-   on the activity flag*, so that flag has to be a model object for them to
-   exist at all. Hence the current gate: a constraint with any variable-height
-   task keeps its flags in the model. 82 of the 266 proofs the cumulative
-   binaries write are in that case, and they are exactly the `var_height` ones.
-   Those rows want the same treatment as the flags, and the same
-   label-or-line accessor on the row side that `reification_half` gives on the
-   flag side.
+2. ~~A variable height's contribution rows~~ --- **done**, see below.
 
 Misses are loud rather than silent, which is worth knowing before doing (1): a
 flag whose definition never went out is a free variable, so a `pol` citing a
 half finds no such line and a `rup` over it stalls. Neither can pass quietly.
+
+#### A variable height, once the flags are out of the model
+
+The three rows per `(i, t)` and three per pair that linearise `contrib = h *
+active` are what forced the gate above: they are OPB rows *half-reified on the
+activity flag*, so that flag had to be a model object for them to exist. Out of
+the model they are not needed at all, because bit by bit the product **is** a
+conjunction:
+
+| | |
+|---|---|
+| `cc_{i,t,k}` | `<-> cact_{i,t} /\ bit_k(h_i)` --- in the proof |
+| `scc_{i,j,k}` | `<-> sact_{i,j} /\ bit_k(h_i)` --- in the model |
+
+If the task is active its contribution is its height, so bit for bit; if it is
+not, every bit is zero. Each is then a two-way reification of a fresh flag over
+literals that already exist --- the same primitive the activity flag uses --- at
+two rows per bit where the linearisation took three per pair.
+
+**That deletes the case split.** The swap the recovery does for a variable
+height needs `Sum cc <= Sum scc` with no `cact` guard on it, and under the
+three-row form that took a case split relativized on its own flag, because
+`cle`'s guard left a residue the scan could not resolve away. Over conjunctions
+it is one `rup` per bit,
+
+    ~w \/ ~cc_{i,t,k} \/ scc_{i,j,k}
+
+which closes by unit propagation alone: `cc` gives `cact` and the height bit,
+the pin turns `cact` into `sact` under `w`, and `sact` with that same bit is
+`scc`. Summed at `2^k` those come to `Sum scc - Sum cc + S.~w >= 0` --- guarded
+by `w` and nothing else, which is exactly where a constant height's pin leaves
+`~cact`. On a flagless diagonal there is no pair bit and `~cc_{j,t,k} \/
+bit_k(h_j)` does the same job, unguarded.
+
+`cge` is still what the energy rules and `donor_view` ask for, so it is derived
+from those definitions rather than asserted: `~cact \/ ~bit_b(h) \/ cc_b` per
+bit, summed at `2^b`, is that row with `S` as its guard coefficient.
+`NamesAndIDsTracker::constraint_row` is the row-side counterpart of
+`reification_half` --- "how do I cite this", label or derived line alike.
+
+**No proof in the cumulative binaries carries per-`(i, t)` flags in its OPB any
+more**: 0 of 266, where gating variable heights out left 82. The long-task table
+above holds with variable heights included.
+
+The one shape left out is a height whose *bits* cannot be cited --- a view,
+which has no bits of its own, or a declared lower bound below zero, which puts a
+sign bit in and shifts every weight. That keeps the three-row form and makes the
+recovery decline; `prepare()` decides it once for the whole constraint, a
+mixture not being available.
 
 ### What the flip actually needs
 
