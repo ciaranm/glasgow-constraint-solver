@@ -2670,6 +2670,54 @@ recovery cost is paid per *cited* time point, and an easy instance cites almost
 none. The 2x proof ratios in the short-task family come from search-heavy
 instances, and neither figure generalises to the other regime.)
 
+### Step 10: the flags move into the proof
+
+`define_proof_model` names the per-`(i, t)` flags and stops; the install
+initialiser emits their two reification halves as `red` steps and registers the
+lines, and citers reach them through `reification_half`, which hides which kind
+of definition it got (`ProofLine` is already the variant of a line number and a
+label, so nothing at a call site changes type). What each flag *says* is stated
+once, in three functions both paths call --- a drifting second copy would make a
+flag mean one thing to the encoder and another to everything citing it.
+
+Same instances as the long-task table above:
+
+| `D` | time-indexed | start-checkpoint |
+|---|---|---|
+| 1,000 | 8,725 lines (832K) | **56 lines** (8.0K) |
+| 10,000 | 85,663 lines (8.3M) | **56 lines** (8.0K) |
+| 100,000 | 854,945 lines (86M) | **56 lines** (12K) |
+| 1,000,000 | 8,547,916 lines (**881 MB**) | **56 lines** (12K) |
+
+Fifty-six lines, flat in the duration. The OPB is horizon-free in fact now, and
+not only in its capacity rows.
+
+**What it does not yet do is remove the cost --- only move it.** The definitions
+go out eagerly, one per `(i, t)` over each task's window, so at `D = 100,000` the
+proof goes from 42 lines to 777,043 (86 MB): the same 86 MB, moved out of a file
+that has to be held and parsed whole and into one that is streamed and checked
+incrementally. Better, and not the point.
+
+The point is emitting a definition only for the `(i, t)` pairs something
+actually reasons about, which is bounded by search effort rather than by the
+horizon. Two things stand in the way, in this order:
+
+1. **The bridge-lemma loop**, in the same install initialiser. It emits
+   `end >= t+1 -> after` per `(i, t)` and cites every `after` flag, so it forces
+   every one of them into existence however lazy everything else becomes.
+2. **A variable height's contribution rows**, which are OPB rows *half-reified
+   on the activity flag*, so that flag has to be a model object for them to
+   exist at all. Hence the current gate: a constraint with any variable-height
+   task keeps its flags in the model. 82 of the 266 proofs the cumulative
+   binaries write are in that case, and they are exactly the `var_height` ones.
+   Those rows want the same treatment as the flags, and the same
+   label-or-line accessor on the row side that `reification_half` gives on the
+   flag side.
+
+Misses are loud rather than silent, which is worth knowing before doing (1): a
+flag whose definition never went out is a free variable, so a `pol` citing a
+half finds no such line and a `rup` over it stalls. Neither can pass quietly.
+
 ### What the flip actually needs
 
 **One thing above all others.** The per-`(i, t)` flags have to stop being model
@@ -2678,9 +2726,9 @@ until they move, `StartCheckpoint` collects about `1/(6n)` of a win that is
 otherwise nearly total. Every other question below is secondary to it, and two
 of the three are questions only about the short-task family.
 
-1. **The per-`(i, t)` flags minted lazily**, which removes the `6nH` term. This
-   is not a prerequisite for a marginal flip --- it is where the benefit is.
-   831 MB to a few kilobytes, projected on the long-task table above.
+1. **The per-`(i, t)` flags out of the model**, which removes the `6nH` term.
+   Done: 881 MB to 12 KB, measured, in "Step 10" above. What is left of it is
+   making the definitions *lazy* so the proof does not inherit the cost.
 2. A rule for *when* to use it, rather than a global default. On short tasks the
    encoding wins on the model only at `H >~ 6n^2` and loses on the proof; on
    long ones it wins outright. So "always" is not what today's measurement
