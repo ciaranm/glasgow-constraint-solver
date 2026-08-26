@@ -638,6 +638,48 @@ namespace gcs::innards
         auto register_in_proof_reification(const ProofFlag & flag, ProofLine implies, ProofLine implied_by) -> void;
 
         /**
+         * \brief A constraint's promise that it can define, on demand, any flag
+         * in a keyed family --- rather than defining them all up front.
+         *
+         * The flag-side counterpart of \ref publish_derived_line_family, and
+         * the fourth of the "per-solve, constraint-keyed memo" facilities the
+         * \todo there predicted. Cumulative's per-(task, time) flags are the
+         * first consumer: their *names* are cheap and go out with the model,
+         * but their definitions are two `red` steps each and a horizon's worth
+         * of them is the whole cost #780 exists to remove.
+         *
+         * The definer is called at most once per `(id, key)` and is expected to
+         * emit whatever that flag needs --- its reification halves, and
+         * anything else keyed the same way --- and to register the halves with
+         * \ref register_in_proof_reification. A key it declines to define is
+         * simply not defined; that is not an error, and a citer of an undefined
+         * flag fails loudly at its own proof step rather than silently.
+         *
+         * \warning **Whatever the definer emits must live at ProofLevel::Top**,
+         * for the same reason \ref publish_derived_line_family says so: the
+         * memo hands out the same lines for the rest of the proof, and a line
+         * emitted lower is deleted on backtracking.
+         *
+         * Registered per install, so it never outlives the proof it writes to.
+         */
+        auto publish_flag_definer(const ConstraintID & id, std::function<auto(ProofLogger &, const ProofFlagKey & key)->void> definer) -> void;
+
+        /**
+         * \brief Make sure a flag from a published family has been defined,
+         * defining it if this is the first ask.
+         *
+         * Does nothing where no definer was published for `id` --- which is the
+         * ordinary case, the flag's definition being OPB rows --- and nothing
+         * on a second ask for the same key.
+         *
+         * Call it before citing a flag from a constraint that might have
+         * published one, which is to say before citing anyone else's flags at
+         * all: it is cheap, and the alternative is a proof step that references
+         * a free variable.
+         */
+        auto ensure_flag_defined(const ConstraintID & id, const ProofFlagKey & key, ProofLogger & logger) -> void;
+
+        /**
          * \brief The two halves of a flag reified inside the proof, if it was
          * reified inside the proof.
          *

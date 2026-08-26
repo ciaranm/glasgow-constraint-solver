@@ -855,127 +855,162 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
     // initialiser has not derived yet.
     auto end_ge_lines = make_shared<vector<std::optional<ProofLine>>>(_starts.size());
 
-    propagators.install_initialiser(
-        [id = constraint_id(), starts = _starts, lengths = _lengths, ends = _end, active_tasks = _active_tasks, before_flags = _before_flags,
-            after_flags = _after_flags, active_flags = _active_flags, contrib_flags = _contrib_flags, task_heights = _heights, presence = _presence,
-            per_task_t_lo = _per_task_t_lo, in_proof = _per_time_flags_in_proof, end_ge_lines](State &, auto &, ProofLogger * const logger) -> void {
-            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
-                return;
-            auto & tracker = logger->names_and_ids_tracker();
+    propagators.install_initialiser([id = constraint_id(), starts = _starts, lengths = _lengths, ends = _end, active_tasks = _active_tasks,
+                                        before_flags = _before_flags, after_flags = _after_flags, active_flags = _active_flags,
+                                        contrib_flags = _contrib_flags, task_heights = _heights, presence = _presence, per_task_t_lo = _per_task_t_lo,
+                                        in_proof = _per_time_flags_in_proof, end_ge_lines](State &, auto &, ProofLogger * const logger) -> void {
+        if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
+            return;
+        auto & tracker = logger->names_and_ids_tracker();
 
-            // #780 step 10: where the per-(task, time) flags were only *named* by
-            // define_proof_model, this is where they are defined --- the same two
-            // halves the encoder would have written as OPB rows, emitted as `red`
-            // steps instead, and registered so that reification_half hands citers
-            // the lines rather than labels that do not exist.
-            //
-            // The order matters: every definition goes out before anything below
-            // cites one, and the bridge lemmas below cite `after`.
-            if (in_proof)
-                for (auto i : active_tasks)
-                    for (std::size_t k = 0; k < active_flags[i].size(); ++k) {
-                        auto t = per_task_t_lo[i] + Integer{static_cast<long long>(k)};
-                        auto define = [&](const ProofFlag & flag, const WPBSumLE & says) {
-                            auto [implies, implied_by] = logger->emit_red_proof_lines_reifying(says, flag, ProofLevel::Top);
-                            tracker.register_in_proof_reification(flag, implies, implied_by);
-                        };
-                        define(before_flags[i][k], per_time_before_says(starts[i], t));
-                        define(after_flags[i][k], per_time_after_says(starts[i], lengths[i], t));
-                        define(active_flags[i][k], per_time_active_says(before_flags[i][k], after_flags[i][k], presence[i]));
+        // #780 step 10: where the per-(task, time) flags were only *named* by
+        // define_proof_model, this is where they are defined --- the same two
+        // halves the encoder would have written as OPB rows, emitted as `red`
+        // steps instead, and registered so that reification_half hands citers
+        // the lines rather than labels that do not exist.
+        //
+        // The order matters: every definition goes out before anything below
+        // cites one, and the bridge lemmas below cite `after`.
+        // Bit-define each variable-duration end = s + l as a conservative
+        // extension FIRST (introduce_bits_of needs end's bits fresh for its
+        // witnesses), caching end's {end_ge, end_le}. cake has no end variable,
+        // so this lives entirely in the proof --- nothing in the OPB to match.
+        //
+        // end_ge is published, because a derived Cumulative over this task pins
+        // its `after` flags the same way and through the same line; end_le is
+        // the bridge lemma's business alone, and stays here.
+        vector<std::optional<ProofLine>> end_le(starts.size());
+        for (auto i : active_tasks)
+            if (ends[i].has_value()) {
+                auto lines = logger->introduce_bits_of(WPBSum{} + 1_i * starts[i] + 1_i * lengths[i], *ends[i], ProofLevel::Top);
+                (*end_ge_lines)[i] = lines.first;
+                end_le[i] = lines.second;
+                tracker.publish_derived_line(id, ConstraintProofModelData<Cumulative>::end_lower_bound_role(i), lines.first);
+            }
 
-                        // A variable height's contribution bits. In the model
-                        // these need three rows, because `contrib = h * cact`
-                        // is a product and the rows are what linearise it. Here
-                        // they need none: bit by bit the product *is* a
-                        // conjunction,
-                        //
-                        //     cc_{i,t,k}  <->  cact_{i,t}  /\  bit_k(h_i)
-                        //
-                        // --- if the task is active its contribution is its
-                        // height, so bit for bit; if it is not, every bit is
-                        // zero. Each one is then a two-way reification of a
-                        // fresh flag over literals that already exist, the same
-                        // primitive the activity flag above uses, and the three
-                        // rows fall out of these rather than being asserted
-                        // beside them.
-                        //
-                        // Weight 2^k is bit k because the gate on this requires
-                        // a height with no sign bit; see height_bits_citable.
-                        if (! is_constant_variable(task_heights[i])) {
-                            const auto & cc = contrib_flags[i][k];
-                            auto height_var = std::get<SimpleIntegerVariableID>(task_heights[i]);
-                            for (Integer b = 0_i; b.raw_value < static_cast<long long>(cc.size()); ++b)
-                                define(cc[b.raw_value], WPBSum{} + 1_i * active_flags[i][k] + 1_i * ProofBitVariable{height_var, b, true} >= 2_i);
-
-                            // And the `cge` row those definitions imply, for the
-                            // energy rules and donor_view, which ask for it by
-                            // role and should not have to know it is derived
-                            // here rather than asserted in the model.
-                            //
-                            //   ~cact \/ ~bit_b(h) \/ cc_b   (rup, off cc_b's
-                            //                                 own reverse half)
-                            //
-                            // summed at 2^b is `S.~cact - h + Sum cc >= 0`,
-                            // which is that row with S as its guard coefficient.
-                            PolBuilder cge;
-                            for (Integer b = 0_i; b.raw_value < static_cast<long long>(cc.size()); ++b)
-                                cge.add(logger->emit_rup_proof_line(WPBSum{} + 1_i * ! active_flags[i][k] +
-                                                    1_i * ! ProofBitVariable{height_var, b, true} + 1_i * cc[b.raw_value] >=
-                                                1_i,
-                                            ProofLevel::Top),
-                                    power2(b));
-                            tracker.publish_derived_line(
-                                id, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t), cge.emit(*logger, ProofLevel::Top));
-                        }
-                    }
-            // Bit-define each variable-duration end = s + l as a conservative
-            // extension FIRST (introduce_bits_of needs end's bits fresh for its
-            // witnesses), caching end's {end_ge, end_le}. cake has no end variable,
-            // so this lives entirely in the proof --- nothing in the OPB to match.
-            //
-            // end_ge is published, because a derived Cumulative over this task pins
-            // its `after` flags the same way and through the same line; end_le is
-            // the bridge lemma's business alone, and stays here.
-            vector<std::optional<ProofLine>> end_le(starts.size());
-            for (auto i : active_tasks)
-                if (ends[i].has_value()) {
-                    auto lines = logger->introduce_bits_of(WPBSum{} + 1_i * starts[i] + 1_i * lengths[i], *ends[i], ProofLevel::Top);
-                    (*end_ge_lines)[i] = lines.first;
-                    end_le[i] = lines.second;
-                    tracker.publish_derived_line(id, ConstraintProofModelData<Cumulative>::end_lower_bound_role(i), lines.first);
-                }
-            // Then, per (i, t), emit the bridge lemma `end ≥ t+1 → after`:
-            //   pol( @v[id][i_t][ca][f] : ¬after → s+l ≤ t )  +  ( end ≤ s+l )
-            //   = ( M·after − end + t ≥ 0 ).
-            // The s+l bits cancel exactly, leaving a single-variable-in-end handle
-            // that makes the propagator's after pin RUP-closable even though after
-            // is reified on the two-variable s+l. end_le is the cancelling term.
-            //
-            // These need no publishing at all: they go out at ProofLevel::Top over
-            // exactly the (i, t) pairs this constraint gave the task a window for,
-            // so unit propagation finds them for whoever pins one of those flags,
-            // and a citer that could ask about a wider window would already have
-            // been turned away by the flag lookup.
+        // The bridge lemma `end >= t+1 -> after`, where the flags are model
+        // objects and so all of them exist already:
+        //   pol( after[f] : ~after -> s+l <= t )  +  ( end <= s+l )
+        //   = ( M.after - end + t >= 0 ).
+        // The s+l bits cancel exactly, leaving a single-variable-in-end
+        // handle that makes the propagator's after pin RUP-closable even
+        // though after is reified on the two-variable s+l. end_le is the
+        // cancelling term.
+        //
+        // Nothing publishes these: they go out at Top over exactly the
+        // (i, t) pairs this constraint gave the task a window for, so unit
+        // propagation finds them for whoever pins one of those flags. Under
+        // #780's in-proof flags the same lemma is emitted per point by the
+        // definer below instead, because citing `after` here would drag
+        // every definition into existence.
+        if (! in_proof)
             for (auto i : active_tasks) {
-                if (! ends[i].has_value())
+                if (! ends[i].has_value() || ! end_le[i].has_value())
                     continue;
                 for (const auto & after : after_flags[i]) {
                     PolBuilder lemma;
-                    // `name_of` and not `pb_file_string_for`, which is the other
-                    // base a flag's reification halves can be labelled under: these
-                    // flags come from create_proof_flag_values_fully_reifying, and
-                    // that is the overload whose `[r]` / `[f]` labels are built off
-                    // `name_of`. `pb_file_string_for` is the base
-                    // add_two_way_reified_constraint uses, for flags with no
-                    // ConstraintID to key them. Getting it the wrong way round is
-                    // loud --- there is no such label --- but it is worth not
-                    // having to find that out.
                     lemma.add(reification_half(tracker, after, ReificationHalf::ImpliedBy));
                     lemma.add(*end_le[i]);
                     lemma.emit(*logger, ProofLevel::Top);
                 }
             }
-        });
+
+        // #780 step 10: rather than defining every per-(task, time) flag
+        // here --- a horizon's worth of `red` steps, which is the cost this
+        // encoding exists to remove --- publish a definer and let the
+        // tracker call it for the keys something actually cites. The names
+        // went out with the model and are free; only the definitions are
+        // paid for, and only where a rule reasons.
+        //
+        // Keyed on the activity flag's key, since all three flags and any
+        // contribution bits for one (task, time) are defined together and
+        // any of them being cited means the others are about to be.
+        if (in_proof)
+            tracker.publish_flag_definer(id, [=, &tracker](ProofLogger & definer_logger, const ProofFlagKey & key) {
+                if (key.values.size() != 2)
+                    return;
+                auto i = static_cast<std::size_t>(key.values[0]);
+                auto t = Integer{key.values[1]};
+                if (i >= active_flags.size() || t < per_task_t_lo[i])
+                    return;
+                auto k = static_cast<std::size_t>((t - per_task_t_lo[i]).raw_value);
+                if (k >= active_flags[i].size())
+                    return;
+                auto define = [&](const ProofFlag & flag, const WPBSumLE & says) {
+                    auto [implies, implied_by] = definer_logger.emit_red_proof_lines_reifying(says, flag, ProofLevel::Top);
+                    tracker.register_in_proof_reification(flag, implies, implied_by);
+                };
+                define(before_flags[i][k], per_time_before_says(starts[i], t));
+                define(after_flags[i][k], per_time_after_says(starts[i], lengths[i], t));
+                define(active_flags[i][k], per_time_active_says(before_flags[i][k], after_flags[i][k], presence[i]));
+
+                // A variable height's contribution bits. In the model
+                // these need three rows, because `contrib = h * cact`
+                // is a product and the rows are what linearise it. Here
+                // they need none: bit by bit the product *is* a
+                // conjunction,
+                //
+                //     cc_{i,t,k}  <->  cact_{i,t}  /\  bit_k(h_i)
+                //
+                // --- if the task is active its contribution is its
+                // height, so bit for bit; if it is not, every bit is
+                // zero. Each one is then a two-way reification of a
+                // fresh flag over literals that already exist, the same
+                // primitive the activity flag above uses, and the three
+                // rows fall out of these rather than being asserted
+                // beside them.
+                //
+                // Weight 2^k is bit k because the gate on this requires
+                // a height with no sign bit; see height_bits_citable.
+                if (! is_constant_variable(task_heights[i])) {
+                    const auto & cc = contrib_flags[i][k];
+                    auto height_var = std::get<SimpleIntegerVariableID>(task_heights[i]);
+                    for (Integer b = 0_i; b.raw_value < static_cast<long long>(cc.size()); ++b)
+                        define(cc[b.raw_value], WPBSum{} + 1_i * active_flags[i][k] + 1_i * ProofBitVariable{height_var, b, true} >= 2_i);
+
+                    // And the `cge` row those definitions imply, for the
+                    // energy rules and donor_view, which ask for it by
+                    // role and should not have to know it is derived
+                    // here rather than asserted in the model.
+                    //
+                    //   ~cact \/ ~bit_b(h) \/ cc_b   (rup, off cc_b's
+                    //                                 own reverse half)
+                    //
+                    // summed at 2^b is `S.~cact - h + Sum cc >= 0`,
+                    // which is that row with S as its guard coefficient.
+                    PolBuilder cge;
+                    for (Integer b = 0_i; b.raw_value < static_cast<long long>(cc.size()); ++b)
+                        cge.add(
+                            definer_logger.emit_rup_proof_line(
+                                WPBSum{} + 1_i * ! active_flags[i][k] + 1_i * ! ProofBitVariable{height_var, b, true} + 1_i * cc[b.raw_value] >= 1_i,
+                                ProofLevel::Top),
+                            power2(b));
+                    tracker.publish_derived_line(
+                        id, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t), cge.emit(*logger, ProofLevel::Top));
+                }
+
+                // And the bridge lemma `end >= t+1 -> after` for this point:
+                //   pol( after[f] : ~after -> s+l <= t )  +  ( end <= s+l )
+                //   = ( M.after - end + t >= 0 ).
+                // The s+l bits cancel exactly, leaving a single-variable-in-end
+                // handle that makes the propagator's after pin RUP-closable even
+                // though after is reified on the two-variable s+l. end_le is the
+                // cancelling term.
+                //
+                // It belongs here rather than in a loop of its own: it cites
+                // `after`, so a loop over the window would drag every definition
+                // into existence and there would be nothing left to be lazy about.
+                // Nothing publishes it, because it goes out at Top for exactly
+                // the (i, t) something asked for, and unit propagation finds it
+                // for whoever pins that flag.
+                if (ends[i].has_value() && end_le[i].has_value()) {
+                    PolBuilder lemma;
+                    lemma.add(reification_half(tracker, after_flags[i][k], ReificationHalf::ImpliedBy));
+                    lemma.add(*end_le[i]);
+                    lemma.emit(definer_logger, ProofLevel::Top);
+                }
+            });
+    });
 
     // One cache, shared between the differential check below and the
     // propagator, so an inference cites the line the check passed on.
@@ -1072,10 +1107,47 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     const auto & heights_var = inputs.heights;
     const auto & capacity_var = inputs.capacity;
     const auto & active_tasks = inputs.active_tasks;
-    const auto & before_flags = inputs.before_flags;
-    const auto & after_flags = inputs.after_flags;
-    const auto & active_flags = inputs.active_flags;
-    const auto & contrib_flags = inputs.contrib_flags;
+    // #780 step 10: the per-(task, time) flags are named with the model but may
+    // only be *defined* on demand, so every use goes through an accessor that
+    // asks for the definition first. The tracker does nothing where there is no
+    // definer, which is every encoding but StartCheckpoint, and nothing on a
+    // second ask. These shadow the raw vectors deliberately: a bare
+    // `before_flags[i][k]` no longer compiles, so the compiler finds a citation
+    // that forgot rather than veripb finding it later.
+    const auto & before_flags_raw = inputs.before_flags;
+    const auto & after_flags_raw = inputs.after_flags;
+    const auto & active_flags_raw = inputs.active_flags;
+    const auto & contrib_flags_raw = inputs.contrib_flags;
+    auto ensure_flags_defined = [&](size_t i, size_t idx) {
+        if (logger)
+            logger->names_and_ids_tracker().ensure_flag_defined(inputs.owner,
+                ConstraintProofModelData<Cumulative>::active_flag_key(i, inputs.per_task_t_lo[i] + Integer{static_cast<long long>(idx)}), *logger);
+    };
+    auto before_flag = [&](size_t i, size_t idx) -> const ProofFlag & {
+        ensure_flags_defined(i, idx);
+        return before_flags_raw[i][idx];
+    };
+    auto after_flag = [&](size_t i, size_t idx) -> const ProofFlag & {
+        ensure_flags_defined(i, idx);
+        return after_flags_raw[i][idx];
+    };
+    auto active_flag = [&](size_t i, size_t idx) -> const ProofFlag & {
+        ensure_flags_defined(i, idx);
+        return active_flags_raw[i][idx];
+    };
+    auto contrib_bits = [&](size_t i, size_t idx) -> const std::vector<ProofFlag> & {
+        ensure_flags_defined(i, idx);
+        return contrib_flags_raw[i][idx];
+    };
+    // A whole task's row, for a caller that hands it to shared machinery which
+    // indexes it itself. Every point of the row is defined first, so this is
+    // the one accessor whose cost is the window rather than a point --- give it
+    // the clipped window where there is one.
+    auto flag_row = [&](const std::vector<std::vector<ProofFlag>> & family, size_t i) -> const std::vector<ProofFlag> & {
+        for (size_t k = 0; k < family[i].size(); ++k)
+            ensure_flags_defined(i, k);
+        return family[i];
+    };
     const auto & per_task_t_lo = inputs.per_task_t_lo;
     const auto & per_task_t_hi = inputs.per_task_t_hi;
     const auto & end_ge_lines = inputs.end_ge_lines;
@@ -1151,8 +1223,9 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // read them, while what it counts the task at is still the length the task
     // is guaranteed to run for.
     auto lemma_task = [&](size_t i) {
-        return window_energy::Task{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i], before_flags[i], after_flags[i],
-            active_flags[i], l_is_var(i) ? make_optional(std::get<SimpleIntegerVariableID>(lengths_var[i])) : optional<SimpleIntegerVariableID>{}};
+        return window_energy::Task{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i], flag_row(before_flags_raw, i),
+            flag_row(after_flags_raw, i), flag_row(active_flags_raw, i),
+            l_is_var(i) ? make_optional(std::get<SimpleIntegerVariableID>(lengths_var[i])) : optional<SimpleIntegerVariableID>{}};
     };
 
     // What a variable-height task is guaranteed to contribute at one time
@@ -1168,7 +1241,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         if (! row)
             throw ProofError{"cumulative: task " + std::to_string(i) + " has no contribution row at time " + std::to_string(t.raw_value)};
         auto fi = static_cast<size_t>((t - per_task_t_lo[i]).raw_value);
-        return guaranteed_contribution_row(*logger, &reason, contrib_flags[i][fi], active_flags[i][fi],
+        return guaranteed_contribution_row(*logger, &reason, contrib_bits(i, fi), active_flag(i, fi),
             std::get<SimpleIntegerVariableID>(heights_var[i]), hlb(i), ProofLine{*row}, ProofLevel::Temporary);
     };
 
@@ -1268,14 +1341,14 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // before/after RUPs give VeriPB the units to chase active's AND-gate.
     auto pin_contributor = [&](const ReasonLiterals & reason, size_t i, Integer t) -> std::pair<ProofLine, Integer> {
         auto fi = (t - per_task_t_lo[i]).raw_value;
-        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flag(i, fi) >= 1_i, ProofLevel::Temporary);
         // A mandatory task has s_i + l_i ≥ lb(s_i) + lb(l_i) > t.
         materialise_after_sum(i, state.lower_bound(starts[i]));
-        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flags[i][fi] >= 1_i, ProofLevel::Temporary);
-        auto active_line = logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * active_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flag(i, fi) >= 1_i, ProofLevel::Temporary);
+        auto active_line = logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * active_flag(i, fi) >= 1_i, ProofLevel::Temporary);
         if (! h_is_var(i))
             return {active_line, hlb(i)};
-        auto contrib_line = logger->emit_rup_proof_line_under_reason(reason, contrib_sum_of(contrib_flags[i][fi]) >= hlb(i), ProofLevel::Temporary);
+        auto contrib_line = logger->emit_rup_proof_line_under_reason(reason, contrib_sum_of(contrib_bits(i, fi)) >= hlb(i), ProofLevel::Temporary);
         return {contrib_line, 1_i};
     };
 
@@ -1318,7 +1391,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             throw ProofError{"cumulative edge-finding: task " + std::to_string(i) + " has no derivable window energy over [" +
                 std::to_string(lo.raw_value) + "," + std::to_string(hi.raw_value) + ") guarded by [" + std::to_string(low_guard.raw_value) + "," +
                 std::to_string(high_guard.raw_value) + ") (length " + std::to_string(llb(i).raw_value) + ", flags from " +
-                std::to_string(per_task_t_lo[i].raw_value) + " for " + std::to_string(active_flags[i].size()) + ")"};
+                std::to_string(per_task_t_lo[i].raw_value) + " for " + std::to_string(active_flags_raw[i].size()) + ")"};
         return inputs.guarded_energy->emplace(key, *derived).first->second;
     };
 
@@ -1506,17 +1579,17 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     auto pin_pushed = [&](const ReasonLiterals & reason, size_t j_idx, Integer t, const ExtLits & ext,
                           Integer s_lo_after) -> std::pair<ProofLine, Integer> {
         auto fj = (t - per_task_t_lo[j_idx]).raw_value;
-        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * before_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * before_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
         // s_lo_after + lb(l_j) ≥ t+1 gives after_{j,t} = 1 (under ¬ext
         // for ub-push, under the running bound for lb-push).
         materialise_after_sum(j_idx, s_lo_after);
-        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * after_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * after_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
         auto active_line = logger->emit_rup_proof_line_under_reason(
-            reason, plus_ext(WPBSum{} + 1_i * active_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
+            reason, plus_ext(WPBSum{} + 1_i * active_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
         if (! h_is_var(j_idx))
             return {active_line, hlb(j_idx)};
         auto contrib_line = logger->emit_rup_proof_line_under_reason(
-            reason, plus_ext(contrib_sum_of(contrib_flags[j_idx][fj]), ext, hlb(j_idx)) >= hlb(j_idx), ProofLevel::Temporary);
+            reason, plus_ext(contrib_sum_of(contrib_bits(j_idx, fj)), ext, hlb(j_idx)) >= hlb(j_idx), ProofLevel::Temporary);
         return {contrib_line, 1_i};
     };
 
@@ -1592,13 +1665,13 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         if (forward) {
             // s_k + l_k >= est_k + p_k = ect_k >= ECT(Omega) > v.
             materialise_after_sum(k.task, k.est);
-            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flags[k.task][fv] >= 1_i, ProofLevel::Temporary);
+            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flag(k.task, fv) >= 1_i, ProofLevel::Temporary);
         }
         else
             // s_k <= ub(s_k) <= LST(Omega) <= v.
-            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flags[k.task][fv] >= 1_i, ProofLevel::Temporary);
+            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flag(k.task, fv) >= 1_i, ProofLevel::Temporary);
         return logger->emit_rup_proof_line_under_reason(
-            reason, WPBSum{} + 1_i * active_flags[k.task][fv] + 1_i * ! active_flags[k.task][fu] >= 1_i, ProofLevel::Temporary);
+            reason, WPBSum{} + 1_i * active_flag(k.task, fv) + 1_i * ! active_flag(k.task, fu) >= 1_i, ProofLevel::Temporary);
     };
 
     // The pushed task pinned active at t, in activity space: `pin_pushed`'s
@@ -1613,11 +1686,11 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             throw ProofError{
                 "cumulative published not-first / not-last: task " + std::to_string(j_idx) + " has no flag at time " + std::to_string(t.raw_value)};
         auto fj = static_cast<size_t>((t - per_task_t_lo[j_idx]).raw_value);
-        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * before_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * before_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
         materialise_after_sum(j_idx, s_lo_after);
-        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * after_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * after_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
         return logger->emit_rup_proof_line_under_reason(
-            reason, plus_ext(WPBSum{} + 1_i * active_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
+            reason, plus_ext(WPBSum{} + 1_i * active_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
     };
 
     auto published_nfnl_justification = [&](Integer a2, Integer b, const vector<PublishedTask> & theta, size_t j, Integer j_lb, Integer j_ub,
@@ -2498,8 +2571,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                     if (is_present(j) && lst <= t && t < eet)
                                         continue;
                                     if (state.lower_bound(starts[j]) <= t && t < state.upper_bound(starts[j]) + llb(j))
-                                        items.push_back(
-                                            SubsetSumItem{hlb(j), active_flags[j][static_cast<size_t>((t - per_task_t_lo[j]).raw_value)]});
+                                        items.push_back(SubsetSumItem{hlb(j), active_flag(j, static_cast<size_t>((t - per_task_t_lo[j]).raw_value))});
                                 }
 
                                 // Where those heights do not add up to what the
@@ -2531,7 +2603,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 for (auto j : active_tasks) {
                                     if (t < per_task_t_lo[j] || t > per_task_t_hi[j])
                                         continue;
-                                    auto flag = active_flags[j][static_cast<size_t>((t - per_task_t_lo[j]).raw_value)];
+                                    auto flag = active_flag(j, static_cast<size_t>((t - per_task_t_lo[j]).raw_value));
                                     auto lst = state.upper_bound(starts[j]), eet = state.lower_bound(starts[j]) + llb(j);
                                     if (is_present(j) && lst <= t && t < eet) {
                                         auto [line, coeff] = pin_contributor(reason, j, t);
@@ -2613,7 +2685,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 auto lst = state.upper_bound(starts[i]), eet = state.lower_bound(starts[i]) + llb(i);
                                 for (Integer t = max(lst, a); t < min(eet, b); ++t) {
                                     pol.add(! logger->names_and_ids_tracker().xliteral_for(
-                                                active_flags[i][static_cast<size_t>((t - per_task_t_lo[i]).raw_value)]),
+                                                active_flag(i, static_cast<size_t>((t - per_task_t_lo[i]).raw_value))),
                                         hlb(i), logger->names_and_ids_tracker());
                                     pol_required -= hlb(i);
                                 }
@@ -2737,7 +2809,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         if (overstate_energy && i == inside_tasks.front()) {
                             WPBSum activity;
                             for (Integer t = energy_line->lo; t < energy_line->hi; ++t)
-                                activity += 1_i * active_flags[i][static_cast<size_t>((t - per_task_t_lo[i]).raw_value)];
+                                activity += 1_i * active_flag(i, static_cast<size_t>((t - per_task_t_lo[i]).raw_value));
                             line =
                                 logger->emit_rup_proof_line_under_reason(reason, move(activity) >= energy_line->bound + 1_i, ProofLevel::Temporary);
                         }

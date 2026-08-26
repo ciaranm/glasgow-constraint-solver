@@ -219,6 +219,12 @@ struct NamesAndIDsTracker::Imp
     // the same reason: a line number means nothing outside its own proof file.
     map<string, pair<ProofLine, ProofLine>> in_proof_reifications;
 
+    // #780 step 10: definers for keyed families of flags, and the set of keys
+    // each has already been asked for. Same per-solve story as the two above.
+    // See publish_flag_definer.
+    map<string, function<auto(ProofLogger &, const ProofFlagKey &)->void>> flag_definers;
+    std::set<string> defined_flag_keys;
+
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
     // Indexed by variable index (variables are allocated with sequential
     // indices, so these stay dense), one per id kind.
@@ -1764,6 +1770,26 @@ auto NamesAndIDsTracker::find_or_derive_line_in_family(const ConstraintID & id, 
     // this time" into "never".
     _imp->derived_family_lines.emplace(member, *derived);
     return derived;
+}
+
+auto NamesAndIDsTracker::publish_flag_definer(const ConstraintID & id, function<auto(ProofLogger &, const ProofFlagKey &)->void> definer) -> void
+{
+    if (! _imp->flag_definers.emplace(as_string(id), std::move(definer)).second)
+        throw ProofError{"constraint published a flag definer twice"};
+}
+
+auto NamesAndIDsTracker::ensure_flag_defined(const ConstraintID & id, const ProofFlagKey & key, ProofLogger & logger) -> void
+{
+    auto definer = _imp->flag_definers.find(as_string(id));
+    if (definer == _imp->flag_definers.end())
+        return;
+
+    // Keyed on the same string the flag's own name is built from, so a second
+    // ask --- from this constraint or from anyone citing it --- is free.
+    auto memo = bracketed_flag_name('v', id, key.values, key.annotation);
+    if (! _imp->defined_flag_keys.emplace(memo).second)
+        return;
+    definer->second(logger, key);
 }
 
 auto NamesAndIDsTracker::constraint_row(const ConstraintID & id, const string & role) const -> optional<ProofLine>
