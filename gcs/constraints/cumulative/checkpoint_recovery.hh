@@ -53,6 +53,15 @@ namespace gcs::innards
      * building the model. Splitting it keeps one statement of what the shape
      * requirement is, rather than a copy in the encoder that could drift from
      * the one the recovery enforces.
+     *
+     * It now turns down only a Cumulative with no active task, every actual
+     * *shape* --- optional tasks, variable lengths, variable heights, a
+     * variable capacity --- having been brought in. The presence, length,
+     * height and capacity parameters stay in the signature anyway: the
+     * question is "could the recovery speak about a Cumulative of this shape",
+     * the answer has merely stopped depending on them, and a caller should not
+     * have to know that. Keeping them also means the next shape the encoder
+     * learns to write has somewhere to be declined from.
      */
     [[nodiscard]] auto cumulative_shape_supports_checkpoint_recovery(const std::vector<std::size_t> & active_tasks,
         const std::vector<std::optional<IntegerVariableID>> & presence, const std::vector<IntegerVariableID> & lengths,
@@ -63,40 +72,48 @@ namespace gcs::innards
      * constraint at all.
      *
      * Asks for the start-checkpoint block to be in the model (see
-     * CumulativeEncoding), and for the shapes the recovery has been written
-     * for: constant lengths, heights and capacity, and no optional tasks. A
-     * variable length moves the diagonal off the row and onto a flag, a
-     * variable height replaces a task's coefficient with a bit sum, and a
-     * presence adds a conjunct to every activity flag; each is a known
-     * extension and none of them is done yet.
+     * CumulativeEncoding). That is now the whole of it: the recovery speaks
+     * about every shape the encoder can write, so the shape half of this
+     * question (\ref cumulative_shape_supports_checkpoint_recovery) only
+     * turns down a Cumulative with no active task, which has no checkpoint row
+     * to recover from.
      *
-     * **A variable capacity is the one whose extension is not merely undone
-     * but unwritten**, so what is known about it belongs here rather than in
-     * someone's head. The *model* side already handles it --- both the
-     * per-time rows and the checkpoint rows move it to the left as a
-     * `(-1) * capacity` term when it is not constant. It is the recovery that
-     * assumes a constant, in two places, and only one of them is clerical:
+     * What each of the four shapes took, since knowing which were hard is
+     * worth more than knowing they are done:
      *
-     * - `target`, the row being recovered, becomes
-     *   `sum h_i * cact_i - capacity <= 0` rather than `... <= capacity`.
-     *   Mechanical: the checkpoint rows the derivation adds up carry the same
-     *   extra term, so it survives every `pol` unchanged.
-     * - `degree = total - capacity` does not survive, and it is load-bearing
-     *   twice over. It decides the trivial case (every candidate at once
-     *   fits, so the row is a tautology over the flags' own bounds and no
-     *   checkpoint is needed), and it is the degree the derivation saturates
-     *   at. With the capacity on the left as a bit sum there is no single
-     *   constant degree: saturating a row whose right-hand side is a number
-     *   and saturating one carrying the capacity's bit coefficients are not
-     *   the same operation, and the guard coefficients are computed against
-     *   it too.
+     * - **An optional task** and **a variable length** took the same one
+     *   change, on the diagonal. Give a task a presence or a variable length
+     *   and the encoder mints `sact_{j,j}` and puts `j`'s own height on the
+     *   checkpoint row; with a constant length and no presence it folds that
+     *   height into the right hand side instead and there is no flag. So the
+     *   recovery pins the diagonal where the flag is there and axiomatises it
+     *   where it is not. Nothing off the diagonal changed: `cact` and `sact`
+     *   both carry the presence conjunct, and `sa_{i,j}` already reified on
+     *   `s_i + l_i` directly when the length varied.
+     * - **A variable height** needed an argument. It is a coefficient on
+     *   neither flag --- the checkpoint row carries the pair's bit-linearised
+     *   contribution and the target carries the per-time one --- so `~cact`
+     *   stops being the load term and becomes a guard residue, and a residue
+     *   left on a case clause is a literal the scan cannot resolve away. The
+     *   swap therefore goes through a fact that holds either side of `cact`,
+     *   for two different reasons, and is proved by a case split relativized
+     *   on a flag of its own. See the comment at the swap.
+     * - **A variable capacity** turned out to be nearly free, and an earlier
+     *   version of this note was wrong about why it would not be. It said
+     *   `degree = total - capacity` was "the degree the derivation saturates
+     *   at" and that the guard coefficients were computed against it. Neither
+     *   is so: `degree` was only ever the test for the trivial case. The
+     *   capacity itself needs no special handling, because it cancels between
+     *   the checkpoint row and the target's own reverse half exactly as the
+     *   load does. All it cost was carrying the row in the encoder's own two
+     *   forms, and giving up the trivial-case shortcut where there is no
+     *   single number to compare against.
      *
-     * So the open question is precisely that one, and it is a question about
-     * saturation rather than about the scheduling argument, which does not
-     * change at all. The obvious first thing to try is the trivial case at
-     * `total <= lb(capacity)` and the general case relativized on the
-     * capacity's bits; nobody has tried it, and this note is not a claim that
-     * it works.
+     * The lesson in that last one is worth keeping: the argument was about
+     * *scheduling*, and it never mentioned the capacity's constancy. Guessing
+     * that PB arithmetic would be the obstacle, without following the constant
+     * through the code to see what it actually reached, produced a confident
+     * note that pointed at the wrong thing.
      */
     [[nodiscard]] auto cumulative_checkpoint_recovery_applies(const CumulativeInputs & inputs, const ProofLogger & logger) -> bool;
 
