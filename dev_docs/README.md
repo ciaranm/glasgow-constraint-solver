@@ -207,5 +207,14 @@ library. For an introduction to *using* the solver, start with the top-level
   through an `all_different`-style at-most-one recurrence with an exact
   coefficient. Also records what was deliberately left out, and why.
 
+- [Releasing gcspy](releasing-gcspy.md) — the procedure for cutting a `gcspy`
+  (Python bindings) release to PyPI: where the version lives, what the CI
+  workflow produces (portable sdist + best-effort macOS/manylinux wheels), why
+  the C++23 compiler floor forces gcc-toolset inside the manylinux image and
+  static-linked libstdc++, the step-by-step (bump → TestPyPI dry-run → tag), and
+  the one-time PyPI Trusted Publishing setup that keeps the release
+  maintainer-independent. Read when releasing the bindings or touching
+  `.github/workflows/release-gcspy.yml`.
+
 More documents will be added here as we build up coverage of other parts of
 the codebase.
