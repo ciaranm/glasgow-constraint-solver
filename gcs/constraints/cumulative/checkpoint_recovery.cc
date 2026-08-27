@@ -117,14 +117,25 @@ auto gcs::innards::cumulative_checkpoint_recovery_applies(const CumulativeInputs
         // or for none.
         if (! logger.names_and_ids_tracker().constraint_row_label(inputs.owner, Data::checkpoint_row_role(i)))
             return false;
-        // A variable height's swap is stated over the reification halves of the
-        // pair contribution bits, so it needs those bits to *be* reifications:
-        // conjunctions with the height's own bits. Where a height has no bits
-        // to conjoin with --- a view, or a declared lower bound below zero ---
-        // the encoding falls back to linearising the product with three rows
-        // per pair, and this declines rather than recovering a row it cannot
-        // state.
-        if (! is_constant_variable(inputs.heights[i]) && ! inputs.pair_contribution_bits_are_conjunctions)
+        // A variable height's swap trades a pair contribution bit for a
+        // per-time one, one `rup` per bit, and that closes by unit propagation
+        // only because *both* families are conjunctions with the height's own
+        // bits. Either side linearised the long way breaks it: from
+        // `Sum 2^k cc_k <= h` guarded by cact, unit propagation cannot get
+        // bit_k(h) out of cc_k, so the clause stalls and veripb rejects the
+        // proof rather than the recovery declining to write one.
+        //
+        // The two conditions are separate because the two families are. A
+        // height with no citable bits --- a view, or a declared lower bound
+        // below zero --- linearises on both sides. And the per-time family is
+        // linearised in the *model* under every encoding but StartCheckpoint,
+        // because O(n x horizon) conjunctions would cost more rows than they
+        // save; only StartCheckpoint's lazy in-proof minting states them as
+        // conjunctions. So `both-recovering` over a variable height is declined
+        // here, and gets its variable-height coverage from the
+        // `_startcheckpoint` arm instead.
+        if (! is_constant_variable(inputs.heights[i]) &&
+            ! (inputs.pair_contribution_bits_are_conjunctions && inputs.per_time_contribution_bits_are_conjunctions))
             return false;
     }
     return true;
