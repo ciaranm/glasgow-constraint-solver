@@ -161,10 +161,58 @@ tools/scheduling_sweep.py --binary build/rcpsp --out proofs-generated.jsonl \
     --arms off,ef,ttef,energetic,nfnl --timeout 60 --proof-cap-mb 4000 --jobs 8 --resume
 ```
 
-Then, if there is time, the same over `--dzn-dir ... --collections data_bl` and
-over `--jss-dir`. Watch the disk: `--jobs 8` at a 4 GB cap can want 32 GB at
-once, and rows come back as `proof-too-big` rather than as failures when they
-hit it.
+Then the same over `--dzn-dir ... --collections data_bl` and over `--jss-dir`.
+Watch the disk: `--jobs 8` at a 4 GB cap can want 32 GB at once, and rows come
+back as `proof-too-big` rather than as failures when they hit it.
+
+**Then these two, which this step used to leave to whoever had time.** Both
+certify at a usable rate, and between them they are this programme's only
+proof-mode coverage of a long duration:
+
+```shell
+tools/scheduling_sweep.py --binary build/rcpsp --out proofs-data_ksd15_d.jsonl \
+    --mode prove --dzn-dir scheduling-instances/rcpsp --collections data_ksd15_d \
+    --arms off,ef,ttef,energetic,nfnl --timeout 60 --proof-cap-mb 4000 --jobs 8 --resume
+
+tools/scheduling_sweep.py --binary build/rcpsp --out proofs-multimode-j20.jsonl \
+    --mode prove --mm-dir scheduling-instances/multimode/j20 \
+    --arms off,ef,ttef,energetic,nfnl --timeout 60 --proof-cap-mb 4000 --jobs 8 --resume
+```
+
+Why they are named rather than left to time. Read the collections by their
+longest task: `data_bl`'s is **6** time units and j10's is **10**, while
+`data_ksd15_d`'s is **250** and `data_pack_d`'s is **1138**. The families a
+"start small and grow" reading reaches first are the two *coarsest* on disk, and
+that is not a coincidence --- the time-indexed OPB is `O(n x horizon)`, so the
+cheapest instances to certify are the ones with the shortest durations. Picking
+by cost picks by duration, and a step that stops when the time runs out reports
+on short tasks only.
+
+Measured over the whole of both collections, eleven arms, 4 GB cap, 600 s:
+
+| collection | verified | capped | verify-timeout | rejected |
+|---|---|---|---|---|
+| `data_ksd15_d` | 4,478/5,280 (84.8%) | 746 | 56 | 0 |
+| multi-mode j20 | 4,611/6,094 (75.7%) | 1,483 | 0 | 0 |
+
+For scale, `data_bl` at the same cap is 270/440 (61.4%) and j10 is 5,439/5,896
+(92.2%), so both sit inside the range this programme already works in. Note that
+j20 is *not* an easier family than j10 despite the same task durations --- more
+activities means bigger proofs, and 1,483 of its runs hit the cap.
+
+**`data_ksd15_d` needs a longer `--verify-timeout` than the default.** Its
+median check is 0.53 s, but the tail is very long: 56 runs exceed 7200 s, and
+`j309_7` --- whose eleven arms are most of that 56 --- verifies correctly in
+**3 h 51 m** when run with no limit at all. A `verify-timeout` on this family is
+a statement about the limit, not about the proof. Budget 4-6 hours where the
+point is to establish that a family checks rather than how quickly.
+
+The three that do not pay, so nobody spends a night rediscovering it:
+`data_pack`, `data_pack_d` and `data_la_x` came back **0/150 verified**, every
+run over the cap. `data_pack_d` is the sharpest case --- raising the ceiling to
+200 GB shows its proofs reaching 80-118 GB and still growing when the solve
+times out, so no cap setting reaches that collection. What is certifiable there
+is bounded by the search, not by the cap.
 
 ### 5e. Closed counts, serially (long)
 
