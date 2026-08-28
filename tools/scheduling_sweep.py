@@ -280,7 +280,26 @@ def run_one(args, source: str, label: str, instance_flags: list[str], arm: str) 
                 check = subprocess.run([args.veripb, str(opb), str(pbp)], capture_output=True,
                                        text=True, timeout=args.verify_timeout)
                 row["verify_s"] = round(time.monotonic() - started, 3)
-                row["result"] = "verified" if check.returncode == 0 else "REJECTED"
+                # A checker that *died* did not reject anything, and this is the
+                # same distinction the solver side makes a few lines up --- which
+                # this half was missing. subprocess reports a signal death as a
+                # negative return code, so an OOM kill, or someone else's
+                # `pkill veripb` on a shared machine, used to land in the JSONL
+                # as REJECTED: indistinguishable from an unsound proof, and the
+                # most alarming thing this harness can say. Both happened.
+                #
+                # The tell is that a real rejection prints a multi-line
+                # `Error: Checking error at ...`, where a killed one has said
+                # nothing but its banner --- but that is a heuristic over the
+                # captured text, and the return code is not. Record it either
+                # way, so a row can be re-read later rather than re-run.
+                row["verify_rc"] = check.returncode
+                if check.returncode < 0:
+                    row["result"] = f"verify-killed-{-check.returncode}"
+                elif check.returncode == 0:
+                    row["result"] = "verified"
+                else:
+                    row["result"] = "REJECTED"
                 if check.returncode != 0:
                     row["verify_says"] = (check.stdout + check.stderr).strip()[-400:]
             except subprocess.TimeoutExpired:
