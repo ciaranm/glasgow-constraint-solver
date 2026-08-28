@@ -3,6 +3,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/logical.hh>
+#include <gcs/constraints/reachable.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
@@ -117,16 +118,16 @@ using fmt::println;
 // which we post too, to keep the same propagation.
 //
 // That encoding lives behind `--connectivity`, following the `--variant` seam
-// of examples/p_dispersion: gcs has no `connected` propagator today, and issue
-// #637 proposes adding the Reachable / Connected family, at which point it
-// arrives as another case of post_connectivity rather than as a change to this
-// model. `--connectivity decomposition` is the default and is what the
-// benchmark entry measures. `--connectivity none` is a *relaxation*, not a
+// of examples/p_dispersion. `--connectivity decomposition` is the default and
+// is what the benchmark entry measures. `--connectivity propagator` posts the
+// same requirement through the native `Reachable` propagator of issue #637
+// instead, so one binary can run the same instance through a decomposition and
+// through a global propagator. `--connectivity none` is a *relaxation*, not a
 // solving mode: it drops the connectivity requirement altogether, so it does
 // not solve hitori and generally reports a larger objective. It is here for
 // proof attribution --- running with and without it and diffing the proofs
 // says how much of the proof the connectivity decomposition is responsible
-// for, which is what sizes #637.
+// for, which is what sized #637.
 //
 // gcs minimises, so `maximise` negates: a VeriPB verdict of
 // `s VERIFIED BOUNDS -17 <= obj <= -17` means an optimum of 17.
@@ -408,14 +409,17 @@ namespace
         return forced;
     }
 
-    // How the "the unshaded cells stay connected" requirement is posted. This
-    // is the seam for issue #637: when gcs grows a native Reachable /
-    // Connected propagator, it arrives as another case of post_connectivity
-    // below rather than as surgery on the model.
+    // How the "the unshaded cells stay connected" requirement is posted: the
+    // mznlib decomposition, the native Reachable propagator of issue #637, or
+    // nothing at all. Both real encodings stay reachable from here, so the
+    // decomposition-versus-propagator comparison can be made on one instance in
+    // one binary --- see the `--variant` seam of examples/p_dispersion.
     enum class Connectivity
     {
-        Decomposition, // the mznlib decomposition; the default, and the one the benchmark entry is about
-        None           // a relaxation: solves a different problem, for proof attribution only
+        Decomposition,    // the mznlib decomposition; the default, and the one the benchmark entry is about
+        Propagator,       // the native Reachable propagator from issue #637, at its default strength
+        PropagatorNoCuts, // the same propagator with its cut-vertex and bridge forcing turned off
+        None              // a relaxation: solves a different problem, for proof attribution only
     };
 
     // Constrain the unshaded cells --- node i is unshaded iff `ns[i]` is 1,
@@ -433,6 +437,45 @@ namespace
         case None:
             // Deliberately post nothing: the relaxation.
             return introduced;
+
+        case Propagator:
+        case PropagatorNoCuts: {
+            // The same `connected` requirement, handed to the native Reachable
+            // propagator instead of being flattened. `connected` is `reachable`
+            // with the root existentially quantified, so the root variable is
+            // created here exactly as `fzn_connected`'s `let` does; edges run
+            // right and down out of each cell, and `es[e]` is the conjunction of
+            // its endpoints, as in the MiniZinc model.
+            vector<pair<size_t, size_t>> edges;
+            for (int i = 0; i < num_nodes; ++i) {
+                auto r = i / n, c = i % n;
+                if (c + 1 < n)
+                    edges.emplace_back(i, i + 1);
+                if (r + 1 < n)
+                    edges.emplace_back(i, i + n);
+            }
+
+            vector<IntegerVariableID> es;
+            for (const auto & [u, v] : edges) {
+                auto edge_in = p.create_integer_variable(0_i, 1_i, format("edge[{}_{}]", u, v));
+                p.post(And{Literals{{ns[u] == 1_i, ns[v] == 1_i}}, edge_in == 1_i});
+                es.push_back(edge_in);
+            }
+
+            auto root = p.create_integer_variable(0_i, Integer{num_nodes - 1}, "root");
+            // The forcing is what makes Reachable GAC, and it cuts this search by
+            // about two and a half times --- but `connected` leaves the root
+            // existentially quantified, and a forcing made before search has
+            // decided the root costs one proof line per candidate root. On h11-1
+            // that is 7x the proof for 2.5x the search, so the two settings are
+            // both kept measurable rather than one being chosen here.
+            p.post(Reachable{move(edges), root, ns, move(es)}.with_cut_forcing(variant == Connectivity::Propagator));
+
+            // The root is the only variable here that search has to decide: the
+            // edges follow from their endpoints, as `is_defined_var` would say.
+            introduced.push_back(root);
+            return introduced;
+        }
 
         case Decomposition: break;
         }
@@ -642,8 +685,9 @@ auto main(int argc, char * argv[]) -> int
             ("dzn", "Solve a MiniZinc Challenge hitori instance instead", cxxopts::value<string>())              //
             ("connectivity",
                 "How to require the unshaded cells to be connected: decomposition (the mznlib "               //
-                "encoding, the default), or none (a relaxation that does not solve hitori, for "              //
-                "proof attribution only)",                                                                    //
+                "encoding, the default), propagator (the native Reachable propagator), "                      //
+                "propagator-no-cuts (the same without its cut-vertex and bridge forcing), or none "           //
+                "(a relaxation that does not solve hitori, for proof attribution only)",                      //
                 cxxopts::value<string>()->default_value("decomposition"))                                     //
             ("show-clues", "Print the clue grid before solving")                                              //
             ("quiet", "Do not print the improving solutions")                                                 //
@@ -667,10 +711,14 @@ auto main(int argc, char * argv[]) -> int
     Connectivity connectivity;
     if (connectivity_name == "decomposition")
         connectivity = Connectivity::Decomposition;
+    else if (connectivity_name == "propagator")
+        connectivity = Connectivity::Propagator;
+    else if (connectivity_name == "propagator-no-cuts")
+        connectivity = Connectivity::PropagatorNoCuts;
     else if (connectivity_name == "none")
         connectivity = Connectivity::None;
     else {
-        cerr << "Error: unknown --connectivity '" << connectivity_name << "', try decomposition or none" << endl;
+        cerr << "Error: unknown --connectivity '" << connectivity_name << "', try decomposition, propagator, propagator-no-cuts or none" << endl;
         return EXIT_FAILURE;
     }
 
