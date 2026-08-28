@@ -43,6 +43,22 @@ set_tests_properties(minizinc-cake PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-circuit COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ circuittest true true)
 set_tests_properties(minizinc-circuit PROPERTIES SKIP_RETURN_CODE 66)
 
+# The reachability family. --fzn-pattern is the reachability guard: MiniZinc's
+# connected / dconnected wrappers go through reachable / dreachable, so without
+# it a test would still agree with the reference solver via the stdlib distance
+# labelling even if the override never fired.
+add_test(NAME minizinc-reachable COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_reachable $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ reachabletest true true)
+set_tests_properties(minizinc-reachable PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-connected COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_reachable $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ connectedtest true true)
+set_tests_properties(minizinc-connected PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-dreachable COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_dreachable $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ dreachabletest true true)
+set_tests_properties(minizinc-dreachable PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-dconnected COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_dreachable $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ dconnectedtest true true)
+set_tests_properties(minizinc-dconnected PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-count COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ counttest true true)
 set_tests_properties(minizinc-count PROPERTIES SKIP_RETURN_CODE 66)
 

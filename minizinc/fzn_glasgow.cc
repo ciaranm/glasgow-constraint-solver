@@ -58,6 +58,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::shared_ptr;
+using std::size_t;
 using std::string;
 using std::thread;
 using std::unique_lock;
@@ -779,6 +780,27 @@ auto main(int argc, char * argv[]) -> int
                 // 0-based (Circuit expects a length-n array valued in 0..n-1).
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 problem.post(Circuit{vars});
+            }
+            else if (id == "glasgow_reachable" || id == "glasgow_dreachable") {
+                // The mznlib redefinition has already shifted the endpoints and
+                // the root to be zero-based, matching how Reachable numbers nodes.
+                auto from = arg_as_array_of_integer(data, args, 0);
+                auto to = arg_as_array_of_integer(data, args, 1);
+                const auto & r = arg_as_var(data, args, 2);
+                const auto & ns = arg_as_array_of_var(data, args, 3);
+                const auto & es = arg_as_array_of_var(data, args, 4);
+                if (from->size() != to->size())
+                    throw FlatZincInterfaceError{"reachable needs one from and one to per edge"};
+                vector<pair<size_t, size_t>> edges;
+                for (size_t e = 0; e != from->size(); ++e) {
+                    if ((*from)[e] < 0_i || (*to)[e] < 0_i)
+                        throw FlatZincInterfaceError{"reachable has a negative edge endpoint"};
+                    edges.emplace_back(static_cast<size_t>((*from)[e].raw_value), static_cast<size_t>((*to)[e].raw_value));
+                }
+                if (id == "glasgow_dreachable")
+                    problem.post(DReachable{move(edges), r, ns, es});
+                else
+                    problem.post(Reachable{move(edges), r, ns, es});
             }
             else if (id == "glasgow_count_eq") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
