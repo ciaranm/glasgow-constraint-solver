@@ -90,6 +90,7 @@ add_library(glasgow_constraint_solver
         constraints/plus_minus/plus.cc
         constraints/power/power.cc
         constraints/power/power_table.cc
+        constraints/reachable/reachable.cc
         constraints/regular/regular.cc
         constraints/regular/regular_bacchus.cc
         constraints/regular/regular_legacy.cc
@@ -322,6 +323,7 @@ if(GCS_BUILD_TESTS)
     add_executable(power_test constraints/power/power_test.cc)
     add_executable(product_bounds_test constraints/innards/product_bounds_test.cc)
     add_executable(product_justify_test constraints/innards/product_justify_test.cc)
+    add_executable(reachable_test constraints/reachable/reachable_test.cc)
     add_executable(regular_test constraints/regular/regular_test.cc)
     add_executable(regular_bacchus_test constraints/regular/regular_bacchus_test.cc)
     add_executable(regular_legacy_test constraints/regular/regular_legacy_test.cc)
@@ -342,7 +344,7 @@ if(GCS_BUILD_TESTS)
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test bin_packing_test comparison_test
             count_test cumulative_test cumulative_overload_test cumulative_edge_finding_test cumulative_ttef_test cumulative_energetic_test cumulative_nfnl_test cumulative_published_nfnl_test cumulative_kaoc_test cumulative_optional_test derived_cumulative_test difference_test disjunctive_test disjunctive_optional_test disjunctive_overload_test disjunctive_edge_finding_test disjunctive_nfnl_test disjunctive_precedences_test disjunctive_set_precedences_test disjunctive_published_nfnl_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
             logical_test mdd_test min_distance_test min_distance_matching_test min_max_test mini_linear_test multiply_test n_value_test nogoods_test parity_test
-            plus_minus_test power_test product_bounds_test product_justify_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
+            plus_minus_test power_test product_bounds_test product_justify_test reachable_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
@@ -680,6 +682,19 @@ if(GCS_BUILD_TESTS)
     add_test(NAME nogoods_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:nogoods_test>)
     add_test(NAME parity_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_test>)
     add_test(NAME plus_minus_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test>)
+    add_test(NAME reachable_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:reachable_test>)
+    # Every Reachable inference is a plain RUP whose whole content is its reason,
+    # so the mutation lanes drop one part of a reason each and insist veripb
+    # notices. Both spellings, because the undirected and directed searches reach
+    # the same reasons by different routes.
+    foreach(direction undirected directed)
+        foreach(mutation border mandatory rootdomain)
+            add_test(NAME reachable_mutation_${direction}_${mutation}
+                COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                    --basename reachable_mutation_${direction}_${mutation} $<TARGET_FILE:reachable_test> --mutate=${mutation}
+                    $<$<STREQUAL:${direction},directed>:--directed>)
+        endforeach()
+    endforeach()
     add_test(NAME regular_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_test>)
     add_test(NAME regular_bacchus_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_bacchus_test>)
     add_test(NAME regular_legacy_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_legacy_test>)

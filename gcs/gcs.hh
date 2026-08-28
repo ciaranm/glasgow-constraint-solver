@@ -55,6 +55,7 @@
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/power.hh>
+#include <gcs/constraints/reachable.hh>
 #include <gcs/constraints/regular.hh>
 #include <gcs/constraints/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table.hh>

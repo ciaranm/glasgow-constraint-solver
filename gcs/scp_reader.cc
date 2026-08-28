@@ -35,6 +35,7 @@
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/power.hh>
+#include <gcs/constraints/reachable/reachable.hh>
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
@@ -61,6 +62,8 @@ using std::map;
 using std::move;
 using std::nullopt;
 using std::optional;
+using std::pair;
+using std::size_t;
 using std::span;
 using std::string;
 using std::string_view;
@@ -633,6 +636,33 @@ namespace
         auto vars = resolve_variable_list(variables, terms[2], "the among variable list");
         auto values = resolve_integer_list(terms[3], "the among values-of-interest list");
         post_constraint(problem, Among{move(vars), values, resolve_variable(variables, terms[4])}, label);
+    }
+
+    auto read_reachable(Problem & problem, const map<string, IntegerVariableID> & variables, const string & op, const vector<SExpr> & terms,
+        const string & label) -> void
+    {
+        // (label reachable (from...) (to...) root (ns...) (es...)): the subgraph
+        // picked out by ns and es is reachable from root, following each edge either
+        // way for reachable and only from-to for dreachable.
+        if (terms.size() != 7)
+            throw ScpReadError{op + " is (label " + op + " (from...) (to...) root (ns...) (es...))"};
+        auto from = resolve_integer_list(terms[2], "the reachable edge from list");
+        auto to = resolve_integer_list(terms[3], "the reachable edge to list");
+        if (from.size() != to.size())
+            throw ScpReadError{op + " needs one from and one to per edge"};
+        vector<pair<size_t, size_t>> edges;
+        for (size_t e = 0; e != from.size(); ++e) {
+            if (from[e] < 0_i || to[e] < 0_i)
+                throw ScpReadError{op + " has a negative edge endpoint"};
+            edges.emplace_back(static_cast<size_t>(from[e].raw_value), static_cast<size_t>(to[e].raw_value));
+        }
+        auto root = resolve_variable(variables, terms[4]);
+        auto ns = resolve_variable_list(variables, terms[5], "the reachable node list");
+        auto es = resolve_variable_list(variables, terms[6], "the reachable edge list");
+        if (op == "dreachable")
+            post_constraint(problem, DReachable{move(edges), root, move(ns), move(es)}, label);
+        else
+            post_constraint(problem, Reachable{move(edges), root, move(ns), move(es)}, label);
     }
 
     auto read_value_precede(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
@@ -1247,6 +1277,9 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
         }
         else if (op == "among") {
             read_among(problem, variables, terms, label);
+        }
+        else if (op == "reachable" || op == "dreachable") {
+            read_reachable(problem, variables, op, terms, label);
         }
         else if (op == "value_precede") {
             read_value_precede(problem, variables, terms, label);

@@ -29,6 +29,7 @@
 #include <gcs/constraints/nogoods/nogoods.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/power.hh>
+#include <gcs/constraints/reachable/reachable.hh>
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/constraints/regular/regular_bacchus.hh>
 #include <gcs/constraints/regular/regular_legacy.hh>
@@ -904,6 +905,53 @@ TEST_CASE("read_scp: the remaining globals survive write -> read -> write unchan
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_globals_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: reachable enumerates correctly")
+{
+    // A three-node path 0 - 1 - 2 with the root pinned to node 0: the selected
+    // subgraph is {0}, {0,1} or {0,1,2}, each with exactly the edges it needs.
+    auto solutions = enumerate("( (version 1) (variables (R 0 0) (N0 0 1) (N1 0 1) (N2 0 1) (E0 0 1) (E1 0 1)) "
+                               "(constraints (_1 reachable (0 1) (1 2) R (N0 N1 N2) (E0 E1))) (prob_type enumerate) )");
+    CHECK(solutions.size() == 3);
+    for (const auto & s : solutions) {
+        CHECK(s.at("N0") == 1);
+        CHECK(s.at("E0") == s.at("N1"));
+        CHECK(s.at("E1") == s.at("N2"));
+        CHECK((s.at("N1") == 1 || s.at("N2") == 0));
+    }
+
+    // Directed, so node 0 is only reachable from itself: pinning the root to node
+    // 2 leaves the same chain running the other way.
+    auto directed = enumerate("( (version 1) (variables (R 2 2) (N0 0 1) (N1 0 1) (N2 0 1) (E0 0 1) (E1 0 1)) "
+                              "(constraints (_1 dreachable (0 1) (1 2) R (N0 N1 N2) (E0 E1))) (prob_type enumerate) )");
+    CHECK(directed.size() == 1);
+    for (const auto & s : directed) {
+        CHECK(s.at("N2") == 1);
+        CHECK(s.at("N0") == 0);
+        CHECK(s.at("N1") == 0);
+    }
+}
+
+TEST_CASE("read_scp: reachable survives write -> read -> write unchanged")
+{
+    Problem original;
+    auto r = original.create_integer_variable(0_i, 2_i, "R");
+    std::vector<IntegerVariableID> ns, es;
+    for (int i = 0; i < 3; ++i)
+        ns.push_back(original.create_integer_variable(0_i, 1_i, "N" + std::to_string(i)));
+    for (int e = 0; e < 2; ++e)
+        es.push_back(original.create_integer_variable(0_i, 1_i, "E" + std::to_string(e)));
+    original.post(Reachable{{{0, 1}, {1, 2}}, r, ns, es});
+    original.post(DReachable{{{0, 1}, {1, 2}}, r, ns, es});
+    auto scp_a = prove_to_scp(original, "scp_reader_reachable_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_reachable_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());
