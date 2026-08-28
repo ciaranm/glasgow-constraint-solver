@@ -213,6 +213,16 @@ are useful and they are not two halves of one thing.
 the run did not finish, not that VeriPB refused anything. Only `REJECTED` is a
 finding --- and it is a serious one, so report it rather than filtering it out.
 
+**Nor is a killed checker.** `verify-killed-N` means VeriPB died on signal N ---
+out of memory, or somebody else's `pkill veripb` on a shared machine. It says
+nothing about the proof. Every row now carries `verify_rc`, so a run that came
+back `REJECTED` can be told apart from one that was killed without re-running
+it; a genuine rejection also prints a multi-line `Error: Checking error at ...`
+into `verify_says`, where a killed one has said nothing but its banner. If a
+whole cohort of rows on one instance rejects at once, suspect the machine before
+the solver: they will be the longest-running checks, which is exactly the set a
+stray `pkill` catches.
+
 **Filter on `result` and `status`, not on the presence of a makespan.** A row can
 be a clean run of an instance that timed out.
 
