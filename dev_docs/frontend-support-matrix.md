@@ -77,6 +77,8 @@ addressed.
 | binary comparison (`x <op> y`, `x <op> y + d`) | `Comparison`, or a two-term `WeightedSum` | ✓ | ✓ | ? | Which of the two, and why it matters, in [^cmp] |
 | difference logic (`x - y <= d` as a *system*) | `DifferenceConstraints`; or the `DifferenceLogic` presolver over constraints posted individually | ✓ presolver only, opt-in `--difference-logic` | ✓ presolver only, opt-in `--difference-logic` | ? | Glasgow-specific extension ([#571](https://github.com/ciaranm/glasgow-constraint-solver/issues/571)); see [^dl] for why there is no predicate |
 | `MinDistance` | `MinDistance` | unsupported | n/a | unsupported | Glasgow-specific extension; no frontend vocabulary for it |
+| graph reachability (`reachable`, `dreachable`, `connected`, `dconnected`) | `Reachable` / `DReachable` | ✓ | n/a | ? | `connected` / `dconnected` ride the same override, being `reachable` / `dreachable` with an existential root; see [^reach] |
+| the rest of `globals.graph` (`tree`, `path`, `steiner`, `dag`, `subgraph`, `network_flow`, `weighted_spanning_tree`, `subcircuit`) | – | decomposition | n/a | n/a | Open under [#637](https://github.com/ciaranm/glasgow-constraint-solver/issues/637), whose later stages build on `DReachable` |
 | `SmartTable` | `SmartTable` | ✓ | n/a | ? | Glasgow-specific extension |
 
 ## Solver gaps tracked elsewhere
@@ -114,6 +116,18 @@ addressed.
 [^disj]: 1D `Disjunctive`: variable starts, constant *or* variable durations, strict/non-strict; time-table specialised to heights=1, capacity=1 (variable durations fold into the pairwise ordering flags directly, with a reified zero-length escape clause in non-strict mode). 2D `Disjunctive2D` (non-overlapping rectangles, variable origins, constant or variable sizes): pairwise time-table — mandatory-box overlap is a contradiction, and a pair forced to overlap on one axis is pushed apart on the other. Both are fully proof-logged pairwise against the declarative OPB encoding ([`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)); 2D adds a 4-way separation clause per pair. 1D also takes **optional tasks**: a `{0, 1}` presence per task, added to the encoding as two more disjuncts on each pair's separation clause and nowhere else, so a constant-1 presence gives a byte-identical OPB. Absent tasks are dropped; undecided ones join no profile and have their own bounds left alone; a task with nowhere left to go has its presence falsified. MiniZinc reaches it through `fzn_disjunctive_opt` and `fzn_disjunctive_strict_opt`, the second of which nothing built on cumulative could have implemented. `cake_pb_cp` has no encoder for the optional form, so it is outside the verified-encoding chain; `constraint_type()` is `disjunctive_optional` / `disjunctive_strict_optional` so that gap is named rather than silently mismatched against the plain encoder. Outside the envelope (k-D, 2D optional tasks): XCSP3 raises an unsupported error.
 
 [^intaff]: `xcsp_glasgow_constraint_solver.cc` keeps `recognizeSpecialIntensionCases = false`, so every `<intension>` still arrives as one typed tree, but `post_intension_top_level` tries an affine peephole first for `le`, `lt`, `ge` and `gt`. Operands built only from variables, integers, `add`, `sub` and `neg` are folded into a single `LinearLessThanEqual` over the instance's own variables; anything else (a `mul`, a `dist`, …) falls back to the ordinary walk, and `eq` is deliberately excluded, because `Equals` over two variables is domain-consistent and a linear equality is only bounds-consistent. Measured on a 12-variable network of 31 such constraints, the peephole removes 31 auxiliary variables, 64 % of the OPB lines and 72 % of the proof lines.
+
+[^reach]: `Reachable` numbers nodes from zero and takes the edge endpoints as a
+    fixed edge list, the root as a variable over node numbers, and a 0/1 variable
+    per node and per edge; it enforces MiniZinc's `subgraph` itself, as
+    `fzn_dreachable` does. The OPB encoding is a breadth-first unfolding of
+    reachability rather than the stdlib's distance labelling, which is what makes
+    every inference RUP — see
+    [`connectivity-proofs.md`](connectivity-proofs.md). The mznlib overrides sit
+    on `fzn_reachable_int` / `_enum` and `fzn_dreachable_int` / `_enum`, so
+    `connected` and `dconnected` reach the propagator through the stdlib's own
+    wrappers without a further override; the reified spellings are left to the
+    stdlib (`fzn_dreachable_reif` aborts there anyway).
 
 [^cmp]: Both frontends reach a *linear* inequality rather than `Comparison` for essentially every binary ordering. MiniZinc 2.10's flattener emits `int_lin_le([1,-1],[x,y],d)` even for a bare `x <= y`, so `int_le` / `int_lt` are bound but hardly ever produced; XCSP3 gets there via the intension peephole of [^intaff]. Either arrival is lifted by the difference-logic presolver — a `Comparison` donor since [#596](https://github.com/ciaranm/glasgow-constraint-solver/pull/596) labelled its rows, counted separately as `DifferenceLogicStats::comparison_edges_lifted` — so which of the two a frontend produces is a question of *size*, not of reach: reaching a `Comparison` whose operand is a compound expression means paying for the auxiliary variable that built the operand, which is what [^intaff] removes. Reified comparisons (`int_le_reif`, an `le` inside an expression) still go to the `*Iff` constraints.
 
