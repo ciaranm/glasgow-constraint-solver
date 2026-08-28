@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -25,6 +26,7 @@ using namespace gcs::innards::reachable;
 
 using std::holds_alternative;
 using std::make_unique;
+using std::min;
 using std::move;
 using std::pair;
 using std::size_t;
@@ -32,6 +34,7 @@ using std::string;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::all_of;
 
 namespace
 {
@@ -77,6 +80,13 @@ namespace
 ReachableBase::ReachableBase(vector<pair<size_t, size_t>> edges, IntegerVariableID root, vector<IntegerVariableID> ns, vector<IntegerVariableID> es,
     bool directed) : _edges(move(edges)), _root(root), _ns(move(ns)), _es(move(es)), _directed(directed)
 {
+}
+
+auto ReachableBase::with_cut_forcing(std::optional<bool> enable) -> ReachableBase &
+{
+    if (enable)
+        _cut_forcing = *enable;
+    return *this;
 }
 
 auto ReachableBase::with_proof_mutation(ReachableProofMutation mutation) -> ReachableBase &
@@ -203,6 +213,7 @@ auto ReachableBase::install_propagators(Propagators & propagators) -> void
     propagators.install(
         constraint_id(),
         [n, edges = _edges, ns = _ns, es = _es, root = _root, arcs = move(arcs), adj = move(adj), owner = constraint_id(), directed = _directed,
+            cut_forcing = _cut_forcing,
             mutation = _proof_mutation](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto justify = JustifyUsingRUP{hints::Reachable{owner}};
             auto fixed_to = [&](IntegerVariableID v, Integer x) {
@@ -248,20 +259,36 @@ auto ReachableBase::install_propagators(Propagators & propagators) -> void
 
             // What is left of the graph: nodes and edges not yet ruled out. Every
             // reachability claim below is made over this, so a claim stays true as
-            // the search goes deeper.
-            vector<bool> node_out(n, false);
-            for (size_t v = 0; v != n; ++v)
-                node_out[v] = fixed_to(ns[v], 0_i);
-            vector<bool> arc_out(arcs.size(), false);
-            for (size_t a = 0; a != arcs.size(); ++a)
-                arc_out[a] = fixed_to(es[arcs[a].edge], 0_i) || node_out[arcs[a].from] || node_out[arcs[a].to];
+            // the search goes deeper. It is refreshed rather than computed once,
+            // because the rules above narrow domains as they go.
+            //
+            // One node or one edge may additionally be treated as though it were
+            // out, for the "suppose this were not selected" searches the forcing
+            // rules make. Such a thing is undecided rather than ruled out, so the
+            // border reasons below know not to blame it: the step that uses them
+            // supplies it from its own negated goal instead.
+            auto no_node = n, no_edge = edges.size();
+            auto hypothetical_node = no_node, hypothetical_edge = no_edge;
+            vector<bool> node_out(n, false), arc_out(arcs.size(), false);
+            auto refresh_graph = [&]() {
+                for (size_t v = 0; v != n; ++v)
+                    node_out[v] = fixed_to(ns[v], 0_i);
+                for (size_t a = 0; a != arcs.size(); ++a)
+                    arc_out[a] = fixed_to(es[arcs[a].edge], 0_i) || node_out[arcs[a].from] || node_out[arcs[a].to];
+            };
+            refresh_graph();
+
+            auto node_usable = [&](size_t v) { return ! node_out[v] && v != hypothetical_node; };
+            auto arc_usable = [&](size_t a) {
+                return ! arc_out[a] && arcs[a].edge != hypothetical_edge && arcs[a].from != hypothetical_node && arcs[a].to != hypothetical_node;
+            };
 
             // Nodes reachable from `sources`, and nodes that can reach `target`.
             auto search = [&](const vector<size_t> & sources, bool forwards) {
                 vector<bool> seen(n, false);
                 vector<size_t> stack;
                 for (const auto & s : sources)
-                    if (! node_out[s] && ! seen[s]) {
+                    if (node_usable(s) && ! seen[s]) {
                         seen[s] = true;
                         stack.push_back(s);
                     }
@@ -270,7 +297,7 @@ auto ReachableBase::install_propagators(Propagators & propagators) -> void
                     stack.pop_back();
                     for (const auto & a : forwards ? adj.leaving[v] : adj.entering[v]) {
                         auto next = forwards ? arcs[a].to : arcs[a].from;
-                        if (! arc_out[a] && ! seen[next]) {
+                        if (arc_usable(a) && ! seen[next]) {
                             seen[next] = true;
                             stack.push_back(next);
                         }
@@ -294,13 +321,16 @@ auto ReachableBase::install_propagators(Propagators & propagators) -> void
                         auto outside = forwards ? arcs[a].to : arcs[a].from;
                         if (inside[outside])
                             continue;
+                        // A genuine blocker gets named; an arc stopped only by the
+                        // hypothesis does not, because it is the caller's negated
+                        // goal that supplies it.
                         if (fixed_to(es[arcs[a].edge], 0_i)) {
                             if (! edge_said[arcs[a].edge]) {
                                 edge_said[arcs[a].edge] = true;
                                 lits.push_back(es[arcs[a].edge] == 0_i);
                             }
                         }
-                        else if (! node_said[outside]) {
+                        else if (node_out[outside] && ! node_said[outside]) {
                             node_said[outside] = true;
                             lits.push_back(ns[outside] == 0_i);
                         }
@@ -380,6 +410,228 @@ auto ReachableBase::install_propagators(Propagators & propagators) -> void
                     }
             }
 
+            // Cut vertices and bridges: a node or edge that every remaining
+            // solution has to use. This is the only place this constraint forces
+            // something *in*, and it is exactly the rest of generalised arc
+            // consistency --- see dev_docs/connectivity-proofs.md.
+            if (! cut_forcing)
+                return PropagatorState::Enable;
+
+            refresh_graph();
+
+            vector<bool> selected(n, false), candidate(n, false);
+            vector<size_t> mandatory, roots;
+            for (size_t v = 0; v != n; ++v)
+                if (! node_out[v] && fixed_to(ns[v], 1_i)) {
+                    selected[v] = true;
+                    mandatory.push_back(v);
+                }
+            state.for_each_value_immutable(root, [&](Integer rho) {
+                if (is_node(rho) && ! node_out[node_of(rho)]) {
+                    candidate[node_of(rho)] = true;
+                    roots.push_back(node_of(rho));
+                }
+            });
+            if (mandatory.empty() || roots.empty())
+                return PropagatorState::Enable;
+
+            // Justify forcing `goal` in, given that taking it out leaves no
+            // candidate root able to reach every selected node. With the root
+            // already decided that is one RUP: unit propagation starts at the root,
+            // walks what is left, and arrives at a selected node it cannot reach.
+            // With the root still open the same argument has to be made once per
+            // candidate, since unit propagation cannot case-split over which node
+            // the root is; the closing step then has no root left to use.
+            auto force_in = [&](const IntegerVariableCondition & goal, size_t hyp_node, size_t hyp_edge) {
+                hypothetical_node = hyp_node;
+                hypothetical_edge = hyp_edge;
+
+                ReasonLiterals lits;
+                vector<bool> covered_by_a_piece(n, false);
+                vector<Integer> to_rule_out;
+                for (const auto & rho : roots) {
+                    if (rho == hyp_node)
+                        continue; // taking it out already says the root is elsewhere
+                    to_rule_out.push_back(Integer(static_cast<long long>(rho)));
+                    if (covered_by_a_piece[rho])
+                        continue;
+                    auto piece = search({rho}, true);
+                    // Undirected, everything this candidate reaches would reach the
+                    // same set back, so one border seals the argument for all of
+                    // them. Directed it would not: a candidate inside this piece
+                    // reaches only part of it, and needs its own border.
+                    if (! directed)
+                        for (size_t u = 0; u != n; ++u)
+                            if (piece[u])
+                                covered_by_a_piece[u] = true;
+                    auto piece_lits = border_reason(piece, true);
+                    lits.insert(lits.end(), piece_lits.begin(), piece_lits.end());
+                    for (const auto & m : mandatory)
+                        if (! piece[m]) {
+                            lits.push_back(ns[m] == 1_i);
+                            break;
+                        }
+                }
+
+                hypothetical_node = no_node;
+                hypothetical_edge = no_edge;
+
+                // With the root already decided this is one RUP: the reason names
+                // it, and unit propagation has the one place to start from that the
+                // whole argument needs.
+                if (auto fixed_root = state.optional_single_value(root); fixed_root && node_of(*fixed_root) != hyp_node) {
+                    lits.push_back(root == *fixed_root);
+                    inference.infer(logger, goal, justify, ExplicitReason{move(lits)});
+                    return;
+                }
+
+                for (long long sigma = 0; sigma != static_cast<long long>(n); ++sigma)
+                    if (! state.in_domain(root, Integer{sigma}))
+                        lits.push_back(root != Integer{sigma});
+
+                auto emit = [&, goal, to_rule_out](const ReasonLiterals & reason_lits) {
+                    for (const auto & rho : to_rule_out)
+                        logger->emit_rup_proof_line_under_reason(
+                            reason_lits, WPBSum{} + 1_i * goal + 1_i * (root != rho) >= 1_i, ProofLevel::Temporary);
+                };
+                inference.infer(logger, goal, JustifyExplicitly{emit, ThenRUP::Yes, hints::Reachable{owner}}, ExplicitReason{move(lits)});
+            };
+
+            if (directed) {
+                // The directed analogue of a cut vertex is a dominator, and because
+                // the root is existentially quantified the selected node that
+                // witnesses it may differ from one candidate root to the next --- so
+                // there is no single dominator tree that answers this, and no
+                // one-pass version at all (the doc spells out why). This asks the
+                // question directly instead, which is exact but costs a search per
+                // candidate root per node and edge. It is the reason
+                // with_cut_forcing() exists as a switch.
+                auto survives_without = [&](size_t hyp_node, size_t hyp_edge) {
+                    hypothetical_node = hyp_node;
+                    hypothetical_edge = hyp_edge;
+                    auto survives = false;
+                    for (const auto & rho : roots) {
+                        if (rho == hyp_node)
+                            continue;
+                        auto reached_from_rho = search({rho}, true);
+                        if (all_of(mandatory.begin(), mandatory.end(), [&](size_t m) { return reached_from_rho[m]; })) {
+                            survives = true;
+                            break;
+                        }
+                    }
+                    hypothetical_node = no_node;
+                    hypothetical_edge = no_edge;
+                    return survives;
+                };
+
+                for (size_t v = 0; v != n; ++v)
+                    if (! node_out[v] && ! selected[v] && ! survives_without(v, no_edge))
+                        force_in(ns[v] == 1_i, v, no_edge);
+
+                for (size_t e = 0; e != edges.size(); ++e)
+                    if (! state.optional_single_value(es[e]) && ! survives_without(no_node, e))
+                        force_in(es[e] == 1_i, no_node, e);
+
+                return PropagatorState::Enable;
+            }
+
+            // The rules above leave every selected node and every candidate root in
+            // one component. If they have not reached that fixpoint yet there is
+            // nothing here to say, and they will fire again before there is.
+            auto component = search({mandatory.front()}, true);
+            for (const auto & v : mandatory)
+                if (! component[v])
+                    return PropagatorState::Enable;
+            for (const auto & v : roots)
+                if (! component[v])
+                    return PropagatorState::Enable;
+
+            // One depth-first pass over that component gives the articulation
+            // points and the bridges together, and carries the counts that say
+            // whether removing one would actually separate anything: a piece is
+            // survivable exactly when it holds every selected node and at least one
+            // candidate root.
+            vector<int> disc(n, -1), low(n, 0), selected_below(n, 0), candidates_below(n, 0);
+            vector<size_t> entered_by(n, no_edge);
+            vector<bool> skipped_entry(n, false);
+            vector<vector<size_t>> separated_children(n);
+            vector<pair<size_t, size_t>> bridges; // (edge, the child endpoint)
+            vector<pair<size_t, size_t>> dfs;
+            int timer = 0;
+            auto visit = [&](size_t v) {
+                disc[v] = low[v] = timer++;
+                selected_below[v] = selected[v] ? 1 : 0;
+                candidates_below[v] = candidate[v] ? 1 : 0;
+                dfs.emplace_back(v, 0);
+            };
+            visit(mandatory.front());
+            while (! dfs.empty()) {
+                auto v = dfs.back().first;
+                if (dfs.back().second < adj.leaving[v].size()) {
+                    auto a = adj.leaving[v][dfs.back().second++];
+                    if (! arc_usable(a))
+                        continue;
+                    // Skip one copy of the edge this vertex was entered by --- by
+                    // edge and not by vertex, so a parallel edge is still seen and
+                    // correctly stops either of them being a bridge.
+                    if (arcs[a].edge == entered_by[v] && ! skipped_entry[v]) {
+                        skipped_entry[v] = true;
+                        continue;
+                    }
+                    auto w = arcs[a].to;
+                    if (disc[w] == -1) {
+                        entered_by[w] = arcs[a].edge;
+                        visit(w);
+                    }
+                    else
+                        low[v] = min(low[v], disc[w]);
+                }
+                else {
+                    dfs.pop_back();
+                    if (! dfs.empty()) {
+                        auto u = dfs.back().first;
+                        low[u] = min(low[u], low[v]);
+                        selected_below[u] += selected_below[v];
+                        candidates_below[u] += candidates_below[v];
+                        if (low[v] >= disc[u])
+                            separated_children[u].push_back(v);
+                        if (low[v] > disc[u])
+                            bridges.emplace_back(entered_by[v], v);
+                    }
+                }
+            }
+
+            auto total_selected = selected_below[mandatory.front()];
+            auto total_candidates = candidates_below[mandatory.front()];
+            auto piece_survives = [&](int has_selected, int has_candidates) { return has_selected == total_selected && has_candidates >= 1; };
+
+            for (size_t v = 0; v != n; ++v) {
+                if (node_out[v] || selected[v] || disc[v] == -1 || v == mandatory.front())
+                    continue;
+                auto separated_selected = 0, separated_candidates = 0;
+                auto survives = false;
+                for (const auto & c : separated_children[v]) {
+                    separated_selected += selected_below[c];
+                    separated_candidates += candidates_below[c];
+                    if (piece_survives(selected_below[c], candidates_below[c]))
+                        survives = true;
+                }
+                if (piece_survives(total_selected - separated_selected, total_candidates - (candidate[v] ? 1 : 0) - separated_candidates))
+                    survives = true;
+                if (! survives)
+                    force_in(ns[v] == 1_i, v, no_edge);
+            }
+
+            for (const auto & [e, child] : bridges) {
+                if (state.optional_single_value(es[e]))
+                    continue;
+                if (piece_survives(selected_below[child], candidates_below[child]))
+                    continue;
+                if (piece_survives(total_selected - selected_below[child], total_candidates - candidates_below[child]))
+                    continue;
+                force_in(es[e] == 1_i, no_node, e);
+            }
+
             return PropagatorState::Enable;
         },
         triggers);
@@ -409,6 +661,7 @@ Reachable::Reachable(vector<pair<size_t, size_t>> edges, IntegerVariableID root,
 auto Reachable::clone() const -> unique_ptr<Constraint>
 {
     auto copy = make_unique<Reachable>(_edges, _root, _ns, _es);
+    copy->with_cut_forcing(_cut_forcing);
     copy->with_proof_mutation(_proof_mutation);
     return copy;
 }
@@ -431,6 +684,7 @@ DReachable::DReachable(vector<pair<size_t, size_t>> edges, IntegerVariableID roo
 auto DReachable::clone() const -> unique_ptr<Constraint>
 {
     auto copy = make_unique<DReachable>(_edges, _root, _ns, _es);
+    copy->with_cut_forcing(_cut_forcing);
     copy->with_proof_mutation(_proof_mutation);
     return copy;
 }

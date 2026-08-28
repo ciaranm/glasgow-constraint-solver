@@ -119,17 +119,17 @@ auto run_reachable_test(bool proofs, bool directed, const string & name, const E
         es.push_back(visit([&](auto d) { return create_integer_variable_or_constant(p, d); }, r));
     post(p, directed, edges, root, ns, es);
 
-    // solve_for_tests, not solve_for_tests_checking_gac: the propagator is GAC on
-    // what it removes and silent on what it would force. Running the cases below
-    // under the GAC check fails on the first one it reaches --- `path3` at root 0
-    // with nodes 0 and 1 selected, where edge (0, 1) is the only way to join two
-    // selected nodes, so GAC forces it and this propagator does not. What closes
-    // the gap is a Tarjan pass for the articulation points and bridges of the
-    // *residual* graph (which is why even the 2-connected `triangle` case fails
-    // once a node has been excluded), and that is exactly GAC for the undirected
-    // spelling. See dev_docs/connectivity-proofs.md.
+    // The GAC check, and it passes for both spellings: with the cut-vertex and
+    // bridge forcing on, this propagator is generalised-arc-consistent, so every
+    // value left in every domain at every search node has a support. That is the
+    // check earning its keep rather than a claim --- before the forcing was added
+    // it failed here, on `path3` at root 0 with nodes 0 and 1 selected, where edge
+    // (0, 1) is the only way to join two selected nodes. Note that the forcing is
+    // about the *residual* graph, which is why the 2-connected `triangle` case
+    // failed too once a node had been excluded. See
+    // dev_docs/connectivity-proofs.md.
     auto proof_name = proofs ? make_optional("reachable_test_" + string(directed ? "d" : "u") + "_" + name) : nullopt;
-    solve_for_tests(p, proof_name, actual, tuple{root, ns, es});
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{root, ns, es});
 
     check_results(proof_name, expected, actual);
 }

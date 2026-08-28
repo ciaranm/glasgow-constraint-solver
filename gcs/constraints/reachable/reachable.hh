@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -28,6 +29,7 @@ namespace gcs
             std::vector<IntegerVariableID> _ns;
             std::vector<IntegerVariableID> _es;
             bool _directed;
+            bool _cut_forcing = true;
             ReachableProofMutation _proof_mutation = reachable_proof_mutation::None{};
 
             explicit ReachableBase(std::vector<std::pair<std::size_t, std::size_t>> edges, IntegerVariableID root, std::vector<IntegerVariableID> ns,
@@ -42,6 +44,17 @@ namespace gcs
             [[nodiscard]] auto base_s_expr(const innards::ProofModel * const) const -> innards::SExpr;
 
         public:
+            /// Force in the nodes and edges that every remaining solution has to use:
+            /// the cut vertices and bridges of what is left of the graph. On by
+            /// default, and for the undirected spelling it is the difference between
+            /// this propagator and generalised arc consistency. Turning it off keeps
+            /// the constraint's meaning and its OPB encoding unchanged, and only
+            /// weakens propagation --- which is worth measuring, because each forcing
+            /// made while the root is still undecided costs one proof line per
+            /// candidate root. No effect on the directed spelling, whose analogue is
+            /// a different algorithm (see dev_docs/connectivity-proofs.md).
+            auto with_cut_forcing(std::optional<bool> enable = true) -> ReachableBase &;
+
             /// Testing only: corrupt one part of every reason this constraint gives,
             /// so a mutation lane can check that veripb refuses the result. See
             /// ReachableProofMutation. Never use this outside a test.
@@ -63,13 +76,15 @@ namespace gcs
      * The root being selected means the subgraph is never empty, which is what
      * MiniZinc's `fzn_dreachable` says.
      *
-     * Propagation is generalised-arc-consistent on what it removes --- a 1 leaves an
-     * `ns` or `es` domain, and a value leaves the root's domain, exactly when it has
-     * no support --- and does not force nodes or edges *in* beyond what `subgraph`
-     * and the root require. That gap is precisely the cut vertices and bridges of
-     * the residual graph, which for the undirected spelling is precisely the rest of
-     * GAC, and which certifies in a single RUP wherever the root is fixed; see
-     * dev_docs/connectivity-proofs.md.
+     * Propagation is generalised-arc-consistent, which the constraint's own tests
+     * check with solve_for_tests_checking_gac. Half of that is removals --- a 1
+     * leaves an `ns` or `es` domain, or a value leaves the root's domain, exactly
+     * when it has no support --- and the other half is with_cut_forcing(), which
+     * forces in the cut vertices and bridges of what is left of the graph. Turning
+     * that off leaves the removals, which alone make this a checker at every leaf
+     * but not GAC. See dev_docs/connectivity-proofs.md, including for why a forcing
+     * made before search has decided the root is much dearer to prove than one made
+     * after.
      *
      * Passing the same variable for two nodes (or two edges) is handled rather
      * than rejected: it simply means those nodes are selected together, and both
