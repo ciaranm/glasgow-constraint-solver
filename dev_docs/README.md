@@ -199,6 +199,21 @@ library. For an introduction to *using* the solver, start with the top-level
   it is not `add_constraint_state`), and the two-watched-literal `Nogoods` client
   that motivated it. Read when touching the propagation-queue/watch internals or
   nogood propagation performance.
+- [Connectivity: encoding and proofs](connectivity-proofs.md) — the design note
+  for `Reachable` / `DReachable` (#637): why the stdlib's arithmetic distance
+  labelling makes every connectivity inference un-RUPable (unit propagation
+  cannot do the induction the infinite-descent argument needs), and why a
+  breadth-first *unfolding* of the same idea makes all of them plain RUP —
+  unit propagation over the levels is the search the propagator ran. Covers the
+  encoding, the one-hot root row and why the root is a caller-supplied variable,
+  the border-cut reasons, why the propagator is GAC (the removals plus the
+  residual graph's cut vertices and bridges, which are exactly the other half,
+  one Tarjan pass undirected and a search per candidate root directed) and how
+  the tests check that, why a forcing made before search has decided the root
+  costs a proof line per candidate root while one made after costs one line
+  (measured, not assumed), the `O(nodes × edges)` size that is the price,
+  and the measured hitori comparison — 815 MB / 796 s of decomposition proof
+  against 0.25 MB / 0.14 s.
 - [`MinDistance`: encoding and proofs](min-distance-proofs.md) — the definitional
   OPB encoding for `min_distance(D, x, z)` (site-selection flags, per-site counts,
   pair clauses, and the min-attained ladder), the justification for each of the
