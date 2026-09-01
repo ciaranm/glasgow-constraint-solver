@@ -694,6 +694,14 @@ if(GCS_BUILD_TESTS)
                     --basename reachable_mutation_${direction}_${mutation} $<TARGET_FILE:reachable_test> --mutate=${mutation}
                     $<$<STREQUAL:${direction},directed>:--directed>)
         endforeach()
+        # The same fixture with nothing dropped, which is what makes the lanes
+        # above evidence: veripb has to accept the honest proof of exactly the
+        # instance whose corrupted proofs it refuses. Without this, a fixture
+        # that had stopped proving anything at all would pass every one of them.
+        add_test(NAME reachable_mutation_${direction}_none
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash
+                --basename reachable_mutation_${direction}_none $<TARGET_FILE:reachable_test> --mutate=none
+                $<$<STREQUAL:${direction},directed>:--directed>)
     endforeach()
     add_test(NAME regular_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_test>)
     add_test(NAME regular_bacchus_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_bacchus_test>)

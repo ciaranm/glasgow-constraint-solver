@@ -249,7 +249,10 @@ auto main(int argc, char * argv[]) -> int
         }
         if (mutation) {
             run_mutation(directed, *mutation, proof_basename);
-            println(cerr, "wrote a deliberately corrupted proof to {}.pbp", proof_basename);
+            if (std::holds_alternative<reachable_proof_mutation::None>(*mutation))
+                println(cerr, "wrote an unmutated proof of the mutation fixture to {}.pbp", proof_basename);
+            else
+                println(cerr, "wrote a deliberately corrupted proof to {}.pbp", proof_basename);
             return EXIT_SUCCESS;
         }
     }
@@ -286,11 +289,11 @@ auto main(int argc, char * argv[]) -> int
             run_reachable_test(proofs, directed, "lollipop_pinned", lollipop, Ranges{1, pair{0, 1}, pair{0, 1}, 1}, free(4), pair{0, 3});
             run_reachable_test(proofs, directed, "lollipop_cut_out", lollipop, Ranges{pair{0, 1}, pair{0, 1}, 0, pair{0, 1}}, free(4), pair{0, 3});
 
-            // Edges pinned, so the subgraph rules have something to say.
             // A root declared wider than the node numbering: the out-of-range
             // values are ruled out by the constraint rather than rejected.
             run_reachable_test(proofs, directed, "path3_wide_root", path3, free(3), free(2), pair{-1, 4});
 
+            // Edges pinned, so the subgraph rules have something to say.
             run_reachable_test(proofs, directed, "square_edges", square, free(4), Ranges{1, pair{0, 1}, pair{0, 1}, 0}, pair{0, 3});
 
             run_dup_reachable_test(proofs, directed, path3, 2, {0, 1, 0});

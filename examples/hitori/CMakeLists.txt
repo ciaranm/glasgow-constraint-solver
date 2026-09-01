@@ -5,6 +5,16 @@ target_link_libraries(hitori PRIVATE cxxopts)
 add_test(NAME hitori COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename hitori $<TARGET_FILE:hitori>)
 add_test(NAME hitori-no-connectivity COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename hitori-no-connectivity $<TARGET_FILE:hitori> --connectivity none)
 
+# The native `Reachable` propagator, with its cut-vertex and bridge forcing on
+# (the default) and off. These are the settings dev_docs/connectivity-proofs.md
+# measures, and the only place in the tree where the propagator meets an
+# instance-sized graph with an existentially quantified root, which is what
+# makes the forcing pay a proof line per candidate root. Both are cheaper to
+# solve and to check than the decomposition lane above, so this is coverage
+# rather than a cost trade.
+add_test(NAME hitori-propagator COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename hitori-propagator $<TARGET_FILE:hitori> --connectivity propagator)
+add_test(NAME hitori-propagator-no-cuts COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename hitori-propagator-no-cuts $<TARGET_FILE:hitori> --connectivity propagator-no-cuts)
+
 # The .dzn reader, on the same grid `--size 4 --seed 0` generates, so this lane
 # and the generator must agree on the optimum. Nothing else in examples/ runs
 # this reader: before issue #664 moved it onto the shared examples/dzn.hh it was
