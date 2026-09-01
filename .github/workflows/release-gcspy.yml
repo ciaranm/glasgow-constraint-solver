@@ -44,14 +44,30 @@ jobs:
       with:
         python-version: '3.12'
 
-    # scikit-build-core builds the sdist in an isolated environment (no compiler
-    # needed here). The package lives in python/, but its cmake.source-dir is the
-    # repo root, so the tarball bundles the whole solver source -- that is what
-    # lets a plain `pip install gcspy` compile on a machine with no wheel.
+    # The sdist must be rooted at the REPO ROOT, not python/: it has to carry the
+    # whole solver source (gcs/, the root CMakeLists.txt, ...) so a from-source
+    # `pip install gcspy` can compile. python/pyproject.toml uses cmake.source-dir
+    # = ".." for the in-tree developer install (`pip install ./python`), but an
+    # sdist cannot include files above its own pyproject, so building from python/
+    # packages python/ alone -- an 8 KB stub that cannot build. Synthesise a root
+    # pyproject from the dev one instead: drop cmake.source-dir (so it defaults to
+    # the repo root, now inside the tarball) and force GCS_BUILD_TESTS=OFF (at the
+    # root it defaults ON and would compile the whole test suite on install). The
+    # two edits are asserted below so a formatting change that breaks them fails
+    # loudly rather than shipping a broken sdist.
+    - name: Assemble the release pyproject at the repo root
+      run: |
+        sed -e '/cmake\.source-dir/d' \
+            -e 's/cmake\.args = \[/cmake.args = ["-DGCS_BUILD_TESTS=OFF", /' \
+            python/pyproject.toml > pyproject.toml
+        echo "--- generated root pyproject.toml ---"; cat pyproject.toml
+        grep -q -- '-DGCS_BUILD_TESTS=OFF' pyproject.toml || { echo "::error::GCS_BUILD_TESTS flag not injected"; exit 1; }
+        ! grep -q 'cmake\.source-dir' pyproject.toml     || { echo "::error::cmake.source-dir not stripped"; exit 1; }
+
     - name: Build sdist
       run: |
         python -m pip install --upgrade build
-        python -m build --sdist --outdir dist python
+        python -m build --sdist --outdir dist .
 
     # Confirm the sdist actually compiles and imports with a stock distro compiler
     # (ubuntu-24.04 ships GCC 13, this project's oldest supported compiler). This
@@ -78,8 +94,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, archs: arm64 }    # Apple silicon
-          - { os: macos-13, archs: x86_64 }   # Intel Macs (older Apple Clang -- riskier lane)
+          - { os: macos-15, archs: arm64 }         # Apple silicon
+          - { os: macos-15-intel, archs: x86_64 }  # Intel Macs
           - { os: ubuntu-24.04, archs: x86_64 }
 
     steps:

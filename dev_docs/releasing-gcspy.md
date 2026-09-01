@@ -13,15 +13,31 @@ note explains the *why* and the human steps around it.
 
 ## What a release produces
 
-- **An sdist** (`gcspy-X.Y.Z.tar.gz`) — the portable artifact. `python/`'s
-  `cmake.source-dir` is the repo root, so the tarball bundles the entire solver
-  source, and anyone with a supported compiler (GCC ≥ 13 / clang 21) can
-  `pip install gcspy` and build it. This is the guaranteed path: every user not
-  covered by a prebuilt wheel gets this.
+- **An sdist** (`gcspy-X.Y.Z.tar.gz`) — the portable artifact. Anyone with a
+  supported compiler (GCC ≥ 13 / clang 21) can `pip install gcspy` and build it.
+  This is the guaranteed path: every user not covered by a prebuilt wheel gets
+  this.
+
+  **The sdist must be rooted at the repo root**, and this is the one genuinely
+  subtle part of the whole setup. `python/pyproject.toml` sets
+  `cmake.source-dir = ".."`, which is correct for the in-tree developer install
+  (`pip install ./python`, where `..` really is the checkout root) but is a trap
+  for packaging: an sdist cannot contain files above its own `pyproject.toml`, so
+  building from `python/` yields an ~8 KB stub with only `python/`'s own files —
+  no `gcs/`, and a `cmake.source-dir` that then resolves *outside* the extracted
+  tarball. It configures against `/tmp` and fails. So the workflow synthesises a
+  root `pyproject.toml` from the dev one (drop `cmake.source-dir`; force
+  `GCS_BUILD_TESTS=OFF`, which at the root would otherwise default ON) and builds
+  the sdist from the repo root — which is exactly what the hand-built 0.1.9
+  release did with an uncommitted root pyproject. If you build a release sdist by
+  hand, do the same (see the manual steps below); `cd python && python -m build`
+  produces the broken stub.
 - **Wheels** for macOS (arm64 + x86_64) and manylinux_2_28 x86_64, CPython
   3.10–3.13. Convenience only — a wheel just spares the user the compile. They
   are **best-effort**: a wheel lane failing does not block the release; the
-  sdist plus whatever wheels succeeded still ship.
+  sdist plus whatever wheels succeeded still ship. (Python 3.14 is not in the
+  wheel set yet — it needs a pybind11 bump; 3.14 users compile from the sdist
+  meanwhile.)
 
 There are no Windows or Linux-aarch64 wheels, and no PyPy/musl wheels. Those
 users compile from the sdist. Widen `CIBW_BUILD` / the job matrix if that
@@ -51,11 +67,15 @@ polyfills via `FetchContent`, so no special compiler wrangling is needed there.
    (E.g. 0.1.9 was published by hand before the CI existed while the repo still
    read 0.1.8; the first CI release skipped to 0.1.10.)
 2. **Commit** the bump on `main` (or via PR).
-3. **Dry-run on TestPyPI.** Actions → *Release gcspy* → *Run workflow*, leave the
-   target as `testpypi`. This builds the sdist and all wheels and uploads them to
-   [test.pypi.org](https://test.pypi.org/project/gcspy/). Confirm the artifact
-   list looks right and, ideally, `pip install -i https://test.pypi.org/simple/
-   gcspy==X.Y.Z` in a clean venv.
+3. **Dry-run on TestPyPI — mandatory, not optional.** Nothing in PR CI exercises
+   this workflow (it triggers only on `workflow_dispatch` and `gcspy-v*` tags), so
+   a green PR says nothing about whether the release path works; the dry-run is
+   the only pre-tag test there is. Actions → *Release gcspy* → *Run workflow*,
+   leave the target as `testpypi`. This builds the sdist and all wheels and
+   uploads them to [test.pypi.org](https://test.pypi.org/project/gcspy/). Confirm
+   the artifact list looks right and `pip install -i
+   https://test.pypi.org/simple/ gcspy==X.Y.Z` in a clean venv. Only tag a real
+   release once a dry-run of the same commit has gone green.
 4. **Release for real** by pushing a tag matching `gcspy-v*`:
    ```shell
    git tag gcspy-v0.1.10
@@ -96,6 +116,31 @@ Trusted Publishing is set up), store it as the `PYPI_API_TOKEN` repo secret and
 follow the commented instructions at the bottom of the workflow. This is the
 worse option for the long term: the token is a long-lived secret tied to whoever
 created it, and it must be rotated when they leave.
+
+## Manual release (when you can't use CI)
+
+The CI is just automating the hand process, and you can still run it by hand
+against your own PyPI token. The one thing you must not skip is rooting the sdist
+at the repo root — `cd python && python -m build` produces the broken 8 KB stub
+(see *What a release produces*). From a clean checkout with the version bumped:
+
+```shell
+# Synthesise the root pyproject the same way the workflow does, then build there.
+sed -e '/cmake\.source-dir/d' \
+    -e 's/cmake\.args = \[/cmake.args = ["-DGCS_BUILD_TESTS=OFF", /' \
+    python/pyproject.toml > pyproject.toml
+rm -rf build dist
+python -m build            # sdist (full source) + one wheel for your local Python
+tar tzf dist/*.tar.gz | grep -q gcs/ || { echo "sdist is missing gcs/ -- do NOT upload"; }
+twine check dist/*
+twine upload dist/*        # your PyPI token
+rm -f pyproject.toml       # the root pyproject is a build artifact; don't commit it
+```
+
+This yields the same shape as the hand-built 0.1.9 (sdist + a single local-Python
+wheel). Verify with `pip install gcspy==X.Y.Z` in a clean venv. Don't also release
+the same version through CI afterwards — the duplicate sdist filename would be
+rejected.
 
 ## When a wheel build goes red
 
