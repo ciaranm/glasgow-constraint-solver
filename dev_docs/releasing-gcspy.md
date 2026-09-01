@@ -120,21 +120,36 @@ created it, and it must be rotated when they leave.
 ## Manual release (when you can't use CI)
 
 The CI is just automating the hand process, and you can still run it by hand
-against your own PyPI token. The one thing you must not skip is rooting the sdist
-at the repo root — `cd python && python -m build` produces the broken 8 KB stub
-(see *What a release produces*). From a clean checkout with the version bumped:
+against your own PyPI token. Two things you must not skip:
+
+- **Root the sdist at the repo root.** `cd python && python -m build` produces the
+  broken 8 KB stub (see *What a release produces*).
+- **Build from a clean export of tracked files, not your live checkout.** A
+  working tree accumulates `build/` directories; building there makes
+  `python -m build` pick up the local `build/` dir instead of the package
+  (`'build' is a package and cannot be directly executed`) and makes
+  scikit-build-core walk gigabytes of build output into the sdist (or crash on a
+  stale symlink inside it). `git archive` sidesteps both. CI is immune because a
+  fresh `actions/checkout` is already clean; a hand build is not.
+
+From a checkout with the version bumped and committed:
 
 ```shell
-# Synthesise the root pyproject the same way the workflow does, then build there.
+# 1. clean export of tracked files into a temp dir
+rm -rf /tmp/gcspy-src && mkdir -p /tmp/gcspy-src
+git archive HEAD | tar -x -C /tmp/gcspy-src
+cd /tmp/gcspy-src
+
+# 2. rooted pyproject (drop cmake.source-dir; force GCS_BUILD_TESTS=OFF)
 sed -e '/cmake\.source-dir/d' \
     -e 's/cmake\.args = \[/cmake.args = ["-DGCS_BUILD_TESTS=OFF", /' \
     python/pyproject.toml > pyproject.toml
-rm -rf build dist
+
+# 3. build, then REFUSE to upload a stub
 python -m build            # sdist (full source) + one wheel for your local Python
-tar tzf dist/*.tar.gz | grep -q gcs/ || { echo "sdist is missing gcs/ -- do NOT upload"; }
+test "$(tar tzf dist/*.tar.gz | grep -c '/gcs/')" -gt 0 || { echo "sdist has no gcs/ -- do NOT upload"; exit 1; }
 twine check dist/*
 twine upload dist/*        # your PyPI token
-rm -f pyproject.toml       # the root pyproject is a build artifact; don't commit it
 ```
 
 This yields the same shape as the hand-built 0.1.9 (sdist + a single local-Python
