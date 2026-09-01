@@ -95,6 +95,15 @@ The `clang-format` CI workflow enforces this on every push and pull request. To
 catch violations before CI, enable the tracked pre-commit hook once per clone
 with `git config core.hooksPath .githooks` (see CONTRIBUTING.md).
 
+## Releasing the Python bindings
+
+`gcspy` (the pybind11 module in `python/`) is published to PyPI. The version
+lives in `python/pyproject.toml`; a tag push matching `gcspy-v*` builds the
+sdist plus macOS/manylinux wheels and publishes via the `release-gcspy.yml`
+workflow. Full procedure, the compiler-floor wheel setup, and the one-time PyPI
+Trusted Publishing configuration are in
+[`dev_docs/releasing-gcspy.md`](dev_docs/releasing-gcspy.md).
+
 ## Compiler and Standard Library Support
 
 The codebase is built with **GCC 15.2.0**, **clang 21**, and **MSVC (Visual Studio

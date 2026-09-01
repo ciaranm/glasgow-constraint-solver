@@ -1,0 +1,200 @@
+name: Release gcspy
+
+# Builds and publishes the gcspy Python bindings to PyPI. Produces a source
+# distribution (the portable fallback -- anyone with a supported compiler can
+# build it) plus prebuilt wheels for macOS (arm64 + x86_64) and manylinux x86_64,
+# then uploads them.
+#
+# There are two ways to trigger a release:
+#   * Push a tag matching gcspy-v*  (e.g. gcspy-v0.1.10)  -> publishes to real PyPI.
+#   * Run the workflow manually (Actions -> Release gcspy -> Run workflow) and pick
+#     "testpypi" (the default, a safe dry run) or "pypi".
+#
+# The version that gets published is whatever is in python/pyproject.toml, NOT the
+# tag name -- keep them in step. See dev_docs/releasing-gcspy.md for the full
+# procedure, the one-time PyPI Trusted Publishing setup, and how to iterate on a
+# failing wheel build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to publish"
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+  push:
+    tags: [ "gcspy-v*" ]
+
+# Never let two release runs upload at once.
+concurrency:
+  group: release-gcspy
+  cancel-in-progress: false
+
+jobs:
+  build-sdist:
+    name: Build sdist
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    # The sdist must be rooted at the REPO ROOT, not python/: it has to carry the
+    # whole solver source (gcs/, the root CMakeLists.txt, ...) so a from-source
+    # `pip install gcspy` can compile. python/pyproject.toml uses cmake.source-dir
+    # = ".." for the in-tree developer install (`pip install ./python`), but an
+    # sdist cannot include files above its own pyproject, so building from python/
+    # packages python/ alone -- an 8 KB stub that cannot build. Synthesise a root
+    # pyproject from the dev one instead: drop cmake.source-dir (so it defaults to
+    # the repo root, now inside the tarball) and force GCS_BUILD_TESTS=OFF (at the
+    # root it defaults ON and would compile the whole test suite on install). The
+    # two edits are asserted below so a formatting change that breaks them fails
+    # loudly rather than shipping a broken sdist.
+    - name: Assemble the release pyproject at the repo root
+      run: |
+        sed -e '/cmake\.source-dir/d' \
+            -e 's/cmake\.args = \[/cmake.args = ["-DGCS_BUILD_TESTS=OFF", /' \
+            python/pyproject.toml > pyproject.toml
+        echo "--- generated root pyproject.toml ---"; cat pyproject.toml
+        grep -q -- '-DGCS_BUILD_TESTS=OFF' pyproject.toml || { echo "::error::GCS_BUILD_TESTS flag not injected"; exit 1; }
+        ! grep -q 'cmake\.source-dir' pyproject.toml     || { echo "::error::cmake.source-dir not stripped"; exit 1; }
+
+    - name: Build sdist
+      run: |
+        python -m pip install --upgrade build
+        python -m build --sdist --outdir dist .
+
+    # Confirm the sdist actually compiles and imports with a stock distro compiler
+    # (ubuntu-24.04 ships GCC 13, this project's oldest supported compiler). This
+    # is the path every from-source user takes, so a red here is a real release
+    # blocker even if the wheels are fine.
+    - name: Smoke-build the sdist from source
+      run: |
+        python -m pip install --verbose dist/*.tar.gz
+        python -c "import gcspy; print('gcspy import OK')"
+
+    - name: Upload sdist artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist-sdist
+        path: dist/*.tar.gz
+
+  build-wheels:
+    name: Wheels (${{ matrix.os }} / ${{ matrix.archs }})
+    needs: build-sdist
+    runs-on: ${{ matrix.os }}
+    # Best-effort: one platform failing must not sink the whole release. The
+    # publish job runs whatever wheels succeeded plus the always-present sdist.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-15, archs: arm64 }         # Apple silicon
+          - { os: macos-15-intel, archs: x86_64 }  # Intel Macs
+          - { os: ubuntu-24.04, archs: x86_64 }
+
+    steps:
+    - name: Download the sdist
+      uses: actions/download-artifact@v4
+      with:
+        name: dist-sdist
+        path: sdist
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    # Build wheels FROM the sdist tarball rather than the checkout: it is the exact
+    # source users get, it already contains the parent-dir solver sources, and it
+    # doubles as a check that the sdist builds on every platform.
+    - name: Build wheels
+      run: |
+        python -m pip install --upgrade cibuildwheel
+        python -m cibuildwheel --output-dir wheelhouse sdist/*.tar.gz
+      env:
+        CIBW_ARCHS: ${{ matrix.archs }}
+        # A focused CPython set. PyPy and musl skipped: this is a heavy C++23 build
+        # with a niche audience. Widen the range here if users ask.
+        CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
+        CIBW_SKIP: "*-musllinux*"
+        CIBW_BUILD_VERBOSITY: "1"
+        # Every wheel must import before it is kept.
+        CIBW_TEST_COMMAND: 'python -c "import gcspy; print(\"gcspy import OK\")"'
+        # CMAKE_ARGS=-DGCS_NATIVE_ARCH=OFF (in each lane's environment below) is the
+        # load-bearing bit for wheels: the Release build tunes with -march=native by
+        # default, which bakes in the build runner's CPU features (AVX-512, ...) with
+        # no fallback -- fine for a local/sdist source build, but a distributed wheel
+        # would then SIGILL on any older CPU. scikit-build-core forwards CMAKE_ARGS to
+        # the CMake configure. (sdist source builds keep the default ON and tune for
+        # the installing machine.)
+        # --- Linux only -------------------------------------------------------
+        # manylinux_2_28's default toolchain (GCC 12) predates our C++23 floor.
+        # AlmaLinux 8 can install gcc-toolset-13 (GCC 13, the oldest compiler we
+        # support). Static-link libstdc++/libgcc so the wheel does not require a
+        # newer libstdc++ than the manylinux_2_28 policy guarantees at runtime.
+        CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+        CIBW_BEFORE_ALL_LINUX: "dnf install -y gcc-toolset-13"
+        CIBW_ENVIRONMENT_LINUX: >-
+          CC=/opt/rh/gcc-toolset-13/root/usr/bin/gcc
+          CXX=/opt/rh/gcc-toolset-13/root/usr/bin/g++
+          LDFLAGS='-static-libstdc++ -static-libgcc'
+          CMAKE_ARGS=-DGCS_NATIVE_ARCH=OFF
+        # --- macOS only -------------------------------------------------------
+        # Match the deployment target of the previously published arm64 wheel.
+        # C++23 pieces libc++ lacks (<generator>, <print>) fall back to the
+        # bundled fmt / generator polyfills, so no special compiler is needed.
+        CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=12.0 CMAKE_ARGS=-DGCS_NATIVE_ARCH=OFF"
+
+    - name: Upload wheel artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist-wheels-${{ matrix.os }}-${{ matrix.archs }}
+        path: wheelhouse/*.whl
+
+  publish:
+    name: Publish to ${{ github.event_name == 'push' && 'pypi' || inputs.target }}
+    needs: [build-sdist, build-wheels]
+    # Publish as long as the sdist exists, even if some wheel lane failed -- ship
+    # the sdist plus whatever wheels succeeded rather than blocking the release.
+    if: ${{ always() && needs.build-sdist.result == 'success' }}
+    runs-on: ubuntu-24.04
+
+    # Trusted Publishing (OIDC): no PyPI token stored anywhere. PyPI is configured
+    # once to trust this repo + workflow + environment, and mints a short-lived
+    # credential per run. The environment name below must match the trusted
+    # publisher registered on PyPI (see dev_docs/releasing-gcspy.md).
+    environment:
+      name: ${{ github.event_name == 'push' && 'pypi' || inputs.target }}
+    permissions:
+      id-token: write
+
+    steps:
+    - name: Collect all artifacts into dist/
+      uses: actions/download-artifact@v4
+      with:
+        pattern: dist-*
+        path: dist
+        merge-multiple: true
+
+    - name: List what will be uploaded
+      run: ls -l dist
+
+    - name: Publish to TestPyPI
+      if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi' }}
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+
+    - name: Publish to PyPI
+      if: ${{ github.event_name == 'push' || inputs.target == 'pypi' }}
+      uses: pypa/gh-action-pypi-publish@release/v1
+      # To fall back to a stored API token instead of Trusted Publishing, drop the
+      # `environment`/`id-token` config above and uncomment:
+      #   with:
+      #     password: ${{ secrets.PYPI_API_TOKEN }}

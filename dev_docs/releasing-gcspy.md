@@ -1,0 +1,193 @@
+# Releasing gcspy (the Python bindings)
+
+`gcspy` is the pybind11 module built from `python/gcspy.cc`, published to
+[PyPI](https://pypi.org/project/gcspy/). This note is the procedure for cutting
+a release. It exists because none of it is derivable from the code: the version
+lives in one file, the compiler floor makes portable wheels awkward, and the
+publish path relies on out-of-repo configuration on PyPI.
+
+The whole thing is driven by
+[`.github/workflows/release-gcspy.yml`](../.github/workflows/release-gcspy.yml).
+Read that file alongside this note — the comments there explain each job; this
+note explains the *why* and the human steps around it.
+
+## What a release produces
+
+- **An sdist** (`gcspy-X.Y.Z.tar.gz`) — the portable artifact. Anyone with a
+  supported compiler (GCC ≥ 13 / clang 21) can `pip install gcspy` and build it.
+  This is the guaranteed path: every user not covered by a prebuilt wheel gets
+  this.
+
+  **The sdist must be rooted at the repo root**, and this is the one genuinely
+  subtle part of the whole setup. `python/pyproject.toml` sets
+  `cmake.source-dir = ".."`, which is correct for the in-tree developer install
+  (`pip install ./python`, where `..` really is the checkout root) but is a trap
+  for packaging: an sdist cannot contain files above its own `pyproject.toml`, so
+  building from `python/` yields an ~8 KB stub with only `python/`'s own files —
+  no `gcs/`, and a `cmake.source-dir` that then resolves *outside* the extracted
+  tarball. It configures against `/tmp` and fails. So the workflow synthesises a
+  root `pyproject.toml` from the dev one (drop `cmake.source-dir`; force
+  `GCS_BUILD_TESTS=OFF`, which at the root would otherwise default ON) and builds
+  the sdist from the repo root — which is exactly what the hand-built 0.1.9
+  release did with an uncommitted root pyproject. If you build a release sdist by
+  hand, do the same (see the manual steps below); `cd python && python -m build`
+  produces the broken stub.
+- **Wheels** for macOS (arm64 + x86_64) and manylinux_2_28 x86_64, CPython
+  3.10–3.13. Convenience only — a wheel just spares the user the compile. They
+  are **best-effort**: a wheel lane failing does not block the release; the
+  sdist plus whatever wheels succeeded still ship. (Python 3.14 is not in the
+  wheel set yet — it needs a pybind11 bump; 3.14 users compile from the sdist
+  meanwhile.)
+
+There are no Windows or Linux-aarch64 wheels, and no PyPy/musl wheels. Those
+users compile from the sdist. Widen `CIBW_BUILD` / the job matrix if that
+changes.
+
+## The compiler floor (why Linux wheels are fiddly)
+
+The solver is bleeding-edge C++23. The default toolchain inside a manylinux
+image is far too old. The workflow therefore builds Linux wheels in the
+`manylinux_2_28` image (AlmaLinux 8), `dnf install`s **gcc-toolset-13** (GCC 13
+is the oldest compiler this project supports — see `CLAUDE.md`), and points
+`CC`/`CXX` at it. It also passes `-static-libstdc++ -static-libgcc` so the
+extension does not depend on a newer `libstdc++` than the `manylinux_2_28`
+policy guarantees on the user's machine. If a future compiler bump raises the
+floor above GCC 13, bump the `gcc-toolset-NN` version (14 is also available in
+AlmaLinux 8; beyond that you may need a newer manylinux image).
+
+macOS builds with the runner's Apple Clang + libc++. C++23 pieces libc++ lacks
+(`<generator>`, `<print>`) fall back to the bundled `fmt` / `generator`
+polyfills via `FetchContent`, so no special compiler wrangling is needed there.
+
+## `-march=native` and portable wheels
+
+A Release build tunes for the build machine's CPU with `-march=native`
+(`CMakeLists.txt`, gated behind the `GCS_NATIVE_ARCH` option, default ON). That
+bakes in whatever instructions the builder had — AVX-512, BMI2, ... — with no
+runtime fallback, so a binary built on one machine `SIGILL`s ("illegal
+instruction", usually at import) on any older CPU. For a source build that is
+exactly right: you compile on your own machine and get a solver tuned for it.
+For a **wheel** — one binary installed on thousands of machines — it is a trap,
+and an invisible one: `auditwheel` only checks libraries/glibc, and the
+build-machine import test always passes because that machine has every
+instruction the wheel uses. So the wheel lanes pass `-DGCS_NATIVE_ARCH=OFF`
+(via `CMAKE_ARGS` in `CIBW_ENVIRONMENT_*`) to build against the portable
+manylinux / macOS x86-64 baseline. Leave that in place; without it a wheel's
+minimum CPU becomes an accident of which runner GitHub allocated.
+
+The sdist path keeps the default ON, which is what you want — except for one
+user-side gotcha worth knowing: `pip install gcspy` inside a `docker build`
+compiles for the *build host* and bakes `-march=native` into the image, so the
+image can `SIGILL` when the container is later run on older hardware. If you
+distribute such an image, build it with `PIP_CONFIG_SETTINGS` /
+`CMAKE_ARGS=-DGCS_NATIVE_ARCH=OFF`, or install the portable wheel instead.
+
+## Step-by-step: cutting a release
+
+1. **Bump the version.** Edit `version` in `python/pyproject.toml`. This string —
+   not the git tag — is what gets published. Check PyPI first: versions are
+   immutable and cannot be reused, so a collision means the upload is rejected.
+   (E.g. 0.1.9 was published by hand before the CI existed while the repo still
+   read 0.1.8; the first CI release skipped to 0.1.10.)
+2. **Commit** the bump on `main` (or via PR).
+3. **Dry-run on TestPyPI — mandatory, not optional.** Nothing in PR CI exercises
+   this workflow (it triggers only on `workflow_dispatch` and `gcspy-v*` tags), so
+   a green PR says nothing about whether the release path works; the dry-run is
+   the only pre-tag test there is. Actions → *Release gcspy* → *Run workflow*,
+   leave the target as `testpypi`. This builds the sdist and all wheels and
+   uploads them to [test.pypi.org](https://test.pypi.org/project/gcspy/). Confirm
+   the artifact list looks right and `pip install -i
+   https://test.pypi.org/simple/ gcspy==X.Y.Z` in a clean venv. Only tag a real
+   release once a dry-run of the same commit has gone green.
+4. **Release for real** by pushing a tag matching `gcspy-v*`:
+   ```shell
+   git tag gcspy-v0.1.10
+   git push origin gcspy-v0.1.10
+   ```
+   A tag push publishes to the real PyPI. (Alternatively, *Run workflow* with the
+   target set to `pypi`.)
+5. **Verify** it installs: `pip install gcspy==X.Y.Z` in a clean environment.
+
+Keep the tag and the `pyproject.toml` version in step — the workflow publishes
+the file's version regardless of the tag string, so a mismatched tag just
+mislabels the git history.
+
+## Authentication: Trusted Publishing (one-time PyPI setup)
+
+The workflow uses PyPI **Trusted Publishing** (OIDC): there is no API token
+stored in the repo. PyPI is configured once to trust this repository + workflow
++ environment, and GitHub mints a short-lived credential per run. This is
+deliberately the low-maintenance option — nothing to rotate, and nothing that
+belongs to one person.
+
+To set it up (needed once per index, by a PyPI project owner):
+
+1. On [pypi.org](https://pypi.org/manage/project/gcspy/settings/publishing/) →
+   the `gcspy` project → *Settings* → *Publishing* → *Add a new publisher*
+   (GitHub Actions):
+   - **Owner / repository**: this repo.
+   - **Workflow name**: `release-gcspy.yml`.
+   - **Environment**: `pypi`.
+2. Repeat on [test.pypi.org](https://test.pypi.org/) with environment `testpypi`
+   if you want the TestPyPI dry-run to work.
+3. Optionally create matching GitHub *Environments* named `pypi` and `testpypi`
+   (repo → Settings → Environments) and add required reviewers to `pypi` so a
+   real publish needs a human approval click.
+
+**Token fallback.** If you would rather use a stored API token (e.g. before
+Trusted Publishing is set up), store it as the `PYPI_API_TOKEN` repo secret and
+follow the commented instructions at the bottom of the workflow. This is the
+worse option for the long term: the token is a long-lived secret tied to whoever
+created it, and it must be rotated when they leave.
+
+## Manual release (when you can't use CI)
+
+The CI is just automating the hand process, and you can still run it by hand
+against your own PyPI token. Two things you must not skip:
+
+- **Root the sdist at the repo root.** `cd python && python -m build` produces the
+  broken 8 KB stub (see *What a release produces*).
+- **Build from a clean export of tracked files, not your live checkout.** A
+  working tree accumulates `build/` directories; building there makes
+  `python -m build` pick up the local `build/` dir instead of the package
+  (`'build' is a package and cannot be directly executed`) and makes
+  scikit-build-core walk gigabytes of build output into the sdist (or crash on a
+  stale symlink inside it). `git archive` sidesteps both. CI is immune because a
+  fresh `actions/checkout` is already clean; a hand build is not.
+
+From a checkout with the version bumped and committed:
+
+```shell
+# 1. clean export of tracked files into a temp dir
+rm -rf /tmp/gcspy-src && mkdir -p /tmp/gcspy-src
+git archive HEAD | tar -x -C /tmp/gcspy-src
+cd /tmp/gcspy-src
+
+# 2. rooted pyproject (drop cmake.source-dir; force GCS_BUILD_TESTS=OFF)
+sed -e '/cmake\.source-dir/d' \
+    -e 's/cmake\.args = \[/cmake.args = ["-DGCS_BUILD_TESTS=OFF", /' \
+    python/pyproject.toml > pyproject.toml
+
+# 3. build, then REFUSE to upload a stub
+python -m build            # sdist (full source) + one wheel for your local Python
+test "$(tar tzf dist/*.tar.gz | grep -c '/gcs/')" -gt 0 || { echo "sdist has no gcs/ -- do NOT upload"; exit 1; }
+twine check dist/*
+twine upload dist/*        # your PyPI token
+```
+
+This yields the same shape as the hand-built 0.1.9 (sdist + a single local-Python
+wheel). Verify with `pip install gcspy==X.Y.Z` in a clean venv. Don't also release
+the same version through CI afterwards — the duplicate sdist filename would be
+rejected.
+
+## When a wheel build goes red
+
+Wheels are best-effort, so a red lane still lets the sdist publish — but you'll
+want to fix it. The Linux lane is the usual suspect (manylinux image contents
+and the C++23 frontier both drift). To iterate without cutting a release, use
+*Run workflow* against `testpypi` and read the failing job's log. The build runs
+`cibuildwheel` over the sdist tarball, so anything that reproduces locally does
+so with `pipx run cibuildwheel <sdist>.tar.gz` and the same `CIBW_*` environment
+the workflow sets. Common fixes: bump `gcc-toolset-NN`, move to a newer
+`manylinux_2_XX` image, or (last resort) drop a platform from the matrix and let
+its users compile from the sdist until it can be restored.

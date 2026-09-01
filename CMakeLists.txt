@@ -157,6 +157,14 @@ set(GCS_TEST_MAX_RECURSIONS "1500" CACHE STRING "Default per-solve search-node c
 # leaves no warning to promote.)
 option(GCS_WERROR "Treat compiler warnings as errors (CI lane only; not for normal builds)" OFF)
 
+# Native CPU tuning helps Release performance but is unsafe to redistribute:
+# -march=native bakes in whatever instructions the build machine has (AVX-512, ...),
+# with no runtime fallback, so a binary built on one machine SIGILLs on any older
+# one. ON (the default) tunes for the build host, which is what a local or sdist
+# source build wants; the wheel lanes pass -DGCS_NATIVE_ARCH=OFF so the published
+# binaries stay portable across the manylinux / macOS x86-64 baseline.
+option(GCS_NATIVE_ARCH "Tune the Release build for the build machine's CPU with -march=native; turn OFF for redistributable binaries such as wheels" ON)
+
 # Compiler flag checks always run so results are available for target-specific use.
 include(CheckCXXCompilerFlag)
 unset(COMPILER_SUPPORTS_MARCH_NATIVE CACHE)
@@ -259,8 +267,9 @@ if(PROJECT_IS_TOP_LEVEL)
         add_compile_options(-pthread)
         add_link_options(-pthread)
 
-        # Native CPU tuning is worthwhile for release performance but unhelpful for debugging.
-        if(COMPILER_SUPPORTS_MARCH_NATIVE)
+        # Native CPU tuning is worthwhile for release performance but unhelpful for
+        # debugging, and unsafe to redistribute -- see the GCS_NATIVE_ARCH option above.
+        if(GCS_NATIVE_ARCH AND COMPILER_SUPPORTS_MARCH_NATIVE)
             add_compile_options($<$<CONFIG:Release>:-march=native>)
         endif()
     endif()
