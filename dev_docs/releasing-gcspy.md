@@ -59,6 +59,29 @@ macOS builds with the runner's Apple Clang + libc++. C++23 pieces libc++ lacks
 (`<generator>`, `<print>`) fall back to the bundled `fmt` / `generator`
 polyfills via `FetchContent`, so no special compiler wrangling is needed there.
 
+## `-march=native` and portable wheels
+
+A Release build tunes for the build machine's CPU with `-march=native`
+(`CMakeLists.txt`, gated behind the `GCS_NATIVE_ARCH` option, default ON). That
+bakes in whatever instructions the builder had — AVX-512, BMI2, ... — with no
+runtime fallback, so a binary built on one machine `SIGILL`s ("illegal
+instruction", usually at import) on any older CPU. For a source build that is
+exactly right: you compile on your own machine and get a solver tuned for it.
+For a **wheel** — one binary installed on thousands of machines — it is a trap,
+and an invisible one: `auditwheel` only checks libraries/glibc, and the
+build-machine import test always passes because that machine has every
+instruction the wheel uses. So the wheel lanes pass `-DGCS_NATIVE_ARCH=OFF`
+(via `CMAKE_ARGS` in `CIBW_ENVIRONMENT_*`) to build against the portable
+manylinux / macOS x86-64 baseline. Leave that in place; without it a wheel's
+minimum CPU becomes an accident of which runner GitHub allocated.
+
+The sdist path keeps the default ON, which is what you want — except for one
+user-side gotcha worth knowing: `pip install gcspy` inside a `docker build`
+compiles for the *build host* and bakes `-march=native` into the image, so the
+image can `SIGILL` when the container is later run on older hardware. If you
+distribute such an image, build it with `PIP_CONFIG_SETTINGS` /
+`CMAKE_ARGS=-DGCS_NATIVE_ARCH=OFF`, or install the portable wheel instead.
+
 ## Step-by-step: cutting a release
 
 1. **Bump the version.** Edit `version` in `python/pyproject.toml`. This string —

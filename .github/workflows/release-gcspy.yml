@@ -126,6 +126,13 @@ jobs:
         CIBW_BUILD_VERBOSITY: "1"
         # Every wheel must import before it is kept.
         CIBW_TEST_COMMAND: 'python -c "import gcspy; print(\"gcspy import OK\")"'
+        # CMAKE_ARGS=-DGCS_NATIVE_ARCH=OFF (in each lane's environment below) is the
+        # load-bearing bit for wheels: the Release build tunes with -march=native by
+        # default, which bakes in the build runner's CPU features (AVX-512, ...) with
+        # no fallback -- fine for a local/sdist source build, but a distributed wheel
+        # would then SIGILL on any older CPU. scikit-build-core forwards CMAKE_ARGS to
+        # the CMake configure. (sdist source builds keep the default ON and tune for
+        # the installing machine.)
         # --- Linux only -------------------------------------------------------
         # manylinux_2_28's default toolchain (GCC 12) predates our C++23 floor.
         # AlmaLinux 8 can install gcc-toolset-13 (GCC 13, the oldest compiler we
@@ -137,11 +144,12 @@ jobs:
           CC=/opt/rh/gcc-toolset-13/root/usr/bin/gcc
           CXX=/opt/rh/gcc-toolset-13/root/usr/bin/g++
           LDFLAGS='-static-libstdc++ -static-libgcc'
+          CMAKE_ARGS=-DGCS_NATIVE_ARCH=OFF
         # --- macOS only -------------------------------------------------------
         # Match the deployment target of the previously published arm64 wheel.
         # C++23 pieces libc++ lacks (<generator>, <print>) fall back to the
         # bundled fmt / generator polyfills, so no special compiler is needed.
-        CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=12.0"
+        CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=12.0 CMAKE_ARGS=-DGCS_NATIVE_ARCH=OFF"
 
     - name: Upload wheel artifacts
       uses: actions/upload-artifact@v4
