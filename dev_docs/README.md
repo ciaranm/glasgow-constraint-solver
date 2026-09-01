@@ -213,7 +213,7 @@ library. For an introduction to *using* the solver, start with the top-level
   costs a proof line per candidate root while one made after costs one line
   (measured, not assumed), the `O(nodes × edges)` size that is the price,
   and the measured hitori comparison — 815 MB / 796 s of decomposition proof
-  against 130 KB / 0.09 s.
+  against 0.25 MB / 0.14 s.
 - [`MinDistance`: encoding and proofs](min-distance-proofs.md) — the definitional
   OPB encoding for `min_distance(D, x, z)` (site-selection flags, per-site counts,
   pair clauses, and the min-attained ladder), the justification for each of the

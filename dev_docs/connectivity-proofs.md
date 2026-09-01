@@ -252,9 +252,9 @@ the pattern sizes that solver sees and worse than the unfolding here.
 
 ## Measured against the decomposition
 
-`examples/hitori --connectivity decomposition|propagator|none` posts the same
-requirement three ways, so the comparison is one instance in one binary. On `h5-1`
-(fataepyc-10, VeriPB 3.0.2):
+`examples/hitori --connectivity decomposition|propagator|propagator-no-cuts|none`
+posts the same requirement four ways, so the comparison is one instance in
+one binary. On `h5-1` (fataepyc-10, VeriPB 3.0.2):
 
 | `h5-1` | `decomposition` | `propagator` | `propagator-no-cuts` | `none` (relaxation) |
 |---|--:|--:|--:|--:|
@@ -301,7 +301,7 @@ with only the encoding taken away:
 
 | `h11-1`, with proof | `.opb` | `.pbp` | veripb | s per `.pbp` MB |
 |---|--:|--:|--:|--:|
-| `propagator` | 16.4 MB, 141 506 rows | 93.7 MB | 626.7 s | 6.7 |
+| `propagator-no-cuts` | 16.4 MB, 141 506 rows | 93.7 MB | 626.7 s | 6.7 |
 | `none` | 0.67 MB | **9.65 GB** | 779.9 s | **0.08** |
 
 The relaxation's proof is 103× the size and takes only 1.24× as long to check. All
@@ -319,14 +319,15 @@ how #637 was sized.** On `h5-1` the relaxation is the floor: 19 recursions and
 "connectivity is very nearly the whole benchmark". On `h11-1` the same relaxation
 takes **446 479 recursions, 86 s, and 9.65 GB of proof** (verifying, at 779.9 s,
 for an objective of 323 against the real 232) — two orders of magnitude of proof
-worse than solving the real problem with the propagator. Dropping connectivity
+worse than solving the real problem with the propagator in its `-no-cuts` setting
+(one order against the default's 679 MB). Dropping connectivity
 makes hitori's *objective* much harder, because far more shadings become feasible,
 and at `h11-1` that dominates whatever the connectivity encoding costs. So the
 attribution argument is an `h5-1` fact, not a hitori fact: at that size
 connectivity is pure overhead, and by `h11-1` it is load-bearing for search.
 
 Two things that table does *not* say, and should not be read into it. The
-propagator is not competing with the decomposition on strength alone: 38 recursions
+propagator is not competing with the decomposition on strength alone: 24 recursions
 against 113 671 is mostly the decomposition's distance labelling being a bad thing
 to search over, not the propagator being clever — the rules it implements are the
 straightforward ones. And `h5-1` is, as issue #637 says, a connectivity benchmark
