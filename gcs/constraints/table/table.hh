@@ -2,9 +2,11 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_TABLE_TABLE_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/extensional_utils.hh>
 #include <gcs/extensional.hh>
 #include <gcs/variable_id.hh>
 
+#include <memory>
 #include <vector>
 
 namespace gcs
@@ -21,7 +23,7 @@ namespace gcs
     private:
         const std::vector<IntegerVariableID> _vars;
         ExtensionalTuples _tuples;
-        SimpleIntegerVariableID _selector{0};
+        std::shared_ptr<innards::ExtensionalLiveTuples> _live;
         bool _has_no_tuples = false;
 
     public:

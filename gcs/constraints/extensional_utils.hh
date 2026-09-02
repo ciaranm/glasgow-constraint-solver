@@ -7,7 +7,7 @@
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/reason.hh>
-#include <gcs/innards/state-fwd.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
@@ -43,20 +43,41 @@ namespace gcs::innards
     };
 
     /**
+     * \brief The set of tuples still selectable, owned by the propagator.
+     *
+     * A sparse set: \c dense[0, size) are the live tuple indices and \c position
+     * is its inverse, so membership is a single comparison and removal is a swap
+     * with the last live entry. Only \c size is backtrackable, which is what
+     * makes this cheap: everything ever removed sits at an index at or above
+     * \c size, and every removal at a deeper node swaps within [0, size), so
+     * restoring \c size re-admits exactly the tuples dropped since. The order
+     * within the live region differs after a backtrack, which changes only which
+     * support witness is found first, never which values are supported -- so the
+     * inferences, and the proof, are unchanged.
+     *
+     * This replaces using a selector variable's domain as the live set. That cost
+     * 32 trailed IntervalSet edits per useful inference, because a domain shot
+     * full of holes splits on every removal; here a removal is two stores and a
+     * decrement, and nothing goes through State's inference path at all.
+     *
+     * \ingroup Innards
+     */
+    struct ExtensionalLiveTuples
+    {
+        std::vector<std::uint32_t> dense;
+        std::vector<std::uint32_t> position;
+        ConstraintStateHandle size_handle{0};
+
+        [[nodiscard]] static auto create(State & initial_state, std::size_t n_tuples) -> std::shared_ptr<ExtensionalLiveTuples>;
+    };
+
+    /**
      * \brief Data for gcs::innards::propagate_extensional().
      *
      * \ingroup Innards
      */
     struct ExtensionalData
     {
-        /**
-         * Always a variable this constraint allocated itself, so it is concrete:
-         * naming it as such lets State's SimpleIntegerVariableID overloads skip
-         * the IntegerVariableID variant visit and the view arithmetic. Pass 2's
-         * residue fast path asks in_domain() about it once per (variable, value)
-         * examined, which is millions of reads on a table of any size.
-         */
-        SimpleIntegerVariableID selector;
         std::vector<IntegerVariableID> vars;
         ExtensionalTuples tuples;
         std::shared_ptr<ExtensionalResidues> residues = std::make_shared<ExtensionalResidues>();
@@ -74,7 +95,17 @@ namespace gcs::innards
          */
         Reason reason;
 
-        ExtensionalData(SimpleIntegerVariableID selector, std::vector<IntegerVariableID> vars, ExtensionalTuples tuples);
+        /**
+         * The live-tuple set. There is deliberately no selector variable here: the
+         * selector exists only so that the OPB encoding has something to name, so
+         * it is a proof-only variable owned by define_proof_model and the
+         * propagator never sees it. Nothing this propagator infers mentions it --
+         * the selector prunings were always NoJustificationNeeded, and VeriPB
+         * re-derives them by unit propagation when it checks a `var != val` RUP.
+         */
+        std::shared_ptr<ExtensionalLiveTuples> live;
+
+        ExtensionalData(std::vector<IntegerVariableID> vars, ExtensionalTuples tuples, std::shared_ptr<ExtensionalLiveTuples> live);
     };
 
     /**

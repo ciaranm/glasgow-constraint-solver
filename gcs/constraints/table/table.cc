@@ -117,15 +117,15 @@ auto Table::prepare(Propagators &, State & initial_state, ProofModel * const) ->
                 // define_proof_model emit a trivially-false `0 >= 1` constraint
                 // (which is morally what an empty selector domain encodes), and
                 // install_propagators installs a contradiction initialiser. Skip
-                // the selector allocation: an empty range [0, -1] would be
-                // invalid, and the propagator won't run anyway.
+                // building the live-tuple set: it would be empty and the
+                // propagator won't run anyway.
                 _has_no_tuples = true;
                 return;
             }
             for (auto & tuple : depointinate(tuples))
                 if (tuple.size() != _vars.size())
                     throw InvalidProblemDefinitionException{"table size mismatch"};
-            _selector = initial_state.allocate_integer_variable_with_state(0_i, Integer(depointinate(tuples).size() - 1));
+            _live = ExtensionalLiveTuples::create(initial_state, depointinate(tuples).size());
         },
         _tuples);
 
@@ -142,15 +142,20 @@ auto Table::define_proof_model(ProofModel & model, const State &) -> void
 
     visit(
         [&](auto && tuples) {
-            model.set_up_integer_variable(_selector, 0_i, Integer(depointinate(tuples).size() - 1), "aux_table" + to_string(_selector.index),
-                IntegerVariableProofRepresentation::DirectOnly);
+            // Proof-only: the selector exists so the encoding has something to
+            // name, and nothing in the proof ever cites it -- the per-tuple rows
+            // below are all VeriPB needs to re-derive `selector != i` by unit
+            // propagation when it checks one of the propagator's RUP steps. So it
+            // gets no State, no domain, and no propagation cost.
+            auto selector = model.create_proof_only_integer_variable(0_i, Integer(depointinate(tuples).size() - 1),
+                "aux_table" + as_string(_constraint_id), IntegerVariableProofRepresentation::DirectOnly);
 
             // pb encoding, if necessary
             for (const auto & [tuple_idx, tuple] : enumerate(depointinate(tuples))) {
                 // selector == tuple_idx -> /\_i vars[i] == tuple[i]
                 bool infeasible = false;
                 WPBSum lits;
-                lits += Integer(tuple.size()) * (_selector != Integer(tuple_idx));
+                lits += Integer(tuple.size()) * (selector != Integer(tuple_idx));
                 for (const auto & [var_idx, var] : enumerate(_vars)) {
                     if (is_immediately_infeasible(var, tuple[var_idx]))
                         infeasible = true;
@@ -158,7 +163,7 @@ auto Table::define_proof_model(ProofModel & model, const State &) -> void
                         add_lit_unless_immediately_true(lits, var, tuple[var_idx]);
                 }
                 if (infeasible)
-                    model.add_constraint({_selector != Integer(tuple_idx)});
+                    model.add_constraint(WPBSum{} + 1_i * (selector != Integer(tuple_idx)) >= 1_i);
                 else
                     model.add_constraint(lits >= Integer(lits.terms.size() - 1));
             }
@@ -179,11 +184,10 @@ auto Table::install_propagators(Propagators & propagators) -> void
             Triggers triggers;
             for (auto & v : _vars)
                 triggers.on_change.push_back(v);
-            triggers.on_change.push_back(_selector);
 
             propagators.install(
                 constraint_id(),
-                [table = ExtensionalData{_selector, move(_vars), move(tuples)}, owner = constraint_id()](
+                [table = ExtensionalData{move(_vars), move(tuples), move(_live)}, owner = constraint_id()](
                     const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     return propagate_extensional(table, state, inference, logger, hints::Table{owner});
                 },
