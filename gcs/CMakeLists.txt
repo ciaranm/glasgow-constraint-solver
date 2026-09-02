@@ -779,6 +779,11 @@ if(GCS_BUILD_TESTS)
     add_test(NAME subcircuit_scc COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subcircuit_scc_test>)
     add_view_tests(subcircuit_scc subcircuit_scc_test 12)
 
+    add_executable(subcircuit_scc_reaches_anchor_test constraints/circuit/subcircuit_scc_reaches_anchor_test.cc)
+    target_link_libraries(subcircuit_scc_reaches_anchor_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME subcircuit_scc_reaches_anchor COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subcircuit_scc_reaches_anchor_test>)
+    add_view_tests(subcircuit_scc_reaches_anchor subcircuit_scc_reaches_anchor_test 12)
+
     add_executable(subcircuit_test constraints/circuit/subcircuit_test.cc)
     target_link_libraries(subcircuit_test PRIVATE glasgow_constraint_solver)
     add_test(NAME subcircuit_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subcircuit_test>)
