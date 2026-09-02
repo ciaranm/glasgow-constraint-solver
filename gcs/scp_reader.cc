@@ -1085,6 +1085,11 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
                 throw ScpReadError{"circuit takes one list: (label circuit (succ...))"};
             post_constraint(problem, Circuit{resolve_variable_list(variables, terms[2], "the circuit successor list")}, label);
         }
+        else if (op == "subcircuit") {
+            if (terms.size() != 3)
+                throw ScpReadError{"subcircuit takes one list: (label subcircuit (succ...))"};
+            post_constraint(problem, SubCircuit{resolve_variable_list(variables, terms[2], "the subcircuit successor list")}, label);
+        }
         else if (op == "array_min" || op == "array_max") {
             // (label array_min (vars...) result): result = min/max of the array.
             if (terms.size() != 4)

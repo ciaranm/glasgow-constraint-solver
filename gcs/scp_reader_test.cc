@@ -53,6 +53,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -69,6 +70,7 @@ using namespace gcs;
 
 using std::map;
 using std::set;
+using std::size_t;
 using std::string;
 using std::string_view;
 using std::vector;
@@ -177,6 +179,47 @@ TEST_CASE("read_scp: circuit enumerates the Hamiltonian cycles")
         ))");
 
     CHECK(solutions == set<map<string, long long>>{{{"A", 1}, {"B", 2}, {"C", 0}}, {{"A", 2}, {"B", 0}, {"C", 1}}});
+}
+
+TEST_CASE("read_scp: subcircuit enumerates the single-tour permutations")
+{
+    // Four nodes is the smallest size that says anything beyond all-different: with three
+    // you cannot fit two disjoint cycles, so every permutation is a subcircuit. Here the
+    // three products of two 2-cycles are the only permutations excluded, leaving 21 --
+    // including the identity, which is the empty subcircuit and a solution.
+    auto solutions = enumerate(R"(
+        (
+            (version 1)
+            (variables (A 0 3) (B 0 3) (C 0 3) (D 0 3))
+            (constraints (_1 subcircuit (A B C D)))
+            (prob_type enumerate)
+        ))");
+
+    CHECK(solutions.size() == 21);
+    for (const auto & s : solutions) {
+        auto succ = vector<long long>{s.at("A"), s.at("B"), s.at("C"), s.at("D")};
+        auto seen = set<long long>{succ.begin(), succ.end()};
+        CHECK(seen.size() == 4);
+        auto tours = 0;
+        auto visited = set<long long>{};
+        for (long long i = 0; i < 4; ++i) {
+            if (visited.contains(i))
+                continue;
+            auto j = i;
+            auto length = 0;
+            do {
+                visited.insert(j);
+                j = succ[static_cast<size_t>(j)];
+                ++length;
+            } while (j != i);
+            if (length >= 2)
+                ++tours;
+        }
+        CHECK(tours <= 1);
+    }
+    // The two products of two 2-cycles that all-different alone would allow.
+    CHECK(! solutions.contains({{"A", 1}, {"B", 0}, {"C", 3}, {"D", 2}}));
+    CHECK(! solutions.contains({{"A", 2}, {"B", 3}, {"C", 0}, {"D", 1}}));
 }
 
 TEST_CASE("read_scp: array_min / array_max enumerate correctly")
@@ -1109,6 +1152,24 @@ TEST_CASE("read_scp: a solver-written .scp survives write -> read -> write uncha
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_roundtrip_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: subcircuit survives write -> read -> write unchanged")
+{
+    Problem original;
+    auto a = original.create_integer_variable(0_i, 3_i, "A");
+    auto b = original.create_integer_variable(0_i, 3_i, "B");
+    auto c = original.create_integer_variable(0_i, 3_i, "C");
+    auto d = original.create_integer_variable(0_i, 3_i, "D");
+    original.post(SubCircuit{std::vector<IntegerVariableID>{a, b, c, d}});
+    auto scp_a = prove_to_scp(original, "scp_reader_subcircuit_roundtrip_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_subcircuit_roundtrip_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());

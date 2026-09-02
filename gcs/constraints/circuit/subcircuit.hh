@@ -1,0 +1,124 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_CIRCUIT_SUBCIRCUIT_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_CIRCUIT_SUBCIRCUIT_HH
+
+#include <gcs/constraint.hh>
+#include <gcs/constraints/circuit/subcircuit_base.hh>
+#include <gcs/variable_id.hh>
+
+#include <memory>
+#include <optional>
+#include <variant>
+#include <vector>
+
+namespace gcs
+{
+    namespace subcircuit
+    {
+        /**
+         * \brief Propagate SubCircuit by checking only: follow each chain of fixed
+         * successors, and when one closes into a cycle, force every node outside that
+         * cycle to be a self loop.
+         *
+         * This is Francis and Stuckey's `check`. It fires only on instantiation and does
+         * no lookahead, so it is the cheapest option and the weakest.
+         *
+         * \ingroup Constraints
+         */
+        struct Check final
+        {
+        };
+
+        /**
+         * \brief Propagate SubCircuit by checking and preventing: as subcircuit::Check,
+         * and additionally forbid a chain of fixed successors from closing into a cycle
+         * whenever some node outside the chain is already known to be on the circuit.
+         *
+         * This is Francis and Stuckey's `check` plus `prevent`; `prevent` is not complete
+         * on its own, so the two always go together. This is the default.
+         *
+         * The node outside the chain is their *evidence node*: unlike Circuit, where any
+         * short cycle is a contradiction, a short cycle here is only wrong if some other
+         * node cannot be a self loop, so nothing can be inferred until such a node exists.
+         *
+         * \ingroup Constraints
+         */
+        struct Prevent final
+        {
+        };
+    }
+
+    /**
+     * \brief The propagation algorithms supported by SubCircuit: subcircuit::Prevent (the
+     * default) or subcircuit::Check (cheaper and weaker). Requesting anything else is a
+     * compile-time error, and the choice never changes the constraint's meaning or its
+     * proof encoding.
+     *
+     * \ingroup Constraints
+     */
+    using SubCircuitAlgorithm = std::variant<subcircuit::Check, subcircuit::Prevent>;
+
+    /**
+     * \brief SubCircuit constraint: requires the variables, representing graph nodes, to
+     * take values such that each variable's value is the index of the next node on a
+     * single tour, where a node not on the tour takes its own index as its value.
+     *
+     * This is MiniZinc's `subcircuit`, and the semantics have three corners worth stating
+     * outright:
+     *
+     * - the **empty** subcircuit, every node pointing at itself, is a solution;
+     * - the smallest non-empty one has **two** nodes, since a node pointing at itself is
+     *   by definition off the tour, so there is no one-node cycle either to allow or to
+     *   forbid;
+     * - the successors are a permutation whether or not a node is on the tour, so
+     *   all-different holds over the whole array. A node off the tour takes its own index,
+     *   which is exactly what stops it being anyone else's successor.
+     *
+     * Circuit is the stricter constraint that additionally requires every node to be on
+     * the tour; it is not a special case of this one, nor this one of it.
+     *
+     * The constructor takes only the successor array; configure propagation with the
+     * fluent setters. Select the algorithm with with_algorithm() (subcircuit::Prevent by
+     * default, or subcircuit::Check). Neither choice changes the constraint's meaning or
+     * the OPB encoding written for proof logging.
+     *
+     * \ingroup Constraints
+     */
+    class SubCircuit : public Constraint
+    {
+    private:
+        const std::vector<IntegerVariableID> _succ;
+        SubCircuitAlgorithm _algorithm = subcircuit::Prevent{};
+        bool _gac_all_different = false;
+
+        // Backtrackable state allocated by prepare(), consumed by install_propagators().
+        innards::subcircuit::SubCircuitStateHandles _state_handles;
+
+        // The position-variable encoding, built by define_proof_model() and captured by
+        // the algorithm's propagator. Empty when proof logging is off, which is what
+        // both algorithms expect.
+        innards::subcircuit::SubCircuitPosData _pos_data;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+
+    public:
+        explicit SubCircuit(std::vector<IntegerVariableID> succ);
+
+        /// Select the propagation algorithm: subcircuit::Prevent (the default) or
+        /// subcircuit::Check. The choice selects propagation strength only and never
+        /// changes the OPB encoding.
+        auto with_algorithm(SubCircuitAlgorithm algorithm) -> SubCircuit &;
+
+        /// Enforce all-different over the successors with a full generalised-arc-consistent
+        /// propagator, in addition to the subcircuit propagation. Off by default (a cheaper
+        /// value-consistent all-different is always applied regardless).
+        auto with_gac_all_different(std::optional<bool> enable = true) -> SubCircuit &;
+
+        [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
+        [[nodiscard]] virtual auto constraint_type() const -> std::string override;
+    };
+}
+
+#endif // GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_CIRCUIT_SUBCIRCUIT_HH
