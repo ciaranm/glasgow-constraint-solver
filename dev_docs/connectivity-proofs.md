@@ -334,6 +334,107 @@ straightforward ones. And `h5-1` is, as issue #637 says, a connectivity benchmar
 wearing a puzzle costume; a model that also does other things will not see ratios
 like these.
 
+## The tree and path family, on top of this
+
+`Tree`, `DTree`, `Path` and `DPath` are the rest of MiniZinc's `globals.graph`
+ladder, and none of them needs a new encoding or a new proof idea. Each posts
+*one* of the reachability encodings above, a linear cardinality equality, and a
+handful of counting rows of its own:
+
+| constraint | reachability child | its own rows |
+|---|---|---|
+| `Tree` | `Reachable` from the root | — |
+| `DTree` | `DReachable` from the root | at most one selected edge into each node |
+| `Path` | `Reachable` from the start | degree at most two, at most one at each end, none at all when the ends coincide |
+| `DPath` | `DReachable` from the start | in- and out-degree at most one, none in at the start, none out of the end, and the end is selected |
+
+Each also posts `sum(es) = sum(ns) - 1`, as a `LinearEquality` child.
+
+Why this is enough, in one line each. A connected subgraph with one fewer edge
+than nodes is a tree, and conversely. Directed, "every selected node is reached
+from the root" gives each non-root node an edge coming in, "at most one" makes it
+exactly one, and the count then leaves the root with none — an arborescence. A
+tree whose degrees are all at most two is a path, and its ends are the nodes of
+degree one. Directed, out-degree at most one means the walk from the start cannot
+branch, so reaching everything from the start makes the selected subgraph one
+walk, and nothing leaving the end stops it there.
+
+The `start = end` case is the one that needs saying out loud, and it is where a
+first attempt was wrong. "At most one edge at each end" admits the start joined to
+one more node when the two ends are the same variable value: that is a path of
+length one, not a path from a node to itself. `Path` therefore also carries, per
+node, a row saying that when *both* ends are that node it has no incident selected
+edge at all — reachability then makes the subgraph that node alone. `DPath` gets
+this for free, because nothing in and nothing out already isolates the node.
+
+### One reachability encoding, not two
+
+The stdlib reaches the same family by doubling every undirected edge and then, for
+`dpath`, asking for two spanning trees — one on the graph and one on its reverse.
+Both of those are worth avoiding here rather than there, because the encoding above
+is `O(nodes × edges)`: doubling the edge set doubles it, and a second spanning tree
+doubles it again. The counting rows cost `O(edges)` in total, so the whole family
+stays on one unfolding.
+
+### Why the counting rows are this constraint's own, and not more children
+
+`Tree` could not be written as "post `Reachable`, then post a linear constraint per
+node", even though that is what it means. Two OPB rows may not share a
+`c[id][role]` label, a child constraint builds its label from its own id and its
+own role, and every plain `LinearLessThanEqual` uses the same empty role — so a
+second linear child under the parent's id is refused by `ProofModel`, with a
+message that says exactly what the rule is: *a role must name everything that
+varies*. One reachability child and one linear child coexist because their roles
+differ; anything past that has to be rows the constraint writes itself, with roles
+naming the node and the degree they are about (`indeg7`, `startdeg7`). That is what
+`gcs/constraints/innards/graph_rules.hh` is: the rows, and a propagator that
+enforces them forwards (a full rule pushes the rest out) and backwards (a rule that
+cannot hold rules out the one condition still open, which is how "nothing enters the
+start" removes a node from the start variable's domain).
+
+Every inference is a plain RUP against exactly the row its rule wrote, for the same
+reason the reachability ones are: the row is a cardinality bound over decided
+literals, and the reason is those literals.
+
+### These are not GAC
+
+`Reachable` is generalised-arc-consistent and the cardinality equality is
+generalised-arc-consistent, and their conjunction is not — the general point
+[`constraints.md`](constraints.md) makes about decompositions. Concretely, nothing
+here notices that a selected edge would close a cycle until the cardinality count
+runs out of room. The tests say so by using `solve_for_tests` rather than
+`solve_for_tests_checking_gac`, and the class documentation says so too, because
+these sit next to a constraint that does claim GAC. A union-find cycle check is the
+obvious later strengthening, and this decomposition is the baseline to measure it
+against.
+
+### Measured, on a grid Steiner tree
+
+`steiner` is `tree` plus a weighted sum, so it reaches `Tree` through the stdlib's
+own wrapper. On a 3 × 3 grid with five terminals and edge weights 1–5, one solver,
+the same model, and the same optimum of 12 — the only difference being whether
+`minizinc/mznlib/fzn_tree_*.mzn` is present:
+
+| `steiner`, 3 × 3 grid | stdlib decomposition | `Tree` |
+|---|--:|--:|
+| nodes | 4 135 | **91** |
+| `.opb` | 326 118 B | 69 135 B |
+| `.pbp` | 39 689 062 B | **238 799 B** |
+| veripb | 4.87 s | **0.01 s** |
+
+166× on proof size and 487× on checking time, at nine nodes and twelve edges.
+
+The same pair on a 4 × 4 grid, proofs off, again both closing at 20:
+
+| `steiner`, 4 × 4 grid | stdlib decomposition | `Tree` |
+|---|--:|--:|
+| nodes | 7 506 461 | **3 209** |
+| solve | 164.49 s | **0.029 s** |
+
+As with the hitori table above, most of that gap is the distance labelling being a
+bad thing to search over rather than these rules being clever: they are the
+straightforward ones.
+
 ## See also
 
 - [`constraints.md`](constraints.md) — the structural pattern, the reason and
@@ -341,6 +442,9 @@ like these.
   `reachable_mutation_*` lanes follow.
 - [`minizinc.md`](minizinc.md) — the `mznlib/` overrides sit on
   `fzn_reachable_int` / `_enum` and `fzn_dreachable_int` / `_enum`, so `connected`
-  and `dconnected` reach the propagator through the stdlib's own wrappers.
+  and `dconnected` reach the propagator through the stdlib's own wrappers, and on
+  `fzn_subgraph`, `fzn_tree`, `fzn_dtree`, `fzn_path` and `fzn_dpath`, which
+  `steiner`, `dsteiner`, `bounded_path`, `bounded_dpath` and both
+  `weighted_spanning_tree` spellings ride in turn.
 - [`proof-benchmarks.md`](proof-benchmarks.md) — `mzn_hitori` and the Group C
   decomposition-against-propagator controls.

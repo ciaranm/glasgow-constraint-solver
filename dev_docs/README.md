@@ -213,7 +213,14 @@ library. For an introduction to *using* the solver, start with the top-level
   costs a proof line per candidate root while one made after costs one line
   (measured, not assumed), the `O(nodes × edges)` size that is the price,
   and the measured hitori comparison — 815 MB / 796 s of decomposition proof
-  against 0.25 MB / 0.14 s.
+  against 0.25 MB / 0.14 s. Also covers `Subgraph` and the tree-and-path family
+  built on top (`Tree`, `DTree`, `Path`, `DPath`, and so `steiner`, `dsteiner`,
+  `bounded_path`, `bounded_dpath` and `weighted_spanning_tree`): one reachability
+  encoding plus counting rows rather than the stdlib's doubled edges and second
+  spanning tree, why the `start = end` corner needs a row of its own, why the
+  counting rows cannot be more child constraints (a role must name everything
+  that varies, so a second linear child collides on `c[id]`), and why the family
+  is deliberately not GAC.
 - [`MinDistance`: encoding and proofs](min-distance-proofs.md) — the definitional
   OPB encoding for `min_distance(D, x, z)` (site-selection flags, per-site counts,
   pair clauses, and the min-attained ladder), the justification for each of the

@@ -33,6 +33,7 @@
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/nogoods/nogoods.hh>
 #include <gcs/constraints/parity.hh>
+#include <gcs/constraints/path/path.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/power.hh>
 #include <gcs/constraints/reachable/reachable.hh>
@@ -40,8 +41,10 @@
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
 #include <gcs/constraints/sort.hh>
+#include <gcs/constraints/subgraph/subgraph.hh>
 #include <gcs/constraints/table/negative_table.hh>
 #include <gcs/constraints/table/table.hh>
+#include <gcs/constraints/tree/tree.hh>
 #include <gcs/constraints/value_precede/value_precede.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/literal.hh>
@@ -665,6 +668,82 @@ namespace
             post_constraint(problem, Reachable{move(edges), root, move(ns), move(es)}, label);
     }
 
+    auto read_path(Problem & problem, const map<string, IntegerVariableID> & variables, const string & op, const vector<SExpr> & terms,
+        const string & label) -> void
+    {
+        // (label path (from...) (to...) start end (ns...) (es...)): the subgraph
+        // picked out by ns and es is a path from start to end, following each edge
+        // either way for path and only from-to for dpath.
+        if (terms.size() != 8)
+            throw ScpReadError{op + " is (label " + op + " (from...) (to...) start end (ns...) (es...))"};
+        auto from = resolve_integer_list(terms[2], "the path edge from list");
+        auto to = resolve_integer_list(terms[3], "the path edge to list");
+        if (from.size() != to.size())
+            throw ScpReadError{op + " needs one from and one to per edge"};
+        vector<pair<size_t, size_t>> edges;
+        for (size_t e = 0; e != from.size(); ++e) {
+            if (from[e] < 0_i || to[e] < 0_i)
+                throw ScpReadError{op + " has a negative edge endpoint"};
+            edges.emplace_back(static_cast<size_t>(from[e].raw_value), static_cast<size_t>(to[e].raw_value));
+        }
+        auto start = resolve_variable(variables, terms[4]);
+        auto end = resolve_variable(variables, terms[5]);
+        auto ns = resolve_variable_list(variables, terms[6], "the path node list");
+        auto es = resolve_variable_list(variables, terms[7], "the path edge list");
+        if (op == "dpath")
+            post_constraint(problem, DPath{move(edges), start, end, move(ns), move(es)}, label);
+        else
+            post_constraint(problem, Path{move(edges), start, end, move(ns), move(es)}, label);
+    }
+
+    auto read_tree(Problem & problem, const map<string, IntegerVariableID> & variables, const string & op, const vector<SExpr> & terms,
+        const string & label) -> void
+    {
+        // (label tree (from...) (to...) root (ns...) (es...)): the subgraph picked
+        // out by ns and es is a tree rooted at root, following each edge either way
+        // for tree and only from-to for dtree.
+        if (terms.size() != 7)
+            throw ScpReadError{op + " is (label " + op + " (from...) (to...) root (ns...) (es...))"};
+        auto from = resolve_integer_list(terms[2], "the tree edge from list");
+        auto to = resolve_integer_list(terms[3], "the tree edge to list");
+        if (from.size() != to.size())
+            throw ScpReadError{op + " needs one from and one to per edge"};
+        vector<pair<size_t, size_t>> edges;
+        for (size_t e = 0; e != from.size(); ++e) {
+            if (from[e] < 0_i || to[e] < 0_i)
+                throw ScpReadError{op + " has a negative edge endpoint"};
+            edges.emplace_back(static_cast<size_t>(from[e].raw_value), static_cast<size_t>(to[e].raw_value));
+        }
+        auto root = resolve_variable(variables, terms[4]);
+        auto ns = resolve_variable_list(variables, terms[5], "the tree node list");
+        auto es = resolve_variable_list(variables, terms[6], "the tree edge list");
+        if (op == "dtree")
+            post_constraint(problem, DTree{move(edges), root, move(ns), move(es)}, label);
+        else
+            post_constraint(problem, Tree{move(edges), root, move(ns), move(es)}, label);
+    }
+
+    auto read_subgraph(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label subgraph (from...) (to...) (ns...) (es...)): every selected edge
+        // has both its endpoints selected.
+        if (terms.size() != 6)
+            throw ScpReadError{"subgraph is (label subgraph (from...) (to...) (ns...) (es...))"};
+        auto from = resolve_integer_list(terms[2], "the subgraph edge from list");
+        auto to = resolve_integer_list(terms[3], "the subgraph edge to list");
+        if (from.size() != to.size())
+            throw ScpReadError{"subgraph needs one from and one to per edge"};
+        vector<pair<size_t, size_t>> edges;
+        for (size_t e = 0; e != from.size(); ++e) {
+            if (from[e] < 0_i || to[e] < 0_i)
+                throw ScpReadError{"subgraph has a negative edge endpoint"};
+            edges.emplace_back(static_cast<size_t>(from[e].raw_value), static_cast<size_t>(to[e].raw_value));
+        }
+        auto ns = resolve_variable_list(variables, terms[4], "the subgraph node list");
+        auto es = resolve_variable_list(variables, terms[5], "the subgraph edge list");
+        post_constraint(problem, Subgraph{move(edges), move(ns), move(es)}, label);
+    }
+
     auto read_value_precede(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
         -> void
     {
@@ -1280,6 +1359,15 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
         }
         else if (op == "reachable" || op == "dreachable") {
             read_reachable(problem, variables, op, terms, label);
+        }
+        else if (op == "path" || op == "dpath") {
+            read_path(problem, variables, op, terms, label);
+        }
+        else if (op == "tree" || op == "dtree") {
+            read_tree(problem, variables, op, terms, label);
+        }
+        else if (op == "subgraph") {
+            read_subgraph(problem, variables, terms, label);
         }
         else if (op == "value_precede") {
             read_value_precede(problem, variables, terms, label);

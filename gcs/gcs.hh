@@ -53,6 +53,7 @@
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/nogoods/nogoods.hh>
 #include <gcs/constraints/parity.hh>
+#include <gcs/constraints/path.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/power.hh>
 #include <gcs/constraints/reachable.hh>
@@ -60,7 +61,9 @@
 #include <gcs/constraints/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/constraints/sort.hh>
+#include <gcs/constraints/subgraph.hh>
 #include <gcs/constraints/table.hh>
+#include <gcs/constraints/tree.hh>
 #include <gcs/constraints/value_precede.hh>
 
 #endif
