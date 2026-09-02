@@ -11,24 +11,8 @@
 #include <gcs/variable_id.hh>
 
 #include <string>
-#include <string_view>
 #include <variant>
 #include <vector>
-
-namespace gcs::innards::hints
-{
-    /**
-     * \brief The graph-structure rules' assertion hint: just the owning
-     * constraint, no subhint.
-     *
-     * \ingroup Innards
-     */
-    struct GraphRules
-    {
-        ConstraintID originator;
-        static constexpr std::string_view hint_name = "graphrules";
-    };
-}
 
 /**
  * \brief The counting rules that turn a reachable subgraph into a tree or a

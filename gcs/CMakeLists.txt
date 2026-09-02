@@ -53,6 +53,7 @@ add_library(glasgow_constraint_solver
         constraints/in/in.cc
         constraints/increasing/increasing.cc
         constraints/innards/cake_truthiness.cc
+        constraints/innards/graph_rules.cc
         constraints/innards/linear_stages.cc
         constraints/innards/guaranteed_contribution.cc
         constraints/innards/makespan_energy.cc
@@ -87,6 +88,7 @@ add_library(glasgow_constraint_solver
         constraints/n_value/n_value.cc
         constraints/nogoods/nogoods.cc
         constraints/parity/parity.cc
+        constraints/path/path.cc
         constraints/plus_minus/plus.cc
         constraints/power/power.cc
         constraints/power/power_table.cc
@@ -96,15 +98,13 @@ add_library(glasgow_constraint_solver
         constraints/regular/regular_legacy.cc
         constraints/regular/regex.cc
         constraints/seq_precede_chain/seq_precede_chain.cc
-        constraints/subgraph/subgraph.cc
-        constraints/path/path.cc
-        constraints/tree/tree.cc
-        constraints/innards/graph_rules.cc
         constraints/smart_table/smart_table.cc
         constraints/sort/arg_sort.cc
         constraints/sort/sort.cc
+        constraints/subgraph/subgraph.cc
         constraints/table/negative_table.cc
         constraints/table/table.cc
+        constraints/tree/tree.cc
         constraints/value_precede/value_precede.cc
         innards/integer_overflow.cc
         innards/literal.cc
