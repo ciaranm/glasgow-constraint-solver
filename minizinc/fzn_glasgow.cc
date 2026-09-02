@@ -796,6 +796,15 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 problem.post(Circuit{vars});
             }
+            else if (id == "glasgow_subcircuit") {
+                // The mznlib redefinition has already shifted successors to be
+                // 0-based, as for glasgow_circuit. SubCircuit is the opt-out
+                // sibling: a node not on the tour takes its own index, and the
+                // empty tour is a solution, so unlike Circuit this must not
+                // assume every node is visited.
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                problem.post(SubCircuit{vars});
+            }
             else if (id == "glasgow_reachable" || id == "glasgow_dreachable") {
                 // The mznlib redefinition has already shifted the endpoints and
                 // the root to be zero-based, matching how Reachable numbers nodes.
