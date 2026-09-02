@@ -1,4 +1,5 @@
 #include <gcs/constraints/linear.hh>
+#include <gcs/constraints/path/hints.hh>
 #include <gcs/constraints/path/path.hh>
 #include <gcs/constraints/reachable.hh>
 #include <gcs/exception.hh>
@@ -153,7 +154,7 @@ auto PathBase::install_propagators(Propagators & propagators) -> void
     propagators.install(
         constraint_id(),
         [rules = _rules, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            graph_rules::propagate(rules, owner, state, inference, logger);
+            graph_rules::propagate(rules, hints::Path{owner}, state, inference, logger);
             return PropagatorState::Enable;
         },
         triggers);

@@ -93,11 +93,15 @@ namespace gcs::innards::graph_rules
      * the start to be decided. With more than one condition undecided there is
      * nothing to name, so nothing is inferred.
      */
-    template <typename Inference_>
-    auto propagate(
-        const std::vector<Rule> & rules, const ConstraintID & owner, const State & state, Inference_ & inference, ProofLogger * const logger) -> void
+    template <typename Hint_, typename Inference_>
+    auto propagate(const std::vector<Rule> & rules, const Hint_ & hint, const State & state, Inference_ & inference, ProofLogger * const logger)
+        -> void
     {
-        auto justify = JustifyUsingRUP{hints::GraphRules{owner}};
+        // The hint comes from the caller rather than from here: an assertion
+        // annotation names the constraint an external justifier has to reason
+        // about, which is the tree or the path the model posted, not this shared
+        // helper.
+        auto justify = JustifyUsingRUP{hint};
 
         // A rule's conditions, sorted into "cannot fire", "holds, and here is the
         // literal to blame it on", and "still open". Returns false if the rule is

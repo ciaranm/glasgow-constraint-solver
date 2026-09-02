@@ -1,5 +1,6 @@
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/reachable.hh>
+#include <gcs/constraints/tree/hints.hh>
 #include <gcs/constraints/tree/tree.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -111,7 +112,7 @@ auto TreeBase::install_propagators(Propagators & propagators) -> void
     propagators.install(
         constraint_id(),
         [rules = _rules, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            graph_rules::propagate(rules, owner, state, inference, logger);
+            graph_rules::propagate(rules, hints::Tree{owner}, state, inference, logger);
             return PropagatorState::Enable;
         },
         triggers);
