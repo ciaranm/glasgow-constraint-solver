@@ -183,9 +183,9 @@ auto run_tour_size_test(bool proofs, int n, int size_lower, int size_upper) -> v
 // certificate instead of one per node of the cycle. Enumerated against the same reference
 // check, restricted to the solutions where the named node is on the tour, since that is the
 // precondition the caller has to have declared.
-auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algorithm, const std::string & label) -> void
+auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algorithm, const std::string & label, bool name_the_anchor = true) -> void
 {
-    println(cerr, "subcircuit/anchored/{} n={} anchor={}{}", label, n, anchor, proofs ? " with proofs:" : ":");
+    println(cerr, "subcircuit/anchored/{}{} n={} anchor={}{}", label, name_the_anchor ? "" : "/found", n, anchor, proofs ? " with proofs:" : ":");
 
     vector<pair<int, int>> domains(static_cast<std::size_t>(n), pair{0, n - 1});
 
@@ -198,16 +198,22 @@ auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algor
     for (int i = 0; i < n; ++i) {
         // The anchor's own index has to be out of its declared domain: with_required_node()
         // takes that as a precondition rather than imposing it, so that the constraint means
-        // the same thing either way and nothing about it has to reach the .scp.
+        // the same thing either way and nothing about it has to reach the .scp. It is also
+        // what prepare() goes looking for, so with name_the_anchor off this same problem
+        // exercises the search for one -- and the search can only land on this node, since
+        // this is the only one whose own index is missing.
         vector<Integer> values;
         for (int v = 0; v < n; ++v)
             if (! (i == anchor && v == anchor))
                 values.emplace_back(Integer{v});
         succ.push_back(p.create_integer_variable(values));
     }
-    p.post(SubCircuit{succ}.with_required_node(anchor).with_algorithm(algorithm));
+    auto constraint = SubCircuit{succ}.with_algorithm(algorithm);
+    if (name_the_anchor)
+        constraint.with_required_node(anchor);
+    p.post(std::move(constraint));
 
-    auto proof_name = proofs ? make_optional("subcircuit_test_anchored_" + label) : nullopt;
+    auto proof_name = proofs ? make_optional("subcircuit_test_anchored_" + label + (name_the_anchor ? "" : "_found")) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{succ});
     check_results(proof_name, expected, actual);
 }
@@ -288,6 +294,10 @@ auto main(int argc, char * argv[]) -> int
                 for (int anchor : {0, n - 1}) {
                     run_anchored_test(proofs, n, anchor, subcircuit::Prevent{}, "prevent");
                     run_anchored_test(proofs, n, anchor, subcircuit::SCC{}, "scc");
+                    // And with nobody named, so the search for an anchor is enumerated and
+                    // certified at every size too, not only asserted on at the root of one
+                    // twelve-node instance.
+                    run_anchored_test(proofs, n, anchor, subcircuit::SCC{}, "scc", false);
                 }
             for (int n : {3, 4}) {
                 run_tour_size_test(proofs, n, 0, n);

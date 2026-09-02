@@ -119,6 +119,11 @@ namespace gcs
         std::optional<IntegerVariableID> _tour_size;
         std::optional<long> _required_node;
 
+        // The node the position encoding is anchored on, settled by prepare(): what
+        // with_required_node() named, or the lowest-numbered node whose declared domain
+        // already says it is on the tour, or nothing when no node's does.
+        std::optional<long> _anchor;
+
         // Backtrackable state allocated by prepare(), consumed by install_propagators().
         innards::subcircuit::SubCircuitStateHandles _state_handles;
 
@@ -150,15 +155,23 @@ namespace gcs
         /// with and without it, so nothing about it is recorded in the `.scp`, in the same
         /// way the choice of algorithm is not.
         ///
-        /// What it buys is a cheaper proof. Without it, which edge of the tour wraps around
-        /// is not known until the membership literals are, so every edge needs a row for
-        /// each case and every certificate splits over the cycle's nodes. With it, only the
-        /// edges into the named node can wrap, which is exactly the shape Circuit gets for
-        /// free by anchoring on node 0: half the rows, and one polish-notation step per
-        /// certificate rather than one per node of the cycle.
+        /// **Calling this is optional.** The constraint looks for such a node itself, and
+        /// uses the lowest-numbered one it finds; naming one only overrides that choice,
+        /// and turns "no node is declared on the tour" from something silently accepted
+        /// into an error. Neither is a way to declare a node on the tour -- post a
+        /// constraint for that, or give the variable a domain that says so.
         ///
-        /// It is also what the SCC propagation needs, which cannot infer anything at all
-        /// until some node is known to be on the tour.
+        /// What an anchor buys is a cheaper proof. Without one, which edge of the tour
+        /// wraps around is not known until the membership literals are, so every edge needs
+        /// a row for each case and every certificate splits over the cycle's nodes. With
+        /// one, only the edges into that node can wrap, which is exactly the shape Circuit
+        /// gets for free by anchoring on node 0: half the rows, and one polish-notation step
+        /// per certificate rather than one per node of the cycle.
+        ///
+        /// It also strengthens propagation, since a closed cycle that misses the anchor is
+        /// a contradiction outright rather than something needing an evidence node, and it
+        /// is what the SCC propagation needs, which cannot infer anything at all until some
+        /// node is known to be on the tour.
         auto with_required_node(long node) -> SubCircuit &;
 
         /// Constrain how many nodes are on the tour: `size` is the number that do not

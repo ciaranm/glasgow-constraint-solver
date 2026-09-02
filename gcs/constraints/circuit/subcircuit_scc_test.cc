@@ -67,7 +67,8 @@ auto post_constraints(Problem & p, vector<IntegerVariableID> & nodes) -> void
 // the two algorithms differ crisply: reachability has already forced the whole unreachable
 // half to opt out before any decision is taken, and check-and-prevent has not, because
 // nothing is fixed yet for it to reason from.
-auto run(SubCircuitAlgorithm algorithm, const ViewWrapConfig & view_cfg, const std::string & label, long & lower_half_fixed_at_root) -> long
+auto run(SubCircuitAlgorithm algorithm, bool name_the_anchor, const ViewWrapConfig & view_cfg, const std::string & label,
+    long & lower_half_fixed_at_root) -> long
 {
     constexpr int n_positions = 12;
     auto wraps = wraps_for_positions(view_cfg, n_positions);
@@ -86,7 +87,10 @@ auto run(SubCircuitAlgorithm algorithm, const ViewWrapConfig & view_cfg, const s
             create_integer_variable_or_constant_with_view(p, pair{i == 6 ? 7 : 0, n_positions - 1}, wraps.at(static_cast<std::size_t>(i))));
 
     post_constraints(p, nodes);
-    p.post(SubCircuit{nodes}.with_required_node(6).with_algorithm(algorithm));
+    auto constraint = SubCircuit{nodes}.with_algorithm(algorithm);
+    if (name_the_anchor)
+        constraint.with_required_node(6);
+    p.post(std::move(constraint));
 
     bool proofs = can_run_veripb();
     auto proof_name = proofs ? make_optional("subcircuit_scc_test_" + label + "_" + view_wrap_config_label(view_cfg)) : nullopt;
@@ -139,12 +143,22 @@ auto main(int argc, char * argv[]) -> int
     // happily. The recursion counts are printed rather than asserted on: the gap here is two
     // nodes out of 558, because check-and-prevent with an evidence node gets to nearly the
     // same place by another route, and a margin that thin is not something to hold a test to.
-    long prevent_at_root = 0, scc_at_root = 0;
-    auto with_prevent = run(subcircuit::Prevent{}, view_cfg, "prevent", prevent_at_root);
-    auto with_scc = run(subcircuit::SCC{}, view_cfg, "scc", scc_at_root);
+    long prevent_at_root = 0, scc_at_root = 0, found_at_root = 0;
+    auto with_prevent = run(subcircuit::Prevent{}, true, view_cfg, "prevent", prevent_at_root);
+    auto with_scc = run(subcircuit::SCC{}, true, view_cfg, "scc", scc_at_root);
+    // And once more with nobody named, because node 6 was *declared* to be on the tour and
+    // the constraint looks for such a node itself. Without that, the SCC arm would have
+    // nothing to be reachable from and would sit inert, so this run coming out the same as
+    // the one above is what says the search for an anchor found it.
+    auto with_found = run(subcircuit::SCC{}, false, view_cfg, "scc-anchor-found", found_at_root);
 
-    if (with_prevent != expected_solutions || with_scc != expected_solutions) {
+    if (with_prevent != expected_solutions || with_scc != expected_solutions || with_found != expected_solutions) {
         cout << "expected " << expected_solutions << " solutions from each" << endl;
+        return EXIT_FAILURE;
+    }
+
+    if (found_at_root != scc_at_root) {
+        cout << "expected the same root state with the anchor found as with it named, got " << found_at_root << " against " << scc_at_root << endl;
         return EXIT_FAILURE;
     }
 

@@ -732,6 +732,31 @@ auto SubCircuit::prepare(Propagators & propagators, State & initial_state, Proof
             "SubCircuit: with_required_node() names a node whose own index is still in its successor's domain, so it is not declared "
             "to be on the tour"};
 
+    // A node is on the tour exactly when it does not point at itself, so any node whose own
+    // index is already out of its successor's domain is one, and that is all an anchor has
+    // to be. So look for one rather than waiting to be told: an anchor halves the number of
+    // position rows, gives `check` a contradiction where it would otherwise have to hunt for
+    // an evidence node, and is what the SCC arm needs to say anything at all.
+    //
+    // The lowest-numbered one, because something has to be picked and nothing has measured a
+    // better rule; F&S §5.3.3 report that for `circuit` a *random* root is best for their
+    // `scc`, which is worth revisiting if the pruning rules ever land, but it is a choice
+    // about search and this one is also a choice about the encoding.
+    //
+    // Only the declared domains can be read here, which is why models differ in whether this
+    // finds anything. Both challenge families that use subcircuit pin a node, but only one
+    // pins it where this can see: mario writes `succ[LuigiHouse] = MarioHouse`, which the
+    // flattener folds into the array as a constant, while tpp writes `succ[n] != n`, which
+    // survives as an int_ne over a variable whose declared domain is still full by the time
+    // the redefinition has shifted it to be zero-based.
+    _anchor = _required_node;
+    if (! _anchor)
+        for (size_t i = 0; i < _succ.size(); ++i)
+            if (! initial_state.in_domain(_succ[i], Integer(static_cast<long long>(i)))) {
+                _anchor = static_cast<long>(i);
+                break;
+            }
+
     NonGacAllDifferentUnassigned unassigned{};
     for (auto v : _succ)
         unassigned.emplace_back(v);
@@ -764,7 +789,7 @@ auto SubCircuit::define_proof_model(ProofModel & model, const State &) -> void
     for (long i = 0; i < n; ++i)
         data.pos.emplace(i, model.create_proof_only_integer_variable(0_i, Integer{n - 1}, "subpos", IntegerVariableProofRepresentation::Bits));
 
-    data.anchor = _required_node;
+    data.anchor = _anchor;
 
     if (data.anchor) {
         // Anchored: the tour starts at the named node, so the only edges that can wrap are
@@ -868,7 +893,7 @@ auto SubCircuit::define_proof_model(ProofModel & model, const State &) -> void
 auto SubCircuit::install_propagators(Propagators & propagators) -> void
 {
     auto prevent = ! std::holds_alternative<Check>(_algorithm);
-    auto scc_anchor = std::holds_alternative<gcs::subcircuit::SCC>(_algorithm) ? _required_node : nullopt;
+    auto scc_anchor = std::holds_alternative<gcs::subcircuit::SCC>(_algorithm) ? _anchor : nullopt;
     // Proof lines, not search state: they stay valid at every later node, so the cache
     // deliberately does not backtrack, exactly as circuit_scc.cc's does.
     auto cache = std::make_shared<SCCProofCache>();
