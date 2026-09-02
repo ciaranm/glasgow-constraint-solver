@@ -388,9 +388,20 @@ Inside the propagator body, the `State` parameter exposes:
 - `state.bounds(v)` → `pair<Integer, Integer>` (lower, upper).
 - `state.in_domain(v, val)` → bool.
 - `state.has_single_value(v)` → bool.
+- `state.for_each_value_immutable(v, cb)` / `state.for_each_value_mutable(v, cb)`
+  → call `cb(value)` for each value in the current domain, ascending. Use
+  `_immutable` if you only read; `_mutable` if you might infer a removal
+  mid-iteration. A `cb` returning `bool` stops iteration by returning `false`;
+  one returning `void` runs to completion. **Prefer these anywhere that runs
+  per wake** — see the note below.
 - `state.each_value_immutable(v)` / `state.each_value_mutable(v)` →
-  ranges over the current domain. Use `_immutable` if you only read;
-  `_mutable` if you might infer a removal mid-iteration.
+  the same two contracts as ranges, for a `for (auto val : ...)` loop. They
+  allocate a `std::generator` frame per loop and route each value through a
+  `std::function`, which is real per-call cost in a propagator body: converting
+  the three loops in `propagate_extensional` to the callback forms above was
+  worth 1.4x end-to-end on every shape measured (PR #786), with nothing else
+  changed. Reach for the range form when a propagator runs once, or when the
+  loop genuinely reads better that way.
 - `state.domains_intersect(v1, v2)` → bool. Does the variables' domains
   share any value? Walks both stored interval sets in merge order
   without copying for the common case. Use this instead of

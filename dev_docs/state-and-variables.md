@@ -304,6 +304,16 @@ constants:
   not rely on that, since it is allowed to be optimised in future to
   avoid the copy. `CurrentState` exposes a single `each_value` (forward)
   and `each_value_reversed` (descending) for callback-time consumers.
+- `for_each_value_immutable(var, cb)`, `for_each_value_mutable(var, cb)` —
+  the same two contracts, delivered by calling `cb(value)` in ascending
+  order rather than returning a generator. A `cb` returning `bool` stops
+  iteration on `false`; one returning `void` runs to completion (that is
+  `IntervalSet::for_each`'s contract, selected with `if constexpr`).
+  These skip the coroutine frame, the `std::function` the view
+  application needs in the generator version, and the `IntervalSet`
+  copy, so they are the right default inside a propagator — see
+  [propagator-performance.md](propagator-performance.md), and note that
+  the `_immutable` one does **not** snapshot (below).
 - `copy_of_values(var)` — full snapshot as an `IntervalSet<Integer>`.
 - `domain_intersects_with(var, IntervalSet)` — does the variable's
   domain share any value with the given set? The common case
@@ -337,6 +347,14 @@ after computing the answer in the actual variable's coordinate system.
 
 - **Pick `_immutable` vs `_mutable` by intent, not by what works.**
   Calling `each_value_immutable` with the intention of modifying the
-  domain during iteration happens to work today (both variants
-  snapshot) but is not guaranteed to work in future. Use `_mutable` if
-  you intend to mutate, `_immutable` if you don't.
+  domain during iteration happens to work today (both generator
+  variants snapshot) but is not guaranteed to work in future. Use
+  `_mutable` if you intend to mutate, `_immutable` if you don't.
+
+  **For the callback forms this is not a future-proofing point but a
+  live hazard.** `for_each_value_mutable` copies the `IntervalSet`
+  first; `for_each_value_immutable` walks the stored one directly. So
+  inferring a removal from inside a `for_each_value_immutable` callback
+  mutates the container being iterated — undefined behaviour now, not
+  merely unsupported later. If the callback can reach `inference.infer`
+  on the variable being iterated, it must be `_mutable`.
