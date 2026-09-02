@@ -38,7 +38,6 @@ using XCSP3Core::NodeVariable;
 using XCSP3Core::OperandType;
 using XCSP3Core::OrderType;
 using XCSP3Core::RankType;
-using XCSP3Core::Tree;
 using XCSP3Core::XCondition;
 using XCSP3Core::XCSP3CoreCallbacks;
 using XCSP3Core::XCSP3CoreParser;
@@ -862,7 +861,9 @@ namespace
             _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts)}.with_closed(closed));
         }
 
-        auto buildConstraintIntension(string, Tree * tree) -> void override
+        // XCSP3Core::Tree, qualified: gcs has a Tree constraint of its own, and
+        // this file pulls both namespaces in.
+        auto buildConstraintIntension(string, XCSP3Core::Tree * tree) -> void override
         {
             post_intension_top_level(tree->root);
         }

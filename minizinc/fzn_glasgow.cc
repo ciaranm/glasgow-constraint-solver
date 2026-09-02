@@ -145,6 +145,21 @@ namespace
         vector<IntegerVariableID> branch_variables, all_variables;
     };
 
+    // The graph constraints all take the same pair of endpoint parameter arrays,
+    // already shifted to be zero-based by the mznlib redefinition.
+    auto edges_from_endpoints(const string & what, const vector<Integer> * from, const vector<Integer> * to) -> vector<pair<size_t, size_t>>
+    {
+        if (from->size() != to->size())
+            throw FlatZincInterfaceError{what + " needs one from and one to per edge"};
+        vector<pair<size_t, size_t>> edges;
+        for (size_t e = 0; e != from->size(); ++e) {
+            if ((*from)[e] < 0_i || (*to)[e] < 0_i)
+                throw FlatZincInterfaceError{what + " has a negative edge endpoint"};
+            edges.emplace_back(static_cast<size_t>((*from)[e].raw_value), static_cast<size_t>((*to)[e].raw_value));
+        }
+        return edges;
+    }
+
     auto arg_as_array_of_integer(ExtractedData & data, const auto & args, int idx) -> vector<Integer> *
     {
         auto a = args.at(idx);
@@ -789,18 +804,45 @@ auto main(int argc, char * argv[]) -> int
                 const auto & r = arg_as_var(data, args, 2);
                 const auto & ns = arg_as_array_of_var(data, args, 3);
                 const auto & es = arg_as_array_of_var(data, args, 4);
-                if (from->size() != to->size())
-                    throw FlatZincInterfaceError{"reachable needs one from and one to per edge"};
-                vector<pair<size_t, size_t>> edges;
-                for (size_t e = 0; e != from->size(); ++e) {
-                    if ((*from)[e] < 0_i || (*to)[e] < 0_i)
-                        throw FlatZincInterfaceError{"reachable has a negative edge endpoint"};
-                    edges.emplace_back(static_cast<size_t>((*from)[e].raw_value), static_cast<size_t>((*to)[e].raw_value));
-                }
+                auto edges = edges_from_endpoints("reachable", from, to);
                 if (id == "glasgow_dreachable")
                     problem.post(DReachable{move(edges), r, ns, es});
                 else
                     problem.post(Reachable{move(edges), r, ns, es});
+            }
+            else if (id == "glasgow_subgraph") {
+                auto from = arg_as_array_of_integer(data, args, 0);
+                auto to = arg_as_array_of_integer(data, args, 1);
+                const auto & ns = arg_as_array_of_var(data, args, 2);
+                const auto & es = arg_as_array_of_var(data, args, 3);
+                problem.post(Subgraph{edges_from_endpoints("subgraph", from, to), ns, es});
+            }
+            else if (id == "glasgow_tree" || id == "glasgow_dtree") {
+                // As glasgow_reachable, the redefinition has already shifted the
+                // endpoints and the root to be zero-based.
+                auto from = arg_as_array_of_integer(data, args, 0);
+                auto to = arg_as_array_of_integer(data, args, 1);
+                const auto & r = arg_as_var(data, args, 2);
+                const auto & ns = arg_as_array_of_var(data, args, 3);
+                const auto & es = arg_as_array_of_var(data, args, 4);
+                auto edges = edges_from_endpoints("tree", from, to);
+                if (id == "glasgow_dtree")
+                    problem.post(DTree{move(edges), r, ns, es});
+                else
+                    problem.post(Tree{move(edges), r, ns, es});
+            }
+            else if (id == "glasgow_path" || id == "glasgow_dpath") {
+                auto from = arg_as_array_of_integer(data, args, 0);
+                auto to = arg_as_array_of_integer(data, args, 1);
+                const auto & s = arg_as_var(data, args, 2);
+                const auto & t = arg_as_var(data, args, 3);
+                const auto & ns = arg_as_array_of_var(data, args, 4);
+                const auto & es = arg_as_array_of_var(data, args, 5);
+                auto edges = edges_from_endpoints("path", from, to);
+                if (id == "glasgow_dpath")
+                    problem.post(DPath{move(edges), s, t, ns, es});
+                else
+                    problem.post(Path{move(edges), s, t, ns, es});
             }
             else if (id == "glasgow_count_eq") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);

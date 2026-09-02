@@ -59,6 +59,32 @@ set_tests_properties(minizinc-dreachable PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-dconnected COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_dreachable $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ dconnectedtest true true)
 set_tests_properties(minizinc-dconnected PROPERTIES SKIP_RETURN_CODE 66)
 
+# tree / dtree / path / dpath ride one reachability encoding plus counting rules
+# rather than the stdlib's distance labelling, and steiner and bounded_dpath ride
+# those in turn through the stdlib's own wrappers. Each guard names the builtin
+# that must appear in the flattened model, because without one the test would
+# pass vacuously against the decomposition.
+add_test(NAME minizinc-subgraph COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_subgraph $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ subgraphtest true true)
+set_tests_properties(minizinc-subgraph PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-tree COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_tree $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ treetest true true)
+set_tests_properties(minizinc-tree PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-dtree COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_dtree $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ dtreetest true true)
+set_tests_properties(minizinc-dtree PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-path COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_path $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ pathtest true true)
+set_tests_properties(minizinc-path PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-dpath COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_dpath $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ dpathtest true true)
+set_tests_properties(minizinc-dpath PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-steiner COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_tree $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ steinertest false true)
+set_tests_properties(minizinc-steiner PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-bounded-dpath COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_dpath $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ boundeddpathtest false true)
+set_tests_properties(minizinc-bounded-dpath PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-count COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ counttest true true)
 set_tests_properties(minizinc-count PROPERTIES SKIP_RETURN_CODE 66)
 

@@ -78,7 +78,9 @@ addressed.
 | difference logic (`x - y <= d` as a *system*) | `DifferenceConstraints`; or the `DifferenceLogic` presolver over constraints posted individually | ✓ presolver only, opt-in `--difference-logic` | ✓ presolver only, opt-in `--difference-logic` | ? | Glasgow-specific extension ([#571](https://github.com/ciaranm/glasgow-constraint-solver/issues/571)); see [^dl] for why there is no predicate |
 | `MinDistance` | `MinDistance` | unsupported | n/a | unsupported | Glasgow-specific extension; no frontend vocabulary for it |
 | graph reachability (`reachable`, `dreachable`, `connected`, `dconnected`) | `Reachable` / `DReachable` | ✓ | n/a | ? | `connected` / `dconnected` ride the same override, being `reachable` / `dreachable` with an existential root; see [^reach] |
-| the rest of `globals.graph` (`tree`, `path`, `steiner`, `dag`, `subgraph`, `network_flow`, `weighted_spanning_tree`, `subcircuit`) | – | decomposition | n/a | n/a | Open under [#637](https://github.com/ciaranm/glasgow-constraint-solver/issues/637), whose later stages build on `DReachable` |
+| `subgraph` | `Subgraph` | ✓ | n/a | n/a | Two implications per edge, so the constraint exists for the C++ and `.scp` interfaces rather than to infer anything the decomposition would not |
+| graph trees and paths (`tree`, `dtree`, `path`, `dpath`) | `Tree` / `DTree` / `Path` / `DPath` | ✓ | n/a | n/a | Also reached by `steiner`, `dsteiner`, `bounded_path`, `bounded_dpath` and both `weighted_spanning_tree` spellings, which the stdlib defines in terms of these; see [^treefam] |
+| the rest of `globals.graph` (`dag`, `network_flow`, `network_flow_cost`, `subcircuit`) | – | decomposition | n/a | n/a | Not on the reachability ladder: `dag` is an acyclicity labelling, `network_flow` decomposes to plain flow conservation, and `subcircuit` belongs with `Circuit` ([#167](https://github.com/ciaranm/glasgow-constraint-solver/issues/167)). Open under [#637](https://github.com/ciaranm/glasgow-constraint-solver/issues/637) |
 | `SmartTable` | `SmartTable` | ✓ | n/a | ? | Glasgow-specific extension |
 
 ## Solver gaps tracked elsewhere
@@ -128,6 +130,20 @@ addressed.
     `connected` and `dconnected` reach the propagator through the stdlib's own
     wrappers without a further override; the reified spellings are left to the
     stdlib (`fzn_dreachable_reif` aborts there anyway).
+
+[^treefam]: `Tree` is `Reachable` plus `sum(es) = sum(ns) - 1`, and `DTree`,
+    `Path` and `DPath` add counting rules on top of the same single reachability
+    encoding: at most one edge into each node for `DTree`, degree bounds and
+    endpoint conditions for the two path spellings. Each is posted as a
+    reachability child, a linear-equality child, and its own rows, rather than as
+    a pile of children, because two OPB rows may not share a `c[id][role]` label
+    and a child picks its own role. The stdlib instead doubles every undirected
+    edge and carries a parent-and-distance labelling per member, so overriding
+    `fzn_tree`, `fzn_dtree`, `fzn_path` and `fzn_dpath` (each `_int` and `_enum`)
+    is what keeps the whole family on one `O(nodes × edges)` unfolding. These
+    are **not** GAC — `Reachable` is, and the cardinality equality is, but their
+    conjunction is not — so their tests use `solve_for_tests`. See
+    [`connectivity-proofs.md`](connectivity-proofs.md).
 
 [^cmp]: Both frontends reach a *linear* inequality rather than `Comparison` for essentially every binary ordering. MiniZinc 2.10's flattener emits `int_lin_le([1,-1],[x,y],d)` even for a bare `x <= y`, so `int_le` / `int_lt` are bound but hardly ever produced; XCSP3 gets there via the intension peephole of [^intaff]. Either arrival is lifted by the difference-logic presolver — a `Comparison` donor since [#596](https://github.com/ciaranm/glasgow-constraint-solver/pull/596) labelled its rows, counted separately as `DifferenceLogicStats::comparison_edges_lifted` — so which of the two a frontend produces is a question of *size*, not of reach: reaching a `Comparison` whose operand is a compound expression means paying for the auxiliary variable that built the operand, which is what [^intaff] removes. Reified comparisons (`int_le_reif`, an `le` inside an expression) still go to the `*Iff` constraints.
 

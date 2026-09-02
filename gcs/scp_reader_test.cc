@@ -28,6 +28,7 @@
 #include <gcs/constraints/multiply.hh>
 #include <gcs/constraints/nogoods/nogoods.hh>
 #include <gcs/constraints/parity.hh>
+#include <gcs/constraints/path/path.hh>
 #include <gcs/constraints/power.hh>
 #include <gcs/constraints/reachable/reachable.hh>
 #include <gcs/constraints/regular/regular.hh>
@@ -35,8 +36,10 @@
 #include <gcs/constraints/regular/regular_legacy.hh>
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
+#include <gcs/constraints/subgraph/subgraph.hh>
 #include <gcs/constraints/table/negative_table.hh>
 #include <gcs/constraints/table/table.hh>
+#include <gcs/constraints/tree/tree.hh>
 #include <gcs/constraints/value_precede/value_precede.hh>
 #include <gcs/current_state.hh>
 #include <gcs/expression.hh>
@@ -934,6 +937,70 @@ TEST_CASE("read_scp: reachable enumerates correctly")
         CHECK(s.at("N0") == 0);
         CHECK(s.at("N1") == 0);
     }
+}
+
+TEST_CASE("read_scp: the tree family enumerates correctly")
+{
+    // A triangle 0 - 1 - 2 with the root pinned to node 0. Trees over it are the
+    // single node, either edge on its own, and any two of the three edges.
+    auto trees = enumerate("( (version 1) (variables (R 0 0) (N0 0 1) (N1 0 1) (N2 0 1) (E0 0 1) (E1 0 1) (E2 0 1)) "
+                           "(constraints (_1 tree (0 1 0) (1 2 2) R (N0 N1 N2) (E0 E1 E2))) (prob_type enumerate) )");
+    for (const auto & s : trees) {
+        CHECK(s.at("N0") == 1);
+        CHECK(s.at("E0") + s.at("E1") + s.at("E2") == s.at("N0") + s.at("N1") + s.at("N2") - 1);
+    }
+    CHECK(trees.size() == 6);
+
+    // Read as arcs, the same graph is 0 -> 1 -> 2 with a shortcut 0 -> 2, and the
+    // arborescences from node 0 are the single node, either arc out of it, and
+    // the two ways to reach both of the others.
+    auto dtrees = enumerate("( (version 1) (variables (R 0 0) (N0 0 1) (N1 0 1) (N2 0 1) (E0 0 1) (E1 0 1) (E2 0 1)) "
+                            "(constraints (_1 dtree (0 1 0) (1 2 2) R (N0 N1 N2) (E0 E1 E2))) (prob_type enumerate) )");
+    CHECK(dtrees.size() == 5);
+
+    // Paths from node 0 to node 2 across the same triangle: the direct edge, or
+    // round through node 1.
+    auto paths = enumerate("( (version 1) (variables (S 0 0) (T 2 2) (N0 0 1) (N1 0 1) (N2 0 1) (E0 0 1) (E1 0 1) (E2 0 1)) "
+                           "(constraints (_1 path (0 1 0) (1 2 2) S T (N0 N1 N2) (E0 E1 E2))) (prob_type enumerate) )");
+    CHECK(paths.size() == 2);
+    for (const auto & s : paths) {
+        CHECK(s.at("N0") == 1);
+        CHECK(s.at("N2") == 1);
+    }
+
+    auto dpaths = enumerate("( (version 1) (variables (S 0 0) (T 2 2) (N0 0 1) (N1 0 1) (N2 0 1) (E0 0 1) (E1 0 1) (E2 0 1)) "
+                            "(constraints (_1 dpath (0 1 0) (1 2 2) S T (N0 N1 N2) (E0 E1 E2))) (prob_type enumerate) )");
+    CHECK(dpaths.size() == 2);
+
+    // Subgraph on its own says only that a selected edge has both its endpoints.
+    auto subgraphs = enumerate("( (version 1) (variables (N0 0 1) (N1 0 1) (E0 0 1)) "
+                               "(constraints (_1 subgraph (0) (1) (N0 N1) (E0))) (prob_type enumerate) )");
+    CHECK(subgraphs.size() == 5);
+}
+
+TEST_CASE("read_scp: the tree family survives write -> read -> write unchanged")
+{
+    Problem original;
+    auto r = original.create_integer_variable(0_i, 2_i, "R");
+    auto t = original.create_integer_variable(0_i, 2_i, "T");
+    std::vector<IntegerVariableID> ns, es;
+    for (int i = 0; i < 3; ++i)
+        ns.push_back(original.create_integer_variable(0_i, 1_i, "N" + std::to_string(i)));
+    for (int e = 0; e < 2; ++e)
+        es.push_back(original.create_integer_variable(0_i, 1_i, "E" + std::to_string(e)));
+    original.post(Subgraph{{{0, 1}, {1, 2}}, ns, es});
+    original.post(Tree{{{0, 1}, {1, 2}}, r, ns, es});
+    original.post(DTree{{{0, 1}, {1, 2}}, r, ns, es});
+    original.post(Path{{{0, 1}, {1, 2}}, r, t, ns, es});
+    original.post(DPath{{{0, 1}, {1, 2}}, r, t, ns, es});
+    auto scp_a = prove_to_scp(original, "scp_reader_tree_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_tree_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
 }
 
 TEST_CASE("read_scp: reachable survives write -> read -> write unchanged")
