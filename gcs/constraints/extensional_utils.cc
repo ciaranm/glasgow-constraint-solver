@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <any>
 #include <cmath>
 #include <cstddef>
@@ -16,6 +17,8 @@
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/proof.hh>
+#include <optional>
+#include <utility>
 
 using std::any_cast;
 using std::make_shared;
@@ -48,21 +51,6 @@ gcs::innards::ExtensionalData::ExtensionalData(vector<IntegerVariableID> vars, E
 
 namespace
 {
-    auto feasible(const State & state, const IntegerVariableID & var, const Integer val) -> bool
-    {
-        return state.in_domain(var, val);
-    }
-
-    auto feasible(const State &, const IntegerVariableID &, const Wildcard &) -> bool
-    {
-        return true;
-    }
-
-    auto feasible(const State & state, const IntegerVariableID & var, const IntegerOrWildcard & v) -> bool
-    {
-        return visit([&](auto & v) { return feasible(state, var, v); }, v);
-    }
-
     auto match(const Integer & a, const Integer & b) -> bool
     {
         return a == b;
@@ -89,6 +77,58 @@ namespace
     {
         return get_tuple_value(*t, tuple_idx, entry);
     }
+
+    // The value range a position can take across the whole table. nullopt if any
+    // tuple has a wildcard there, since then no membership test happens at all.
+    auto tuple_value_range(const Integer & v, std::optional<std::pair<long long, long long>> & range) -> bool
+    {
+        if (! range)
+            range = std::pair{v.raw_value, v.raw_value};
+        else {
+            range->first = std::min(range->first, v.raw_value);
+            range->second = std::max(range->second, v.raw_value);
+        }
+        return true;
+    }
+
+    auto tuple_value_range(const Wildcard &, std::optional<std::pair<long long, long long>> &) -> bool
+    {
+        return false;
+    }
+
+    auto tuple_value_range(const IntegerOrWildcard & v, std::optional<std::pair<long long, long long>> & range) -> bool
+    {
+        return visit([&](auto & v) { return tuple_value_range(v, range); }, v);
+    }
+
+    // Membership against a rasterised domain, given the position is usable. The
+    // caller has already established that the entry is an Integer.
+    [[nodiscard]] inline auto bitmap_contains(
+        const ExtensionalDomainBitmaps & bitmaps, const ExtensionalDomainBitmaps::Position & p, const Integer val) -> bool
+    {
+        auto off = static_cast<unsigned long long>(val.raw_value - p.base);
+        if (off >= p.n_values)
+            return false;
+        return 0 != (bitmaps.words[p.offset + off / extensional_word_bits] & (ExtensionalWord{1} << (off % extensional_word_bits)));
+    }
+
+    [[nodiscard]] inline auto bitmap_feasible(const ExtensionalDomainBitmaps & bitmaps, const ExtensionalDomainBitmaps::Position & p,
+        const State & state, const IntegerVariableID & var, const Integer val) -> bool
+    {
+        return p.usable ? bitmap_contains(bitmaps, p, val) : state.in_domain(var, val);
+    }
+
+    [[nodiscard]] inline auto bitmap_feasible(const ExtensionalDomainBitmaps &, const ExtensionalDomainBitmaps::Position &, const State &,
+        const IntegerVariableID &, const Wildcard &) -> bool
+    {
+        return true;
+    }
+
+    [[nodiscard]] inline auto bitmap_feasible(const ExtensionalDomainBitmaps & bitmaps, const ExtensionalDomainBitmaps::Position & p,
+        const State & state, const IntegerVariableID & var, const IntegerOrWildcard & v) -> bool
+    {
+        return visit([&](auto & v) { return bitmap_feasible(bitmaps, p, state, var, v); }, v);
+    }
 }
 
 template <typename Hint_>
@@ -97,6 +137,57 @@ auto gcs::innards::propagate_extensional(
 {
     auto & live = *table.live;
     auto & live_count = any_cast<size_t &>(state.get_constraint_state(live.size_handle));
+
+    // Rasterise each position's domain once, so pass 1's inner test is a shift
+    // and a mask rather than a call back into State for every (tuple, position)
+    // pair. Laid out on the first call, which is at the root, from the values
+    // the *table* holds at that position: a value outside that range is not in
+    // any tuple, so it can never be asked about.
+    auto & bitmaps = *table.bitmaps;
+    if (! bitmaps.initialised) {
+        bitmaps.positions.assign(table.vars.size(), ExtensionalDomainBitmaps::Position{});
+        size_t next_offset = 0;
+        visit(
+            [&](const auto & tuples) {
+                auto n_tuples = live.dense.size();
+                for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
+                    std::optional<std::pair<long long, long long>> range;
+                    bool all_integers = true;
+                    for (size_t t = 0; t < n_tuples; ++t)
+                        if (! tuple_value_range(get_tuple_value(tuples, static_cast<unsigned>(t), idx), range)) {
+                            all_integers = false;
+                            break;
+                        }
+
+                    if (! all_integers || ! range)
+                        continue;
+
+                    auto n_values = static_cast<size_t>(range->second - range->first) + 1;
+                    auto n_words = extensional_words_for(n_values);
+                    if (n_words > ExtensionalDomainBitmaps::max_words)
+                        continue;
+
+                    bitmaps.positions[idx] = ExtensionalDomainBitmaps::Position{range->first, n_values, next_offset, true};
+                    next_offset += n_words;
+                }
+            },
+            table.tuples);
+        bitmaps.words.resize(next_offset);
+        bitmaps.initialised = true;
+    }
+
+    for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
+        const auto & p = bitmaps.positions[idx];
+        if (! p.usable)
+            continue;
+        auto n_words = extensional_words_for(p.n_values);
+        std::fill_n(bitmaps.words.begin() + static_cast<std::ptrdiff_t>(p.offset), n_words, ExtensionalWord{});
+        state.for_each_value_immutable(table.vars[idx], [&](Integer val) {
+            auto off = static_cast<unsigned long long>(val.raw_value - p.base);
+            if (off < p.n_values)
+                bitmaps.words[p.offset + off / extensional_word_bits] |= ExtensionalWord{1} << (off % extensional_word_bits);
+        });
+    }
 
     // Pass 1: drop tuples that are no longer feasible, by swapping them past the
     // live count. Nothing here goes through State, so a dropped tuple costs two
@@ -107,7 +198,7 @@ auto gcs::innards::propagate_extensional(
                 auto tuple_idx = live.dense[i];
                 bool is_feasible = true;
                 for (unsigned idx = 0; idx < table.vars.size(); ++idx)
-                    if (! feasible(state, table.vars[idx], get_tuple_value(tuples, tuple_idx, idx))) {
+                    if (! bitmap_feasible(bitmaps, bitmaps.positions[idx], state, table.vars[idx], get_tuple_value(tuples, tuple_idx, idx))) {
                         is_feasible = false;
                         break;
                     }
