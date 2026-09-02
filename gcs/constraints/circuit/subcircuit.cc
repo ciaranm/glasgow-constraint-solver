@@ -214,6 +214,51 @@ namespace
         combine.emit(logger, ProofLevel::Current);
     }
 
+    // The tour size: how many nodes do not point at themselves. All of this follows from
+    // the one cardinality row define_proof_model() writes, so every inference here is a
+    // plain RUP against it.
+    //
+    // Not inferred, deliberately: the count can never be 1, because a lone node on the
+    // tour has nowhere to point but itself. That is a consequence of the rest of the model
+    // rather than something the encoding says, so it would have to be derived in the proof
+    // rather than read off a row, and nothing needs it yet.
+    auto propagate_tour_size(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const IntegerVariableID & size,
+        const vector<IntegerVariableID> & reason_vars, const State & state, auto & inference, ProofLogger * const logger) -> void
+    {
+        auto n = static_cast<long long>(succ.size());
+        long long on = 0, off = 0;
+        for (const auto & [idx, s] : enumerate(succ)) {
+            auto here = Integer(static_cast<long long>(idx));
+            if (! state.in_domain(s, here))
+                ++on; // cannot be a self loop, so it is on the tour whatever else happens
+            else if (state.optional_single_value(s) == here)
+                ++off; // fixed as a self loop, so it is off the tour
+        }
+
+        auto reason = generic_reason(reason_vars);
+        inference.infer(logger, size >= Integer{on}, JustifyUsingRUP{hints::SubCircuit{owner}}, reason);
+        inference.infer(logger, size <= Integer{n - off}, JustifyUsingRUP{hints::SubCircuit{owner}}, reason);
+
+        // With a bound tight against what is already decided, every undecided node goes
+        // the same way: no room left for another node on the tour, or none left off it.
+        auto force_undecided = [&](bool onto_tour) {
+            vector<Literal> forced;
+            for (const auto & [idx, s] : enumerate(succ)) {
+                auto here = Integer(static_cast<long long>(idx));
+                if (! state.in_domain(s, here) || state.optional_single_value(s) == here)
+                    continue;
+                forced.emplace_back(onto_tour ? Literal{s != here} : Literal{s == here});
+            }
+            if (! forced.empty())
+                inference.infer_all(logger, forced, JustifyUsingRUP{hints::SubCircuit{owner}}, reason);
+        };
+
+        if (state.upper_bound(size) == Integer{on})
+            force_undecided(false);
+        else if (state.lower_bound(size) == Integer{n - off})
+            force_undecided(true);
+    }
+
     auto propagate_subcircuit(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const SubCircuitPosData & pos_data,
         const ConstraintStateHandle & unassigned_handle, const bool prevent, const State & state, auto & inference, ProofLogger * const logger)
         -> void
@@ -316,6 +361,12 @@ auto SubCircuit::with_gac_all_different(optional<bool> enable) -> SubCircuit &
     return *this;
 }
 
+auto SubCircuit::with_tour_size(IntegerVariableID size) -> SubCircuit &
+{
+    _tour_size = size;
+    return *this;
+}
+
 auto SubCircuit::prepare(Propagators & propagators, State & initial_state, ProofModel * const model) -> bool
 {
     for (const auto & s : _succ) {
@@ -346,11 +397,19 @@ auto SubCircuit::define_proof_model(ProofModel & model, const State &) -> void
     if (! _gac_all_different)
         define_clique_not_equals_encoding(model, _constraint_id, _succ);
 
-    if (_succ.empty())
+    if (_succ.empty()) {
+        // No node, so no node is on the tour. Anything else the caller asked for still has
+        // to be said: an empty array with a tour size pins that size to zero.
+        if (_tour_size)
+            model.add_labelled_constraint(_constraint_id, "tour_size_le", "tour_size_ge", WPBSum{} + 1_i * *_tour_size == 0_i);
         return;
+    }
 
     auto n = static_cast<long>(_succ.size());
     auto tour_size = tour_size_sum(_succ);
+
+    if (_tour_size)
+        model.add_labelled_constraint(_constraint_id, "tour_size_le", "tour_size_ge", tour_size + -1_i * *_tour_size == 0_i);
     auto & data = _pos_data;
     data.defined = true;
 
@@ -441,6 +500,26 @@ auto SubCircuit::install_propagators(Propagators & propagators) -> void
 {
     auto prevent = std::holds_alternative<Prevent>(_algorithm);
 
+    if (_tour_size) {
+        // Its own propagator, on its own triggers: this one has to wake on a value being
+        // removed, not just on a successor being fixed, because losing its own index from
+        // a domain is what puts a node on the tour.
+        auto reason_vars = _succ;
+        reason_vars.emplace_back(*_tour_size);
+
+        Triggers size_triggers;
+        size_triggers.on_change = {_succ.begin(), _succ.end()};
+        size_triggers.on_bounds = {*_tour_size};
+        propagators.install(
+            constraint_id(),
+            [succ = _succ, owner = constraint_id(), size = *_tour_size, reason_vars = std::move(reason_vars)](
+                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                propagate_tour_size(succ, owner, size, reason_vars, state, inference, logger);
+                return PropagatorState::Enable;
+            },
+            size_triggers);
+    }
+
     Triggers triggers;
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
     propagators.install(
@@ -463,6 +542,8 @@ auto SubCircuit::clone() const -> unique_ptr<Constraint>
     auto cloned = make_unique<SubCircuit>(_succ);
     cloned->with_algorithm(_algorithm);
     cloned->with_gac_all_different(_gac_all_different);
+    if (_tour_size)
+        cloned->with_tour_size(*_tour_size);
     return cloned;
 }
 
@@ -477,5 +558,10 @@ auto SubCircuit::s_expr(const ProofModel * const model) const -> SExpr
     vector<SExpr> vars;
     for (const auto & var : _succ)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars))});
+    // The tour size is a semantic argument, not a tuning knob, so it has to appear here or
+    // a .scp round trip would quietly drop it and read back a weaker constraint.
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars))};
+    if (_tour_size)
+        terms.push_back(tracker.s_expr_term_of(*_tour_size));
+    return SExpr::list(std::move(terms));
 }

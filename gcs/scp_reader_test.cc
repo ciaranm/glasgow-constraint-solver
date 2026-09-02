@@ -1175,6 +1175,37 @@ TEST_CASE("read_scp: subcircuit survives write -> read -> write unchanged")
     CHECK_FALSE(scp_a.empty());
 }
 
+TEST_CASE("read_scp: a subcircuit tour size round-trips and is not silently dropped")
+{
+    // Byte-stability alone would not catch a dropped tour size: the writer would omit it,
+    // the reader would build the weaker constraint, and writing again would match. So
+    // check the term is really in the .scp, and that reading it back still constrains.
+    Problem original;
+    auto a = original.create_integer_variable(0_i, 2_i, "A");
+    auto b = original.create_integer_variable(0_i, 2_i, "B");
+    auto c = original.create_integer_variable(0_i, 2_i, "C");
+    auto size = original.create_integer_variable(3_i, 3_i, "SIZE");
+    original.post(SubCircuit{std::vector<IntegerVariableID>{a, b, c}}.with_tour_size(size));
+    auto scp_a = prove_to_scp(original, "scp_reader_subcircuit_size_roundtrip_a");
+    CHECK(scp_a.find("SIZE") != string::npos);
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_subcircuit_size_roundtrip_b");
+    CHECK(scp_a == scp_b);
+
+    // A size of exactly three over three nodes leaves only the two 3-cycles, where without
+    // the size there would be all six permutations.
+    auto solutions = enumerate(R"(
+        (
+            (version 1)
+            (variables (A 0 2) (B 0 2) (C 0 2) (SIZE 3 3))
+            (constraints (_1 subcircuit (A B C) SIZE))
+            (prob_type enumerate)
+        ))");
+    CHECK(solutions.size() == 2);
+}
+
 TEST_CASE("read_scp: logical constraints survive write -> read -> write unchanged")
 {
     // The and / or / parity forms write each operand as a reification tuple;

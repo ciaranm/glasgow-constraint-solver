@@ -138,6 +138,46 @@ auto run_empty_test(bool proofs) -> void
     check_results(proof_name, expected, actual);
 }
 
+// The tour size, XCSP3's `size` argument. Enumerated against the same reference check with
+// the count computed alongside it, so the option is pinned to "how many nodes do not point
+// at themselves" and not to some off-by-one reading of it.
+auto run_tour_size_test(bool proofs, int n, int size_lower, int size_upper) -> void
+{
+    println(cerr, "subcircuit/tour_size n={} size={}..{}{}", n, size_lower, size_upper, proofs ? " with proofs:" : ":");
+
+    vector<pair<int, int>> domains(static_cast<std::size_t>(n) + 1, pair{0, n - 1});
+    domains.back() = pair{size_lower, size_upper};
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected,
+        [&](vector<int> all) {
+            auto succ = vector<int>(all.begin(), all.end() - 1);
+            if (! is_subcircuit(succ))
+                return false;
+            auto on = 0;
+            for (std::size_t i = 0; i < succ.size(); ++i)
+                if (succ[i] != static_cast<int>(i))
+                    ++on;
+            return on == all.back();
+        },
+        domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> succ;
+    for (int i = 0; i < n; ++i)
+        succ.push_back(p.create_integer_variable(0_i, Integer{n - 1}));
+    auto size = p.create_integer_variable(Integer{size_lower}, Integer{size_upper});
+    p.post(SubCircuit{succ}.with_tour_size(size));
+
+    auto all_vars = succ;
+    all_vars.emplace_back(size);
+    auto proof_name = proofs ? make_optional<std::string>("subcircuit_test_tour_size") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{all_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -167,8 +207,20 @@ auto main(int argc, char * argv[]) -> int
                 run_subcircuit_test(proofs, view_cfg, 2, propagator);
             }
         }
-        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions))
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
             run_empty_test(proofs);
+            // The full range, so the option constrains nothing and every subcircuit
+            // survives with its own count; then a lower bound of 2, which is how XCSP3's
+            // "exactly one circuit" reading is spelled and rules the empty tour out; then
+            // an exact size, and 1, which nothing can satisfy because a lone node on the
+            // tour has nowhere to point but itself.
+            for (int n : {3, 4}) {
+                run_tour_size_test(proofs, n, 0, n);
+                run_tour_size_test(proofs, n, 2, n);
+                run_tour_size_test(proofs, n, n, n);
+                run_tour_size_test(proofs, n, 1, 1);
+            }
+        }
     }
 
     return EXIT_SUCCESS;
