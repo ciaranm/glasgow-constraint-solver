@@ -348,6 +348,39 @@ confident wrong answer first time:
   itself and reports exactly 1.00x for everything. `md5sum` the two binaries when
   a change reads 1.00x across the board.
 
+### Adding a second algorithm to a hot function slows down the first one
+
+The table propagator later grew a compact-table path alongside the live-set one,
+chosen per instance and dispatched on a bool at the top of
+`propagate_extensional`. That should cost the live-set path one predictable
+branch per call. It cost it far more than that, on instances that execute none
+of the new code, and for three unrelated reasons — each worth checking for
+whenever a second path lands in a function that was already hot. The three are
+separate costs on different instances, not three explanations of one number.
+
+- **The inner test stopped being inlined.** `perf record` showed
+  `bitmap_feasible` — pass 1's membership test, previously inlined away — as a
+  separate symbol at 27% of runtime. The function had not changed; the function
+  it was called from had grown past GCC's inlining budget. `[[gnu::always_inline]]`
+  on the test put it back, worth **10% on `srch_k5`** and 25% of the instruction
+  count. The symptom to look for is a helper appearing in the profile that did
+  not use to be there at all.
+- **Instruction footprint, even from code that never runs.** Before the new pass
+  was moved out of line with `[[gnu::noinline]]`, it cost 7% on `Dubois` — an
+  instance whose propagator does almost nothing per call, so its cost is
+  dominated by how much of the function is resident.
+- **Constraint state is not free to declare.** Every slot added with
+  `State::add_constraint_state` is deep-copied into every search node, so two
+  extra integers per table cost `Dubois` 14% and `enum_shared` 24% before the
+  second one was folded into the undo trail and the first was made conditional on
+  the table being large enough to want it. A propagator that ends up not using
+  the state still pays for it at every node.
+
+The general shape: a second algorithm is not free for the first one even when it
+is never executed, and the cost does not show up where you would look for it. Any
+such change needs the *old* path measured against the *unmodified* build, not
+just the new path measured against the old one.
+
 ## Is it the propagator, the strength, or the search?
 
 When a model is slow, "the propagator is slow" is only one of three

@@ -28,6 +28,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::holds_alternative;
 using std::optional;
 using std::string;
 using std::stringstream;
@@ -49,9 +50,17 @@ Table::Table(vector<IntegerVariableID> v, ExtensionalTuples t) : _vars(move(v)),
 {
 }
 
+auto Table::with_algorithm(TableAlgorithm algorithm) -> Table &
+{
+    _algorithm = algorithm;
+    return *this;
+}
+
 auto Table::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Table>(_vars, ExtensionalTuples{_tuples});
+    auto result = make_unique<Table>(_vars, ExtensionalTuples{_tuples});
+    result->with_algorithm(_algorithm);
+    return result;
 }
 
 namespace
@@ -126,6 +135,14 @@ auto Table::prepare(Propagators &, State & initial_state, ProofModel * const) ->
                 if (tuple.size() != _vars.size())
                     throw InvalidProblemDefinitionException{"table size mismatch"};
             _live = ExtensionalLiveTuples::create(initial_state, depointinate(tuples).size());
+            // A table whose tuples all fit in one word cannot pay for the
+            // compact table's per-call bookkeeping, so it does not even get the
+            // state that would let it try: every constraint state is
+            // deep-copied into every search node, and two spare integers per
+            // table cost Dubois 14% and enum_shared 24% before this test.
+            const bool forced = holds_alternative<table::CompactTable>(_algorithm);
+            if (! holds_alternative<table::LiveSet>(_algorithm) && (forced || depointinate(tuples).size() >= ExtensionalCompactTable::min_tuples))
+                _compact = ExtensionalCompactTable::create(initial_state, forced);
         },
         _tuples);
 
@@ -187,7 +204,7 @@ auto Table::install_propagators(Propagators & propagators) -> void
 
             propagators.install(
                 constraint_id(),
-                [table = ExtensionalData{move(_vars), move(tuples), move(_live)}, owner = constraint_id()](
+                [table = ExtensionalData{move(_vars), move(tuples), move(_live), move(_compact)}, owner = constraint_id()](
                     const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     return propagate_extensional(table, state, inference, logger, hints::Table{owner});
                 },

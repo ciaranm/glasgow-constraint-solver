@@ -8,6 +8,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <random>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -41,7 +42,8 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_table_test_2(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> r1, pair<int, int> r2, SimpleTuples allowed) -> void
+auto run_table_test_2(
+    bool proofs, const ViewWrapConfig & view_cfg, TableAlgorithm algorithm, pair<int, int> r1, pair<int, int> r2, SimpleTuples allowed) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 2);
     print(cerr, "table 2var [{}] [{},{}] [{},{}] {} tuples{}", view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first, r2.second,
@@ -63,15 +65,15 @@ auto run_table_test_2(bool proofs, const ViewWrapConfig & view_cfg, pair<int, in
     Problem p;
     auto v1 = create_integer_variable_or_constant_with_view(p, r1, wraps.at(0));
     auto v2 = create_integer_variable_or_constant_with_view(p, r2, wraps.at(1));
-    p.post(Table{{v1, v2}, allowed});
+    p.post(Table{{v1, v2}, allowed}.with_algorithm(algorithm));
 
     auto proof_name = proofs ? make_optional("table_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2});
     check_results(proof_name, expected, actual);
 }
 
-auto run_table_test_3(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> r1, pair<int, int> r2, pair<int, int> r3, SimpleTuples allowed)
-    -> void
+auto run_table_test_3(bool proofs, const ViewWrapConfig & view_cfg, TableAlgorithm algorithm, pair<int, int> r1, pair<int, int> r2, pair<int, int> r3,
+    SimpleTuples allowed) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 3);
     print(cerr, "table 3var [{}] [{},{}] [{},{}] [{},{}] {} tuples{}", view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first, r2.second,
@@ -94,15 +96,15 @@ auto run_table_test_3(bool proofs, const ViewWrapConfig & view_cfg, pair<int, in
     auto v1 = create_integer_variable_or_constant_with_view(p, r1, wraps.at(0));
     auto v2 = create_integer_variable_or_constant_with_view(p, r2, wraps.at(1));
     auto v3 = create_integer_variable_or_constant_with_view(p, r3, wraps.at(2));
-    p.post(Table{{v1, v2, v3}, allowed});
+    p.post(Table{{v1, v2, v3}, allowed}.with_algorithm(algorithm));
 
     auto proof_name = proofs ? make_optional("table_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});
     check_results(proof_name, expected, actual);
 }
 
-auto run_wildcard_table_test(
-    bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> r1, pair<int, int> r2, pair<int, int> r3, WildcardTuples allowed) -> void
+auto run_wildcard_table_test(bool proofs, const ViewWrapConfig & view_cfg, TableAlgorithm algorithm, pair<int, int> r1, pair<int, int> r2,
+    pair<int, int> r3, WildcardTuples allowed) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 3);
     print(cerr, "wildcard table [{}] [{},{}] [{},{}] [{},{}] {} tuples{}", view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first, r2.second,
@@ -133,7 +135,7 @@ auto run_wildcard_table_test(
     auto v1 = create_integer_variable_or_constant_with_view(p, r1, wraps.at(0));
     auto v2 = create_integer_variable_or_constant_with_view(p, r2, wraps.at(1));
     auto v3 = create_integer_variable_or_constant_with_view(p, r3, wraps.at(2));
-    p.post(Table{{v1, v2, v3}, allowed});
+    p.post(Table{{v1, v2, v3}, allowed}.with_algorithm(algorithm));
 
     auto proof_name = proofs ? make_optional("table_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});
@@ -143,7 +145,8 @@ auto run_wildcard_table_test(
 // Dup-variable test: Table with the same handle in several positions.
 // Tuples where the duplicated positions disagree are infeasible.
 // Consistency isn't checked on dup runs; see tmp/duplicate_var_audit.md.
-auto run_dup_table_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, SimpleTuples allowed) -> void
+auto run_dup_table_test(
+    bool proofs, TableAlgorithm algorithm, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, SimpleTuples allowed) -> void
 {
     print(cerr, "table dup unique_doms={} positions={} {} tuples{}", unique_domains, positions, allowed.size(), proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -174,36 +177,90 @@ auto run_dup_table_test(bool proofs, const vector<pair<int, int>> & unique_domai
     vector<IntegerVariableID> vars;
     for (auto pos : positions)
         vars.push_back(unique_vars.at(pos));
-    p.post(Table{vars, allowed});
+    p.post(Table{vars, allowed}.with_algorithm(algorithm));
 
     auto proof_name = proofs ? make_optional("table_test_dup") : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{unique_vars});
     check_results(proof_name, expected, actual);
 }
 
-auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
+auto algorithm_label(TableAlgorithm a) -> const char *
+{
+    return overloaded{                         //
+        [](table::Auto) { return "auto"; },    //
+        [](table::LiveSet) { return "live"; }, //
+        [](table::CompactTable) { return "compact"; }}
+        .visit(a);
+}
+
+/**
+ * A table big and busy enough to make TableAlgorithm::Auto actually switch: it
+ * only builds the compact structure after watching a propagator for a while, so
+ * the small tables above never reach it. This is where the hand-over from the
+ * sparse set is exercised, and -- because the search backtracks above the node
+ * the switch happened at -- so is starting the compact structure again from
+ * scratch. Both were wrong in ways no small table could show.
+ */
+auto run_big_random_table_test(bool proofs, TableAlgorithm algorithm, unsigned n_tuples) -> void
+{
+    constexpr int lo = 0, hi = 7;
+    auto seed = get_seed().value_or(0);
+    std::mt19937 rng(seed + n_tuples);
+    std::uniform_int_distribution<int> pick(lo, hi);
+
+    set<tuple<int, int, int, int>> allowed_set;
+    while (allowed_set.size() < n_tuples)
+        allowed_set.emplace(pick(rng), pick(rng), pick(rng), pick(rng));
+
+    SimpleTuples allowed;
+    for (const auto & [a, b, c, d] : allowed_set)
+        allowed.push_back({Integer(a), Integer(b), Integer(c), Integer(d)});
+
+    print(cerr, "big random table [{}] {} tuples{}", algorithm_label(algorithm), allowed.size(), proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int, int, int, int>> expected, actual;
+    build_expected(
+        expected, [&](int a, int b, int c, int d) -> bool { return allowed_set.contains(tuple{a, b, c, d}); }, pair{lo, hi}, pair{lo, hi},
+        pair{lo, hi}, pair{lo, hi});
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto v1 = p.create_integer_variable(Integer(lo), Integer(hi));
+    auto v2 = p.create_integer_variable(Integer(lo), Integer(hi));
+    auto v3 = p.create_integer_variable(Integer(lo), Integer(hi));
+    auto v4 = p.create_integer_variable(Integer(lo), Integer(hi));
+    p.post(Table{{v1, v2, v3, v4}, allowed}.with_algorithm(algorithm));
+
+    auto proof_name = proofs ? make_optional("table_test_big") : nullopt;
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3, v4});
+    check_results(proof_name, expected, actual);
+}
+
+auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, TableAlgorithm algorithm) -> void
 {
     // Table, 2 variables
-    run_table_test_2(proofs, view_cfg, {1, 3}, {1, 3}, {{1_i, 1_i}, {1_i, 3_i}, {2_i, 2_i}, {3_i, 1_i}});
-    run_table_test_2(proofs, view_cfg, {1, 4}, {1, 4}, {{1_i, 2_i}, {2_i, 1_i}, {3_i, 4_i}, {4_i, 3_i}});
-    run_table_test_2(proofs, view_cfg, {1, 3}, {1, 3}, {}); // empty table: unsatisfiable
-    run_table_test_2(proofs, view_cfg, {-2, 2}, {-2, 2}, {{-2_i, 2_i}, {0_i, 0_i}, {2_i, -2_i}});
+    run_table_test_2(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {{1_i, 1_i}, {1_i, 3_i}, {2_i, 2_i}, {3_i, 1_i}});
+    run_table_test_2(proofs, view_cfg, algorithm, {1, 4}, {1, 4}, {{1_i, 2_i}, {2_i, 1_i}, {3_i, 4_i}, {4_i, 3_i}});
+    run_table_test_2(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {}); // empty table: unsatisfiable
+    run_table_test_2(proofs, view_cfg, algorithm, {-2, 2}, {-2, 2}, {{-2_i, 2_i}, {0_i, 0_i}, {2_i, -2_i}});
     // Degenerate (issue #254): all-fixed variables, both directions, and a
     // mixed fixed+variable case. (Empty tuple list → UNSAT is covered above.)
-    run_table_test_2(proofs, view_cfg, {1, 1}, {1, 1}, {{1_i, 1_i}});             // fixed (1,1) is an allowed tuple (tautology)
-    run_table_test_2(proofs, view_cfg, {2, 2}, {3, 3}, {{1_i, 1_i}});             // fixed (2,3) is not in the table (contradiction)
-    run_table_test_2(proofs, view_cfg, {1, 1}, {1, 3}, {{1_i, 1_i}, {1_i, 2_i}}); // mixed: v1 fixed, v2 variable
+    run_table_test_2(proofs, view_cfg, algorithm, {1, 1}, {1, 1}, {{1_i, 1_i}});             // fixed (1,1) is an allowed tuple (tautology)
+    run_table_test_2(proofs, view_cfg, algorithm, {2, 2}, {3, 3}, {{1_i, 1_i}});             // fixed (2,3) is not in the table (contradiction)
+    run_table_test_2(proofs, view_cfg, algorithm, {1, 1}, {1, 3}, {{1_i, 1_i}, {1_i, 2_i}}); // mixed: v1 fixed, v2 variable
 
     // Table, 3 variables
-    run_table_test_3(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{1_i, 1_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 1_i, 3_i}, {3_i, 3_i, 3_i}});
-    run_table_test_3(proofs, view_cfg, {1, 3}, {2, 4}, {1, 2}, {{2_i, 3_i, 1_i}, {2_i, 4_i, 2_i}}); // tight domain: forces propagation
-    run_table_test_3(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {});                                 // empty table: unsatisfiable
-    run_table_test_3(proofs, view_cfg, {-2, 2}, {-2, 2}, {-2, 2}, {{-2_i, 0_i, 2_i}, {0_i, 0_i, 0_i}, {2_i, 0_i, -2_i}});
+    run_table_test_3(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {1, 3}, {{1_i, 1_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 1_i, 3_i}, {3_i, 3_i, 3_i}});
+    run_table_test_3(proofs, view_cfg, algorithm, {1, 3}, {2, 4}, {1, 2}, {{2_i, 3_i, 1_i}, {2_i, 4_i, 2_i}}); // tight domain: forces propagation
+    run_table_test_3(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {1, 3}, {});                                 // empty table: unsatisfiable
+    run_table_test_3(proofs, view_cfg, algorithm, {-2, 2}, {-2, 2}, {-2, 2}, {{-2_i, 0_i, 2_i}, {0_i, 0_i, 0_i}, {2_i, 0_i, -2_i}});
 
     // Wildcard Table
-    run_wildcard_table_test(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{{Wildcard{}, 2_i, Wildcard{}}}}); // only middle position must be 2
-    run_wildcard_table_test(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{{1_i, Wildcard{}, 3_i}, {Wildcard{}, 2_i, Wildcard{}}}});
-    run_wildcard_table_test(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{{Wildcard{}, Wildcard{}, Wildcard{}}}}); // all wildcards: all tuples allowed
+    run_wildcard_table_test(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {1, 3}, {{{Wildcard{}, 2_i, Wildcard{}}}}); // only middle position must be 2
+    run_wildcard_table_test(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {1, 3}, {{{1_i, Wildcard{}, 3_i}, {Wildcard{}, 2_i, Wildcard{}}}});
+    run_wildcard_table_test(
+        proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {1, 3}, {{{Wildcard{}, Wildcard{}, Wildcard{}}}}); // all wildcards: all tuples allowed
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -223,13 +280,29 @@ auto main(int argc, char * argv[]) -> int
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        run_all_tests(proofs, view_cfg);
+        // Every shape under every algorithm: they are supposed to make exactly
+        // the same inferences, so anything that differs is a bug in one of them.
+        for (auto algorithm : {TableAlgorithm{table::LiveSet{}}, TableAlgorithm{table::CompactTable{}}, TableAlgorithm{table::Auto{}}}) {
+            run_all_tests(proofs, view_cfg, algorithm);
+        }
+        // The rest wrap no views, so they run once rather than once per view
+        // lane -- which also keeps their fixed proof basenames from racing
+        // between lanes under a parallel ctest (issue #562).
         if (run_dup) {
-            // {x, y, x} with mixed-match tuples: (1, 2, 1) matches (cols 0
-            // and 2 share x=1), (1, 2, 2) does not (cols 0 and 2 disagree).
-            run_dup_table_test(proofs, {{1, 3}, {1, 3}}, {0, 1, 0}, {{1_i, 2_i, 1_i}, {1_i, 2_i, 2_i}, {2_i, 3_i, 2_i}, {3_i, 3_i, 3_i}});
-            // {x, x} — only diagonal tuples can match.
-            run_dup_table_test(proofs, {{1, 3}}, {0, 0}, {{1_i, 1_i}, {2_i, 3_i}, {3_i, 3_i}});
+            for (auto algorithm : {TableAlgorithm{table::LiveSet{}}, TableAlgorithm{table::CompactTable{}}, TableAlgorithm{table::Auto{}}}) {
+                // Only Auto's threshold makes this interesting, but running it
+                // under all three keeps the comparison honest, and it is the
+                // only test here where the compact structure is handed the live
+                // set mid-search.
+                run_big_random_table_test(proofs, algorithm, 120);
+                run_big_random_table_test(proofs, algorithm, 400);
+                // {x, y, x} with mixed-match tuples: (1, 2, 1) matches (cols 0
+                // and 2 share x=1), (1, 2, 2) does not (cols 0 and 2 disagree).
+                run_dup_table_test(
+                    proofs, algorithm, {{1, 3}, {1, 3}}, {0, 1, 0}, {{1_i, 2_i, 1_i}, {1_i, 2_i, 2_i}, {2_i, 3_i, 2_i}, {3_i, 3_i, 3_i}});
+                // {x, x} -- only diagonal tuples can match.
+                run_dup_table_test(proofs, algorithm, {{1, 3}}, {0, 0}, {{1_i, 1_i}, {2_i, 3_i}, {3_i, 3_i}});
+            }
         }
     }
 

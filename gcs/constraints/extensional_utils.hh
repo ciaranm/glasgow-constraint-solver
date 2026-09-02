@@ -144,6 +144,152 @@ namespace gcs::innards
     };
 
     /**
+     * \brief Compact-table state for gcs::innards::propagate_extensional().
+     *
+     * The live-set algorithm re-tests every live tuple against every position on
+     * every wake, so pass 1 costs what is *live*. Compact table makes it cost
+     * what *changed*: the live set is a bitset over tuple indices, and for each
+     * value removed from a variable's domain one word-wise `live &= ~support`
+     * takes out every tuple that used it. Measured over this project's suite,
+     * that is 2-13x fewer pass-1 operations, each of them a word AND rather than
+     * a membership test.
+     *
+     * The set of tuples this leaves live, and therefore every inference pass 2
+     * draws from it, is identical to what the live-set algorithm computes: both
+     * end up with the tuples all of whose entries are still in domain. The
+     * proof is unchanged.
+     *
+     * \sa ExtensionalLiveTuples
+     * \ingroup Innards
+     */
+    struct ExtensionalCompactTable
+    {
+        /// Do not build masks larger than this, in words, per constraint.
+        /// The suite's largest is Renault-big at 755 623 words over 332 tables;
+        /// a single table wanting more than this is better served by the
+        /// live-set algorithm than by the memory.
+        static constexpr std::size_t max_mask_words = 16 * 1024 * 1024;
+
+        /**
+         * How long table::Auto watches before deciding, and what it
+         * looks for. Every threshold here is read off the measured suite:
+         *
+         *  - \c decide_after separates the instances that never amortise a mask
+         *    build from the ones that do, and it is counted per propagator, not
+         *    per search. Kakuro wakes a table one to three times in the whole
+         *    search and Renault-megane about four; Crossword wakes one 1 898
+         *    times, srch_k5 3 146, srch_bin_d20 19 068. Nothing sits between, so
+         *    the threshold only has to be small enough that the wait itself does
+         *    not cost anything: at 512 it left srch_k5 running 16% of its calls
+         *    on the slower path, which was worth 36%.
+         *  - \c min_mean_live is where a call starts doing enough work to cover
+         *    the fixed cost of an update. Below it the compact table measured
+         *    0.74-0.96x: Dubois at 2.3 live, enum_shared at 3.0, enum_func at
+         *    12.8. Above it, 1.4x and upwards. It is a mean over the first
+         *    \c decide_after wakes, which early in a search overestimates the
+         *    steady state: srch_bin_d10_n20_s2 settles at 7.7 live but does not
+         *    look like it yet at wake 32, and is the one instance where Auto
+         *    loses (0.96x).
+         *  - the density test is the one that is easy to miss. A bitset is only
+         *    a good shape for the live set if its words are full: the support
+         *    test costs a word per live word, where the live-set scan costs a
+         *    step per tuple until it finds a witness. enum_single_k10_t200k
+         *    keeps 46 tuples live in a 200 000-tuple table -- one per word --
+         *    and measured 1.00x. Requiring \c extensional_word_bits * mean live >=
+         *    tuples asks for at
+         *    least one live tuple per word on average.
+         */
+        static constexpr unsigned long long decide_after = 32;
+        static constexpr std::size_t min_mean_live = 16;
+
+        /// A table whose tuples all fit in one word cannot pay for the compact
+        /// table's per-call bookkeeping -- rasterising the domains twice,
+        /// counting bits, keeping a trail -- however many times it is woken, so
+        /// it does not even get the state that would let it try.
+        static constexpr std::size_t min_tuples = extensional_word_bits;
+
+        /**
+         * Supports: one bitset of \c n_words per (position, value), holding the
+         * tuples whose entry at that position is that value. Values are indexed
+         * from the position's ExtensionalDomainBitmaps::Position, so a value the
+         * table never uses at that position is outside the range and is
+         * unsupported without a lookup.
+         */
+        std::vector<ExtensionalWord> masks;
+        std::vector<std::size_t> mask_at;
+        std::size_t n_words = 0;
+
+        /**
+         * The live tuples, as a sparse bitset: \c words holds the bits, and
+         * \c index[0, limit) names the words that still have any set. Only
+         * \c limit backtracks, by the same argument ExtensionalLiveTuples uses
+         * for its size: a word only ever leaves the live region by swapping with
+         * \c index[limit - 1], so restoring \c limit re-admits exactly the words
+         * dropped below this node.
+         */
+        std::vector<ExtensionalWord> words;
+        std::vector<std::uint32_t> index;
+        std::size_t limit = 0;
+
+        /**
+         * What each position's domain held when this instance last ran on this
+         * path, rasterised exactly as ExtensionalDomainBitmaps rasterises the
+         * current one, so that the difference of the two is the set of values to
+         * react to. It has to backtrack: a stale copy from a deeper node is a
+         * subset of the truth, which would make the update miss removals.
+         */
+        std::vector<ExtensionalWord> previous_domain;
+
+        /// Accumulates the union of the support masks being applied, so that the
+        /// live words are written once per position rather than once per value.
+        std::vector<ExtensionalWord> scratch;
+
+        /**
+         * The undo trail for \c words and \c previous_domain, which are the two
+         * things that change value rather than merely membership.
+         * State::on_backtrack is not reachable from a propagator's
+         * `const State &`, so this follows the difference-logic propagator's
+         * pattern: the trail itself is propagator-owned and never backtracked,
+         * and a single trailed number says how much of it belongs to the current
+         * epoch. It is unwound lazily at the top of the next call, which is safe
+         * because nothing reads either array in between, and what is restored is
+         * exact rather than reconstructed from the current domains.
+         *
+         * \c where indexes \c words below \c n_words and \c previous_domain
+         * above it, so one trail covers both.
+         */
+        struct Undo
+        {
+            std::uint32_t where;
+            ExtensionalWord was;
+        };
+
+        std::vector<Undo> trail;
+
+        /// Sentinel \c where for a trail entry that carries the old \c limit
+        /// rather than a word. Restoring the limit through the trail rather than
+        /// through a second constraint state matters more than it looks: every
+        /// slot is deep-copied into every search node, so a table that never
+        /// ends up using the compact table would still pay for it at each node.
+        /// Two slots cost Dubois 14% and enum_shared 24% before this.
+        static constexpr std::uint32_t limit_marker = ~std::uint32_t{0};
+
+        /// How much of \c trail belongs to the current epoch. A plain integer,
+        /// which std::any holds without allocating.
+        ConstraintStateHandle trail_mark_handle{0};
+
+        /// table::Auto watches this many wakes before deciding; table::CompactTable
+        /// builds at the first one. Once \c decided is set the answer never changes.
+        bool forced = true;
+        unsigned long long wakes = 0;
+        unsigned long long total_live = 0;
+        bool decided = false;
+        bool built = false;
+
+        [[nodiscard]] static auto create(State & initial_state, bool forced) -> std::shared_ptr<ExtensionalCompactTable>;
+    };
+
+    /**
      * \brief Data for gcs::innards::propagate_extensional().
      *
      * \ingroup Innards
@@ -186,7 +332,17 @@ namespace gcs::innards
          */
         std::shared_ptr<ExtensionalLiveTuples> live;
 
-        ExtensionalData(std::vector<IntegerVariableID> vars, ExtensionalTuples tuples, std::shared_ptr<ExtensionalLiveTuples> live);
+        /**
+         * Non-null when this instance may use the compact-table algorithm: the
+         * caller asked for it, or asked for Auto and the table is big enough to
+         * be worth watching. Deliberately the last member, so that adding it
+         * moves nothing the live-set path's hot loops touch -- placed before
+         * \c reason it cost srch_k5 9% and Crossword 13% on the live-set path.
+         */
+        std::shared_ptr<ExtensionalCompactTable> compact = {};
+
+        ExtensionalData(std::vector<IntegerVariableID> vars, ExtensionalTuples tuples, std::shared_ptr<ExtensionalLiveTuples> live,
+            std::shared_ptr<ExtensionalCompactTable> compact = {});
     };
 
     /**
