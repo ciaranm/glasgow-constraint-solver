@@ -52,8 +52,8 @@ equivalent for that frontend's vocabulary).
 | cumulative, optional tasks | `Cumulative` presence form[^cumopt] | ✓ (`fzn_cumulative_opt`) | n/a — no such form in XCSP3 | ? |
 | binPacking | `BinPacking` (per-bin GAC)[^bp] | ✓ (`fzn_bin_packing` / `_capa` / `_load`) | ✓ (signatures 1/2/3; per-bin condition list `s UNSUPPORTED`) | ? |
 | knapsack | `Knapsack` | ✓ | ✓ (basic with two `XCondition`s; not yet exercised by a test) | ? |
-| circuit | `Circuit` | ✓ | ✓ (basic; sub-circuit with size param `s UNSUPPORTED`); semantics mismatch with XCSP3 spec, see #167 | ? |
-| subcircuit | `SubCircuit` | ✓ | not yet bound; XCSP3's plain `<circuit>` is *this* constraint's semantics, not `Circuit`'s, and its size-carrying forms are `s UNSUPPORTED` — see #167 and [#788](https://github.com/ciaranm/glasgow-constraint-solver/issues/788) | ? |
+| circuit | `Circuit` | ✓ | n/a — XCSP3 has no Hamiltonian-circuit constraint; its `<circuit>` is `subcircuit`, see the row below | ? |
+| subcircuit | `SubCircuit` | ✓ | ✓ (all three `<circuit>` forms: no size, constant size, variable size) — XCSP3-core's `<circuit>` allows isolated vertices and asks for exactly one circuit, so it is this constraint with a tour size of at least two ([#167](https://github.com/ciaranm/glasgow-constraint-solver/issues/167) closed by [#788](https://github.com/ciaranm/glasgow-constraint-solver/issues/788)) | ? |
 | instantiation | `Equals` to constant | ✓ | ✓ | ? |
 | lex (ordered list) | `LexLessThan` / `LexLessThanEqual` / `LexGreaterThan` / `LexGreaterEqual` | ✓ | ✓ (lists; matrix as lex² over rows + columns) | ? |
 | slide (meta-constraint) | apply template per window | ? | ✓ (parser unfolds into per-window constraints) | ? |

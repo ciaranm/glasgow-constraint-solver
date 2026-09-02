@@ -1,0 +1,13 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <array id="s" size="[4]"> 0..3 </array>
+    </variables>
+    <constraints>
+        <!-- A constant size: three of the four vertices are on the circuit, so each
+             solution is one isolated vertex plus a directed 3-cycle on the rest. -->
+        <circuit>
+            <list> s[] </list>
+            <size> 3 </size>
+        </circuit>
+    </constraints>
+</instance>

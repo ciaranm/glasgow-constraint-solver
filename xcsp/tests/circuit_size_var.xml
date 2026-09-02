@@ -1,0 +1,14 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <array id="s" size="[4]"> 0..3 </array>
+        <var id="k"> 0..4 </var>
+    </variables>
+    <constraints>
+        <!-- A variable size, with 0 in its domain on purpose: XCSP3 asks for exactly one
+             circuit, so the empty one is still excluded and k never takes 0. -->
+        <circuit>
+            <list> s[] </list>
+            <size> k </size>
+        </circuit>
+    </constraints>
+</instance>
