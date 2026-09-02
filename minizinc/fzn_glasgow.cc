@@ -478,6 +478,11 @@ auto main(int argc, char * argv[]) -> int
                     seen_a_bool = seen_a_bool || data.integer_variables.at(string{v}).second;
                 }
                 else {
+                    // A literal counts towards seen_a_bool just as a variable reference
+                    // does: the flag decides whether the solution printer says true /
+                    // false or an integer, and if the flattener has fixed every element
+                    // of a var bool array then no variable is left to recover it from.
+                    seen_a_bool = seen_a_bool || v.is_boolean();
                     Integer val = v.is_boolean() ? (static_cast<bool>(v) ? 1_i : 0_i) : Integer{v.get<long long>()};
                     values.push_back(val);
                     variables.push_back(ConstantIntegerVariableID{val});

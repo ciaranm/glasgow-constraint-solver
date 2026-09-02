@@ -277,6 +277,14 @@ add_test(NAME minizinc-cumulativeopt-fzn COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}
 add_test(NAME minizinc-emptysetin COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ empty_set_in)
 add_test(NAME minizinc-emptysetinreif COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ empty_set_in_reif)
 
+# A var bool output array whose every element the flattener has fixed (#785).
+# This has to be hand-written JSON: MiniZinc drops such an array from `output`
+# unless something else keeps it alive, so a .mzn model cannot reach it. `ns` is
+# the all-par array that used to print as 1 / 0; `es` keeps one live variable, so
+# it prints correctly either way and shows the two disagreeing in one solution;
+# `ds` is all-par ints, and is here so the fix cannot start calling those bools.
+add_test(NAME minizinc-parboolarrayoutput COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ par_bool_array_output)
+
 add_test(NAME minizinc-small COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ small true true)
 set_tests_properties(minizinc-small PROPERTIES SKIP_RETURN_CODE 66)
 

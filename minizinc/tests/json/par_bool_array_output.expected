@@ -1,0 +1,11 @@
+----------
+----------
+==========
+ds = [3, 4];
+ds = [3, 4];
+es = [false, true];
+es = [true, true];
+ns = [true, false];
+ns = [true, false];
+x = false;
+x = true;

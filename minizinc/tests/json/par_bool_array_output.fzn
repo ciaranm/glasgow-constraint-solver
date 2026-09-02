@@ -1,0 +1,14 @@
+{
+    "variables": {
+        "x": { "type": "bool" }
+    },
+    "arrays": {
+        "ns": { "a": [true, false] },
+        "es": { "a": ["x", true] },
+        "ds": { "a": [3, 4] }
+    },
+    "constraints": [],
+    "output": ["x", "ns", "es", "ds"],
+    "solve": { "method": "satisfy" },
+    "version": "1.0"
+}
