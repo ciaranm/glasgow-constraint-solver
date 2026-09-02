@@ -5,6 +5,7 @@
 #include <gcs/constraints/circuit/subcircuit.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/am1_from_pairs.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -44,7 +45,9 @@ using std::format;
 using fmt::format;
 #endif
 
+using std::cmp_equal;
 using std::cmp_greater_equal;
+using std::cmp_not_equal;
 using std::make_optional;
 using std::make_unique;
 using std::map;
@@ -287,9 +290,183 @@ namespace
             force_undecided(true);
     }
 
+    // Everything on the tour is reachable from the anchor, because the tour is one cycle
+    // through it. So anything the anchor cannot reach has to opt out. This is the
+    // connectivity core of Francis and Stuckey's `scc`, and their observation that this
+    // family cannot say anything until some node is mandatory is why it is guarded on the
+    // anchor: without one there is nothing to be reachable from.
+    //
+    // Self loops are not tour edges -- a node pointing at itself is off the tour -- so they
+    // are not followed, which is the same care F&S call for: "self-cycle edges must be
+    // handled carefully... ignored when finding the children of a node".
+    auto reachable_layers(const vector<IntegerVariableID> & succ, const long anchor, const State & state) -> vector<vector<bool>>
+    {
+        auto n = succ.size();
+        // layers[t][x]: x is reachable from the anchor in at most t steps. The certificate
+        // walks these out one at a time, so it needs each layer and not just the union.
+        auto layers = vector<vector<bool>>(n, vector<bool>(n, false));
+        layers[0][static_cast<size_t>(anchor)] = true;
+        for (size_t t = 1; t < n; ++t) {
+            layers[t] = layers[t - 1];
+            for (size_t i = 0; i < n; ++i) {
+                if (! layers[t - 1][i])
+                    continue;
+                for (const auto & v : state.each_value_immutable(succ[i])) {
+                    auto j = static_cast<size_t>(v.raw_value);
+                    if (cmp_not_equal(j, i))
+                        layers[t][j] = true;
+                }
+            }
+        }
+        return layers;
+    }
+
+    // At most one of the successors takes value v. The all-different encoding only has the
+    // pairwise rows, so the clique inequality over them has to be derived -- which is
+    // recover_am1_from_pairs's job, so all there is to do here is emit the pairs it merges
+    // and remember the answer.
+    //
+    // This was a hand-rolled staircase until it turned out to be the fifth copy of one
+    // derivation, four of which predate the shared version. Not for the reason the shared
+    // version's own documentation gives, though, which is worth recording because the next
+    // caller to switch over will read it: recover_am1_from_pairs pins its result with an
+    // `ia` step, on the grounds that every intermediate is sound whatever it is fed, so a
+    // corrupted merge lands on a weaker line VeriPB is right to accept. *At this call site
+    // that pin buys nothing*, measured rather than assumed -- the pigeonhole below consumes
+    // this line coefficient by coefficient, so a merge that lost an input, summed
+    // everything at once, or skipped the final division is already rejected downstream,
+    // hand-rolled and unpinned, in all four cases tried. What the switch does buy is one
+    // derivation instead of five, a refusal rather than an operandless `pol` below two
+    // members, and the induction's scaffolding deleted rather than left live. It costs 0.7%
+    // more `.pbp`.
+    auto need_value_at_most_one(ProofLogger & logger, const vector<IntegerVariableID> & succ, SCCProofCache & cache, const long v) -> ProofLine
+    {
+        if (auto found = cache.value_at_most_one.find(v); found != cache.value_at_most_one.end())
+            return found->second;
+
+        // The lower triangle, in the order the induction consumes it.
+        vector<ProofLiteralOrFlag> members;
+        auto at_most_ones = vector<vector<ProofLine>>(succ.size());
+        for (size_t j = 0; j < succ.size(); ++j) {
+            members.emplace_back(succ[j] == Integer{v});
+            for (size_t i = 0; i < j; ++i)
+                at_most_ones[j].emplace_back(logger.emit_rup_proof_line(
+                    WPBSum{} + 1_i * ! (succ[i] == Integer{v}) + 1_i * ! (succ[j] == Integer{v}) >= 1_i, ProofLevel::Temporary));
+        }
+
+        auto line = recover_am1_from_pairs(logger, members, at_most_ones, ProofLevel::Top);
+        cache.value_at_most_one.emplace(v, line);
+        return line;
+    }
+
+    // At least one of the successors takes value v: pigeonhole. Every successor takes some
+    // value, and every value other than v can be taken by at most one of them, so with as
+    // many successors as values somebody has to take v. This is what makes the reachability
+    // induction below possible at all -- it is how "the node at position t has a
+    // predecessor" gets said.
+    auto need_value_at_least_one(ProofLogger & logger, const vector<IntegerVariableID> & succ, SCCProofCache & cache, const long v) -> ProofLine
+    {
+        if (auto found = cache.value_at_least_one.find(v); found != cache.value_at_least_one.end())
+            return found->second;
+
+        PolBuilder pigeonhole;
+        for (const auto & s : succ)
+            pigeonhole.add(logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(s));
+        for (size_t w = 0; w < succ.size(); ++w)
+            if (cmp_not_equal(w, v))
+                pigeonhole.add(need_value_at_most_one(logger, succ, cache, static_cast<long>(w)));
+
+        auto line = pigeonhole.emit(logger, ProofLevel::Top);
+        cache.value_at_least_one.emplace(v, line);
+        return line;
+    }
+
+    // Justify "node m cannot be on the tour" for every m the anchor cannot reach, by walking
+    // out from the anchor one layer at a time.
+    //
+    // The fact derived at each layer t, for each node x the anchor has not reached within t
+    // steps, is
+    //
+    //     E(t, x):  pos[x] = t  ->  succ[x] = x
+    //
+    // "x sitting at position t has to be off the tour". Its proof is the same at every
+    // layer. Somebody is x's predecessor, and for each candidate q either q = x, which is
+    // the conclusion, or the step row puts q at position t-1. A q the anchor *had* reached
+    // within t-1 steps cannot point at x, or x would have been reached within t; that is in
+    // the reason. A q it had not reached carries E(t-1, q), so q at t-1 is off the tour and
+    // cannot point at x either. At t = 0 the step row puts q at position -1, which the
+    // position variable's own lower bound refuses, so the layer needs nothing before it.
+    //
+    // Two things make this work here where circuit_scc.cc's argument would not. Positions
+    // are anchored on the very node the walk starts from, so no shifting to an arbitrary
+    // root is needed -- and that shift would be modulo the tour's length, which is a
+    // variable. And a node off the tour sits at position zero, so position t >= 1 already
+    // means on the tour and nothing has to count how long the tour is.
+    //
+    // The whole thing is a chain of RUP lemmas with exactly one cutting-planes step in it,
+    // the pigeonhole for "somebody is x's predecessor". Nothing else needs a `pol`, and
+    // nothing has to cite a step row either, which is worth stating because the arithmetic
+    // looks as though it should need both: taking "x is at t" through the step row to "q is
+    // at t-1" is unit propagation on the two halves of that row. The row is written over
+    // `pos[x] - pos[q]`, so with `pos[x]` fixed at t the `>=` half gives `pos[q] <= t-1` and
+    // the `<=` half gives `pos[q] >= t-1` -- the `>=` half is the one bounding q from above,
+    // which is the opposite way round from how it reads -- and between them they pin every
+    // bit. Those halves are model rows, so unit propagation reaches them unaided -- and
+    // only because the encoding is anchored, since without an anchor each is guarded on a
+    // `first` flag as well, which nothing here would have fixed. Adding pols to help was
+    // measured and they were dead weight: each one removed leaves every test verifying,
+    // while a plain JustifyUsingRUP in place of this function still gets rejected, so it is
+    // these lemmas and not the arithmetic that is load-bearing. Dropping the pigeonhole
+    // does make VeriPB reject.
+    auto derive_unreachable(ProofLogger & logger, const vector<IntegerVariableID> & succ, const SubCircuitPosData & pos_data, SCCProofCache & cache,
+        const vector<vector<bool>> & reached_within, const ReasonLiterals & reason) -> void
+    {
+        auto n = succ.size();
+        logger.emit_proof_comment("everything on the tour is reachable from the anchor, one layer at a time");
+
+        for (size_t t = 0; t < n; ++t)
+            for (size_t x = 0; x < n; ++x) {
+                if (reached_within[t][x] || cmp_equal(x, *pos_data.anchor))
+                    continue;
+
+                auto at_t = pos_data.pos.at(static_cast<long>(x)) == Integer(static_cast<long long>(t));
+
+                // "Somebody is x's predecessor" is not in the encoding -- the all-different
+                // rows are a pairwise clique, which is at-most-one only -- so it has to be
+                // derived, and it is what the layer's conclusion resolves the candidates
+                // against. Emitted for its place in the database rather than for its line
+                // number, at ProofLevel::Top and cached, so a later layer and a later search
+                // node both reuse it.
+                need_value_at_least_one(logger, succ, cache, static_cast<long>(x));
+
+                for (size_t q = 0; q < n; ++q) {
+                    if (q == x)
+                        continue;
+
+                    // A predecessor the anchor had already reached cannot point at x -- x
+                    // would have been reached too -- and that is in the reason, so unit
+                    // propagation has it without any help.
+                    if (t > 0 && reached_within[t - 1][q])
+                        continue;
+                    // Nor can the anchor itself, for the same reason, and it carries no
+                    // E(t-1, .) of its own.
+                    if (cmp_equal(q, *pos_data.anchor))
+                        continue;
+
+                    logger.emit_rup_proof_line_under_reason(
+                        reason, WPBSum{} + 1_i * ! at_t + 1_i * ! (succ[q] == Integer(static_cast<long long>(x))) >= 1_i, ProofLevel::Temporary);
+                }
+
+                // E(t, x) itself, at ProofLevel::Current so that the next layer still has it:
+                // that is how the layers chain, and why nothing has to restate a layer.
+                logger.emit_rup_proof_line_under_reason(
+                    reason, WPBSum{} + 1_i * ! at_t + 1_i * (succ[x] == Integer(static_cast<long long>(x))) >= 1_i, ProofLevel::Current);
+            }
+    }
+
     auto propagate_subcircuit(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const SubCircuitPosData & pos_data,
-        const ConstraintStateHandle & unassigned_handle, const bool prevent, const State & state, auto & inference, ProofLogger * const logger)
-        -> void
+        const ConstraintStateHandle & unassigned_handle, const bool prevent, const optional<long> & scc_anchor,
+        const std::shared_ptr<SCCProofCache> & cache, const State & state, auto & inference, ProofLogger * const logger) -> void
     {
         if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
             return;
@@ -334,6 +511,24 @@ namespace
 
             auto justf = [&, cycle](const ReasonLiterals &) { derive_tour_at_most(*logger, pos_data, cycle); };
             inference.infer_all(logger, off, JustifyExplicitly{justf, ThenRUP::Yes, hints::SubCircuit{owner}}, generic_reason(succ));
+        }
+
+        if (scc_anchor) {
+            auto layers = reachable_layers(succ, *scc_anchor, state);
+            const auto & seen = layers.back();
+            vector<Literal> unreachable;
+            for (size_t m = 0; m < n; ++m) {
+                if (seen[m])
+                    continue;
+                auto here = Integer(static_cast<long long>(m));
+                if (state.optional_single_value(succ[m]) == here)
+                    continue;
+                unreachable.emplace_back(succ[m] == here);
+            }
+            if (! unreachable.empty()) {
+                auto justf = [&](const ReasonLiterals & reason) { derive_unreachable(*logger, succ, pos_data, *cache, layers, reason); };
+                inference.infer_all(logger, unreachable, JustifyExplicitly{justf, ThenRUP::Yes, hints::SubCircuit{owner}}, generic_reason(succ));
+            }
         }
 
         if (! prevent)
@@ -568,7 +763,11 @@ auto SubCircuit::define_proof_model(ProofModel & model, const State &) -> void
 
 auto SubCircuit::install_propagators(Propagators & propagators) -> void
 {
-    auto prevent = std::holds_alternative<Prevent>(_algorithm);
+    auto prevent = ! std::holds_alternative<Check>(_algorithm);
+    auto scc_anchor = std::holds_alternative<gcs::subcircuit::SCC>(_algorithm) ? _required_node : nullopt;
+    // Proof lines, not search state: they stay valid at every later node, so the cache
+    // deliberately does not backtrack, exactly as circuit_scc.cc's does.
+    auto cache = std::make_shared<SCCProofCache>();
 
     if (_tour_size) {
         // Its own propagator, on its own triggers: this one has to wake on a value being
@@ -592,11 +791,15 @@ auto SubCircuit::install_propagators(Propagators & propagators) -> void
 
     Triggers triggers;
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
+    // Reachability shrinks when a value is removed, not only when a successor is fixed, so
+    // the SCC arm needs the wider trigger.
+    if (scc_anchor)
+        triggers.on_change = {_succ.begin(), _succ.end()};
     propagators.install(
         constraint_id(),
-        [succ = _succ, owner = constraint_id(), pos_data = std::move(_pos_data), unassigned_handle = _state_handles.unassigned, prevent](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            propagate_subcircuit(succ, owner, pos_data, unassigned_handle, prevent, state, inference, logger);
+        [succ = _succ, owner = constraint_id(), pos_data = std::move(_pos_data), unassigned_handle = _state_handles.unassigned, prevent, scc_anchor,
+            cache](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            propagate_subcircuit(succ, owner, pos_data, unassigned_handle, prevent, scc_anchor, cache, state, inference, logger);
             // Deliberately not claiming idempotence, unlike circuit::Prevent: forcing a
             // node to be a self loop fixes a successor, which changes the chain structure
             // this pass walked, and one pass makes no attempt to reach the fixpoint of

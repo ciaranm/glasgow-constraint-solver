@@ -183,9 +183,9 @@ auto run_tour_size_test(bool proofs, int n, int size_lower, int size_upper) -> v
 // certificate instead of one per node of the cycle. Enumerated against the same reference
 // check, restricted to the solutions where the named node is on the tour, since that is the
 // precondition the caller has to have declared.
-auto run_anchored_test(bool proofs, int n, int anchor) -> void
+auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algorithm, const std::string & label) -> void
 {
-    println(cerr, "subcircuit/anchored n={} anchor={}{}", n, anchor, proofs ? " with proofs:" : ":");
+    println(cerr, "subcircuit/anchored/{} n={} anchor={}{}", label, n, anchor, proofs ? " with proofs:" : ":");
 
     vector<pair<int, int>> domains(static_cast<std::size_t>(n), pair{0, n - 1});
 
@@ -205,9 +205,9 @@ auto run_anchored_test(bool proofs, int n, int anchor) -> void
                 values.emplace_back(Integer{v});
         succ.push_back(p.create_integer_variable(values));
     }
-    p.post(SubCircuit{succ}.with_required_node(anchor));
+    p.post(SubCircuit{succ}.with_required_node(anchor).with_algorithm(algorithm));
 
-    auto proof_name = proofs ? make_optional<std::string>("subcircuit_test_anchored") : nullopt;
+    auto proof_name = proofs ? make_optional("subcircuit_test_anchored_" + label) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{succ});
     check_results(proof_name, expected, actual);
 }
@@ -285,8 +285,10 @@ auto main(int argc, char * argv[]) -> int
             // an exact size, and 1, which nothing can satisfy because a lone node on the
             // tour has nowhere to point but itself.
             for (int n : {3, 4, 5})
-                for (int anchor : {0, n - 1})
-                    run_anchored_test(proofs, n, anchor);
+                for (int anchor : {0, n - 1}) {
+                    run_anchored_test(proofs, n, anchor, subcircuit::Prevent{}, "prevent");
+                    run_anchored_test(proofs, n, anchor, subcircuit::SCC{}, "scc");
+                }
             for (int n : {3, 4}) {
                 run_tour_size_test(proofs, n, 0, n);
                 run_tour_size_test(proofs, n, 2, n);

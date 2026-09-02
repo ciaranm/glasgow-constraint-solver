@@ -774,6 +774,11 @@ if(GCS_BUILD_TESTS)
     add_test(NAME subcircuit_prevent COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subcircuit_prevent_test>)
     add_view_tests(subcircuit_prevent subcircuit_prevent_test 8)
 
+    add_executable(subcircuit_scc_test constraints/circuit/subcircuit_scc_test.cc)
+    target_link_libraries(subcircuit_scc_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME subcircuit_scc COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subcircuit_scc_test>)
+    add_view_tests(subcircuit_scc subcircuit_scc_test 12)
+
     add_executable(subcircuit_test constraints/circuit/subcircuit_test.cc)
     target_link_libraries(subcircuit_test PRIVATE glasgow_constraint_solver)
     add_test(NAME subcircuit_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subcircuit_test>)

@@ -45,17 +45,36 @@ namespace gcs
         struct Prevent final
         {
         };
+
+        /**
+         * \brief Propagate SubCircuit by reachability as well: as subcircuit::Prevent, and
+         * additionally require every node on the tour to be reachable from the node the
+         * caller named with with_required_node(), forcing anything unreachable to opt out.
+         *
+         * This is the connectivity core of Francis and Stuckey's `scc` algorithm. Their
+         * four extra pruning rules -- prune root, prune skip, fix required edges and prune
+         * within -- are not here yet.
+         *
+         * It needs with_required_node(), and does nothing without it: there is nothing to
+         * be reachable *from* until some node is known to be on the tour, which is Francis
+         * and Stuckey's own observation about applying this family to subcircuit at all.
+         *
+         * \ingroup Constraints
+         */
+        struct SCC final
+        {
+        };
     }
 
     /**
      * \brief The propagation algorithms supported by SubCircuit: subcircuit::Prevent (the
-     * default) or subcircuit::Check (cheaper and weaker). Requesting anything else is a
-     * compile-time error, and the choice never changes the constraint's meaning or its
-     * proof encoding.
+     * default), subcircuit::Check (cheaper and weaker) or subcircuit::SCC (stronger, and
+     * only useful with with_required_node()). Requesting anything else is a compile-time
+     * error, and the choice never changes the constraint's meaning or its proof encoding.
      *
      * \ingroup Constraints
      */
-    using SubCircuitAlgorithm = std::variant<subcircuit::Check, subcircuit::Prevent>;
+    using SubCircuitAlgorithm = std::variant<subcircuit::Check, subcircuit::Prevent, subcircuit::SCC>;
 
     /**
      * \brief SubCircuit constraint: requires the variables, representing graph nodes, to
