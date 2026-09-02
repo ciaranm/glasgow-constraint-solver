@@ -113,21 +113,21 @@ namespace
     }
 
     [[nodiscard]] inline auto bitmap_feasible(const ExtensionalDomainBitmaps & bitmaps, const ExtensionalDomainBitmaps::Position & p,
-        const State & state, const IntegerVariableID & var, const Integer val) -> bool
+        const bool use_bitmaps, const State & state, const IntegerVariableID & var, const Integer val) -> bool
     {
-        return p.usable ? bitmap_contains(bitmaps, p, val) : state.in_domain(var, val);
+        return (use_bitmaps && p.usable) ? bitmap_contains(bitmaps, p, val) : state.in_domain(var, val);
     }
 
-    [[nodiscard]] inline auto bitmap_feasible(const ExtensionalDomainBitmaps &, const ExtensionalDomainBitmaps::Position &, const State &,
+    [[nodiscard]] inline auto bitmap_feasible(const ExtensionalDomainBitmaps &, const ExtensionalDomainBitmaps::Position &, const bool, const State &,
         const IntegerVariableID &, const Wildcard &) -> bool
     {
         return true;
     }
 
     [[nodiscard]] inline auto bitmap_feasible(const ExtensionalDomainBitmaps & bitmaps, const ExtensionalDomainBitmaps::Position & p,
-        const State & state, const IntegerVariableID & var, const IntegerOrWildcard & v) -> bool
+        const bool use_bitmaps, const State & state, const IntegerVariableID & var, const IntegerOrWildcard & v) -> bool
     {
-        return visit([&](auto & v) { return bitmap_feasible(bitmaps, p, state, var, v); }, v);
+        return visit([&](auto & v) { return bitmap_feasible(bitmaps, p, use_bitmaps, state, var, v); }, v);
     }
 }
 
@@ -176,7 +176,13 @@ auto gcs::innards::propagate_extensional(
         bitmaps.initialised = true;
     }
 
-    for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
+    // Rasterising position idx costs a word-clear plus one bit-set per value in
+    // its domain, and saves roughly one in_domain() call per live tuple. On a
+    // four-tuple table with two live entries that trade loses -- it read 0.9x on
+    // enum_bin_d2_n14 and enum_shared_k2_n12 before this gate -- so only do it
+    // when the live set is big enough to amortise it.
+    const bool use_bitmaps = live_count >= ExtensionalDomainBitmaps::min_live;
+    for (unsigned idx = 0; use_bitmaps && idx < table.vars.size(); ++idx) {
         const auto & p = bitmaps.positions[idx];
         if (! p.usable)
             continue;
@@ -192,13 +198,25 @@ auto gcs::innards::propagate_extensional(
     // Pass 1: drop tuples that are no longer feasible, by swapping them past the
     // live count. Nothing here goes through State, so a dropped tuple costs two
     // stores rather than an inference plus an IntervalSet edit.
+    //
+    // Everything loop-invariant is spelled as a local first. Reaching one tuple
+    // entry is four dependent loads -- the ArrayParam's shared_ptr, the outer
+    // vector's buffer, the row's buffer, the value -- and GCC hoists none of
+    // them out of the inner loop on its own, so `perf annotate` showed the first
+    // two being redone for every (tuple, position) pair. Naming them costs
+    // nothing and leaves two loads: the row, once per tuple, and the value.
     visit(
         [&](const auto & tuples) {
+            const auto & rows = *tuples;
+            const auto n_vars = static_cast<unsigned>(table.vars.size());
+            const auto * const positions = bitmaps.positions.data();
+            const auto * const vars = table.vars.data();
             for (size_t i = 0; i < live_count;) {
                 auto tuple_idx = live.dense[i];
+                const auto & row = rows[tuple_idx];
                 bool is_feasible = true;
-                for (unsigned idx = 0; idx < table.vars.size(); ++idx)
-                    if (! bitmap_feasible(bitmaps, bitmaps.positions[idx], state, table.vars[idx], get_tuple_value(tuples, tuple_idx, idx))) {
+                for (unsigned idx = 0; idx < n_vars; ++idx)
+                    if (! bitmap_feasible(bitmaps, positions[idx], use_bitmaps, state, vars[idx], row[idx])) {
                         is_feasible = false;
                         break;
                     }
@@ -251,25 +269,30 @@ auto gcs::innards::propagate_extensional(
 
     visit(
         [&](const auto & tuples) {
+            // Same hoisting as pass 1: the support scan reaches one tuple entry
+            // per step, and the loads that get there are loop-invariant.
+            const auto & rows = *tuples;
             for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
-                auto & residue_row = residues.support[idx];
-                auto base = residues.base[idx];
+                auto * const residue_row = residues.support[idx].data();
+                const auto residue_row_size = residues.support[idx].size();
+                const auto base = residues.base[idx];
+                const auto * const dense = live.dense.data();
+                const auto * const position = live.position.data();
                 state.for_each_value_mutable(table.vars[idx], [&](Integer val) {
                     auto off = static_cast<std::size_t>(val.raw_value - base);
-                    bool have_row = off < residue_row.size();
+                    bool have_row = off < residue_row_size;
 
                     // O(1) fast path: last witness still selectable and still matching.
                     if (have_row) {
                         auto cached = residue_row[off];
-                        if (cached != ExtensionalResidues::none && live.position[cached] < live_count &&
-                            match(get_tuple_value(tuples, cached, idx), val))
+                        if (cached != ExtensionalResidues::none && position[cached] < live_count && match(rows[cached][idx], val))
                             return;
                     }
 
                     bool supported = false;
                     for (size_t i = 0; i < live_count; ++i) {
-                        auto tuple_idx = live.dense[i];
-                        if (match(get_tuple_value(tuples, tuple_idx, idx), val)) {
+                        auto tuple_idx = dense[i];
+                        if (match(rows[tuple_idx][idx], val)) {
                             supported = true;
                             if (have_row)
                                 residue_row[off] = tuple_idx;

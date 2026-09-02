@@ -126,6 +126,10 @@ namespace gcs::innards
         /// word count, unrelated to extensional_word_bits happening to match.
         static constexpr std::size_t max_words = 64;
 
+        /// Below this many live tuples, rasterising costs more than the
+        /// in_domain() calls it replaces.
+        static constexpr std::size_t min_live = 8;
+
         struct Position
         {
             long long base = 0;
