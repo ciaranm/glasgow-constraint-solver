@@ -90,6 +90,7 @@ namespace gcs
         SubCircuitAlgorithm _algorithm = subcircuit::Prevent{};
         bool _gac_all_different = false;
         std::optional<IntegerVariableID> _tour_size;
+        std::optional<long> _required_node;
 
         // Backtrackable state allocated by prepare(), consumed by install_propagators().
         innards::subcircuit::SubCircuitStateHandles _state_handles;
@@ -115,6 +116,23 @@ namespace gcs
         /// propagator, in addition to the subcircuit propagation. Off by default (a cheaper
         /// value-consistent all-different is always applied regardless).
         auto with_gac_all_different(std::optional<bool> enable = true) -> SubCircuit &;
+
+        /// Name a node that is already declared to be on the tour -- its own index must
+        /// not be in its successor's domain, and this throws if it is. That is a
+        /// precondition, not a strengthening: the constraint means exactly the same thing
+        /// with and without it, so nothing about it is recorded in the `.scp`, in the same
+        /// way the choice of algorithm is not.
+        ///
+        /// What it buys is a cheaper proof. Without it, which edge of the tour wraps around
+        /// is not known until the membership literals are, so every edge needs a row for
+        /// each case and every certificate splits over the cycle's nodes. With it, only the
+        /// edges into the named node can wrap, which is exactly the shape Circuit gets for
+        /// free by anchoring on node 0: half the rows, and one polish-notation step per
+        /// certificate rather than one per node of the cycle.
+        ///
+        /// It is also what the SCC propagation needs, which cannot infer anything at all
+        /// until some node is known to be on the tour.
+        auto with_required_node(long node) -> SubCircuit &;
 
         /// Constrain how many nodes are on the tour: `size` is the number that do not
         /// point at themselves. This is XCSP3's `size` argument, for which MiniZinc's

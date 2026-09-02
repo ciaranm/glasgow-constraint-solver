@@ -44,6 +44,7 @@ using std::format;
 using fmt::format;
 #endif
 
+using std::cmp_greater_equal;
 using std::make_optional;
 using std::make_unique;
 using std::map;
@@ -194,11 +195,38 @@ namespace
 
         // One comment for the whole derivation rather than one per case: there are
         // |cycle| + 1 cases and a proof comment costs bytes at every firing.
+        if (pos_data.anchor) {
+            // With the tour anchored at a named node, which edge wraps is known, so there
+            // is nothing to split over: one polish-notation step either way.
+            if (std::find(cycle.begin(), cycle.end(), *pos_data.anchor) == cycle.end()) {
+                // Every edge of the cycle steps, and chaining them telescopes to 0 >= k.
+                // The cycle cannot exist at all -- no evidence node needed, because the
+                // anchor is itself a node outside it that has to be on the tour.
+                logger.emit_proof_comment(format("this cycle of {} misses the anchor entirely", k));
+                PolBuilder avoids_anchor;
+                for (size_t t = 0; t < k; ++t)
+                    add_sat(avoids_anchor, *pos_data.edges.at(cycle[t]).at(next(t)).step_ge);
+                avoids_anchor.emit(logger, ProofLevel::Current);
+            }
+            else {
+                // The edge into the anchor is the wrap; chaining the rest bounds the tour.
+                logger.emit_proof_comment(format("this cycle of {} contains the anchor, so it is the whole tour", k));
+                PolBuilder is_whole_tour;
+                for (size_t t = 0; t < k; ++t) {
+                    const auto & lines = pos_data.edges.at(cycle[t]).at(next(t));
+                    add_sat(is_whole_tour, next(t) == *pos_data.anchor ? *lines.wrap_le : *lines.step_le);
+                }
+                is_whole_tour.emit(logger, ProofLevel::Current);
+            }
+            return;
+        }
+
+        // Unanchored, so every node of the cycle is a candidate for being first.
         logger.emit_proof_comment(format("this cycle of {} bounds the whole tour, whichever of its nodes is first", k));
 
         PolBuilder no_first;
         for (size_t t = 0; t < k; ++t)
-            add_sat(no_first, pos_data.edges.at(cycle[t]).at(next(t)).step_ge);
+            add_sat(no_first, *pos_data.edges.at(cycle[t]).at(next(t)).step_ge);
 
         PolBuilder combine;
         combine.add(no_first.emit(logger, ProofLevel::Current));
@@ -206,7 +234,7 @@ namespace
             PolBuilder this_first;
             for (size_t t = 0; t < k; ++t) {
                 const auto & lines = pos_data.edges.at(cycle[t]).at(next(t));
-                add_sat(this_first, next(t) == cycle[s] ? lines.wrap_le : lines.step_le);
+                add_sat(this_first, next(t) == cycle[s] ? *lines.wrap_le : *lines.step_le);
             }
             add_sat(combine, this_first.emit(logger, ProofLevel::Current));
         }
@@ -361,6 +389,17 @@ auto SubCircuit::with_gac_all_different(optional<bool> enable) -> SubCircuit &
     return *this;
 }
 
+auto SubCircuit::with_required_node(long node) -> SubCircuit &
+{
+    // The range is checkable here, so check it here: a caller who has miscounted finds out
+    // at the call rather than when search starts. Whether the node is really declared on
+    // the tour needs the initial domains, so that one waits for prepare().
+    if (node < 0 || cmp_greater_equal(node, _succ.size()))
+        throw InvalidProblemDefinitionException{"SubCircuit: with_required_node() names a node outside the successor array"};
+    _required_node = node;
+    return *this;
+}
+
 auto SubCircuit::with_tour_size(IntegerVariableID size) -> SubCircuit &
 {
     _tour_size = size;
@@ -383,6 +422,16 @@ auto SubCircuit::prepare(Propagators & propagators, State & initial_state, Proof
         all_diff.set_constraint_id(constraint_id());
         std::move(all_diff).install(propagators, initial_state, model);
     }
+
+    // The named node has to be declared on the tour, not merely constrained onto it by
+    // something posted later: the anchored encoding below is only sound if it really is on
+    // the tour, and a constraint posted after this one has not narrowed anything yet when
+    // define_proof_model() runs. A declared domain has, since domains are set when the
+    // variable is created.
+    if (_required_node && initial_state.in_domain(_succ[static_cast<size_t>(*_required_node)], Integer{*_required_node}))
+        throw InvalidProblemDefinitionException{
+            "SubCircuit: with_required_node() names a node whose own index is still in its successor's domain, so it is not declared "
+            "to be on the tour"};
 
     NonGacAllDifferentUnassigned unassigned{};
     for (auto v : _succ)
@@ -416,83 +465,104 @@ auto SubCircuit::define_proof_model(ProofModel & model, const State &) -> void
     for (long i = 0; i < n; ++i)
         data.pos.emplace(i, model.create_proof_only_integer_variable(0_i, Integer{n - 1}, "subpos", IntegerVariableProofRepresentation::Bits));
 
-    // first[i]: node i is on the tour and every lower-numbered node is off it, written as
-    // "all i+1 of these literals hold". Fully reified, so unit propagation fixes the flag
-    // from the successors -- a half-reified flag would leave it free on a solution and the
-    // rows below that need it would not check.
-    for (long i = 0; i < n; ++i) {
-        auto conjunction = WPBSum{} + 1_i * (_succ[i] != Integer{i});
-        for (long j = 0; j < i; ++j)
-            conjunction += 1_i * (_succ[j] == Integer{j});
-        data.first.emplace(i, model.create_proof_flag_fully_reifying(_constraint_id, {i}, "first", conjunction >= Integer{i + 1}));
-    }
+    data.anchor = _required_node;
 
-    // The tour starts at whichever node is first...
-    for (long i = 0; i < n; ++i)
-        data.first_is_zero.emplace(i,
-            model.add_labelled_constraint(
-                _constraint_id, "first_pos_" + to_string(i), WPBSum{} + 1_i * data.pos.at(i) <= 0_i, HalfReifyOnConjunctionOf{{data.first.at(i)}}));
+    if (data.anchor) {
+        // Anchored: the tour starts at the named node, so the only edges that can wrap are
+        // the ones into it. No `first` flags are needed at all.
+        model.add_labelled_constraint(_constraint_id, "anchor_pos", WPBSum{} + 1_i * data.pos.at(*data.anchor) <= 0_i);
+    }
+    else {
+        // first[i]: node i is on the tour and every lower-numbered node is off it, written
+        // as "all i+1 of these literals hold". Fully reified, so unit propagation fixes the
+        // flag from the successors -- a half-reified flag would leave it free on a solution
+        // and the rows below that need it would not check.
+        for (long i = 0; i < n; ++i) {
+            auto conjunction = WPBSum{} + 1_i * (_succ[i] != Integer{i});
+            for (long j = 0; j < i; ++j)
+                conjunction += 1_i * (_succ[j] == Integer{j});
+            data.first.emplace(i, model.create_proof_flag_fully_reifying(_constraint_id, {i}, "first", conjunction >= Integer{i + 1}));
+        }
+
+        // The tour starts at whichever node is first...
+        for (long i = 0; i < n; ++i)
+            data.first_is_zero.emplace(i,
+                model.add_labelled_constraint(_constraint_id, "first_pos_" + to_string(i), WPBSum{} + 1_i * data.pos.at(i) <= 0_i,
+                    HalfReifyOnConjunctionOf{{data.first.at(i)}}));
+    }
 
     // ...and a node off the tour is given position zero. Nothing here needs the positions to
     // be a permutation -- no certificate below relies on them being distinct -- and an
     // off-tour node takes part in no position row at all: it has no successor other than
     // itself, and by all-different nothing else can point at it either. So the only job
-    // these rows have is to leave `pos` determined by the successors under unit
-    // propagation, which is what solution checking needs, and zero does that as well as
-    // anything.
+    // these rows have is to leave `pos` determined by the successors under unit propagation,
+    // which is what solution checking needs, and zero does that as well as anything.
     //
     // The stdlib decomposition instead numbers off-tour nodes after every on-tour one, in
-    // index order, which does make the positions a permutation. That is what to reach for
-    // if the wrap rows below ever move into the proof -- the counting argument they would
-    // need is a pigeonhole over the positions -- but it costs n rows of n+1 terms where
-    // this costs n rows of one, and nothing today buys anything with it.
+    // index order, which does make the positions a permutation. That is what to reach for if
+    // the wrap rows below ever move into the proof -- the counting argument they would need
+    // is a pigeonhole over the positions -- but it costs n rows of n+1 terms where this
+    // costs n rows of one, and nothing today buys anything with it.
     for (long i = 0; i < n; ++i)
         model.add_labelled_constraint(
             _constraint_id, "off_pos_" + to_string(i), WPBSum{} + 1_i * data.pos.at(i) <= 0_i, HalfReifyOnConjunctionOf{{_succ[i] == Integer{i}}});
 
-    // Each edge gets two row families rather than Circuit's one, because which edge wraps
-    // around is not known statically: it is the edge into whichever node is `first`, and
-    // that is only pinned down once the membership literals are. Circuit anchors on node 0,
-    // so it writes the `+1` form for every column but 0 and the wrap form for column 0, and
-    // never both for the same edge.
+    // How many row families an edge needs depends on whether the wrap edge is known.
     //
-    // This is the one place where the encoding carries something for the proof's benefit
-    // rather than saying the constraint as compactly as it could, so it is worth recording
-    // why rather than leaving it to be rediscovered. The wrap rows are what let a
-    // propagator that has found a closed cycle *count*: chaining them gives "the tour is no
-    // longer than this cycle" in a bounded number of steps (see derive_tour_at_most).
-    // Without them the encoding is smaller -- n^2 row families rather than 2n^2, smaller
-    // than the stdlib decomposition -- and still exact, because a cycle avoiding the anchor
-    // still chains to 0 = k. But then that counting fact has to be derived instead, and
-    // deriving it needs "the on-tour positions are exactly 0..L-1", a pigeonhole induction
-    // *conditional on the variable L*. That is the same obstacle that stops circuit_scc.cc's
-    // machinery being ported here, so the smaller encoding is not a free reformulation: it
-    // is blocked on the same open problem.
+    // Anchored, it is: only the edges into the named node wrap, so each edge gets exactly
+    // one family, and this is precisely Circuit's shape -- it writes the `+1` form for
+    // every column but 0 and the wrap form for column 0, because it anchors on node 0.
     //
-    // The other way out is a statically known anchor, which collapses this to exactly
-    // Circuit's shape, since only the n edges into a nominated on-tour node can wrap. That
-    // needs the caller to name one. The C++ and .scp interfaces could; MiniZinc cannot on
-    // the models that matter, because both challenge models post their "this node is
-    // visited" constraint *after* the subcircuit call and MiniZinc flattens in source order,
-    // so the domain is not yet narrowed when the redefinition runs.
+    // Unanchored, it is not: the wrap edge is the one into whichever node is `first`, which
+    // is only pinned down once the membership literals are, so both cases have to be
+    // written and every certificate splits over the candidates. This is the one place where
+    // the encoding carries something for the proof's benefit rather than saying the
+    // constraint as compactly as it could, so it is worth recording why rather than leaving
+    // it to be rediscovered. The wrap rows are what let a propagator that has found a
+    // closed cycle *count*: chaining them gives "the tour is no longer than this cycle" in
+    // a bounded number of steps (see derive_tour_at_most). Without them the encoding is
+    // smaller -- n^2 row families rather than 2n^2, smaller than the stdlib decomposition
+    // -- and still exact, because a cycle avoiding the anchor still chains to 0 = k. But
+    // then that counting fact has to be derived instead, and deriving it needs "the on-tour
+    // positions are exactly 0..L-1", a pigeonhole induction *conditional on the variable
+    // L*. So the smaller encoding is not a free reformulation; naming an anchor is the way
+    // to get it, and that is what with_required_node() is for.
     for (long i = 0; i < n; ++i)
         for (long j = 0; j < n; ++j) {
             if (i == j)
                 continue;
 
-            auto step = WPBSum{} + 1_i * data.pos.at(j) + -1_i * data.pos.at(i);
-            auto [step_le, step_ge] = model.add_labelled_constraint(_constraint_id, "pos_step_" + to_string(i) + "_" + to_string(j) + "_le",
-                "pos_step_" + to_string(i) + "_" + to_string(j) + "_ge", step == 1_i,
-                HalfReifyOnConjunctionOf{{_succ[i] == Integer{j}, ! data.first.at(j)}});
+            EdgePosLines lines;
+            auto pos_difference = [&]() { return WPBSum{} + 1_i * data.pos.at(j) + -1_i * data.pos.at(i); };
+            auto role = to_string(i) + "_" + to_string(j);
 
-            auto wrap = WPBSum{} + 1_i * data.pos.at(j) + -1_i * data.pos.at(i);
-            for (const auto & term : tour_size.terms)
-                wrap += term;
-            auto [wrap_le, wrap_ge] = model.add_labelled_constraint(_constraint_id, "pos_wrap_" + to_string(i) + "_" + to_string(j) + "_le",
-                "pos_wrap_" + to_string(i) + "_" + to_string(j) + "_ge", wrap == 1_i,
-                HalfReifyOnConjunctionOf{{_succ[i] == Integer{j}, data.first.at(j)}});
+            auto wraps_here = data.anchor ? (j == *data.anchor) : true;
+            auto steps_here = data.anchor ? (j != *data.anchor) : true;
 
-            data.edges[i].emplace(j, EdgePosLines{step_le, step_ge, wrap_le, wrap_ge});
+            if (steps_here) {
+                auto guard = HalfReifyOnConjunctionOf{{_succ[i] == Integer{j}}};
+                if (! data.anchor)
+                    guard.emplace_back(! data.first.at(j));
+                auto [le, ge] = model.add_labelled_constraint(
+                    _constraint_id, "pos_step_" + role + "_le", "pos_step_" + role + "_ge", pos_difference() == 1_i, guard);
+                lines.step_le = le;
+                lines.step_ge = ge;
+            }
+
+            if (wraps_here) {
+                auto wrap = pos_difference();
+                for (const auto & term : tour_size.terms)
+                    wrap += term;
+                auto guard = HalfReifyOnConjunctionOf{{_succ[i] == Integer{j}}};
+                if (! data.anchor)
+                    guard.emplace_back(data.first.at(j));
+                auto [le, ge] =
+                    model.add_labelled_constraint(_constraint_id, "pos_wrap_" + role + "_le", "pos_wrap_" + role + "_ge", wrap == 1_i, guard);
+                lines.wrap_le = le;
+                lines.wrap_ge = ge;
+            }
+
+            data.edges[i].emplace(j, lines);
         }
 }
 
@@ -544,6 +614,8 @@ auto SubCircuit::clone() const -> unique_ptr<Constraint>
     cloned->with_gac_all_different(_gac_all_different);
     if (_tour_size)
         cloned->with_tour_size(*_tour_size);
+    if (_required_node)
+        cloned->with_required_node(*_required_node);
     return cloned;
 }
 

@@ -21,12 +21,12 @@ namespace gcs::innards::subcircuit
      */
     struct EdgePosLines
     {
-        // (succ[i] = j and not first[j]) -> pos[j] - pos[i] = 1
-        ProofLine step_le;
-        ProofLine step_ge;
-        // (succ[i] = j and first[j]) -> pos[j] - pos[i] + |tour| = 1
-        ProofLine wrap_le;
-        ProofLine wrap_ge;
+        // (succ[i] = j [and not first[j]]) -> pos[j] - pos[i] = 1
+        std::optional<ProofLine> step_le;
+        std::optional<ProofLine> step_ge;
+        // (succ[i] = j [and first[j]]) -> pos[j] - pos[i] + |tour| = 1
+        std::optional<ProofLine> wrap_le;
+        std::optional<ProofLine> wrap_ge;
     };
 
     /**
@@ -46,6 +46,10 @@ namespace gcs::innards::subcircuit
     struct SubCircuitPosData
     {
         bool defined = false;
+        // Set when the caller named a node already known to be on the tour. Then the tour
+        // is anchored there, only the edges into it carry a wrap row, and there are no
+        // `first` flags at all -- Circuit's shape, which it gets by anchoring on node 0.
+        std::optional<long> anchor;
         std::map<long, ProofOnlySimpleIntegerVariableID> pos;
         // first[i]: node i is on the tour and every lower-numbered node is off it. At most
         // one of these holds, and exactly one does unless the tour is empty.
