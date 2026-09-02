@@ -75,7 +75,7 @@ auto gcs::innards::propagate_extensional(
     visit(
         [&](const auto & tuples) {
             auto none_feasible = true;
-            for (auto tuple_idx : state.each_value_mutable(table.selector)) {
+            state.for_each_value_mutable(table.selector, [&](Integer tuple_idx) {
                 bool is_feasible = true;
                 for (unsigned idx = 0; idx < table.vars.size(); ++idx)
                     if (! feasible(state, table.vars[idx], get_tuple_value(tuples, tuple_idx.as_index(), idx))) {
@@ -91,7 +91,7 @@ auto gcs::innards::propagate_extensional(
                     inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(table.vars));
                 else
                     inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, NoReason{});
-            }
+            });
             if (none_feasible && logger && logger->get_assertion_level() != AssertionLevel::Off)
                 // selector already empty on entry
                 inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(table.vars));
@@ -121,7 +121,7 @@ auto gcs::innards::propagate_extensional(
             for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
                 auto & residue_row = residues.support[idx];
                 auto base = residues.base[idx];
-                for (auto val : state.each_value_mutable(table.vars[idx])) {
+                state.for_each_value_mutable(table.vars[idx], [&](Integer val) {
                     auto off = static_cast<std::size_t>(val.raw_value - base);
                     bool have_row = off < residue_row.size();
 
@@ -130,23 +130,24 @@ auto gcs::innards::propagate_extensional(
                         auto cached = residue_row[off];
                         if (cached != ExtensionalResidues::none && state.in_domain(table.selector, Integer(static_cast<long long>(cached))) &&
                             match(get_tuple_value(tuples, cached, idx), val))
-                            continue;
+                            return;
                     }
 
                     bool supported = false;
-                    for (auto tuple_idx : state.each_value_immutable(table.selector)) {
+                    state.for_each_value_immutable(table.selector, [&](Integer tuple_idx) -> bool {
                         if (match(get_tuple_value(tuples, tuple_idx.as_index(), idx), val)) {
                             supported = true;
                             if (have_row)
                                 residue_row[off] = static_cast<std::uint32_t>(tuple_idx.as_index());
-                            break;
+                            return false;
                         }
-                    }
+                        return true;
+                    });
 
                     if (! supported) {
                         inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{hint}, generic_reason(table.vars));
                     }
-                }
+                });
             }
         },
         table.tuples);
