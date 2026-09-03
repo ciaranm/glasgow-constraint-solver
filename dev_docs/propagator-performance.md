@@ -87,10 +87,11 @@ loophole for speculative single-constraint cleverness.
 many constraints of that type there are, how many propagators they installed,
 and how many times those propagators were called, changed a domain, and
 contradicted. `GCS_PROPAGATOR_STATS=time` adds the elapsed time in each,
-totalled per type. It reaches `%%%mzn-stat:` lines from `fzn-glasgow -s` and
-`xcsp_glasgow_constraint_solver -s`, and the default `operator<<` on `Stats`
-prints the one-line summary, so a sweep harness can tabulate it without any
-per-constraint plumbing.
+totalled per type. It reaches `%%%mzn-stat:` lines from `fzn-glasgow -s`, `d PROPAGATOR CALLS ...`
+lines from `xcsp_glasgow_constraint_solver` (which prints its `d` statistics
+unconditionally), and the one-line summary from the default `operator<<` on
+`Stats`, so a sweep harness can tabulate it without any per-constraint
+plumbing.
 
 Read the two rungs for what they are. `calls` is one increment per propagator
 run, so a run with it on is comparable with a run without. `time` reads the

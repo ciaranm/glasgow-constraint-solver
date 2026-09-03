@@ -368,7 +368,9 @@ autotuner) without recompiling. Each is read once, on first use.
   ``time`` (or ``2``) additionally times each run, which costs two clock reads per propagator call
   and so makes the run's own wall clock and nodes-per-second incomparable with an untimed one ---
   read shares and per-call figures off it, not throughput. An unrecognised value is ignored with a
-  warning. See ``dev_docs/propagator-performance.md``.
+  warning. The breakdown appears as ``%%%mzn-stat:`` lines from ``fzn-glasgow -s``, as
+  ``d PROPAGATOR CALLS ...`` lines from ``xcsp_glasgow_constraint_solver``, and as a summary
+  line in the default ``Stats`` output. See ``dev_docs/propagator-performance.md``.
 
 * ``GCS_TABULATION_THRESHOLD``: under ``consistency::Auto``, a constraint tabulates itself for
   generalised arc consistency when the product of its variables' domain sizes is no bigger than
