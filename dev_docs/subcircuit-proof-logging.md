@@ -431,99 +431,128 @@ The same shape is in four more redefinitions — the three `bin_packing` ones an
 `fzn_regular` — and is [issue #803](https://github.com/ciaranm/glasgow-constraint-solver/issues/803).
 The graph family shifts *parameters*, which costs nothing.
 
-## Not implemented: F&S's pruning rules, and what certifying them would take
+## The pruning rules: implemented, certified, and expensive
 
-F&S's remaining `scc` rules — prune root, prune skip, fix required edges and prune
-within — with the evidence-node guard each one needs for `subcircuit`. Their
-explanation clauses are §5.3.2 of the paper, numbered 1 to 7 there and referred to
-by those numbers below.
+`with_prune_root()` and `with_prune_within()`, both off by default. Together they are
+Francis and Stuckey's remaining `scc` rules, and they cost between 1x and 95x the
+proof for at most a ten per cent reduction in search. They are here because they are
+*certifiable*, and a corpus of expensive-but-correct rules that a checker can be
+pointed at is worth having on its own account.
 
-They are stated over the **subtree structure of a depth-first traversal**: which
-subtree was visited before which, and the lowpoint of a node's first child. Our
-encoding knows nothing about that. `pos` is a *tour-order* labelling, not a DFS
-one, and it is pinned at exactly one place, `pos[anchor] = 0`.
+### Why the encoding takes them at all
 
-That sounds like an obstacle and mostly is not, because the DFS tree turns out to
-be how the propagator *finds* these inferences rather than why they hold. Working
-each clause back to what makes it true:
+F&S state the rules over the **subtree structure of a depth-first traversal**: which
+subtree was visited before which, and the lowpoint of a node's first child. This
+encoding knows nothing about that. `pos` is a *tour-order* labelling, not a DFS one,
+and it is pinned at exactly one place, `pos[anchor] = 0`.
 
-**Rules 1 and 5, and the conflict cases of 3 and 4, are already ours.** Rule 1 is
-a strongly connected sub-component `S` with an evidence node `a ∈ S`. Given an
-anchor there are only two cases and the walks cover both: if the anchor is in `S`
-then nothing outside `S` is forward-reachable from it, and if it is not, then `a`
-cannot reach the anchor. Rule 5 (an edge skipping subtrees) is the same argument
-over the partition its reason describes — with no `A → B ∪ C` and no `B → C`
-edges, whichever of the three sets holds the anchor leaves one of the other two
-unreachable in one direction or the other. The general shape is a **cut**: if
-`A` and `V \ A` both contain an evidence node and no edge crosses `A → V \ A`,
-then whichever side the anchor is on, the other side is stranded, so one of the
-two walks fires. That cut fact is what all of 2, 3, 4 and 5 rest on.
+That looked like the obstacle and mostly is not, because the DFS tree turns out to be
+how the propagator *finds* these inferences rather than why they hold. Working each of
+§5.3.2's seven explanation clauses back to what makes it true:
 
-**Prune root (rule 6) and prune within (rule 7) are strictly stronger than what we
-do, and both are the existing induction run under one assumed edge.** Prune root:
-assume `succ[anchor] = e`; if the last subtree is only reachable through the
-anchor, it is now unreachable, so its evidence node is forced off the tour, which
-contradicts the evidence literal. Prune within: assume `succ[p] = c`; the subtree
-at `c` then has no way back out, so the backward walk strands it, and `succ[p] = c`
-with `c` a self loop takes value `c` twice. Neither fires on the live domains,
-which is precisely why they add strength.
+**Rules 1 and 5, and the conflict cases of 3 and 4, were already ours.** They all rest
+on one cut fact: if both sides of a cut hold a node that must be on the tour and no
+edge crosses it, then whichever side the anchor is on, the other side is stranded ---
+and stranding is exactly what the two plain walks derive. Rule 1's component `S`
+either contains the anchor, in which case nothing outside it is forward-reachable, or
+does not, in which case its evidence node cannot reach the anchor.
 
-So, in this encoding, **prune root and prune within are singleton arc consistency
-(shaving) on the successor variables**, over the candidates a DFS pass identifies
-cheaply.
+**Prune root (rule 6) and prune within (rule 7) are strictly stronger, and both are
+the existing induction run under one assumed edge.** Assume `succ[p] = c`, run the
+reachability rules against the domains that leaves, and if a node that must be on the
+tour would be stranded in either direction, `c` is not a value `succ[p]` can take.
+Neither fires on the live domains --- while a successor is still free the anchor
+reaches everything any of its values reaches --- which is precisely why they add
+strength and why they cost a walk per candidate.
 
-### This was probed rather than argued
+So in this encoding **the two rules are singleton arc consistency (shaving) on the
+successor variables**, and both are one function, `shave_by_reachability`, with the two
+flags selecting which nodes it runs over: prune root the anchor, prune within
+everything else. Splitting them at the anchor keeps them non-overlapping.
 
-`~/claude/tmp/788-subcircuit-step0/prune_root_probe.cc`: six nodes, anchor 0 with
-candidates `{1, 4}`, a strongly connected `{1,2,3}` with no edge to `{4,5}`, and
-node 4 required on the tour and reachable only through `0 -> 4`. Every successor in
-`{1,2,3}` keeps two values under the hypothesis, so all-different fixes nothing and
-no cycle closes, which is what stops `check` and `prevent` getting there first.
+### What the certificates needed: nothing new
 
-* Free, it is satisfiable and `scc` infers enough to find the solution without
-  search (1 recursion, against `prevent`'s 5).
-* With `succ[0] = 1` posted after the constraint — so the declared domain, and
-  hence the encoding, is untouched — `scc` reaches the contradiction at the root
-  (1 recursion; `prevent` needs 3), and the proof **verifies**:
-  `s VERIFIED UNSATISFIABLE`.
-* Swapping `derive_unreachable` for a plain `JustifyUsingRUP` makes VeriPB
-  **reject** it, at `.pbp:95`. So the induction is doing the work, not unit
-  propagation.
+No new row family, no new proof-only variable, and no new cutting-planes step. Three
+small pieces of mechanism:
 
-**The existing certificate therefore survives being run under a hypothesis, with
-no new row family, no new proof-only variable and no new cutting-planes step.**
-That is the substantive finding: for these two rules the proof-logging question is
-already answered, and the work is propagator work.
+* **`AssumedEdge`**, and walks that take one. Carried as data rather than read back out
+  of the `State`, because the walk's result and the justification that reproduces it
+  must be over the same edge set --- and a justification may read only the reason and
+  the model, never the live state, which by then has moved on.
+* **The hypothesis as a guard.** Every row the induction emits picks up
+  `succ[from] != to` as an extra disjunct, so it says "*if* that edge is taken, then x
+  at position t is off the tour", and the conclusion drawn from such a chain is not "x
+  is off the tour" but "that edge is not taken". One extra literal per row. The
+  alternative --- emitting the chain at a proof level deleted once the conclusion is
+  drawn --- saves those literals and costs the level discipline; the guard was chosen
+  because it cannot be got subtly wrong.
+* **Candidates snapshotted** before the loop infers anything. Judging each against the
+  domains the pass started from is sound and not merely convenient: a walk only ever
+  uses the *absence* of a value to rule a neighbour out, so a domain that has since
+  lost more values makes the reason a stronger premise, not a weaker one.
 
-### The four things that would actually be hard
+Both mutation probes are caught by `subcircuit_prune_root_test`: dropping the guard,
+and replacing the induction with a plain `JustifyUsingRUP`.
 
-1. **Proof size, which is the binding constraint.** The induction emits one row
-   per (layer, unreached node), `O(n²)` rows per inference. Once per candidate
-   value of a successor makes it `O(n³)` rows per propagator call. The real
-   15-house instance already writes a 186 MB `.pbp` with the walks firing once;
-   measure before building.
-2. **Forced edges: shave, do not derive the cut row.** Rules 2 and 3 conclude
-   `succ[c] = b`. Two routes. Shaving gives it as a by-product — remove every
-   other candidate, and the variable's own at-least-one row unit-propagates the
-   survivor — at one induction per candidate, each carrying **one** extra guard
-   literal, so `O(n³)` literals to shave a variable. Deriving the cut row
-   `Σ_{i∈A, j∉A} [succ[i] = j] ≥ 1` instead needs one induction, but every row of
-   it carries the whole crossing set as guards: `O(n²)` guards on `O(n²)` rows,
-   `O(n⁴)` literals. Fine at `n = 15`, hopeless at competitive `n`. The cheaper
-   route is the one that looks more wasteful.
-3. **Where the hypothesis lives.** The `E(t, x)` rows are derived under an assumed
-   edge, so either they carry that literal as a guard (sound, one literal longer
-   per row) or they are emitted at a level deleted once the conclusion is drawn
-   (shorter, needs the level discipline to be right). Worth deciding before
-   writing any of it.
-4. **The one case genuinely out of reach: rule 1 with no anchor.** F&S guard it
-   with `in(a)` alone and need no root. Our induction has to start somewhere, and
-   `pos` is pinned only at the anchor; for an arbitrary component the layers would
-   have to be indexed relative to `pos[a]`, which is unknown. This is the one
-   place the "arbitrary root" position-offset problem --- argued on
-   [#788](https://github.com/ciaranm/glasgow-constraint-solver/issues/788) to be no
-   blocker, correctly, for the arm as it stands --- is real — and it is unreachable for us anyway, since the arm does nothing without
-   an anchor.
+### The cost, measured
+
+One random instance per `n` (the same one across configs), complete enumeration with
+proofs on, VeriPB 3.0.2. Harness `costcurve.cc` + `curve.sh` in
+`~/claude/tmp/788-subcircuit-step0/`.
+
+| n | recursions (scc / +root / +within) | `.pbp` scc | +prune_root | +prune_within | verify scc → +within |
+|---|---|---|---|---|---|
+| 6 | 16 / 16 / 17 | 11 KB | 1.0x | **13.1x** | 0.10 → 0.11 s |
+| 7 | 119 / 119 / 117 | 139 KB | 1.5x | **15.4x** | 0.11 → 0.10 s |
+| 8 | 492 / 492 / 478 | 212 KB | 1.0x | **51.6x** | 0.11 → 0.51 s |
+| 9 | 1281 / 1281 / 1199 | 586 KB | 1.6x | **72.2x** | 0.21 → 2.11 s |
+| 10 | 8057 / 8057 / 7461 | 4.3 MB | 1.0x | **94.9x** | 1.71 → 24.3 s |
+| 11 | 25469 / 25420 / 22846 | 72.9 MB | 1.7x | **25.5x** | 12.8 → 108 s |
+| 12 | 104134 / 104044 / — | 73.0 MB | 3.7x | *abandoned* | 93.1 s → — |
+
+**Every proof verified**, up to and including the 1.86 GB one at `n = 11`. That is the
+result worth having: the rules are checkable, at every size the checking is affordable
+at all.
+
+Read the multiplier column carefully. It is not monotone --- 95x at `n = 10` and 25x at
+`n = 11` --- because the denominator moves too: `scc`'s own proof jumps 17x between
+those sizes as its search grows. The absolute figures are the honest ones.
+
+At `n = 12` prune within passed **10.8 GB** of `.pbp` before being abandoned, which on
+this machine means it does not fit: the scratchpad is a 16 GB tmpfs and therefore
+*shares the guest's RAM*. Complete enumeration with prune within has a practical
+ceiling somewhere around `n = 11`.
+
+And what it buys: **at most ten per cent fewer search nodes** (8057 → 7461, 25469 →
+22846, 1281 → 1199), and for prune root essentially nothing at all (104134 → 104044).
+Which is consistent with everything else measured on this arm --- the node reduction
+where it is measurable at all is 1.09x to 1.38x --- and is the argument for treating
+the proof-size constant as the thing to attack rather than the propagator.
+
+### What is still hard, and what is not
+
+1. **Proof size is the whole problem.** `O(n²)` rows per inference, `O(n³)` per call
+   for prune root and `O(n^4)` for prune within. The table above is that constant.
+2. **Forced edges come out of shaving**, which is the cheap route even though it looks
+   the wasteful one. Rules 2 and 3 conclude `succ[c] = b`; shaving yields it as a
+   by-product once every other candidate is gone, at one induction per candidate each
+   carrying **one** guard literal. Deriving the cut row
+   `Σ_{i∈A, j∉A} [succ[i] = j] ≥ 1` instead needs one induction, but every row of it
+   carries the whole crossing set as guards: `O(n²)` guards on `O(n²)` rows against
+   `O(n³)` literals for the shave. Nothing here derives a cut row.
+3. **Rule 1 with no anchor is still out of reach.** F&S guard it with `in(a)` alone and
+   need no root; this induction has to start somewhere, and `pos` is pinned only at the
+   anchor, so an arbitrary component would need layers indexed relative to the unknown
+   `pos[a]`. It is the one place the "arbitrary root" position-offset problem is real
+   --- and unreachable for us anyway, since the arm does nothing without an anchor.
+4. **A constant in the successor array breaks the certificate**, which is
+   [issue #812](https://github.com/ciaranm/glasgow-constraint-solver/issues/812) and
+   not these rules' fault: the pigeonhole sums "this variable takes at least one value"
+   over every successor and that is `UnimplementedException` for a constant. Every
+   `mario` instance has one, because its `succ[LuigiHouse] = MarioHouse` pin folds into
+   the array as a literal --- so the one thing that gives the arm an anchor is the one
+   thing that stops it writing a proof, and the cost table above is measured on
+   constant-free instances for that reason.
 
 ### A sign error in the paper, for whoever implements from it
 
