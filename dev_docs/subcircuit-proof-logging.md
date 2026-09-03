@@ -585,15 +585,17 @@ the conclusion is different too: `x` sitting at position `t` would put the pinne
 row emitted is the stronger `pos[x] != t` rather than `E(t, x)`.
 
 **What the tests could and could not pin.** The anchored enumeration sweep now runs with a
-constant in the array, at every size and anchor, with proofs --- 72 runs. That covers the
-branch structure, but **not the arithmetic**: at `n <= 6` unit propagation reaches
+constant in the array, at every size and anchor --- 48 runs, 24 of them with proofs. (72 is
+the figure a careless `grep -c` gives, the proofs-on runs each printing a `$ veripb …` echo
+line as well.) That covers the branch structure, but **not the arithmetic**: at `n <= 6` unit propagation reaches
 `E(t, x)` from the candidate rows and the reason alone, so the pigeonhole line is not
 load-bearing at those sizes and deleting the at-most-zero row still verifies. Complete
 enumeration cannot be run at a size where it does bite. So
 `subcircuit_constant_test` carries a second, *generated* eight-node scenario, searched for
-by the property that its proof fails if the pinned value is counted with an ordinary
-at-most-one --- which is why that fixture is arbitrary and asymmetric. On real cut-down
-mario the same mutation is rejected at k = 10.
+by the property that its proof fails under exactly one mutation: counting a pinned value
+with the ordinary at-most-one instead of the at-most-zero row, which is what deleting
+`need_no_variable_takes` amounts to. That is why the fixture is arbitrary and asymmetric.
+On real cut-down mario the same mutation is rejected at k = 10.
 
 ### A sign error in the paper, for whoever implements from it
 

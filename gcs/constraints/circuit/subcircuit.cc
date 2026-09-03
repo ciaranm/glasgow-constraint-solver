@@ -401,13 +401,6 @@ namespace
         return reaches;
     }
 
-    // At most one of the successors takes value v. The all-different encoding only has the
-    // pairwise rows, so the clique inequality over them has to be derived -- which is
-    // recover_am1_from_pairs's job, so all there is to do here is emit the pairs it merges
-    // and remember the answer.
-    //
-    // This was a hand-rolled staircase until it turned out to be the fifth copy of one
-    // derivation, four of which predate the shared version. Not for the reason the shared
     // Which successors are constants. A constant successor has no encoded atoms at all ---
     // no "takes at least one value" row to cite, and no equality literal a `pol` can name
     // an operand for --- so both halves of the pigeonhole below have to be taken over the
@@ -441,6 +434,18 @@ namespace
         return result;
     }
 
+    // At most one of the *non-constant* successors takes value v. The all-different
+    // encoding only has the pairwise rows, so the clique inequality over them has to be
+    // derived -- which is recover_am1_from_pairs's job, so all there is to do here is emit
+    // the pairs it merges and remember the answer.
+    //
+    // Constants are left out because recover_am1_from_pairs needs a `pol` operand naming
+    // each member, and a constant's condition is a plain true or false with no atom behind
+    // it to name. Leaving them out costs nothing: the pigeonhole below counts only over
+    // these members too, and accounts for the constants separately.
+    //
+    // This was a hand-rolled staircase until it turned out to be the fifth copy of one
+    // derivation, four of which predate the shared version. Not for the reason the shared
     // version's own documentation gives, though, which is worth recording because the next
     // caller to switch over will read it: recover_am1_from_pairs pins its result with an
     // `ia` step, on the grounds that every intermediate is sound whatever it is fed, so a
@@ -452,11 +457,6 @@ namespace
     // derivation instead of five, a refusal rather than an operandless `pol` below two
     // members, and the induction's scaffolding deleted rather than left live. It costs 0.7%
     // more `.pbp`.
-    // At most one of the *non-constant* successors takes value v. Constants are left out
-    // because recover_am1_from_pairs needs a `pol` operand naming each member, and a
-    // constant's condition is a plain true or false with no atom behind it to name.
-    // Leaving them out costs nothing: the pigeonhole below counts only over these members
-    // too, and accounts for the constants separately.
     auto need_value_at_most_one(ProofLogger & logger, const vector<IntegerVariableID> & succ, SCCProofCache & cache,
         const ConstantSuccessors & consts, const long v) -> ProofLine
     {
@@ -519,8 +519,12 @@ namespace
     //     ----------------------------------------------------------------------------
     //     so  sum over the m of [succ_i = v]  >=  m - (n - pinned - 1)  =  1
     //
-    // since m = n - pinned. The constants drop out of both sides, which they have to: they
-    // have no atoms to name.
+    // since m = n - pinned --- an identity that needs the constant successors to be
+    // pairwise distinct, `pinned` counting distinct *values* where m counts successors.
+    // All-different is what supplies that: two constants sharing a value contradict at the
+    // root, so this walk never runs on such a model, which is the same reasoning the
+    // out-of-range constant gets in survey_constants. The constants drop out of both
+    // sides, which they have to: they have no atoms to name.
     //
     // Caller's obligation: v must not be pinned. If it is then the value already has its
     // predecessor and no counting is needed --- derive_unreachable takes that branch
