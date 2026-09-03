@@ -783,6 +783,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(subcircuit_prune_root_test PRIVATE glasgow_constraint_solver)
     add_test(NAME subcircuit_prune_root COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subcircuit_prune_root_test>)
 
+    add_executable(subcircuit_prune_within_test constraints/circuit/subcircuit_prune_within_test.cc)
+    target_link_libraries(subcircuit_prune_within_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME subcircuit_prune_within COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subcircuit_prune_within_test>)
+
     add_executable(subcircuit_scc_reaches_anchor_test constraints/circuit/subcircuit_scc_reaches_anchor_test.cc)
     target_link_libraries(subcircuit_scc_reaches_anchor_test PRIVATE glasgow_constraint_solver)
     add_test(NAME subcircuit_scc_reaches_anchor COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subcircuit_scc_reaches_anchor_test>)

@@ -184,7 +184,7 @@ auto run_tour_size_test(bool proofs, int n, int size_lower, int size_upper) -> v
 // check, restricted to the solutions where the named node is on the tour, since that is the
 // precondition the caller has to have declared.
 auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algorithm, const std::string & label, bool name_the_anchor = true,
-    bool prune_root = false) -> void
+    bool prune_root = false, bool prune_within = false) -> void
 {
     println(cerr, "subcircuit/anchored/{}{} n={} anchor={}{}", label, name_the_anchor ? "" : "/found", n, anchor, proofs ? " with proofs:" : ":");
 
@@ -214,6 +214,8 @@ auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algor
         constraint.with_required_node(anchor);
     if (prune_root)
         constraint.with_prune_root();
+    if (prune_within)
+        constraint.with_prune_within();
     p.post(std::move(constraint));
 
     auto proof_name = proofs ? make_optional("subcircuit_test_anchored_" + label + (name_the_anchor ? "" : "_found")) : nullopt;
@@ -308,6 +310,12 @@ auto main(int argc, char * argv[]) -> int
                     // built to make it fire. A rule that inferred nothing would pass this,
                     // which is what subcircuit_prune_root_test is for.
                     run_anchored_test(proofs, n, anchor, subcircuit::SCC{}, "scc-prune-root", true, true);
+                    // And both rules together, which is the shave over every successor.
+                    // Expensive --- a walk per node per value, and an induction per
+                    // pruning --- but these are the sizes where that is affordable, and
+                    // running it over a full enumeration with proofs on is the only thing
+                    // that checks the two rules do not interfere with each other.
+                    run_anchored_test(proofs, n, anchor, subcircuit::SCC{}, "scc-pruning-rules", true, true, true);
                 }
             for (int n : {3, 4}) {
                 run_tour_size_test(proofs, n, 0, n);

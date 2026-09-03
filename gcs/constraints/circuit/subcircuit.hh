@@ -119,6 +119,7 @@ namespace gcs
         std::optional<IntegerVariableID> _tour_size;
         std::optional<long> _required_node;
         bool _prune_root = false;
+        bool _prune_within = false;
 
         // The node the position encoding is anchored on, settled by prepare(): what
         // with_required_node() named, or the lowest-numbered node whose declared domain
@@ -194,6 +195,22 @@ namespace gcs
         /// is not switched on in the hope of going faster. It is here because the rule is
         /// certifiable and worth having implemented and checkable.
         auto with_prune_root(std::optional<bool> enable = true) -> SubCircuit &;
+
+        /// Add Francis and Stuckey's *prune within* rule to subcircuit::SCC: ask the same
+        /// question with_prune_root() asks of the anchor's successor, of every other node's.
+        /// Off by default, and ignored without subcircuit::SCC.
+        ///
+        /// The two rules are split at the anchor so that they do not overlap: with both on,
+        /// every successor is shaved exactly once, and each flag maps to one of F&S's rules
+        /// (theirs is stated over a first child whose exploration never reaches above its
+        /// parent, which is a cheap sufficient condition for the assumed edge stranding
+        /// something).
+        ///
+        /// **This is the expensive one.** A reachability walk per node per candidate value
+        /// is `O(n^4)` work per propagator call, and each pruning writes another
+        /// `O(n^2)`-row induction. It is here to be correct and checkable, not to be fast;
+        /// see with_prune_root() for what the measurements say about that.
+        auto with_prune_within(std::optional<bool> enable = true) -> SubCircuit &;
 
         /// Constrain how many nodes are on the tour: `size` is the number that do not
         /// point at themselves. This is XCSP3's `size` argument, for which MiniZinc's

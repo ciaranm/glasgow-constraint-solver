@@ -620,73 +620,97 @@ namespace
             }
     }
 
-    // Prune root. For each value the anchor's successor could still take, ask what the
-    // reachability rule would say if it took that one; if the answer is that some node
-    // which must be on the tour could not be reached, the value goes.
+    // The shave behind both of Francis and Stuckey's remaining pruning rules. For a node
+    // and a value it could still take, ask what the reachability rules would say if it took
+    // that one; if the answer is that some node which must be on the tour could not be
+    // reached from the anchor, or could not reach it back, then that is not the value.
+    //
+    // Prune root is this over the anchor alone (F&S rule 3, explanation 6) and prune within
+    // is it over every other node (rule 4, explanation 7). Their versions read the
+    // condition off the depth-first traversal they are already doing --- an edge into any
+    // subtree but the last; a first child whose exploration never gets above its parent ---
+    // which are cheap sufficient conditions for the same thing. Asking the question
+    // directly of each value prunes at least as much and needs no traversal, at the cost of
+    // a walk per candidate.
+    //
+    // Neither rule can be found by the plain walks, which is the whole point of having
+    // them: while a successor is still free, the anchor reaches everything any of that
+    // successor's values reaches, so there is nothing to report.
     //
     // The evidence node is F&S's: a node whose own index has been removed from its
-    // successor's domain must be on the tour, so it cannot be one of the nodes the walk
-    // has just declared unreachable. Any such node will do and the lowest-numbered one is
-    // taken, matching how the anchor itself is chosen; F&S report a slightly better rule
-    // ("fixed highest in the search tree") which is a knob for once something measures it.
-    auto prune_anchor_successor(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const SubCircuitPosData & pos_data,
-        const long anchor, SCCProofCache & cache, const State & state, auto & inference, ProofLogger * const logger) -> void
+    // successor's domain must be on the tour, so it cannot be one of the nodes a walk has
+    // just declared stranded. Any such node will do, and the lowest-numbered one is taken,
+    // matching how the anchor itself is chosen; F&S report a slightly better rule ("fixed
+    // highest in the search tree") which is a knob for once something measures it here.
+    auto shave_by_reachability(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const SubCircuitPosData & pos_data,
+        const long anchor, SCCProofCache & cache, const State & state, auto & inference, ProofLogger * const logger, const size_t node) -> void
     {
         auto n = succ.size();
-        auto anchor_index = static_cast<size_t>(anchor);
 
         // Snapshot the candidates before inferring anything, since the loop narrows this
         // very domain as it goes. Judging each candidate against the domains the pass
-        // started from is sound and not merely convenient: the walk only ever uses
-        // *absence* of values to rule a predecessor out, so a domain that has since lost
+        // started from is sound and not merely convenient: a walk only ever uses the
+        // *absence* of a value to rule a neighbour out, so a domain that has since lost
         // more values makes the reason a stronger premise, not a weaker one, and every row
         // the certificate emits stays derivable from it.
         vector<long long> candidates;
-        for (const auto & v : state.each_value_immutable(succ[anchor_index]))
+        for (const auto & v : state.each_value_immutable(succ[node]))
             candidates.emplace_back(v.raw_value);
 
+        // The lowest-numbered node that must be on the tour and is not in `may_be_on_tour`,
+        // or nothing.
+        auto stranded_evidence = [&](const vector<bool> & may_be_on_tour) -> optional<size_t> {
+            for (size_t m = 0; m < n; ++m) {
+                if (may_be_on_tour[m])
+                    continue;
+                if (! state.in_domain(succ[m], Integer(static_cast<long long>(m))))
+                    return m;
+            }
+            return nullopt;
+        };
+
         for (const auto & v : candidates) {
-            // The anchor is on the tour, so its own index is not a value it can take, and
-            // a walk assuming otherwise would be assuming a contradiction. The declared
-            // domain has ruled it out already -- that is what made this node the anchor --
-            // but a caller-named one need not have, so check rather than assume.
-            if (v == anchor)
+            // A node pointing at itself is off the tour, which is not an edge into anything
+            // and not what either rule is about. The anchor cannot take its own index at
+            // all --- that is what made it the anchor --- but a caller-named one need not
+            // have had it removed, so this is a check and not an assumption.
+            if (cmp_equal(v, node))
                 continue;
 
-            auto assumed = AssumedEdge{anchor_index, v};
-            auto layers = reachable_layers(succ, anchor, state, assumed);
+            auto assumed = AssumedEdge{node, v};
 
-            // The evidence node: unreachable under the assumption, and required on the
-            // tour, so the assumption cannot hold.
-            optional<size_t> evidence;
-            for (size_t m = 0; m < n; ++m) {
-                if (layers.back()[m])
-                    continue;
-                auto here = Integer(static_cast<long long>(m));
-                if (! state.in_domain(succ[m], here)) {
-                    evidence = m;
-                    break;
-                }
+            // Forward first, since it is the cheaper certificate to be wrong about: if the
+            // assumed edge strands something the anchor must reach, say so and stop.
+            auto layers = reachable_layers(succ, anchor, state, assumed);
+            if (auto evidence = stranded_evidence(layers.back())) {
+                auto justf = [&](const ReasonLiterals & reason) {
+                    logger->emit_proof_comment("this edge would leave a node that must be on the tour unreachable");
+                    derive_unreachable(*logger, succ, pos_data, cache, layers, reason, assumed);
+                };
+                // The throwing path: there is no _or_stop taking an explicit justification,
+                // and a contradiction here --- this node left with no successor at all ---
+                // ends the pass by unwinding, as most of this file already does.
+                inference.infer(
+                    logger, succ[node] != Integer{v}, JustifyExplicitly{justf, ThenRUP::Yes, hints::SubCircuit{owner}}, generic_reason(succ));
+                continue;
             }
 
-            if (! evidence)
-                continue;
-
-            auto justf = [&](const ReasonLiterals & reason) {
-                logger->emit_proof_comment("prune root: the anchor cannot take this successor");
-                derive_unreachable(*logger, succ, pos_data, cache, layers, reason, assumed);
-            };
-            // The throwing path: there is no _or_stop taking an explicit justification, and
-            // a contradiction here -- the anchor left with no successor at all -- ends the
-            // pass by unwinding, which is what most of this file already does.
-            inference.infer(
-                logger, succ[anchor_index] != Integer{v}, JustifyExplicitly{justf, ThenRUP::Yes, hints::SubCircuit{owner}}, generic_reason(succ));
+            auto reaches = reaches_anchor(succ, anchor, state, assumed);
+            if (auto evidence = stranded_evidence(reaches)) {
+                auto justf = [&](const ReasonLiterals & reason) {
+                    logger->emit_proof_comment("this edge would leave a node that must be on the tour unable to reach the anchor");
+                    derive_cannot_reach_anchor(*logger, succ, pos_data, reaches, reason, assumed);
+                };
+                inference.infer(
+                    logger, succ[node] != Integer{v}, JustifyExplicitly{justf, ThenRUP::Yes, hints::SubCircuit{owner}}, generic_reason(succ));
+            }
         }
     }
 
     auto propagate_subcircuit(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const SubCircuitPosData & pos_data,
         const ConstraintStateHandle & unassigned_handle, const bool prevent, const optional<long> & scc_anchor, const bool prune_root,
-        const std::shared_ptr<SCCProofCache> & cache, const State & state, auto & inference, ProofLogger * const logger) -> void
+        const bool prune_within, const std::shared_ptr<SCCProofCache> & cache, const State & state, auto & inference, ProofLogger * const logger)
+        -> void
     {
         if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
             return;
@@ -772,7 +796,15 @@ namespace
             // there is nothing unreachable to report. That is the whole reason this rule
             // adds strength, and the whole reason it costs a walk per candidate.
             if (prune_root)
-                prune_anchor_successor(succ, owner, pos_data, *scc_anchor, *cache, state, inference, logger);
+                shave_by_reachability(succ, owner, pos_data, *scc_anchor, *cache, state, inference, logger, static_cast<size_t>(*scc_anchor));
+
+            // Prune within: the same question of every *other* node. Splitting the two
+            // rules at the anchor keeps them non-overlapping, so having both on does no
+            // work twice, and each flag maps to one of F&S's rules.
+            if (prune_within)
+                for (size_t node = 0; node < n; ++node)
+                    if (cmp_not_equal(node, *scc_anchor))
+                        shave_by_reachability(succ, owner, pos_data, *scc_anchor, *cache, state, inference, logger, node);
         }
 
         if (! prevent)
@@ -842,6 +874,12 @@ auto SubCircuit::with_required_node(long node) -> SubCircuit &
 auto SubCircuit::with_prune_root(optional<bool> enable) -> SubCircuit &
 {
     _prune_root = enable.value_or(true);
+    return *this;
+}
+
+auto SubCircuit::with_prune_within(optional<bool> enable) -> SubCircuit &
+{
+    _prune_within = enable.value_or(true);
     return *this;
 }
 
@@ -1073,8 +1111,10 @@ auto SubCircuit::install_propagators(Propagators & propagators) -> void
     propagators.install(
         constraint_id(),
         [succ = _succ, owner = constraint_id(), pos_data = std::move(_pos_data), unassigned_handle = _state_handles.unassigned, prevent, scc_anchor,
-            prune_root = _prune_root, cache](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            propagate_subcircuit(succ, owner, pos_data, unassigned_handle, prevent, scc_anchor, prune_root, cache, state, inference, logger);
+            prune_root = _prune_root, prune_within = _prune_within,
+            cache](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            propagate_subcircuit(
+                succ, owner, pos_data, unassigned_handle, prevent, scc_anchor, prune_root, prune_within, cache, state, inference, logger);
             // Deliberately not claiming idempotence, unlike circuit::Prevent: forcing a
             // node to be a self loop fixes a successor, which changes the chain structure
             // this pass walked, and one pass makes no attempt to reach the fixpoint of
@@ -1094,6 +1134,8 @@ auto SubCircuit::clone() const -> unique_ptr<Constraint>
         cloned->with_tour_size(*_tour_size);
     if (_prune_root)
         cloned->with_prune_root();
+    if (_prune_within)
+        cloned->with_prune_within();
     if (_required_node)
         cloned->with_required_node(*_required_node);
     return cloned;
