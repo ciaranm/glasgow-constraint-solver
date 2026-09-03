@@ -221,6 +221,34 @@ library. For an introduction to *using* the solver, start with the top-level
   counting rows cannot be more child constraints (a role must name everything
   that varies, so a second linear child collides on `c[id]`), and why the family
   is deliberately not GAC.
+- [SubCircuit: encoding and proofs](subcircuit-proof-logging.md) — the design
+  note for `SubCircuit` (#788), behind MiniZinc's `subcircuit` and XCSP3-core's
+  `<circuit>`: the position labelling, why the tour length can be a sum of
+  literals rather than a variable, why off-tour nodes sit at position *zero*
+  (which is what lets `pos >= 1` mean "on the tour" and moved the
+  mutation-catching property into the plain enumeration test), and the anchored
+  and unanchored shapes the encoding comes in — measured at half the position
+  rows and around 30% fewer `.opb` bytes when an anchor is found, plus where one
+  comes from and why the shift the mznlib redefinition used to do lost tpp's.
+  Covers all three of Francis and Stuckey's algorithms and their certificates:
+  `check`'s counting `pol` and the `|cycle|+1`-way split it needs unanchored, the
+  evidence node `prevent` cannot do without, and the `scc` arm's two reachability
+  walks — which are [connectivity-proofs.md](connectivity-proofs.md)'s un-RUPable
+  infinite descent performed by hand, one layer of RUP lemmas at a time, because
+  this constraint needs the arithmetic labelling for its counting and so cannot
+  swap it for an unfolding the way `Reachable` did. Records what was measured to
+  be load-bearing and what only looked it (both `pol`s in the forward walk were
+  dead weight — unit propagation pins a position through the two halves of a step
+  row), what the rules are honestly worth (certification is the win; reachability
+  is two search nodes in 558; `scc` cuts nodes up to 35× and loses anyway, 14/27
+  optimal-in-cap against 11/27, because the walk and not the rule is what costs —
+  except on tpp, where it is free and buys nothing, which is unexplained and worth
+  settling first), and F&S's four pruning rules that are
+  not implemented. Read "Where the pruning was going" whatever else you skip: the
+  redefinition's comprehension shift was throwing away every hole this propagator
+  punched, because it crossed a bounds-consistent `int_lin_eq`, and fixing that
+  took mario from 4/15 optimal to 9/15 — the same bug is in four more
+  redefinitions (#803).
 - [`MinDistance`: encoding and proofs](min-distance-proofs.md) — the definitional
   OPB encoding for `min_distance(D, x, z)` (site-selection flags, per-site counts,
   pair clauses, and the min-attained ladder), the justification for each of the
