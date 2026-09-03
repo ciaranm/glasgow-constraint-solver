@@ -72,6 +72,78 @@ namespace gcs::innards
     };
 
     /**
+     * \brief The word the extensional propagator's bitsets are built from.
+     *
+     * Every shift, mask and round-up over those bitsets derives its constants
+     * from \c extensional_word_bits, so the width is stated once here rather
+     * than spelled 64 at each use.
+     *
+     * \ingroup Innards
+     */
+    using ExtensionalWord = std::uint64_t;
+
+    /// \see ExtensionalWord
+    /// \ingroup Innards
+    constexpr std::size_t extensional_word_bits = std::numeric_limits<ExtensionalWord>::digits;
+
+    /**
+     * \brief How many ExtensionalWord words it takes to hold \c n_bits bits.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] constexpr auto extensional_words_for(std::size_t n_bits) -> std::size_t
+    {
+        return (n_bits + extensional_word_bits - 1) / extensional_word_bits;
+    }
+
+    /**
+     * \brief Dense per-position membership tests for pass 1.
+     *
+     * Pass 1 asks "is this tuple's entry at position i still in variable i's
+     * domain?" once per (live tuple, position). Answering it with
+     * State::in_domain() means an out-of-line call that re-resolves the
+     * variable's domain out of State and then walks an interval list -- 40% of
+     * total runtime on a binary random instance, 59% on Crossword, measured.
+     * The resolution is loop-invariant: only the value changes.
+     *
+     * So each position's domain is rasterised once per call into a bitmap over
+     * that position's *table* value range (not the variable's, which can be
+     * wider), and the test becomes a bounds check, a shift and a mask. The
+     * number of membership tests is identical, and so are the tuples dropped --
+     * this is only a cheaper way to ask the same question.
+     *
+     * The range comes from the tuples, so every value a tuple can hold is
+     * addressable by construction, and a value outside it is not in the table
+     * at all. A position whose range is wider than \c max_words words, or which
+     * holds a wildcard, keeps the State::in_domain() path.
+     *
+     * \ingroup Innards
+     */
+    struct ExtensionalDomainBitmaps
+    {
+        /// Beyond this many words per position, rasterising costs more than
+        /// the scans it saves, and the fallback is used instead. A measured
+        /// word count, unrelated to extensional_word_bits happening to match.
+        static constexpr std::size_t max_words = 64;
+
+        /// Below this many live tuples, rasterising costs more than the
+        /// in_domain() calls it replaces.
+        static constexpr std::size_t min_live = 8;
+
+        struct Position
+        {
+            long long base = 0;
+            std::size_t n_values = 0;
+            std::size_t offset = 0;
+            bool usable = false;
+        };
+
+        std::vector<Position> positions;
+        std::vector<ExtensionalWord> words;
+        bool initialised = false;
+    };
+
+    /**
      * \brief Data for gcs::innards::propagate_extensional().
      *
      * \ingroup Innards
@@ -81,6 +153,15 @@ namespace gcs::innards
         std::vector<IntegerVariableID> vars;
         ExtensionalTuples tuples;
         std::shared_ptr<ExtensionalResidues> residues = std::make_shared<ExtensionalResidues>();
+
+        /**
+         * Scratch for the pass-1 membership tests, rebuilt at the top of every
+         * call. Held by shared_ptr like the residues, and for the same reason:
+         * the propagator is called through a const reference, and propagators
+         * are per-thread under parallel search, so a per-instance mutable
+         * buffer is sound and needs no locking.
+         */
+        std::shared_ptr<ExtensionalDomainBitmaps> bitmaps = std::make_shared<ExtensionalDomainBitmaps>();
 
         /**
          * The reason for every inference this table makes, built once here rather
