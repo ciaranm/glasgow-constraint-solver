@@ -17,6 +17,17 @@ namespace gcs::innards::hints
         ConstraintID originator;
         static constexpr std::string_view hint_name = "circuit";
     };
+
+    /**
+     * \brief SubCircuit's assertion hint: just the owning constraint.
+     *
+     * \ingroup Innards
+     */
+    struct SubCircuit
+    {
+        ConstraintID originator;
+        static constexpr std::string_view hint_name = "subcircuit";
+    };
 }
 
 #endif

@@ -30,6 +30,7 @@ add_library(glasgow_constraint_solver
         constraints/circuit/circuit_base.cc
         constraints/circuit/circuit_prevent.cc
         constraints/circuit/circuit_scc.cc
+        constraints/circuit/subcircuit.cc
         constraints/comparison/comparison.cc
         constraints/count/count.cc
         constraints/cumulative/cumulative.cc
@@ -767,6 +768,20 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(circuit_test PRIVATE glasgow_constraint_solver)
     add_test(NAME circuit_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_test>)
     add_view_tests(circuit_constraint circuit_test 5)
+
+    add_executable(subcircuit_prevent_test constraints/circuit/subcircuit_prevent_test.cc)
+    target_link_libraries(subcircuit_prevent_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME subcircuit_prevent COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subcircuit_prevent_test>)
+    add_view_tests(subcircuit_prevent subcircuit_prevent_test 8)
+
+    add_executable(subcircuit_test constraints/circuit/subcircuit_test.cc)
+    target_link_libraries(subcircuit_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME subcircuit_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subcircuit_test>)
+    add_view_tests(subcircuit_constraint subcircuit_test 5)
+
+    add_executable(subcircuit_dup_test constraints/circuit/subcircuit_dup_test.cc)
+    target_link_libraries(subcircuit_dup_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME subcircuit_dup COMMAND $<TARGET_FILE:subcircuit_dup_test>)
 
     add_executable(circuit_dup_test constraints/circuit/circuit_dup_test.cc)
     target_link_libraries(circuit_dup_test PRIVATE glasgow_constraint_solver)
