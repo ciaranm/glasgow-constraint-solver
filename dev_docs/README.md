@@ -46,6 +46,12 @@ library. For an introduction to *using* the solver, start with the top-level
   measuring the wall-time impact of a performance-sensitive change, the
   rationale for each pick, the harness pattern for comparing two builds,
   and what to capture. Use when quantifying a refactor's perf impact.
+- [Making a propagator faster](propagator-performance.md) — what to change
+  once a propagator is correct: the per-constraint-type breakdown
+  (`GCS_PROPAGATOR_STATS`) that says which constraint the time went to, then
+  the levers cheapest first, and the ground rules that keep a performance
+  change from quietly becoming a strength change. The companion to
+  `benchmarking.md`, which is about how to measure instead of what to change.
 - [Proof benchmarks](proof-benchmarks.md) — the counterpart set for when
   the *proof* is what is being measured: proof-writing cost, proof size
   and VeriPB checking time. Groups instances by whether they stress
