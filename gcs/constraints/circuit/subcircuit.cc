@@ -408,6 +408,39 @@ namespace
     //
     // This was a hand-rolled staircase until it turned out to be the fifth copy of one
     // derivation, four of which predate the shared version. Not for the reason the shared
+    // Which successors are constants. A constant successor has no encoded atoms at all ---
+    // no "takes at least one value" row to cite, and no equality literal a `pol` can name
+    // an operand for --- so both halves of the pigeonhole below have to be taken over the
+    // others. Getting this wrong is issue #812: every `mario` instance has a constant here,
+    // its `succ[LuigiHouse] = MarioHouse` pin having folded into the array as a literal, so
+    // the one thing that gives this arm an anchor was the one thing that stopped it writing
+    // a proof.
+    struct ConstantSuccessors final
+    {
+        vector<bool> is_constant;      // indexed by node
+        vector<bool> value_is_pinned;  // indexed by value: some constant successor takes it
+        vector<size_t> variable_nodes; // the nodes that are not constants, in order
+    };
+
+    [[nodiscard]] auto survey_constants(const vector<IntegerVariableID> & succ) -> ConstantSuccessors
+    {
+        auto n = succ.size();
+        ConstantSuccessors result{vector<bool>(n, false), vector<bool>(n, false), {}};
+        for (size_t i = 0; i < n; ++i)
+            if (auto c = std::get_if<ConstantIntegerVariableID>(&succ[i])) {
+                result.is_constant[i] = true;
+                // A value outside 0..n-1 cannot be pinned: prepare() define_bound()s every
+                // successor into that range, so such a constant makes the model
+                // unsatisfiable at search start and this walk never runs. Guard anyway
+                // rather than index out of range.
+                if (c->const_value >= 0_i && c->const_value < Integer(static_cast<long long>(n)))
+                    result.value_is_pinned[c->const_value.as_index()] = true;
+            }
+            else
+                result.variable_nodes.emplace_back(i);
+        return result;
+    }
+
     // version's own documentation gives, though, which is worth recording because the next
     // caller to switch over will read it: recover_am1_from_pairs pins its result with an
     // `ia` step, on the grounds that every intermediate is sound whatever it is fed, so a
@@ -419,23 +452,49 @@ namespace
     // derivation instead of five, a refusal rather than an operandless `pol` below two
     // members, and the induction's scaffolding deleted rather than left live. It costs 0.7%
     // more `.pbp`.
-    auto need_value_at_most_one(ProofLogger & logger, const vector<IntegerVariableID> & succ, SCCProofCache & cache, const long v) -> ProofLine
+    // At most one of the *non-constant* successors takes value v. Constants are left out
+    // because recover_am1_from_pairs needs a `pol` operand naming each member, and a
+    // constant's condition is a plain true or false with no atom behind it to name.
+    // Leaving them out costs nothing: the pigeonhole below counts only over these members
+    // too, and accounts for the constants separately.
+    auto need_value_at_most_one(ProofLogger & logger, const vector<IntegerVariableID> & succ, SCCProofCache & cache,
+        const ConstantSuccessors & consts, const long v) -> ProofLine
     {
         if (auto found = cache.value_at_most_one.find(v); found != cache.value_at_most_one.end())
             return found->second;
 
         // The lower triangle, in the order the induction consumes it.
         vector<ProofLiteralOrFlag> members;
-        auto at_most_ones = vector<vector<ProofLine>>(succ.size());
-        for (size_t j = 0; j < succ.size(); ++j) {
+        auto at_most_ones = vector<vector<ProofLine>>(consts.variable_nodes.size());
+        for (size_t jj = 0; jj < consts.variable_nodes.size(); ++jj) {
+            auto j = consts.variable_nodes[jj];
             members.emplace_back(succ[j] == Integer{v});
-            for (size_t i = 0; i < j; ++i)
-                at_most_ones[j].emplace_back(logger.emit_rup_proof_line(
-                    WPBSum{} + 1_i * ! (succ[i] == Integer{v}) + 1_i * ! (succ[j] == Integer{v}) >= 1_i, ProofLevel::Temporary));
+            for (size_t ii = 0; ii < jj; ++ii)
+                at_most_ones[jj].emplace_back(logger.emit_rup_proof_line(
+                    WPBSum{} + 1_i * ! (succ[consts.variable_nodes[ii]] == Integer{v}) + 1_i * ! (succ[j] == Integer{v}) >= 1_i,
+                    ProofLevel::Temporary));
         }
 
         auto line = recover_am1_from_pairs(logger, members, at_most_ones, ProofLevel::Top);
         cache.value_at_most_one.emplace(v, line);
+        return line;
+    }
+
+    // No non-constant successor takes value c, for a c some constant successor is pinned to.
+    // One row, and RUP: assuming succ[i] = c forces both halves of that pair's all-different
+    // rows, whose guards are each other's negation, so unit propagation closes it.
+    auto need_no_variable_takes(ProofLogger & logger, const vector<IntegerVariableID> & succ, SCCProofCache & cache,
+        const ConstantSuccessors & consts, const long c) -> ProofLine
+    {
+        if (auto found = cache.no_variable_takes.find(c); found != cache.no_variable_takes.end())
+            return found->second;
+
+        WPBSum none;
+        for (const auto & i : consts.variable_nodes)
+            none += 1_i * ! (succ[i] == Integer{c});
+
+        auto line = logger.emit_rup_proof_line(move(none) >= Integer(static_cast<long long>(consts.variable_nodes.size())), ProofLevel::Top);
+        cache.no_variable_takes.emplace(c, line);
         return line;
     }
 
@@ -444,17 +503,45 @@ namespace
     // many successors as values somebody has to take v. This is what makes the reachability
     // induction below possible at all -- it is how "the node at position t has a
     // predecessor" gets said.
-    auto need_value_at_least_one(ProofLogger & logger, const vector<IntegerVariableID> & succ, SCCProofCache & cache, const long v) -> ProofLine
+    // At least one of the non-constant successors takes value v: pigeonhole. Every one of
+    // them takes some value, and every *other* value they could take is taken by at most
+    // one of them, so with as many of them as there are values left to them, somebody has
+    // to take v. This is what makes the reachability induction below possible at all --- it
+    // is how "the node at position t has a predecessor" gets said.
+    //
+    // The counting with constants in the array (#812). Write m for the number of
+    // non-constant successors out of n, and take v not pinned by any constant:
+    //
+    //     sum over the m of "takes at least one value"          =  m
+    //     for each w != v not pinned:  at most one takes w      <= 1, and there are
+    //                                                              n - pinned - 1 such w
+    //     for each pinned c:           none of the m takes c    <= 0
+    //     ----------------------------------------------------------------------------
+    //     so  sum over the m of [succ_i = v]  >=  m - (n - pinned - 1)  =  1
+    //
+    // since m = n - pinned. The constants drop out of both sides, which they have to: they
+    // have no atoms to name.
+    //
+    // Caller's obligation: v must not be pinned. If it is then the value already has its
+    // predecessor and no counting is needed --- derive_unreachable takes that branch
+    // separately, because the *conclusion* there is different too.
+    auto need_value_at_least_one(ProofLogger & logger, const vector<IntegerVariableID> & succ, SCCProofCache & cache,
+        const ConstantSuccessors & consts, const long v) -> ProofLine
     {
         if (auto found = cache.value_at_least_one.find(v); found != cache.value_at_least_one.end())
             return found->second;
 
         PolBuilder pigeonhole;
-        for (const auto & s : succ)
-            pigeonhole.add(logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(s));
-        for (size_t w = 0; w < succ.size(); ++w)
-            if (cmp_not_equal(w, v))
-                pigeonhole.add(need_value_at_most_one(logger, succ, cache, static_cast<long>(w)));
+        for (const auto & i : consts.variable_nodes)
+            pigeonhole.add(logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(succ[i]));
+        for (size_t w = 0; w < succ.size(); ++w) {
+            if (cmp_equal(w, v))
+                continue;
+            if (consts.value_is_pinned[w])
+                pigeonhole.add(need_no_variable_takes(logger, succ, cache, consts, static_cast<long>(w)));
+            else
+                pigeonhole.add(need_value_at_most_one(logger, succ, cache, consts, static_cast<long>(w)));
+        }
 
         auto line = pigeonhole.emit(logger, ProofLevel::Top);
         cache.value_at_least_one.emplace(v, line);
@@ -510,6 +597,7 @@ namespace
         const vector<vector<bool>> & reached_within, const ReasonLiterals & reason, const optional<AssumedEdge> & assumed = nullopt) -> void
     {
         auto n = succ.size();
+        auto consts = survey_constants(succ);
         if (assumed)
             logger.emit_proof_comment("if this edge were taken, the anchor could not reach everything on the tour");
         else
@@ -536,10 +624,31 @@ namespace
                 // against. Emitted for its place in the database rather than for its line
                 // number, at ProofLevel::Top and cached, so a later layer and a later search
                 // node both reuse it.
-                need_value_at_least_one(logger, succ, cache, static_cast<long>(x));
+                // A *constant* successor pinned to x is x's predecessor outright, so there is
+                // no counting to do and nothing to rule out: x sitting at position t would
+                // put that node at t-1, and it carries E(t-1, .) saying it is a self loop
+                // there, which its own pin contradicts. So the conclusion is the stronger
+                // "x is not at position t" rather than E(t, x), and the pigeonhole is not
+                // needed --- which is just as well, since it cannot count a constant (#812).
+                //
+                // Emitting the weaker E(t, x) here instead also verifies, since a
+                // contradictory antecedent implies anything, so this choice is not
+                // load-bearing --- it is just what the argument actually establishes, and
+                // one literal shorter.
+                if (consts.value_is_pinned[x]) {
+                    logger.emit_rup_proof_line_under_reason(reason, guarded(WPBSum{} + 1_i * ! at_t) >= 1_i, ProofLevel::Current);
+                    continue;
+                }
+
+                need_value_at_least_one(logger, succ, cache, consts, static_cast<long>(x));
 
                 for (size_t q = 0; q < n; ++q) {
                     if (q == x)
+                        continue;
+                    // A constant cannot point at x here: x is not pinned, so this one is
+                    // pinned elsewhere and its term is a plain false. Skipping it keeps a
+                    // vacuous row out of the proof.
+                    if (consts.is_constant[q])
                         continue;
 
                     // A predecessor the anchor had already reached cannot point at x -- x

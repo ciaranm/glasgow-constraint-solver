@@ -549,14 +549,51 @@ the proof-size constant as the thing to attack rather than the propagator.
    anchor, so an arbitrary component would need layers indexed relative to the unknown
    `pos[a]`. It is the one place the "arbitrary root" position-offset problem is real
    --- and unreachable for us anyway, since the arm does nothing without an anchor.
-4. **A constant in the successor array breaks the certificate**, which is
-   [issue #812](https://github.com/ciaranm/glasgow-constraint-solver/issues/812) and
-   not these rules' fault: the pigeonhole sums "this variable takes at least one value"
-   over every successor and that is `UnimplementedException` for a constant. Every
-   `mario` instance has one, because its `succ[LuigiHouse] = MarioHouse` pin folds into
-   the array as a literal --- so the one thing that gives the arm an anchor is the one
-   thing that stops it writing a proof, and the cost table above is measured on
-   constant-free instances for that reason.
+4. **A constant in the successor array used to break the certificate**, which was
+   [issue #812](https://github.com/ciaranm/glasgow-constraint-solver/issues/812) --- not
+   these rules' fault, since plain `scc` hit it too, and the cost table above is measured
+   on constant-free instances for that reason. Fixed; see below.
+
+### Constants in the successor array (#812)
+
+A constant successor has no encoded atoms: no "takes at least one value" row to cite, and
+no equality literal a `pol` can name an operand for. The pigeonhole summed that row over
+*every* successor, so it threw an `UnimplementedException` on any array containing one ---
+and **every `mario` instance contains one**, its `succ[LuigiHouse] = MarioHouse` pin having
+folded into the array as a literal. That pin is also what gives mario its anchor, so the
+one thing that let this arm run was the one thing that stopped it writing a proof.
+
+Both halves of the pigeonhole now range over the non-constant successors only, and the
+constants are accounted for separately. Writing `m` for the number of non-constant
+successors out of `n`, and taking `v` not pinned by any constant:
+
+```
+    sum over the m of "takes at least one value"        =  m
+    for each w != v not pinned:  at most one takes w    <= 1   (n - pinned - 1 of them)
+    for each pinned c:           none of the m takes c  <= 0
+    ------------------------------------------------------------------------------
+    so  sum over the m of [succ_i = v]  >=  m - (n - pinned - 1)  =  1
+```
+
+since `m = n - pinned`. "None of them takes `c`" is one RUP row: assuming `succ[i] = c`
+forces both halves of that pair's all-different rows, whose guards are each other's
+negation, so unit propagation closes it.
+
+When `v` *is* pinned there is nothing to count --- that constant is the predecessor --- and
+the conclusion is different too: `x` sitting at position `t` would put the pinned node at
+`t-1`, where its own `E(t-1, .)` says it is a self loop, which its pin contradicts. So the
+row emitted is the stronger `pos[x] != t` rather than `E(t, x)`.
+
+**What the tests could and could not pin.** The anchored enumeration sweep now runs with a
+constant in the array, at every size and anchor, with proofs --- 72 runs. That covers the
+branch structure, but **not the arithmetic**: at `n <= 6` unit propagation reaches
+`E(t, x)` from the candidate rows and the reason alone, so the pigeonhole line is not
+load-bearing at those sizes and deleting the at-most-zero row still verifies. Complete
+enumeration cannot be run at a size where it does bite. So
+`subcircuit_constant_test` carries a second, *generated* eight-node scenario, searched for
+by the property that its proof fails if the pinned value is counted with an ordinary
+at-most-one --- which is why that fixture is arbitrary and asymmetric. On real cut-down
+mario the same mutation is rejected at k = 10.
 
 ### A sign error in the paper, for whoever implements from it
 
