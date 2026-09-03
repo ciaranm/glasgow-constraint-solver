@@ -254,6 +254,37 @@ namespace
         }
     }
 
+    // A plain integer parameter, for the redefinitions that hand gcs a number
+    // rather than folding it into an array.
+    auto arg_as_constant(const auto & args, int idx) -> Integer
+    {
+        auto a = args.at(idx);
+        if (! a.is_number())
+            throw FlatZincInterfaceError{format("Didn't get a number where a constant was needed? arg is \"{}\"", a.dump())};
+        return Integer{static_cast<long long>(a)};
+    }
+
+    // Both circuit predicates hand over the successor array unshifted, with the
+    // offset to subtract from each value, and gcs applies it as a view.
+    //
+    // That is not just tidier than shifting in the redefinition, it keeps
+    // information. A comprehension there introduces a fresh FlatZinc variable per
+    // node, declared over the full range before its defining constraint has
+    // propagated, so every narrowing the model had already made is invisible to the
+    // constraint. SubCircuit cares about exactly one such narrowing -- a node whose
+    // own index has left its domain is a node known to be on the tour, which is what
+    // lets it anchor the position encoding -- and `constraint succ[n] != n`, which is
+    // how the tpp challenge model says it, was being lost that way. A view keeps the
+    // domain, and n variables and n linear constraints never get written at all.
+    auto zero_based_successors(const vector<IntegerVariableID> & vars, Integer offset) -> vector<IntegerVariableID>
+    {
+        vector<IntegerVariableID> succ;
+        succ.reserve(vars.size());
+        for (const auto & v : vars)
+            succ.push_back(v + -offset);
+        return succ;
+    }
+
     auto arg_as_var(ExtractedData & data, const auto & args, int idx) -> IntegerVariableID
     {
         auto a = args.at(idx);
@@ -796,19 +827,15 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(BinPacking{items, *sizes, loads});
             }
             else if (id == "glasgow_circuit") {
-                // The mznlib redefinition has already shifted successors to be
-                // 0-based (Circuit expects a length-n array valued in 0..n-1).
-                const auto & vars = arg_as_array_of_var(data, args, 0);
-                problem.post(Circuit{vars});
+                // Circuit expects a length-n array valued in 0..n-1, which the
+                // second argument's offset turns the model's successors into.
+                problem.post(Circuit{zero_based_successors(arg_as_array_of_var(data, args, 0), arg_as_constant(args, 1))});
             }
             else if (id == "glasgow_subcircuit") {
-                // The mznlib redefinition has already shifted successors to be
-                // 0-based, as for glasgow_circuit. SubCircuit is the opt-out
-                // sibling: a node not on the tour takes its own index, and the
-                // empty tour is a solution, so unlike Circuit this must not
-                // assume every node is visited.
-                const auto & vars = arg_as_array_of_var(data, args, 0);
-                problem.post(SubCircuit{vars});
+                // As glasgow_circuit. SubCircuit is the opt-out sibling: a node not
+                // on the tour takes its own index, and the empty tour is a solution,
+                // so unlike Circuit this must not assume every node is visited.
+                problem.post(SubCircuit{zero_based_successors(arg_as_array_of_var(data, args, 0), arg_as_constant(args, 1))});
             }
             else if (id == "glasgow_reachable" || id == "glasgow_dreachable") {
                 // The mznlib redefinition has already shifted the endpoints and
