@@ -183,7 +183,8 @@ auto run_tour_size_test(bool proofs, int n, int size_lower, int size_upper) -> v
 // certificate instead of one per node of the cycle. Enumerated against the same reference
 // check, restricted to the solutions where the named node is on the tour, since that is the
 // precondition the caller has to have declared.
-auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algorithm, const std::string & label, bool name_the_anchor = true) -> void
+auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algorithm, const std::string & label, bool name_the_anchor = true,
+    bool prune_root = false) -> void
 {
     println(cerr, "subcircuit/anchored/{}{} n={} anchor={}{}", label, name_the_anchor ? "" : "/found", n, anchor, proofs ? " with proofs:" : ":");
 
@@ -211,6 +212,8 @@ auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algor
     auto constraint = SubCircuit{succ}.with_algorithm(algorithm);
     if (name_the_anchor)
         constraint.with_required_node(anchor);
+    if (prune_root)
+        constraint.with_prune_root();
     p.post(std::move(constraint));
 
     auto proof_name = proofs ? make_optional("subcircuit_test_anchored_" + label + (name_the_anchor ? "" : "_found")) : nullopt;
@@ -298,6 +301,13 @@ auto main(int argc, char * argv[]) -> int
                     // certified at every size too, not only asserted on at the root of one
                     // twelve-node instance.
                     run_anchored_test(proofs, n, anchor, subcircuit::SCC{}, "scc", false);
+                    // And with prune root on. It cannot change the solution set --- it is a
+                    // strengthening of an inference, not of the constraint --- so the same
+                    // expected set is the assertion, and its own certificate is verified
+                    // over the whole enumeration rather than only on the scenario that was
+                    // built to make it fire. A rule that inferred nothing would pass this,
+                    // which is what subcircuit_prune_root_test is for.
+                    run_anchored_test(proofs, n, anchor, subcircuit::SCC{}, "scc-prune-root", true, true);
                 }
             for (int n : {3, 4}) {
                 run_tour_size_test(proofs, n, 0, n);
