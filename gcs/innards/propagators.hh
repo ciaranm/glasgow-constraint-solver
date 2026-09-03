@@ -631,9 +631,11 @@ namespace gcs::innards
          * \brief Label every propagator installed since `first_propagator` that
          * is not labelled already with the type of the constraint it came from.
          *
-         * Called by Constraint::install(), which is the one function every
-         * install path runs through and so the only place that knows both a
-         * constraint's type and which propagators it installed. The
+         * Called by Constraint::install(), which is the one place that knows both a
+         * constraint's type and which propagators it installed. Every Constraint
+         * runs through it; a propagator installed on the raw Propagators by a
+         * presolver does not, and comes out unlabelled (AutoTable is the one such
+         * today). The
          * already-labelled exemption is what keeps a *child* constraint's
          * propagators labelled with the child's own type: a child is installed
          * from within its parent's prepare(), so the child's own install() has

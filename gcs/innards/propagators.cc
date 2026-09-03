@@ -1144,9 +1144,13 @@ auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void
     vector<set<int>> constraints_per_type(rows.size());
     for (const auto & [index, name] : enumerate(_imp->constraint_type_names))
         rows[index].type = name;
-    // A propagator installed by something that is not a Constraint --- the
-    // learned-nogoods store is the one today --- never passes through
-    // Constraint::install() and so is labelled by nothing.
+    // A propagator installed on the raw Propagators, rather than by a Constraint
+    // going through Constraint::install(), is labelled by nothing. AutoTable is the
+    // one today: it installs a presolver-derived propagator under
+    // CurrentlyUnnamedConstraint, having no posted-constraint identity to use. (The
+    // learned-nogoods store is *not* an example, though it looks like one: Nogoods is
+    // a Constraint with its own constraint_type(), and solve.cc installs it the
+    // ordinary way, so it gets a `nogoods` row.)
     rows[unknown_type].type = "unlabelled";
 
     for (std::size_t p = 0; p != _imp->propagation_functions.size(); ++p) {

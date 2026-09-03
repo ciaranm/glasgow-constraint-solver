@@ -26,6 +26,11 @@ auto Constraint::install(Propagators & propagators, State & initial_state, Proof
     // through here --- then keeps its own type rather than inheriting ours.
     // A prepare() that returned false is included: it may have delegated the
     // whole constraint to a child.
+    // The window is a shortcut, not part of the argument: labelling is
+    // first-writer-wins and installation is serial, so passing 0 here would relabel
+    // nothing and only cost a longer scan. What the correctness rests on is the
+    // already-labelled exemption. (Checked by mutation: widening the window to 0
+    // fails no test, dropping the call entirely fails several.)
     if (propagators.number_of_propagators() != propagators_before)
         propagators.note_propagator_types(propagators_before, constraint_type());
 }

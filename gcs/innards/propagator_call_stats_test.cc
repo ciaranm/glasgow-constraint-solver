@@ -1,6 +1,11 @@
+#include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/power.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/problem.hh>
+#include <gcs/solve.hh>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -224,8 +229,10 @@ TEST_CASE("A propagator no constraint claimed is reported as unlabelled")
     REQUIRE(propagators.propagate(Literals{}, state, nullptr));
     propagators.fill_in_constraint_stats(stats);
 
-    // Nothing routed this one through Constraint::install(), which is how the
-    // learned-nogoods store's propagator arrives. It is still counted.
+    // Nothing routed this one through Constraint::install(), which is how AutoTable's
+    // presolver-derived propagator arrives --- it installs under
+    // CurrentlyUnnamedConstraint, having no posted-constraint identity. It is still
+    // counted.
     const auto entries = propagator_call_entries(stats);
     CHECK(entries.at("unlabelled_calls") == 2);
 }
@@ -271,4 +278,52 @@ TEST_CASE("An unrecognised GCS_PROPAGATOR_STATS value is ignored with a warning"
 
     CHECK(captured.str().find("GCS_PROPAGATOR_STATS") != std::string::npos);
     CHECK(! component_named(stats, "propagator_calls"));
+}
+
+TEST_CASE("The report is built through Constraint::install(), and a child keeps its own type")
+{
+    // Everything above reaches the machinery by calling Propagators::install() and
+    // note_propagator_types() directly. That leaves Constraint::install() --- the one
+    // function that actually wires the feature up, and where the whole design argument
+    // lives: the propagators_before window, the prepare()-returned-false case, and the
+    // child-keeps-its-own-type property --- untested, so a mutation of constraint.cc could
+    // not fail anything. This case goes through Problem::post() and solve() instead.
+    //
+    // Power is the vehicle for the child property, and a neat one: Power::prepare()
+    // installs a Table child and Power installs no propagator of its own, so a posted
+    // Power shows up as a `table` row and there is no `power` row at all. If the parent
+    // overwrote its children's labels it would be the other way round.
+    WithPropagatorStats asked{"calls"};
+
+    Problem p;
+    auto x = p.create_integer_variable_vector(3, 1_i, 3_i);
+    auto b = p.create_integer_variable(1_i, 3_i);
+    auto e = p.create_integer_variable(1_i, 2_i);
+    auto r = p.create_integer_variable(1_i, 9_i);
+    p.post(AllDifferent{x});
+    p.post(LessThan{x[0], b});
+    p.post(Power{b, e, r});
+
+    auto stats = solve(p, [](const CurrentState &) -> bool { return true; }, std::nullopt);
+
+    const auto entries = propagator_call_entries(stats);
+
+    // The child took the label, and the parent did not take it back.
+    CHECK(entries.contains("table_calls"));
+    CHECK(! entries.contains("power_calls"));
+    CHECK(entries.at("table_constraints") == 1);
+
+    // The constraints posted directly are named by their own types.
+    CHECK(entries.at("all_different_calls") > 0);
+    CHECK(entries.at("less_than_calls") > 0);
+
+    // Nothing went unlabelled, and the per-type calls account for every propagation the
+    // aggregate counter saw. That sum is what catches a labelling window that starts or
+    // ends in the wrong place.
+    CHECK(! entries.contains("unlabelled_calls"));
+    long long total = 0;
+    for (const auto & [name, value] : entries)
+        if (name.ends_with("_calls"))
+            total += value;
+    CHECK(total == static_cast<long long>(stats.propagations));
 }

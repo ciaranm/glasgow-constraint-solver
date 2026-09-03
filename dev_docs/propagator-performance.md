@@ -95,8 +95,8 @@ plumbing.
 
 Read the two rungs for what they are. `calls` is one increment per propagator
 run, so a run with it on is comparable with a run without. `time` reads the
-clock twice per run — around 10% on a propagation-heavy model, but far more if
-the model's propagators are individually tiny — so a timed run's own wall clock
+clock twice per run — 13% on `tpp_3_5_20_1`, and far more if the model's
+propagators are individually tiny — so a timed run's own wall clock
 and nodes-per-second are *not* comparable with an untimed one. Read shares and
 per-call figures off a timed run, never throughput.
 
@@ -108,9 +108,10 @@ subcircuit families of the MiniZinc Challenge corpus (issue #788):
 - **A propagator's per-node cost is `calls-per-node` times `cost-per-call`, and
   the two vary independently.** `SubCircuit`'s reachability arm looked free on
   `tpp` and crushing on `mario`, at comparable `n`, which read as a per-call
-  cost that was not a function of `n`. It is not: per *call* it costs 7.7 µs at
-  `n = 15` and 30.7 µs at `n = 35`, on `tpp`, growing about as `n²` — it is the
-  most expensive propagator per call in that model. It is woken **676 times in
+  cost that was not a function of `n`. It is not: per *call* it costs 7.4 µs at
+  `n = 15` and 31.2 µs at `n = 30` on `mario`, which is very nearly `n²`, and
+  7.7 µs at `n = 15` against 30.7 µs at `n = 35` on `tpp` — it is the most
+  expensive propagator per call in that model. It is woken **676 times in
   a 7.5-million-node search** there, because `tpp` fixes its 15 successors in
   the first 15 levels and then spends the whole search below them on
   `purchaseLoc`. On `mario`, whose search *is* the successors, it is woken 1.5
