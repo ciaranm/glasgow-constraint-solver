@@ -1,5 +1,6 @@
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -178,6 +179,75 @@ auto run_tour_size_test(bool proofs, int n, int size_lower, int size_upper) -> v
     check_results(proof_name, expected, actual);
 }
 
+// The anchored encoding: same constraint, half the rows, and one polish-notation step per
+// certificate instead of one per node of the cycle. Enumerated against the same reference
+// check, restricted to the solutions where the named node is on the tour, since that is the
+// precondition the caller has to have declared.
+auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algorithm, const std::string & label) -> void
+{
+    println(cerr, "subcircuit/anchored/{} n={} anchor={}{}", label, n, anchor, proofs ? " with proofs:" : ":");
+
+    vector<pair<int, int>> domains(static_cast<std::size_t>(n), pair{0, n - 1});
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, [&](vector<int> succ) { return is_subcircuit(succ) && succ[static_cast<std::size_t>(anchor)] != anchor; }, domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> succ;
+    for (int i = 0; i < n; ++i) {
+        // The anchor's own index has to be out of its declared domain: with_required_node()
+        // takes that as a precondition rather than imposing it, so that the constraint means
+        // the same thing either way and nothing about it has to reach the .scp.
+        vector<Integer> values;
+        for (int v = 0; v < n; ++v)
+            if (! (i == anchor && v == anchor))
+                values.emplace_back(Integer{v});
+        succ.push_back(p.create_integer_variable(values));
+    }
+    p.post(SubCircuit{succ}.with_required_node(anchor).with_algorithm(algorithm));
+
+    auto proof_name = proofs ? make_optional("subcircuit_test_anchored_" + label) : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{succ});
+    check_results(proof_name, expected, actual);
+}
+
+// with_required_node() is a precondition, so it has to say so rather than quietly building
+// an unsound encoding: the anchored rows force the tour's length to zero if the named node
+// turns out to be off it. The range is checked at the call, the domain when the constraint
+// is installed -- post() only stores it -- so the two are caught in different places.
+auto run_anchor_rejection_tests() -> bool
+{
+    auto ok = true;
+
+    {
+        Problem p;
+        auto x = p.create_integer_variable_vector(4, 0_i, 3_i);
+        try {
+            SubCircuit{x}.with_required_node(4);
+            println(cerr, "out-of-range anchor: expected InvalidProblemDefinitionException from with_required_node");
+            ok = false;
+        }
+        catch (const InvalidProblemDefinitionException &) {
+        }
+    }
+
+    {
+        Problem p;
+        auto x = p.create_integer_variable_vector(4, 0_i, 3_i);
+        p.post(SubCircuit{x}.with_required_node(2));
+        try {
+            solve_with(p, SolveCallbacks{});
+            println(cerr, "anchor still able to be a self loop: expected InvalidProblemDefinitionException from the solve");
+            ok = false;
+        }
+        catch (const InvalidProblemDefinitionException &) {
+        }
+    }
+
+    return ok;
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -214,6 +284,11 @@ auto main(int argc, char * argv[]) -> int
             // "exactly one circuit" reading is spelled and rules the empty tour out; then
             // an exact size, and 1, which nothing can satisfy because a lone node on the
             // tour has nowhere to point but itself.
+            for (int n : {3, 4, 5})
+                for (int anchor : {0, n - 1}) {
+                    run_anchored_test(proofs, n, anchor, subcircuit::Prevent{}, "prevent");
+                    run_anchored_test(proofs, n, anchor, subcircuit::SCC{}, "scc");
+                }
             for (int n : {3, 4}) {
                 run_tour_size_test(proofs, n, 0, n);
                 run_tour_size_test(proofs, n, 2, n);
@@ -222,6 +297,9 @@ auto main(int argc, char * argv[]) -> int
             }
         }
     }
+
+    if (view_wrap_config_is_effectively_bare(view_cfg, n_positions) && ! run_anchor_rejection_tests())
+        return EXIT_FAILURE;
 
     return EXIT_SUCCESS;
 }

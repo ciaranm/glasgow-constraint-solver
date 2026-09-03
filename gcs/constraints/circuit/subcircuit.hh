@@ -45,17 +45,36 @@ namespace gcs
         struct Prevent final
         {
         };
+
+        /**
+         * \brief Propagate SubCircuit by reachability as well: as subcircuit::Prevent, and
+         * additionally require every node on the tour to be reachable from the node the
+         * caller named with with_required_node(), forcing anything unreachable to opt out.
+         *
+         * This is the connectivity core of Francis and Stuckey's `scc` algorithm. Their
+         * four extra pruning rules -- prune root, prune skip, fix required edges and prune
+         * within -- are not here yet.
+         *
+         * It needs with_required_node(), and does nothing without it: there is nothing to
+         * be reachable *from* until some node is known to be on the tour, which is Francis
+         * and Stuckey's own observation about applying this family to subcircuit at all.
+         *
+         * \ingroup Constraints
+         */
+        struct SCC final
+        {
+        };
     }
 
     /**
      * \brief The propagation algorithms supported by SubCircuit: subcircuit::Prevent (the
-     * default) or subcircuit::Check (cheaper and weaker). Requesting anything else is a
-     * compile-time error, and the choice never changes the constraint's meaning or its
-     * proof encoding.
+     * default), subcircuit::Check (cheaper and weaker) or subcircuit::SCC (stronger, and
+     * only useful with with_required_node()). Requesting anything else is a compile-time
+     * error, and the choice never changes the constraint's meaning or its proof encoding.
      *
      * \ingroup Constraints
      */
-    using SubCircuitAlgorithm = std::variant<subcircuit::Check, subcircuit::Prevent>;
+    using SubCircuitAlgorithm = std::variant<subcircuit::Check, subcircuit::Prevent, subcircuit::SCC>;
 
     /**
      * \brief SubCircuit constraint: requires the variables, representing graph nodes, to
@@ -90,6 +109,7 @@ namespace gcs
         SubCircuitAlgorithm _algorithm = subcircuit::Prevent{};
         bool _gac_all_different = false;
         std::optional<IntegerVariableID> _tour_size;
+        std::optional<long> _required_node;
 
         // Backtrackable state allocated by prepare(), consumed by install_propagators().
         innards::subcircuit::SubCircuitStateHandles _state_handles;
@@ -115,6 +135,23 @@ namespace gcs
         /// propagator, in addition to the subcircuit propagation. Off by default (a cheaper
         /// value-consistent all-different is always applied regardless).
         auto with_gac_all_different(std::optional<bool> enable = true) -> SubCircuit &;
+
+        /// Name a node that is already declared to be on the tour -- its own index must
+        /// not be in its successor's domain, and this throws if it is. That is a
+        /// precondition, not a strengthening: the constraint means exactly the same thing
+        /// with and without it, so nothing about it is recorded in the `.scp`, in the same
+        /// way the choice of algorithm is not.
+        ///
+        /// What it buys is a cheaper proof. Without it, which edge of the tour wraps around
+        /// is not known until the membership literals are, so every edge needs a row for
+        /// each case and every certificate splits over the cycle's nodes. With it, only the
+        /// edges into the named node can wrap, which is exactly the shape Circuit gets for
+        /// free by anchoring on node 0: half the rows, and one polish-notation step per
+        /// certificate rather than one per node of the cycle.
+        ///
+        /// It is also what the SCC propagation needs, which cannot infer anything at all
+        /// until some node is known to be on the tour.
+        auto with_required_node(long node) -> SubCircuit &;
 
         /// Constrain how many nodes are on the tour: `size` is the number that do not
         /// point at themselves. This is XCSP3's `size` argument, for which MiniZinc's
