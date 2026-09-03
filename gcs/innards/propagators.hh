@@ -628,6 +628,24 @@ namespace gcs::innards
         auto fill_in_constraint_stats(Stats &) const -> void;
 
         /**
+         * \brief Label every propagator installed since `first_propagator` that
+         * is not labelled already with the type of the constraint it came from.
+         *
+         * Called by Constraint::install(), which is the one function every
+         * install path runs through and so the only place that knows both a
+         * constraint's type and which propagators it installed. The
+         * already-labelled exemption is what keeps a *child* constraint's
+         * propagators labelled with the child's own type: a child is installed
+         * from within its parent's prepare(), so the child's own install() has
+         * labelled them before the parent's call gets here.
+         *
+         * The labels are what the per-constraint-type propagator report is
+         * grouped by; they carry the type (`subcircuit`, `all_different`), not
+         * the identity, for which see constraint_id_for_index().
+         */
+        auto note_propagator_types(std::size_t first_propagator, const std::string & constraint_type) -> void;
+
+        /**
          * \brief Register a component's stats block with the search's Stats.
          *
          * For a Presolver, or a constraint installed by one, that keeps a block
@@ -655,6 +673,12 @@ namespace gcs::innards
          * How many constraints is this variable involved in?
          */
         auto degree_of(IntegerVariableID) const -> long;
+
+        /**
+         * How many propagators have been installed. Valid propagator ids run
+         * from zero to this minus one.
+         */
+        [[nodiscard]] auto number_of_propagators() const -> std::size_t;
 
         /**
          * How many distinct constraints (by ConstraintID) installed at least

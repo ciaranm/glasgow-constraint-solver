@@ -12,11 +12,14 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <iostream>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -26,15 +29,23 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
+using std::make_shared;
 using std::make_unique;
 using std::move;
+using std::nullopt;
 using std::optional;
 using std::pair;
+using std::set;
 using std::string;
 using std::swap;
 using std::to_underlying;
 using std::vector;
 using std::visit;
+using std::chrono::duration_cast;
+using std::chrono::microseconds;
+using std::chrono::milliseconds;
+using std::chrono::nanoseconds;
+using std::chrono::steady_clock;
 using std::ranges::adjacent_find;
 using std::ranges::contains;
 using std::ranges::sort;
@@ -44,6 +55,130 @@ namespace
     struct TriggerIDs
     {
         vector<pair<int, int>> ids_and_masks;
+    };
+
+    // What GCS_PROPAGATOR_STATS asked for. Calls costs one increment per
+    // propagator run; Time additionally reads the clock twice per run, which is
+    // enough overhead that a timed run's own wall clock and nodes-per-second are
+    // not comparable with an uninstrumented one --- hence the two rungs, so that
+    // a sweep can have the counts without paying for the timings.
+    enum class PropagatorStatsWanted
+    {
+        Calls,
+        Time
+    };
+
+    [[nodiscard]] auto propagator_stats_from_env() -> optional<PropagatorStatsWanted>
+    {
+        const auto * const env = std::getenv("GCS_PROPAGATOR_STATS");
+        if (! env || ! *env)
+            return nullopt;
+
+        string value{env};
+        if (value == "calls" || value == "1")
+            return PropagatorStatsWanted::Calls;
+        else if (value == "time" || value == "2")
+            return PropagatorStatsWanted::Time;
+
+        std::cerr << "Ignoring unrecognised GCS_PROPAGATOR_STATS value '" << value << "', expected 'calls' or 'time'\n";
+        return nullopt;
+    }
+
+    // Accumulates one propagator run's elapsed time on the way out, however the
+    // run ends. A contradicting propagator that uses the throwing failure path
+    // leaves by unwinding, and roughly half the runs in a search that is doing
+    // any good are contradictions, so a sample taken only on the fall-through
+    // path would systematically miss exactly the runs most worth timing.
+    // A null accumulator is the not-timing case, which is also the default.
+    //
+    // The sample is the run plus the two clock reads (tens of nanoseconds, which
+    // matters for a propagator whose own body is that cheap) plus the queue
+    // bookkeeping between the call and the end of the enclosing try block. That
+    // bookkeeping includes the GCS_CHECK_IDEMPOTENT_CLAIMS re-run, which is a
+    // whole second run of the propagator, so do not read timings off a run with
+    // both switched on.
+    struct TimedPropagatorRun
+    {
+        unsigned long long * const into;
+        const steady_clock::time_point started;
+
+        explicit TimedPropagatorRun(unsigned long long * const into) : into(into), started(into ? steady_clock::now() : steady_clock::time_point{})
+        {
+        }
+
+        ~TimedPropagatorRun()
+        {
+            if (into)
+                *into += static_cast<unsigned long long>(duration_cast<nanoseconds>(steady_clock::now() - started).count());
+        }
+
+        TimedPropagatorRun(const TimedPropagatorRun &) = delete;
+        auto operator=(const TimedPropagatorRun &) -> TimedPropagatorRun & = delete;
+    };
+
+    // The per-constraint-type propagator report: how much of the propagation a
+    // model does belongs to each kind of constraint in it. Grouped by constraint
+    // *type* rather than by constraint, because a model with ten thousand
+    // linear constraints in it wants one `lin_less_equal` row and not ten
+    // thousand rows; the propagator counts say how many constraints are behind
+    // each row.
+    struct PropagatorCallStats final : ComponentStats
+    {
+        struct Row final
+        {
+            string type;
+            unsigned long long constraints = 0, propagators = 0, calls = 0, effectful = 0, contradictions = 0, nanos = 0;
+        };
+
+        vector<Row> rows;
+        bool timed;
+
+        explicit PropagatorCallStats(vector<Row> && rows, bool timed) : rows(move(rows)), timed(timed)
+        {
+        }
+
+        [[nodiscard]] auto component_name() const -> string override
+        {
+            return "propagator_calls";
+        }
+
+        [[nodiscard]] auto summary() const -> string override
+        {
+            if (rows.empty())
+                return "no propagators were installed";
+
+            unsigned long long total_calls = 0, total_nanos = 0;
+            for (const auto & row : rows) {
+                total_calls += row.calls;
+                total_nanos += row.nanos;
+            }
+
+            // rows is sorted busiest first, so rows.front() is the answer to the
+            // question this report is usually opened to ask.
+            const auto & busiest = rows.front();
+            auto result = std::to_string(total_calls) + " propagator calls over " + std::to_string(rows.size()) + " constraint types, busiest " +
+                busiest.type + " with " + std::to_string(busiest.calls);
+            if (timed && 0 != total_nanos)
+                result += " taking " + std::to_string(busiest.nanos * 100 / total_nanos) + "% of " +
+                    std::to_string(duration_cast<milliseconds>(nanoseconds{total_nanos}).count()) + "ms propagating";
+            return result;
+        }
+
+        [[nodiscard]] auto entries() const -> vector<StatsEntry> override
+        {
+            vector<StatsEntry> result;
+            for (const auto & row : rows) {
+                result.emplace_back(StatsEntry{row.type + "_constraints", static_cast<long long>(row.constraints)});
+                result.emplace_back(StatsEntry{row.type + "_propagators", static_cast<long long>(row.propagators)});
+                result.emplace_back(StatsEntry{row.type + "_calls", static_cast<long long>(row.calls)});
+                result.emplace_back(StatsEntry{row.type + "_effectful", static_cast<long long>(row.effectful)});
+                result.emplace_back(StatsEntry{row.type + "_contradictions", static_cast<long long>(row.contradictions)});
+                if (timed)
+                    result.emplace_back(
+                        StatsEntry{row.type + "_micros", static_cast<long long>(duration_cast<microseconds>(nanoseconds{row.nanos}).count())});
+            }
+            return result;
+        }
     };
 
     // The GCS_CHECK_IDEMPOTENT_CLAIMS re-run: the claim says an immediate
@@ -231,6 +366,24 @@ struct Propagators::Imp : RefinedWatchSink
     vector<TriggerIDs> iv_triggers;
     vector<long> degrees;
 
+    // What the propagation loop is to record per propagator, from
+    // GCS_PROPAGATOR_STATS, decided once at construction; nullopt --- the
+    // default --- means the loop keeps only the three aggregate counters above.
+    // The four vectors are indexed by propagator id and sized in install(), so
+    // that the loop only ever indexes them and never grows one.
+    optional<PropagatorStatsWanted> propagator_stats_wanted;
+    vector<unsigned long long> calls_by_propagator, effectful_by_propagator, contradictions_by_propagator, nanos_by_propagator;
+
+    // The type of the constraint each propagator came from --- `subcircuit`,
+    // `all_different` --- interned: propagator_type_index is indexed by
+    // propagator id into constraint_type_names, and is -1 for a propagator
+    // nothing has claimed (which install() cannot rule out on its own, since it
+    // is note_propagator_types that does the labelling, afterwards). One int per
+    // propagator and one string per distinct type, both install-time only, so
+    // these are kept whether or not any counters are.
+    vector<string> constraint_type_names;
+    vector<int> propagator_type_index;
+
     // The constraint each propagator belongs to. propagator_constraint_index is
     // indexed by propagator id and gives a dense constraint index; constraint_ids
     // is the inverse (dense index -> ConstraintID); constraint_index_of_id assigns
@@ -368,6 +521,7 @@ struct Propagators::Imp : RefinedWatchSink
 Propagators::Propagators(Stats & stats) : _imp(make_unique<Imp>())
 {
     _imp->stats = &stats;
+    _imp->propagator_stats_wanted = propagator_stats_from_env();
 }
 
 Propagators::~Propagators() = default;
@@ -406,6 +560,13 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
     _imp->permanently_disabled.push_back(0);
+    _imp->propagator_type_index.push_back(-1);
+    if (_imp->propagator_stats_wanted) {
+        _imp->calls_by_propagator.push_back(0);
+        _imp->effectful_by_propagator.push_back(0);
+        _imp->contradictions_by_propagator.push_back(0);
+        _imp->nanos_by_propagator.push_back(0);
+    }
 
     auto [it, inserted] = _imp->constraint_index_of_id.try_emplace(constraint_id, static_cast<int>(_imp->constraint_ids.size()));
     if (inserted)
@@ -859,6 +1020,12 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
                 continue;
             try {
                 ++_imp->total_propagations;
+                if (_imp->propagator_stats_wanted) [[unlikely]]
+                    ++_imp->calls_by_propagator[propagator_id];
+                // Not timing is a null pointer here, so the ordinary path pays a
+                // branch on it and nothing else.
+                TimedPropagatorRun timed{
+                    _imp->propagator_stats_wanted == PropagatorStatsWanted::Time ? &_imp->nanos_by_propagator[propagator_id] : nullptr};
                 tracker.begin_propagator_run();
                 RefinedWatchContext watches{*_imp, propagator_id, _imp->inbox_by_propagator[propagator_id]};
                 auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger, watches);
@@ -872,6 +1039,8 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
                     // than by unwinding; throwing propagators are caught below.
                     contradiction = true;
                     ++_imp->contradicting_propagations;
+                    if (_imp->propagator_stats_wanted) [[unlikely]]
+                        ++_imp->contradictions_by_propagator[propagator_id];
                     // Attribute the conflict to observers here too: many constraints
                     // contradict via the non-throwing path, and if only the throwing
                     // catch below notified, a weighting heuristic would never see
@@ -881,8 +1050,11 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
                             tracker.last_contradiction_reason(), state);
                 }
                 else {
-                    if (tracker.did_anything_since_last_call_by_propagation_queue())
+                    if (tracker.did_anything_since_last_call_by_propagation_queue()) {
                         ++_imp->effectful_propagations;
+                        if (_imp->propagator_stats_wanted) [[unlikely]]
+                            ++_imp->effectful_by_propagator[propagator_id];
+                    }
                     switch (propagator_state) {
                     case PropagatorState::Enable: break;
                     case PropagatorState::EnableButIdempotent:
@@ -913,6 +1085,8 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
             catch (const TrackedPropagationFailed &) {
                 contradiction = true;
                 ++_imp->contradicting_propagations;
+                if (_imp->propagator_stats_wanted) [[unlikely]]
+                    ++_imp->contradictions_by_propagator[propagator_id];
                 // Exactly one propagator contradiction ends each propagate(), so this
                 // fires at most once per call. Non-propagator contradiction paths
                 // (initialisers, the objective bound) never reach here, so they are
@@ -954,6 +1128,47 @@ auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void
     stats.contradicting_propagations += _imp->contradicting_propagations;
     for (const auto & ignored : _imp->idempotence_claims_ignored)
         stats.idempotence_downgrades += ignored;
+
+    // The per-constraint-type block is registered only when it was asked for,
+    // rather than always and empty: an unasked-for component has not done
+    // nothing, it has not run, and a line on every solve saying which
+    // environment variable to set is noise rather than a finding.
+    if (! _imp->propagator_stats_wanted)
+        return;
+
+    // Group by type, and count the distinct constraints behind each group ---
+    // a parent and a child constraint share one ConstraintID but have different
+    // types, so a constraint can legitimately be counted under two of them.
+    const auto unknown_type = _imp->constraint_type_names.size();
+    vector<PropagatorCallStats::Row> rows(unknown_type + 1);
+    vector<set<int>> constraints_per_type(rows.size());
+    for (const auto & [index, name] : enumerate(_imp->constraint_type_names))
+        rows[index].type = name;
+    // A propagator installed by something that is not a Constraint --- the
+    // learned-nogoods store is the one today --- never passes through
+    // Constraint::install() and so is labelled by nothing.
+    rows[unknown_type].type = "unlabelled";
+
+    for (std::size_t p = 0; p != _imp->propagation_functions.size(); ++p) {
+        const auto type = -1 == _imp->propagator_type_index[p] ? unknown_type : static_cast<std::size_t>(_imp->propagator_type_index[p]);
+        auto & row = rows[type];
+        ++row.propagators;
+        row.calls += _imp->calls_by_propagator[p];
+        row.effectful += _imp->effectful_by_propagator[p];
+        row.contradictions += _imp->contradictions_by_propagator[p];
+        row.nanos += _imp->nanos_by_propagator[p];
+        constraints_per_type[type].insert(_imp->propagator_constraint_index[p]);
+    }
+    for (const auto & [index, constraints] : enumerate(constraints_per_type))
+        rows[index].constraints = constraints.size();
+
+    std::erase_if(rows, [](const auto & row) { return 0 == row.propagators; });
+    // Busiest first, by calls and then by name, so that the summary line can
+    // just take the front row and two runs of the same model list their rows in
+    // the same order.
+    sort(rows, [](const auto & a, const auto & b) { return a.calls != b.calls ? a.calls > b.calls : a.type < b.type; });
+
+    stats.add_component(make_shared<PropagatorCallStats>(move(rows), PropagatorStatsWanted::Time == *_imp->propagator_stats_wanted));
 }
 
 auto Propagators::add_component_stats(std::shared_ptr<const ComponentStats> component) -> void
@@ -1043,6 +1258,37 @@ auto Propagators::degree_of(IntegerVariableID var) const -> long
 auto Propagators::number_of_constraints() const -> std::size_t
 {
     return _imp->constraint_ids.size();
+}
+
+auto Propagators::number_of_propagators() const -> std::size_t
+{
+    return _imp->propagation_functions.size();
+}
+
+auto Propagators::note_propagator_types(std::size_t first_propagator, const string & constraint_type) -> void
+{
+    // Installation is serial, so [first_propagator, end) is exactly what this
+    // constraint and its children installed. Anything in there already labelled
+    // is a child's, which has its own type and keeps it; look before interning,
+    // so that a constraint which installed nothing but a child does not put a
+    // name in the table that no row will ever be grouped under.
+    const auto end = _imp->propagator_type_index.size();
+    auto unlabelled = first_propagator;
+    while (unlabelled < end && -1 != _imp->propagator_type_index[unlabelled])
+        ++unlabelled;
+    if (unlabelled == end)
+        return;
+
+    auto found = std::ranges::find(_imp->constraint_type_names, constraint_type);
+    if (found == _imp->constraint_type_names.end()) {
+        _imp->constraint_type_names.push_back(constraint_type);
+        found = _imp->constraint_type_names.end() - 1;
+    }
+    const auto type_index = static_cast<int>(found - _imp->constraint_type_names.begin());
+
+    for (auto p = unlabelled; p != end; ++p)
+        if (-1 == _imp->propagator_type_index[p])
+            _imp->propagator_type_index[p] = type_index;
 }
 
 auto Propagators::constraint_index_of_propagator(int propagator_id) const -> int

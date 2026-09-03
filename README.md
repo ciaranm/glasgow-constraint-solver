@@ -361,6 +361,15 @@ autotuner) without recompiling. Each is read once, on first use.
   some backtrackable bookkeeping (default: 8). The test suite runs in both modes by setting
   this.
 
+* ``GCS_PROPAGATOR_STATS``: adds a per-constraint-type propagator breakdown to the statistics ---
+  how many constraints of each type there are, how many propagators they installed, and how many
+  times those propagators were called, changed a domain and contradicted. ``calls`` (or ``1``) is
+  one increment per propagator run, so a run with it on is comparable with a run without;
+  ``time`` (or ``2``) additionally times each run, which costs two clock reads per propagator call
+  and so makes the run's own wall clock and nodes-per-second incomparable with an untimed one ---
+  read shares and per-call figures off it, not throughput. An unrecognised value is ignored with a
+  warning. See ``dev_docs/propagator-performance.md``.
+
 * ``GCS_TABULATION_THRESHOLD``: under ``consistency::Auto``, a constraint tabulates itself for
   generalised arc consistency when the product of its variables' domain sizes is no bigger than
   this (default: 100). A variable that is functionally determined by the others (say, the result
