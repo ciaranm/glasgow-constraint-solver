@@ -43,6 +43,16 @@ set_tests_properties(minizinc-cake PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-circuit COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ circuittest true true)
 set_tests_properties(minizinc-circuit PROPERTIES SKIP_RETURN_CODE 66)
 
+# --fzn-pattern is load-bearing here: without it these would pass against the
+# stdlib decomposition, which agrees with the reference solver and verifies its
+# proof just as happily, and nothing else the harness checks would notice that
+# the builtin never ran.
+add_test(NAME minizinc-subcircuit COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_subcircuit $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ subcircuittest true true)
+set_tests_properties(minizinc-subcircuit PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-subcircuit-evidence COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_subcircuit $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ subcircuitevidencetest true true)
+set_tests_properties(minizinc-subcircuit-evidence PROPERTIES SKIP_RETURN_CODE 66)
+
 # The reachability family. --fzn-pattern is the reachability guard: MiniZinc's
 # connected / dconnected wrappers go through reachable / dreachable, so without
 # it a test would still agree with the reference solver via the stdlib distance

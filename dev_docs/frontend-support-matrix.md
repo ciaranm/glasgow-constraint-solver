@@ -53,6 +53,7 @@ equivalent for that frontend's vocabulary).
 | binPacking | `BinPacking` (per-bin GAC)[^bp] | ✓ (`fzn_bin_packing` / `_capa` / `_load`) | ✓ (signatures 1/2/3; per-bin condition list `s UNSUPPORTED`) | ? |
 | knapsack | `Knapsack` | ✓ | ✓ (basic with two `XCondition`s; not yet exercised by a test) | ? |
 | circuit | `Circuit` | ✓ | ✓ (basic; sub-circuit with size param `s UNSUPPORTED`); semantics mismatch with XCSP3 spec, see #167 | ? |
+| subcircuit | `SubCircuit` | ✓ | not yet bound; XCSP3's plain `<circuit>` is *this* constraint's semantics, not `Circuit`'s, and its size-carrying forms are `s UNSUPPORTED` — see #167 and [#788](https://github.com/ciaranm/glasgow-constraint-solver/issues/788) | ? |
 | instantiation | `Equals` to constant | ✓ | ✓ | ? |
 | lex (ordered list) | `LexLessThan` / `LexLessThanEqual` / `LexGreaterThan` / `LexGreaterEqual` | ✓ | ✓ (lists; matrix as lex² over rows + columns) | ? |
 | slide (meta-constraint) | apply template per window | ? | ✓ (parser unfolds into per-window constraints) | ? |
@@ -80,7 +81,7 @@ addressed.
 | graph reachability (`reachable`, `dreachable`, `connected`, `dconnected`) | `Reachable` / `DReachable` | ✓ | n/a | ? | `connected` / `dconnected` ride the same override, being `reachable` / `dreachable` with an existential root; see [^reach] |
 | `subgraph` | `Subgraph` | ✓ | n/a | n/a | Two implications per edge, so the constraint exists for the C++ and `.scp` interfaces rather than to infer anything the decomposition would not |
 | graph trees and paths (`tree`, `dtree`, `path`, `dpath`) | `Tree` / `DTree` / `Path` / `DPath` | ✓ | n/a | n/a | Also reached by `steiner`, `dsteiner`, `bounded_path`, `bounded_dpath` and both `weighted_spanning_tree` spellings, which the stdlib defines in terms of these; see [^treefam] |
-| the rest of `globals.graph` (`dag`, `network_flow`, `network_flow_cost`, `subcircuit`) | – | decomposition | n/a | n/a | Not on the reachability ladder: `dag` is an acyclicity labelling, `network_flow` decomposes to plain flow conservation, and `subcircuit` belongs with `Circuit` ([#167](https://github.com/ciaranm/glasgow-constraint-solver/issues/167)). Open under [#637](https://github.com/ciaranm/glasgow-constraint-solver/issues/637) |
+| the rest of `globals.graph` (`dag`, `network_flow`, `network_flow_cost`) | – | decomposition | n/a | n/a | Not on the reachability ladder: `dag` is an acyclicity labelling and `network_flow` decomposes to plain flow conservation. Open under [#637](https://github.com/ciaranm/glasgow-constraint-solver/issues/637). `subcircuit` was listed here too until [#788](https://github.com/ciaranm/glasgow-constraint-solver/issues/788) gave it `SubCircuit`; it has its own row above, beside `circuit`, where it belongs |
 | `SmartTable` | `SmartTable` | ✓ | n/a | ? | Glasgow-specific extension |
 
 ## Solver gaps tracked elsewhere
