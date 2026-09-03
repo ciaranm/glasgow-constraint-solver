@@ -317,8 +317,9 @@ The script runs ACE on the instance:
   and writes that.
 
 If ACE produces a different result from gcs, the diff during ctest
-will fail loudly — that's the cross-check working. One known
-disagreement is documented under #167 (circuit semantics).
+will fail loudly — that's the cross-check working. That is how the
+`circuit` semantic mismatch under #167 was found in the first place,
+and regenerating `circuit.sols` is how it was closed.
 
 ## Adding a new constraint binding
 
@@ -379,10 +380,16 @@ xcsp/README.md                           user-facing setup notes (ACE, pycsp3, J
 The gcs propagators were not designed against XCSP3-core; they have
 their own conventions. Two real cases:
 
-- **`circuit`**: gcs's `Circuit` requires a strict Hamiltonian cycle,
-  but XCSP3-core allows isolated vertices via self-loops. The
-  binding currently posts `Circuit` directly, so it imposes a
-  stricter constraint than the spec. Tracked as #167.
+- **`circuit`**: gcs has two constraints here and the binding wants the
+  *other* one. `Circuit` requires a strict Hamiltonian cycle, but
+  XCSP3-core allows isolated vertices via self-loops and asks for
+  "exactly one circuit", so `<circuit>` is `SubCircuit` with a tour size
+  of at least two — which is what the binding now posts (#167, #788).
+  `Circuit` is consequently unreachable from XCSP3: it is a MiniZinc,
+  C++ and `.scp` constraint only. The size-carrying forms pass their
+  size straight to `with_tour_size()`, and all three forms are checked
+  against ACE by `xcsp_circuit`, `xcsp_circuit_size` and
+  `xcsp_circuit_size_var`.
 - **arithmetic**: the binding posts `Multiply`, `Divide`, `Modulus`
   and `Power`, which do their own constant folding and implementation
   selection (#153, #444), so wide domains no longer exhaust memory

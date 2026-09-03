@@ -755,27 +755,45 @@ namespace
             report_unsupported("binPacking", "per-bin XCondition list not yet supported");
         }
 
-        auto buildConstraintCircuit(string, vector<XVariable *> & x_vars, int startIndex) -> void override
+        // XCSP3-core's <circuit> is SubCircuit, not Circuit (issue #167). The spec says "if
+        // a vertex i has its successor x[i] equal to i, then the vertex is isolated", and
+        // requires "exactly one circuit in the (functional) graph composed of vertices
+        // having distinct successors" -- so isolated vertices are allowed, and the empty
+        // circuit is not. Our Circuit is the stricter Hamiltonian reading, which is why it
+        // found 2 solutions on a 3-vertex instance where the reference solver ACE finds 5.
+        //
+        // "Exactly one circuit" is spelled here as a tour size of at least two: SubCircuit
+        // on its own allows the empty tour, as MiniZinc's subcircuit does. Checked against
+        // ACE 2.6 rather than read off the spec -- for a 4-vertex instance it gives 8
+        // solutions at size 3 (four choices of isolated vertex times two 3-cycles), 6 at
+        // size 4 (the Hamiltonian cycles), 20 for a size variable over 0..4 (every
+        // non-empty subcircuit), and unsatisfiable at sizes 0 and 1.
+        auto post_circuit(vector<XVariable *> & x_vars, int startIndex, IntegerVariableID size) -> void
         {
             if (startIndex != 0)
                 report_unsupported("circuit", "non-zero startIndex");
-            _problem.post(Circuit{need_variables(x_vars)});
+            _problem.post(SubCircuit{need_variables(x_vars)}.with_tour_size(size));
+            _problem.post(GreaterThanEqual{size, constant_variable(2_i)});
+        }
+
+        auto buildConstraintCircuit(string, vector<XVariable *> & x_vars, int startIndex) -> void override
+        {
+            // No size given, so any non-empty tour will do; the bound lives in the
+            // auxiliary variable's own domain rather than in a second constraint.
+            auto size = create_aux_variable(2_i, Integer(static_cast<long long>(x_vars.size())), "circuit_size");
+            if (startIndex != 0)
+                report_unsupported("circuit", "non-zero startIndex");
+            _problem.post(SubCircuit{need_variables(x_vars)}.with_tour_size(size));
         }
 
         auto buildConstraintCircuit(string, vector<XVariable *> & x_vars, int startIndex, int size) -> void override
         {
-            (void)x_vars;
-            (void)startIndex;
-            (void)size;
-            report_unsupported("circuit", "fixed-size sub-circuit");
+            post_circuit(x_vars, startIndex, constant_variable(Integer{size}));
         }
 
         auto buildConstraintCircuit(string, vector<XVariable *> & x_vars, int startIndex, XVariable * size) -> void override
         {
-            (void)x_vars;
-            (void)startIndex;
-            (void)size;
-            report_unsupported("circuit", "variable-size sub-circuit");
+            post_circuit(x_vars, startIndex, need_variable(size->id));
         }
 
         auto buildConstraintInstantiation(string, vector<XVariable *> & x_vars, vector<int> & values) -> void override
