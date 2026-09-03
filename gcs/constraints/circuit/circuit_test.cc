@@ -92,6 +92,45 @@ auto run_circuit_test(bool proofs, const ViewWrapConfig & view_cfg, int n, Circu
     check_results(proof_name, expected, actual);
 }
 
+// A caller can hand over successors whose declared domains reach outside 0..n-1 --- a
+// variable sized from a loop bound, or one shared with another constraint that needed a
+// wider range. prepare() narrows them with define_bound() rather than rejecting them, and
+// that guard is what the position encoding's range assumption rests on: `p[i]` rows exist
+// for values 0..n-1 and nothing else keeps succ[i] inside that. Every other test here
+// declares exactly 0..n-1, so without this one the guard is a no-op, and a no-op passes
+// every check.
+//
+// Run bare rather than through the view sweep: a view's own bounds are what would be
+// widened, and the guard is about the successor the constraint sees.
+auto run_circuit_wide_domain_test(bool proofs, int n, CircuitPropagator propagator) -> void
+{
+    auto prop_label = propagator == CircuitPropagator::prevent ? "prevent" : "scc";
+    print(cerr, "circuit/{} wide domains n={}{}", prop_label, n, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    // Two either side, so a negative value, a value equal to n, and one beyond it are all
+    // declared. is_single_circuit rejects every one of them, so the expected set is the
+    // same as the 0..n-1 run's --- which is the point: the answer must not change.
+    vector<pair<int, int>> domains(static_cast<std::size_t>(n), pair{-2, n + 1});
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, [&](vector<int> succ) { return is_single_circuit(succ); }, domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> succ;
+    for (int i = 0; i < n; ++i)
+        succ.push_back(p.create_integer_variable(-2_i, Integer{n + 1}));
+    if (propagator == CircuitPropagator::prevent)
+        p.post(Circuit{succ}.with_algorithm(circuit::Prevent{}));
+    else
+        p.post(Circuit{succ}.with_algorithm(circuit::SCC{}));
+
+    auto proof_name = proofs ? make_optional("circuit_test_wide_" + std::string{prop_label}) : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{succ});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -118,6 +157,10 @@ auto main(int argc, char * argv[]) -> int
             if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
                 run_circuit_test(proofs, view_cfg, 1, propagator);
                 run_circuit_test(proofs, view_cfg, 2, propagator);
+                // n = 1 as well: the self-loop is the one solution, and it is the
+                // smallest case where a negative value could reach as_index().
+                run_circuit_wide_domain_test(proofs, 1, propagator);
+                run_circuit_wide_domain_test(proofs, 4, propagator);
             }
         }
     }
