@@ -89,6 +89,7 @@ namespace gcs
         const std::vector<IntegerVariableID> _succ;
         SubCircuitAlgorithm _algorithm = subcircuit::Prevent{};
         bool _gac_all_different = false;
+        std::optional<IntegerVariableID> _tour_size;
 
         // Backtrackable state allocated by prepare(), consumed by install_propagators().
         innards::subcircuit::SubCircuitStateHandles _state_handles;
@@ -114,6 +115,17 @@ namespace gcs
         /// propagator, in addition to the subcircuit propagation. Off by default (a cheaper
         /// value-consistent all-different is always applied regardless).
         auto with_gac_all_different(std::optional<bool> enable = true) -> SubCircuit &;
+
+        /// Constrain how many nodes are on the tour: `size` is the number that do not
+        /// point at themselves. This is XCSP3's `size` argument, for which MiniZinc's
+        /// spelling has no equivalent.
+        ///
+        /// It is also how to ask for a *non-empty* tour, which XCSP3-core's `<circuit>`
+        /// wants where MiniZinc's `subcircuit` does not: give `size` a lower bound of 2.
+        /// There is no separate option for that, because this one already says it, and
+        /// the count can never be 1 anyway -- a lone node has nowhere to point but itself,
+        /// which is what taking its own index means.
+        auto with_tour_size(IntegerVariableID size) -> SubCircuit &;
 
         [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;

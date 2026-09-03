@@ -1086,9 +1086,14 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
             post_constraint(problem, Circuit{resolve_variable_list(variables, terms[2], "the circuit successor list")}, label);
         }
         else if (op == "subcircuit") {
-            if (terms.size() != 3)
-                throw ScpReadError{"subcircuit takes one list: (label subcircuit (succ...))"};
-            post_constraint(problem, SubCircuit{resolve_variable_list(variables, terms[2], "the subcircuit successor list")}, label);
+            // The tour size is optional, and semantic when present, so it round-trips as a
+            // trailing term rather than being lost between writer and reader.
+            if (terms.size() != 3 && terms.size() != 4)
+                throw ScpReadError{"subcircuit takes one list and an optional tour size: (label subcircuit (succ...) [size])"};
+            SubCircuit constraint{resolve_variable_list(variables, terms[2], "the subcircuit successor list")};
+            if (terms.size() == 4)
+                constraint.with_tour_size(resolve_variable(variables, terms[3]));
+            post_constraint(problem, std::move(constraint), label);
         }
         else if (op == "array_min" || op == "array_max") {
             // (label array_min (vars...) result): result = min/max of the array.
