@@ -48,12 +48,20 @@ namespace gcs
 
         /**
          * \brief Propagate SubCircuit by reachability as well: as subcircuit::Prevent, and
-         * additionally require every node on the tour to be reachable from the node the
-         * caller named with with_required_node(), forcing anything unreachable to opt out.
+         * additionally require every node on the tour to lie in the same strongly connected
+         * component as the node the caller named with with_required_node(), forcing anything
+         * else to opt out.
          *
-         * This is the connectivity core of Francis and Stuckey's `scc` algorithm. Their
-         * four extra pruning rules -- prune root, prune skip, fix required edges and prune
-         * within -- are not here yet.
+         * The tour is a cycle through the named node, so a node on it must both be reachable
+         * from that node and reach it back; the two directions are checked by separate walks
+         * and justified by separate arguments, and either can fire without the other.
+         *
+         * This is the connectivity part of Francis and Stuckey's `scc` algorithm -- their
+         * rule for a strongly connected sub-component containing a required node, which is
+         * the one component that always has one. Their four extra pruning rules -- prune
+         * root, prune skip, fix required edges and prune within -- are not here yet; those
+         * need the subtree structure of a depth-first traversal, where these two need only
+         * the component.
          *
          * It needs with_required_node(), and does nothing without it: there is nothing to
          * be reachable *from* until some node is known to be on the tour, which is Francis

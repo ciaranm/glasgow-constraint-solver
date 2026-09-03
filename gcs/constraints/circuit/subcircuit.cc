@@ -321,6 +321,46 @@ namespace
         return layers;
     }
 
+    // The other half of the same fact. The tour is a cycle *through* the anchor, so a node
+    // on it does not merely have to be reachable from the anchor, it has to reach the anchor
+    // back; anything that cannot has to opt out. Between them the two directions say the
+    // tour lies inside the anchor's strongly connected component, which is Francis and
+    // Stuckey's rule for a strongly connected sub-component containing a required node,
+    // specialised to the one component that always has such a node in it.
+    //
+    // Self loops are not followed here either, and for the same reason: a node pointing at
+    // itself is off the tour, so that is not a tour edge to travel along.
+    auto reaches_anchor(const vector<IntegerVariableID> & succ, const long anchor, const State & state) -> vector<bool>
+    {
+        auto n = succ.size();
+
+        // The reverse graph, built once. A breadth-first walk backwards from the anchor is
+        // then one pass over it, where iterating the forward domains to a fixpoint would
+        // walk them once per layer.
+        auto backwards = vector<vector<size_t>>(n);
+        for (size_t i = 0; i < n; ++i)
+            for (const auto & v : state.each_value_immutable(succ[i])) {
+                auto j = static_cast<size_t>(v.raw_value);
+                if (cmp_not_equal(j, i))
+                    backwards[j].emplace_back(i);
+            }
+
+        auto reaches = vector<bool>(n, false);
+        reaches[static_cast<size_t>(anchor)] = true;
+        auto pending = vector<size_t>{static_cast<size_t>(anchor)};
+        while (! pending.empty()) {
+            auto here = pending.back();
+            pending.pop_back();
+            for (const auto & before : backwards[here])
+                if (! reaches[before]) {
+                    reaches[before] = true;
+                    pending.emplace_back(before);
+                }
+        }
+
+        return reaches;
+    }
+
     // At most one of the successors takes value v. The all-different encoding only has the
     // pairwise rows, so the clique inequality over them has to be derived -- which is
     // recover_am1_from_pairs's job, so all there is to do here is emit the pairs it merges
@@ -464,6 +504,61 @@ namespace
             }
     }
 
+    // Justify "node m cannot be on the tour" for every m that cannot reach the anchor. The
+    // fact derived for each such node x, at each position t, is
+    //
+    //     G(t, x):  pos[x] = t  ->  succ[x] = x
+    //
+    // the same shape as the forward walk's E(t, x) and the same length of induction, but it
+    // runs the other way: t from n-1 down to 0, because here it is what x's successor does
+    // that settles x, not what its predecessor does.
+    //
+    // Its proof. succ[x] takes some value, and every candidate y other than x cannot reach
+    // the anchor either -- if y could then x could, through y -- so a candidate that can is
+    // excluded by the reason. For one that cannot, the step row puts y at position t+1, and
+    // G(t+1, y) then makes y a self loop; value y would be taken twice, by succ[x] and by
+    // succ[y], which the all-different rows forbid. At t = n-1 the step row asks for
+    // position n, which the position variable's own upper bound refuses, so the top layer
+    // needs nothing above it.
+    //
+    // This direction needs no derivation of its own at all -- no pigeonhole and no cutting
+    // planes anywhere -- because every fact it leans on is a row of the model: the two
+    // halves of the step row, one all-different pair, and the at-least-one-value row for
+    // succ[x]. Following x's own successor is what buys that. The forward walk cannot,
+    // because hunting for x's *predecessor* asks that somebody take the value x, and only
+    // at-most-one of those is written down. So on an instance where both fire, this half is
+    // very nearly free.
+    auto derive_cannot_reach_anchor(ProofLogger & logger, const vector<IntegerVariableID> & succ, const SubCircuitPosData & pos_data,
+        const vector<bool> & reaches, const ReasonLiterals & reason) -> void
+    {
+        auto n = static_cast<long long>(succ.size());
+        logger.emit_proof_comment("everything on the tour reaches the anchor, working down from the last position");
+
+        for (auto t = n - 1; t >= 0; --t)
+            for (long long x = 0; x < n; ++x) {
+                if (reaches[static_cast<size_t>(x)])
+                    continue;
+
+                auto at_t = pos_data.pos.at(static_cast<long>(x)) == Integer{t};
+
+                for (long long y = 0; y < n; ++y) {
+                    // A candidate that reaches the anchor is excluded by the reason, and so
+                    // is anything outside the domain; the anchor itself reaches itself, so it
+                    // is never a candidate here, which is why the step row this leans on is
+                    // always the step row and never the wrap one.
+                    if (y == x || reaches[static_cast<size_t>(y)])
+                        continue;
+
+                    logger.emit_rup_proof_line_under_reason(
+                        reason, WPBSum{} + 1_i * ! at_t + 1_i * ! (succ[static_cast<size_t>(x)] == Integer{y}) >= 1_i, ProofLevel::Temporary);
+                }
+
+                // G(t, x) itself, at ProofLevel::Current so the layer below still has it.
+                logger.emit_rup_proof_line_under_reason(
+                    reason, WPBSum{} + 1_i * ! at_t + 1_i * (succ[static_cast<size_t>(x)] == Integer{x}) >= 1_i, ProofLevel::Current);
+            }
+    }
+
     auto propagate_subcircuit(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const SubCircuitPosData & pos_data,
         const ConstraintStateHandle & unassigned_handle, const bool prevent, const optional<long> & scc_anchor,
         const std::shared_ptr<SCCProofCache> & cache, const State & state, auto & inference, ProofLogger * const logger) -> void
@@ -478,6 +573,28 @@ namespace
         // obvious thing to do if this ever shows up in a profile.
         auto edges = walk_fixed_edges(succ, state);
 
+        // Given the nodes that may still be on the tour, the literals saying everything else
+        // is off it. All three rules below end this way, differing only in how they work out
+        // that first set.
+        //
+        // A node already sitting on its own index is the only one skipped: one fixed to
+        // anything else has to go through infer() so that the contradiction is raised and
+        // justified. That is the whole of what makes `check` complete -- Francis and Stuckey
+        // report failure exactly when a node outside the cycle cannot be a self cycle, and a
+        // node fixed elsewhere cannot.
+        auto off_tour = [&](const vector<bool> & maybe_on_tour) {
+            vector<Literal> off;
+            for (size_t m = 0; m < n; ++m) {
+                if (maybe_on_tour[m])
+                    continue;
+                auto here = Integer(static_cast<long long>(m));
+                if (state.optional_single_value(succ[m]) == here)
+                    continue;
+                off.emplace_back(succ[m] == here);
+            }
+            return off;
+        };
+
         // A closed cycle of two or more nodes is the whole tour, so every other node has
         // to be a self loop. This is Francis and Stuckey's `check`: for Circuit a short
         // cycle is a flat contradiction, but here it only pins down everyone else.
@@ -489,23 +606,9 @@ namespace
             for (auto v : cycle)
                 on_cycle[v] = true;
 
-            vector<Literal> off;
-            for (size_t m = 0; m < n; ++m) {
-                if (on_cycle[m])
-                    continue;
-                auto here = Integer(static_cast<long long>(m));
-                // Skip only a node already sitting on its own index: one fixed to anything
-                // else has to go through infer() so that the contradiction is raised and
-                // justified. That is the whole of what makes `check` complete -- Francis
-                // and Stuckey report failure exactly when a node outside the cycle cannot
-                // be a self cycle, and a node fixed elsewhere cannot.
-                if (state.optional_single_value(succ[m]) == here)
-                    continue;
-                off.emplace_back(succ[m] == here);
-            }
-
-            // Nothing left to say: the cycle is the whole graph, or everyone else is
+            // Nothing left to say if the cycle is the whole graph, or everyone else is
             // already a self loop.
+            auto off = off_tour(on_cycle);
             if (off.empty())
                 continue;
 
@@ -513,21 +616,22 @@ namespace
             inference.infer_all(logger, off, JustifyExplicitly{justf, ThenRUP::Yes, hints::SubCircuit{owner}}, generic_reason(succ));
         }
 
+        // Anything the anchor cannot reach has to opt out, and so does anything that cannot
+        // reach the anchor back. The two are separate arguments over separate walks, so they
+        // are two inferences; the second is taken over the state the first leaves behind,
+        // which is the stronger place to take it from and costs nothing, since a node the
+        // first has just made a self loop cannot reach anything at all.
         if (scc_anchor) {
             auto layers = reachable_layers(succ, *scc_anchor, state);
-            const auto & seen = layers.back();
-            vector<Literal> unreachable;
-            for (size_t m = 0; m < n; ++m) {
-                if (seen[m])
-                    continue;
-                auto here = Integer(static_cast<long long>(m));
-                if (state.optional_single_value(succ[m]) == here)
-                    continue;
-                unreachable.emplace_back(succ[m] == here);
-            }
-            if (! unreachable.empty()) {
+            if (auto unreachable = off_tour(layers.back()); ! unreachable.empty()) {
                 auto justf = [&](const ReasonLiterals & reason) { derive_unreachable(*logger, succ, pos_data, *cache, layers, reason); };
                 inference.infer_all(logger, unreachable, JustifyExplicitly{justf, ThenRUP::Yes, hints::SubCircuit{owner}}, generic_reason(succ));
+            }
+
+            auto reaches = reaches_anchor(succ, *scc_anchor, state);
+            if (auto stranded = off_tour(reaches); ! stranded.empty()) {
+                auto justf = [&](const ReasonLiterals & reason) { derive_cannot_reach_anchor(*logger, succ, pos_data, reaches, reason); };
+                inference.infer_all(logger, stranded, JustifyExplicitly{justf, ThenRUP::Yes, hints::SubCircuit{owner}}, generic_reason(succ));
             }
         }
 
