@@ -435,7 +435,7 @@ The graph family shifts *parameters*, which costs nothing.
 
 `with_prune_root()` and `with_prune_within()`, both off by default. Together they are
 Francis and Stuckey's remaining `scc` rules, and they cost between 1x and 95x the
-proof for at most a ten per cent reduction in search. They are here because they are
+proof for about a ten per cent reduction in search. They are here because they are
 *certifiable*, and a corpus of expensive-but-correct rules that a checker can be
 pointed at is worth having on its own account.
 
@@ -491,8 +491,11 @@ small pieces of mechanism:
   uses the *absence* of a value to rule a neighbour out, so a domain that has since
   lost more values makes the reason a stronger premise, not a weaker one.
 
-Both mutation probes are caught by `subcircuit_prune_root_test`: dropping the guard,
-and replacing the induction with a plain `JustifyUsingRUP`.
+Both mutation probes are caught: dropping the guard, and replacing the induction with a
+plain `JustifyUsingRUP`. The guard one is caught three times over --- by
+`subcircuit_prune_root_test`, by `subcircuit_prune_within_test`, and by the anchored
+enumeration sweep in `subcircuit_test.cc`, which reports the signature worth recognising:
+the solution set is still right and VeriPB refuses the certificate.
 
 ### The cost, measured
 
@@ -523,8 +526,9 @@ this machine means it does not fit: the scratchpad is a 16 GB tmpfs and therefor
 *shares the guest's RAM*. Complete enumeration with prune within has a practical
 ceiling somewhere around `n = 11`.
 
-And what it buys: **at most ten per cent fewer search nodes** (8057 → 7461, 25469 →
-22846, 1281 → 1199), and for prune root essentially nothing at all (104134 → 104044).
+And what it buys: **about ten per cent fewer search nodes** (8057 → 7461 is 7.4%,
+25469 → 22846 is 10.3%, 1281 → 1199 is 6.4%), and for prune root essentially nothing at
+all (104134 → 104044).
 Which is consistent with everything else measured on this arm --- the node reduction
 where it is measurable at all is 1.09x to 1.38x --- and is the argument for treating
 the proof-size constant as the thing to attack rather than the propagator.

@@ -306,19 +306,26 @@ namespace
         long long to;
     };
 
-    // The values `succ[i]` may take for the purposes of a walk: its domain, or just the
-    // assumed value where the assumption is about `i`.
-    auto walkable_values(const vector<IntegerVariableID> & succ, const State & state, const optional<AssumedEdge> & assumed, const size_t i)
-        -> vector<long long>
+    // Visit the values `succ[i]` may take for the purposes of a walk: its live domain, or
+    // just the assumed value where the assumption is about `i`.
+    //
+    // A visitor rather than a returned vector, and that is measured rather than taste. This
+    // is called from inside reachable_layers' `t` by `i` double loop, so materialising a
+    // vector is `O(n^2)` heap allocations per walk --- on the *plain* SCC path, whether or
+    // not either pruning rule is switched on. The vector version cost **1.15x** on an
+    // n = 18 enumeration (2423-2434 ms against 2110-2126) with `recursions` and
+    // `propagations` identical in both arms, so it was pure per-call overhead for a feature
+    // the run was not using. A template parameter and not a std::function: the whole point
+    // is to keep an indirect call out of this loop.
+    template <typename Visit_>
+    auto for_each_walkable_value(
+        const vector<IntegerVariableID> & succ, const State & state, const optional<AssumedEdge> & assumed, const size_t i, Visit_ && visit) -> void
     {
-        vector<long long> values;
-        if (assumed && assumed->from == i) {
-            values.emplace_back(assumed->to);
-            return values;
-        }
-        for (const auto & v : state.each_value_immutable(succ[i]))
-            values.emplace_back(v.raw_value);
-        return values;
+        if (assumed && assumed->from == i)
+            visit(assumed->to);
+        else
+            for (const auto & v : state.each_value_immutable(succ[i]))
+                visit(v.raw_value);
     }
 
     // Everything on the tour is reachable from the anchor, because the tour is one cycle
@@ -343,11 +350,11 @@ namespace
             for (size_t i = 0; i < n; ++i) {
                 if (! layers[t - 1][i])
                     continue;
-                for (const auto & v : walkable_values(succ, state, assumed, i)) {
+                for_each_walkable_value(succ, state, assumed, i, [&](long long v) {
                     auto j = static_cast<size_t>(v);
                     if (cmp_not_equal(j, i))
                         layers[t][j] = true;
-                }
+                });
             }
         }
         return layers;
@@ -372,11 +379,11 @@ namespace
         // walk them once per layer.
         auto backwards = vector<vector<size_t>>(n);
         for (size_t i = 0; i < n; ++i)
-            for (const auto & v : walkable_values(succ, state, assumed, i)) {
+            for_each_walkable_value(succ, state, assumed, i, [&](long long v) {
                 auto j = static_cast<size_t>(v);
                 if (cmp_not_equal(j, i))
                     backwards[j].emplace_back(i);
-            }
+            });
 
         auto reaches = vector<bool>(n, false);
         reaches[static_cast<size_t>(anchor)] = true;
