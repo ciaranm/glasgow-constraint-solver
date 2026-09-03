@@ -22,6 +22,11 @@ using std::visit;
 using namespace gcs;
 using namespace gcs::innards;
 
+gcs::innards::ExtensionalData::ExtensionalData(SimpleIntegerVariableID selector, vector<IntegerVariableID> vars, ExtensionalTuples tuples) :
+    selector(selector), vars(move(vars)), tuples(move(tuples)), reason(generic_reason(this->vars))
+{
+}
+
 namespace
 {
     auto feasible(const State & state, const IntegerVariableID & var, const Integer val) -> bool
@@ -88,13 +93,13 @@ auto gcs::innards::propagate_extensional(
                 else if (logger && logger->get_assertion_level() != AssertionLevel::Off && state.has_single_value(table.selector))
                     // Last selector val so infeasible -> we need an explicit contradiction at higher assertion levels
                     // since there's no table for the implicit one.
-                    inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(table.vars));
+                    inference.contradiction(logger, JustifyUsingRUP{hint}, table.reason);
                 else
                     inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, NoReason{});
             });
             if (none_feasible && logger && logger->get_assertion_level() != AssertionLevel::Off)
                 // selector already empty on entry
-                inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(table.vars));
+                inference.contradiction(logger, JustifyUsingRUP{hint}, table.reason);
         },
         table.tuples);
 
@@ -145,7 +150,7 @@ auto gcs::innards::propagate_extensional(
                     });
 
                     if (! supported) {
-                        inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{hint}, generic_reason(table.vars));
+                        inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{hint}, table.reason);
                     }
                 });
             }

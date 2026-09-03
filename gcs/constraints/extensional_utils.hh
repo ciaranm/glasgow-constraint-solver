@@ -6,6 +6,7 @@
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/propagators-fwd.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
@@ -48,10 +49,32 @@ namespace gcs::innards
      */
     struct ExtensionalData
     {
-        IntegerVariableID selector;
+        /**
+         * Always a variable this constraint allocated itself, so it is concrete:
+         * naming it as such lets State's SimpleIntegerVariableID overloads skip
+         * the IntegerVariableID variant visit and the view arithmetic. Pass 2's
+         * residue fast path asks in_domain() about it once per (variable, value)
+         * examined, which is millions of reads on a table of any size.
+         */
+        SimpleIntegerVariableID selector;
         std::vector<IntegerVariableID> vars;
         ExtensionalTuples tuples;
         std::shared_ptr<ExtensionalResidues> residues = std::make_shared<ExtensionalResidues>();
+
+        /**
+         * The reason for every inference this table makes, built once here rather
+         * than by calling generic_reason(vars) at each inference site.
+         *
+         * Sound to hoist because the scope is fixed and Reason is declarative: it
+         * captures the variables and defers reading their domains to
+         * materialise(). The factories take their scope by value, so a per-site
+         * call copies the whole scope vector into a fresh shared_ptr on every
+         * inference -- and does it even with proofs off, where the reason is
+         * never materialised at all.
+         */
+        Reason reason;
+
+        ExtensionalData(SimpleIntegerVariableID selector, std::vector<IntegerVariableID> vars, ExtensionalTuples tuples);
     };
 
     /**
