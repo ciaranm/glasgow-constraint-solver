@@ -50,6 +50,8 @@ auto main(int argc, char * argv[]) -> int
             ("proof-files-basename", "Basename for the .opb and .pbp files", //
                 cxxopts::value<string>()->default_value("tables"))           //
             ("stats", "Print solve statistics")                              //
+            ("table", "Table algorithm: auto, live or compact",              //
+                cxxopts::value<string>()->default_value("auto"))             //
             ;
 
         options_vars = options.parse(argc, argv);
@@ -67,6 +69,19 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
+    // Both directions stay runnable from the example, which is how the two
+    // algorithms are compared: they are supposed to make identical inferences,
+    // so `--prove` under each should write the same proof.
+    auto algorithm = TableAlgorithm{table::Auto{}};
+    if (auto choice = options_vars["table"].as<string>(); "live" == choice)
+        algorithm = table::LiveSet{};
+    else if ("compact" == choice)
+        algorithm = table::CompactTable{};
+    else if ("auto" != choice) {
+        println(cerr, "Error: --table must be auto, live or compact");
+        return EXIT_FAILURE;
+    }
+
     Problem p;
 
     auto v1 = p.create_integer_variable(1_i, 4_i, "v1");
@@ -80,13 +95,15 @@ auto main(int argc, char * argv[]) -> int
             {2_i, 1_i, 3_i},          //
             {2_i, 3_i, 1_i},          //
             {3_i, 1_i, 2_i},          //
-            {3_i, 2_i, 1_i}}});
+            {3_i, 2_i, 1_i}}}
+            .with_algorithm(algorithm));
 
     p.post(Table{{v1, v4},                //
         WildcardTuples{{1_i, Wildcard{}}, //
             {2_i, 2_i},                   //
             {3_i, 3_i},                   //
-            {4_i, 4_i}}});
+            {4_i, 4_i}}}
+            .with_algorithm(algorithm));
 
     p.post(Table{{v1, v2, v3, v4}, //
         WildcardTuples{
@@ -102,7 +119,7 @@ auto main(int argc, char * argv[]) -> int
             {4_i, 4_i, Wildcard{}, Wildcard{}}, //
             {Wildcard{}, 4_i, 4_i, Wildcard{}}, //
             {Wildcard{}, Wildcard{}, 4_i, 4_i}, //
-        }});
+        }}.with_algorithm(algorithm));
 
     auto stats = solve_with(p,
         SolveCallbacks{

@@ -15,6 +15,9 @@ namespace gcs
      * \brief Constrain that the specified variables are equal to one of the specified
      * tuples.
      *
+     * The constructor takes only the variables and the tuples; select the
+     * propagation algorithm with the fluent with_algorithm().
+     *
      * \ingroup Constraints
      * \see SmartTable
      */
@@ -24,10 +27,19 @@ namespace gcs
         const std::vector<IntegerVariableID> _vars;
         ExtensionalTuples _tuples;
         std::shared_ptr<innards::ExtensionalLiveTuples> _live;
+        std::shared_ptr<innards::ExtensionalCompactTable> _compact;
+        TableAlgorithm _algorithm = table::Auto{};
         bool _has_no_tuples = false;
 
     public:
         explicit Table(std::vector<IntegerVariableID> vars, ExtensionalTuples tuples);
+
+        /**
+         * Select the propagation algorithm: table::Auto by default, or
+         * table::LiveSet / table::CompactTable to force one. The choice never
+         * changes the constraint's meaning, its search tree, or its proof.
+         */
+        auto with_algorithm(TableAlgorithm) -> Table &;
 
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;

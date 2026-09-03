@@ -4,8 +4,10 @@
 #include <examples/benchmark_cli.hh>
 
 #include <cstdlib>
+#include <iostream>
 #include <optional>
 #include <random>
+#include <string>
 #include <vector>
 
 #include <version>
@@ -14,15 +16,18 @@
 #include <print>
 #else
 #include <fmt/core.h>
+#include <fmt/ostream.h>
 #endif
 
 #include <cxxopts.hpp>
 
 using namespace gcs;
 
+using std::cerr;
 using std::mt19937;
 using std::nullopt;
 using std::optional;
+using std::string;
 using std::uniform_int_distribution;
 using std::vector;
 
@@ -33,11 +38,12 @@ using fmt::println;
 #endif
 
 // A random binary-CSP benchmark built entirely from Table (allowed
-// tuples), to exercise the negative-table propagator: n variables of domain
-// 0..d-1, and `constraints` random binary allowed-tuple tables
-// each of the d*d value pairs independently with probability `tightness`. Fixed
-// (deterministic) search, so the search tree is identical regardless of how the
-// propagator is triggered -- the interesting number is solve time / time-per-node.
+// tuples), to exercise the table propagator: n variables of domain
+// 0..d-1, and `constraints` random binary allowed-tuple tables, each allowing
+// each of the d*d value pairs independently with probability 1 - `tightness`.
+// Fixed (deterministic) search, so the search tree is identical regardless of
+// how the propagator is triggered -- the interesting number is solve time /
+// time-per-node.
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("positive_table_random", "Random allowed-tuple (Table) benchmark");
@@ -47,6 +53,7 @@ auto main(int argc, char * argv[]) -> int
         ("constraints", "Number of binary allowed-tuple tables", cxxopts::value<int>()->default_value("180"))                           //
         ("tightness", "Probability each value pair is forbidden (allowed = 1 - this)", cxxopts::value<double>()->default_value("0.34")) //
         ("seed", "Random seed", cxxopts::value<unsigned>()->default_value("1"))                                                         //
+        ("table", "Table algorithm: auto, live or compact", cxxopts::value<string>()->default_value("auto"))                            //
         ("first", "Stop at the first solution instead of enumerating all")                                                              //
         ("timeout", "Timeout in seconds (0 = none)", cxxopts::value<double>()->default_value("0"))                                      //
         ("help", "Display help");
@@ -62,6 +69,19 @@ auto main(int argc, char * argv[]) -> int
     auto tightness = options_vars["tightness"].as<double>();
     auto seed = options_vars["seed"].as<unsigned>();
     auto first_only = options_vars.contains("first");
+
+    // The in-repo way to reproduce the live-vs-compact comparison: the two are
+    // supposed to make identical inferences, so only the timings should move.
+    // Spelled as on the `tables` example.
+    auto algorithm = TableAlgorithm{table::Auto{}};
+    if (auto choice = options_vars["table"].as<string>(); "live" == choice)
+        algorithm = table::LiveSet{};
+    else if ("compact" == choice)
+        algorithm = table::CompactTable{};
+    else if ("auto" != choice) {
+        println(cerr, "Error: --table must be auto, live or compact");
+        return EXIT_FAILURE;
+    }
 
     mt19937 rng(seed);
     uniform_int_distribution<int> pick_var(0, n - 1);
@@ -82,7 +102,7 @@ auto main(int argc, char * argv[]) -> int
             for (int v = 0; v < d; ++v)
                 if (unit(rng) >= tightness)
                     allowed.push_back({Integer{u}, Integer{v}});
-        p.post(Table{{vars[a], vars[b]}, move(allowed)});
+        p.post(Table{{vars[a], vars[b]}, move(allowed)}.with_algorithm(algorithm));
     }
 
     unsigned long long solutions = 0;
