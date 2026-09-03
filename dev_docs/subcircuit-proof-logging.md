@@ -500,7 +500,7 @@ already answered, and the work is propagator work.
 1. **Proof size, which is the binding constraint.** The induction emits one row
    per (layer, unreached node), `O(n²)` rows per inference. Once per candidate
    value of a successor makes it `O(n³)` rows per propagator call. The real
-   15-house instance already writes a 194 MB `.pbp` with the walks firing once;
+   15-house instance already writes a 186 MB `.pbp` with the walks firing once;
    measure before building.
 2. **Forced edges: shave, do not derive the cut row.** Rules 2 and 3 conclude
    `succ[c] = b`. Two routes. Shaving gives it as a by-product — remove every
@@ -520,9 +520,9 @@ already answered, and the work is propagator work.
    with `in(a)` alone and need no root. Our induction has to start somewhere, and
    `pos` is pinned only at the anchor; for an arbitrary component the layers would
    have to be indexed relative to `pos[a]`, which is unknown. This is the one
-   place the "arbitrary root" position-offset problem
-   (recorded elsewhere as *not* a real blocker, correctly, for the arm as it stands) is
-   real — and it is unreachable for us anyway, since the arm does nothing without
+   place the "arbitrary root" position-offset problem --- argued on
+   [#788](https://github.com/ciaranm/glasgow-constraint-solver/issues/788) to be no
+   blocker, correctly, for the arm as it stands --- is real — and it is unreachable for us anyway, since the arm does nothing without
    an anchor.
 
 ### A sign error in the paper, for whoever implements from it
