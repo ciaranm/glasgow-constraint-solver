@@ -180,7 +180,10 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
     if (sel != future_var_id)
         throw UnexpectedException{"something went horribly wrong with variable IDs"};
 
-    return ExtensionalData{sel, vector<IntegerVariableID>{vars}, move(permitted)};
+    // `sel` remains a State variable because the derivation above introduced its
+    // literals against that identity; the propagator no longer uses it.
+    auto n_tuples = permitted.size();
+    return ExtensionalData{vector<IntegerVariableID>{vars}, move(permitted), ExtensionalLiveTuples::create(state, n_tuples)};
 }
 
 auto gcs::innards::reify_tabulation(const ReificationCondition & reif, TabulationVariables & enum_vars,

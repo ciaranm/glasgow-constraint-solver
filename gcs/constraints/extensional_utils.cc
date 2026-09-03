@@ -1,3 +1,4 @@
+#include <any>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -16,14 +17,32 @@
 #include <gcs/innards/state.hh>
 #include <gcs/proof.hh>
 
+using std::any_cast;
+using std::make_shared;
+using std::shared_ptr;
+using std::size_t;
+using std::uint32_t;
 using std::vector;
 using std::visit;
 
 using namespace gcs;
 using namespace gcs::innards;
 
-gcs::innards::ExtensionalData::ExtensionalData(SimpleIntegerVariableID selector, vector<IntegerVariableID> vars, ExtensionalTuples tuples) :
-    selector(selector), vars(move(vars)), tuples(move(tuples)), reason(generic_reason(this->vars))
+auto gcs::innards::ExtensionalLiveTuples::create(State & initial_state, size_t n_tuples) -> shared_ptr<ExtensionalLiveTuples>
+{
+    auto result = make_shared<ExtensionalLiveTuples>();
+    result->dense.resize(n_tuples);
+    result->position.resize(n_tuples);
+    for (size_t i = 0; i < n_tuples; ++i)
+        result->dense[i] = result->position[i] = static_cast<uint32_t>(i);
+    // Only the count backtracks: see the class comment for why restoring it is
+    // enough to re-admit exactly the tuples dropped below this node.
+    result->size_handle = initial_state.add_constraint_state(n_tuples);
+    return result;
+}
+
+gcs::innards::ExtensionalData::ExtensionalData(vector<IntegerVariableID> vars, ExtensionalTuples tuples, shared_ptr<ExtensionalLiveTuples> live) :
+    vars(move(vars)), tuples(move(tuples)), reason(generic_reason(this->vars)), live(move(live))
 {
 }
 
@@ -76,32 +95,50 @@ template <typename Hint_>
 auto gcs::innards::propagate_extensional(
     const ExtensionalData & table, const State & state, auto & inference, ProofLogger * const logger, const Hint_ & hint) -> PropagatorState
 {
-    // check whether selectable tuples are still feasible
+    auto & live = *table.live;
+    auto & live_count = any_cast<size_t &>(state.get_constraint_state(live.size_handle));
+
+    // Pass 1: drop tuples that are no longer feasible, by swapping them past the
+    // live count. Nothing here goes through State, so a dropped tuple costs two
+    // stores rather than an inference plus an IntervalSet edit.
     visit(
         [&](const auto & tuples) {
-            auto none_feasible = true;
-            state.for_each_value_mutable(table.selector, [&](Integer tuple_idx) {
+            for (size_t i = 0; i < live_count;) {
+                auto tuple_idx = live.dense[i];
                 bool is_feasible = true;
                 for (unsigned idx = 0; idx < table.vars.size(); ++idx)
-                    if (! feasible(state, table.vars[idx], get_tuple_value(tuples, tuple_idx.as_index(), idx))) {
+                    if (! feasible(state, table.vars[idx], get_tuple_value(tuples, tuple_idx, idx))) {
                         is_feasible = false;
                         break;
                     }
 
                 if (is_feasible)
-                    none_feasible = false;
-                else if (logger && logger->get_assertion_level() != AssertionLevel::Off && state.has_single_value(table.selector))
-                    // Last selector val so infeasible -> we need an explicit contradiction at higher assertion levels
-                    // since there's no table for the implicit one.
-                    inference.contradiction(logger, JustifyUsingRUP{hint}, table.reason);
-                else
-                    inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, NoReason{});
-            });
-            if (none_feasible && logger && logger->get_assertion_level() != AssertionLevel::Off)
-                // selector already empty on entry
-                inference.contradiction(logger, JustifyUsingRUP{hint}, table.reason);
+                    ++i;
+                else {
+                    auto last = live_count - 1;
+                    auto moved = live.dense[last];
+                    live.dense[i] = moved;
+                    live.position[moved] = static_cast<uint32_t>(i);
+                    live.dense[last] = tuple_idx;
+                    live.position[tuple_idx] = static_cast<uint32_t>(last);
+                    live_count = last;
+                }
+            }
         },
         table.tuples);
+
+    if (0 == live_count) {
+        // The two spellings the selector used to give us for free, kept exactly:
+        // at higher assertion levels the contradiction must be explicit because
+        // there is no table to derive it from, and otherwise it must carry no
+        // justification and no reason, because that is what emptying the
+        // selector's domain used to report -- and the conflict observer behind
+        // dom/wdeg reads that reason.
+        if (logger && logger->get_assertion_level() != AssertionLevel::Off)
+            inference.contradiction(logger, JustifyUsingRUP{hint}, table.reason);
+        else
+            inference.contradiction(logger, NoJustificationNeeded{}, NoReason{});
+    }
 
     // check for supports in selectable tuples, using residual supports: for each
     // (variable position, value) we remember the last selectable tuple that
@@ -133,21 +170,21 @@ auto gcs::innards::propagate_extensional(
                     // O(1) fast path: last witness still selectable and still matching.
                     if (have_row) {
                         auto cached = residue_row[off];
-                        if (cached != ExtensionalResidues::none && state.in_domain(table.selector, Integer(static_cast<long long>(cached))) &&
+                        if (cached != ExtensionalResidues::none && live.position[cached] < live_count &&
                             match(get_tuple_value(tuples, cached, idx), val))
                             return;
                     }
 
                     bool supported = false;
-                    state.for_each_value_immutable(table.selector, [&](Integer tuple_idx) -> bool {
-                        if (match(get_tuple_value(tuples, tuple_idx.as_index(), idx), val)) {
+                    for (size_t i = 0; i < live_count; ++i) {
+                        auto tuple_idx = live.dense[i];
+                        if (match(get_tuple_value(tuples, tuple_idx, idx), val)) {
                             supported = true;
                             if (have_row)
-                                residue_row[off] = static_cast<std::uint32_t>(tuple_idx.as_index());
-                            return false;
+                                residue_row[off] = tuple_idx;
+                            break;
                         }
-                        return true;
-                    });
+                    }
 
                     if (! supported) {
                         inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{hint}, table.reason);

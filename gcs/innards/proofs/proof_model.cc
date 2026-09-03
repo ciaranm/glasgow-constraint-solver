@@ -452,8 +452,24 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
                 pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> names_0{! eqvar, eqvar};
                 names_and_ids_tracker().track_eqvar(id, 0_i, names_0);
             }, //
-            [](const ProofOnlySimpleIntegerVariableID &) {
-                // currently there's no API for asking for literals for these
+            [&](const ProofOnlySimpleIntegerVariableID & id) {
+                // Same aliasing as above: for a {0,1} variable the bit-0 literal
+                // *is* the (== 1)/(== 0) literal. Without these, a caller writing
+                // `id != 0` into an OPB row gets the lazily-built ge/eq ladder
+                // instead of the bit, which is a different (and much larger)
+                // encoding than the same variable would get with State behind it
+                // -- and one whose atoms a `solx` line cannot satisfy, because
+                // nothing assigns them and the model does not force them.
+                //
+                // No track_eqvar: that pair is what need_pol_item_defining_literal
+                // returns, and takes a SimpleIntegerVariableID. Nothing does pol
+                // steps over a proof-only {0,1} variable today, so this stays a
+                // gap to close when something needs it rather than a second
+                // polarity trap to get wrong (issues #554, #559).
+                names_and_ids_tracker().associate_condition_with_xliteral(id == 1_i, eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id != 1_i, ! eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id == 0_i, ! eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id != 0_i, eqvar);
             } //
         }
             .visit(id);

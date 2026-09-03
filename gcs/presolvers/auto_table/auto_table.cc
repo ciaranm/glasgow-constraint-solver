@@ -143,7 +143,11 @@ auto AutoTable::run(Problem & problem, Propagators & propagators, State & initia
     if (selector != selector_var_id)
         throw UnexpectedException{"something went horribly wrong with variable IDs when autotabulating"};
 
-    ExtensionalData data{selector, _vars, move(tuples)};
+    // `selector` stays a State variable here only because this presolver's proof
+    // derivation introduces its literals lazily; the propagator itself no longer
+    // sees a selector at all.
+    auto n_tuples = tuples.size();
+    ExtensionalData data{_vars, move(tuples), ExtensionalLiveTuples::create(initial_state, n_tuples)};
 
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};

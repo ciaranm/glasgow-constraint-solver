@@ -316,6 +316,38 @@ it does, two tools help:
 Both are profile-driven: don't pre-emptively specialise. Confirm the dispatch is
 actually costing you first.
 
+**A worked example of confirming it, and of getting the confirmation wrong.** In
+the extensional (table) propagator, `State::in_domain` is 34% of the profile: it
+is called once per (live tuple, position) in the feasibility pass, through the
+`IntegerVariableID` variant. That looks like the textbook case for specialising.
+It is not, and three measurements say so:
+
+- `perf annotate` on `in_domain` shows its hot block is `cmpq %rdx,%rcx` /
+  `cmpq (%rax),%rcx` / `addq $0x10,%rax` — a linear scan over the `IntervalSet`'s
+  interval array, sixteen bytes per step, with **no discriminant test and no
+  indirect branch in it**. GCC had already lowered the visit away.
+- Specialising the pass over a concrete `std::vector<SimpleIntegerVariableID>`
+  moves 1971 of 1995 `in_domain` samples from the variant instantiation to the
+  concrete one, and leaves the total unchanged.
+- End to end it measures 1.0x on all 18 instances of the table benchmark matrix.
+
+The 34% is the intrinsic cost of testing interval membership, and the ways to
+move it are algorithmic — call it less, or find a cheaper test than a scan.
+
+Two traps to avoid when running this experiment, both of which produced a
+confident wrong answer first time:
+
+- **A helper that takes `const IntegerVariableID &` silently un-specialises its
+  caller.** Passing a concrete `SimpleIntegerVariableID` to it converts back into
+  the variant at the call site, so `State::in_domain` is still the variant
+  instantiation and the "specialisation" changes nothing. Check the profile for
+  which instantiation the samples are actually in, rather than assuming the
+  specialisation took.
+- **Make sure the benchmark binary relinked.** If the harness does not depend on
+  the solver library, a before/after comparison measures one build against
+  itself and reports exactly 1.00x for everything. `md5sum` the two binaries when
+  a change reads 1.00x across the board.
+
 ## Is it the propagator, the strength, or the search?
 
 When a model is slow, "the propagator is slow" is only one of three
