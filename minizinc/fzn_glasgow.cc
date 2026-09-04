@@ -264,25 +264,34 @@ namespace
         return Integer{static_cast<long long>(a)};
     }
 
-    // Both circuit predicates hand over the successor array unshifted, with the
-    // offset to subtract from each value, and gcs applies it as a view.
+    // Several of our predicates take an array whose values gcs numbers from zero
+    // -- circuit and subcircuit successors, bin packing's bins -- and hand it over
+    // unshifted with the offset to subtract, which gcs applies as a view.
     //
     // That is not just tidier than shifting in the redefinition, it keeps
     // information. A comprehension there introduces a fresh FlatZinc variable per
-    // node, declared over the full range before its defining constraint has
-    // propagated, so every narrowing the model had already made is invisible to the
-    // constraint. SubCircuit cares about exactly one such narrowing -- a node whose
-    // own index has left its domain is a node known to be on the tour, which is what
-    // lets it anchor the position encoding -- and `constraint succ[n] != n`, which is
-    // how the tpp challenge model says it, was being lost that way. A view keeps the
-    // domain, and n variables and n linear constraints never get written at all.
-    auto zero_based_successors(const vector<IntegerVariableID> & vars, Integer offset) -> vector<IntegerVariableID>
+    // element, declared over the full range before its defining int_lin_eq has
+    // propagated, and LinearEquality is bounds consistent by default, so every
+    // narrowing the model had already made reaches the constraint only as a bound
+    // -- and every hole the constraint punches reaches the model's array, which is
+    // what a search annotation names, only as a bound too.
+    //
+    // SubCircuit cared about exactly one such narrowing -- a node whose own index
+    // has left its domain is a node known to be on the tour, which is what lets it
+    // anchor the position encoding -- and `constraint succ[n] != n`, which is how
+    // the tpp challenge model says it, was being lost that way. For bin packing it
+    // is the per-item bin pruning that was being lost, worth better-or-equal
+    // objectives on all five steelmillslab instances and strictly better on four.
+    //
+    // A view keeps the domain, because a view is the same variable, and n variables
+    // and n linear constraints never get written at all.
+    auto zero_based(const vector<IntegerVariableID> & vars, Integer offset) -> vector<IntegerVariableID>
     {
-        vector<IntegerVariableID> succ;
-        succ.reserve(vars.size());
+        vector<IntegerVariableID> shifted;
+        shifted.reserve(vars.size());
         for (const auto & v : vars)
-            succ.push_back(v + -offset);
-        return succ;
+            shifted.push_back(v + -offset);
+        return shifted;
     }
 
     auto arg_as_var(ExtractedData & data, const auto & args, int idx) -> IntegerVariableID
@@ -815,27 +824,31 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(ArgSort{x, p, 1_i});
             }
             else if (id == "glasgow_bin_packing_capa") {
+                // BinPacking numbers bins 0..num_bins-1, which the fourth argument's
+                // offset turns the model's bin variables into, as a view.
                 auto capacities = arg_as_array_of_integer(data, args, 0);
                 const auto & items = arg_as_array_of_var(data, args, 1);
                 auto sizes = arg_as_array_of_integer(data, args, 2);
-                problem.post(BinPacking{items, *sizes, *capacities});
+                problem.post(BinPacking{zero_based(items, arg_as_constant(args, 3)), *sizes, *capacities});
             }
             else if (id == "glasgow_bin_packing_load") {
+                // As glasgow_bin_packing_capa; only the bins are shifted, since the
+                // load array is indexed by bin rather than valued in bins.
                 const auto & loads = arg_as_array_of_var(data, args, 0);
                 const auto & items = arg_as_array_of_var(data, args, 1);
                 auto sizes = arg_as_array_of_integer(data, args, 2);
-                problem.post(BinPacking{items, *sizes, loads});
+                problem.post(BinPacking{zero_based(items, arg_as_constant(args, 3)), *sizes, loads});
             }
             else if (id == "glasgow_circuit") {
                 // Circuit expects a length-n array valued in 0..n-1, which the
                 // second argument's offset turns the model's successors into.
-                problem.post(Circuit{zero_based_successors(arg_as_array_of_var(data, args, 0), arg_as_constant(args, 1))});
+                problem.post(Circuit{zero_based(arg_as_array_of_var(data, args, 0), arg_as_constant(args, 1))});
             }
             else if (id == "glasgow_subcircuit") {
                 // As glasgow_circuit. SubCircuit is the opt-out sibling: a node not
                 // on the tour takes its own index, and the empty tour is a solution,
                 // so unlike Circuit this must not assume every node is visited.
-                problem.post(SubCircuit{zero_based_successors(arg_as_array_of_var(data, args, 0), arg_as_constant(args, 1))});
+                problem.post(SubCircuit{zero_based(arg_as_array_of_var(data, args, 0), arg_as_constant(args, 1))});
             }
             else if (id == "glasgow_reachable" || id == "glasgow_dreachable") {
                 // The mznlib redefinition has already shifted the endpoints and
@@ -1062,20 +1075,27 @@ auto main(int argc, char * argv[]) -> int
                 const auto & raw_transitions = arg_as_array_of_integer(data, args, 3);
                 const auto & start_state = static_cast<long long>(args.at(4));
 
-                vector<vector<long>> transitions;
+                // Keyed by the symbol values the model's own variables take, which
+                // FlatZinc regular numbers 1..S. Regular takes the symbols it is
+                // given rather than assuming an alphabet, so nothing needs shifting:
+                // the redefinition used to hand over `[x[i] - 1 | ...]`, which cost a
+                // fresh variable per position and lost every hole across the
+                // bounds-consistent int_lin_eq that defined it.
+                vector<unordered_map<Integer, long>> transitions(num_states);
                 for (int i = 0; i < num_states; i++) {
-                    transitions.emplace_back();
                     for (int j = 0; j < num_symbols; j++) {
                         // Swap 0 and start state to ensure start state is always 0 for gcs::regular
                         auto t_value = raw_transitions->at(i * num_symbols + j).raw_value;
-                        if (t_value == start_state) {
-                            transitions[i].emplace_back(0);
-                        }
-                        else if (t_value == 1) {
-                            transitions[i].emplace_back(start_state - 1);
-                        }
+                        long target;
+                        if (t_value == start_state)
+                            target = 0;
+                        else if (t_value == 1)
+                            target = start_state - 1;
                         else
-                            transitions[i].emplace_back(t_value - 1);
+                            target = t_value - 1;
+                        // A FlatZinc transition to state 0 means "no transition", which
+                        // maps to -1 above and is what Regular drops.
+                        transitions[i].emplace(Integer{j + 1}, target);
                     }
                 }
 

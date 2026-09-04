@@ -652,6 +652,10 @@ if(GCS_BUILD_TESTS)
     endforeach()
     add_view_tests(cumulative_constraint cumulative_test 4)
     add_view_tests(regular_constraint regular_test 4)
+    # Every MiniZinc model hands BinPacking views: glasgow_bin_packing_capa and
+    # glasgow_bin_packing_load take the bin offset and fzn_glasgow applies it with
+    # operator+, so the item scope is never a plain variable on that path.
+    add_view_tests(bin_packing_constraint bin_packing_test 4)
     add_test(NAME in_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:in_test>)
     add_test(NAME increasing_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:increasing_test>)
     add_test(NAME inverse_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)

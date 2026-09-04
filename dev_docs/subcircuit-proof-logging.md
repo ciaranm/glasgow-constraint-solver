@@ -427,9 +427,13 @@ alone recovers the search (10,021 → 3,099 on `easy_2`, 1,133,233 → 55,157 on
 equalities' consistency, not the extra variables. Views are still the right fix,
 since a view shares the domain outright and costs nothing to propagate.
 
-The same shape is in four more redefinitions — the three `bin_packing` ones and
-`fzn_regular` — and is [issue #803](https://github.com/ciaranm/glasgow-constraint-solver/issues/803).
-The graph family shifts *parameters*, which costs nothing.
+The same shape was in four more redefinitions — the three `bin_packing` ones and
+`fzn_regular` — and was
+[issue #803](https://github.com/ciaranm/glasgow-constraint-solver/issues/803).
+That is now fixed the same way: the three `bin_packing` redefinitions pass the
+offset, and `fzn_regular` needs none at all, because `Regular` takes the symbol
+values it is given rather than assuming an alphabet. The graph family shifts
+*parameters*, which costs nothing.
 
 ## The pruning rules: implemented, certified, and expensive
 

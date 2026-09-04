@@ -34,6 +34,19 @@ set_tests_properties(minizinc-aust PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-binpacking COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ binpackingtest true true)
 set_tests_properties(minizinc-binpacking PROPERTIES SKIP_RETURN_CODE 66)
 
+# The bin offset the three bin_packing redefinitions pass, which fzn_glasgow
+# applies as a view. --fzn-pattern is load-bearing on both: MiniZinc's
+# bin_packing wrappers are free to rewrite into the library decomposition, which
+# agrees with the reference solver and verifies its proof just as happily, and
+# then the offset argument under test is never read. binpackingtest above is
+# 1-based, where the offset is 1; these reach offsets of 5, 3 and 0, and
+# binpackingloadtest is the only test of the variable-load form at all.
+add_test(NAME minizinc-binpacking-offset COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_bin_packing_capa $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ binpackingoffsettest true true)
+set_tests_properties(minizinc-binpacking-offset PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-binpacking-load COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_bin_packing_load $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ binpackingloadtest true true)
+set_tests_properties(minizinc-binpacking-load PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-boolxor COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ boolxor true true)
 set_tests_properties(minizinc-boolxor PROPERTIES SKIP_RETURN_CODE 66)
 
