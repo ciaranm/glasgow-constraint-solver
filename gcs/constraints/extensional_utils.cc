@@ -58,6 +58,11 @@ auto gcs::innards::ExtensionalCompactTable::create(State & initial_state, bool f
     return result;
 }
 
+auto gcs::innards::ExtensionalCompactTable::create_for_auto(State & initial_state, size_t n_tuples) -> shared_ptr<ExtensionalCompactTable>
+{
+    return n_tuples >= min_tuples ? create(initial_state, false) : shared_ptr<ExtensionalCompactTable>{};
+}
+
 gcs::innards::ExtensionalData::ExtensionalData(
     vector<IntegerVariableID> vars, ExtensionalTuples tuples, shared_ptr<ExtensionalLiveTuples> live, shared_ptr<ExtensionalCompactTable> compact) :
     vars(move(vars)), tuples(move(tuples)), reason(generic_reason(this->vars)), live(move(live)), compact(move(compact))

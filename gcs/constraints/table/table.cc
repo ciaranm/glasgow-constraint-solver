@@ -135,14 +135,13 @@ auto Table::prepare(Propagators &, State & initial_state, ProofModel * const) ->
                 if (tuple.size() != _vars.size())
                     throw InvalidProblemDefinitionException{"table size mismatch"};
             _live = ExtensionalLiveTuples::create(initial_state, depointinate(tuples).size());
-            // A table whose tuples all fit in one word cannot pay for the
-            // compact table's per-call bookkeeping, so it does not even get the
-            // state that would let it try: every constraint state is
-            // deep-copied into every search node, and two spare integers per
-            // table cost Dubois 14% and enum_shared 24% before this test.
-            const bool forced = holds_alternative<table::CompactTable>(_algorithm);
-            if (! holds_alternative<table::LiveSet>(_algorithm) && (forced || depointinate(tuples).size() >= ExtensionalCompactTable::min_tuples))
-                _compact = ExtensionalCompactTable::create(initial_state, forced);
+            // create_for_auto applies the min_tuples test and documents why;
+            // an explicit table::CompactTable overrides it, which is the only
+            // way to get the compact algorithm on a table that small.
+            if (holds_alternative<table::CompactTable>(_algorithm))
+                _compact = ExtensionalCompactTable::create(initial_state, true);
+            else if (! holds_alternative<table::LiveSet>(_algorithm))
+                _compact = ExtensionalCompactTable::create_for_auto(initial_state, depointinate(tuples).size());
         },
         _tuples);
 

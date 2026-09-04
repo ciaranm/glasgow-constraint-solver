@@ -183,7 +183,8 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
     // `sel` remains a State variable because the derivation above introduced its
     // literals against that identity; the propagator no longer uses it.
     auto n_tuples = permitted.size();
-    return ExtensionalData{vector<IntegerVariableID>{vars}, move(permitted), ExtensionalLiveTuples::create(state, n_tuples)};
+    return ExtensionalData{vector<IntegerVariableID>{vars}, move(permitted), ExtensionalLiveTuples::create(state, n_tuples),
+        ExtensionalCompactTable::create_for_auto(state, n_tuples)};
 }
 
 auto gcs::innards::reify_tabulation(const ReificationCondition & reif, TabulationVariables & enum_vars,

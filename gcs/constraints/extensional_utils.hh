@@ -287,6 +287,19 @@ namespace gcs::innards
         bool built = false;
 
         [[nodiscard]] static auto create(State & initial_state, bool forced) -> std::shared_ptr<ExtensionalCompactTable>;
+
+        /**
+         * \brief create() for a caller with no user-facing algorithm choice:
+         * Auto, and null below \c min_tuples.
+         *
+         * The tabulated constraints and the AutoTable presolver build their own
+         * ExtensionalData, so there is no TableAlgorithm to honour -- but the
+         * \c min_tuples test still has to be applied, and for the same reason
+         * `Table::prepare` applies it: a table that fits in one word cannot pay
+         * for the bookkeeping, and every constraint state is deep-copied into
+         * every search node whether the propagator uses it or not.
+         */
+        [[nodiscard]] static auto create_for_auto(State & initial_state, std::size_t n_tuples) -> std::shared_ptr<ExtensionalCompactTable>;
     };
 
     /**
