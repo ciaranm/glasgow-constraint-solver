@@ -26,6 +26,7 @@ using std::cerr;
 using std::flush;
 using std::make_optional;
 using std::nullopt;
+using std::optional;
 using std::pair;
 using std::set;
 using std::tuple;
@@ -183,12 +184,22 @@ auto run_tour_size_test(bool proofs, int n, int size_lower, int size_upper) -> v
 // certificate instead of one per node of the cycle. Enumerated against the same reference
 // check, restricted to the solutions where the named node is on the tour, since that is the
 // precondition the caller has to have declared.
+// `constant_at` pins one successor to a *constant* rather than a variable. A constant has
+// no encoded atoms, so the pigeonhole in the reachability certificate cannot count it and
+// has to account for it another way (issue #812); running the whole enumeration that way,
+// at every size and anchor and with proofs on, is what covers that arithmetic across many
+// (layer, node) pairs rather than on one hand-built instance. It has to be a node that is
+// not the anchor, and pinned to a value the anchor's own domain still allows.
 auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algorithm, const std::string & label, bool name_the_anchor = true,
-    bool prune_root = false, bool prune_within = false) -> void
+    bool prune_root = false, bool prune_within = false, optional<pair<int, int>> constant_at = nullopt) -> void
 {
-    println(cerr, "subcircuit/anchored/{}{} n={} anchor={}{}", label, name_the_anchor ? "" : "/found", n, anchor, proofs ? " with proofs:" : ":");
+    println(cerr, "subcircuit/anchored/{}{} n={} anchor={}{}{}", label, name_the_anchor ? "" : "/found", n, anchor,
+        constant_at ? " constant succ[" + std::to_string(constant_at->first) + "]=" + std::to_string(constant_at->second) : "",
+        proofs ? " with proofs:" : ":");
 
     vector<pair<int, int>> domains(static_cast<std::size_t>(n), pair{0, n - 1});
+    if (constant_at)
+        domains[static_cast<std::size_t>(constant_at->first)] = pair{constant_at->second, constant_at->second};
 
     set<tuple<vector<int>>> expected, actual;
     build_expected(expected, [&](vector<int> succ) { return is_subcircuit(succ) && succ[static_cast<std::size_t>(anchor)] != anchor; }, domains);
@@ -203,6 +214,10 @@ auto run_anchored_test(bool proofs, int n, int anchor, SubCircuitAlgorithm algor
         // what prepare() goes looking for, so with name_the_anchor off this same problem
         // exercises the search for one -- and the search can only land on this node, since
         // this is the only one whose own index is missing.
+        if (constant_at && i == constant_at->first) {
+            succ.push_back(ConstantIntegerVariableID{Integer{static_cast<long long>(constant_at->second)}});
+            continue;
+        }
         vector<Integer> values;
         for (int v = 0; v < n; ++v)
             if (! (i == anchor && v == anchor))
@@ -316,6 +331,17 @@ auto main(int argc, char * argv[]) -> int
                     // running it over a full enumeration with proofs on is the only thing
                     // that checks the two rules do not interfere with each other.
                     run_anchored_test(proofs, n, anchor, subcircuit::SCC{}, "scc-pruning-rules", true, true, true);
+                    // And the same three with a constant in the array, which is what
+                    // covers #812's arithmetic. Pinned to the anchor for one and to a
+                    // different node for the other, since "the pinned value is the one the
+                    // walk needs a predecessor for" and "it is some other value" take
+                    // different branches of the certificate.
+                    for (auto konst : {pair{(anchor + 1) % n, anchor}, pair{(anchor + 1) % n, (anchor + 2) % n}}) {
+                        if (konst.first == anchor || konst.first == konst.second)
+                            continue;
+                        run_anchored_test(proofs, n, anchor, subcircuit::SCC{}, "scc-const", true, false, false, konst);
+                        run_anchored_test(proofs, n, anchor, subcircuit::SCC{}, "scc-const-pruning-rules", true, true, true, konst);
+                    }
                 }
             for (int n : {3, 4}) {
                 run_tour_size_test(proofs, n, 0, n);

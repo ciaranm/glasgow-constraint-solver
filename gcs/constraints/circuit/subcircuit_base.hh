@@ -78,6 +78,9 @@ namespace gcs::innards::subcircuit
     {
         std::map<long, ProofLine> value_at_most_one;
         std::map<long, ProofLine> value_at_least_one;
+        /// Keyed by a value some *constant* successor is pinned to: no non-constant
+        /// successor takes it. Only reached when the array has a constant in it at all.
+        std::map<long, ProofLine> no_variable_takes;
     };
 
     /**
