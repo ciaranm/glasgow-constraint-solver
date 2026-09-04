@@ -183,6 +183,13 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
     // `sel` remains a State variable because the derivation above introduced its
     // literals against that identity; the propagator no longer uses it.
     auto n_tuples = permitted.size();
+    // No shared support masks, for the same reason AutoTable::run() passes none:
+    // Propagators::shared_derived_data() keys them on the address of the tupleset
+    // they were derived from, and `permitted` was built here and is about to be
+    // moved into the single propagator that reads it. Two tabulations of the same
+    // relation produce equal tuples at different addresses, so there is nothing
+    // for a second caller to find. Table::prepare shares because its tuples come
+    // from the user, who can hand the same buffer to twenty constraints.
     return ExtensionalData{vector<IntegerVariableID>{vars}, move(permitted), ExtensionalLiveTuples::create(state, n_tuples),
         ExtensionalCompactTable::create_for_auto(state, n_tuples)};
 }

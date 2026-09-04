@@ -567,6 +567,14 @@ Three things to get right when using it:
   of the small per-position layout, so the innermost test is the same loads it
   was before. Reaching through the `shared_ptr` in the loop would have given some
   of the win straight back.
+- **Check there is a second holder at all, and say so where there is not.** The
+  key is an address, so only a caller that can name the same address can find
+  what another one stored. `Table::prepare` shares because the tuples come from
+  the user, who can hand one buffer to twenty constraints; `AutoTable::run` and
+  `build_table_in_proof` each build a tupleset inside the call and move it into
+  the one propagator that reads it, so for them sharing would be a map lookup
+  and nothing else. That is worth a comment at the call site rather than a
+  defaulted parameter, because the two read identically (#835).
 
 ## Is it the propagator, the strength, or the search?
 

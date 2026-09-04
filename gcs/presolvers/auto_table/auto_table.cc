@@ -147,8 +147,17 @@ auto AutoTable::run(Problem & problem, Propagators & propagators, State & initia
     // derivation introduces its literals lazily; the propagator itself no longer
     // sees a selector at all.
     auto n_tuples = tuples.size();
-    ExtensionalData data{_vars, move(tuples), ExtensionalLiveTuples::create(initial_state, n_tuples),
-        ExtensionalCompactTable::create_for_auto(initial_state, n_tuples)};
+    // No shared support masks, and that is a decision rather than the default it
+    // looks like: the masks Propagators::shared_derived_data() shares are keyed
+    // on the address of the tupleset they come from, and this tupleset was built
+    // a few lines above and is about to be moved into the one propagator that
+    // will ever read it. There is no second holder that could name the key, so
+    // sharing would buy a lookup and nothing else. Table::prepare is the caller
+    // that does share, because a crossword posts twenty of them over one
+    // dictionary.
+    auto compact = ExtensionalCompactTable::create_for_auto(initial_state, n_tuples);
+    _stats->compact_table = nullptr != compact;
+    ExtensionalData data{_vars, move(tuples), ExtensionalLiveTuples::create(initial_state, n_tuples), move(compact)};
 
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
@@ -181,11 +190,13 @@ auto AutoTableStats::summary() const -> string
     if (0 == tuples)
         return "found no satisfying assignment of " + to_string(variables) + " variables, in " + to_string(search_nodes) + " nodes";
 
-    return to_string(tuples) + " tuples over " + to_string(variables) + " variables, found in " + to_string(search_nodes) + " nodes";
+    return to_string(tuples) + " tuples over " + to_string(variables) + " variables, found in " + to_string(search_nodes) + " nodes" +
+        (compact_table ? ", large enough for the compact table" : "");
 }
 
 auto AutoTableStats::entries() const -> vector<StatsEntry>
 {
     return {StatsEntry{"ran", ran ? 1 : 0}, StatsEntry{"variables", static_cast<long long>(variables)},
-        StatsEntry{"tuples", static_cast<long long>(tuples)}, StatsEntry{"search_nodes", static_cast<long long>(search_nodes)}};
+        StatsEntry{"tuples", static_cast<long long>(tuples)}, StatsEntry{"search_nodes", static_cast<long long>(search_nodes)},
+        StatsEntry{"compact_table", compact_table ? 1 : 0}};
 }

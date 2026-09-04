@@ -592,6 +592,10 @@ namespace
     /// and a field added without a matching `entries()` line moves one side of
     /// the comparison below and not the other. That is the rot this design can
     /// grow: a figure that exists, is filled in, and reaches nobody.
+    ///
+    /// The one way to defeat this rather than trip it: two `bool`s declared next
+    /// to each other share a slot, and then `sizeof` undercounts. Keep them
+    /// apart, as AutoTableStats does.
     template <typename Block_>
     [[nodiscard]] auto field_count() -> std::size_t
     {
@@ -732,6 +736,10 @@ TEST_CASE("AutoTable reports what it did, with no stats block asked for")
     CHECK(by_name["variables"] == 2);
     CHECK(by_name["tuples"] == 4); // a + b == 3, over 0..3
     CHECK(by_name["search_nodes"] > 0);
+    // Four tuples fit in one word, so the compact table is not on offer. The
+    // other side of that threshold is auto_table_test.cc, which is where the
+    // presolver's compact arm gets exercised at all.
+    CHECK(by_name["compact_table"] == 0);
 }
 
 TEST_CASE("A caller's AutoTable stats block is the one that gets filled in and reported")

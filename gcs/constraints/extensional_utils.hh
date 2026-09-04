@@ -384,6 +384,12 @@ namespace gcs::innards
          * `Table::prepare` applies it: a table that fits in one word cannot pay
          * for the bookkeeping, and every constraint state is deep-copied into
          * every search node whether the propagator uses it or not.
+         *
+         * Both of those callers leave \c supports defaulted, which is a decision
+         * and not an omission: each builds its tupleset inside the call and hands
+         * it to exactly one propagator, so there is no second holder that could
+         * name the key Propagators::shared_derived_data() is looking up. See the
+         * comments at those two call sites.
          */
         [[nodiscard]] static auto create_for_auto(State & initial_state, std::size_t n_tuples, std::shared_ptr<ExtensionalSupportMasks> supports = {})
             -> std::shared_ptr<ExtensionalCompactTable>;
