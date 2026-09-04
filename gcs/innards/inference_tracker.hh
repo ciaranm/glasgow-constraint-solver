@@ -6,6 +6,7 @@
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/infer_explicitly.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state.hh>
 
 #include <concepts>
@@ -381,6 +382,14 @@ namespace gcs::innards
             contradiction(logger, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
+        template <typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        [[nodiscard]] auto contradiction_or_stop(ProofLogger * const logger, const JustifyUsingRUP<Hint_> & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> PropagatorState
+        {
+            return contradiction_or_stop(logger, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
+        }
+
         template <IntegerVariableIDLike VarType_, typename Hint_>
             requires(! std::same_as<Hint_, NoHint>)
         auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const JustifyUsingRUP<Hint_> & why,
@@ -535,6 +544,42 @@ namespace gcs::innards
                 if (logger)
                     logger->infer(FalseLiteral{}, why, materialise(reason, _state), assertion_hints);
             throw TrackedPropagationFailed{};
+        }
+
+        /**
+         * \brief Non-throwing counterpart of contradiction(), for the propagators
+         * that fail often enough for the unwind to be their dominant cost.
+         *
+         * Everything up to the failure signal is identical --- the reason is
+         * stashed for the conflict observers, the justification is logged --- but
+         * instead of unwinding with TrackedPropagationFailed this sets the same
+         * _contradicted flag the infer_*_or_stop family sets and hands back the
+         * PropagatorState for the caller to return immediately:
+         *
+         *     return inference.contradiction_or_stop(logger, JustifyUsingRUP{hint}, reason);
+         *
+         * The propagation loop tests tracker.contradicted() as soon as the
+         * propagator returns and does everything the catch clause does (the
+         * counters, the conflict observers), so the two paths differ only in
+         * mechanism. The returned state is not otherwise used --- a contradicted
+         * run's PropagatorState is never examined --- so the value is
+         * DisableUntilBacktrack only because that is the honest thing to say.
+         *
+         * [[nodiscard]] because a caller that drops it carries on reading and
+         * inferring against a contradicted state. See issue #820 for what this is
+         * worth: a throw and unwind is ~1.6 us, against ~15 ns for a propagator
+         * wake, so it is only worth converting a propagator that contradicts in
+         * bulk. The JustifyExplicitly overload can be added when a caller wants it.
+         */
+        [[nodiscard]] auto contradiction_or_stop(ProofLogger * const logger, const Justification & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> PropagatorState
+        {
+            _last_contradiction_reason = reason;
+            if constexpr (Actual_::materialises_reasons)
+                if (logger)
+                    logger->infer(FalseLiteral{}, why, materialise(reason, _state), assertion_hints);
+            _contradicted = true;
+            return PropagatorState::DisableUntilBacktrack;
         }
 
         template <IntegerVariableIDLike VarType_>
