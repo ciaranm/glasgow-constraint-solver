@@ -317,7 +317,7 @@ namespace
     template <typename Hint_, typename Inference_>
     [[gnu::noinline]] auto propagate_compact_table(const ExtensionalData & table, ExtensionalCompactTable & ct, const State & state,
         Inference_ & inference, ProofLogger * const logger, const Hint_ & hint, ExtensionalDomainBitmaps & bitmaps,
-        const ExtensionalLiveTuples & live, const std::size_t live_count, const bool just_built) -> void
+        const ExtensionalLiveTuples & live, const std::size_t live_count, const bool just_built) -> PropagatorState
     {
         auto & trail_mark = any_cast<size_t &>(state.get_constraint_state(ct.trail_mark_handle));
         const auto n_vars = static_cast<unsigned>(table.vars.size());
@@ -434,10 +434,16 @@ namespace
             // The same two spellings as the live-set path below, and for the
             // same reason: the dom/wdeg conflict observer reads the reason of a
             // no-justification contradiction.
+            //
+            // Returning without publishing the trail mark is what the throw used
+            // to do, and is what the note below the filter pass asks for: this
+            // call's trail entries stay unclaimed, to be undone at the top of
+            // the next one rather than committed to an epoch that did not
+            // survive.
             if (logger && logger->get_assertion_level() != AssertionLevel::Off)
-                inference.contradiction(logger, JustifyUsingRUP{hint}, table.reason);
+                return inference.contradiction_or_stop(logger, JustifyUsingRUP{hint}, table.reason);
             else
-                inference.contradiction(logger, NoJustificationNeeded{}, NoReason{});
+                return inference.contradiction_or_stop(logger, NoJustificationNeeded{}, NoReason{});
         }
 
         // Filter: a value survives iff some live tuple supports it. Same
@@ -494,6 +500,7 @@ namespace
         // leaves this call's entries on the trail to be undone rather than
         // committed as if they belonged to an epoch that survived.
         trail_mark = ct.trail.size();
+        return PropagatorState::EnableButIdempotent;
     }
 }
 
@@ -594,10 +601,8 @@ auto gcs::innards::propagate_extensional(
         });
     }
 
-    if (compact) {
-        propagate_compact_table(table, *table.compact, state, inference, logger, hint, bitmaps, live, live_count, just_built);
-        return PropagatorState::EnableButIdempotent;
-    }
+    if (compact)
+        return propagate_compact_table(table, *table.compact, state, inference, logger, hint, bitmaps, live, live_count, just_built);
 
     // Pass 1: drop tuples that are no longer feasible, by swapping them past the
     // live count. Nothing here goes through State, so a dropped tuple costs two
@@ -647,10 +652,18 @@ auto gcs::innards::propagate_extensional(
         // justification and no reason, because that is what emptying the
         // selector's domain used to report -- and the conflict observer behind
         // dom/wdeg reads that reason.
+        //
+        // Stop rather than throw. An empty live set is how a table reports
+        // failure, and a table is the failure detector at a large share of the
+        // nodes of the models it appears in: Dubois-017 contradicts 393 216
+        // times, one call in six, and the unwinder was 40% of that run.
+        // Everything up to the signal, the reason and the justification
+        // included, is unchanged; see issue #820 and
+        // dev_docs/propagator-performance.md.
         if (logger && logger->get_assertion_level() != AssertionLevel::Off)
-            inference.contradiction(logger, JustifyUsingRUP{hint}, table.reason);
+            return inference.contradiction_or_stop(logger, JustifyUsingRUP{hint}, table.reason);
         else
-            inference.contradiction(logger, NoJustificationNeeded{}, NoReason{});
+            return inference.contradiction_or_stop(logger, NoJustificationNeeded{}, NoReason{});
     }
 
     // check for supports in selectable tuples, using residual supports: for each
@@ -705,6 +718,17 @@ auto gcs::innards::propagate_extensional(
                     }
 
                     if (! supported) {
+                        // Still the throwing infer, deliberately. With distinct
+                        // variables this cannot empty a domain -- a live tuple
+                        // is its own witness that every position keeps a
+                        // supported value -- so the only way here is a repeated
+                        // variable, where a removal at one occurrence can leave
+                        // the other unsupported. That is rare enough that a
+                        // per-inference branch to check for it would cost more
+                        // than the unwind it saves, and the measurement agrees:
+                        // once the contradiction above stops throwing, the
+                        // unwinder is 0.00% of the profile on every instance of
+                        // the suite.
                         inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{hint}, table.reason);
                     }
                 });

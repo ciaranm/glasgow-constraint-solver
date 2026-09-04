@@ -236,6 +236,49 @@ thousand times a search has nothing to gain, and the conversion is a control-flo
 change in the propagator (it must now return immediately, which
 `[[nodiscard]]` enforces) rather than a free win.
 
+**Measure the unwinder by DSO, not by symbol name.** `perf report | grep -i
+unwind` finds `_Unwind_Find_FDE` and `__gxx_personality_v0` and misses most of
+the cost, because the bulk of `libgcc_s.so.1`'s unwinder has no symbol names in
+the profile and appears as bare addresses. On `Dubois-017` a symbol grep says
+8.8%; `perf report --sort dso` says **30.7% in `libgcc_s.so.1`**, plus another
+10% in `libstdc++.so.6` — and that 40% is what converting the extensional
+propagator was actually worth (1.69x measured). Read that way the profile
+predicts the prize on every instance, including the ones with no prize in them:
+
+| instance | `libgcc_s` before | after | speed-up |
+|---|---|---|---|
+| `Dubois-017` | 30.7% | 0.00% | 1.69x |
+| `enum_func_k3_n20` | 11.6% | 0.00% | 1.24x |
+| `srch_bin_d12_n25_s1` | 7.5% | 0.00% | 1.09x |
+| `Crossword` | 1.3% | 0.00% | 1.00x |
+| `enum_single_k10_t200k` | 0.0% | 0.00% | 1.00x |
+
+Instruction counts say it more bluntly still: 42.6% of `Dubois-017`'s
+instructions were in `libgcc_s` plus `libstdc++` before the change and 1.9%
+after, which is 21.6G instructions down to 11.5G for the same search.
+
+Take the zero in the "after" column as well as the speed-up: it says the
+conversion caught every failure path the propagator actually uses.
+
+The second lesson from that conversion is that **a propagator can have failure
+paths it never actually takes**, and knowing which is what decides how much
+there is to do. `propagate_extensional` can fail in two places: the empty live
+set, and an `infer` that empties a domain. The second is unreachable for a table
+whose variables are distinct -- a live tuple is its own witness that every
+position still has a supported value -- so only the first was worth converting,
+and the unwinding going to exactly zero is the evidence that the second never
+fired.
+
+The counter-example, so nobody re-does it: **`NegativeTable` is not a candidate**,
+despite failing 55 497 times in a 3.5 s search of its own benchmark. `libgcc_s`
+is **3.6%** there, because its propagator is woken twenty-five times per
+contradiction and each wake does real work (`test_literal` alone is 18% of the
+profile). The ratio that matters is contradictions per *call*, not per node: the
+extensional propagator on `Dubois` contradicts on one call in six, the negative
+table on one in twenty-five. `Element` is not a candidate either — 2.2% on `qap`
+and 1.5% on `tsp`, despite `tsp` failing 4.3 million times, because most of
+those failures already report through the non-throwing `infer_*_or_stop` path.
+
 ### Reuse data structures to avoid per-wake allocation
 
 The same principle applies to scratch state generally: a propagator that
