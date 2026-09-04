@@ -279,6 +279,57 @@ table on one in twenty-five. `Element` is not a candidate either — 2.2% on `qa
 and 1.5% on `tsp`, despite `tsp` failing 4.3 million times, because most of
 those failures already report through the non-throwing `infer_*_or_stop` path.
 
+### The throw survey, and what it found
+
+Rather than guess at the remaining candidates, all 285 MiniZinc Challenge models
+(2008-2025, one instance each, capped at twenty seconds) were run with a counter
+on each of the two ways a propagator reports failure by unwinding. The raw
+material is in `tmp/throw-survey/`. Two things came out of it, and both are worth
+knowing before doing this kind of work again.
+
+**`contradiction()` is a solved problem: there are no more candidates.** Across
+all 285 models it threw **219 918** times in total, and exactly one model
+(`2019_kidney-exchange`) reaches even 1% of its runtime that way. The table
+propagator was the outlier, not the first of many.
+
+**The volume is all on the other path — an `infer*` that empties a domain —
+which threw 19 457 165 times, eighty-eight times as often.** That is worth
+10-22% of the run on six models, and it concentrates in a handful of
+propagators. Counting throws by constraint type over the thirty worst models:
+
+| propagator | throws | models |
+|---|---|---|
+| `count` | 5 954 685 | 7 |
+| `or` | 5 629 563 | **19** |
+| `disjunctive2d_strict` | 2 435 425 | 4 |
+| `all_different_except` | 766 548 | 2 |
+| `disjunctive_strict` | 348 160 | 1 |
+| `equals` | 266 738 | 13 |
+| `element` | 199 096 | 6 |
+| `multiply` | 135 549 | 3 |
+
+`count` and `or` are converted (`infer_*_or_stop` throughout `Count`; the clause
+conflict in the shared `And`/`Or` propagator is a contradiction spelled as
+`infer(FalseLiteral{})` and became `contradiction_or_stop`). On identical trees
+that is **1.53x** on a completed `2015/grid-colouring`, and 1.17-2.65x of extra
+throughput on the capped models. `libgcc_s` goes to 0.00% on all of them.
+
+The rest are named above and left: `disjunctive2d_strict`'s two prunings sit
+inside a lambda in a doubly-nested loop, so stopping has to be threaded out by
+hand, and `all_different_except`'s failure is
+`gac_all_different.cc`'s matching-too-small `infer(logger, FalseLiteral{}, ...)`,
+which would need `propagate_gac_all_different` to return a verdict to its five
+callers. Both are mechanical; neither is one line.
+
+**Per-throw cost, measured on an identical completed search** (`gc_4_8`, 322 378
+clause conflicts): 5.65G instructions and 1.85G cycles, i.e. **17 500
+instructions and about 2.4 us** each. That is the number to multiply a
+contradiction count by when deciding whether a conversion is worth it. One model
+(`2011/roster`'s larger instance) came out far above that, at 2.65x throughput
+for only 5% of cycles in `libgcc_s`, because there the throwing build also takes
+**five page faults per node** that the non-throwing one does not; that mechanism
+is not understood and is not the general case.
+
 ### Reuse data structures to avoid per-wake allocation
 
 The same principle applies to scratch state generally: a propagator that

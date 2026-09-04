@@ -414,11 +414,24 @@ namespace gcs::innards
             track_explicit(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, snapshotted, fallback);
         }
 
-        // Non-throwing counterparts of the JustifyExplicitly infer_less_than /
-        // infer_greater_than_or_equal: on contradiction they set _contradicted and
-        // return false instead of throwing, so the caller bails up its own control
-        // flow. [[nodiscard]] makes ignoring the verdict a compile error -- the
-        // caller must stop (it cannot safely keep reading state after a failure).
+        // Non-throwing counterparts of the JustifyExplicitly infer_not_equal /
+        // infer_less_than / infer_greater_than_or_equal: on contradiction they set
+        // _contradicted and return false instead of throwing, so the caller bails
+        // up its own control flow. [[nodiscard]] makes ignoring the verdict a
+        // compile error -- the caller must stop (it cannot safely keep reading
+        // state after a failure).
+        template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
+        [[nodiscard]] auto infer_not_equal_or_stop(ProofLogger * const logger, const VarType_ & var, Integer value,
+            const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt)
+            -> bool
+        {
+            if (_contradicted) [[unlikely]]
+                return false;
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_explicit(logger, _state.infer_not_equal(var, value), var != value, why, snapshotted, fallback, false);
+            return ! _contradicted;
+        }
+
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
         [[nodiscard]] auto infer_less_than_or_stop(ProofLogger * const logger, const VarType_ & var, Integer value,
             const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt)
