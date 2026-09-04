@@ -1,9 +1,9 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_EXAMPLES_RCPSP_INSTANCE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_EXAMPLES_RCPSP_INSTANCE_HH
 
-// Instance model, random generator, .sch reader and schedule utilities for the
-// RCPSP example. Kept separate from the model itself (rcpsp.cc) so that the
-// model file reads as a model.
+// Instance model, random generator, .sch / .dzn / job-shop readers and schedule
+// utilities for the RCPSP example. Kept separate from the model itself
+// (rcpsp.cc) so that the model file reads as a model.
 //
 // An instance has n tasks, indexed 0..n-1. Task i has an integer duration
 // d_i >= 1 and, for each of the renewable resources, a demand q_{r,i} >= 0
@@ -23,6 +23,15 @@
 // *maximum* time lag, which is a backward arc, so the network of lags may have
 // cycles. That is what makes the problem RCPSP/max rather than plain RCPSP, and
 // it changes what the horizon machinery can promise --- see default_horizon().
+//
+// \par Job shops
+//
+// A job-shop instance is an RCPSP instance and needs no separate model: each
+// machine is a renewable resource of capacity one, each operation demands one
+// unit of the machine it runs on and none of any other, and each job is a chain
+// of precedences. read_jss_stream() below is the whole of the support, and
+// `--unary disjunctive` is what turns those capacity-one resources into
+// Disjunctives.
 //
 // A plain RCPSP instance has an empty lag list, and everything below then
 // behaves exactly as it did before generalised lags existed. That is deliberate:
@@ -625,6 +634,144 @@ namespace rcpsp
                 throw std::runtime_error{"malformed .sch file: a negative capacity"};
 
         return inst;
+    }
+
+    /// Read a job-shop scheduling instance in the standard OR-Library layout,
+    /// the one the `ft`, `la`, `abz`, `orb`, `swv` and `ta` sets are distributed
+    /// in.
+    ///
+    /// After any amount of leading blurb --- the bundled `jobshop1.txt` puts an
+    /// `instance <name>` line and a free-text description between rows of `+`
+    /// signs --- the file is
+    ///
+    ///     J  M                                   job count, machine count
+    ///     m_1 p_1  m_2 p_2  ..  m_M p_M          one line per job
+    ///
+    /// where job `j` occupies machine `m_1` for `p_1` time units, then `m_2` for
+    /// `p_2`, and so on. The pairs are in *processing order*, and the machine
+    /// indices are zero-based and a permutation of `0..M-1`: every job visits
+    /// every machine exactly once, which is what makes this a job shop rather
+    /// than a general shop, and this reader insists on it rather than guessing
+    /// what a repeated or missing machine was meant to mean.
+    ///
+    /// \par How a job shop lands in an RCPSP Instance
+    ///
+    /// Operations are numbered job-major --- job `j`'s `k`th operation is task
+    /// `j * M + k` --- so index order is a topological order of the job chains,
+    /// which earliest_starts(), tails() and longest_paths() all require. The
+    /// chain itself is an ordinary finish-to-start precedence per consecutive
+    /// pair, so there are no time lags and this is plain RCPSP, not RCPSP/max.
+    ///
+    /// A machine is a **capacity-one renewable resource** that its own
+    /// operations demand one unit of and every other operation demands none of.
+    /// That is not a re-modelling of the problem: it is what a machine is, and
+    /// it is why rcpsp.cc needs no job-shop case at all. `--unary disjunctive`
+    /// then posts one Disjunctive per machine over exactly that machine's
+    /// operations, and the default `--unary cumulative` posts the capacity-one
+    /// Cumulative saying the same thing, which is the control arm.
+    ///
+    /// \par What this is for
+    ///
+    /// Every RCPSP collection to hand has capacities of three and up, so none of
+    /// them posts a Disjunctive at all, and the unary propagation rules have had
+    /// no real instance family to be measured on. A job shop is that family: it
+    /// is all unary machines, it is what the unary scheduling literature reports
+    /// on, and the `la_x` RCPSP set is these instances with their capacities
+    /// raised to two or three.
+    ///
+    /// Taillard's own distribution format is a different layout --- named header
+    /// fields, then the durations and the machine assignments as two separate
+    /// matrices --- and is not read here. A file holding several instances is
+    /// not read here either: this takes the first one it finds.
+    [[nodiscard]] inline auto read_jss_stream(std::istream & in, const std::string & description) -> Instance
+    {
+        // Leading blurb is anything that is not a row of numbers: the bundled
+        // file's `instance <name>` line, its rows of `+` signs, and the prose
+        // between them. The dimensions are the first line that is numeric
+        // throughout, which no line of blurb is.
+        auto numeric_line = [](const std::string & line) {
+            bool any_digit = false;
+            for (auto & c : line) {
+                if (c >= '0' && c <= '9')
+                    any_digit = true;
+                else if (c != ' ' && c != '\t' && c != '\r')
+                    return false;
+            }
+            return any_digit;
+        };
+
+        std::string dims_line;
+        while (std::getline(in, dims_line))
+            if (numeric_line(dims_line))
+                break;
+
+        long long n_jobs = 0, n_machines = 0;
+        {
+            std::istringstream ds{dims_line};
+            long long extra = 0;
+            if (! (ds >> n_jobs >> n_machines))
+                throw std::runtime_error{"not a job-shop instance: no line giving a job count and a machine count"};
+            if (ds >> extra)
+                throw std::runtime_error{"not a job-shop instance: the first numeric line has more than a job count and a machine count"};
+        }
+        if (n_jobs < 1 || n_machines < 1 || n_jobs > 100000 || n_machines > 100000)
+            throw std::runtime_error{"not a job-shop instance: implausible job or machine count"};
+        // Bound the product too, not just the factors: the operation count is
+        // what gets cast to int and what sizes every array below, and a header
+        // of two plausible-looking factors can still ask for more operations
+        // than an int holds.
+        if (n_jobs * n_machines > 1000000)
+            throw std::runtime_error{"not a job-shop instance: " + std::to_string(n_jobs) + " jobs of " + std::to_string(n_machines) +
+                " operations each is more than this reader will build"};
+
+        auto next = [&](const char * what) -> long long {
+            long long v = 0;
+            if (! (in >> v))
+                throw std::runtime_error{std::string{"job-shop instance ended while reading "} + what};
+            return v;
+        };
+
+        Instance inst;
+        auto uj = static_cast<std::size_t>(n_jobs), um = static_cast<std::size_t>(n_machines);
+        inst.n_tasks = static_cast<int>(n_jobs * n_machines);
+        inst.durations.assign(static_cast<std::size_t>(inst.n_tasks), gcs::Integer{0});
+        inst.capacities.assign(um, gcs::Integer{1});
+        inst.demands.assign(um, std::vector<gcs::Integer>(static_cast<std::size_t>(inst.n_tasks), gcs::Integer{0}));
+
+        for (std::size_t j = 0; j != uj; ++j) {
+            std::vector<char> visited(um, 0);
+            for (std::size_t k = 0; k != um; ++k) {
+                auto machine = next("a machine index");
+                auto duration = next("a duration");
+                if (machine < 0 || machine >= n_machines)
+                    throw std::runtime_error{"malformed job-shop instance: job " + std::to_string(j) + " names machine " + std::to_string(machine) +
+                        ", which is outside 0.." + std::to_string(n_machines - 1)};
+                if (duration < 0)
+                    throw std::runtime_error{"malformed job-shop instance: job " + std::to_string(j) + " has a negative duration"};
+                if (visited[static_cast<std::size_t>(machine)])
+                    throw std::runtime_error{"malformed job-shop instance: job " + std::to_string(j) + " visits machine " + std::to_string(machine) +
+                        " twice, so it is not a job shop as this reader understands one"};
+                visited[static_cast<std::size_t>(machine)] = 1;
+
+                auto task = j * um + k;
+                inst.durations[task] = gcs::Integer{duration};
+                inst.demands[static_cast<std::size_t>(machine)][task] = gcs::Integer{1};
+                if (k > 0)
+                    inst.precedences.emplace_back(static_cast<int>(task - 1), static_cast<int>(task));
+            }
+        }
+
+        inst.description = description + " jobs=" + std::to_string(n_jobs) + " machines=" + std::to_string(n_machines) +
+            " operations=" + std::to_string(inst.n_tasks);
+        return inst;
+    }
+
+    [[nodiscard]] inline auto read_jss_file(const std::string & path) -> Instance
+    {
+        std::ifstream in{path};
+        if (! in)
+            throw std::runtime_error{"could not open instance file: " + path};
+        return read_jss_stream(in, "jss " + path);
     }
 
     [[nodiscard]] inline auto read_file(const std::string & path) -> Instance
