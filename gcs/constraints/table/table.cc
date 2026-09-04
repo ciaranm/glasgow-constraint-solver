@@ -117,7 +117,7 @@ namespace
     }
 }
 
-auto Table::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+auto Table::prepare(Propagators & propagators, State & initial_state, ProofModel * const) -> bool
 {
     visit(
         [&](auto & tuples) {
@@ -135,13 +135,22 @@ auto Table::prepare(Propagators &, State & initial_state, ProofModel * const) ->
                 if (tuple.size() != _vars.size())
                     throw InvalidProblemDefinitionException{"table size mismatch"};
             _live = ExtensionalLiveTuples::create(initial_state, depointinate(tuples).size());
-            // create_for_auto applies the min_tuples test and documents why;
-            // an explicit table::CompactTable overrides it, which is the only
-            // way to get the compact algorithm on a table that small.
-            if (holds_alternative<table::CompactTable>(_algorithm))
-                _compact = ExtensionalCompactTable::create(initial_state, true);
-            else if (! holds_alternative<table::LiveSet>(_algorithm))
-                _compact = ExtensionalCompactTable::create_for_auto(initial_state, depointinate(tuples).size());
+            if (! holds_alternative<table::LiveSet>(_algorithm)) {
+                // The support masks follow from the tuples alone, so every Table
+                // over this tupleset would build byte-identical ones: ask for a
+                // shared set instead, keyed on the tuples. A crossword posts
+                // twenty tables over one dictionary, and twenty copies of the
+                // same 146 KB is 2.9 MB that does not fit in cache where one copy
+                // does. Whether this constraint ever builds them is decided
+                // during search and separately for each; sharing is not.
+                auto supports = propagators.shared_derived_data<ExtensionalSupportMasks>(&depointinate(tuples));
+                // create_for_auto applies the min_tuples test and documents why;
+                // an explicit table::CompactTable overrides it, which is the only
+                // way to get the compact algorithm on a table that small.
+                _compact = holds_alternative<table::CompactTable>(_algorithm)
+                    ? ExtensionalCompactTable::create(initial_state, true, std::move(supports))
+                    : ExtensionalCompactTable::create_for_auto(initial_state, depointinate(tuples).size(), std::move(supports));
+            }
         },
         _tuples);
 

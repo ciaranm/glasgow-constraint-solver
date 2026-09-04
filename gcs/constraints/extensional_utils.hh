@@ -136,11 +136,75 @@ namespace gcs::innards
             std::size_t n_values = 0;
             std::size_t offset = 0;
             bool usable = false;
+
+            /// So that a constraint adopting another's support masks can check
+            /// the layout they were built against is the one it computed for
+            /// itself, rather than assume it. \see ExtensionalSupportMasks
+            [[nodiscard]] auto operator==(const Position &) const -> bool = default;
         };
 
         std::vector<Position> positions;
         std::vector<ExtensionalWord> words;
         bool initialised = false;
+    };
+
+    /**
+     * \brief The support masks a compact table filters with: one bitset of
+     * \c n_words per (position, value), holding the tuples whose entry at that
+     * position is that value.
+     *
+     * A separate object from the rest of ExtensionalCompactTable because it is
+     * the only part that several constraints can share, and it is by far the
+     * largest. It is a pure function of the tuples alone: every position's value
+     * range is read off the table (see ExtensionalDomainBitmaps), never off a
+     * variable's domain, so two constraints over the same tupleset lay out
+     * byte-identical masks however different their scopes are. Everything else
+     * the compact table owns -- the live words, the index over them, the
+     * previous domains, the trail -- is per constraint and stays there.
+     *
+     * Crossword is why: twenty Table constraints over one 4 591-word dictionary,
+     * which unshared is twenty copies of the same 146 KB. 2.9 MB does not fit in
+     * a 512 KB L2 and one copy does, and mask loads in the filter pass are half
+     * of that propagator's L2 misses and a third of the whole program's.
+     *
+     * Shared through Propagators::shared_derived_data(), keyed on the tuples'
+     * address, which is what makes the sharing last exactly one solve. Built
+     * lazily, by whichever of the sharers first decides it wants masks, and
+     * read-only from then on -- so the only thing sharing it needs is that the
+     * build happens once, and it is guarded by \c status rather than by a lock,
+     * on the same single-threaded-per-solve footing as the rest of the
+     * propagator's mutable scratch.
+     *
+     * \sa ExtensionalCompactTable
+     * \ingroup Innards
+     */
+    struct ExtensionalSupportMasks
+    {
+        /**
+         * Whether the masks have been built, and if so whether they can be used.
+         * The build declines a table it cannot rasterise or that wants more
+         * memory than the cap allows, and that verdict belongs to the tuples
+         * rather than to the constraint that happened to ask first -- so it is
+         * recorded here and the next sharer does not try again.
+         */
+        enum class Status
+        {
+            Unbuilt,
+            Built,
+            Declined
+        };
+
+        Status status = Status::Unbuilt;
+
+        std::vector<ExtensionalWord> masks;
+        std::vector<std::size_t> mask_at;
+        std::size_t n_words = 0;
+
+        /// The rasterisation the masks are indexed by. Kept so an adopting
+        /// constraint can check it against its own: they must agree, since both
+        /// come from the same tuples, and a mismatch would otherwise be a silent
+        /// misread rather than a loud one.
+        std::vector<ExtensionalDomainBitmaps::Position> positions;
     };
 
     /**
@@ -164,7 +228,7 @@ namespace gcs::innards
      */
     struct ExtensionalCompactTable
     {
-        /// Do not build masks larger than this, in words, per constraint.
+        /// Do not build masks larger than this, in words, per tupleset.
         /// The suite's largest is Renault-big at 755 623 words over 332 tables;
         /// a single table wanting more than this is better served by the
         /// live-set algorithm than by the memory.
@@ -209,13 +273,19 @@ namespace gcs::innards
         static constexpr std::size_t min_tuples = extensional_word_bits;
 
         /**
-         * Supports: one bitset of \c n_words per (position, value), holding the
-         * tuples whose entry at that position is that value. Values are indexed
-         * from the position's ExtensionalDomainBitmaps::Position, so a value the
-         * table never uses at that position is outside the range and is
-         * unsupported without a lookup.
+         * The support masks, and the layout they are indexed by, copied out of
+         * \c supports once it has been built. Values are indexed from the
+         * position's ExtensionalDomainBitmaps::Position, so a value the table
+         * never uses at that position is outside the range and is unsupported
+         * without a lookup.
+         *
+         * A raw pointer plus its own copy of the small layout, rather than
+         * reaching through \c supports, because both are read in the filter
+         * loop's innermost test: that keeps it exactly the loads it was before
+         * the masks moved out of here. \c supports below owns the storage the
+         * pointer names, so it is valid for as long as this object is.
          */
-        std::vector<ExtensionalWord> masks;
+        const ExtensionalWord * masks = nullptr;
         std::vector<std::size_t> mask_at;
         std::size_t n_words = 0;
 
@@ -278,6 +348,16 @@ namespace gcs::innards
         /// which std::any holds without allocating.
         ConstraintStateHandle trail_mark_handle{0};
 
+        /**
+         * The masks, shared with every other constraint over the same tuples,
+         * or private to this one where there is nothing to share with. Whoever
+         * decides to build first builds; the rest adopt what is there.
+         *
+         * Down here with the cold fields on purpose: it is read once, when the
+         * decision is made, and never again during propagation.
+         */
+        std::shared_ptr<ExtensionalSupportMasks> supports;
+
         /// table::Auto watches this many wakes before deciding; table::CompactTable
         /// builds at the first one. Once \c decided is set the answer never changes.
         bool forced = true;
@@ -286,7 +366,13 @@ namespace gcs::innards
         bool decided = false;
         bool built = false;
 
-        [[nodiscard]] static auto create(State & initial_state, bool forced) -> std::shared_ptr<ExtensionalCompactTable>;
+        /**
+         * \param supports the masks to share, from
+         * Propagators::shared_derived_data(); null for a caller with no other
+         * constraint to share them with, which gets a private set.
+         */
+        [[nodiscard]] static auto create(State & initial_state, bool forced, std::shared_ptr<ExtensionalSupportMasks> supports = {})
+            -> std::shared_ptr<ExtensionalCompactTable>;
 
         /**
          * \brief create() for a caller with no user-facing algorithm choice:
@@ -299,7 +385,8 @@ namespace gcs::innards
          * for the bookkeeping, and every constraint state is deep-copied into
          * every search node whether the propagator uses it or not.
          */
-        [[nodiscard]] static auto create_for_auto(State & initial_state, std::size_t n_tuples) -> std::shared_ptr<ExtensionalCompactTable>;
+        [[nodiscard]] static auto create_for_auto(State & initial_state, std::size_t n_tuples, std::shared_ptr<ExtensionalSupportMasks> supports = {})
+            -> std::shared_ptr<ExtensionalCompactTable>;
     };
 
     /**

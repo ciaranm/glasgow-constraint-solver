@@ -15,6 +15,7 @@
 #include <gcs/problem.hh>
 #include <gcs/stats.hh>
 
+#include <any>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -22,6 +23,7 @@
 #include <memory>
 #include <span>
 #include <type_traits>
+#include <typeindex>
 #include <utility>
 #include <vector>
 
@@ -411,6 +413,8 @@ namespace gcs::innards
         struct Imp;
         std::unique_ptr<Imp> _imp;
 
+        auto shared_derived_data_slot(const void * key, std::type_index type) -> std::any &;
+
         auto trigger_on_change(IntegerVariableID, int id) -> void;
         auto trigger_on_bounds(IntegerVariableID, int id) -> void;
         auto trigger_on_instantiated(IntegerVariableID, int id) -> void;
@@ -483,6 +487,42 @@ namespace gcs::innards
          * state so it cannot be mis-sequenced.
          */
         auto install(const ConstraintID & constraint_id, PropagationFunction &&, const Triggers & trigger_vars) -> void;
+
+        /**
+         * Fetch, creating it empty on the first ask, the object that every
+         * constraint deriving data from the same shared input is to share.
+         *
+         * Constraints share bulk input by sharing an ArrayParam, which is a
+         * shared_ptr: the twenty Table constraints of a crossword all read one
+         * dictionary. Anything derived from that input *alone* is then the same
+         * for all of them, so deriving it per constraint buys nothing and costs
+         * twenty copies of a structure that would otherwise stay in cache. This
+         * is where such a thing goes.
+         *
+         * The key is the address of the input it is derived from, which is what
+         * "the same input" means for an ArrayParam. That is safe because the
+         * store lives exactly as long as this Propagators, i.e. one solve, and
+         * the propagator that put an address here holds a handle to that input
+         * for the same span: an owned or shared ArrayParam keeps the data
+         * alive, and a borrowed one is required to be backed by storage
+         * outliving every copy of the handle. Either way the address cannot be
+         * recycled underneath the entry naming it. The type is part of the key
+         * too, so two constraints deriving different things from one input get
+         * a slot each.
+         *
+         * Deliberately hands back an empty object rather than taking a factory:
+         * whether the data is worth deriving at all, and when, is the caller's
+         * business --- the compact table decides that some way into the search,
+         * and only for some of the constraints that share the slot.
+         */
+        template <typename Data_>
+        [[nodiscard]] auto shared_derived_data(const void * key) -> std::shared_ptr<Data_>
+        {
+            auto & slot = shared_derived_data_slot(key, std::type_index{typeid(Data_)});
+            if (! slot.has_value())
+                slot = std::make_shared<Data_>();
+            return std::any_cast<std::shared_ptr<Data_>>(slot);
+        }
 
         /**
          * Retire every propagator belonging to any of the given constraints for

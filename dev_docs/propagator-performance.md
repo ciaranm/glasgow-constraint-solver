@@ -426,6 +426,58 @@ is never executed, and the cost does not show up where you would look for it. An
 such change needs the *old* path measured against the *unmodified* build, not
 just the new path measured against the old one.
 
+### Data derived from a shared input belongs to the input, not to the constraint
+
+A propagator that precomputes something from bulk input holds one copy per
+constraint by default, and where the input is shared that is *n* copies of the
+same bytes. It is not the memory that costs — it is that the copies compete for
+cache that one copy would have kept.
+
+The table propagator's compact algorithm keeps a support mask per (position,
+value): one bitset over the tuple indices, saying which tuples use that value
+there. Those masks are a pure function of the tuples — the value ranges they are
+indexed by are read off the table, never off a variable's domain — so every
+`Table` over one tupleset builds identical ones. A crossword posts twenty tables
+over one 4 591-word dictionary: 146 KB each, **2.9 MB of the same thing**, in a
+512 KB L2.
+
+The numbers, on `Crossword-words-vg-10-10-relaxed`, single core, boost off,
+identical trees (9 927 nodes, 317 193 propagations) before and after:
+
+| | before | after |
+|---|---|---|
+| L2 data-read misses (`l2_cache_req_stat.ls_rd_blk_c`) | 183.6M | **14.6M** |
+| instructions | 10.461G | 10.442G |
+| cycles | 7.24G | 6.47G |
+| solve time | 3.169 s | **2.834 s** (1.12x) |
+| peak RSS | 9.5 MB | 6.4 MB |
+
+The instruction count is flat to 0.2%: it is the same algorithm doing the same
+work, and all of the gain is the working set fitting. `perf record` on the L2
+miss event said so in advance — 65% of the program's L2 misses were in
+`propagate_compact_table`, and half of *those* were on the one line that reads a
+mask word in the filter pass — which is why it was worth doing before it was
+worth building.
+
+`Propagators::shared_derived_data()` is where such a thing goes: keyed on the
+address of the input it came from, and living exactly as long as the
+`Propagators`, i.e. one solve, so the key cannot outlive the data it names.
+Three things to get right when using it:
+
+- **Derive it from the input alone, or not at all.** If the answer depends on
+  the constraint's scope or its variables' domains, it is not shareable, and the
+  shape of the bug you get is silent misreading rather than a crash. Check the
+  derivation's inputs, and check the shared object still agrees with the sharer
+  at the point of adoption.
+- **Share the verdict as well as the answer.** The mask build declines a table it
+  cannot rasterise; that verdict belongs to the tuples, so the second constraint
+  must find it recorded rather than rediscover it.
+- **Keep the hot path's loads where they were.** The masks moved behind a
+  `shared_ptr`, but the propagator holds a raw pointer to them and its own copy
+  of the small per-position layout, so the innermost test is the same loads it
+  was before. Reaching through the `shared_ptr` in the loop would have given some
+  of the win straight back.
+
 ## Is it the propagator, the strength, or the search?
 
 When a model is slow, "the propagator is slow" is only one of three
