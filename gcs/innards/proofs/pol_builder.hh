@@ -143,6 +143,22 @@ namespace gcs::innards
         auto add(const XLiteral & lit, Integer coeff, const NamesAndIDsTracker & tracker) -> PolBuilder &;
 
         /**
+         * Push a proof flag as a literal axiom (coefficient 1), resolved to its
+         * file-format string via the tracker. The axiom is `flag >= 0`, so
+         * adding it to a running `>=` constraint introduces the term without
+         * moving the degree --- which is how a term the arithmetic did not
+         * produce, but the target row wants, is put back. The mirror of
+         * \ref weaken.
+         */
+        auto add(const ProofFlag & flag, const NamesAndIDsTracker & tracker) -> PolBuilder &;
+
+        /**
+         * Same, weighted by `coeff`. `coeff == 1_i` elides the `1 *`;
+         * `coeff == 0_i` throws.
+         */
+        auto add(const ProofFlag & flag, Integer coeff, const NamesAndIDsTracker & tracker) -> PolBuilder &;
+
+        /**
          * Push the `pol`-side defining item for a literal, dispatching on the
          * `variant<ProofLine, XLiteral>` that
          * `NamesAndIDsTracker::need_pol_item_defining_literal` returns.

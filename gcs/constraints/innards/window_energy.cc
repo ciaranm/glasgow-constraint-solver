@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/window_energy.hh>
+#include <gcs/innards/proofs/flag_bridge.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
@@ -110,13 +111,13 @@ namespace
             auto idx = static_cast<size_t>((t - task.flags_t_lo).raw_value);
 
             PolBuilder before_bridge;
-            before_bridge.add(ProofLineLabel{tracker.name_of(task.before[idx]) + "[f]"});
+            before_bridge.add(reification_half(tracker, task.before[idx], ReificationHalf::ImpliedBy));
             before_bridge.add_for_literal(tracker, start < t + 1_i);
             before_bridge.saturate();
             auto before_clause = before_bridge.emit(logger, level);
 
             PolBuilder after_bridge;
-            after_bridge.add(ProofLineLabel{tracker.name_of(task.after[idx]) + "[f]"});
+            after_bridge.add(reification_half(tracker, task.after[idx], ReificationHalf::ImpliedBy));
             after_bridge.add_for_literal(tracker, start >= t - shape.p + 1_i);
             if (task.length_variable) {
                 after_bridge.add_for_literal(tracker, *task.length_variable >= shape.p);
@@ -138,7 +139,7 @@ namespace
             auto after_clause = after_bridge.emit(logger, level);
 
             PolBuilder step;
-            step.add(ProofLineLabel{tracker.name_of(task.active[idx]) + "[f]"});
+            step.add(reification_half(tracker, task.active[idx], ReificationHalf::ImpliedBy));
             step.add(before_clause);
             step.add(after_clause);
             per_time.push_back(step.emit(logger, level));

@@ -18,6 +18,7 @@
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -615,6 +616,81 @@ namespace gcs::innards
         auto publish_derived_line(const ConstraintID & id, const std::string & role, ProofLine line) -> void;
 
         /**
+         * \brief Record that a flag's reification was emitted *inside the
+         * proof*, and under which two lines.
+         *
+         * A flag defined by ProofModel carries `[r]` and `[f]` labels on its
+         * two halves, and every citer references them by name. A flag defined
+         * by ProofLogger::emit_red_proof_lines_reifying has no labels at all,
+         * only line numbers, so a citer has to be told them --- which is what
+         * this is for, and what \ref reification_half then hides.
+         *
+         * The halves are in the order the labels read: `implies` is the `[r]`
+         * half, `flag -> ineq`, and `implied_by` is `[f]`, `ineq -> flag`.
+         *
+         * Per-solve state, like \ref publish_derived_line and for the same
+         * reason: a proof line number is meaningless outside the proof file it
+         * indexes. Registered per install, so it never outlives that.
+         *
+         * \throws ProofError if this flag has already been registered, which
+         * means its definition went out twice.
+         */
+        auto register_in_proof_reification(const ProofFlag & flag, ProofLine implies, ProofLine implied_by) -> void;
+
+        /**
+         * \brief A constraint's promise that it can define, on demand, any flag
+         * in a keyed family --- rather than defining them all up front.
+         *
+         * The flag-side counterpart of \ref publish_derived_line_family, and
+         * the fourth of the "per-solve, constraint-keyed memo" facilities the
+         * \todo there predicted. Cumulative's per-(task, time) flags are the
+         * first consumer: their *names* are cheap and go out with the model,
+         * but their definitions are two `red` steps each and a horizon's worth
+         * of them is the whole cost #780 exists to remove.
+         *
+         * The definer is called at most once per `(id, key)` and is expected to
+         * emit whatever that flag needs --- its reification halves, and
+         * anything else keyed the same way --- and to register the halves with
+         * \ref register_in_proof_reification. A key it declines to define is
+         * simply not defined; that is not an error, and a citer of an undefined
+         * flag fails loudly at its own proof step rather than silently.
+         *
+         * \warning **Whatever the definer emits must live at ProofLevel::Top**,
+         * for the same reason \ref publish_derived_line_family says so: the
+         * memo hands out the same lines for the rest of the proof, and a line
+         * emitted lower is deleted on backtracking.
+         *
+         * Registered per install, so it never outlives the proof it writes to.
+         */
+        auto publish_flag_definer(const ConstraintID & id, std::function<auto(ProofLogger &, const ProofFlagKey & key)->void> definer) -> void;
+
+        /**
+         * \brief Make sure a flag from a published family has been defined,
+         * defining it if this is the first ask.
+         *
+         * Does nothing where no definer was published for `id` --- which is the
+         * ordinary case, the flag's definition being OPB rows --- and nothing
+         * on a second ask for the same key.
+         *
+         * Call it before citing a flag from a constraint that might have
+         * published one, which is to say before citing anyone else's flags at
+         * all: it is cheap, and the alternative is a proof step that references
+         * a free variable.
+         */
+        auto ensure_flag_defined(const ConstraintID & id, const ProofFlagKey & key, ProofLogger & logger) -> void;
+
+        /**
+         * \brief The two halves of a flag reified inside the proof, if it was
+         * reified inside the proof.
+         *
+         * nullopt means it was not, which for a fully reified flag means its
+         * halves are OPB rows and carry labels. Prefer \ref reification_half,
+         * which answers "how do I cite this half" without the caller having to
+         * know which of the two it is.
+         */
+        [[nodiscard]] auto in_proof_reification(const ProofFlag & flag) const -> std::optional<std::pair<ProofLine, ProofLine>>;
+
+        /**
          * \brief The line a constraint published under this role, if it
          * published one.
          *
@@ -634,6 +710,77 @@ namespace gcs::innards
          * constraint publishes which role names the line a citer wants.
          */
         [[nodiscard]] auto find_derived_line(const ConstraintID & id, const std::string & role) const -> std::optional<ProofLine>;
+
+        /**
+         * \brief How to cite the row a constraint published under this role,
+         * however it was written.
+         *
+         * The row-side counterpart of \ref reification_half, and the same
+         * answer for the same reason: an OPB row gives its label, a row an
+         * install initialiser derived inside the proof gives its line, and
+         * ProofLine is already the variant of the two, so a citer needs to know
+         * neither. #780 moves Cumulative's per-(task, time) contribution rows
+         * from the first kind to the second under one encoding and not the
+         * others.
+         *
+         * nullopt means the same thing it means in both halves of that: there
+         * is nothing to cite, so do not do the thing that would need citing.
+         */
+        [[nodiscard]] auto constraint_row(const ConstraintID & id, const std::string & role) const -> std::optional<ProofLine>;
+
+        /**
+         * \brief A constraint's promise that it can derive, on demand, any line
+         * in an integer-indexed family --- rather than publishing them all up
+         * front.
+         *
+         * \ref publish_derived_line is for a fact a constraint decides to
+         * establish once, whatever anyone does with it. This is for a family
+         * whose members are too numerous to derive speculatively and whose
+         * consumers are known only later: Cumulative's per-time capacity rows
+         * under the start-checkpoint encoding (#780) are the first, where each
+         * member costs `O(n^3)` proof lines and a horizon's worth of them would
+         * dwarf the OPB block the encoding exists to delete.
+         *
+         * The deriver is called at most once per `(id, family, index)` and the
+         * result memoised, so a second consumer of the same member pays
+         * nothing. It may return nullopt, meaning this constraint cannot speak
+         * about that member --- read exactly as nullopt from
+         * \ref find_derived_line: there is nothing to cite, so do not do the
+         * thing that would need citing.
+         *
+         * \warning **Whatever the deriver emits must live at ProofLevel::Top.**
+         * The memo hands the same line number out for the rest of the proof,
+         * and a line emitted at any lower level is deleted on backtracking ---
+         * after which the memo is a dangling reference and nothing here can
+         * tell. This is a promise the publisher makes and that nothing checks.
+         *
+         * Registered per install, like everything else that holds proof line
+         * numbers, so it never outlives the proof whose lines it hands out.
+         *
+         * \todo This, \ref publish_derived_line and \ref boundary_pin_line are
+         * three variations on "a per-solve, constraint-keyed memo of proof
+         * lines", and each arrived for one caller. The tracker is meant to
+         * provide general facilities rather than a drawer of specific ones, and
+         * this is the third; #780's step 10 wants a fourth, the same thing for
+         * *flags* rather than lines. Once that one exists there should be
+         * enough examples to see the general requirement, and these should
+         * collapse into it. Deliberately not generalised before then, on the
+         * grounds that three examples are what tells you what the fourth needs.
+         */
+        auto publish_derived_line_family(const ConstraintID & id, const std::string & family,
+            std::function<auto(ProofLogger &, Integer index)->std::optional<ProofLine>> deriver) -> void;
+
+        /**
+         * \brief The line for one member of a family published by
+         * \ref publish_derived_line_family, deriving it if this is the first
+         * ask.
+         *
+         * Nullopt when no deriver was published for `(id, family)` --- the
+         * constraint was not installed, or proofs are off, or it does not have
+         * this family --- or when the deriver itself declines.
+         */
+        [[nodiscard]] auto find_or_derive_line_in_family(const ConstraintID & id, const std::string & family, Integer index, ProofLogger & logger)
+            -> std::optional<ProofLine>;
 
         /**
          * Create a proof flag with a new identifier, named `f[index][stem]`.

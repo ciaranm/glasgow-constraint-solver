@@ -127,6 +127,27 @@ auto PolBuilder::divide_by(Integer n) -> PolBuilder &
     return *this;
 }
 
+auto PolBuilder::add(const ProofFlag & flag, const NamesAndIDsTracker & tracker) -> PolBuilder &
+{
+    return add(flag, 1_i, tracker);
+}
+
+auto PolBuilder::add(const ProofFlag & flag, Integer coeff, const NamesAndIDsTracker & tracker) -> PolBuilder &
+{
+    if (coeff == 0_i)
+        throw UnexpectedException{"PolBuilder::add called with zero coefficient"};
+    _text += ' ';
+    _text += tracker.pb_file_string_for(flag);
+    if (coeff != 1_i) {
+        _text += ' ';
+        append_number_to(_text, coeff);
+        _text += " *";
+    }
+    separator_if_not_first();
+    _empty = false;
+    return *this;
+}
+
 auto PolBuilder::weaken(const ProofFlag & flag, const NamesAndIDsTracker & tracker) -> PolBuilder &
 {
     _text += ' ';

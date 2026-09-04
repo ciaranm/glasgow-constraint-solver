@@ -31,6 +31,9 @@ Doxyfile
 /*.default.sols
 # ... except the curated workflow-2 regression cases, which are source, not generated:
 !verified_encodings/scp_cases/*.scp
+# ... and #780's leak-check model, which is source too: it lives beside the
+# recovery it checks rather than in scp_cases, since it drives no cake chain.
+!gcs/constraints/cumulative/*.scp
 # ... and the committed VeriPB smoke fixture used by the Windows CI lane:
 !.github/veripb_smoke/*.opb
 !.github/veripb_smoke/*.pbp

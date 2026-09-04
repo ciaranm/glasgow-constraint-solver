@@ -124,17 +124,29 @@ namespace
     /// A task's activity flag on a donor at one time, absent when that donor
     /// never encoded the pair --- which is how a task outside its window looks,
     /// and is also how it looks in the donor's own capacity row.
-    [[nodiscard]] auto active_flag_for(const NamesAndIDsTracker & tracker, const ConstraintID & donor, size_t position, Integer t)
-        -> optional<ProofFlag>
+    /// Asking a donor for a flag is also asking it to define one: #780's
+    /// per-(task, time) flags are named with the model but defined on demand,
+    /// and a citer that skipped this would reference a free variable. Nothing
+    /// happens for a donor whose flags are OPB rows, which is all of them under
+    /// every encoding but StartCheckpoint.
+    auto ensure_donor_flags(ProofLogger & logger, const ConstraintID & donor, size_t position, Integer t) -> void
     {
-        return tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
+        logger.names_and_ids_tracker().ensure_flag_defined(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t), logger);
+    }
+
+    [[nodiscard]] auto active_flag_for(ProofLogger & logger, const ConstraintID & donor, size_t position, Integer t) -> optional<ProofFlag>
+    {
+        ensure_donor_flags(logger, donor, position, t);
+        return logger.names_and_ids_tracker().find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
     }
 
     /// The `before` and `after` flags an `active` flag is the conjunction of,
     /// which is what a bridge between two donors' copies of it has to line up.
-    [[nodiscard]] auto active_conjuncts_for(const NamesAndIDsTracker & tracker, const ConstraintID & donor, size_t position, Integer t)
+    [[nodiscard]] auto active_conjuncts_for(ProofLogger & logger, const ConstraintID & donor, size_t position, Integer t)
         -> optional<vector<ProofFlag>>
     {
+        ensure_donor_flags(logger, donor, position, t);
+        auto & tracker = logger.names_and_ids_tracker();
         auto before = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
         auto after = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
         if (! before || ! after)
@@ -838,7 +850,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                     const auto & member = recipe.members[k];
                     if (t < member.t_lo || t > member.t_hi)
                         continue;
-                    auto flag = active_flag_for(tracker, recipe.donors[member.canonical_donor].id, member.canonical_position, t);
+                    auto flag = active_flag_for(recipe_logger, recipe.donors[member.canonical_donor].id, member.canonical_position, t);
                     if (! flag)
                         return std::nullopt;
                     present.push_back(k);
@@ -953,10 +965,10 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                                 onto = j - 1;
                             const auto & carried = recipe.members[present[onto]];
 
-                            auto theirs = active_flag_for(tracker, donor.id, *position, t);
-                            auto their_conjuncts = active_conjuncts_for(tracker, donor.id, *position, t);
+                            auto theirs = active_flag_for(recipe_logger, donor.id, *position, t);
+                            auto their_conjuncts = active_conjuncts_for(recipe_logger, donor.id, *position, t);
                             auto our_conjuncts =
-                                active_conjuncts_for(tracker, recipe.donors[carried.canonical_donor].id, carried.canonical_position, t);
+                                active_conjuncts_for(recipe_logger, recipe.donors[carried.canonical_donor].id, carried.canonical_position, t);
                             if (! theirs || ! their_conjuncts || ! our_conjuncts) {
                                 missing = true;
                                 break;
@@ -981,7 +993,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                     for (auto position : donor.view.usable) {
                         if (in_the_row.contains(position))
                             continue;
-                        if (auto flag = active_flag_for(tracker, donor.id, position, t))
+                        if (auto flag = active_flag_for(recipe_logger, donor.id, position, t))
                             weaken_out.push_back(*flag);
                     }
 
