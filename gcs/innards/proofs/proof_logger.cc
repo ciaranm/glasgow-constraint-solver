@@ -16,6 +16,7 @@
 #include <gcs/interval_set.hh>
 #include <gcs/proof.hh>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <deque>
@@ -47,6 +48,7 @@ using std::ios;
 using std::ios_base;
 using std::make_unique;
 using std::map;
+using std::max;
 using std::optional;
 using std::ostream;
 using std::pair;
@@ -297,6 +299,22 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
     _imp->proof << ";\n";
     record_proof_line(advance_proof_line_number(), ProofLevel::Top);
 
+    // Under OrderEncodingDeletion::Literals the objective-improvement constraint emitted
+    // below (soli, either branch) names the objective variable's `id < incumbent` order
+    // literal at ProofLevel::Top on every improving solution. Its definition sits at the
+    // deep Current level the search reached this solution at, so the very next backtrack's
+    // forget deletes it -- leaving this permanent Top line naming a deleted literal, which
+    // VeriPB rejects. Hoist that order literal to Top first, exactly as the backtrack and
+    // nogood paths hoist their guess/decision literals, so its definition survives every
+    // later forget. A no-op in every other mode (and when the literal is already Top).
+    if (optional_minimise_variable_and_value)
+        visit(
+            [&](const auto & id) {
+                names_and_ids_tracker().hoist_live_order_literals_toward_level(
+                    std::vector<Literal>{Literal{id < optional_minimise_variable_and_value->second}}, 0, OrderEncodingResidencyCause::SoliHoist);
+            },
+            optional_minimise_variable_and_value->first);
+
     if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
         // soli and no links => have to assert the objective improving constraint
         visit(
@@ -325,6 +343,17 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
 auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
 {
+    // Under OrderEncodingDeletion::Literals the backtrack clause below names every
+    // guess, and the forget_proof_level(depth+1) the caller runs straight after would
+    // delete this frame's guess order-literal definition (emitted one level deeper).
+    // Re-introducing it later fails VeriPB because the backtrack clause pins the atom
+    // and the reification's falsify-witness collides with the pin. So hoist every
+    // guess that is a real-variable order literal up to the current (backtrack) level
+    // first: its definition then survives the forget and the clause never names a
+    // to-be-deleted literal. A no-op in every other mode. (proof_level() is the
+    // backtrack level here: solve.cc enters it before calling backtrack.)
+    names_and_ids_tracker().hoist_live_order_literals_toward_level(guesses, proof_level(), OrderEncodingResidencyCause::GuessHoist);
+
     _imp->proof << "% backtracking\n";
     // The backtrack clause is `at least one guess is false': exactly a
     // reason-only reified line over the guesses, so route it through the
@@ -341,6 +370,14 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
 
 auto ProofLogger::emit_learned_nogood(const vector<Literal> & decisions) -> ProofLine
 {
+    // The nogood clause lands at Top and survives the restart forget, but it names
+    // the decision (branch-threshold) order literals, whose definitions live at
+    // Current and would be deleted by that forget. Under OrderEncodingDeletion::Literals
+    // hoist those decision literals to Top first, so they stay resident and the Top
+    // nogood never references a deleted literal. Done before emitting the clause so the
+    // hoisted def ids precede the clause id in the Top bucket. A no-op in other modes.
+    names_and_ids_tracker().hoist_live_order_literals_toward_level(decisions, 0, OrderEncodingResidencyCause::NogoodHoist);
+
     _imp->proof << "% learned nogood\n";
     WPBSum clause;
     for (const auto & lit : decisions)
@@ -355,6 +392,12 @@ auto ProofLogger::end_proof() -> void
     // this is mostly for tests: we haven't necessarily destroyed the
     // Problem before running the verifier.
     _imp->proof << flush;
+
+    // Single conclude funnel (every conclude_* variant ends here exactly once): dump the
+    // order-encoding-deletion pin-apportionment diagnostic to stderr, if requested. A
+    // no-op unless GCS_ORDER_ENCODING_STATS is set under OrderEncodingDeletion::Literals;
+    // it writes only to stderr, never to the proof, so the .pbp is unaffected.
+    names_and_ids_tracker().dump_order_encoding_stats();
 }
 
 auto ProofLogger::conclude_unsatisfiable(bool is_optimisation) -> void
@@ -677,6 +720,48 @@ auto ProofLogger::forget_proof_level(int depth) -> void
         }
     }
     lines.clear();
+
+    // Keep the tracker's live order-link structure in sync with the deletions just
+    // emitted: any order-encoding chain links recorded at this level have now been
+    // del'd, so drop them from the live set so a later need_gevar re-emits them if
+    // required. A cheap no-op when the order-link deletion mode is off.
+    names_and_ids_tracker().forget_order_links_at_level(depth);
+}
+
+auto ProofLogger::move_proof_lines_to_level(const vector<ProofLine> & lines, int from_level, int target_level) -> void
+{
+    if (from_level == target_level)
+        return;
+
+    auto deepest = max(from_level, target_level);
+    if (cmp_less_equal(_imp->proof_lines_by_level.size(), deepest + 1))
+        _imp->proof_lines_by_level.resize(deepest + 2);
+
+    // Move each concrete line id from the source bucket to the target bucket
+    // (labels have no numeric id and are skipped). A hoisted definition can carry
+    // a smaller id than lines already resident in the target bucket -- several
+    // guess literals hoisted to one level need not arrive in id order, and a
+    // hoist-to-Top lands a mid-range def id into a bucket whose tail is a large
+    // learned-nogood clause -- so the general-position IntervalSet::insert is used
+    // rather than insert_at_end, keeping the bucket sorted, disjoint and merged
+    // whatever order the moves happen in.
+    auto & from = _imp->proof_lines_by_level.at(from_level);
+    auto & to = _imp->proof_lines_by_level.at(target_level);
+    for (const auto & l : lines)
+        if (auto n = std::get_if<ProofLineNumber>(&l)) {
+            from.erase(n->number);
+            to.insert(n->number);
+        }
+}
+
+auto ProofLogger::hoist_literal_to_level(const SimpleIntegerVariableID & id, Integer v, int target_level) -> void
+{
+    names_and_ids_tracker().hoist_order_literal_to_level(id, v, target_level);
+}
+
+auto ProofLogger::hoist_literal_to_top(const SimpleIntegerVariableID & id, Integer v) -> void
+{
+    names_and_ids_tracker().hoist_order_literal_to_top(id, v);
 }
 
 auto ProofLogger::start_proof(const ProofModel & model) -> void
