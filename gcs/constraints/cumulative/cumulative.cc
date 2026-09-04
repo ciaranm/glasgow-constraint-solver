@@ -7,6 +7,7 @@
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/bits_encoding.hh>
+#include <gcs/innards/proofs/flag_bridge.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
@@ -23,6 +24,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 #include <version>
@@ -1119,9 +1121,27 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             materialise_after_sum(k.task, k.est);
             logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flags[k.task][fv] >= 1_i, ProofLevel::Temporary);
         }
-        else
+        else {
             // s_k <= ub(s_k) <= LST(Omega) <= v.
             logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flags[k.task][fv] >= 1_i, ProofLevel::Temporary);
+            // Activity at v also needs `after_{k,v}`, and backwards it is
+            // `after_{k,u}` that supplies it rather than the reason: the task
+            // is still running at u, and u >= v, so it was still running at v.
+            // Unit propagation finds that for itself only while `after` is
+            // reified on one variable --- a constant length puts it on s_k
+            // alone, and `s_k >= u - p_k + 1` against `s_k <= v - p_k` is a
+            // bound conflict the bits close. A mode fixes a duration as well
+            // as its demands, so both operands vary and `after` is reified on
+            // the sum: `s_k + l_k >= u + 1` and `s_k + l_k <= v` are each
+            // satisfiable on their own terms, neither propagates anything, and
+            // the RUP below has nothing to close on (#778). Say it as the pol
+            // that cancels the sum instead, which is what the flag bridge is.
+            //
+            // The line is wanted in the database for the RUP below to
+            // propagate through rather than to be cited, so nothing pins it.
+            if (s_is_var(k.task) && l_is_var(k.task))
+                std::ignore = recover_flag_bridge(*logger, after_flags[k.task][fu], after_flags[k.task][fv], ProofLevel::Temporary);
+        }
         return logger->emit_rup_proof_line_under_reason(
             reason, WPBSum{} + 1_i * active_flags[k.task][fv] + 1_i * ! active_flags[k.task][fu] >= 1_i, ProofLevel::Temporary);
     };
