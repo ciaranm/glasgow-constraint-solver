@@ -4,6 +4,23 @@ target_link_libraries(fzn-glasgow PRIVATE glasgow_constraint_solver cxxopts gcs_
 add_test(NAME minizinc-abs COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ abs true true)
 set_tests_properties(minizinc-abs PROPERTIES SKIP_RETURN_CODE 66)
 
+# MiniZinc rewrites `x = y` and `x != y` between two variables into a two-term
+# int_lin_eq / int_lin_ne rather than emitting int_eq / int_ne, and the FlatZinc
+# reader recovers the shape so the specialised propagators are reached at all.
+# Both guards are load-bearing: --fzn-pattern pins that MiniZinc really does hand
+# us the linear form (if a future version emits int_eq instead, the recovery is
+# dead code and this says so), and the required output pattern pins that the
+# recovery actually fired, counting the four sign patterns and *not* the
+# variable-right-hand-side constraint, which is three terms and must fall through
+# to LinearEquality. Without the second guard the test passes against a binary
+# that does no recovery at all; without the enumeration diff a sign error in the
+# normalisation passes too.
+add_test(NAME minizinc-two-term-lin-eq COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern int_lin_eq $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ twotermlineq true true "-s" "propagatorCallsEqualsConstraints=4")
+set_tests_properties(minizinc-two-term-lin-eq PROPERTIES SKIP_RETURN_CODE 66 ENVIRONMENT "GCS_PROPAGATOR_STATS=calls")
+
+add_test(NAME minizinc-two-term-lin-ne COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern int_lin_ne $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ twotermlinne true true "-s" "propagatorCallsNotEqualsConstraints=4")
+set_tests_properties(minizinc-two-term-lin-ne PROPERTIES SKIP_RETURN_CODE 66 ENVIRONMENT "GCS_PROPAGATOR_STATS=calls")
+
 add_test(NAME minizinc-alldifferentexcept COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ alldifferentexcept true true)
 set_tests_properties(minizinc-alldifferentexcept PROPERTIES SKIP_RETURN_CODE 66)
 

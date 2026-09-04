@@ -613,10 +613,47 @@ auto main(int argc, char * argv[]) -> int
                 else
                     terms += -1_i * arg_as_var(data, args, 2);
 
-                if (id.ends_with("_eq"))
-                    problem.post(LinearEquality{terms, total});
-                else if (id.ends_with("_ne"))
-                    problem.post(LinearNotEquals{terms, total});
+                // MiniZinc rewrites `x = y` and `x != y` between two variables into a
+                // two-term int_lin_eq / int_lin_ne rather than int_eq / int_ne --- it emits
+                // those only for the reified forms --- so from this frontend the
+                // specialised propagators would otherwise never be reached at all. Across
+                // 75 sampled challenge instances: 13,605 two-term unit-coefficient
+                // int_lin_eq in 37 of them and 24,636 int_lin_ne in 6, against zero int_eq
+                // and 125 int_ne. So recover the shape here. Any two unit coefficients
+                // work, not just [1, -1]: dividing through by the first and moving the
+                // second across gives a +-var + constant view of the second variable, which
+                // is exactly what an IntegerVariableID can already express.
+                //
+                // This is the frontend deciding what to post, not a rewrite of a posted
+                // model, so the OPB simply describes the constraint that was posted and
+                // there is no proof gap to bridge (contrast issue #649).
+                auto recover_two_variable_form = [&]() -> optional<pair<IntegerVariableID, IntegerVariableID>> {
+                    if (terms.terms.size() != 2)
+                        return nullopt;
+                    const auto [a, v0] = terms.terms[0];
+                    const auto [b, v1] = terms.terms[1];
+                    if ((a != 1_i && a != -1_i) || (b != 1_i && b != -1_i))
+                        return nullopt;
+                    return pair{v0, (a * b == -1_i ? v1 : -v1) + (a == 1_i ? total : -total)};
+                };
+
+                if (id.ends_with("_eq")) {
+                    // Equals intersects the two domains; the generic linear equality is
+                    // bounds(Z), so it cannot carry a hole across. A strength gain as well
+                    // as a cheaper propagator.
+                    if (auto two = recover_two_variable_form())
+                        problem.post(Equals{two->first, two->second});
+                    else
+                        problem.post(LinearEquality{terms, total});
+                }
+                else if (id.ends_with("_ne")) {
+                    // Same strength either way (a two-term not-equals is GAC both ways),
+                    // so this one is purely the cheaper propagator.
+                    if (auto two = recover_two_variable_form())
+                        problem.post(NotEquals{two->first, two->second});
+                    else
+                        problem.post(LinearNotEquals{terms, total});
+                }
                 else
                     problem.post(terms <= total);
             }
