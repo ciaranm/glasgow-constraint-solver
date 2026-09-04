@@ -1,4 +1,5 @@
 #include <gcs/constraints/all_different/justify.hh>
+#include <gcs/innards/proofs/am1_from_pairs.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 
@@ -19,24 +20,20 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(ProofLogger & logg
         if (value_am1_constraint_numbers.contains(val))
             continue;
 
-        // at most one variable can take this value
-        PolBuilder am1;
-        int layer = 0;
-        for (unsigned i = 1; i < all_variables.size(); ++i) {
-            if (++layer >= 2)
-                am1.multiply_by(Integer{layer});
-
-            for (unsigned j = 0; j < i; ++j) {
-                auto ne = logger.emit_rup_proof_line(
-                    WPBSum{} + 1_i * ! (all_variables[i] == val) + 1_i * ! (all_variables[j] == val) >= 1_i, ProofLevel::Temporary);
-                am1.add(ne);
-            }
-
-            am1.divide_by(Integer{layer + 1});
+        // At most one variable can take this value: the pairwise clauses, and
+        // then the shared fold of them into the clique inequality. Emitted at
+        // Top and cached here, because the Hall set argument below is replayed
+        // for every violator that mentions this value.
+        vector<ProofLiteralOrFlag> members;
+        vector<vector<ProofLine>> at_most_ones(all_variables.size());
+        for (unsigned i = 0; i < all_variables.size(); ++i) {
+            members.push_back(ProofLiteral{all_variables[i] == val});
+            for (unsigned j = 0; j < i; ++j)
+                at_most_ones[i].push_back(logger.emit_rup_proof_line(
+                    WPBSum{} + 1_i * ! (all_variables[i] == val) + 1_i * ! (all_variables[j] == val) >= 1_i, ProofLevel::Temporary));
         }
 
-        if (! am1.empty())
-            value_am1_constraint_numbers.emplace(val, am1.emit(logger, ProofLevel::Top));
+        value_am1_constraint_numbers.emplace(val, recover_am1_from_pairs(logger, members, at_most_ones, ProofLevel::Top));
     }
 
     // we are going to need the at least one value variables

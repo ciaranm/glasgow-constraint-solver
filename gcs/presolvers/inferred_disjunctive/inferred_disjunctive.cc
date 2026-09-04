@@ -714,7 +714,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         at_most_ones[b].push_back(pair_amo.emit(recipe_logger, ProofLevel::Temporary));
                     }
 
-                return recover_am1_from_pairs(recipe_logger, flags, at_most_ones, ProofLevel::Top,
+                return recover_am1_from_pairs(recipe_logger, flags, at_most_ones, ProofLevel::Top, std::nullopt,
                     claim_rhs_zero ? Am1FromPairsMutation{am1_from_pairs_mutation::ClaimOneMore{}}
                                    : Am1FromPairsMutation{am1_from_pairs_mutation::None{}});
             },
