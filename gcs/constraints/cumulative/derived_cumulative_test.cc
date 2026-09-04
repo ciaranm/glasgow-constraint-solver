@@ -680,14 +680,16 @@ auto main(int argc, char * argv[]) -> int
     }
 
     // The same bound, from a model that spells its makespan rows as comparisons
-    // over an offset view rather than as two-term linear rows. Two things have
-    // to work that the linear spelling does not exercise: find_makespan_links
-    // recognising the shape at all --- miss it and there is no link, so the
-    // task's energy is not counted and the bound is not reached --- and the
-    // confine `pol` deviewing the row it cites, since the row is stated in
-    // BinEnc(V) and has to cancel against the start's and the makespan's own
-    // order literals. The first failure shows up as a wrong bound here, the
-    // second as a proof VeriPB rejects.
+    // over an offset view rather than as two-term linear rows.
+    //
+    // What these two lanes pin is find_makespan_links recognising the shape:
+    // miss it and there is no link, so the task's energy is not counted and the
+    // bound below is wrong. They do *not* pin the other thing the spelling
+    // needs, the confine `pol` deviewing the row it cites --- deleting that
+    // leaves both of these passing and both proofs verifying, because the
+    // framework's atom-level `[V >= v] <=> [X >= k]` clauses let the lemma's own
+    // RUP reach the deadline literals without the clause the `pol` builds. See
+    // makespan_energy.cc, which says the same thing at the call.
     for (const auto & [spelling, tag] :
         {pair{MakespanRows::OffsetOnStart, string{"offset_on_start"}}, pair{MakespanRows::OffsetOnMakespan, string{"offset_on_makespan"}}}) {
         auto comparison_makespan = makespan_instance;
