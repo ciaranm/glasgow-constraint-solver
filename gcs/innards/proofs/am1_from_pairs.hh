@@ -34,7 +34,9 @@ namespace gcs::innards
 
         /// Claim the members are all inactive rather than at most one active
         /// --- the "bound + 1 must fail" check for a rule whose content is a
-        /// number.
+        /// number. The only one of these that is purely about the pin: it
+        /// leaves the derivation alone, so there is nothing for a downstream
+        /// consumer to reject.
         struct ClaimOneMore
         {
         };
@@ -100,19 +102,28 @@ namespace gcs::innards
      * that VeriPB is right to accept, so nothing *here* catches it and the
      * caller has no guarantee that what it got says what it wanted.
      *
-     * Whether anything catches it *later* is the caller's to know, and the
-     * answer is not always no. Where the consumer is coefficient-sensitive ---
-     * a pigeonhole `pol` that adds this line into a count and needs an exact
-     * cancellation --- a corrupted merge is rejected downstream with or without
-     * the pin. That was measured rather than assumed, at `subcircuit.cc`'s call
-     * site and again at `all_different/justify.cc`'s (#805): with the pin taken
-     * off, every one of these mutations was still rejected. Where the consumer
-     * only needs the line to be sound, the pin is the only thing between a
-     * quietly weakened derivation and a proof that verifies. Both kinds of
-     * caller live here, so the pin stays --- it is one line, and a caller
-     * should not have to know which kind it is --- but do not read a passing
-     * mutation test at your own call site as evidence that the pin is what
-     * caught it.
+     * Whether anything catches it *later* is the caller's to know, and so far
+     * the answer has always been yes. Every call site here consumes the clique
+     * line coefficient by coefficient --- a counting `pol` that needs an exact
+     * cancellation, and whose RUP then fails when it does not get one --- so a
+     * weakened merge is rejected downstream whether or not it was pinned. That
+     * was measured rather than assumed. With the pin replaced by an unpinned
+     * copy of whatever the induction landed on, the `DropAnAtMostOne`,
+     * `NaiveOneShot` and `SkipFinalDivision` mutations were each still
+     * rejected: at `subcircuit.cc` (#797), and at all three of
+     * `all_different/justify.cc`, `sort/sort.cc` and
+     * `min_distance/min_distance.cc` (#805).
+     *
+     * What that leaves the pin doing here is saying so locally, where it can
+     * name the line that is wrong, instead of as a RUP failure a few hundred
+     * lines further on --- and covering a caller who is *not*
+     * coefficient-sensitive, for whom it would be the only thing between a
+     * quietly weakened derivation and a proof that verifies. So the pin stays;
+     * it is one line, and a caller should not have to know which kind it is.
+     * But do not read a mutation rejected at your own call site as evidence
+     * that the pin is what rejected it: run the experiment. `ClaimOneMore`
+     * cannot answer it for you, since it corrupts nothing but the pin's target
+     * and so has nothing left to catch once the pin is gone.
      *
      * The pin is also stricter than "weaker fails". An implication check is
      * syntactic, so it rejects a line that is *equivalent* to the target but
