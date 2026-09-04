@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -20,7 +21,8 @@ using std::to_string;
 using std::vector;
 
 auto gcs::innards::recover_am1_from_pairs(ProofLogger & logger, const vector<ProofLiteralOrFlag> & members,
-    const vector<vector<ProofLine>> & at_most_ones, ProofLevel level, Am1FromPairsMutation mutation) -> ProofLine
+    const vector<vector<ProofLine>> & at_most_ones, ProofLevel level, const std::optional<ProofLiteralOrFlag> & guard, Am1FromPairsMutation mutation)
+    -> ProofLine
 {
     auto k = members.size();
     if (k < 2)
@@ -38,7 +40,7 @@ auto gcs::innards::recover_am1_from_pairs(ProofLogger & logger, const vector<Pro
     if ((drop_one || skip_final_division) && k < 3)
         throw ProofError{"clique derivation: this mutation needs a merge to corrupt, so at least three members"};
 
-    logger.emit_proof_comment("clique at-most-one over " + to_string(k) + " members");
+    logger.emit_proof_comment("clique at-most-one over " + to_string(k) + " members" + (guard ? ", or the guard" : ""));
 
     // Only the pin below is ever cited again: every line the induction emits
     // between here and it exists to reach it. See ProofScaffoldingScope.
@@ -101,9 +103,19 @@ auto gcs::innards::recover_am1_from_pairs(ProofLogger & logger, const vector<Pro
     WPBSum clique;
     for (const auto & member : members)
         add_term_to(clique, 1_i, member);
+    auto bound = claim_one_more ? 0_i : 1_i;
+
+    // A guarded fold concludes `sum a_p <= 1 + (k-1) g`, the guard's
+    // coefficient having tracked the degree the whole way up. Stated over `~g`
+    // so that the pin has no negative coefficient in it: `(k-1) ~g = (k-1) -
+    // (k-1) g`, which is the same constraint with `k - 1` added to both sides.
+    if (guard) {
+        add_term_to(clique, Integer{static_cast<long long>(k) - 1}, ! *guard);
+        bound += Integer{static_cast<long long>(k) - 1};
+    }
 
     // Back at the caller's level to pin, while the induction is still alive for
     // VeriPB to resolve the reference against, and only then drop it.
     scaffolding.restore();
-    return logger.emit(ImpliesProofRule{current}, move(clique) <= (claim_one_more ? 0_i : 1_i), level);
+    return logger.emit(ImpliesProofRule{current}, move(clique) <= bound, level);
 }

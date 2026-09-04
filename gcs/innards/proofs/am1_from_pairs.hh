@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -96,9 +97,22 @@ namespace gcs::innards
      * The returned line is pinned to `sum a_p <= 1` with an `ia` step before it
      * comes back, and that step is not decoration. Dropping an input, or
      * mis-scaling a merge, leaves the `pol` on a weaker but still sound line
-     * that VeriPB is right to accept --- so without the pin there is no
-     * mutation of this derivation that can be caught, and the caller has no
-     * guarantee that what it got says what it wanted.
+     * that VeriPB is right to accept, so nothing *here* catches it and the
+     * caller has no guarantee that what it got says what it wanted.
+     *
+     * Whether anything catches it *later* is the caller's to know, and the
+     * answer is not always no. Where the consumer is coefficient-sensitive ---
+     * a pigeonhole `pol` that adds this line into a count and needs an exact
+     * cancellation --- a corrupted merge is rejected downstream with or without
+     * the pin. That was measured rather than assumed, at `subcircuit.cc`'s call
+     * site and again at `all_different/justify.cc`'s (#805): with the pin taken
+     * off, every one of these mutations was still rejected. Where the consumer
+     * only needs the line to be sound, the pin is the only thing between a
+     * quietly weakened derivation and a proof that verifies. Both kinds of
+     * caller live here, so the pin stays --- it is one line, and a caller
+     * should not have to know which kind it is --- but do not read a passing
+     * mutation test at your own call site as evidence that the pin is what
+     * caught it.
      *
      * The pin is also stricter than "weaker fails". An implication check is
      * syntactic, so it rejects a line that is *equivalent* to the target but
@@ -118,6 +132,20 @@ namespace gcs::innards
      * at-most-one for its pair rather than some other line that happens to
      * carry the arithmetic.
      *
+     * `guard`, if given, is a literal every input at-most-one carries as an
+     * extra disjunct --- `~a_p + ~a_q + g >= 1` --- so that what is being
+     * derived is "at most one of these, *or* the guard". None of the arithmetic
+     * changes: the guard rides through the induction, and its coefficient stays
+     * equal to the degree at every step, because a merge takes `m` copies of it
+     * from the pairs and `m - 1` from the copies of `current`, and that same
+     * `m(m-1) + 1` divides by `m` to the same `m`. So the pin at `k` members is
+     * `sum a_p <= 1 + (k-1) g`, written with the guard negated to keep every
+     * coefficient positive, and it is as strict as the unguarded one. What the
+     * caller has to remember is that the coefficient grows with the clique: a
+     * sum of folds over cliques of different sizes carries `sum (k_f - 1)` of
+     * the guard, and getting back to a coefficient of one means dividing by
+     * exactly that.
+     *
      * Every intermediate is emitted at `level`. Only the returned line needs to
      * outlive the call, so a caller replaying this across a scheduling horizon
      * should think about deriving the intermediates at `ProofLevel::Temporary`
@@ -130,8 +158,8 @@ namespace gcs::innards
      * \ingroup Innards
      */
     [[nodiscard]] auto recover_am1_from_pairs(ProofLogger &, const std::vector<ProofLiteralOrFlag> & members,
-        const std::vector<std::vector<ProofLine>> & at_most_ones, ProofLevel, Am1FromPairsMutation mutation = am1_from_pairs_mutation::None{})
-        -> ProofLine;
+        const std::vector<std::vector<ProofLine>> & at_most_ones, ProofLevel, const std::optional<ProofLiteralOrFlag> & guard = std::nullopt,
+        Am1FromPairsMutation mutation = am1_from_pairs_mutation::None{}) -> ProofLine;
 }
 
 #endif

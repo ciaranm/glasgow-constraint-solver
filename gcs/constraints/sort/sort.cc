@@ -2,6 +2,7 @@
 #include <gcs/constraints/sort/sort.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/am1_from_pairs.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -1063,30 +1064,25 @@ auto gcs::innards::install_sortedness_propagator(Propagators & propagators, cons
             }
 
             // Per-rank injectivity: at most one position has rank k, i.e.
-            // sum_i [pos[i] = k] <= 1. This is recover_am1's pairwise->global
-            // fold (the layer/multiply/divide pol from all_different's
-            // justify.cc), done inline because pos is proof-only and so the
-            // shared recover_am1 template isn't instantiated for its condition
-            // type. Each pairwise distinctness clause
+            // sum_i [pos[i] = k] <= 1, by the shared clique fold. Each pairwise
+            // distinctness clause
             //   !(pos[i]=k) + !(pos[i']=k) >= 1
             // is RUP from the two GAP lines and the antisymmetry clause: if both
             // had rank k, the GAPs force both directed before-flags, which
-            // antisymmetry forbids.
+            // antisymmetry forbids. pos is proof-only, but a condition on a
+            // ProofOnlySimpleIntegerVariableID is a ProofLiteral like any other,
+            // so recover_am1_from_pairs takes it unchanged.
             inj_lines->clear();
             for (size_t k = 0; n >= 2 && k < n; ++k) {
-                PolBuilder am1;
-                long long layer = 0;
-                for (size_t i = 1; i < n; ++i) {
-                    if (++layer >= 2)
-                        am1.multiply_by(Integer{layer});
-                    for (size_t ip = 0; ip < i; ++ip) {
-                        auto ne = logger->emit_rup_proof_line(
-                            WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (pos[ip] != Integer(k)) >= 1_i, ProofLevel::Temporary);
-                        am1.add(ne);
-                    }
-                    am1.divide_by(Integer{layer + 1});
+                vector<ProofLiteralOrFlag> members;
+                vector<vector<ProofLine>> at_most_ones(n);
+                for (size_t i = 0; i < n; ++i) {
+                    members.push_back(ProofLiteral{pos[i] == Integer(k)});
+                    for (size_t ip = 0; ip < i; ++ip)
+                        at_most_ones[i].push_back(logger->emit_rup_proof_line(
+                            WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (pos[ip] != Integer(k)) >= 1_i, ProofLevel::Temporary));
                 }
-                inj_lines->push_back(am1.emit(*logger, ProofLevel::Top));
+                inj_lines->push_back(recover_am1_from_pairs(*logger, members, at_most_ones, ProofLevel::Top));
             }
         },
         InitialiserPriority::Expensive);

@@ -1,6 +1,7 @@
 #include <gcs/constraints/min_distance/min_distance.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/am1_from_pairs.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -697,33 +698,32 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
                 // Per unordered pair emit ~l_r \/ ~l_s \/ g by RUP (cross-site via
                 // the pair clause + z order; same-site via the per-site count
                 // constraint + z order; same-position via the variable's at-most-one),
-                // then combine with the all_different PolBuilder layer recurrence, so
-                // g rides through the ceil-divisions with an exact coefficient:
-                // Sum_{l in L} ~l + (|L|-1) g >= |L|-1.
+                // then hand them to the shared clique fold, which carries g through
+                // the ceil-divisions with its coefficient tracking the degree:
+                // Sum_{l in L} ~l + (|L|-1) g >= |L|-1. That (|L|-1) is what sum_c
+                // above counts, and what the final division cancels.
                 auto emit_am1 = [&](const vector<pair<std::size_t, Integer>> & lits) -> optional<ProofLine> {
                     if (lits.size() < 2) {
                         // A single-literal site contributes nothing to the counting
                         // beyond cancelling its own at-least-one term; the trivially
-                        // true ~[x_pos = site] >= 0 does exactly that.
+                        // true ~[x_pos = site] >= 0 does exactly that. Below the two
+                        // members the fold needs, so it is handled here rather than
+                        // there.
                         if (lits.size() == 1)
                             return logger->emit_rup_proof_line(WPBSum{} + 1_i * (x[lits[0].first] != lits[0].second) >= 0_i, ProofLevel::Temporary);
                         return std::nullopt;
                     }
-                    PolBuilder am1;
-                    int layer = 0;
-                    for (std::size_t i = 1; i < lits.size(); ++i) {
-                        if (++layer >= 2)
-                            am1.multiply_by(Integer{layer});
-                        for (std::size_t j = 0; j < i; ++j) {
-                            auto ne = logger->emit_rup_proof_line(
+                    vector<ProofLiteralOrFlag> members;
+                    vector<vector<ProofLine>> at_most_ones(lits.size());
+                    for (std::size_t i = 0; i < lits.size(); ++i) {
+                        members.push_back(ProofLiteral{x[lits[i].first] == lits[i].second});
+                        for (std::size_t j = 0; j < i; ++j)
+                            at_most_ones[i].push_back(logger->emit_rup_proof_line(
                                 WPBSum{} + 1_i * (x[lits[i].first] != lits[i].second) + 1_i * (x[lits[j].first] != lits[j].second) + 1_i * guard >=
                                     1_i,
-                                ProofLevel::Temporary);
-                            am1.add(ne);
-                        }
-                        am1.divide_by(Integer{layer + 1});
+                                ProofLevel::Temporary));
                     }
-                    return am1.emit(*logger, ProofLevel::Temporary);
+                    return recover_am1_from_pairs(*logger, members, at_most_ones, ProofLevel::Temporary, ProofLiteralOrFlag{ProofLiteral{guard}});
                 };
 
                 PolBuilder final_pol;

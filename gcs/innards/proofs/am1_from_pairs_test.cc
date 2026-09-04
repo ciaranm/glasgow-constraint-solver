@@ -7,14 +7,19 @@
  * against an unsatisfiable one every RUP step is vacuously valid and a
  * corrupted derivation would sail through, which is the trap #656 walked into.
  *
- * The three claims made here are separate:
+ * The four claims made here are separate:
  *
  *   1. the derivation follows, for cliques of two to twelve;
  *   2. the line that comes back is the clique inequality and not something
- *      weaker --- which nothing but the `ia` pin can say, because every step of
- *      a corrupted merge is still individually sound;
+ *      weaker --- which nothing but the `ia` pin can say *here*, because every
+ *      step of a corrupted merge is still individually sound, and this model
+ *      has no consumer to reject it downstream;
  *   3. the induction is necessary, which the NaiveOneShot mutation shows by
- *      being accepted for two and three members and rejected from four on.
+ *      being accepted for two and three members and rejected from four on;
+ *   4. a guard rides through unchanged and comes out with coefficient exactly
+ *      `k - 1`, which the guarded contradiction pins down from both sides: too
+ *      few copies of the guard-is-false axiom and the pol does not close, too
+ *      many and it is not a contradiction the checker will take.
  */
 
 #include <gcs/constraints/innards/constraints_test_utils.hh>
@@ -76,7 +81,17 @@ namespace
         WithTwoActive
     };
 
-    auto check(size_t k, Am1FromPairsMutation mutation, Model model_kind, const string & tag, bool expect_veripb_to_accept) -> void
+    enum class Guard
+    {
+        /// The plain fold: every at-most-one is unconditional.
+        None,
+        /// Every at-most-one carries an extra disjunct, so the clique
+        /// inequality holds only where the guard is false --- min_distance's
+        /// shape.
+        Present
+    };
+
+    auto check(size_t k, Am1FromPairsMutation mutation, Model model_kind, Guard guard_kind, const string & tag, bool expect_veripb_to_accept) -> void
     {
         auto proof_name = "am1_from_pairs_" + to_string(k) + "_" + tag;
         ProofOptions proof_options{proof_name};
@@ -91,23 +106,36 @@ namespace
             members.push_back(flag);
         }
 
+        std::optional<ProofFlag> guard;
+        if (guard_kind == Guard::Present)
+            guard = model.create_proof_flag("guard");
+
         // The lower triangle, in the order the induction consumes it. Labelled,
-        // because a pol step may only reference an OPB row by name.
+        // because a pol step may only reference an OPB row by name. A guarded
+        // pair is `~a_i + ~a_j + g >= 1`, written here as `a_i + a_j + ~g <= 2`.
         vector<vector<ProofLine>> at_most_ones(k);
         for (size_t j = 1; j < k; ++j)
             for (size_t i = 0; i < j; ++i) {
                 WPBSum pair;
                 pair += 1_i * flags[i];
                 pair += 1_i * flags[j];
-                at_most_ones[j].push_back(model.add_labelled_constraint("amo" + to_string(i) + "x" + to_string(j), move(pair) <= 1_i));
+                if (guard)
+                    pair += 1_i * ! *guard;
+                auto bound = guard ? 2_i : 1_i;
+                at_most_ones[j].push_back(model.add_labelled_constraint("amo" + to_string(i) + "x" + to_string(j), move(pair) <= bound));
             }
 
-        std::optional<ProofLine> two_active;
+        std::optional<ProofLine> two_active, guard_false;
         if (model_kind == Model::WithTwoActive) {
             WPBSum both;
             both += 1_i * flags[0];
             both += 1_i * flags[1];
             two_active = model.add_labelled_constraint("bothactive", move(both) >= 2_i);
+            // A guarded clique inequality says nothing at all where the guard
+            // holds, so two active members only contradict it once the guard is
+            // ruled out.
+            if (guard)
+                guard_false = model.add_labelled_constraint("guardfalse", WPBSum{} + 1_i * ! *guard >= 1_i);
         }
         model.finalise();
 
@@ -116,15 +144,20 @@ namespace
         logger.start_proof(model);
         tracker.emit_delayed_proof_steps();
 
-        auto clique = recover_am1_from_pairs(logger, members, at_most_ones, ProofLevel::Top, mutation);
+        auto clique = recover_am1_from_pairs(
+            logger, members, at_most_ones, ProofLevel::Top, guard ? std::optional<ProofLiteralOrFlag>{*guard} : std::nullopt, mutation);
 
         if (two_active) {
             // The clique inequality says at most one is active and the axiom
             // says two are, so one pol closes it --- and `ia` against the
             // result insists that it really is a contradiction rather than
-            // something the checker refuted by other means.
+            // something the checker refuted by other means. The guarded fold
+            // carries `k - 1` of the guard, so it takes that many copies of the
+            // axiom ruling it out to cancel them.
             PolBuilder contradiction;
             contradiction.add(clique).add(*two_active);
+            if (guard_false)
+                contradiction.add(*guard_false, Integer{static_cast<long long>(k) - 1});
             auto combined = contradiction.emit(logger, ProofLevel::Top);
             logger.emit(ImpliesProofRule{combined}, WPBSum{} >= 1_i, ProofLevel::Top);
             logger.conclude_unsatisfiable(false);
@@ -160,12 +193,12 @@ auto main(int argc, char * argv[]) -> int
     // is where #548 expects to stop caring: the merge is O(k^2) additions per
     // time point, so a clique is not something to be casual about.
     for (size_t k = 2; k <= 12; ++k)
-        check(k, am1_from_pairs_mutation::None{}, Model::Plain, "honest", true);
+        check(k, am1_from_pairs_mutation::None{}, Model::Plain, Guard::None, "honest", true);
     println(cerr, "cliques of 2 to 12 members: derived and verified");
 
     // And it means what it says: two members active contradicts it.
     for (size_t k : {2, 3, 5, 8})
-        check(k, am1_from_pairs_mutation::None{}, Model::WithTwoActive, "contradiction", true);
+        check(k, am1_from_pairs_mutation::None{}, Model::WithTwoActive, Guard::None, "contradiction", true);
     println(cerr, "the clique inequality contradicts two active members");
 
     // Dropping an input from the last merge. Worth being clear about what this
@@ -173,12 +206,12 @@ auto main(int argc, char * argv[]) -> int
     // VeriPB would be right to accept. It is the `ia` pin that rejects, which
     // is the only reason this mutation is a test at all.
     for (size_t k : {3, 4, 7})
-        check(k, am1_from_pairs_mutation::DropAnAtMostOne{}, Model::Plain, "dropped", false);
+        check(k, am1_from_pairs_mutation::DropAnAtMostOne{}, Model::Plain, Guard::None, "dropped", false);
     println(cerr, "veripb rejected a merge missing an at-most-one, as expected");
 
     // Claiming no member may be active at all.
     for (size_t k : {2, 3, 6})
-        check(k, am1_from_pairs_mutation::ClaimOneMore{}, Model::Plain, "onemore", false);
+        check(k, am1_from_pairs_mutation::ClaimOneMore{}, Model::Plain, Guard::None, "onemore", false);
     println(cerr, "veripb rejected the one-stronger claim, as expected");
 
     // The induction is necessary, and here is where. Summing every at-most-one
@@ -187,9 +220,9 @@ auto main(int argc, char * argv[]) -> int
     // and rejected from four on --- if this boundary ever moves, the argument
     // for the induction has changed and the comment explaining it is wrong.
     for (size_t k : {2, 3})
-        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, "naive", true);
+        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::None, "naive", true);
     for (size_t k : {4, 5, 9})
-        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, "naive", false);
+        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::None, "naive", false);
     println(cerr, "the one-shot merge works to three members and fails from four, as the induction's premise says");
 
     // Leaving the division off the last merge gives a line that is *stronger*
@@ -199,8 +232,36 @@ auto main(int argc, char * argv[]) -> int
     // it says the final division is load-bearing for the pin and not only for
     // the induction.
     for (size_t k : {3, 5})
-        check(k, am1_from_pairs_mutation::SkipFinalDivision{}, Model::Plain, "nodivide", false);
+        check(k, am1_from_pairs_mutation::SkipFinalDivision{}, Model::Plain, Guard::None, "nodivide", false);
     println(cerr, "veripb rejected an undivided --- and strictly stronger --- last merge, as expected");
+
+    // And the same again with a guard riding through the induction, which is
+    // min_distance's shape. The claim being tested is the one the header makes
+    // about the coefficient: the guard comes out at exactly `k - 1`, so the pin
+    // states it, and the contradiction below cancels it with exactly that many
+    // copies of the axiom ruling the guard out. Either number being wrong is a
+    // rejection, which is why the contradiction model is the interesting one
+    // here rather than an extra.
+    for (size_t k = 2; k <= 12; ++k)
+        check(k, am1_from_pairs_mutation::None{}, Model::Plain, Guard::Present, "ghonest", true);
+    for (size_t k : {2, 3, 5, 8})
+        check(k, am1_from_pairs_mutation::None{}, Model::WithTwoActive, Guard::Present, "gcontradiction", true);
+    println(cerr, "the guarded fold derives, and carries the guard at k-1 exactly");
+
+    // A guard does not soften the pin: every mutation is still caught, and the
+    // one-shot merge still turns from right to wrong between three members and
+    // four.
+    for (size_t k : {3, 4, 7})
+        check(k, am1_from_pairs_mutation::DropAnAtMostOne{}, Model::Plain, Guard::Present, "gdropped", false);
+    for (size_t k : {2, 3, 6})
+        check(k, am1_from_pairs_mutation::ClaimOneMore{}, Model::Plain, Guard::Present, "gonemore", false);
+    for (size_t k : {2, 3})
+        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::Present, "gnaive", true);
+    for (size_t k : {4, 5, 9})
+        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::Present, "gnaive", false);
+    for (size_t k : {3, 5})
+        check(k, am1_from_pairs_mutation::SkipFinalDivision{}, Model::Plain, Guard::Present, "gnodivide", false);
+    println(cerr, "the guarded fold rejects every mutation the plain one does");
 
     return EXIT_SUCCESS;
 }
