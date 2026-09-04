@@ -352,10 +352,23 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         }
     };
 
+    // on_change for the shared set, because the undecided pass reads in_domain and
+    // domains_intersect, and the must-hold pass intersects the two domains.
     Triggers triggers;
     triggers.on_change = {_v1, _v2};
+
+    // But an unconditional NotEquals only ever runs the must-not-hold pass, which
+    // reads nothing but optional_single_value and disables itself until backtrack
+    // once it has acted -- so on_instantiated cannot miss its wake, and the wakes
+    // it drops are the expensive ones: fixing a vertex removes one value from each
+    // of its d neighbours, and under on_change each of those interior removals
+    // woke every other not-equals on that neighbour to find neither end fixed
+    // (issue #819).
+    Triggers triggers_when_must_not_hold;
+    triggers_when_must_not_hold.on_instantiated = {_v1, _v2};
+
     install_reified_dispatcher(propagators, constraint_id(), _evaluated_cond, _cond, triggers, std::move(enforce_constraint_must_hold),
-        std::move(enforce_constraint_must_not_hold), std::move(infer_cond_when_undecided));
+        std::move(enforce_constraint_must_not_hold), std::move(infer_cond_when_undecided), std::move(triggers_when_must_not_hold));
 }
 
 Equals::Equals(const IntegerVariableID v1, const IntegerVariableID v2) : ReifiedEquals(v1, v2, reif::MustHold{})

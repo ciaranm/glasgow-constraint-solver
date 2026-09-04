@@ -107,6 +107,17 @@ namespace gcs::innards
      * is Undecided, this helper appends `cond.var` to `triggers.on_change` so
      * the dispatcher wakes up when cond changes.
      *
+     * `triggers` has to cover every branch the installed propagator can take, so
+     * for an Undecided condition it is necessarily the union. When the condition
+     * is decided must-not-hold at install time the propagator only ever runs the
+     * one enforce pass, and a negation pass is often much cheaper to wake than
+     * the union suggests: it typically acts only once a variable is fixed, where
+     * the undecided pass has to watch every value. Pass
+     * `triggers_when_decided_must_not_hold` to give that one branch its own,
+     * narrower trigger set; without it the branch uses `triggers` as before.
+     * There is deliberately no must-hold counterpart: no constraint here wants
+     * one yet.
+     *
      * `initial_evaluated` is the result of evaluating the reification
      * condition against the initial state; the caller computes it once
      * (typically in `prepare()`) and passes it in. This keeps the helper
@@ -118,7 +129,7 @@ namespace gcs::innards
     auto install_reified_dispatcher(Propagators & propagators, const ConstraintID & constraint_id,
         const EvaluatedReificationCondition & initial_evaluated, const ReificationCondition & reif_cond, Triggers triggers,
         EnforceMustHold_ enforce_constraint_must_hold, EnforceMustNotHold_ enforce_constraint_must_not_hold,
-        InferCondWhenUndecided_ infer_cond_when_undecided) -> void
+        InferCondWhenUndecided_ infer_cond_when_undecided, std::optional<Triggers> triggers_when_decided_must_not_hold = std::nullopt) -> void
     {
         if (std::holds_alternative<evaluated_reif::Deactivated>(initial_evaluated))
             return;
@@ -152,7 +163,7 @@ namespace gcs::innards
                 [enforce_constraint_must_not_hold = std::move(enforce_constraint_must_not_hold),
                     cond = std::get<evaluated_reif::MustNotHold>(initial_evaluated).cond](const State & state, auto & inference,
                     ProofLogger * const logger) -> PropagatorState { return enforce_constraint_must_not_hold(state, inference, logger, cond); },
-                triggers);
+                triggers_when_decided_must_not_hold ? *triggers_when_decided_must_not_hold : triggers);
             return;
         }
 
