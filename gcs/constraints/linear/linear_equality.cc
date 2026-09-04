@@ -376,11 +376,20 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                         });
                 }
 
-                // strictly speaking, we care when we're down to only one variable left unassigned, and then there's one
-                // value it potentially mustn't have
+                // We can only act once at most one variable is left unassigned: with two or more
+                // unfixed, propagate_linear_not_equals scans the terms and returns having inferred
+                // nothing. Both branches it can act in are entered by a variable becoming fixed, and
+                // every State::change_state_for_* path that leaves a domain a singleton returns
+                // Inference::Instantiated (the start-of-search call covers a term fixed before
+                // install), so on_instantiated cannot miss a wake: each node reaches the same
+                // fixpoint, and the wakes on_change adds on top of it only ever do that work a
+                // round sooner. On the tpp challenge model they cost 17.8M calls for a single
+                // pruning (issue #807). Contrast the undecided branch below, which stays enabled with one
+                // variable left and then acts when *that* variable loses the value that would make
+                // the equality hold: that one genuinely needs on_change.
                 Triggers triggers;
                 for (auto & [_, v] : _coeff_vars.terms)
-                    triggers.on_change.push_back(v);
+                    triggers.on_instantiated.push_back(v);
 
                 visit(
                     [&, modifier = modifier](const auto & sanitised_cv) {

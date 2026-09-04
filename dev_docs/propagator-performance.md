@@ -149,6 +149,25 @@ They are the one legitimate way to lower the `propagations:` count — see the
 ground rule above for what must still hold, and its caveats. Get these right
 before micro-optimising the body.
 
+**What a removed wake is worth.** A wake the propagator no longer takes costs
+tens of nanoseconds, so the payoff scales with the *scan* the wake skips, not
+with the call count on its own. Moving `lin_not_equals` from `on_change` to
+`on_instantiated` (issue #807) dropped 9.9M of 17.8M calls on the `tpp`
+challenge model, whose flattened `int_lin_ne` has two terms, and moved the wall
+clock by nothing measurable (three instances, min-of-3, −0.3% to +0.7% against
+a ~1% run-to-run spread); the same change dropped 15.6M of 41.0M calls on a
+ten-term not-equals and was a reproducible 6.9% there. Both had identical
+`nodes` *and* identical `effectfulPropagations` — which is the shape to insist
+on, and the one that says the fixpoint at every node is untouched.
+
+**A `_micros` share is not necessarily wake cost.** `GCS_PROPAGATOR_STATS=time`
+brackets the propagator call, so a contradiction's `throw
+TrackedPropagationFailed` unwinds inside the sample. `lin_not_equals` on `tpp`
+reported 6.23 s of the model's 12.41 s of propagation, and 6.03 s of that
+survived removing 56% of its calls: it was 3.75M contradictions at ~1.6 µs
+each, not 17.8M wakes. Read the `_contradictions` column before reading a large
+`_micros` share as a trigger problem.
+
 ### Reuse the reason instead of rebuilding it
 
 A propagator that reasons over a fixed variable scope should build **one**
