@@ -133,10 +133,17 @@ auto run_linear_test(bool proofs, const string & mode, const ViewWrapConfig & vi
     auto proof_name =
         proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg) + threshold_proof_suffix()) : nullopt;
 
+    // The inequality propagators are bounds(Z), but LinearNotEquals forbids the one value
+    // that would complete the equality as soon as a single variable is left unfixed, which
+    // for a single not-equals constraint is exactly GAC. Checking at that strength is what
+    // makes this lane a test of the propagator's triggers -- it wakes on_instantiated only
+    // (issue #807), and a missed wake leaves an unsupported *interior* value behind, which
+    // the BC check the other modes use cannot see. Deliberately registering only the first
+    // term's trigger fails this on the first data item of every view configuration.
+    constexpr auto level = is_same_v<Constraint_, LinearNotEquals> ? CheckConsistency::GAC : CheckConsistency::BC;
     if ((! is_same_v<Constraint_, LinearEquality>) && 1 == ineqs.size())
-        solve_for_tests_checking_consistency(p, proof_name, expected, actual,
-            tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}},
-            write_s_expr_file_for<Constraint_>());
+        solve_for_tests_checking_consistency(
+            p, proof_name, expected, actual, tuple{pair{v1, level}, pair{v2, level}, pair{v3, level}}, write_s_expr_file_for<Constraint_>());
     else
         solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3}, write_s_expr_file_for<Constraint_>());
 
