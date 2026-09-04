@@ -42,6 +42,13 @@ library. For an introduction to *using* the solver, start with the top-level
   instances: the `XCSPCallbacks` class, the intension tree walker, the
   cache-based test harness with ACE cross-checking, and the recipe for
   adding a new constraint binding.
+- [Per-rule firing counters](rule-counters.md) — what
+  `GCS_SCHEDULING_RULE_STATS` prints for each `Cumulative` and
+  `Disjunctive` propagation rule, what the four numbers mean, and the one
+  way they are easy to misquote: `already_true` is a candidate count on
+  most rows and a detection count on two, and neither is the same
+  quantity a standalone simulation of a rule reports. Use when deciding
+  whether a rule earns its sweep.
 - [Benchmarking](benchmarking.md) — the curated set of benchmarks for
   measuring the wall-time impact of a performance-sensitive change, the
   rationale for each pick, the harness pattern for comparing two builds,

@@ -57,6 +57,7 @@ add_library(glasgow_constraint_solver
         constraints/innards/graph_rules.cc
         constraints/innards/linear_stages.cc
         constraints/innards/guaranteed_contribution.cc
+        constraints/innards/rule_counters.cc
         constraints/innards/makespan_energy.cc
         constraints/innards/product_encoding.cc
         constraints/innards/product_justify.cc
