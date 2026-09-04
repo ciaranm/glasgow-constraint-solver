@@ -42,11 +42,11 @@ using namespace gcs::test_innards;
 
 namespace
 {
-    auto run_bin_packing_capa_test(
-        bool proofs, bool upfront, const vector<pair<int, int>> & item_ranges, const vector<int> & sizes, const vector<int> & capacities) -> void
+    auto run_bin_packing_capa_test(bool proofs, bool upfront, const ViewWrapConfig & view_cfg, const vector<pair<int, int>> & item_ranges,
+        const vector<int> & sizes, const vector<int> & capacities) -> void
     {
-        print(cerr, "bin_packing capa {} sizes={} caps={}{}{}", item_ranges, sizes, capacities, upfront ? " upfront" : "",
-            proofs ? " with proofs:" : ":");
+        print(cerr, "bin_packing capa [{}] {} sizes={} caps={}{}{}", view_wrap_config_label(view_cfg), item_ranges, sizes, capacities,
+            upfront ? " upfront" : "", proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = item_ranges.size();
@@ -70,9 +70,15 @@ namespace
         println(cerr, " expecting {} solutions", expected.size());
 
         Problem p;
+        // The items are what every MiniZinc model now hands over as views: the
+        // redefinition passes the bin offset and fzn_glasgow applies it with
+        // operator+, so BinPacking sees `bin[i] + -offset` rather than a variable
+        // of its own. The wrap lands back on the requested visible domain, so the
+        // solution set is unchanged and only the view plumbing differs.
+        auto wraps = wraps_for_positions(view_cfg, static_cast<int>(item_ranges.size()));
         vector<IntegerVariableID> items;
-        for (auto & [lo, hi] : item_ranges)
-            items.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        for (size_t i = 0; i < item_ranges.size(); ++i)
+            items.push_back(create_integer_variable_or_constant_with_view(p, item_ranges.at(i), wraps.at(i)));
 
         vector<Integer> sizes_i, caps_i;
         for (auto s : sizes)
@@ -84,7 +90,7 @@ namespace
                 .with_proof_strategy(
                     upfront ? BinPackingProofStrategy{proof_strategy::Upfront{}} : BinPackingProofStrategy{proof_strategy::PerCall{}}));
 
-        auto proof_name = proofs ? make_optional("bin_packing_test") : nullopt;
+        auto proof_name = proofs ? make_optional("bin_packing_test_" + view_wrap_config_label(view_cfg)) : nullopt;
         // Enumeration only — Stage 3 achieves per-bin GAC, not joint GAC
         // (joint GAC for BinPacking is NP-hard, classic subset-sum). For the
         // constant-cap form per-bin GAC is structurally identical to Stage
@@ -96,11 +102,11 @@ namespace
         check_results(proof_name, expected, actual);
     }
 
-    auto run_bin_packing_load_test(bool proofs, bool upfront, const vector<pair<int, int>> & item_ranges, const vector<int> & sizes,
-        const vector<pair<int, int>> & load_ranges) -> void
+    auto run_bin_packing_load_test(bool proofs, bool upfront, const ViewWrapConfig & view_cfg, const vector<pair<int, int>> & item_ranges,
+        const vector<int> & sizes, const vector<pair<int, int>> & load_ranges) -> void
     {
-        print(cerr, "bin_packing load {} sizes={} loads={}{}{}", item_ranges, sizes, load_ranges, upfront ? " upfront" : "",
-            proofs ? " with proofs:" : ":");
+        print(cerr, "bin_packing load [{}] {} sizes={} loads={}{}{}", view_wrap_config_label(view_cfg), item_ranges, sizes, load_ranges,
+            upfront ? " upfront" : "", proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = item_ranges.size();
@@ -124,9 +130,13 @@ namespace
         println(cerr, " expecting {} solutions", expected.size());
 
         Problem p;
+        // Only the items are wrapped; see the capa runner. glasgow_bin_packing_load
+        // shifts the bins alone, because the load array is indexed by bin rather
+        // than valued in bins, so loads stay plain variables on the MiniZinc path.
+        auto wraps = wraps_for_positions(view_cfg, static_cast<int>(item_ranges.size()));
         vector<IntegerVariableID> items, loads;
-        for (auto & [lo, hi] : item_ranges)
-            items.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        for (size_t i = 0; i < item_ranges.size(); ++i)
+            items.push_back(create_integer_variable_or_constant_with_view(p, item_ranges.at(i), wraps.at(i)));
         for (auto & [lo, hi] : load_ranges)
             loads.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
 
@@ -138,7 +148,7 @@ namespace
                 .with_proof_strategy(
                     upfront ? BinPackingProofStrategy{proof_strategy::Upfront{}} : BinPackingProofStrategy{proof_strategy::PerCall{}}));
 
-        auto proof_name = proofs ? make_optional("bin_packing_test") : nullopt;
+        auto proof_name = proofs ? make_optional("bin_packing_test_" + view_wrap_config_label(view_cfg)) : nullopt;
         // Enumeration only; see capa runner for why per-bin GAC isn't
         // checked here.
         solve_for_tests(p, proof_name, actual, tuple{items, loads});
@@ -150,6 +160,7 @@ namespace
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Each capa case: { item_ranges, sizes, capacities }.
     vector<tuple<vector<pair<int, int>>, vector<int>, vector<int>>> capa_data = {
@@ -220,9 +231,9 @@ auto main(int argc, char * argv[]) -> int
             if (upfront && ! proofs)
                 continue;
             for (auto & [items, sizes, caps] : capa_data)
-                run_bin_packing_capa_test(proofs, upfront, items, sizes, caps);
+                run_bin_packing_capa_test(proofs, upfront, view_cfg, items, sizes, caps);
             for (auto & [items, sizes, loads] : load_data)
-                run_bin_packing_load_test(proofs, upfront, items, sizes, loads);
+                run_bin_packing_load_test(proofs, upfront, view_cfg, items, sizes, loads);
         }
     }
 

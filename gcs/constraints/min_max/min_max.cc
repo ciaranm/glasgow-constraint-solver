@@ -27,7 +27,6 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-using std::ranges::any_of;
 
 ArrayMinMax::ArrayMinMax(vector<IntegerVariableID> vars, const IntegerVariableID result, bool min) : _vars(move(vars)), _result(result), _min(min)
 {
@@ -134,7 +133,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
             // is there more than one variable that can support the values in result?
             optional<IntegerVariableID> support_1, support_2;
             for (auto & var : vars) {
-                if (any_of(state.each_value_immutable(result), [&](const Integer & val) { return state.in_domain(var, val); })) {
+                if (state.domains_intersect(var, result)) {
                     if (! support_1)
                         support_1 = var;
                     else {

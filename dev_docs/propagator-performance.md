@@ -149,6 +149,25 @@ They are the one legitimate way to lower the `propagations:` count — see the
 ground rule above for what must still hold, and its caveats. Get these right
 before micro-optimising the body.
 
+**What a removed wake is worth.** A wake the propagator no longer takes costs
+tens of nanoseconds, so the payoff scales with the *scan* the wake skips, not
+with the call count on its own. Moving `lin_not_equals` from `on_change` to
+`on_instantiated` (issue #807) dropped 9.9M of 17.8M calls on the `tpp`
+challenge model, whose flattened `int_lin_ne` has two terms, and moved the wall
+clock by nothing measurable (three instances, min-of-3, −0.3% to +0.7% against
+a ~1% run-to-run spread); the same change dropped 15.6M of 41.0M calls on a
+ten-term not-equals and was a reproducible 6.9% there. Both had identical
+`nodes` *and* identical `effectfulPropagations` — which is the shape to insist
+on, and the one that says the fixpoint at every node is untouched.
+
+**A `_micros` share is not necessarily wake cost.** `GCS_PROPAGATOR_STATS=time`
+brackets the propagator call, so a contradiction's `throw
+TrackedPropagationFailed` unwinds inside the sample. `lin_not_equals` on `tpp`
+reported 6.23 s of the model's 12.41 s of propagation, and 6.03 s of that
+survived removing 56% of its calls: it was 3.75M contradictions at ~1.6 µs
+each, not 17.8M wakes. Read the `_contradictions` column before reading a large
+`_micros` share as a trigger problem.
+
 ### Reuse the reason instead of rebuilding it
 
 A propagator that reasons over a fixed variable scope should build **one**
@@ -188,6 +207,34 @@ If the reason is materialised eagerly against the current state
 (`eager_reason(reason, state)`), or its literal set depends on what changed,
 it is per-call by nature and must not be hoisted. (`lex` is the in-tree example
 that is *not* hoisted for exactly this reason.)
+
+### Don't throw from a propagator that fails in bulk
+
+`inference.contradiction(...)` signals failure by throwing
+`TrackedPropagationFailed`, which the propagation loop catches. The throw and
+unwind cost about **1.6 us**, against ~15 ns for a propagator wake — so for a
+propagator that is the failure detector at a large fraction of nodes, the
+reporting mechanism can cost more than everything else it does. Such a
+propagator should use `contradiction_or_stop`, which does the same recording and
+logging, sets the `_contradicted` flag the `infer_*_or_stop` family sets, and
+returns the `PropagatorState` for the caller to return immediately:
+
+```cpp
+return inference.contradiction_or_stop(logger, JustifyUsingRUP{hint}, reason);
+```
+
+The loop tests `tracker.contradicted()` as soon as the propagator returns and
+does everything the catch clause does — the counters, the conflict observers —
+so nothing else changes. Converting `propagate_linear_not_equals`'s all-fixed
+check (issue #820) was worth **21% to 29%** end-to-end on three `tpp` challenge
+instances, at 1.58 us per contradiction avoided, with every count and the proof
+byte-identical.
+
+Pick the candidates off the `_contradictions` column of
+`GCS_PROPAGATOR_STATS=calls`, not by eye: a propagator that contradicts a few
+thousand times a search has nothing to gain, and the conversion is a control-flow
+change in the propagator (it must now return immediately, which
+`[[nodiscard]]` enforces) rather than a free win.
 
 ### Reuse data structures to avoid per-wake allocation
 

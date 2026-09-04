@@ -147,7 +147,8 @@ auto AutoTable::run(Problem & problem, Propagators & propagators, State & initia
     // derivation introduces its literals lazily; the propagator itself no longer
     // sees a selector at all.
     auto n_tuples = tuples.size();
-    ExtensionalData data{_vars, move(tuples), ExtensionalLiveTuples::create(initial_state, n_tuples)};
+    ExtensionalData data{_vars, move(tuples), ExtensionalLiveTuples::create(initial_state, n_tuples),
+        ExtensionalCompactTable::create_for_auto(initial_state, n_tuples)};
 
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};

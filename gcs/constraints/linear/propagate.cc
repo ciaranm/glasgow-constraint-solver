@@ -664,8 +664,11 @@ auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer 
     if (single_unset == coeff_vars.terms.end()) {
         // every variable is set, do a sanity check
         if (accum == value) {
-            // we've set every variable and have equality
-            inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(all_vars_for_reason));
+            // We've set every variable and have equality. Stop rather than throw: this
+            // is the failure detector for half the nodes of some searches (3.75M
+            // contradictions on one tpp challenge instance), and at ~1.6 us a throw and
+            // unwind that dominated everything else the propagator did (issue #820).
+            return inference.contradiction_or_stop(logger, JustifyUsingRUP{hint}, generic_reason(all_vars_for_reason));
         }
         else
             return PropagatorState::DisableUntilBacktrack;

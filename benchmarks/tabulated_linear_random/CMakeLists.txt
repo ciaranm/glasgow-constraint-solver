@@ -1,0 +1,3 @@
+add_executable(tabulated_linear_random tabulated_linear_random.cc)
+target_link_libraries(tabulated_linear_random PRIVATE glasgow_constraint_solver)
+target_link_libraries(tabulated_linear_random PRIVATE cxxopts)

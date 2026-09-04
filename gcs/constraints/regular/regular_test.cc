@@ -190,6 +190,24 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -
         2, {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},                       //
         {0});
 
+    // The same automaton over the alphabet {1,2} rather than {0,1}. Regular takes
+    // the symbol values it is given rather than assuming a 0-based alphabet, and
+    // fzn_regular relies on exactly that: FlatZinc regular numbers its alphabet
+    // 1..S, so the transition table arrives keyed 1..S and the variables are handed
+    // over unshifted. Before that, the redefinition shifted with a comprehension and
+    // every explicit-transitions case here started its alphabet at 0, so nothing
+    // covered a table whose keys miss zero.
+    run_regular_test(proofs, view_cfg, "even ones, 1-based alphabet", {{1, 2}, {1, 2}, {1, 2}}, //
+        2, {{{1_i, 1}, {2_i, 0}}, {{1_i, 0}, {2_i, 1}}},                                        //
+        {0});
+
+    // A 1-based alphabet with a gap in the middle: symbol 2 has no transition from
+    // either state, so every solution must avoid it even though it sits inside the
+    // variables' declared range. A bounds-only reading of the table cannot do this.
+    run_regular_test(proofs, view_cfg, "1-based alphabet with a hole", {{1, 3}, {1, 3}, {1, 3}}, //
+        2, {{{1_i, 1}, {3_i, 0}}, {{1_i, 0}, {3_i, 1}}},                                         //
+        {0});
+
     // DFA: no two consecutive 0s, binary alphabet {0,1}
     // State 0 (initial, final): 0->1, 1->0
     // State 1 (final, last was 0): 0->dead (absent), 1->0
