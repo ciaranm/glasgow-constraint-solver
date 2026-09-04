@@ -118,6 +118,8 @@ namespace gcs
         bool _gac_all_different = false;
         std::optional<IntegerVariableID> _tour_size;
         std::optional<long> _required_node;
+        bool _prune_root = false;
+        bool _prune_within = false;
 
         // The node the position encoding is anchored on, settled by prepare(): what
         // with_required_node() named, or the lowest-numbered node whose declared domain
@@ -173,6 +175,42 @@ namespace gcs
         /// is what the SCC propagation needs, which cannot infer anything at all until some
         /// node is known to be on the tour.
         auto with_required_node(long node) -> SubCircuit &;
+
+        /// Add Francis and Stuckey's *prune root* rule to subcircuit::SCC: try each value
+        /// the anchor's successor could take, and remove any that would leave a node which
+        /// must be on the tour unreachable from the anchor. Off by default, and ignored
+        /// without subcircuit::SCC, which it strengthens rather than replaces.
+        ///
+        /// This is singleton arc consistency on the anchor's successor with respect to the
+        /// reachability rule, which is at least what F&S's rule prunes: their condition ---
+        /// that the edge leads to a subtree earlier than the last --- is a sufficient
+        /// condition for the assumed edge stranding something, found cheaply from the
+        /// depth-first traversal they already have, where this tries every value.
+        ///
+        /// **It is expensive, and deliberately so.** One reachability walk per candidate
+        /// value, so `O(n^3)` work per propagator call against the plain rule's `O(n^2)`,
+        /// and the certificate is a fresh `O(n^2)`-row induction per pruning. Measured on
+        /// the MiniZinc Challenge `subcircuit` families the walk alone is already 87--98%
+        /// of all propagation time and the node reduction it buys is 1.09--1.38x, so this
+        /// is not switched on in the hope of going faster. It is here because the rule is
+        /// certifiable and worth having implemented and checkable.
+        auto with_prune_root(std::optional<bool> enable = true) -> SubCircuit &;
+
+        /// Add Francis and Stuckey's *prune within* rule to subcircuit::SCC: ask the same
+        /// question with_prune_root() asks of the anchor's successor, of every other node's.
+        /// Off by default, and ignored without subcircuit::SCC.
+        ///
+        /// The two rules are split at the anchor so that they do not overlap: with both on,
+        /// every successor is shaved exactly once, and each flag maps to one of F&S's rules
+        /// (theirs is stated over a first child whose exploration never reaches above its
+        /// parent, which is a cheap sufficient condition for the assumed edge stranding
+        /// something).
+        ///
+        /// **This is the expensive one.** A reachability walk per node per candidate value
+        /// is `O(n^4)` work per propagator call, and each pruning writes another
+        /// `O(n^2)`-row induction. It is here to be correct and checkable, not to be fast;
+        /// see with_prune_root() for what the measurements say about that.
+        auto with_prune_within(std::optional<bool> enable = true) -> SubCircuit &;
 
         /// Constrain how many nodes are on the tour: `size` is the number that do not
         /// point at themselves. This is XCSP3's `size` argument, for which MiniZinc's
