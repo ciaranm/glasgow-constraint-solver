@@ -140,6 +140,47 @@ auto run_empty_test(bool proofs) -> void
     check_results(proof_name, expected, actual);
 }
 
+// A caller can hand over successors whose declared domains reach outside 0..n-1 --- a
+// variable sized from a loop bound, or one shared with another constraint that needed a
+// wider range. prepare() narrows them with define_bound() rather than rejecting them, and
+// that guard is what the position encoding's range assumption rests on: there is a `p[i]`
+// row per value in 0..n-1 and nothing else keeps succ[i] inside that. Every other test
+// here declares exactly 0..n-1, so without this one the guard is a no-op, and a no-op
+// passes every check.
+//
+// Run bare rather than through the view sweep: a view's own bounds are what would be
+// widened, and the guard is about the successor the constraint sees.
+auto run_wide_domain_test(bool proofs, int n, SubCircuitPropagator propagator) -> void
+{
+    auto prop_label = propagator == SubCircuitPropagator::prevent ? "prevent" : "check";
+    print(cerr, "subcircuit/{} wide domains n={}{}", prop_label, n, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    // Two either side, so a negative value, a value equal to n, and one beyond it are all
+    // declared. is_subcircuit rejects every one of them, so the expected set is the same as
+    // the 0..n-1 run's --- which is the point: the answer must not change. It also keeps
+    // the anchor search honest, since a node whose own index is out of a *wider* domain is
+    // not thereby on the tour.
+    vector<pair<int, int>> domains(static_cast<std::size_t>(n), pair{-2, n + 1});
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, [&](vector<int> succ) { return is_subcircuit(succ); }, domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> succ;
+    for (int i = 0; i < n; ++i)
+        succ.push_back(p.create_integer_variable(-2_i, Integer{n + 1}));
+    if (propagator == SubCircuitPropagator::prevent)
+        p.post(SubCircuit{succ}.with_algorithm(subcircuit::Prevent{}));
+    else
+        p.post(SubCircuit{succ}.with_algorithm(subcircuit::Check{}));
+
+    auto proof_name = proofs ? make_optional("subcircuit_test_wide_" + std::string{prop_label}) : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{succ});
+    check_results(proof_name, expected, actual);
+}
+
 // The tour size, XCSP3's `size` argument. Enumerated against the same reference check with
 // the count computed alongside it, so the option is pinned to "how many nodes do not point
 // at themselves" and not to some off-by-one reading of it.
@@ -301,6 +342,10 @@ auto main(int argc, char * argv[]) -> int
             if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
                 run_subcircuit_test(proofs, view_cfg, 1, propagator);
                 run_subcircuit_test(proofs, view_cfg, 2, propagator);
+                // n = 1 as well: its one solution is the self-loop, and it is the smallest
+                // case where an out-of-range value could reach the position encoding.
+                run_wide_domain_test(proofs, 1, propagator);
+                run_wide_domain_test(proofs, 4, propagator);
             }
         }
         if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {

@@ -85,6 +85,12 @@ namespace
         vector<vector<long>> chains;
     };
 
+    // Every fixed successor value is assumed to be in 0..n-1, and indexes straight into
+    // has_fixed_pred without a check: this runs on every call, so the range is an
+    // invariant to be established once rather than tested here. SubCircuit::prepare()
+    // establishes it, define_bound()ing each successor to 0..n-1 before search starts.
+    // Losing that guard does not give wrong answers here, it segfaults --- which is what
+    // the wide-domain case in subcircuit_test.cc exists to keep from happening quietly.
     auto walk_fixed_edges(const vector<IntegerVariableID> & succ, const State & state) -> FixedEdges
     {
         auto n = static_cast<long>(succ.size());

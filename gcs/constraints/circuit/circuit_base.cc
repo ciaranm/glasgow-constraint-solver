@@ -42,8 +42,19 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
     if (current_val == nullopt)
         throw UnexpectedException("Circuit propagator tried to output a cycle that doesn't exist");
 
+    // Cannot happen, and only the negative side is checked here --- deliberately, because
+    // that is the side as_index() below cannot catch: it is an unchecked cast, so a
+    // negative value would index the position map at a vast offset rather than fail. A
+    // value >= n reaches plus_one_lines.at() instead, which is checked and throws
+    // std::out_of_range on its own.
+    // Circuit::prepare() define_bound()s every successor to 0..n-1, which is one phase
+    // earlier than the constructor could manage (a variable's domain lives in the State,
+    // not in the handle) and long before any propagator runs, so nothing outside that
+    // range survives to be output here. Issue #201 asked for this to become a
+    // problem-definition error hoisted out of proof emission; the hoisted version is
+    // that define_bound, and what is left here is a bug check (#201).
     if (*current_val < 0_i)
-        throw UnimplementedException("Successor encoding for circuit can't have negative values");
+        throw UnexpectedException("Circuit propagator output a negative successor, which prepare() should have ruled out");
 
     PolBuilder pol;
     pol.add(pos_var_data.at(start).plus_one_lines.at(current_val->as_index()).geq_line);
