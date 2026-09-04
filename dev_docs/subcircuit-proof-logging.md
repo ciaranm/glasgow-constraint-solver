@@ -431,12 +431,107 @@ The same shape is in four more redefinitions — the three `bin_packing` ones an
 `fzn_regular` — and is [issue #803](https://github.com/ciaranm/glasgow-constraint-solver/issues/803).
 The graph family shifts *parameters*, which costs nothing.
 
-## Not implemented
+## Not implemented: F&S's pruning rules, and what certifying them would take
 
-F&S's four extra `scc` pruning rules — prune root, prune skip, fix required edges
-and prune within — with the evidence-node guard each one needs for `subcircuit`.
-Those need the subtree structure of a depth-first traversal, where the two
-reachability walks need only the component. Their explanations are all `O(n²)`.
+F&S's remaining `scc` rules — prune root, prune skip, fix required edges and prune
+within — with the evidence-node guard each one needs for `subcircuit`. Their
+explanation clauses are §5.3.2 of the paper, numbered 1 to 7 there and referred to
+by those numbers below.
+
+They are stated over the **subtree structure of a depth-first traversal**: which
+subtree was visited before which, and the lowpoint of a node's first child. Our
+encoding knows nothing about that. `pos` is a *tour-order* labelling, not a DFS
+one, and it is pinned at exactly one place, `pos[anchor] = 0`.
+
+That sounds like an obstacle and mostly is not, because the DFS tree turns out to
+be how the propagator *finds* these inferences rather than why they hold. Working
+each clause back to what makes it true:
+
+**Rules 1 and 5, and the conflict cases of 3 and 4, are already ours.** Rule 1 is
+a strongly connected sub-component `S` with an evidence node `a ∈ S`. Given an
+anchor there are only two cases and the walks cover both: if the anchor is in `S`
+then nothing outside `S` is forward-reachable from it, and if it is not, then `a`
+cannot reach the anchor. Rule 5 (an edge skipping subtrees) is the same argument
+over the partition its reason describes — with no `A → B ∪ C` and no `B → C`
+edges, whichever of the three sets holds the anchor leaves one of the other two
+unreachable in one direction or the other. The general shape is a **cut**: if
+`A` and `V \ A` both contain an evidence node and no edge crosses `A → V \ A`,
+then whichever side the anchor is on, the other side is stranded, so one of the
+two walks fires. That cut fact is what all of 2, 3, 4 and 5 rest on.
+
+**Prune root (rule 6) and prune within (rule 7) are strictly stronger than what we
+do, and both are the existing induction run under one assumed edge.** Prune root:
+assume `succ[anchor] = e`; if the last subtree is only reachable through the
+anchor, it is now unreachable, so its evidence node is forced off the tour, which
+contradicts the evidence literal. Prune within: assume `succ[p] = c`; the subtree
+at `c` then has no way back out, so the backward walk strands it, and `succ[p] = c`
+with `c` a self loop takes value `c` twice. Neither fires on the live domains,
+which is precisely why they add strength.
+
+So, in this encoding, **prune root and prune within are singleton arc consistency
+(shaving) on the successor variables**, over the candidates a DFS pass identifies
+cheaply.
+
+### This was probed rather than argued
+
+`~/claude/tmp/788-subcircuit-step0/prune_root_probe.cc`: six nodes, anchor 0 with
+candidates `{1, 4}`, a strongly connected `{1,2,3}` with no edge to `{4,5}`, and
+node 4 required on the tour and reachable only through `0 -> 4`. Every successor in
+`{1,2,3}` keeps two values under the hypothesis, so all-different fixes nothing and
+no cycle closes, which is what stops `check` and `prevent` getting there first.
+
+* Free, it is satisfiable and `scc` infers enough to find the solution without
+  search (1 recursion, against `prevent`'s 5).
+* With `succ[0] = 1` posted after the constraint — so the declared domain, and
+  hence the encoding, is untouched — `scc` reaches the contradiction at the root
+  (1 recursion; `prevent` needs 3), and the proof **verifies**:
+  `s VERIFIED UNSATISFIABLE`.
+* Swapping `derive_unreachable` for a plain `JustifyUsingRUP` makes VeriPB
+  **reject** it, at `.pbp:95`. So the induction is doing the work, not unit
+  propagation.
+
+**The existing certificate therefore survives being run under a hypothesis, with
+no new row family, no new proof-only variable and no new cutting-planes step.**
+That is the substantive finding: for these two rules the proof-logging question is
+already answered, and the work is propagator work.
+
+### The four things that would actually be hard
+
+1. **Proof size, which is the binding constraint.** The induction emits one row
+   per (layer, unreached node), `O(n²)` rows per inference. Once per candidate
+   value of a successor makes it `O(n³)` rows per propagator call. The real
+   15-house instance already writes a 186 MB `.pbp` with the walks firing once;
+   measure before building.
+2. **Forced edges: shave, do not derive the cut row.** Rules 2 and 3 conclude
+   `succ[c] = b`. Two routes. Shaving gives it as a by-product — remove every
+   other candidate, and the variable's own at-least-one row unit-propagates the
+   survivor — at one induction per candidate, each carrying **one** extra guard
+   literal, so `O(n³)` literals to shave a variable. Deriving the cut row
+   `Σ_{i∈A, j∉A} [succ[i] = j] ≥ 1` instead needs one induction, but every row of
+   it carries the whole crossing set as guards: `O(n²)` guards on `O(n²)` rows,
+   `O(n⁴)` literals. Fine at `n = 15`, hopeless at competitive `n`. The cheaper
+   route is the one that looks more wasteful.
+3. **Where the hypothesis lives.** The `E(t, x)` rows are derived under an assumed
+   edge, so either they carry that literal as a guard (sound, one literal longer
+   per row) or they are emitted at a level deleted once the conclusion is drawn
+   (shorter, needs the level discipline to be right). Worth deciding before
+   writing any of it.
+4. **The one case genuinely out of reach: rule 1 with no anchor.** F&S guard it
+   with `in(a)` alone and need no root. Our induction has to start somewhere, and
+   `pos` is pinned only at the anchor; for an arbitrary component the layers would
+   have to be indexed relative to `pos[a]`, which is unknown. This is the one
+   place the "arbitrary root" position-offset problem --- argued on
+   [#788](https://github.com/ciaranm/glasgow-constraint-solver/issues/788) to be no
+   blocker, correctly, for the arm as it stands --- is real — and it is unreachable for us anyway, since the arm does nothing without
+   an anchor.
+
+### A sign error in the paper, for whoever implements from it
+
+§5.3.2 defines `in(a)` as "node `a` must be included in the circuit ... (i.e.
+`a ∈ D(x_a)`)". Those two halves disagree: a node that must be on the tour is one
+whose own index has been *removed*, `a ∉ D(x_a)`. Every clause body in the section
+writes `x_a ≠ a`, which is the correct reading, so it is the parenthetical that is
+inverted.
 
 Also not implemented, and deliberately: F&S's evidence-literal selection
 heuristic. They report that "fixed highest in the search tree" is a little better
