@@ -216,6 +216,10 @@ if(GCS_BUILD_TESTS)
     add_test(NAME difference_logic_presolver_proofs
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:difference_logic_presolver_test> proofs)
 
+    add_executable(auto_table_presolver_test presolvers/auto_table/auto_table_test.cc)
+    target_link_libraries(auto_table_presolver_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME auto_table_presolver_test COMMAND $<TARGET_FILE:auto_table_presolver_test>)
+
     add_executable(inferred_cumulative_presolver_test presolvers/inferred_cumulative/inferred_cumulative_test.cc)
     target_link_libraries(inferred_cumulative_presolver_test PRIVATE glasgow_constraint_solver)
     add_test(NAME inferred_cumulative_presolver

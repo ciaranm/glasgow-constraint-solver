@@ -52,6 +52,20 @@ namespace gcs
         /// other measurement, exactly like a slow model.
         std::size_t search_nodes = 0;
 
+        /// Whether the table that was installed is large enough for the
+        /// compact-table algorithm, which since #809 this presolver's tables can
+        /// use. It follows from `tuples` --- the threshold is
+        /// innards::ExtensionalCompactTable::min_tuples --- but that threshold
+        /// is an innards constant, so a caller holding this block cannot work it
+        /// out. Whether the propagator then goes on to *use* the algorithm is a
+        /// separate question, decided during search and by measurement; this is
+        /// only whether it was offered the choice.
+        ///
+        /// Last in the block on purpose, so that it gets its own eight bytes
+        /// rather than sharing `ran`'s padding: see `field_count` in
+        /// solve_test.cc for what depends on that.
+        bool compact_table = false;
+
         [[nodiscard]] virtual auto component_name() const -> std::string override;
         [[nodiscard]] virtual auto summary() const -> std::string override;
         [[nodiscard]] virtual auto entries() const -> std::vector<StatsEntry> override;
