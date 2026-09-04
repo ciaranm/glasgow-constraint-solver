@@ -27,12 +27,16 @@ namespace gcs::innards
      * a variable that is not a makespan gets a task with no link, which costs
      * that task's energy, instead of a rejected proof.
      *
-     * Only the linear family, and only its two-term unconditional rows over
-     * plain variables with coefficients `+1` and `-1` --- which is what a
-     * scheduling model's makespan rows are, and what MiniZinc's `int_lin_le`
-     * flattens them to. A comparison spelling (`start + length <= makespan`)
-     * says the same thing over an offset view, whose bits would not cancel
-     * against the plain variable's in the `pol`, so it is not matched here.
+     * Both families, unconditionally-held rows only. From the linear family,
+     * two-term rows over plain variables with coefficients `+1` and `-1` ---
+     * which is what a scheduling model's makespan rows are, and what MiniZinc's
+     * `int_lin_le` flattens them to. From the comparison family, `start + length
+     * <= makespan` and `start <= makespan - length`, which say the same thing
+     * over an offset view: a view has its own `BinEnc` in the proof, so those
+     * rows are not stated in the underlying variables' bits, and
+     * makespan_energy cites the row in *deview mode* to put it back in them
+     * before the cancellation. A negated view is not this shape at all and is
+     * declined.
      *
      * The strongest row wins where a variable has several. With proofs off the
      * links are still found --- which is the point, since the bound they let

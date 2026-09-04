@@ -1,3 +1,4 @@
+#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
@@ -359,6 +360,24 @@ namespace
         }
     };
 
+    /// How a model spells the rows that say every task finishes by the makespan.
+    /// find_makespan_links has to recognise all three, and the energy
+    /// derivation cites whichever row it found --- which for the two comparison
+    /// spellings is stated over an offset view, whose BinEnc the confine `pol`
+    /// deviews before it can cancel. So each spelling is its own path through
+    /// the proof, not a restatement of the same one.
+    enum class MakespanRows
+    {
+        /// `LinearGreaterThanEqual{makespan - start, length}`, which is what a
+        /// scheduling model writes and what MiniZinc's int_lin_le flattens to.
+        Linear,
+        /// `LessThanEqual{start + length, makespan}`: the view is over the start.
+        OffsetOnStart,
+        /// `LessThanEqual{start, makespan - length}`: the view is over the
+        /// makespan. This is the shape the FlatZinc reader recovers.
+        OffsetOnMakespan
+    };
+
     struct Instance
     {
         vector<pair<int, int>> start_ranges;
@@ -370,6 +389,8 @@ namespace
         /// --- which is the entailment the makespan bound's derivation rests
         /// on, and the only thing that makes those demos legal.
         optional<int> makespan_horizon = nullopt;
+        /// Which spelling those rows get. Ignored without a horizon.
+        MakespanRows makespan_rows = MakespanRows::Linear;
         /// When non-empty, one per task: the domain that task's presence
         /// variable is declared over, and the constraint is posted with the
         /// optional-task constructor. A solution then carries every presence
@@ -438,7 +459,12 @@ namespace
         if (inst.makespan_horizon) {
             makespan = p.create_integer_variable(0_i, Integer{*inst.makespan_horizon}, "makespan");
             for (size_t i = 0; i < starts.size(); ++i)
-                p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * *makespan + -1_i * starts[i], lengths[i]});
+                switch (inst.makespan_rows) {
+                    using enum MakespanRows;
+                case Linear: p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * *makespan + -1_i * starts[i], lengths[i]}); break;
+                case OffsetOnStart: p.post(LessThanEqual{starts[i] + lengths[i], *makespan}); break;
+                case OffsetOnMakespan: p.post(LessThanEqual{starts[i], *makespan - lengths[i]}); break;
+                }
         }
 
         vector<IntegerVariableID> presences;
@@ -651,6 +677,39 @@ auto main(int argc, char * argv[]) -> int
         auto unproved = solve_it(makespan_instance, make_optional(Demo::Makespan), nullopt);
         if (unproved.makespan_bound != with_bound.makespan_bound)
             fail("makespan demo: the bound differs with proofs off");
+    }
+
+    // The same bound, from a model that spells its makespan rows as comparisons
+    // over an offset view rather than as two-term linear rows. Two things have
+    // to work that the linear spelling does not exercise: find_makespan_links
+    // recognising the shape at all --- miss it and there is no link, so the
+    // task's energy is not counted and the bound is not reached --- and the
+    // confine `pol` deviewing the row it cites, since the row is stated in
+    // BinEnc(V) and has to cancel against the start's and the makespan's own
+    // order literals. The first failure shows up as a wrong bound here, the
+    // second as a proof VeriPB rejects.
+    for (const auto & [spelling, tag] :
+        {pair{MakespanRows::OffsetOnStart, string{"offset_on_start"}}, pair{MakespanRows::OffsetOnMakespan, string{"offset_on_makespan"}}}) {
+        auto comparison_makespan = makespan_instance;
+        comparison_makespan.makespan_rows = spelling;
+
+        auto with_bound =
+            solve_it(comparison_makespan, make_optional(Demo::Makespan), proofs ? make_optional("derived_cumulative_makespan_" + tag) : nullopt);
+
+        if (with_bound.makespan_bound != make_optional(6_i))
+            fail("makespan demo, " + tag + ": the derived constraint inferred " +
+                (with_bound.makespan_bound ? std::to_string(with_bound.makespan_bound->raw_value) : string{"nothing"}) +
+                ", not the six its tasks' energy supports --- the model's rows were not recognised as makespan links");
+
+        set<vector<int>> expected;
+        build_expected(
+            expected, [&](const vector<int> & a) { return is_satisfying(comparison_makespan, a); }, assignment_ranges(comparison_makespan));
+        if (expected != with_bound.solutions)
+            fail("makespan demo, " + tag + ": solutions do not match brute force");
+
+        auto unproved = solve_it(comparison_makespan, make_optional(Demo::Makespan), nullopt);
+        if (unproved.makespan_bound != with_bound.makespan_bound)
+            fail("makespan demo, " + tag + ": the bound differs with proofs off");
     }
 
     // The same three tasks, made optional. What a derived constraint over an
