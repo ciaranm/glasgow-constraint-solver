@@ -5,10 +5,12 @@
 #include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/reason.hh>
 
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace gcs::innards
 {
@@ -54,6 +56,39 @@ namespace gcs::innards
 
     template <typename Hint_>
     JustifyUsingRUP(Hint_) -> JustifyUsingRUP<Hint_>;
+
+    /**
+     * \brief Specify that an inference is justified by case analysis over a set
+     * of proof flags, using VeriPB's `cases` rule.
+     *
+     * The mirror of JustifyUsingRUP for selector-style reasoning: the inferred
+     * literal follows because, under each \c case_flag, it holds by RUP, and the
+     * model's at-least-one constraint over those flags rules out the all-false
+     * case. The inference-tracker overloads turn this into a single
+     * `emit_cases_proof_line_under_reason` for the inferred literal (so it is a
+     * direct, persistent derivation, not temporary steps plus a RUP), optionally
+     * carrying a typed assertion hint exactly as JustifyUsingRUP does. In Off
+     * proof mode nothing is emitted.
+     *
+     * Each branch must be automatically provable (trivial, in-database, RUP, or
+     * implied by a database constraint) — this suits "exactly one selector holds"
+     * reasoning, not cross-variable cutting-planes case splits (use
+     * JustifyExplicitly there).
+     *
+     * \ingroup Innards
+     * \sa JustifyUsingRUP
+     */
+    template <typename Hint_ = NoHint>
+    struct JustifyUsingCases
+    {
+        std::vector<ProofFlag> case_flags;
+        [[no_unique_address]] Hint_ hint{};
+    };
+
+    JustifyUsingCases(std::vector<ProofFlag>) -> JustifyUsingCases<NoHint>;
+
+    template <typename Hint_>
+    JustifyUsingCases(std::vector<ProofFlag>, Hint_) -> JustifyUsingCases<Hint_>;
 
     /**
      * \brief Specify that an inference will be asserted rather than justified.
