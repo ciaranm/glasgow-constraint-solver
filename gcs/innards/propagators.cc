@@ -11,6 +11,7 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
+#include <any>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -18,10 +19,12 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <set>
 #include <span>
 #include <string>
+#include <typeindex>
 #include <unordered_map>
 #include <utility>
 
@@ -300,6 +303,11 @@ struct Propagators::Imp : RefinedWatchSink
     // stays movable, which create_propagators returning one by value needs.
     Stats * stats = nullptr;
 
+    // See Propagators::shared_derived_data. A std::map rather than a hash: it is
+    // touched once per constraint at install time and never during search, so
+    // the only thing worth having is not needing a hash for the key.
+    std::map<std::pair<const void *, std::type_index>, std::any> shared_derived_data;
+
     vector<PropagationFunction> propagation_functions;
     std::array<vector<InitialisationFunction>, number_of_initialiser_priorities> initialisation_functions_by_priority;
     // How many of each bucket initialise() has already run. A presolver can
@@ -553,6 +561,11 @@ auto Propagators::define_bound(const State & state, ProofModel * const optional_
         });
         return;
     }
+}
+
+auto Propagators::shared_derived_data_slot(const void * const key, const std::type_index type) -> std::any &
+{
+    return _imp->shared_derived_data[std::pair{key, type}];
 }
 
 auto Propagators::install(const ConstraintID & constraint_id, PropagationFunction && f, const Triggers & triggers) -> void

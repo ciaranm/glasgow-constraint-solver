@@ -47,10 +47,14 @@ auto gcs::innards::ExtensionalLiveTuples::create(State & initial_state, size_t n
     return result;
 }
 
-auto gcs::innards::ExtensionalCompactTable::create(State & initial_state, bool forced) -> shared_ptr<ExtensionalCompactTable>
+auto gcs::innards::ExtensionalCompactTable::create(State & initial_state, bool forced, shared_ptr<ExtensionalSupportMasks> supports)
+    -> shared_ptr<ExtensionalCompactTable>
 {
     auto result = make_shared<ExtensionalCompactTable>();
     result->forced = forced;
+    // A caller with nothing to share with gets a set of its own, so that the
+    // rest of the code never has to ask whether it is sharing.
+    result->supports = supports ? move(supports) : make_shared<ExtensionalSupportMasks>();
     // One plain integer, which std::any holds without allocating. Everything
     // else the compact table owns is restored by unwinding the trail down to
     // it: the words, the previous domains, and the limit.
@@ -58,9 +62,10 @@ auto gcs::innards::ExtensionalCompactTable::create(State & initial_state, bool f
     return result;
 }
 
-auto gcs::innards::ExtensionalCompactTable::create_for_auto(State & initial_state, size_t n_tuples) -> shared_ptr<ExtensionalCompactTable>
+auto gcs::innards::ExtensionalCompactTable::create_for_auto(State & initial_state, size_t n_tuples, shared_ptr<ExtensionalSupportMasks> supports)
+    -> shared_ptr<ExtensionalCompactTable>
 {
-    return n_tuples >= min_tuples ? create(initial_state, false) : shared_ptr<ExtensionalCompactTable>{};
+    return n_tuples >= min_tuples ? create(initial_state, false, move(supports)) : shared_ptr<ExtensionalCompactTable>{};
 }
 
 gcs::innards::ExtensionalData::ExtensionalData(
@@ -178,25 +183,28 @@ namespace
     /**
      * Lay out and fill the support masks: one bitset of n_words per (position,
      * value), holding the tuples whose entry at that position is that value.
-     * Returns false, leaving the compact table unusable, if any position could
-     * not be rasterised (a wildcard, or a value range too wide) or if the masks
-     * would be larger than the cap -- in either case the live-set algorithm
-     * runs instead.
+     * Returns false, leaving the masks unusable, if any position could not be
+     * rasterised (a wildcard, or a value range too wide) or if they would be
+     * larger than the cap -- in either case the live-set algorithm runs instead.
+     *
+     * Writes into the shared object rather than the constraint, since which
+     * masks a table has and whether it can have them at all follow from the
+     * tuples alone. \see ExtensionalSupportMasks
      */
-    auto build_compact_table(
-        ExtensionalCompactTable & ct, const ExtensionalDomainBitmaps & bitmaps, const ExtensionalData & table, const std::size_t n_tuples) -> bool
+    auto build_support_masks(ExtensionalSupportMasks & supports, const ExtensionalDomainBitmaps & bitmaps, const ExtensionalData & table,
+        const std::size_t n_tuples) -> bool
     {
         auto n_vars = table.vars.size();
         for (unsigned idx = 0; idx < n_vars; ++idx)
             if (! bitmaps.positions[idx].usable)
                 return false;
 
-        ct.n_words = extensional_words_for(n_tuples);
-        ct.mask_at.assign(n_vars, 0);
+        supports.n_words = extensional_words_for(n_tuples);
+        supports.mask_at.assign(n_vars, 0);
         std::size_t total = 0;
         for (unsigned idx = 0; idx < n_vars; ++idx) {
-            ct.mask_at[idx] = total;
-            auto here = bitmaps.positions[idx].n_values * ct.n_words;
+            supports.mask_at[idx] = total;
+            auto here = bitmaps.positions[idx].n_values * supports.n_words;
             if (here > ExtensionalCompactTable::max_mask_words - total)
                 return false;
             total += here;
@@ -204,11 +212,7 @@ namespace
         if (total > ExtensionalCompactTable::max_mask_words)
             return false;
 
-        ct.masks.assign(total, ExtensionalWord{});
-        ct.index.resize(ct.n_words);
-        ct.scratch.assign(ct.n_words, ExtensionalWord{});
-        ct.words.assign(ct.n_words, ExtensionalWord{});
-        ct.previous_domain.assign(bitmaps.words.size(), ExtensionalWord{});
+        supports.masks.assign(total, ExtensionalWord{});
         visit(
             [&](const auto & tuples) {
                 const auto & rows = *tuples;
@@ -219,12 +223,50 @@ namespace
                     for (unsigned idx = 0; idx < n_vars; ++idx) {
                         const auto & p = bitmaps.positions[idx];
                         auto off = static_cast<std::size_t>(compact_value(row[idx]) - p.base);
-                        ct.masks[ct.mask_at[idx] + off * ct.n_words + word] |= bit;
+                        supports.masks[supports.mask_at[idx] + off * supports.n_words + word] |= bit;
                     }
                 }
             },
             table.tuples);
 
+        supports.positions = bitmaps.positions;
+        return true;
+    }
+
+    /**
+     * Point this constraint at the shared masks and give it the per-constraint
+     * arrays that go with them, building the masks first if this is the
+     * constraint that got here first. False means the live-set algorithm runs
+     * instead, which is what a table the masks cannot describe falls back to --
+     * for every constraint over those tuples, not just the one that found out.
+     */
+    auto adopt_compact_table(
+        ExtensionalCompactTable & ct, const ExtensionalDomainBitmaps & bitmaps, const ExtensionalData & table, const std::size_t n_tuples) -> bool
+    {
+        auto & supports = *ct.supports;
+        if (ExtensionalSupportMasks::Status::Unbuilt == supports.status)
+            supports.status = build_support_masks(supports, bitmaps, table, n_tuples) ? ExtensionalSupportMasks::Status::Built
+                                                                                      : ExtensionalSupportMasks::Status::Declined;
+
+        if (ExtensionalSupportMasks::Status::Built != supports.status)
+            return false;
+
+        // Cannot fail: both rasterisations are computed from the same tuples by
+        // the same code, and the store these came from is keyed on the address
+        // of those tuples. Checked anyway because the masks are *indexed* by
+        // this, so a key that named the wrong data would otherwise read the
+        // wrong words and prune soundly-looking nonsense rather than complain.
+        if (supports.positions != bitmaps.positions || supports.n_words != extensional_words_for(n_tuples))
+            throw UnexpectedException{"shared table support masks do not match the table sharing them"};
+
+        ct.masks = supports.masks.data();
+        ct.mask_at = supports.mask_at;
+        ct.n_words = supports.n_words;
+
+        ct.index.resize(ct.n_words);
+        ct.scratch.assign(ct.n_words, ExtensionalWord{});
+        ct.words.assign(ct.n_words, ExtensionalWord{});
+        ct.previous_domain.assign(bitmaps.words.size(), ExtensionalWord{});
         return true;
     }
 
@@ -380,7 +422,7 @@ namespace
                 continue;
 
             const bool by_removals = n_removed <= n_kept;
-            const auto * const masks_here = ct.masks.data() + ct.mask_at[idx];
+            const auto * const masks_here = ct.masks + ct.mask_at[idx];
             bool any = false;
             for (std::size_t k = 0; k < domain_words; ++k) {
                 auto bits = by_removals ? (prev[k] & ~cur[k]) : cur[k];
@@ -446,7 +488,7 @@ namespace
         // would have made.
         for (unsigned idx = 0; idx < n_vars; ++idx) {
             const auto & p = bitmaps.positions[idx];
-            const auto * const masks_here = ct.masks.data() + ct.mask_at[idx];
+            const auto * const masks_here = ct.masks + ct.mask_at[idx];
             state.for_each_value_mutable(table.vars[idx], [&](Integer val) {
                 auto off = static_cast<unsigned long long>(val.raw_value - p.base);
                 bool supported = false;
@@ -562,7 +604,7 @@ auto gcs::innards::propagate_extensional(
             auto n_tuples = live.dense.size();
             auto mean_live = static_cast<std::size_t>(ct.total_live / ct.wakes);
             bool worth_it = forced || (mean_live >= ExtensionalCompactTable::min_mean_live && extensional_word_bits * mean_live >= n_tuples);
-            if (worth_it && build_compact_table(ct, bitmaps, table, n_tuples)) {
+            if (worth_it && adopt_compact_table(ct, bitmaps, table, n_tuples)) {
                 ct.built = true;
                 just_built = true;
             }

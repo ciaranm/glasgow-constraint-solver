@@ -273,3 +273,68 @@ TEST_CASE("A view of a distinct variable does not downgrade the claim")
     CHECK(state.upper_bound(x) == 5_i);
     CHECK(runs == 1);
 }
+
+// Propagators::shared_derived_data: the store that lets several constraints
+// over one shared input derive something from it once between them. Keyed by
+// (input address, type), created empty on the first ask, and the same object
+// thereafter --- which is the whole of what a caller relies on, since it then
+// fills the object in itself.
+
+namespace
+{
+    struct Derived
+    {
+        int filled_in = 0;
+    };
+
+    struct OtherwiseDerived
+    {
+        int filled_in = 0;
+    };
+}
+
+TEST_CASE("Shared derived data is shared between asks with the same key")
+{
+    Stats stats;
+    Propagators propagators{stats};
+    int input = 0;
+
+    auto first = propagators.shared_derived_data<Derived>(&input);
+    REQUIRE(first);
+    CHECK(0 == first->filled_in);
+    first->filled_in = 42;
+
+    // The second constraint over the same input sees what the first left there,
+    // rather than an empty one of its own.
+    auto second = propagators.shared_derived_data<Derived>(&input);
+    CHECK(second == first);
+    CHECK(42 == second->filled_in);
+}
+
+TEST_CASE("Shared derived data is not shared between different inputs")
+{
+    Stats stats;
+    Propagators propagators{stats};
+    int input = 0, other_input = 0;
+
+    auto first = propagators.shared_derived_data<Derived>(&input);
+    auto second = propagators.shared_derived_data<Derived>(&other_input);
+    CHECK(second != first);
+    CHECK(0 == second->filled_in);
+}
+
+TEST_CASE("Shared derived data is not shared between different types")
+{
+    Stats stats;
+    Propagators propagators{stats};
+    int input = 0;
+
+    // Two constraints deriving different things from one input get a slot each,
+    // rather than the second one finding the first one's object under its own
+    // type and failing the cast.
+    auto first = propagators.shared_derived_data<Derived>(&input);
+    first->filled_in = 42;
+    auto second = propagators.shared_derived_data<OtherwiseDerived>(&input);
+    CHECK(0 == second->filled_in);
+    CHECK(42 == first->filled_in);
+}
