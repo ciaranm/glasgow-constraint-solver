@@ -152,6 +152,29 @@ auto gcs::innards::makespan_energy::derive_makespan_bound(ProofLogger & logger, 
             if (! task.link->row)
                 throw ProofError{"makespan energy bound: a task's makespan link has no row to cite"};
             PolBuilder confine;
+            // Deview mode, because a link's row may be stated over an offset view
+            // --- a model that writes `start + length <= makespan`, or the
+            // `start <= makespan - length` the FlatZinc reader recovers from a
+            // two-term int_lin_le --- and a view has its own BinEnc in the OPB,
+            // which would not cancel against either variable's order-literal
+            // definitions below. Deview mode substitutes each BinEnc(V) term
+            // through the view's link axiom first, so the cancellation is the
+            // one this derivation describes. A row with no view terms has no
+            // deview-form registered and is pushed unchanged, so the linear
+            // family's proofs are byte-for-byte what they were.
+            //
+            // Removing this does not currently fail any fixture, and that is
+            // worth knowing rather than hiding: the framework pre-derives the
+            // atom-level `[V >= v] <=> [X >= k]` clauses for every view atom a
+            // proof uses, so the lemma's own reverse unit propagation can cross
+            // the V/X boundary in one step and reach the deadline literals
+            // without this clause. What it cannot do is *add* the row to the
+            // literal definitions, which is what this pol does --- so without
+            // deview mode the line emitted here is a valid consequence that is
+            // not the clause the comment below describes, and the first lemma
+            // that needs the clause rather than the atoms would fail somewhere
+            // far from the cause.
+            confine.enable_deview_mode(logger.names_and_ids_tracker());
             confine.add(*task.link->row);
             confine.add_for_literal(logger.names_and_ids_tracker(), task.start >= hi - task.link->bound + 1_i);
             confine.add_for_literal(logger.names_and_ids_tracker(), makespan < hi + 1_i);
