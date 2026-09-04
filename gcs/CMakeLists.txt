@@ -923,6 +923,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(propagators_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME propagators_test COMMAND $<TARGET_FILE:propagators_test>)
 
+    add_executable(propagator_call_stats_test innards/propagator_call_stats_test.cc)
+    target_link_libraries(propagator_call_stats_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME propagator_call_stats_test COMMAND $<TARGET_FILE:propagator_call_stats_test>)
+
     add_executable(idempotent_claim_checker_test innards/idempotent_claim_checker_test.cc)
     target_link_libraries(idempotent_claim_checker_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME idempotent_claim_checker_test COMMAND $<TARGET_FILE:idempotent_claim_checker_test>)

@@ -81,6 +81,51 @@ idea is worthwhile. Consistency has value: it removes a whole class of avoidable
 work and makes the next propagator's default the good one. Don't use this as a
 loophole for speculative single-constraint cleverness.
 
+### Find out which constraint is spending the time, before optimising one
+
+`GCS_PROPAGATOR_STATS=calls` adds a per-constraint-type block to the stats: how
+many constraints of that type there are, how many propagators they installed,
+and how many times those propagators were called, changed a domain, and
+contradicted. `GCS_PROPAGATOR_STATS=time` adds the elapsed time in each,
+totalled per type. It reaches `%%%mzn-stat:` lines from `fzn-glasgow -s`, `d PROPAGATOR CALLS ...`
+lines from `xcsp_glasgow_constraint_solver` (which prints its `d` statistics
+unconditionally), and the one-line summary from the default `operator<<` on
+`Stats`, so a sweep harness can tabulate it without any per-constraint
+plumbing.
+
+Read the two rungs for what they are. `calls` is one increment per propagator
+run, so a run with it on is comparable with a run without. `time` reads the
+clock twice per run — 13% on `tpp_3_5_20_1`, and far more if the model's
+propagators are individually tiny — so a timed run's own wall clock
+and nodes-per-second are *not* comparable with an untimed one. Read shares and
+per-call figures off a timed run, never throughput.
+
+The reason this section comes before the levers is that the aggregate
+`propagations:` count cannot tell you which constraint to look at, and the
+answer is regularly not the one you would guess. Two examples, both from the
+subcircuit families of the MiniZinc Challenge corpus (issue #788):
+
+- **A propagator's per-node cost is `calls-per-node` times `cost-per-call`, and
+  the two vary independently.** `SubCircuit`'s reachability arm looked free on
+  `tpp` and crushing on `mario`, at comparable `n`, which read as a per-call
+  cost that was not a function of `n`. It is not: per *call* it costs 7.4 µs at
+  `n = 15` and 31.2 µs at `n = 30` on `mario`, which is very nearly `n²`, and
+  7.7 µs at `n = 15` against 30.7 µs at `n = 35` on `tpp` — it is the most
+  expensive propagator per call in that model. It is woken **676 times in
+  a 7.5-million-node search** there, because `tpp` fixes its 15 successors in
+  the first 15 levels and then spends the whole search below them on
+  `purchaseLoc`. On `mario`, whose search *is* the successors, it is woken 1.5
+  times a node. Optimising the body would have been the right call and the
+  per-node figure alone said the opposite.
+- **A propagator can be 50% of the time while pruning nothing at all.** On
+  `tpp` the twenty `lin_not_equals` constraints are called 17.8 million times,
+  remove a value **once** in the entire search, contradict 3.75 million times,
+  and take half the propagation time. That is a propagator whose wake condition
+  is far looser than the only situation it can act in, which is the first lever
+  below and not a body optimisation.
+
+So: get the per-type breakdown first, and pick the lever from it.
+
 ## Levers, cheapest first
 
 ### Better triggers and idempotence
@@ -387,11 +432,17 @@ When a model is slow, "the propagator is slow" is only one of three
 possibilities, and they have completely different fixes:
 
 1. the propagator is slow **per call** (this document);
-2. the propagator's **strength** is wrong for the problem — too weak (search
+2. the propagator is **called too often** for what it can infer (the triggers
+   lever, and the first thing `GCS_PROPAGATOR_STATS` tells you);
+3. the propagator's **strength** is wrong for the problem — too weak (search
    explores too much) or too strong (propagation costs more than the nodes it
    saves);
-3. the **search heuristic** is making bad decisions, so no propagator speed
+4. the **search heuristic** is making bad decisions, so no propagator speed
    fixes the node count.
+
+The per-type breakdown separates 1 from 2, which the aggregate counts cannot:
+divide the calls by the nodes for how often, and the time by the calls for how
+expensive, and never read one of those off the other.
 
 Comparing against **Gecode** and the **MiniCP benchmarks** is a useful way to
 tell these apart: if we explore far more nodes than Gecode on the same model,
