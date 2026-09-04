@@ -21,6 +21,26 @@ set_tests_properties(minizinc-two-term-lin-eq PROPERTIES SKIP_RETURN_CODE 66 ENV
 add_test(NAME minizinc-two-term-lin-ne COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern int_lin_ne $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ twotermlinne true true "-s" "propagatorCallsNotEqualsConstraints=4")
 set_tests_properties(minizinc-two-term-lin-ne PROPERTIES SKIP_RETURN_CODE 66 ENVIRONMENT "GCS_PROPAGATOR_STATS=calls")
 
+# The same for `x - y <= d`, which is the most common of the three shapes. The
+# second lane is the one that matters: it pins that the recovered LessThanEqual
+# still reaches the difference-logic presolver, which enumerates
+# ReifiedCompareLessThanOrMaybeEqual donors as well as ReifiedLinearInequality
+# ones -- six edges lifted either way, and through the comparison family after
+# the rewrite, which is what differenceLogicComparisonEdgesLifted counts.
+# These two are the only pair of minizinc lanes sharing a testname, and every
+# scratch file run_minizinc_test.bash writes --- the .fzn, the captured output,
+# the proof basename --- is named after it, so under a parallel ctest they
+# clobber each other (the same hazard as issue #562, and it does fail: the
+# difference-logic lane loses its output file to the plain one's run). The
+# RESOURCE_LOCK serialises them.
+add_test(NAME minizinc-two-term-lin-le COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern int_lin_le $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ twotermlinle true true "-s" "propagatorCallsLessEqualConstraints=8")
+set_tests_properties(minizinc-two-term-lin-le PROPERTIES SKIP_RETURN_CODE 66 ENVIRONMENT "GCS_PROPAGATOR_STATS=calls"
+    RESOURCE_LOCK twotermlinle)
+
+add_test(NAME minizinc-two-term-lin-le-difference-logic COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern int_lin_le $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ twotermlinle true true "-s --difference-logic" "propagatorCallsLessEqualConstraints=8" "differenceLogicEdgesLifted=6" "differenceLogicComparisonEdgesLifted=6")
+set_tests_properties(minizinc-two-term-lin-le-difference-logic PROPERTIES SKIP_RETURN_CODE 66 ENVIRONMENT "GCS_PROPAGATOR_STATS=calls"
+    RESOURCE_LOCK twotermlinle)
+
 add_test(NAME minizinc-alldifferentexcept COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ alldifferentexcept true true)
 set_tests_properties(minizinc-alldifferentexcept PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -161,7 +181,11 @@ set_tests_properties(minizinc-disjunctive-strict-opt PROPERTIES SKIP_RETURN_CODE
 add_test(NAME minizinc-differencelogic COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ differencelogic true true
     "-s --difference-logic"
     "^%%%mzn-stat: differenceLogicEdgesLifted=4$"
-    "^%%%mzn-stat: differenceLogicComparisonEdgesLifted=0$"
+    # Four via the comparison family, because the FlatZinc reader recovers a
+    # two-term int_lin_le as LessThanEqual: the presolver enumerates both donor
+    # families, so the same four edges lift, and this counter is what says which
+    # way in. It was 0 before that recovery existed.
+    "^%%%mzn-stat: differenceLogicComparisonEdgesLifted=4$"
     "^%%%mzn-stat: differenceLogicNodes=4$"
     "^%%%mzn-stat: differenceLogicSkippedNotTwoTerms=1$"
     "^%%%mzn-stat: differenceLogicSkippedCoefficients=1$"

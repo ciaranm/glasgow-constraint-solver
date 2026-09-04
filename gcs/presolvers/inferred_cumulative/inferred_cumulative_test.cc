@@ -41,6 +41,7 @@
  * rather than only over the fixture built to need it.
  */
 
+#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/linear.hh>
@@ -219,11 +220,18 @@ namespace
         shared_ptr<InferredCumulativeStats> stats = nullptr;
         shared_ptr<InferredDisjunctiveStats> disjunctive_stats = nullptr;
 
-        /// Add a makespan variable, the `start_i + length_i <= makespan` rows
-        /// that make it one, and minimise it --- so that the cut's capacity
-        /// bound is not only reported but derived, and the search starts from
-        /// it.
+        /// Add a makespan variable, the rows that make it one, and minimise it
+        /// --- so that the cut's capacity bound is not only reported but
+        /// derived, and the search starts from it.
         bool minimise_makespan = false;
+
+        /// Spell those rows as `start_i <= makespan - length_i`, which is what
+        /// the FlatZinc reader recovers from a two-term int_lin_le, rather than
+        /// as the two-term linear row a hand-written model uses.
+        /// find_makespan_links has to find the link either way: if it does not,
+        /// no task carries a deadline, the energy argument reaches no bound, and
+        /// certified_makespan_bound below is zero.
+        bool comparison_makespan_rows = false;
     };
 
     auto post(Problem & p, const Instance & instance, const Setup & setup) -> vector<IntegerVariableID>
@@ -236,7 +244,10 @@ namespace
         if (setup.minimise_makespan) {
             makespan = p.create_integer_variable(0_i, Integer{instance.horizon}, "makespan");
             for (std::size_t i = 0; i < starts.size(); ++i)
-                p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * *makespan + -1_i * starts[i], instance.lengths[i]});
+                if (setup.comparison_makespan_rows)
+                    p.post(LessThanEqual{starts[i], *makespan - instance.lengths[i]});
+                else
+                    p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * *makespan + -1_i * starts[i], instance.lengths[i]});
             p.minimise(*makespan);
         }
 
@@ -442,6 +453,31 @@ auto main(int argc, char * argv[]) -> int
                 (certified.best_makespan ? to_string(certified.best_makespan->raw_value) : string{"unreachable"}) + ", not the thirteen expected");
         if (*certified.best_makespan < stats->certified_makespan_bound)
             fail("certified bound: derived a bound above a schedule that exists");
+
+        // The same again with the makespan rows spelled the way the FlatZinc
+        // reader spells them --- `start <= makespan - length`, a comparison over
+        // an offset view rather than a two-term linear row. This is the end of
+        // the coupling #825 is about: the reader picks the class, this presolver
+        // never sees the model any other way, and find_makespan_links is the
+        // only thing that knows both. Post a class it does not know and nothing
+        // errors --- every task simply loses its deadline and the bound below
+        // goes to zero, which is why it is pinned here rather than left to the
+        // derivation's own fixtures.
+        {
+            auto comparison_stats = make_shared<InferredCumulativeStats>();
+            auto comparison =
+                solve_instance(lifted_instance(13), Setup{.stats = comparison_stats, .minimise_makespan = true, .comparison_makespan_rows = true},
+                    proofs ? make_optional("inferred_cumulative_makespan_comparison") : nullopt);
+
+            if (comparison_stats->certified_makespan_bound != 11_i)
+                fail("certified bound, comparison rows: derived a makespan bound of " +
+                    to_string(comparison_stats->certified_makespan_bound.raw_value) +
+                    ", not the eleven the two-term linear spelling derives --- the model's rows were not recognised as makespan links");
+            if (comparison.best_makespan != make_optional(13_i))
+                fail("certified bound, comparison rows: the optimum is " +
+                    (comparison.best_makespan ? to_string(comparison.best_makespan->raw_value) : string{"unreachable"}) +
+                    ", not the thirteen expected");
+        }
 
         // The same number with proofs off, or the solver is doing different
         // arithmetic depending on whether anyone is watching.
