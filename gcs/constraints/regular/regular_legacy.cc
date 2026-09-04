@@ -435,6 +435,7 @@ auto RegularLegacy::with_short_reasons(std::optional<bool> short_reasons) -> Reg
 
 auto RegularLegacy::clone() const -> unique_ptr<Constraint>
 {
+    // The set-valued-transitions constructor is private, so make_unique cannot reach it.
     return unique_ptr<Constraint>(new RegularLegacy(_vars, _num_states, _transitions, _final_states, _symbols, _short_reasons, _regex));
 }
 
