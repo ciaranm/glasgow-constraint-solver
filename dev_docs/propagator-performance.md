@@ -189,6 +189,34 @@ If the reason is materialised eagerly against the current state
 it is per-call by nature and must not be hoisted. (`lex` is the in-tree example
 that is *not* hoisted for exactly this reason.)
 
+### Don't throw from a propagator that fails in bulk
+
+`inference.contradiction(...)` signals failure by throwing
+`TrackedPropagationFailed`, which the propagation loop catches. The throw and
+unwind cost about **1.6 us**, against ~15 ns for a propagator wake — so for a
+propagator that is the failure detector at a large fraction of nodes, the
+reporting mechanism can cost more than everything else it does. Such a
+propagator should use `contradiction_or_stop`, which does the same recording and
+logging, sets the `_contradicted` flag the `infer_*_or_stop` family sets, and
+returns the `PropagatorState` for the caller to return immediately:
+
+```cpp
+return inference.contradiction_or_stop(logger, JustifyUsingRUP{hint}, reason);
+```
+
+The loop tests `tracker.contradicted()` as soon as the propagator returns and
+does everything the catch clause does — the counters, the conflict observers —
+so nothing else changes. Converting `propagate_linear_not_equals`'s all-fixed
+check (issue #820) was worth **21% to 29%** end-to-end on three `tpp` challenge
+instances, at 1.58 us per contradiction avoided, with every count and the proof
+byte-identical.
+
+Pick the candidates off the `_contradictions` column of
+`GCS_PROPAGATOR_STATS=calls`, not by eye: a propagator that contradicts a few
+thousand times a search has nothing to gain, and the conversion is a control-flow
+change in the propagator (it must now return immediately, which
+`[[nodiscard]]` enforces) rather than a free win.
+
 ### Reuse data structures to avoid per-wake allocation
 
 The same principle applies to scratch state generally: a propagator that
