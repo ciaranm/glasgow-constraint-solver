@@ -5,6 +5,7 @@
 #include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/bits_encoding.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -331,6 +332,7 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
     }
 
     auto range = (global_hi - global_lo + 1_i).raw_value;
+    GCS_CHECK_LARGE_DOMAIN("the horizon a cumulative overload check is being sized by", range);
     vector<long long> starting_or_ending(static_cast<size_t>(range) + 1, 0);
     for (auto i : active_tasks) {
         ++starting_or_ending[static_cast<size_t>((per_task_t_lo[i] - global_lo).raw_value)];
@@ -1321,6 +1323,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         return PropagatorState::DisableUntilBacktrack;
 
     auto range = (t_hi - t_lo + 1_i).raw_value;
+    GCS_CHECK_LARGE_DOMAIN("the horizon a cumulative time-table is being sized by", range);
     vector<Integer> mand_load(range, 0_i);
 
     // Only tasks known present have a mandatory part: an undecided one might
@@ -1515,6 +1518,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         constexpr auto max_knapsack_capacity = 4096;
         auto knapsack_rule = rules.knapsack_overload && capacity <= Integer{max_knapsack_capacity};
         auto knapsack_words = static_cast<size_t>(capacity.raw_value / 64 + 1);
+        if (elastic_rules)
+            GCS_CHECK_LARGE_DOMAIN("the window a cumulative elastic profile is being sized by", range);
         vector<Integer> optional_height(elastic_rules ? static_cast<size_t>(range) : 0, 0_i);
         vector<uint64_t> reachable(elastic_rules && knapsack_rule ? static_cast<size_t>(range) * knapsack_words : 0, 0);
 

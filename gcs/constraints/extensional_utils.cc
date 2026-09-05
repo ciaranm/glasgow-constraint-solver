@@ -14,6 +14,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/justification.hh>
+#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state-fwd.hh>
@@ -721,6 +722,7 @@ auto gcs::innards::propagate_extensional(
         for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
             auto [lo, hi] = state.bounds(table.vars[idx]);
             residues.base[idx] = lo.raw_value;
+            GCS_CHECK_LARGE_DOMAIN("the domain an extensional residue row is being sized by", (hi - lo).raw_value + 1);
             residues.support[idx].assign(static_cast<std::size_t>((hi - lo).raw_value + 1), ExtensionalResidues::none);
         }
         residues.initialised = true;
