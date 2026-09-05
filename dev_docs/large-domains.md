@@ -159,6 +159,58 @@ known good:
   the per-value work is in `prepare()`, but a constraint whose *encoding* alone
   is per-value would not be. A proofs axis is the obvious next addition.
 
+## Proofs
+
+**Out of scope for fixing.** Several of these have no viable fix today, and a
+propagator is never weakened for proof size ([propagator-performance.md](propagator-performance.md)).
+The reason to measure it anyway is that the bad cases are *evidence*: where an
+inference's justification emits one near-identical step per value — the same
+derivation with a different constant substituted in — a VeriPB feature that
+could express the whole family in one step would take an O(n) or better bite out
+of it. This survey is where candidates for such a feature come from.
+
+```shell
+# from a build with the guard OFF, so the probes are not stopped before they write
+./build/large_domain_audit_test "[.proofscaling]"
+```
+
+It runs every probe at widths 10^3 and 10^4 and reports OPB rows and proof steps
+separately, because they mean different things:
+
+* **OPB rows growing with the width** is an encoding that is per-value. That is a
+  modelling problem, and no checker feature helps.
+* **Proof steps growing at a *fixed* encoding** is the copy-paste, and is what a
+  checker feature could collapse.
+
+### Results at 10^3 → 10^4
+
+| | growth (opb / steps) | constraints |
+|---|---|---|
+| **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
+| **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
+| **Steps only** | 1.0x / 10x | **`Among`** (42-row OPB fixed, 32996 → 329996 steps) and **`Table`** (47-row OPB fixed, 50788 → 509788 steps) |
+| neither | 1.0x / 1.0x | everything else, 59 of 67 |
+
+**`Among` and `Table` are the two clean candidates.** Their encodings do not grow
+at all, so every one of those extra steps is the *same* derivation with a
+different value in it:
+
+* `Table` is the purest. `extensional_utils.cc`'s support scan calls
+  `inference.infer(logger, vars[idx] != val, JustifyUsingRUP{hint}, table.reason)`
+  once per unsupported value — the same reason, the same hint, one RUP step each,
+  differing only in `val`. A rule that could discharge "these removals, for every
+  value in this interval, by this one derivation" would replace the lot.
+* `Among` emits, per removed value, one line per value-of-interest
+  (`among.cc`) — the same clause shape with one constant substituted, nested one
+  level deeper.
+
+Both are also H1a in the propagation column, so the interval-level rewrite would
+remove much of the proof volume as a side effect: an interval removal is one
+inference where a run of values was many. That does not make a checker feature
+redundant — the rewrite only applies where the removed set *is* an interval — but
+it does mean these two rows should be re-measured afterwards rather than quoted
+as a standing figure.
+
 ## See also
 
 - [constraints.md](constraints.md) — the constraint-authoring pattern; "Querying
