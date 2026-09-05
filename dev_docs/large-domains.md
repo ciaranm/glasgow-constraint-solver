@@ -211,6 +211,122 @@ redundant — the rewrite only applies where the removed set *is* an interval �
 it does mean these two rows should be re-measured afterwards rather than quoted
 as a standing figure.
 
+### The bad encoding cases
+
+Eight constraints write an OPB whose size grows with the domain. They are not
+all the same shape, and the difference decides whether a checker feature is the
+only way out.
+
+| constraint | rows | what varies per row | re-encodable without checker help? |
+|---|---|---|---|
+| `Regular`, `RegularLegacy`, `RegularBacchus` | O(layers × states × D) | a value with **no transition** at that state | **yes**, see below |
+| `MDD` | O(layers × nodes × D) | same | **yes**, same fix |
+| `NValue` | O(D) | a value of the union of the domains | only by changing encoding family |
+| `Cumulative` | O(tasks × horizon) | a time point | no |
+| `Power`, `PowerTable` | O(D) | a row of an enumerated relation | no — it *is* a table |
+
+**`Regular` and `MDD` are the easy ones, and the fix needs no checker feature.**
+Both deliberately widen their OPB alphabet to the union of the transition keys
+*and every value of every variable's initial domain*
+(`regular.cc:581-584`, `mdd.cc:465-471`), purely so that a value with no
+transition gets an explicit `(x_i ≠ val) ∨ ¬(state_i = q)` row — the comment says
+it is "what veripb needs to verify the propagator's RUP-justified pruning of
+those values". But a value outside the transition keys entirely has no transition
+at *any* state, so the honest statement about it is not one row per state, it is
+`x_i ∈ alphabet`. The complement of a k-element key set inside a domain is at most
+k+1 intervals, so that is O(|alphabet|) range rows instead of O(states × D), with
+no dependence on the width at all. The measured 18042 → 180042 rows for a
+*two-state, one-symbol* automaton is all no-transition rows.
+
+What needs checking before believing that: whether the propagator's RUP pruning
+of an out-of-alphabet value still goes through against range rows. A range row
+asserts order atoms, and getting from there to `x_i ≠ val` is the same step
+`justify_not_in_range_across_equality()` exists for — so there is precedent, but
+it is exactly the sort of thing that has to be run past VeriPB rather than
+argued.
+
+#### Two thirds of that OPB is not the constraint
+
+Worth breaking down, because it is not where you would guess. `regular` over
+three variables of `0..100`, a two-state one-symbol automaton, 1841 rows:
+
+| rows | what |
+|---|---|
+| 612 | `@i[x][geN][r]` / `[f]` — **order-atom definitions** against the bit encoding, two per atom |
+| 606 | `@i[x][eqN][r]` / `[f]` — **equality-atom definitions**, two per atom, built from the order atoms |
+| 600 | the constraint's own `(x_i ≠ val) ∨ ¬(state_i = q)` rows |
+| 23 | everything else |
+
+So only a third of the per-value cost is `Regular`'s own rows. The other two
+thirds is the **variable's direct encoding**, written out one value at a time
+*because the constraint names those atoms* — atoms are emitted on reference, not
+wholesale (`always_use_full_encoding` is off by default; see
+[variable-encodings.md](variable-encodings.md)). The `geN` rows also carry one
+term per bit, so the character count is O(states × D × log D).
+
+Two consequences:
+
+* The `Regular`/`MDD` re-encoding is worth about **3x more** than the
+  constraint-row count suggests, because not naming those atoms stops their
+  definitions being emitted at all.
+* A parameterised-family feature has to be able to introduce **atom
+  definitions**, not merely constraint rows. On this instance a feature that
+  collapsed only the 600 constraint rows would leave 1218 behind and change the
+  asymptotics not at all. That is a sharper requirement than "a family of
+  constraints", and it is the one this measurement actually supports.
+
+**`NValue` is fixable, and the ugliness is not where I first assumed.** The
+value-indexed encoding is a fully-reified flag per value of the union
+(`n_value.cc:60-77`), `flag_v ⇔ ∃i. x_i = v`, and `n = Σ_v flag_v`. The
+position-indexed alternative is `n = Σ_i f_i` with `f_i ⇔ ∀j<i. x_i ≠ x_j` —
+"x_i is the first occurrence of its value" — which is O(n²) rows and completely
+independent of the domain.
+
+The obvious objection is that all the propagator's justifications would need
+rewriting against the new flags. **That objection is wrong**: `NValue`'s
+propagator emits no explicit steps at all, just two `JustifyUsingRUP` inferences
+(`n_value.cc:104` and `:116`). The real costs are different, and worse:
+
+1. `n_values ≤ |possible values|` is RUP under the value-indexed encoding almost
+   by construction — at most that many flags can be true. Under the
+   position-indexed one it is a counting argument over the `f_i`, and very likely
+   **not** RUP, so a currently-free inference would need a real justification.
+2. It abandons cake_pb_cp's nvalue encoding, which `n_value.cc:61` says it
+   conforms to deliberately (#354), so the workflow-2 chain breaks for nvalue.
+3. O(n²) is worse than O(D) whenever the domain is narrower than the scope, so
+   the honest version picks between the two — which means two encodings and two
+   sets of justifications to maintain.
+
+**`Cumulative` and the tabulated pair have no re-encoding.** Cumulative's
+encoding is time-indexed by construction: three fully-reified flags and a load
+line per (task, time point) (`cumulative.cc`, the `for (Integer t = t_lo; t <=
+t_hi; ++t)` loops), so a 10^9 horizon is an OPB with billions of rows and no
+change of variable avoids it. `PowerTable` *is* a table; its rows are the
+relation.
+
+### What a parameterised-family feature would buy
+
+Four of the eight — `NValue`, `Cumulative`, and `Regular`/`MDD` if they are left
+as they are — share one shape: **the same row schema with a single parameter
+ranging over a contiguous interval**. `flag_v ⇔ ∃i. x_i = v` for every v in
+[lo,hi]; `active_{i,t} ⇔ before ∧ after` for every t in a window; `(x_i ≠ val) ∨
+¬(state_i = q)` for every val in a gap. If a family like that could be *declared*
+once and instantiated by the checker on demand, all four collapse, and the two
+step-level cases from the previous section (`Among`, `Table`) collapse with them
+— they are the same construct applied to derivation steps rather than axioms.
+
+The `Regular` breakdown above says the feature has to reach one level further
+down than that, though: the majority of the rows in every one of these cases are
+the **eq/ge atom definitions of the variables the family mentions**, which are
+themselves a family over the same parameter. A construct that covers the
+constraint rows but not the atoms they name would leave two thirds of the OPB
+untouched.
+
+That is a stronger case for the feature than the step-level cases alone make,
+because `Cumulative` and `NValue` have no other way out: for them it is the
+feature or the O(n²) re-encoding with its own costs, and there is no third
+option.
+
 ## See also
 
 - [constraints.md](constraints.md) — the constraint-authoring pattern; "Querying
