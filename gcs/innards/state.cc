@@ -130,6 +130,14 @@ auto State::allocate_integer_variable_with_state(Integer lower, Integer upper) -
 {
     if (lower > upper)
         throw InvalidProblemDefinitionException{"variable created with lower bound greater than upper bound"};
+    // Every route to a variable comes through here, including the auxiliaries
+    // constraints mint for themselves, so this is the one place that can stop a
+    // domain too wide for the proof model to be written (issue #852). It refuses
+    // rather than narrowing: silently shrinking a declared domain would change
+    // what the model means.
+    if (lower < Integer::min_bounded_value() || upper > Integer::max_bounded_value())
+        throw InvalidProblemDefinitionException{"variable created with a domain wider than Integer::min_bounded_value() .. "
+                                                "Integer::max_bounded_value(); the proof model cannot be written for domains this wide"};
     _imp->integer_variable_states.back().emplace_back(lower, upper);
     return SimpleIntegerVariableID{_imp->integer_variable_states.back().size() - 1};
 }
