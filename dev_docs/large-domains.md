@@ -215,15 +215,16 @@ as a standing figure.
 
 Eight constraints write an OPB whose size grows with the domain. They are not
 all the same shape, and the difference decides whether a checker feature is the
-only way out.
+only way out. All five are filed and parked under tracker **#846**; nothing here
+is scheduled before the propagation work in #833.
 
-| constraint | rows | what varies per row | re-encodable without checker help? |
-|---|---|---|---|
-| `Regular`, `RegularLegacy`, `RegularBacchus` | O(layers × states × D) | a value with **no transition** at that state | **yes**, see below |
-| `MDD` | O(layers × nodes × D) | same | **yes**, same fix |
-| `NValue` | O(D) | a value of the union of the domains | only by changing encoding family |
-| `Cumulative` | O(tasks × horizon) | a time point | no |
-| `Power`, `PowerTable` | O(D) | a row of an enumerated relation | no — it *is* a table |
+| issue | constraint | rows | what varies per row | re-encodable without checker help? |
+|---|---|---|---|---|
+| #841 | `Regular`, `RegularLegacy`, `RegularBacchus` | O(layers × states × D) | a value with **no transition** at that state | **yes**, see below |
+| #842 | `MDD` | O(layers × nodes × D) | same | **yes**, same fix |
+| #843 | `NValue` | O(D) | a value of the union of the domains | only by changing encoding family |
+| #844 | `Cumulative` | O(tasks × horizon) | a time point | no |
+| #845 | `Power`, `PowerTable` | O(D) | a row of an enumerated relation | no — it *is* a table |
 
 **`Regular` and `MDD` are the easy ones, and the fix needs no checker feature.**
 Both deliberately widen their OPB alphabet to the union of the transition keys
@@ -296,6 +297,22 @@ propagator emits no explicit steps at all, just two `JustifyUsingRUP` inferences
 3. O(n²) is worse than O(D) whenever the domain is narrower than the scope, so
    the honest version picks between the two — which means two encodings and two
    sets of justifications to maintain.
+
+The same breakdown for the other two measured cases, three variables at
+`0..100`, which is what the tracker's feature argument rests on:
+
+| constraint | total rows | variable `geN`/`eqN` atom definitions | its own rows |
+|---|---|---|---|
+| `Regular` | 1841 | 1218 (66%) | 600 |
+| `NValue` | 1431 | 1218 (85%) | 213 |
+| `Cumulative` | 1945 | **0** | 1836 |
+
+`Cumulative` is the instructive exception: it names no equality atoms at all,
+because its flags are defined against order comparisons over the bits
+(`starts[i] <= t`), so every one of its 1836 rows is its own reified flag
+halves. So the family construct needs to introduce *two* kinds of definition —
+eq/ge atoms for `Regular` and `NValue`, reified flag halves for `Cumulative` —
+not one.
 
 **`Cumulative` and the tabulated pair have no re-encoding.** Cumulative's
 encoding is time-indexed by construction: three fully-reified flags and a load
