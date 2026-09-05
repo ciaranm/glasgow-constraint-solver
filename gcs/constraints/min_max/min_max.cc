@@ -27,6 +27,7 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::all_of;
 
 ArrayMinMax::ArrayMinMax(vector<IntegerVariableID> vars, const IntegerVariableID result, bool min) : _vars(move(vars)), _result(result), _min(min)
 {
@@ -102,31 +103,107 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
             }
 
             // result in union(vars)
-            for (auto value : state.each_value_mutable(result)) {
-                bool found_support = false;
-                for (auto & var : vars) {
-                    if (state.in_domain(var, value)) {
-                        found_support = true;
+            //
+            // Interval-level where the proof allows it. The values to remove are
+            // result's domain minus the union of the vars' domains, which is a
+            // handful of ranges however wide the domains are; per value it was
+            // O(|D(result)|) even when it removed nothing, and this loop is also
+            // the only thing that bounds result from the loose side, so on a
+            // domainless FlatZinc objective it had 9.2x10^18 values to get
+            // through and never returned (issue #815).
+            //
+            // The removals are identical either way -- a value survives iff some
+            // var holds it -- so the search does not change, only how many
+            // inferences it takes to get there.
+            auto all_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{result}) &&
+                all_of(vars, [](const IntegerVariableID & v) { return std::holds_alternative<SimpleIntegerVariableID>(v); });
+
+            if (all_simple) {
+                auto unsupported = state.copy_of_values(result);
+                for (const auto & var : vars) {
+                    if (unsupported.empty())
                         break;
-                    }
+                    for (auto [lo, hi] : state.copy_of_values(var).each_interval())
+                        unsupported.erase_range(lo, hi);
                 }
 
-                if (! found_support) {
+                for (auto [lo, hi] : unsupported.each_interval()) {
                     ReasonLiterals reason;
                     for (auto & var : vars)
-                        reason.emplace_back(var != value);
+                        reason.emplace_back(not_in_range(var, lo, hi));
 
-                    inference.infer_not_equal(logger, result, value,
+                    inference.infer_not_in_range(logger, result, lo, hi,
                         JustifyExplicitly{//
-                            [logger, result, value, &selectors](const ReasonLiterals & reason) {
-                                // show that none of the selectors work, if we're taking the result to be that value and also
-                                // that the value is missing from all of the vars
-                                for (const auto & sel : selectors)
-                                    logger->emit_rup_proof_line_under_reason(
-                                        reason, WPBSum{} + (1_i * ! sel) + (1_i * (result != value)) >= 1_i, ProofLevel::Temporary);
+                            [logger, result, min, lo = lo, hi = hi, &vars, &selectors](const ReasonLiterals & reason) {
+                                // The range conclusion cannot be RUPped on its own, and
+                                // not for the reason the per-value form gets away with.
+                                // Negating the conclusion is fine: two opposing bounds on
+                                // result do contradict through the bit rows. It is the
+                                // *reason* that blocks it -- "var not in [lo, hi]" is the
+                                // disjunction ~ge(lo) \/ ge(hi+1), and RUP cannot case
+                                // split. (The per-value form never meets this, because
+                                // result = val pins every bit of result and so pins var's
+                                // too, deciding both halves at once.)
+                                //
+                                // So each half is restated as a clause the checker can
+                                // unit propagate. One of the two crosses the half-reified
+                                // row and carries the selector with it; the other crosses
+                                // the unconditional row and does not. For max the model is
+                                // result >= var_i always and result <= var_i under f_i, so
+                                // it is the lower lemma that needs f_i; for min it is the
+                                // upper one. With both in the database the selector clause
+                                // and the conclusion are plain propagation.
+                                for (const auto & [idx, var] : enumerate(vars)) {
+                                    auto lower = WPBSum{} + 1_i * (result < lo) + 1_i * (var >= lo);
+                                    auto upper = WPBSum{} + 1_i * (var < hi + 1_i) + 1_i * (result >= hi + 1_i);
+                                    if (min)
+                                        upper += 1_i * ! selectors.at(idx);
+                                    else
+                                        lower += 1_i * ! selectors.at(idx);
+
+                                    logger->emit_rup_proof_line_under_reason(reason, move(lower) >= 1_i, ProofLevel::Temporary);
+                                    logger->emit_rup_proof_line_under_reason(reason, move(upper) >= 1_i, ProofLevel::Temporary);
+                                    logger->emit_rup_proof_line_under_reason(reason,
+                                        WPBSum{} + 1_i * ! selectors.at(idx) + 1_i * not_in_range(result, lo, hi) + 1_i * in_range(var, lo, hi) >=
+                                            1_i,
+                                        ProofLevel::Temporary);
+                                }
                             },
                             ThenRUP::Yes, hints::MinMax{owner}},
                         ExplicitReason{reason});
+                }
+            }
+            else {
+                // A view's atoms are spelled through the view, and the bound
+                // lemmas above have not been shown to bridge that, so anything
+                // but a plain variable keeps the per-value path. Same restriction,
+                // and the same reason, as the single-support range path below.
+                for (auto value : state.each_value_mutable(result)) {
+                    bool found_support = false;
+                    for (auto & var : vars) {
+                        if (state.in_domain(var, value)) {
+                            found_support = true;
+                            break;
+                        }
+                    }
+
+                    if (! found_support) {
+                        ReasonLiterals reason;
+                        for (auto & var : vars)
+                            reason.emplace_back(var != value);
+
+                        inference.infer_not_equal(logger, result, value,
+                            JustifyExplicitly{//
+                                [logger, result, value, &selectors](const ReasonLiterals & reason) {
+                                    // show that none of the selectors work, if we're taking the result to be that value and also
+                                    // that the value is missing from all of the vars
+                                    for (const auto & sel : selectors)
+                                        logger->emit_rup_proof_line_under_reason(
+                                            reason, WPBSum{} + (1_i * ! sel) + (1_i * (result != value)) >= 1_i, ProofLevel::Temporary);
+                                },
+                                ThenRUP::Yes, hints::MinMax{owner}},
+                            ExplicitReason{reason});
+                    }
                 }
             }
 
