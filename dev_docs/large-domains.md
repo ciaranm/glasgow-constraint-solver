@@ -223,7 +223,7 @@ is scheduled before the propagation work in #833.
 | #841 | `Regular`, `RegularLegacy`, `RegularBacchus` | O(layers × states × D) | a value with **no transition** at that state | **yes**, see below |
 | #842 | `MDD` | O(layers × nodes × D) | same | **yes**, same fix |
 | #843 | `NValue` | O(D) | a value of the union of the domains | only by changing encoding family |
-| #844 | `Cumulative` | O(tasks × horizon) | a time point | no |
+| ~~#844~~ | `Cumulative` | O(tasks × horizon) | a time point | **already fixed by #781**, opt-in |
 | #845 | `Power`, `PowerTable` | O(D) | a row of an enumerated relation | no — it *is* a table |
 
 **`Regular` and `MDD` are the easy ones, and the fix needs no checker feature.**
@@ -314,12 +314,22 @@ halves. So the family construct needs to introduce *two* kinds of definition —
 eq/ge atoms for `Regular` and `NValue`, reified flag halves for `Cumulative` —
 not one.
 
-**`Cumulative` and the tabulated pair have no re-encoding.** Cumulative's
-encoding is time-indexed by construction: three fully-reified flags and a load
-line per (task, time point) (`cumulative.cc`, the `for (Integer t = t_lo; t <=
-t_hi; ++t)` loops), so a 10^9 horizon is an OPB with billions of rows and no
-change of variable avoids it. `PowerTable` *is* a table; its rows are the
-relation.
+**`Cumulative` already has its fix, and it is the useful counterexample.** The
+figures above are the `TimeIndexed` encoding, which is still the default: three
+fully-reified flags and a load line per (task, time point). PR #781 (for #780)
+replaces it with a horizon-free start-checkpoint encoding, and on the same
+instance that is 1945 → **46** rows at `0..100` and 190045 → **46** at
+`0..10000`, flat in the horizon. It is opt-in behind
+`GCS_CUMULATIVE_ENCODING=start-checkpoint`; #781 says the default is deliberate
+pending a measurement over #777.
+
+This is worth remembering when arguing that a shape needs checker support. Before
+#781, `Cumulative` looked like the case with no way out — time-indexing was "what
+the encoding is". It was not: a change of formulation plus minting the
+per-(task, time) flags inside the proof rather than in the model removed the
+dependence entirely. Re-encoding may be available more often than it looks.
+
+`PowerTable` genuinely *is* a table; its rows are the relation.
 
 ### What a parameterised-family feature would buy
 
