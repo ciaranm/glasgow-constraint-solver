@@ -122,6 +122,22 @@ unset(_gcs_enable_executables_default)
 option(GCS_BUILD_TESTS "Build GCS tests" ${PROJECT_IS_TOP_LEVEL})
 option(GCS_ENABLE_VIEW_WRAP_SWEEP "Register the view-wrap proof-verification sweep (many tests, most failing today; opt in when working on view proof logging)" OFF)
 
+# The large-domain guard (issue #833). A development tripwire, not a user-facing
+# safety net: it turns work proportional to a variable's domain width -- a
+# per-value propagation loop, or an array sized by a domain's span -- into a
+# LargeDomainGuardTripped exception, so that a wedged core or a bad_alloc deep in
+# propagation becomes an attributable test failure instead. What protects a user
+# is a constraint having somewhere cheap to fall back to, which is the rest of
+# #833; this only helps us find the places that do not have one yet.
+#
+# OFF by default and never on in a release build. The checks are behind a macro
+# that expands to nothing when this is off, so a default build does not even
+# evaluate the sizes being checked.
+#
+# Turning it ON also registers the large-domain audit lane (see gcs/CMakeLists.txt),
+# which is where the per-constraint expected-outcome table lives.
+option(GCS_LARGE_DOMAIN_GUARD "Development tripwire: fail when work is proportional to a variable's domain width (issue #833)" OFF)
+
 # Runtime caps for data-driven constraint tests. When enabled, each registered
 # test gets generous per-solve solution/recursion caps in its environment so
 # that the occasional pathological random instance (huge solution count or

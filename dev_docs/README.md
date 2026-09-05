@@ -46,6 +46,12 @@ library. For an introduction to *using* the solver, start with the top-level
   measuring the wall-time impact of a performance-sensitive change, the
   rationale for each pick, the harness pattern for comparing two builds,
   and what to capture. Use when quantifying a refactor's perf impact.
+- [Large domains](large-domains.md) — the policy for constraints whose work is
+  proportional to how *wide* a variable's domain is: the rule that every
+  bounds-consistency path must be width-independent, the hazard taxonomy, the
+  `GCS_LARGE_DOMAIN_GUARD` development tripwire, and the per-constraint audit
+  lane and its current table. Read before writing a loop over a variable's
+  values, or when a model with a wide declared domain wedges.
 - [Making a propagator faster](propagator-performance.md) — what to change
   once a propagator is correct: the per-constraint-type breakdown
   (`GCS_PROPAGATOR_STATS`) that says which constraint the time went to, then

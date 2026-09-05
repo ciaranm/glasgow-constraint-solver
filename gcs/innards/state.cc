@@ -1,4 +1,5 @@
 #include <gcs/exception.hh>
+#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
@@ -631,8 +632,15 @@ namespace
 {
     auto each_value_generator(IntervalSet<Integer> set, std::function<auto(Integer)->Integer> apply) -> generator<Integer>
     {
-        for (auto i : set.each())
+        // Counted as the values are handed out rather than checked against the
+        // domain's width up front: a caller that reads one value from a very
+        // wide domain -- which is what a branching heuristic does -- is doing
+        // nothing wrong, and only a caller that walks the whole thing is.
+        LargeDomainIterationCounter guard{"the number of values one each_value_*() generator has yielded"};
+        for (auto i : set.each()) {
+            guard.step();
             co_yield apply(i);
+        }
     }
 
     auto each_value_constant_generator(Integer val, std::function<auto(Integer)->Integer> apply) -> generator<Integer>

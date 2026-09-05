@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 
 #include <gcs/current_state.hh>
+#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/variable_id_utils.hh>
@@ -433,7 +434,11 @@ namespace gcs::innards
             state_detail::visit_actual(
                 actual_var,
                 [&, negate_first = negate_first, then_add = then_add](const SimpleIntegerVariableID & v) {
-                    state_of_for_iteration(v).for_each([&](Integer i) { return cb(state_detail::apply_view(i, negate_first, then_add)); });
+                    LargeDomainIterationCounter guard{"the number of values one for_each_value_immutable() call has visited"};
+                    state_of_for_iteration(v).for_each([&](Integer i) {
+                        guard.step();
+                        return cb(state_detail::apply_view(i, negate_first, then_add));
+                    });
                 },
                 [&, negate_first = negate_first, then_add = then_add](
                     const ConstantIntegerVariableID & v) { cb(state_detail::apply_view(v.const_value, negate_first, then_add)); });
@@ -455,7 +460,11 @@ namespace gcs::innards
                 actual_var,
                 [&, negate_first = negate_first, then_add = then_add](const SimpleIntegerVariableID & v) {
                     auto snapshot = state_of_for_iteration(v);
-                    snapshot.for_each([&](Integer i) { return cb(state_detail::apply_view(i, negate_first, then_add)); });
+                    LargeDomainIterationCounter guard{"the number of values one for_each_value_mutable() call has visited"};
+                    snapshot.for_each([&](Integer i) {
+                        guard.step();
+                        return cb(state_detail::apply_view(i, negate_first, then_add));
+                    });
                 },
                 [&, negate_first = negate_first, then_add = then_add](
                     const ConstantIntegerVariableID & v) { cb(state_detail::apply_view(v.const_value, negate_first, then_add)); });
