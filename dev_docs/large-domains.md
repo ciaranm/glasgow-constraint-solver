@@ -52,6 +52,30 @@ The tree already has the machinery: `IntervalSet::each_interval_minus()`,
 that removes "everything not in this small given set" one value at a time is an
 interval operation written out longhand, and rewriting it keeps GAC.
 
+### A trap: a bound that is obvious is not necessarily RUP
+
+`ArrayMinMax` has no hull bound on the loose side — for a max it posts
+`result >= lb(var_i)` for every i but never `result <= max_i ub(var_i)`, so the
+per-value union sweep is what establishes it (issue #815, which proposes adding
+the bound as a small, obviously-correct first fix).
+
+It is obviously correct, and it is **not a small fix**, because it does not
+verify. Negating it gives `result > max_i ub(var_i)`; each selector asserts
+`result <= var_i`, so every selector must be false and the al1 row fails. That
+argument needs to carry an order atom on `result` across the half-reified row
+relating `result` and `var_i`, which is a linear row over the *bits* — and unit
+propagation does not cross a bit sum on a wide domain, where nothing fixes an
+individual bit. Adding the bound with `JustifyUsingRUP` fails VeriPB on
+`min_max_constraint` and `min_max_constraint_view_mixed`. Making it verify needs
+an explicit `pol` per selector, over line numbers `define_proof_model` does not
+currently keep.
+
+The interval rewrite of the union sweep is the better target anyway: it fixes the
+general case rather than only the narrow-array one, and the range-removal proof
+pattern it needs already exists and verifies fifty lines further down the same
+file (`min_max.cc:199`, `infer_not_in_range` with a value-independent
+justification emitted once per interval).
+
 H3 has two precedents in the tree for what a good cap looks like:
 `ExtensionalDomainBitmaps::max_words` and `cumulative.cc`'s
 `max_knapsack_capacity`. Both are far above anything a real model asks for, both
