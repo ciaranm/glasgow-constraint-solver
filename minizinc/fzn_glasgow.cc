@@ -459,9 +459,13 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (var_type == "int") {
                 if (! vardata.contains("domain")) {
-                    // Halve the bounds so there is headroom for sums and products of
-                    // unbounded variables to stay within Integer without overflowing.
-                    auto var = problem.create_integer_variable(Integer::min_value() / 2_i, Integer::max_value() / 2_i, name);
+                    // The widest domain the solver accepts, which leaves headroom
+                    // for sums and products of unbounded variables to stay within
+                    // Integer. Halving was one bit short: writing a half-reified
+                    // row over two such variables overflowed while emitting the OPB
+                    // (issue #852), so the bound is a named quarter now rather than
+                    // a local guess.
+                    auto var = problem.create_integer_variable(Integer::min_bounded_value(), Integer::max_bounded_value(), name);
                     data.integer_variables.emplace(name, pair{var, false});
                     if ((! vardata.contains("defined")) || (! vardata["defined"].get<bool>()))
                         data.branch_variables.push_back(var);

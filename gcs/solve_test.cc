@@ -6,11 +6,13 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/linear.hh>
 #include <gcs/constraints/modulus.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/power.hh>
 #include <gcs/constraints/table.hh>
 #include <gcs/expression.hh>
+#include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/presolver.hh>
 #include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
@@ -842,4 +844,28 @@ TEST_CASE("A constraint that is trivially unsatisfiable at install time says whi
         CHECK(important[0].text.ends_with(", so the model is unsatisfiable before search starts"));
         CHECK(render(important[0]).ends_with(" (_1)"));
     }
+}
+
+TEST_CASE("A row too large to render says so, rather than failing as bare arithmetic")
+{
+    // Writing a pseudo-Boolean row sums the positive contributions of every term
+    // to size a half-reified row's reification constant, negates weights to turn
+    // <= into >=, and folds constants into the right-hand side. Any of those can
+    // exceed an Integer, and used to surface as a bare "Integer overflow" from
+    // deep inside model writing --- with the OPB already half written and nothing
+    // naming what was being emitted (issue #852).
+    //
+    // Variable domains are capped at Integer::max_bounded_value() so the ordinary
+    // routes cannot get here; large coefficients still can, which is what this
+    // uses. The point is the diagnosis, not the refusal: the row genuinely does
+    // not fit, and refusing it is right.
+    Problem p;
+    auto a = p.create_integer_variable(0_i, 1024_i), b = p.create_integer_variable(0_i, 1024_i);
+    auto r = p.create_integer_variable(0_i, 1_i);
+    p.post(LinearEqualityIff{WeightedSum{} + Integer{1LL << 60} * a + Integer{1LL << 60} * b, 0_i, r == 1_i});
+
+    auto proof_name = "solve_test_row_too_large";
+    CHECK_THROWS_AS(solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) { return false; }, .stats_report = silent_stats_report()},
+                        ProofOptions{proof_name}),
+        ProofError);
 }
