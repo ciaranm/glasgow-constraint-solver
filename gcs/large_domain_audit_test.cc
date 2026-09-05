@@ -288,6 +288,19 @@ namespace
         add("AllDifferentExcept", Expect::KnownTrip, [](Problem & p) { p.post(AllDifferentExcept{wide(p, 4), {0_i}}); });
         add("SymmetricAllDifferent", Expect::NoWidePosition, [](Problem & p) { p.post(SymmetricAllDifferent{narrow(p, 4, 0_i, 3_i)}); });
         add("AllEqual", Expect::Clean, [](Problem & p) { p.post(AllEqual{wide(p, 3)}); });
+        add("AllEqual/holes", Expect::KnownTrip, [](Problem & p) {
+            // all_equal.cc:114 prunes every variable to the intersection of all
+            // the domains once any of them has holes. It takes the difference as
+            // intervals (each_interval_minus) but then walks each interval a
+            // value at a time, so it needs a *large* difference as well as a
+            // hole. Bounds propagation runs first and would collapse a merely
+            // narrow partner, so the hole has to be spread across the full width:
+            // a two-value domain at the extremes leaves the whole middle of the
+            // other variable to remove.
+            auto holey = p.create_integer_variable(vector<Integer>{wide_lo, probe_width});
+            auto full = wide_var(p);
+            p.post(AllEqual{vector<IntegerVariableID>{holey, full}});
+        });
 
         // --- Counting family.
         add("Among", Expect::KnownTrip, [](Problem & p) {
@@ -319,13 +332,17 @@ namespace
             auto v = wide(p, 3);
             p.post(AtMostOneSmartTable{v, wide_var(p)});
         });
-        add("GlobalCardinality", Expect::HazardNotReached, // propagate_bounds_global_cardinality enumerates values, but not on a probe this shape
-            [](Problem & p) {
-                // The counterexample to "just default to BC": this already defaults
-                // to consistency::BC and still enumerates values.
-                auto v = wide(p, 3);
-                p.post(GlobalCardinality{v, {1_i, 2_i}, narrow(p, 2, 0_i, 3_i)});
-            });
+        add("GlobalCardinality", Expect::KnownTrip, [](Problem & p) {
+            // The counterexample to "just default to BC": this already defaults
+            // to consistency::BC and still enumerates values. Reaching that needs
+            // the just-met-demand branch (bounds_global_cardinality.cc:127), where
+            // the number of variables that *can* take a cover value equals that
+            // value's count lower bound -- so each is forced to it by removing
+            // every other value one at a time. Three variables, one cover value,
+            // and a count pinned at three does it.
+            auto v = wide(p, 3);
+            p.post(GlobalCardinality{v, {1_i}, {p.create_integer_variable(3_i, 3_i)}});
+        });
         add("In", Expect::KnownTrip, [](Problem & p) {
             auto v = wide(p, 1);
             p.post(In{v[0], vector<Integer>{1_i, 2_i, 3_i}});
@@ -339,15 +356,22 @@ namespace
             auto v = wide(p, 4);
             p.post(ArrayMax{vector<IntegerVariableID>{v[0], v[1], v[2]}, v[3]});
         });
-        add("Element", Expect::HazardNotReached, // element.cc's per-value support remainder is not reached from a narrow index at the root
-            [](Problem & p) {
-                auto v = wide(p, 4);
-                p.post(Element{v[3], p.create_integer_variable(0_i, 2_i), vector<IntegerVariableID>{v[0], v[1], v[2]}});
-            });
+        add("Element", Expect::KnownTrip, [](Problem & p) {
+            // The array entries have to be *narrow* for this to bite. The GAC
+            // sweep erases each entry's domain from the result's still-unsupported
+            // set (element.cc:583), so a wide entry erases the lot in one
+            // erase_range and leaves nothing, while a narrow one leaves the rest
+            // of the result's domain to be walked a value at a time
+            // (element.cc:621).
+            auto result = wide_var(p);
+            p.post(Element{result, p.create_integer_variable(0_i, 2_i), narrow(p, 3, 1_i, 3_i)});
+        });
         add("Element/BC", Expect::Clean, [](Problem & p) {
-            auto v = wide(p, 4);
-            p.post(
-                Element{v[3], p.create_integer_variable(0_i, 2_i), vector<IntegerVariableID>{v[0], v[1], v[2]}}.with_consistency(consistency::BC{}));
+            // The same instance as the GAC probe above, so the pair is
+            // comparable: the weaker arm is what makes it clean, not an easier
+            // instance.
+            auto result = wide_var(p);
+            p.post(Element{result, p.create_integer_variable(0_i, 2_i), narrow(p, 3, 1_i, 3_i)}.with_consistency(consistency::BC{}));
         });
 
         // --- Ordering.
@@ -377,12 +401,14 @@ namespace
             SimpleTuples tuples{{1_i, 2_i, 3_i}, {4_i, 5_i, 6_i}};
             p.post(Table{v, tuples});
         });
-        add("NegativeTable", Expect::HazardNotReached, // does not take the residue path the positive table dies in
-            [](Problem & p) {
-                auto v = wide(p, 3);
-                SimpleTuples tuples{{1_i, 2_i, 3_i}, {4_i, 5_i, 6_i}};
-                p.post(NegativeTable{v, tuples});
-            });
+        add("NegativeTable", Expect::Clean, [](Problem & p) {
+            // Genuinely clean rather than merely unreached: it is watched-literal
+            // over tuples and never iterates a domain, so it takes none of the
+            // residue path the positive table dies in.
+            auto v = wide(p, 3);
+            SimpleTuples tuples{{1_i, 2_i, 3_i}, {4_i, 5_i, 6_i}};
+            p.post(NegativeTable{v, tuples});
+        });
         add("SmartTable", Expect::KnownTrip, [](Problem & p) {
             auto v = wide(p, 2);
             // Built a step at a time rather than from a nested braced list. GCC
@@ -427,11 +453,13 @@ namespace
             auto starts = wide(p, 3);
             p.post(Disjunctive{starts, vector<Integer>{2_i, 2_i, 2_i}});
         });
-        add("Disjunctive2D", Expect::HazardNotReached, // the time-table pass is not reached at the root here
-            [](Problem & p) {
-                auto xs = wide(p, 2), ys = wide(p, 2);
-                p.post(Disjunctive2D{xs, ys, narrow(p, 2, 1_i, 1_i), narrow(p, 2, 1_i, 1_i)});
-            });
+        add("Disjunctive2D", Expect::Clean, [](Problem & p) {
+            // Clean rather than unreached: it is pairwise, with no value loop and
+            // no span-indexed array anywhere, and it installs no 1D Disjunctive
+            // child that would have one.
+            auto xs = wide(p, 2), ys = wide(p, 2);
+            p.post(Disjunctive2D{xs, ys, narrow(p, 2, 1_i, 1_i), narrow(p, 2, 1_i, 1_i)});
+        });
 
         // --- Packing and knapsack.
         add("BinPacking", Expect::Clean, [](Problem & p) {
@@ -494,12 +522,15 @@ namespace
             p.post(Nogoods{vector<Nogood>{{v[0] == 0_i, v[1] == 0_i}}});
         });
 
-        add("MinDistance", Expect::HazardNotReached, // the per-value sites need more sites than this probe has
-            [](Problem & p) {
-                auto x = narrow(p, 2, 0_i, 1_i);
-                auto z = wide_var(p);
-                p.post(MinDistance{x, z, MinDistance::Matrix{{0_i, 1_i}, {1_i, 0_i}}});
-            });
+        add("MinDistance", Expect::Clean, [](Problem & p) {
+            // Its per-value loops are all over the *position* variables, and
+            // prepare() define_bound()s those to 0..n-1 of the distance matrix
+            // (min_distance.cc:92-93), so they cannot be wide. The wide position
+            // here is the objective z, which it reasons about by bounds.
+            auto x = narrow(p, 2, 0_i, 1_i);
+            auto z = wide_var(p);
+            p.post(MinDistance{x, z, MinDistance::Matrix{{0_i, 1_i}, {1_i, 0_i}}});
+        });
 
         return probes;
     }
