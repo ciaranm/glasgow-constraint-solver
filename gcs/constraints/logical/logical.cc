@@ -118,13 +118,20 @@ namespace
                     if (any_false)
                         return PropagatorState::DisableUntilBacktrack;
                     else if (! undecided1) {
-                        // literals are all true, but reif is false
+                        // literals are all true, but reif is false. Stop rather
+                        // than throw: for Or -- which is this propagator over
+                        // negated literals -- this is the clause conflict, and a
+                        // clause is the failure detector at a large share of the
+                        // nodes of the models that have any. It is 1.2M unwinds
+                        // in twenty seconds of `2014_train`, where the unwinder
+                        // is 22% of the run. Inferring FalseLiteral{} and
+                        // contradicting are the same proof step and the same
+                        // reason; only the way out of the propagator differs.
                         ReasonLiterals why;
                         for (auto & lit : lits)
                             why.push_back(lit);
                         why.push_back(! full_reif);
-                        inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{why});
-                        return PropagatorState::Enable;
+                        return inference.contradiction_or_stop(logger, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{why});
                     }
                     else {
                         ReasonLiterals why;

@@ -121,7 +121,16 @@ auto Count::install_propagators(Propagators & propagators) -> void
                     }
                 }
             };
-            inference.infer(logger, how_many < how_many_is_less_than, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, reason);
+            // The _or_stop family throughout this propagator, rather than the
+            // throwing infer: Count is the failure detector at a large share of
+            // the nodes of the rostering and puzzle models that use it -- 6.0M
+            // unwinds over seven MiniZinc Challenge models in the throw survey,
+            // where the unwinder is 11-15% of the run. Same inference, same
+            // proof step, same reason; only the way out of the propagator
+            // differs, and [[nodiscard]] makes forgetting to take it an error.
+            if (! inference.infer_less_than_or_stop(
+                    logger, how_many, how_many_is_less_than, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, reason))
+                return PropagatorState::DisableUntilBacktrack;
 
             // must have at least this many occurrences of the value of interest
             int how_many_must = 0;
@@ -131,11 +140,17 @@ auto Count::install_propagators(Propagators & propagators) -> void
                     if (state.optional_single_value(v) == voi)
                         ++how_many_must;
             }
-            inference.infer(logger, how_many >= Integer(how_many_must), JustifyUsingRUP{hints::Count{owner}}, reason);
+            if (! inference.infer_greater_than_or_equal_or_stop(
+                    logger, how_many, Integer(how_many_must), JustifyUsingRUP{hints::Count{owner}}, reason))
+                return PropagatorState::DisableUntilBacktrack;
 
             // is each value of interest supported? also track how_many bounds supports
             // whilst we're here
             optional<Integer> lowest_how_many_must, highest_how_many_might;
+            // Set when a pruning below empties value_of_interest's domain, so the
+            // loop leaves and the propagator returns rather than carrying on
+            // reading a state that has already failed.
+            bool stop = false;
             for (const auto & voi : state.each_value_mutable(value_of_interest)) {
                 Integer how_many_must = 0_i, how_many_might = 0_i;
                 for (const auto & var : vars) {
@@ -162,12 +177,19 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             }
                         }
                     };
-                    inference.infer(logger, value_of_interest != voi, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, reason);
+                    if (! inference.infer_not_equal_or_stop(
+                            logger, value_of_interest, voi, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, reason)) {
+                        stop = true;
+                        break;
+                    }
                 }
                 else if (how_many_must > state.upper_bound(how_many)) {
                     // unlike above, we don't need to help, because the equality flag will propagate
                     // from the fixed assignment
-                    inference.infer(logger, value_of_interest != voi, JustifyUsingRUP{hints::Count{owner}}, reason);
+                    if (! inference.infer_not_equal_or_stop(logger, value_of_interest, voi, JustifyUsingRUP{hints::Count{owner}}, reason)) {
+                        stop = true;
+                        break;
+                    }
                 }
                 else {
                     // [how_many_must, how_many_might] is the range of counts
@@ -213,7 +235,11 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= how_many_must) >= 1_i, ProofLevel::Temporary);
                         };
-                        inference.infer(logger, value_of_interest != voi, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, reason);
+                        if (! inference.infer_not_equal_or_stop(
+                                logger, value_of_interest, voi, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, reason)) {
+                            stop = true;
+                            break;
+                        }
                     }
                     else {
                         if ((! lowest_how_many_must) || (how_many_must < *lowest_how_many_must))
@@ -224,6 +250,9 @@ auto Count::install_propagators(Propagators & propagators) -> void
                 }
             }
 
+            if (stop)
+                return PropagatorState::DisableUntilBacktrack;
+
             // what are the supports on possible values we've seen?
             if (lowest_how_many_must) {
                 auto emit = [&](const ReasonLiterals & reason) -> void {
@@ -232,7 +261,8 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i, ProofLevel::Temporary);
                 };
                 auto just = JustifyExplicitly{emit, ThenRUP::Yes, hints::Count{owner}};
-                inference.infer(logger, how_many >= *lowest_how_many_must, just, reason);
+                if (! inference.infer_greater_than_or_equal_or_stop(logger, how_many, *lowest_how_many_must, just, reason))
+                    return PropagatorState::DisableUntilBacktrack;
             }
 
             if (highest_how_many_might) {
@@ -264,7 +294,8 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             ProofLevel::Temporary);
                 };
                 auto just = JustifyExplicitly{emit, ThenRUP::Yes, hints::Count{owner}};
-                inference.infer(logger, how_many < *highest_how_many_might + 1_i, just, reason);
+                if (! inference.infer_less_than_or_stop(logger, how_many, *highest_how_many_might + 1_i, just, reason))
+                    return PropagatorState::DisableUntilBacktrack;
             }
 
             return PropagatorState::Enable;
