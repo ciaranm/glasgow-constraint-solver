@@ -61,14 +61,19 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
+using std::format;
 using std::println;
 #else
 #include <fmt/core.h>
+using fmt::format;
 using fmt::println;
 #endif
 
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <new>
 #include <string>
@@ -83,10 +88,13 @@ using std::vector;
 
 namespace
 {
-    // Wide enough that any per-value work is hopeless, and the same width the
-    // issue's MiniZinc probes used, so the two sets of numbers are comparable.
+    // The probes' wide position is 0..probe_width. The audit runs at 10^9: wide
+    // enough that any per-value work is hopeless, and the width the issue's
+    // MiniZinc probes used, so the two sets of numbers are comparable. The proof
+    // survey below re-runs the same probes at two much smaller widths, because a
+    // proof can only be measured where it can actually be written.
     const auto wide_lo = 0_i;
-    const auto wide_hi = 1000000000_i;
+    auto probe_width = 1000000000_i;
 
     enum class Expect
     {
@@ -149,11 +157,16 @@ namespace
         function<auto(Problem &)->void> build;
     };
 
+    auto wide_var(Problem & p) -> IntegerVariableID
+    {
+        return p.create_integer_variable(wide_lo, probe_width);
+    }
+
     auto wide(Problem & p, int n) -> vector<IntegerVariableID>
     {
         vector<IntegerVariableID> result;
         for (int i = 0; i < n; ++i)
-            result.push_back(p.create_integer_variable(wide_lo, wide_hi));
+            result.push_back(wide_var(p));
         return result;
     }
 
@@ -300,11 +313,11 @@ namespace
             // The value variable has to be distinct from the scope: an aliased
             // one is rejected at post time, so it would probe nothing.
             auto v = wide(p, 3);
-            p.post(AtMostOne{v, p.create_integer_variable(wide_lo, wide_hi)});
+            p.post(AtMostOne{v, wide_var(p)});
         });
         add("AtMostOneSmartTable", Expect::KnownTrip, [](Problem & p) {
             auto v = wide(p, 3);
-            p.post(AtMostOneSmartTable{v, p.create_integer_variable(wide_lo, wide_hi)});
+            p.post(AtMostOneSmartTable{v, wide_var(p)});
         });
         add("GlobalCardinality", Expect::HazardNotReached, // propagate_bounds_global_cardinality enumerates values, but not on a probe this shape
             [](Problem & p) {
@@ -484,7 +497,7 @@ namespace
         add("MinDistance", Expect::HazardNotReached, // the per-value sites need more sites than this probe has
             [](Problem & p) {
                 auto x = narrow(p, 2, 0_i, 1_i);
-                auto z = p.create_integer_variable(wide_lo, wide_hi);
+                auto z = wide_var(p);
                 p.post(MinDistance{x, z, MinDistance::Matrix{{0_i, 1_i}, {1_i, 0_i}}});
             });
 
@@ -494,6 +507,85 @@ namespace
 
 namespace
 {
+    /* How does the *proof* grow with the domain's width?
+     *
+     * Out of scope for fixing: several of these have no viable fix today, and a
+     * propagator is never weakened for proof size (propagator-performance.md).
+     * The reason to measure it anyway is that the bad cases are evidence. Where
+     * an inference's justification emits one near-identical step per value --
+     * the same derivation with a different constant substituted in -- a VeriPB
+     * feature that could express the family in one step would take an O(n) or
+     * better bite out of it. This survey is where the candidates for such a
+     * feature come from, so it reports OPB rows and proof steps separately: OPB
+     * growth is an encoding that is per-value (a modelling problem, which no
+     * checker feature helps), while proof-step growth at a *fixed* encoding is
+     * the copy-paste that one might.
+     *
+     * Run it by hand, from a build with the guard OFF so that the wide probes
+     * are not stopped before they write anything:
+     *
+     *     ./build/large_domain_audit_test "[.proofscaling]"
+     */
+    struct ProofSizes
+    {
+        long long opb_rows = 0;
+        long long proof_steps = 0;
+        bool measured = false;
+        string detail = {};
+    };
+
+    auto count_lines(const std::filesystem::path & f) -> long long
+    {
+        std::ifstream in{f};
+        if (! in)
+            return 0;
+        long long n = 0;
+        for (string line; std::getline(in, line);)
+            ++n;
+        return n;
+    }
+
+    auto proof_sizes(const function<auto(Problem &)->void> & build, Integer width) -> ProofSizes
+    {
+        auto restore = probe_width;
+        probe_width = width;
+        ProofSizes result;
+        auto names = ProofFileNames{"large_domain_proof_scaling"};
+        try {
+            Problem problem;
+            build(problem);
+            solve_with(problem,
+                SolveCallbacks{.solution = [](const CurrentState &) { return false; },
+                    .trace = [](const CurrentState &) { return false; },
+                    .stats_report = silent_stats_report()},
+                ProofOptions{names});
+            result.measured = true;
+        }
+        catch (const std::exception & e) {
+            // Whatever was written before it gave up is not a measurement, so
+            // the row says so rather than reporting a truncated count.
+            result.detail = e.what();
+        }
+
+        result.opb_rows = count_lines(names.opb_file);
+        result.proof_steps = count_lines(names.proof_file);
+        for (const auto & f : {names.opb_file, names.proof_file})
+            std::filesystem::remove(f);
+        for (const auto & f : {names.variables_map_file, names.s_expr_file})
+            if (f)
+                std::filesystem::remove(*f);
+
+        probe_width = restore;
+        return result;
+    }
+
+    auto growth(long long small, long long large) -> string
+    {
+        if (small <= 0)
+            return "-";
+        return format("{:.1f}x", static_cast<double>(large) / static_cast<double>(small));
+    }
+
     auto describe(Expect e) -> string
     {
         switch (e) {
@@ -528,4 +620,29 @@ TEST_CASE("Large domain audit")
         // pinned, so the table cannot drift away from what the code does.
         CHECK(result.tripped == expected_trip);
     }
+}
+
+TEST_CASE("Large domain proof scaling", "[.proofscaling]")
+{
+    // Two widths a factor of ten apart, both small enough that every probe can
+    // actually write a proof. A row whose count grows by about ten is linear in
+    // the domain; one that barely moves does not depend on the width at all.
+    const auto narrow_width = 1000_i, wider_width = 10000_i;
+
+    println("{:<40} {:>10} {:>10} {:>8} {:>10} {:>10} {:>8}", "constraint", "opb@1e3", "opb@1e4", "growth", "pbp@1e3", "pbp@1e4", "growth");
+    for (const auto & probe_case : all_probes()) {
+        auto small = proof_sizes(probe_case.build, narrow_width);
+        auto large = proof_sizes(probe_case.build, wider_width);
+        if (! (small.measured && large.measured)) {
+            println("{:<40} {:>10} {}", probe_case.name, "unmeasured", small.measured ? large.detail : small.detail);
+            continue;
+        }
+        println("{:<40} {:>10} {:>10} {:>8} {:>10} {:>10} {:>8}", probe_case.name, small.opb_rows, large.opb_rows,
+            growth(small.opb_rows, large.opb_rows), small.proof_steps, large.proof_steps, growth(small.proof_steps, large.proof_steps));
+    }
+
+    // A survey, not a gate: it asserts only that it got all the way through, so
+    // that a constraint which cannot be proof-logged at all still shows up as a
+    // row rather than ending the run.
+    SUCCEED("proof scaling survey complete");
 }
