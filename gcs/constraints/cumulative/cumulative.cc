@@ -1036,6 +1036,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .capacity_lines = move(_capacity_lines),
         .checkpoint_recovery = recovery_cache,
         .pair_contribution_bits_are_conjunctions = _height_bits_citable,
+        .per_time_contribution_bits_are_conjunctions = _per_time_flags_in_proof,
         .rules = _rules,
         .proof_mutation = _proof_mutation,
         .presence_mutation = _presence_mutation,
