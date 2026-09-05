@@ -720,7 +720,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
 template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<Constraint>
 {
-    return unique_ptr<Constraint>(new NDimensionalElement{_result_var, _index_vars, _index_starts, _array, _bounds_only});
+    // The constructor is protected, so make_unique cannot reach it.
+    return unique_ptr<Constraint>(new NDimensionalElement(_result_var, _index_vars, _index_starts, _array, _bounds_only));
 }
 
 template <typename EntryType_, unsigned dimensions_>

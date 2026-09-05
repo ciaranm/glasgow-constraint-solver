@@ -509,6 +509,7 @@ auto Regular::with_proof_strategy(RegularProofStrategy strategy) -> Regular &
 
 auto Regular::clone() const -> unique_ptr<Constraint>
 {
+    // The set-valued-transitions constructor is private, so make_unique cannot reach it.
     auto cloned = unique_ptr<Regular>(new Regular(_vars, _num_states, _transitions, _final_states, _symbols, _short_reasons, _regex));
     cloned->with_proof_strategy(_proof_strategy);
     return cloned;

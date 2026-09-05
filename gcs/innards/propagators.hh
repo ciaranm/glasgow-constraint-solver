@@ -240,7 +240,7 @@ namespace gcs::innards
 
     public:
         template <typename Func_>
-        PropagationFunction(Func_ && f) : _impl(new PropagationFunctionImpl<Func_>(std::move(f)))
+        PropagationFunction(Func_ && f) : _impl(std::make_unique<PropagationFunctionImpl<Func_>>(std::move(f)))
         {
         }
 
