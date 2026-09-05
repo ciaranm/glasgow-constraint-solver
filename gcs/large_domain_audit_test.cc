@@ -372,7 +372,16 @@ namespace
             });
         add("SmartTable", Expect::KnownTrip, [](Problem & p) {
             auto v = wide(p, 2);
-            SmartTuples tuples{{SmartTable::equals(v[0], v[1])}};
+            // Built a step at a time rather than from a nested braced list. GCC
+            // cannot see that a SmartEntry variant's inactive alternative is
+            // never destroyed, and reports a maybe-uninitialized vector<Integer>
+            // inside the variant's destructor -- which the -Werror CI lane turns
+            // into a build failure. This is the spelling the smart_table tests
+            // already use.
+            vector<SmartEntry> tuple;
+            tuple.push_back(SmartTable::equals(v[0], v[1]));
+            SmartTuples tuples;
+            tuples.push_back(move(tuple));
             p.post(SmartTable{v, tuples});
         });
 
