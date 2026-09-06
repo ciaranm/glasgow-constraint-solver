@@ -394,11 +394,25 @@ namespace
         });
 
         // --- Extensional.
-        add("Table", Expect::KnownTrip, [](Problem & p) {
-            // H3: the residue rows are sized by the variable's bounds rather
-            // than by the table's own value range.
+        add("Table", Expect::Clean, [](Problem & p) {
+            // Was a KnownTrip on two counts: residue rows sized by the variable
+            // rather than the table, and a support scan that walked the
+            // variable's whole domain. Both fixed, so a wide domain now costs
+            // two range removals and a walk bounded by the table.
             auto v = wide(p, 3);
             SimpleTuples tuples{{1_i, 2_i, 3_i}, {4_i, 5_i, 6_i}};
+            p.post(Table{v, tuples});
+        });
+        add("Table/sparse", Expect::Clean, [](Problem & p) {
+            // The compact probe above says nothing about this one. There the
+            // table's values are adjacent, so trimming the domain to the table's
+            // *range* is enough; here the two values sit a million apart, the
+            // range is as wide as the domain, and what bounds the scan is
+            // removing the gap between them. Before that existed this took
+            // 0.163s and 37 MB without proofs, and 3.6 GB of proof and still
+            // growing with them.
+            auto v = wide(p, 2);
+            SimpleTuples tuples{{1_i, 1_i}, {1000000_i, 1000000_i}};
             p.post(Table{v, tuples});
         });
         add("NegativeTable", Expect::Clean, [](Problem & p) {
