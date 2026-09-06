@@ -44,6 +44,23 @@ Two corollaries that are easy to get wrong:
 | **H2′** | an OPB *encoding* proportional to a domain | no consistency level helps; `NValue` writes one proof flag per value of the union of the domains |
 | **H3** | arrays sized by a span, which no consistency level covers | a cap and a weaker rung |
 
+**First, check whether the loop already stops early.** A `for` over a domain is
+not automatically a hazard: what matters is how many values it takes before it
+can answer. `Among`'s variable partition asks "is every value of this domain one
+of the values of interest", walking the domain — but as a `none_of`, so it stops
+at the first value that is not, and among any `|voi| + 1` values at most `|voi|`
+can be of interest. It is bounded by the value set, not the domain, and rewriting
+it as a counting query over `in_domain` made it **9% slower** on a search that
+calls it hundreds of thousands of times, for no width benefit at all. Ten lines
+below it the *same* predicate was written as a plain loop with no early exit, and
+that one really did walk a billion values; the fix there was the missing exit, not
+a new algorithm.
+
+Neither the audit lane nor the test suite can tell these two apart — both are
+`each_value_immutable` over a wide domain, and only one trips the guard. So read
+the loop for its exit condition before reaching for an interval rewrite, and put
+any rewrite of a hot query through a before/after benchmark.
+
 H1a is the one worth looking for first, because it is not a trade-off at all.
 The tree already has the machinery: `IntervalSet::each_interval_minus()`,
 `InferenceTracker::infer_not_in_range()`, and
@@ -95,6 +112,48 @@ unconditional equality to one that holds only under a guard.
 Views keep the per-value path: a view's atoms are spelled through the view and
 the lemmas have not been shown to bridge that. Same restriction, and same reason,
 as the single-support range path in the same file.
+
+**Where the conclusion needs a counting argument, only the case split changes.**
+`Among` is the third shape, and it is much cheaper than `ArrayMinMax`'s. Its
+conclusion does not follow from one row: it needs `pol` over the encoding's
+`sum >= how_many` half plus an at-most-one line per other variable, which is what
+shows that a variable stepping outside the value set leaves the count short. That
+argument does not mention the removed value at all, so it is *unchanged* by the
+rewrite. What changes is only the step before it, which zeroes the `[var = voi]`
+terms. Per value that was, for each value of interest,
+
+```
+rup  var != val \/ var != voi
+```
+
+and per range it is, for each value of interest,
+
+```
+rup  var < lo      \/ var != voi      [when voi < lo]
+rup  var >= hi + 1 \/ var != voi      [when voi > hi]
+```
+
+Every value of interest sits wholly on one side of the range — the ranges removed
+are the gaps between them — so which of the two applies is decided when the line
+is written, and unit propagation then reaches the negated eq atom along the
+ge-atom chain links. The per-value form needed no such choice because `var = val`
+pins every bit of `var`; a range pins none, so the side has to be picked
+explicitly rather than left to the checker.
+
+The count goes from `|voi|` lines per removed *value* to `|voi|` per removed
+*range*, and there are at most `|voi| + 1` of those however wide the domain is.
+Measured: `Among`'s survey row falls from 32996 → 329996 steps across a 10x width
+to a flat 98.
+
+**And unlike `ArrayMinMax`, this one bridges views**, so `Among` needs no
+plain-variable restriction: 259 range removals on view variables under proofs,
+all verified. The difference is that every atom in these lines is on the *same*
+variable — its order atoms against its own eq atoms — and `need_gevar` pol-derives
+a view's chain links from the underlying variable's. `ArrayMinMax`'s lemmas have
+to carry an atom on `result` across a row to an atom on `var_i`, and it is the
+crossing, not the range, that views break. So "does this constraint's range
+justification stay within one variable" is the question to ask before restricting
+a rewrite to `SimpleIntegerVariableID`.
 
 **The related trap.** The *hull bound* `result <= max_i ub(var_i)`, which #815
 proposes as a small first fix, is a different problem and is still open. There the
@@ -178,13 +237,17 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-68 probes, run on `7d014207`.
+69 probes. The lane itself is the authority — run it rather than trusting this
+table, which is a snapshot for orientation.
 
 | | constraints |
 |---|---|
-| **KnownTrip** (24) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `AllEqual/holes`, `Among`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality`, `In`, `ArrayMinMax`, `Element`, `LexSmartTable`, `Table`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (30) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` under `BC`, `AllEqual` without holes, `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **KnownTrip** (22) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `AllEqual/holes`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality`, `In`, `ArrayMinMax`, `Element`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
+| **Clean** (33) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` under `BC`, `AllEqual` without holes, `Among`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
+
+`Among` and `Table` started as `KnownTrip` and are now `Clean`, by the interval
+rewrites rather than by a weaker arm: both still propagate GAC.
 
 Three things in that table were not what #833 predicted, and are worth
 recording because they change what the later stages have to do:
@@ -195,10 +258,12 @@ recording because they change what the later stages have to do:
    `BC`.
 2. **`Power` trips**, which #833 did not list — it reaches `PowerTable`'s
    product enumeration. So does `LexSmartTable`.
-3. **`Among`'s trip is conditional.** Its per-value branch only runs with the
-   count pinned; with slack in the count the propagator concludes nothing and
-   the probe passes without touching the hazard. A probe that does not reach a
+3. **`Among`'s trip was conditional.** Its per-value branch only ran with the
+   count pinned; with slack in the count the propagator concluded nothing and
+   the probe passed without touching the hazard. A probe that does not reach a
    path proves nothing about it, which is what `HazardNotReached` exists to say.
+   The probe still pins the count for the same reason, now to reach the interval
+   rewrite that replaced the per-value branch.
 
 ### What the sharpening pass found
 
@@ -270,32 +335,53 @@ separately, because they mean different things:
 
 ### Results at 10^3 → 10^4
 
+Re-measured over all 69 probes after the interval rewrites for `ArrayMinMax`,
+`Table` and `Among` landed. The figures move, so re-run the survey rather than
+quoting this table after touching any propagator's removal loop — that is how the
+previous version of it went stale, see below.
+
 | | growth (opb / steps) | constraints |
 |---|---|---|
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
-| **Steps only** | 1.0x / 10x | **`Among`** (42-row OPB fixed, 32996 → 329996 steps) and **`Table`** (47-row OPB fixed, 50788 → 509788 steps) |
-| neither | 1.0x / 1.0x | everything else, 59 of 67 |
+| **Steps only** | 1.0x / 10x | `AllEqual/holes` (22-row OPB fixed, 16987 → 169987 steps), `GlobalCardinality` (30-row, 18024 → 180024), `Element` (32-row, 27981 → 279981) |
+| neither | 1.0x / 1.0x | everything else, 58 of 69 |
 
-**`Among` and `Table` are the two clean candidates.** Their encodings do not grow
-at all, so every one of those extra steps is the *same* derivation with a
-different value in it:
+`Multiply`, `Divide` and `Modulus` sit in the last row but are not flat: their OPB
+grows 1.8x for a 10x width, which is the bit-width of the product, not a per-value
+encoding. Nothing to do about that, and nothing a checker feature would help with.
 
-* `Table` is the purest. `extensional_utils.cc`'s support scan calls
-  `inference.infer(logger, vars[idx] != val, JustifyUsingRUP{hint}, table.reason)`
-  once per unsupported value — the same reason, the same hint, one RUP step each,
-  differing only in `val`. A rule that could discharge "these removals, for every
-  value in this interval, by this one derivation" would replace the lot.
-* `Among` emits, per removed value, one line per value-of-interest
-  (`among.cc`) — the same clause shape with one constant substituted, nested one
-  level deeper.
+**A "steps only" row is not on its own evidence for a checker feature**, and this
+is the lesson the table's own history teaches. The previous version named `Among`
+(32996 → 329996 steps) and `Table` (50788 → 509788) as the two clean candidates,
+on the grounds that their encodings do not grow at all, so every extra step is the
+same derivation with a different constant in it. That was true, and it was still
+the wrong conclusion: both were also H1a in the propagation column, and the
+interval rewrites collapsed both to **flat** — `Among` 98 steps and `Table` 93, at
+either width. The copy-paste was real, but the right place to remove it was the
+propagator, not the checker.
 
-Both are also H1a in the propagation column, so the interval-level rewrite would
-remove much of the proof volume as a side effect: an interval removal is one
-inference where a run of values was many. That does not make a checker feature
-redundant — the rewrite only applies where the removed set *is* an interval — but
-it does mean these two rows should be re-measured afterwards rather than quoted
-as a standing figure.
+So the question to ask of a row here is not "are the steps repetitive" but **"is
+the removed set an interval?"** Where it is, an interval rewrite deletes the
+volume at full strength and needs nothing from VeriPB. Where it is not, no rewrite
+helps and a checker feature is the only way out. On that test the three rows above
+are much better candidates than the two they replaced:
+
+* `AllEqual/holes` is the clearest case. The removed set is a domain punched full
+  of holes, so it is *not* an interval by construction — that is what the probe is
+  for — and no rewrite of the loop can turn it into one.
+* `GlobalCardinality` enumerates values in
+  `propagate_bounds_global_cardinality`, and under this document's own rule that
+  is a broken fallback arm rather than a missing one, so it is scheduled work
+  either way.
+* `Element` walks the result values its array does not support (`element.cc`),
+  which for a narrow array over a wide result *is* mostly intervals. It is the
+  next H1a rewrite, and the honest expectation is that it collapses like the other
+  two rather than surviving as evidence.
+
+The table was last stale because the probe sharpening of PR #849 turned exactly
+these three rows from `HazardNotReached` into real hazards without the survey
+being re-run. Sharpening a probe changes what the survey measures.
 
 ### The bad encoding cases
 
