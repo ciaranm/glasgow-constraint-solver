@@ -154,6 +154,62 @@ auto run_holes_test(bool proofs) -> void
     check_results(proof_name, expected, actual);
 }
 
+// A removed interval whose parts are missing from *different* variables.
+//
+// The intersection pruning takes each variable's domain minus the intersection of
+// all of them, so a single contiguous run of that difference can be explained by
+// one variable at its start and another at its end. That is the case the reason
+// has to split by witness, and nothing else in this file reaches it: everywhere
+// else, one variable's hole happens to cover the whole run.
+//
+// x is the full range; y is missing the lower half of the middle band and z the
+// upper half, so the band leaves x as one interval that neither alone witnesses.
+auto run_mixed_witness_test(bool proofs) -> void
+{
+    print(cerr, "all_equal mixed witness{}", proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    const int hi = 20;
+    auto without = [](int lo, int upper, int gap_lo, int gap_hi) {
+        vector<int> vs;
+        for (int v = lo; v <= upper; ++v)
+            if (v < gap_lo || v > gap_hi)
+                vs.push_back(v);
+        return vs;
+    };
+    auto dy = without(0, hi, 5, 9);
+    auto dz = without(0, hi, 10, 14);
+
+    auto in = [](int v, const vector<int> & sv) {
+        for (auto u : sv)
+            if (u == v)
+                return true;
+        return false;
+    };
+
+    set<tuple<int, int, int>> expected, actual;
+    build_expected(
+        expected, [&](int x, int y, int z) -> bool { return x == y && y == z && in(y, dy) && in(z, dz); }, pair{0, hi}, pair{0, hi}, pair{0, hi});
+    println(cerr, " expecting {} solutions", expected.size());
+
+    auto to_integers = [](const vector<int> & vs) {
+        vector<Integer> out;
+        for (auto v : vs)
+            out.emplace_back(v);
+        return out;
+    };
+
+    Problem p;
+    auto x = p.create_integer_variable(0_i, Integer{hi});
+    auto y = p.create_integer_variable(to_integers(dy));
+    auto z = p.create_integer_variable(to_integers(dz));
+    p.post(AllEqual{vector<IntegerVariableID>{x, y, z}});
+
+    auto proof_name = proofs ? make_optional("all_equal_test_mixed_witness") : nullopt;
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y, z});
+    check_results(proof_name, expected, actual);
+}
+
 // Dup-variable test: AllEqual with the same handle in several positions.
 // Duplicates are idempotent (x = x is vacuous); the constraint reduces to
 // AllEqual over the unique vars. Consistency isn't checked on dup runs;
@@ -250,6 +306,7 @@ auto main(int argc, char * argv[]) -> int
             run_test(proofs, view_cfg, doms);
         if (run_holes)
             run_holes_test(proofs);
+        run_mixed_witness_test(proofs);
         if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
             // Degenerate collections with genuine constants (issue #254).
             run_all_equal_collection_test(proofs, "empty", {});
