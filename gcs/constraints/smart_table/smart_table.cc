@@ -498,12 +498,10 @@ namespace
 
         if (! some_tuple_still_feasible) {
             if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                auto justf = [&](const ReasonLiterals & reason) -> void {
-                    for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (! pb_selectors[tuple_idx]) >= 1_i, ProofLevel::Temporary);
-                    }
-                };
-                inference.contradiction(logger, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, reason_to_use);
+                // contradiction by case analysis over the tuple selectors: every tuple is
+                // infeasible here, and the model's at-least-one tuple selector forbids the
+                // all-false case.
+                inference.contradiction(logger, JustifyUsingCases{pb_selectors, hints::SmartTable{owner}}, reason_to_use);
                 // if (short_reasons) {
                 //     logger->delete_range(reason_definition_1, reason_definition_2 + 1);
                 // }
@@ -517,13 +515,9 @@ namespace
 
             for (const auto & var : vars) {
                 for (const auto & value : unsupported[var]) {
-                    auto justf = [&](const ReasonLiterals & reason) -> void {
-                        for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                            logger->emit_rup_proof_line_under_reason(
-                                reason, WPBSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i, ProofLevel::Temporary);
-                        }
-                    };
-                    inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, reason_to_use);
+                    // var != value by case analysis over the tuple selectors: no feasible
+                    // tuple assigns var = value, and at-least-one forbids the all-false case.
+                    inference.infer_not_equal(logger, var, value, JustifyUsingCases{pb_selectors, hints::SmartTable{owner}}, reason_to_use);
                 }
             }
             // if (short_reasons) {
