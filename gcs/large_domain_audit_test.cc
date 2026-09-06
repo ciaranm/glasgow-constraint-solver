@@ -340,16 +340,32 @@ namespace
             auto v = wide(p, 3);
             p.post(AtMostOneSmartTable{v, wide_var(p)});
         });
-        add("GlobalCardinality", Expect::KnownTrip, [](Problem & p) {
-            // The counterexample to "just default to BC": this already defaults
-            // to consistency::BC and still enumerates values. Reaching that needs
-            // the just-met-demand branch (bounds_global_cardinality.cc:127), where
-            // the number of variables that *can* take a cover value equals that
-            // value's count lower bound -- so each is forced to it by removing
-            // every other value one at a time. Three variables, one cover value,
-            // and a count pinned at three does it.
+        add("GlobalCardinality", Expect::Clean, [](Problem & p) {
+            // Was the counterexample to "just default to BC": this already
+            // defaults to consistency::BC and still enumerated values, so under
+            // the governing rule it was a broken fallback arm rather than a
+            // missing one. Reaching it needs the just-met-demand branch, where the
+            // number of variables that *can* take a cover value equals that
+            // value's count lower bound -- so each is forced to it. Three
+            // variables, one cover value, and a count pinned at three does it.
+            // Forcing a variable to a value is now two range removals.
             auto v = wide(p, 3);
             p.post(GlobalCardinality{v, {1_i}, {p.create_integer_variable(3_i, 3_i)}});
+        });
+        add("GlobalCardinality/hall", Expect::KnownTrip, [](Problem & p) {
+            // The second per-value site, in part 2's Hall reasoning: when the
+            // variables that can meet a hall set are exactly as many as the set
+            // demands, each is pruned to the set by removing everything outside it
+            // one value at a time. The probe above cannot reach this -- one cover
+            // value means there is no multi-value hall to form -- so it needs its
+            // own row rather than being covered by association.
+            //
+            // Not fixed with the other site because its justification is not
+            // range-shaped: the pol builds an at-most-one over the hall set plus
+            // the single removed value, so the removed value is named in the
+            // derivation rather than merely concluded.
+            auto v = wide(p, 2);
+            p.post(GlobalCardinality{v, {1_i, 2_i}, {p.create_integer_variable(1_i, 1_i), p.create_integer_variable(1_i, 1_i)}});
         });
         add("In", Expect::Clean, [](Problem & p) {
             // Its conclusions were always interval-level; what was per-value was
