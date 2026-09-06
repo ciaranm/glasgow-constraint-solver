@@ -103,7 +103,7 @@ you `f_i` — so the lemmas above do not apply and it needs `pol` over OPB line
 numbers `define_proof_model` does not keep. The interval rewrite above makes it
 unnecessary for the case that motivated it.
 
-H3 has two precedents in the tree for what a good cap looks like:H3 has two precedents in the tree for what a good cap looks like:
+H3 has two precedents in the tree for what a good cap looks like:
 `ExtensionalDomainBitmaps::max_words` and `cumulative.cc`'s
 `max_knapsack_capacity`. Both are far above anything a real model asks for, both
 degrade to a named weaker rung rather than silently doing less, and the comment
@@ -132,6 +132,14 @@ Two kinds of check, and the difference matters:
   branching heuristic asks for a generator over a billion-value domain and reads
   one value from it, which is fine. An early version of this guard checked the
   width and condemned `Plus`, `Abs`, `LessThan` and `LinearEquality` for it.
+
+  `State`'s iterators are not the only way a propagator walks a domain: it can
+  also build an `IntervalSet` of its own and walk that, which `State` never sees.
+  Such a loop needs its own counter, declared at the loop. `Element`'s sweep over
+  the result values the array does not support (`element.cc`) is the one such site
+  outside proof logging, and it is instrumented. The counter does not belong in
+  `IntervalSet::each()` itself, which is a general container used for deliberate
+  enumeration — tabulation, and the tests.
 * **`GCS_CHECK_LARGE_DOMAIN`** checks a size up front, for the H3 sites that
   commit to a whole array at once.
 

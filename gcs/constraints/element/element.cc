@@ -4,6 +4,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -619,7 +620,19 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                 };
                 collect_supported_values(collect_supported_values, 0);
 
+                // The set left over is the result's domain minus what the array
+                // covers, so a narrow array over a wide result leaves nearly the
+                // whole domain to walk a value at a time. The guard belongs here
+                // rather than only on State's iterators: this walks an IntervalSet
+                // the propagator built for itself, which those never see, and a
+                // walk of that shape is the same #833 hazard however the values
+                // were obtained. Without it the probe's outcome is decided by how
+                // much memory the machine happens to have -- 16 GB and 81 s here,
+                // a bad_alloc somewhere smaller -- which is not a test result.
+                LargeDomainIterationCounter unsupported_guard{"the number of unsupported result values one Element propagation has walked"};
+
                 for (auto value : still_to_find_support_for.each()) {
+                    unsupported_guard.step();
                     // index_vars stay a declarative generic_reason, concatenated with
                     // the per-considered-var literals; assembled only when a reason
                     // will be read.
