@@ -360,13 +360,13 @@ namespace
             auto v = wide(p, 4);
             p.post(ArrayMax{vector<IntegerVariableID>{v[0], v[1], v[2]}, v[3]});
         });
-        add("Element", Expect::KnownTrip, [](Problem & p) {
+        add("Element", Expect::Clean, [](Problem & p) {
             // The array entries have to be *narrow* for this to bite. The GAC
             // sweep erases each entry's domain from the result's still-unsupported
-            // set (element.cc:583), so a wide entry erases the lot in one
-            // erase_range and leaves nothing, while a narrow one leaves the rest
-            // of the result's domain to be walked a value at a time
-            // (element.cc:621).
+            // set, so a wide entry erases the lot in one erase_range and leaves
+            // nothing, while a narrow one leaves the rest of the result's domain
+            // behind. That remainder used to be walked a value at a time; it is
+            // now removed as the two ranges it is.
             auto result = wide_var(p);
             p.post(Element{result, p.create_integer_variable(0_i, 2_i), narrow(p, 3, 1_i, 3_i)});
         });
