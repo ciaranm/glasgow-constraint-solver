@@ -362,26 +362,43 @@ either width. The copy-paste was real, but the right place to remove it was the
 propagator, not the checker.
 
 So the question to ask of a row here is not "are the steps repetitive" but **"is
-the removed set an interval?"** Where it is, an interval rewrite deletes the
-volume at full strength and needs nothing from VeriPB. Where it is not, no rewrite
-helps and a checker feature is the only way out. On that test the three rows above
-are much better candidates than the two they replaced:
+the removed set an interval?"** Where it is, an interval rewrite deletes the volume
+at full strength and needs nothing from VeriPB. Where it is not, no rewrite helps
+and a checker feature is the only way out.
 
-* `AllEqual/holes` is the clearest case. The removed set is a domain punched full
-  of holes, so it is *not* an interval by construction — that is what the probe is
-  for — and no rewrite of the loop can turn it into one.
-* `GlobalCardinality` enumerates values in
-  `propagate_bounds_global_cardinality`, and under this document's own rule that
-  is a broken fallback arm rather than a missing one, so it is scheduled work
-  either way.
+**On that test, none of the three rows above is a candidate either.** All three are
+H1a sites — a propagator expanding an interval by hand — and all three are stage 4
+work rather than evidence:
+
+* `AllEqual/holes` is the starkest. `all_equal.cc` already computes the values to
+  remove with `each_interval_minus`, and then expands each interval one value at a
+  time. The interval is literally in hand when the per-value loop starts. The only
+  real obstacle is that the reason names a *witness* — some variable whose domain
+  lacks that value — which can differ across one interval, because the difference
+  is taken against the intersection of every domain. Differencing against each
+  variable separately gives ranges with a constant witness, at the cost of
+  overlapping removals, which are idempotent.
+* `GlobalCardinality`'s just-met-demand branch
+  (`bounds_global_cardinality.cc`) removes every value of a variable *except*
+  one, which is two range removals — and its reason is already hoisted out of the
+  loop and constant, so it is a simpler case than `Among`'s. Under this document's
+  own rule it is a broken fallback arm rather than a missing one, so it is
+  scheduled work regardless.
 * `Element` walks the result values its array does not support (`element.cc`),
-  which for a narrow array over a wide result *is* mostly intervals. It is the
-  next H1a rewrite, and the honest expectation is that it collapses like the other
-  two rather than surviving as evidence.
+  which for a narrow array over a wide result is mostly intervals.
 
-The table was last stale because the probe sharpening of PR #849 turned exactly
-these three rows from `HazardNotReached` into real hazards without the survey
-being re-run. Sharpening a probe changes what the survey measures.
+So the survey currently supports **no** VeriPB feature request at all: every row
+whose steps grow at a fixed encoding is a propagator that has an interval and
+spells it out. That is a real conclusion rather than a gap in the survey, and it
+should be re-tested after stage 4 rather than assumed to stay true — a genuine
+candidate would be a growing row whose removed set provably is not an interval,
+and none of the 69 probes produces one today.
+
+Two things kept this table wrong for longer than it should have been. The probe
+sharpening of PR #849 turned exactly these three rows from `HazardNotReached` into
+real hazards without the survey being re-run — sharpening a probe changes what the
+survey measures. And the rows were read as feature evidence without first checking
+the propagator for an interval it had already computed.
 
 ### The bad encoding cases
 
