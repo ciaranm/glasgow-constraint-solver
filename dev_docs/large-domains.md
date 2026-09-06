@@ -439,7 +439,7 @@ previous version of it went stale, see below.
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 33984 → 339984 steps) |
-| neither | 1.0x / 1.0x | everything else, 60 of 70 |
+| neither | 1.0x / 1.0x | everything else, 61 of 70 |
 
 `Multiply`, `Divide` and `Modulus` sit in the last row but are not flat: their OPB
 grows 1.8x for a 10x width, which is the bit-width of the product, not a per-value
