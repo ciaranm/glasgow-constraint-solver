@@ -340,7 +340,7 @@ table, which is a snapshot for orientation.
 as `KnownTrip` and are now `Clean`, by the interval rewrites rather than by a
 weaker arm: all of them still propagate at their original strength.
 
-`GlobalCardinality` mattered most of the five, because it was the rule's own
+`GlobalCardinality` mattered most of the six, because it was the rule's own
 counterexample: already the bounds arm, and still enumerating, so it had nothing
 weaker to fall back to. Its just-met-demand branch forces a variable to a value,
 which is two range removals however wide the domain is. **A second per-value site
@@ -446,8 +446,9 @@ separately, because they mean different things:
 
 ### Results at 10^3 → 10^4
 
-Re-measured over all 69 probes after the interval rewrites for `ArrayMinMax`,
-`Table` and `Among` landed. The figures move, so re-run the survey rather than
+Re-measured over all 70 probes after the interval rewrites landed for
+`ArrayMinMax`, `Table`, `Among`, `Element`, `In`, `GlobalCardinality` and
+`AllEqual/holes`. The figures move, so re-run the survey rather than
 quoting this table after touching any propagator's removal loop — that is how the
 previous version of it went stale, see below.
 
@@ -458,9 +459,13 @@ previous version of it went stale, see below.
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 33984 → 339984 steps) |
 | neither | 1.0x / 1.0x | everything else, 61 of 70 |
 
-`Multiply`, `Divide` and `Modulus` sit in the last row but are not flat: their OPB
-grows 1.8x for a 10x width, which is the bit-width of the product, not a per-value
-encoding. Nothing to do about that, and nothing a checker feature would help with.
+The last row means "does not grow with the width", not "identical at both widths",
+and three entries in it are worth naming so nobody reads them as a promise.
+`Multiply`, `Divide` and `Modulus` grow **1.8x** in OPB rows for a 10x width, which
+is the bit-width of the product rather than a per-value encoding; and `Modulus`
+also moves 77 → 85 steps, **1.1x**. Both are logarithmic in the width, so neither
+is a hazard and neither is something a checker feature would help with — but they
+are not 1.0x, and the row's header is a threshold, not a measurement.
 
 **A "steps only" row is not on its own evidence for a checker feature**, and this
 is the lesson the table's own history teaches. The previous version named `Among`
@@ -505,15 +510,16 @@ work rather than evidence:
   remaining candidate for exactly that reason.
 * `Element` walked the result values its array does not support (`element.cc`),
   which for a narrow array over a wide result is mostly intervals. **Done**, and it
-  collapsed as predicted: 27981 → 279981 steps became a flat 108. Two of the three
-  are left.
+  collapsed as predicted: 27981 → 279981 steps became a flat 108. All three are
+  now done, and each collapsed the same way, which is what leaves the paragraph
+  below with a single row to stand on.
 
 So the survey currently supports **no** VeriPB feature request at all: every row
 whose steps grow at a fixed encoding is a propagator that has an interval and
 spells it out. That is a real conclusion rather than a gap in the survey, and it
 should be re-tested after stage 4 rather than assumed to stay true — a genuine
 candidate would be a growing row whose removed set provably is not an interval,
-and none of the 69 probes produces one today.
+and none of the 70 probes produces one today.
 
 Two things kept this table wrong for longer than it should have been. The probe
 sharpening of PR #849 turned exactly these three rows from `HazardNotReached` into
@@ -525,8 +531,9 @@ the propagator for an interval it had already computed.
 
 Eight constraints write an OPB whose size grows with the domain. They are not
 all the same shape, and the difference decides whether a checker feature is the
-only way out. All five are filed and parked under tracker **#846**; nothing here
-is scheduled before the propagation work in #833.
+only way out. They are filed as five issues -- the `Regular` family shares one --
+and parked under tracker **#846**; nothing here is scheduled before the
+propagation work in #833.
 
 | issue | constraint | rows | what varies per row | re-encodable without checker help? |
 |---|---|---|---|---|
