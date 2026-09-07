@@ -236,6 +236,58 @@ auto run_holey_no_overlap_equals_test(bool proofs, bool swapped) -> void
     check_results(proof_name, expected, actual);
 }
 
+// The same interleaved shape with a *view* as the second operand, which is the
+// one instance here whose witness is not spelled entirely in intervals.
+//
+// A view has no range literal (#882), so a run of values it cannot take is
+// spelled out value by value in the reason -- and the second operand is the one
+// whose runs cost lemmas. The witness has to recognise those single-value
+// literals as one run again, or it pays two lemmas per value instead of two per
+// run; the proof still verifies either way, which is why this is checked by
+// diffing proof bytes against the interval spelling rather than by a lane going
+// red. Measured on this instance: 527 proof lines, against 536 if the run is
+// not put back together.
+//
+// It matters more than a handful of lines because it is the only coverage of the
+// witness reading a run out of literals it did not write as a range: everything
+// else in this file hands it interval literals.
+auto run_holey_no_overlap_view_equals_test(bool proofs) -> void
+{
+    print(cerr, "holey no overlap equals with a view operand{}", proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    // {4..7, 12..15} against a view of {0..3, 8..11}: interleaved, disjoint, and
+    // the walk climbs the bare operand, so every run it steps over belongs to
+    // the view.
+    vector<Integer> lower_first, upper_first;
+    for (Integer v = 0_i; v <= 15_i; ++v)
+        ((v / 4_i) % 2_i == 0_i ? lower_first : upper_first).push_back(v);
+
+    set<tuple<int, int, int>> expected, actual;
+    for (const auto & xv : upper_first)
+        for (const auto & yv : lower_first)
+            expected.emplace(static_cast<int>(xv.raw_value), static_cast<int>(yv.raw_value), 0);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto x = p.create_integer_variable(upper_first);
+
+    // A non-zero offset, deliberately: `v + 0` deviews onto the underlying
+    // variable in the proof and gets that variable's range literals, so it would
+    // not exercise the per-value spelling at all.
+    vector<Integer> shifted;
+    for (const auto & v : lower_first)
+        shifted.push_back(v - 1_i);
+    auto y = p.create_integer_variable(shifted) + 1_i;
+    auto b = p.create_integer_variable(0_i, 1_i);
+    p.post(EqualsIff{x, y, b == 1_i});
+
+    auto proof_name = proofs ? make_optional("equals_test_holey_view") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{x, y, b});
+
+    check_results(proof_name, expected, actual);
+}
+
 // A reified equals whose operands are wide and do not overlap. Nothing else in
 // this file goes anywhere near this shape: every other domain here lives inside
 // [-10, 10], and range_infer_test works inside [0, 40], so the no-overlap rule
@@ -586,6 +638,7 @@ auto main(int argc, char * argv[]) -> int
             run_no_overlap_equals_test(proofs);
             run_holey_no_overlap_equals_test(proofs, false);
             run_holey_no_overlap_equals_test(proofs, true);
+            run_holey_no_overlap_view_equals_test(proofs);
             if (proofs)
                 run_wide_proved_no_overlap_equals_test();
             else
