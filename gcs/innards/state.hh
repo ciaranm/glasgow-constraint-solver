@@ -396,9 +396,17 @@ namespace gcs::innards
         [[nodiscard]] auto has_single_value(const IntegerVariableID) const -> bool;
 
         /**
-         * Provide a generator that iterates over each value in a variable's domain. The
-         * variable's domain must not be modified whilst the generator is alive. Call using
-         * either IntegerVariableID or one of its more specific types.
+         * Provide a generator that iterates over each value in a variable's domain,
+         * **in ascending order**. The variable's domain must not be modified whilst
+         * the generator is alive. Call using either IntegerVariableID or one of its
+         * more specific types.
+         *
+         * Ascending in the *variable's own* values, which for a negated view is the
+         * reverse of the underlying domain's order: the walk goes backwards over the
+         * stored intervals, which costs nothing, rather than sorting afterwards,
+         * which would. Getting this wrong made value_order::smallest_first() hand
+         * out the largest value first, and made it indistinguishable from
+         * largest_first (issue #890).
          *
          * \sa State::each_value_mutable(), State::for_each_value_immutable()
          */
@@ -406,10 +414,14 @@ namespace gcs::innards
         auto each_value_immutable(const VarType_ &) const -> std::generator<Integer>;
 
         /**
-         * Provide a generator that iterates over each value in a variable's domain. The
-         * variable's domain may be modified whilst the generator is alive, but the generator
-         * will run over the values pre-modification. Call using either IntegerVariableID or
-         * one of its more specific types.
+         * Provide a generator that iterates over each value in a variable's domain,
+         * **in ascending order**. The variable's domain may be modified whilst the
+         * generator is alive, but the generator will run over the values
+         * pre-modification. Call using either IntegerVariableID or one of its more
+         * specific types.
+         *
+         * Ascending in the variable's own values; see State::each_value_immutable()
+         * for what that means for a negated view.
          *
          * \sa State::each_value_immutable(), State::for_each_value_mutable()
          */
@@ -418,7 +430,9 @@ namespace gcs::innards
 
         /**
          * Non-coroutine alternative to each_value_immutable(). Calls \p cb(value)
-         * for each value in the variable's domain, in ascending order. Avoids the
+         * for each value in the variable's domain, in ascending order --- of the
+         * variable's own values, so a negated view walks the stored intervals
+         * backwards (issue #890). Avoids the
          * std::generator frame allocation, the std::function the view-application
          * needs in the generator version, and copying the underlying IntervalSet.
          *
@@ -435,10 +449,17 @@ namespace gcs::innards
                 actual_var,
                 [&, negate_first = negate_first, then_add = then_add](const SimpleIntegerVariableID & v) {
                     LargeDomainIterationCounter guard{"the number of values one for_each_value_immutable() call has visited"};
-                    state_of_for_iteration(v).for_each([&](Integer i) {
+                    auto step = [&](Integer i) {
                         guard.step();
                         return cb(state_detail::apply_view(i, negate_first, then_add));
-                    });
+                    };
+                    // A negated view reverses the underlying domain's order, so
+                    // walking the stored set backwards is what hands the view's
+                    // values out ascending.
+                    if (negate_first)
+                        state_of_for_iteration(v).for_each_reversed(step);
+                    else
+                        state_of_for_iteration(v).for_each(step);
                 },
                 [&, negate_first = negate_first, then_add = then_add](
                     const ConstantIntegerVariableID & v) { cb(state_detail::apply_view(v.const_value, negate_first, then_add)); });
@@ -447,7 +468,8 @@ namespace gcs::innards
         /**
          * Non-coroutine alternative to each_value_mutable(). The variable's
          * domain may be modified by \p cb; iteration walks a snapshot of the
-         * pre-modification domain. If \p cb returns \c bool, returning \c false
+         * pre-modification domain, in ascending order of the variable's own
+         * values (issue #890). If \p cb returns \c bool, returning \c false
          * stops iteration early.
          *
          * \sa State::each_value_mutable(), State::for_each_value_immutable()
@@ -461,10 +483,14 @@ namespace gcs::innards
                 [&, negate_first = negate_first, then_add = then_add](const SimpleIntegerVariableID & v) {
                     auto snapshot = state_of_for_iteration(v);
                     LargeDomainIterationCounter guard{"the number of values one for_each_value_mutable() call has visited"};
-                    snapshot.for_each([&](Integer i) {
+                    auto step = [&](Integer i) {
                         guard.step();
                         return cb(state_detail::apply_view(i, negate_first, then_add));
-                    });
+                    };
+                    if (negate_first)
+                        snapshot.for_each_reversed(step);
+                    else
+                        snapshot.for_each(step);
                 },
                 [&, negate_first = negate_first, then_add = then_add](
                     const ConstantIntegerVariableID & v) { cb(state_detail::apply_view(v.const_value, negate_first, then_add)); });

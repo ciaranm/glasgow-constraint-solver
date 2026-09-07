@@ -304,6 +304,18 @@ constants:
   not rely on that, since it is allowed to be optimised in future to
   avoid the copy. `CurrentState` exposes a single `each_value` (forward)
   and `each_value_reversed` (descending) for callback-time consumers.
+- **Ascending means ascending in the variable's own values, views
+  included** — and that is worth spelling out because it was not true
+  until #890. A view's values are produced by applying the view to the
+  underlying domain as it is walked, and a *negated* view reverses the
+  order while doing so, so an ascending walk of the stored intervals
+  handed a negated view's values out largest first. The four entry
+  points now walk the stored set backwards when `negate_first` is set,
+  which costs nothing; `copy_of_values()` was already re-sorting, so it
+  and `each_value_reversed()` (built on it) were right all along, and it
+  was the cheap path that disagreed with them. The symptom was
+  `value_order::smallest_first()` yielding the largest value first, and
+  being indistinguishable from `largest_first`.
 - `for_each_value_immutable(var, cb)`, `for_each_value_mutable(var, cb)` —
   the same two contracts, delivered by calling `cb(value)` in ascending
   order rather than returning a generator. A `cb` returning `bool` stops
