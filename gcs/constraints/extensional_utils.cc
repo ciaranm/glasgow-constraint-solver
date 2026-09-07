@@ -29,8 +29,11 @@ using std::make_shared;
 using std::shared_ptr;
 using std::size_t;
 using std::uint32_t;
+using std::unique;
 using std::vector;
 using std::visit;
+
+using std::ranges::sort;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -125,6 +128,39 @@ namespace
     auto tuple_value_range(const IntegerOrWildcard & v, std::optional<std::pair<long long, long long>> & range) -> bool
     {
         return visit([&](auto & v) { return tuple_value_range(v, range); }, v);
+    }
+
+    // The set of values a position actually takes across the whole table, as
+    // intervals. nullopt if any tuple has a wildcard there, since then the
+    // position takes every value and there is nothing to exclude.
+    //
+    // Only built for a position the bitmaps declined for width, which is exactly
+    // where it pays: the bitmap covers a range of at most a few thousand values,
+    // so a position it accepts is already bounded and a compact table never
+    // reaches this at all. A position it declined can span the whole domain --
+    // a column holding only 1 and 1000000 has a range of a million and two
+    // entries -- and there the gaps between the values are what stops the
+    // support scan walking the variable's domain one value at a time.
+    template <typename Tuples_>
+    auto tuple_value_set(const Tuples_ & tuples, std::size_t n_tuples, unsigned idx) -> std::optional<IntervalSet<Integer>>
+    {
+        std::vector<Integer> values;
+        values.reserve(n_tuples);
+        for (std::size_t t = 0; t < n_tuples; ++t) {
+            const auto & entry = get_tuple_value(tuples, static_cast<unsigned>(t), idx);
+            std::optional<std::pair<long long, long long>> one;
+            if (! tuple_value_range(entry, one))
+                return std::nullopt;
+            values.emplace_back(one->first);
+        }
+
+        sort(values);
+        values.erase(unique(values.begin(), values.end()), values.end());
+
+        IntervalSet<Integer> result;
+        for (const auto & v : values)
+            result.insert_at_end(v);
+        return result;
     }
 
     // Membership against a rasterised domain, given the position is usable. The
@@ -717,6 +753,64 @@ auto gcs::innards::propagate_extensional(
     // the same as a full scan; only the search for a witness is incremental.
     auto & residues = *table.residues;
     if (! residues.initialised) {
+        // Before anything is laid out, and exactly once: take each variable's
+        // domain down to the values the table can actually supply at its
+        // position. Once, because domains only ever shrink -- a domain that is
+        // inside the table's reach stays inside it -- so nothing here can fire
+        // after the first call, which is at the root. Doing it per call instead
+        // cost 7% on Dubois, whose two-value domains make every one of these
+        // checks a no-op across a million and a half nodes.
+        //
+        // On a position whose table range was too wide to rasterise, this takes
+        // the domain down to the values the table actually holds there. Those gaps are static -- they are a fact
+        // about the tuples, not about the search -- so this happens once, at the
+        // root, and the number of removals is bounded by the number of distinct
+        // values in the column rather than by the width of the domain.
+        //
+        // This is what stops the support scan below being O(domain). Without it
+        // a column holding only 1 and 1000000 makes the scan walk a million
+        // values, removing all but two of them one at a time; with proofs that
+        // was 3.6 GB and still growing. Afterwards the domain holds at most as
+        // many values as the column has distinct entries, so the scan is bounded
+        // by the table's own size, which is the cost the table was always going
+        // to be.
+        //
+        // A position the bitmaps accepted is skipped: its range is already at
+        // most a few thousand values, so there is nothing here to win and the
+        // compact case pays nothing at all -- not even the pass over the tuples,
+        // which only happens for a position already known to be wide.
+        visit(
+            [&](const auto & tuples) {
+                const auto n_tuples = live.dense.size();
+                for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
+                    const auto & pos = bitmaps.positions[idx];
+                    if (pos.usable) {
+                        // A position the bitmaps accepted spans at most a few
+                        // thousand values, so the ends are all there is to take
+                        // off, and they are bound tightenings: a bound moves one
+                        // order atom, where a range literal is a conjunction of
+                        // two and materialises the variable's interval partition.
+                        auto [var_lo, var_hi] = state.bounds(table.vars[idx]);
+                        auto table_lo = Integer{pos.base};
+                        auto table_hi = Integer{pos.base + static_cast<long long>(pos.n_values) - 1};
+                        if (var_lo < table_lo)
+                            inference.infer_greater_than_or_equal(logger, table.vars[idx], table_lo, JustifyUsingRUP{hint}, table.reason);
+                        if (var_hi > table_hi)
+                            inference.infer_less_than(logger, table.vars[idx], table_hi + 1_i, JustifyUsingRUP{hint}, table.reason);
+                        continue;
+                    }
+
+                    auto present = tuple_value_set(*tuples, n_tuples, idx);
+                    if (! present)
+                        continue;
+
+                    auto domain = state.copy_of_values(table.vars[idx]);
+                    for (auto [lo, hi] : domain.each_interval_minus(*present))
+                        inference.infer_not_in_range(logger, table.vars[idx], lo, hi, JustifyUsingRUP{hint}, table.reason);
+                }
+            },
+            table.tuples);
+
         residues.support.resize(table.vars.size());
         residues.base.resize(table.vars.size());
         for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
@@ -748,6 +842,20 @@ auto gcs::innards::propagate_extensional(
             // per step, and the loads that get there are loop-invariant.
             const auto & rows = *tuples;
             for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
+                // Every value outside the range the *table* holds at this
+                // position appears in no tuple, so it is unsupported by
+                // construction and needs no scan to establish it. Taking the two
+                // tails off as ranges bounds the walk below by the table's range
+                // instead of the variable's, which is what stops a wide domain
+                // being hopeless (issue #833) -- and the walk is where the cost
+                // is, at one pass over the live tuples per value.
+                //
+                // In the compact case, where the domain already sits inside the
+                // table's range, this is two comparisons against bounds that are
+                // O(1) to read: no inference, no allocation, nothing added to
+                // the scan itself. That case is the one that matters for
+                // throughput, so it is the one kept free.
+                //
                 auto * const residue_row = residues.support[idx].data();
                 const auto residue_row_size = residues.support[idx].size();
                 const auto base = residues.base[idx];
