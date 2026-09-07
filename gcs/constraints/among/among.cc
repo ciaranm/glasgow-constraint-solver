@@ -230,31 +230,29 @@ auto Among::install_propagators(Propagators & propagators) -> void
                 // question again per variable, as this used to, walks the value set
                 // to recompute an answer already in hand.
                 for (const auto & var : can_be_either_vars) {
-                    {
-                        vector<Literal> inferences;
-                        for (const auto & val : values_of_interest)
-                            inferences.push_back(var != val);
+                    vector<Literal> inferences;
+                    for (const auto & val : values_of_interest)
+                        inferences.push_back(var != val);
 
-                        auto emit = [&](const ReasonLiterals &) -> void {
-                            // We need to bound the sum from BELOW: must_match vars each
-                            // contribute at least one to the Among sum, so combining the
-                            // (sum <= how_many) half with at-least-one constraints for
-                            // every must_match var derives that any extra contribution
-                            // from a non-must-match variable conflicts with the fixed
-                            // how_many = must_match_count value.
-                            if (sum_line.first && ! empty(must_match_vars)) {
-                                PolBuilder b;
-                                b.add(*sum_line.first);
-                                for (const auto & m : must_match_vars) {
-                                    if (holds_alternative<ConstantIntegerVariableID>(m))
-                                        continue;
-                                    b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
-                                }
-                                b.emit(*logger, ProofLevel::Temporary);
+                    auto emit = [&](const ReasonLiterals &) -> void {
+                        // We need to bound the sum from BELOW: must_match vars each
+                        // contribute at least one to the Among sum, so combining the
+                        // (sum <= how_many) half with at-least-one constraints for
+                        // every must_match var derives that any extra contribution
+                        // from a non-must-match variable conflicts with the fixed
+                        // how_many = must_match_count value.
+                        if (sum_line.first && ! empty(must_match_vars)) {
+                            PolBuilder b;
+                            b.add(*sum_line.first);
+                            for (const auto & m : must_match_vars) {
+                                if (holds_alternative<ConstantIntegerVariableID>(m))
+                                    continue;
+                                b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
                             }
-                        };
-                        inference.infer_all(logger, inferences, JustifyExplicitly{emit, ThenRUP::Yes, hints::Among{owner}}, vars_and_bounds_reason);
-                    }
+                            b.emit(*logger, ProofLevel::Temporary);
+                        }
+                    };
+                    inference.infer_all(logger, inferences, JustifyExplicitly{emit, ThenRUP::Yes, hints::Among{owner}}, vars_and_bounds_reason);
                 }
 
                 // now every variable is set in a way that either must
@@ -292,50 +290,48 @@ auto Among::install_propagators(Propagators & propagators) -> void
                     // on a search that calls this a million times it was the single
                     // biggest cost in the propagator.
                     for (const auto & var : can_be_either_or_must_vars) {
-                        {
-                            // Both sets have to be named locals: each_interval_minus()
-                            // hands out a generator borrowing *both*, which must outlive
-                            // it (see IntervalSet's class documentation). Iterating a
-                            // temporary's generator reads freed intervals, and here that
-                            // would remove values the constraint supports -- lost
-                            // solutions rather than lost pruning.
-                            auto var_values = state.copy_of_values(var);
-                            for (auto [lo, hi] : var_values.each_interval_minus(voi_set)) {
-                                auto emit = [&, lo = lo, hi = hi](const ReasonLiterals &) {
-                                    // Same shape as the per-value argument, restated over
-                                    // a range: if var lies in [lo, hi] then var is not any
-                                    // value of interest. Each value of interest sits
-                                    // wholly on one side of the range -- the range is a
-                                    // gap between them -- so one order atom rules it out,
-                                    // and unit propagation gets from that atom to the
-                                    // negated eq atom along the ge-atom chain links. The
-                                    // per-value form did not need the chain, because
-                                    // var == val pins every bit of var; a range pins none,
-                                    // which is why the side has to be picked explicitly
-                                    // rather than left to the checker.
-                                    for (const auto & voi : values_of_interest) {
-                                        auto outside = voi < lo ? (var < lo) : (var >= hi + 1_i);
-                                        logger->emit(RUPProofRule{}, WPBSum{} + 1_i * outside + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
-                                    }
+                        // Both sets have to be named locals: each_interval_minus()
+                        // hands out a generator borrowing *both*, which must outlive
+                        // it (see IntervalSet's class documentation). Iterating a
+                        // temporary's generator reads freed intervals, and here that
+                        // would remove values the constraint supports -- lost
+                        // solutions rather than lost pruning.
+                        auto var_values = state.copy_of_values(var);
+                        for (auto [lo, hi] : var_values.each_interval_minus(voi_set)) {
+                            auto emit = [&, lo = lo, hi = hi](const ReasonLiterals &) {
+                                // Same shape as the per-value argument, restated over
+                                // a range: if var lies in [lo, hi] then var is not any
+                                // value of interest. Each value of interest sits
+                                // wholly on one side of the range -- the range is a
+                                // gap between them -- so one order atom rules it out,
+                                // and unit propagation gets from that atom to the
+                                // negated eq atom along the ge-atom chain links. The
+                                // per-value form did not need the chain, because
+                                // var == val pins every bit of var; a range pins none,
+                                // which is why the side has to be picked explicitly
+                                // rather than left to the checker.
+                                for (const auto & voi : values_of_interest) {
+                                    auto outside = voi < lo ? (var < lo) : (var >= hi + 1_i);
+                                    logger->emit(RUPProofRule{}, WPBSum{} + 1_i * outside + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
+                                }
 
-                                    // now every other variable that contributes to the sum is
-                                    // capped at one — must_match vars (whose AM1 lines bound their
-                                    // contribution to the at-most-must_match_count tally) AND every
-                                    // other can_be_either var.
-                                    if (sum_line.second && values_of_interest.size() > 1) {
-                                        PolBuilder b;
-                                        b.add(*sum_line.second);
-                                        for (const auto & m : must_match_vars)
-                                            b.add(am1_lines->at(m));
-                                        for (const auto & other_var : can_be_either_vars)
-                                            if (var != other_var)
-                                                b.add(am1_lines->at(other_var));
-                                        b.emit(*logger, ProofLevel::Temporary);
-                                    }
-                                };
-                                inference.infer_not_in_range(
-                                    logger, var, lo, hi, JustifyExplicitly{emit, ThenRUP::Yes, hints::Among{owner}}, vars_and_bounds_reason);
-                            }
+                                // now every other variable that contributes to the sum is
+                                // capped at one — must_match vars (whose AM1 lines bound their
+                                // contribution to the at-most-must_match_count tally) AND every
+                                // other can_be_either var.
+                                if (sum_line.second && values_of_interest.size() > 1) {
+                                    PolBuilder b;
+                                    b.add(*sum_line.second);
+                                    for (const auto & m : must_match_vars)
+                                        b.add(am1_lines->at(m));
+                                    for (const auto & other_var : can_be_either_vars)
+                                        if (var != other_var)
+                                            b.add(am1_lines->at(other_var));
+                                    b.emit(*logger, ProofLevel::Temporary);
+                                }
+                            };
+                            inference.infer_not_in_range(
+                                logger, var, lo, hi, JustifyExplicitly{emit, ThenRUP::Yes, hints::Among{owner}}, vars_and_bounds_reason);
                         }
                     }
 

@@ -72,7 +72,22 @@ just worked out: a variable is not wholly inside the value set exactly when it i
 not a `must_match` one, and it has some value of interest exactly when it is not a
 `must_not_match` one. Iterating the partition's own subranges instead is **1.9x**
 at a 40-value set, **2.7x** at 400 and **3.9x** at 5000, for no change to a single
-inference — the proof is byte-identical.
+inference.
+
+Not, however, for a byte-identical proof, which this document originally claimed:
+4 of 31 proofs move. `std::ranges::partition` *groups* the variables, where the
+loops used to walk `vars` and skip, so a must_match variable's block can now be
+emitted before a can_be_either one that preceded it. The steps are the same steps;
+what changes with them is the `pol ... -N +` relative back-references, which count
+lines backwards and so shift when a block moves. `stable_partition` does not help
+and was tried: the grouping *is* the reordering, and stability within each group
+does not undo it.
+
+So this is a case where byte-identity is the wrong property to ask for, and the
+weaker one — same OPB, same test output, same node counts, every proof still
+verifying — is what holds. Worth being exact about, because this document uses
+byte-identical proofs as a *technique* elsewhere (`In`, below, really is), and a
+false instance makes the true ones harder to trust.
 
 Asking the two surviving questions of the value set *as a set* pays on top of
 that, and the reason it is worth doing is not the speed. `State` answers both at
@@ -102,8 +117,15 @@ set yields the same runs — a run breaks exactly where the domain has a hole or
 permitted value intervenes, which is where `each_interval_minus` ends one too — so
 the rewrite changes nothing at all in the proof. Verified rather than argued: at a
 fixed seed the OPB, the proof, and the test output are byte-identical before and
-after, and a differential check computing both algorithms in one binary reports
-zero disagreements over ten seeds. Look for this shape first; it is free.
+after — all 212 artefacts, not just the last instance's — and a differential check
+computing both algorithms in one binary reports zero disagreements over ten seeds.
+Look for this shape first; it is free.
+
+**Check byte-identity with `GCS_PRESERVE_PROOF_FILES=all`, not `=1`.** The latter
+keeps only the last instance's files, since every case writes to the same
+basename, so a run over 31 instances leaves six artefacts to compare out of 124.
+That is how the claim above this one came to be believed when it was false: the
+files that moved were not among the ones the check looked at.
 
 H1a is the one worth looking for first, because it is not a trade-off at all.
 The tree already has the machinery: `IntervalSet::each_interval_minus()`,
