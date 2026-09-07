@@ -247,8 +247,10 @@ auto run_holey_no_overlap_equals_test(bool proofs, bool swapped) -> void
 // literals as one run again, or it pays two lemmas per value instead of two per
 // run; the proof still verifies either way, which is why this is checked by
 // diffing proof bytes against the interval spelling rather than by a lane going
-// red. Measured on this instance: 527 proof lines, against 536 if the run is
-// not put back together.
+// red. Measured on this instance: putting the run back together saves nine
+// proof lines -- 759 against 768 at --seed=1, 755 against 764 at 424242, 742
+// against 751 at 999. The absolute size moves with the seed, since this test
+// enumerates under a randomised branching order; the nine lines do not.
 //
 // It matters more than a handful of lines because it is the only coverage of the
 // witness reading a run out of literals it did not write as a range: everything
