@@ -124,9 +124,22 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
 
         // Just-met demand: if only `can` variables can take value and the
         // count's lower bound needs all of them, each is forced to value.
+        //
+        // Forcing a variable to a value means removing everything else, which is
+        // at most two ranges however wide the domain is -- and this is the
+        // constraint the governing rule singles out, since it is already the
+        // bounds arm and so has nothing weaker to fall back to. Per value it took
+        // O(|D(var)|) inferences to reach a one-value domain.
+        //
+        // Plain RUP, as for the per-value form and for the same reason: the rows
+        // here are over eq atoms with an at-least-one, so asserting the negated
+        // conclusion refutes each of them through the ge-atom chain links. The
+        // reason is unchanged, and was already hoisted out of the loop and
+        // constant across the removed values, so nothing about it has to move.
         if (can == lb_j && can > 0_i) {
             ReasonLiterals force;
             bool have_force = false;
+            IntervalSet<Integer> just_value{value, value};
             for (const auto & var : vars)
                 if (state.in_domain(var, value) && ! state.has_single_value(var)) {
                     if (! have_force) {
@@ -134,9 +147,11 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                         gather_absent_ne(force);
                         force.emplace_back(counts[j] >= lb_j);
                     }
-                    for (const auto & w : state.each_value_mutable(var))
-                        if (w != value)
-                            inference.infer(logger, var != w, JustifyUsingRUP{hints::GlobalCardinality{owner}}, ExplicitReason{force});
+                    // Named local: each_interval_minus() borrows both sets, which
+                    // must outlive the generator (see IntervalSet's documentation).
+                    auto var_values = state.copy_of_values(var);
+                    for (auto [lo, hi] : var_values.each_interval_minus(just_value))
+                        inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{hints::GlobalCardinality{owner}}, ExplicitReason{force});
                 }
         }
     }

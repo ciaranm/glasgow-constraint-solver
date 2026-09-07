@@ -291,17 +291,26 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-69 probes. The lane itself is the authority — run it rather than trusting this
+70 probes. The lane itself is the authority — run it rather than trusting this
 table, which is a snapshot for orientation.
 
 | | constraints |
 |---|---|
-| **KnownTrip** (20) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `AllEqual/holes`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (35) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, `AllEqual` without holes, `Among`, `In`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **KnownTrip** (20) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `AllEqual/holes`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
+| **Clean** (36) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, `AllEqual` without holes, `Among`, `In`, `GlobalCardinality`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
 
-`Among`, `In`, `Table` and `Element` started as `KnownTrip` and are now `Clean`, by
-the interval rewrites rather than by a weaker arm: all four still propagate GAC.
+`Among`, `In`, `GlobalCardinality`, `Table` and `Element` started as `KnownTrip`
+and are now `Clean`, by the interval rewrites rather than by a weaker arm: all of
+them still propagate at their original strength.
+
+`GlobalCardinality` mattered most of the five, because it was the rule's own
+counterexample: already the bounds arm, and still enumerating, so it had nothing
+weaker to fall back to. Its just-met-demand branch forces a variable to a value,
+which is two range removals however wide the domain is. **A second per-value site
+remains** in its Hall reasoning, which the original probe could not reach — one
+cover value means there is no multi-value hall — so it now has a row of its own
+rather than being covered by association.
 
 **`In` is worth more than its own row.** `create_integer_variable` over a vector
 posts an `In` to carve the holes, so any probe that builds a sparse variable that
@@ -410,8 +419,8 @@ previous version of it went stale, see below.
 |---|---|---|
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
-| **Steps only** | 1.0x / 10x | `AllEqual/holes` (22-row OPB fixed, 16987 → 169987 steps), `GlobalCardinality` (30-row, 18024 → 180024) |
-| neither | 1.0x / 1.0x | everything else, 59 of 69 |
+| **Steps only** | 1.0x / 10x | `AllEqual/holes` (22-row OPB fixed, 16987 → 169987 steps), `GlobalCardinality/hall` (34-row, 33984 → 339984) |
+| neither | 1.0x / 1.0x | everything else, 59 of 70 |
 
 `Multiply`, `Divide` and `Modulus` sit in the last row but are not flat: their OPB
 grows 1.8x for a 10x width, which is the bit-width of the product, not a per-value
@@ -445,11 +454,18 @@ work rather than evidence:
   variable separately gives ranges with a constant witness, at the cost of
   overlapping removals, which are idempotent.
 * `GlobalCardinality`'s just-met-demand branch
-  (`bounds_global_cardinality.cc`) removes every value of a variable *except*
-  one, which is two range removals — and its reason is already hoisted out of the
-  loop and constant, so it is a simpler case than `Among`'s. Under this document's
-  own rule it is a broken fallback arm rather than a missing one, so it is
-  scheduled work regardless.
+  (`bounds_global_cardinality.cc`) removed every value of a variable *except*
+  one, which is two range removals — and its reason was already hoisted out of the
+  loop and constant, so it was a simpler case than `Among`'s. **Done**: 18024 →
+  180024 steps became a flat 63.
+
+  Its **Hall pruning** is a separate site, and it is the first one here whose
+  obstacle is not the removed set. That set is an interval complement like all the
+  others; what resists is the *justification*, whose `pol` builds an at-most-one
+  over the hall values plus the single removed value, so the removed value is
+  named in the derivation rather than merely concluded. It has its own probe and
+  its own survey row now (33984 → 339984), and it is the most interesting
+  remaining candidate for exactly that reason.
 * `Element` walked the result values its array does not support (`element.cc`),
   which for a narrow array over a wide result is mostly intervals. **Done**, and it
   collapsed as predicted: 27981 → 279981 steps became a flat 108. Two of the three
