@@ -286,6 +286,19 @@ auto gcs::variable_order::with_smallest_value(vector<IntegerVariableID> vars) ->
         });
 }
 
+auto gcs::variable_order::with_largest_value(const Problem & problem) -> BranchVariableHeuristic
+{
+    return with_largest_value(problem.all_normal_variables());
+}
+
+auto gcs::variable_order::with_largest_value(vector<IntegerVariableID> vars) -> BranchVariableHeuristic
+{
+    return variable_order::in_order_of(
+        vars, [](const CurrentState & state, const innards::Propagators &, const IntegerVariableID & a, const IntegerVariableID & b) {
+            return state.upper_bound(a) > state.upper_bound(b);
+        });
+}
+
 namespace
 {
     // A position drawn as a size_t index, as the Integer position

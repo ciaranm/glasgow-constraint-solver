@@ -390,6 +390,27 @@ TEST_CASE("Position-based value orders wired into solve_with find every solution
     CHECK(solutions == 30);
 }
 
+TEST_CASE("with_largest_value branches on the variable whose domain reaches highest")
+{
+    // Declared and documented in the header since it was written, but never
+    // defined, so any caller got a link error; found by the large-domain
+    // heuristic audit lane, which names every heuristic and so link-checks them.
+    State state;
+    auto a = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 5_i)};
+    auto b = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 9_i)};
+    auto c = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 7_i)};
+
+    Problem dummy;
+    Stats stats;
+    Propagators propagators{stats};
+    auto select = variable_order::with_largest_value(vector{a, b, c})(dummy, state, propagators);
+    CHECK(select(state.current(), propagators) == b);
+
+    auto smallest = variable_order::with_smallest_value(vector{a, b, c})(dummy, state, propagators);
+    REQUIRE(Inference::Instantiated != state.infer_greater_than_or_equal(b, 3_i));
+    CHECK(smallest(state.current(), propagators) == a);
+}
+
 TEST_CASE("Position-based value orders count positions from the smallest value of a view")
 {
     // CurrentState::each_value() hands a *negated* view's values out in
