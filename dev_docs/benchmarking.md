@@ -10,6 +10,12 @@ The set was settled on while doing Phase 2 of issue #134. The intent is that
 future performance work re-uses it, so that results are comparable across
 PRs over time.
 
+**If the question is how gcs compares with another solver** rather than how one
+build of gcs compares with another, use
+[cross-solver-benchmarking.md](cross-solver-benchmarking.md): a cross-solver time
+ratio only means something where the search trees are identical, and that
+document covers how to pin one and how to tell when you have not.
+
 **If the change under test is on the proof side**, use
 [proof-benchmarks.md](proof-benchmarks.md) instead: it curates a separate set
 of instances for measuring proof-writing cost, proof size and VeriPB checking
