@@ -61,6 +61,23 @@ Neither the audit lane nor the test suite can tell these two apart — both are
 the loop for its exit condition before reaching for an interval rewrite, and put
 any rewrite of a hot query through a before/after benchmark.
 
+**And before optimising a predicate, check it is the cost.** `Among`'s
+`domain_is_inside_values_of_interest` looks like the obvious thing to speed up, and
+a profile puts it at **0.75%** of the propagator's time. What the profile does show
+is that the two places asking it were recomputing what the variable partition had
+just worked out: a variable is not wholly inside the value set exactly when it is
+not a `must_match` one, and it has some value of interest exactly when it is not a
+`must_not_match` one. Iterating the partition's own subranges instead is **1.9x**
+at a 40-value set, **2.7x** at 400 and **3.9x** at 5000, for no change to a single
+inference — the proof is byte-identical.
+
+The rewrite that did *not* pay is worth recording next to it, because it was the
+first idea and it is a reasonable one: taking the surviving predicate against an
+`IntervalSet` instead, whether by set difference or by `State::domain_intersects_with`'s
+no-copy merge-walk. It measures as *exactly* neutral — at 40 values, at 5000, and
+on a shape built so the `none_of` cannot short-circuit at all. Asymptotics are not
+a reason on their own; the early exit already bounds it in practice.
+
 **The cheapest H1a of all is where the conclusions are already intervals and only
 the search for them is per-value.** `In`'s constant-set filter emitted one
 `infer_not_in_range` per maximal run of forbidden values, and found those runs by

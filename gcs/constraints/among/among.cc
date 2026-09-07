@@ -226,9 +226,16 @@ auto Among::install_propagators(Propagators & propagators) -> void
                     throw UnexpectedException{"something's wrong, at_least_how_many != at_most_how_many option 1"};
                 }
 
-                // anything that might match actually mustn't match
-                for (const auto & var : vars) {
-                    if (! domain_is_inside_values_of_interest(state, var, values_of_interest)) {
+                // Anything that might match actually mustn't match.
+                //
+                // The partition above already knows which variables those are. A
+                // variable is not wholly inside the value set exactly when it is not
+                // a must_match one, and a must_not_match one has no value of interest
+                // left to remove, so what is left is can_be_either. Asking the
+                // question again per variable, as this used to, walks the value set
+                // to recompute an answer already in hand.
+                for (const auto & var : can_be_either_vars) {
+                    {
                         vector<Literal> inferences;
                         for (const auto & val : values_of_interest)
                             inferences.push_back(var != val);
@@ -284,17 +291,14 @@ auto Among::install_propagators(Propagators & propagators) -> void
                     // only how many inferences it takes to get there --- verified
                     // by identical recursion and propagation counts on a
                     // before/after enumeration.
+                    // Same reuse: "some value of interest is still in this domain"
+                    // is exactly "not must_not_match", which the partition settled.
+                    // Recomputing it walked the value set per variable per call, and
+                    // on a search that calls this a million times it was the single
+                    // biggest cost in the propagator.
                     auto voi_set = values_of_interest_set(values_of_interest);
-                    for (const auto & var : vars) {
-                        bool might_match = false;
-                        for (const auto & val : values_of_interest) {
-                            if (state.in_domain(var, val)) {
-                                might_match = true;
-                                break;
-                            }
-                        }
-
-                        if (might_match) {
+                    for (const auto & var : can_be_either_or_must_vars) {
+                        {
                             // Both sets have to be named locals: each_interval_minus()
                             // hands out a generator borrowing *both*, which must outlive
                             // it (see IntervalSet's class documentation). Iterating a
