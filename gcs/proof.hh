@@ -53,7 +53,15 @@ namespace gcs
     {
         explicit ProofOptions(const std::string &);
         explicit ProofOptions(const ProofFileNames &);
+
+        // Both spelled out, not just the copy constructor: declaring either one
+        // deprecates the implicit definition of the other, which clang reports
+        // (-Wdeprecated-copy) and a future standard may remove. Declaring the
+        // pair also keeps the move operations suppressed, which is what the
+        // user-declared copy constructor already does, so copying stays the only
+        // way this gets passed around.
         ProofOptions(const ProofOptions &) = default;
+        auto operator=(const ProofOptions &) -> ProofOptions & = default;
 
         ProofFileNames proof_file_names;           ///< Filenames for OPB, proof, and mapping files
         bool verbose_names = true;                 ///< Use verbose names in proofs?

@@ -131,7 +131,7 @@ namespace gcs
          * Called at each restart boundary (for smoothing / decay schemes).
          * Inert until restarts land.
          */
-        virtual auto on_restart() -> void = 0;
+        virtual auto on_restart() -> void override = 0;
 
         /**
          * Read the live weights out into a portable WeightingState.

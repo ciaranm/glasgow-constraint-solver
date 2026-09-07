@@ -200,7 +200,7 @@ namespace
                     vector<Integer> length_ubs;
                     for (const auto & l : lengths)
                         length_ubs.push_back(state.upper_bound(l));
-                    spec.recipe = [starts, heights, length_ubs, capacity, donor_id, claim_one_lower, row_of, &state](
+                    spec.recipe = [starts, heights, length_ubs, capacity, donor_id, claim_one_lower, row_of](
                                       ProofLogger & logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
                         auto donor_row = row_of(rows);
                         vector<SubsetSumItem> items;
