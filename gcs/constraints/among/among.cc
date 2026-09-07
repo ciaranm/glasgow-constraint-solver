@@ -32,6 +32,7 @@ using namespace gcs::innards;
 using std::holds_alternative;
 using std::make_shared;
 using std::map;
+using std::move;
 using std::optional;
 using std::pair;
 using std::shared_ptr;
@@ -39,10 +40,8 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-using std::ranges::contains;
 using std::ranges::distance;
 using std::ranges::empty;
-using std::ranges::none_of;
 using std::ranges::partition;
 using std::ranges::sort;
 using std::ranges::subrange;
@@ -75,21 +74,6 @@ namespace
         return result;
     }
 
-    // Is every value the variable can still take one of the values of interest?
-    //
-    // Walks the domain, but is bounded by the value set rather than by the
-    // domain: it stops at the first value that is not of interest, and among any
-    // |voi| + 1 values at most |voi| can be of interest, so a false answer comes
-    // back within |voi| + 1 steps however wide the domain is. A true answer means
-    // the domain is inside the set and so has at most |voi| values in it anyway.
-    //
-    // The early exit is the whole of it. Written without one -- which is how the
-    // second caller below used to be -- the same predicate walks a billion values
-    // to reach a conclusion its first four had already settled.
-    auto domain_is_inside_values_of_interest(const State & state, const IntegerVariableID & var, const vector<Integer> & values_of_interest) -> bool
-    {
-        return none_of(state.each_value_immutable(var), [&](const auto & val) -> bool { return ! contains(values_of_interest, val); });
-    }
 }
 
 Among::Among(vector<IntegerVariableID> vars, const vector<Integer> & values_of_interest, const IntegerVariableID & how_many) :
@@ -142,19 +126,30 @@ auto Among::install_propagators(Propagators & propagators) -> void
             }
         });
 
+    // The values of interest as intervals, built once: the set is fixed for the
+    // life of the constraint, and every question the propagator asks of a domain
+    // is asked against it.
+    auto voi_set = values_of_interest_set(_values_of_interest);
+
     propagators.install(
         constraint_id(),
-        [vars = _vars, values_of_interest = _values_of_interest, how_many = _how_many, sum_line = _sum_line, am1_lines = am1_lines,
-            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [vars = _vars, values_of_interest = _values_of_interest, voi_set = move(voi_set), how_many = _how_many, sum_line = _sum_line,
+            am1_lines = am1_lines, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // partition variables to be 1) those that must not match, 2) those that must match, and 3) those
             // where they might match but don't have to.
             vector<IntegerVariableID> partitioned_vars = vars;
-            auto not_impossible_start = partition(partitioned_vars, [&](const auto & var) -> bool {
-                return none_of(values_of_interest, [&](const auto & val) -> bool { return state.in_domain(var, val); });
-            }).begin();
+            //
+            // Both questions are asked of the whole set at once rather than a
+            // value at a time. Neither was a hazard -- each stopped early, and
+            // was bounded by the value set rather than the domain -- and neither
+            // is measurably faster this way. What it buys is that this propagator
+            // no longer reaches for State's per-value iterators at all, which is
+            // the property #833 wants to be able to check by inspection.
+            auto not_impossible_start =
+                partition(partitioned_vars, [&](const auto & var) -> bool { return ! state.domain_intersects_with(var, voi_set); }).begin();
             auto can_be_either_start = partition(subrange{not_impossible_start, partitioned_vars.end()}, //
                 [&](const auto & var) -> bool {
-                    return domain_is_inside_values_of_interest(state, var, values_of_interest);
+                    return state.domain_is_subset_of(var, voi_set);
                 }).begin();
 
             auto must_not_match_vars = subrange{partitioned_vars.begin(), not_impossible_start};
@@ -296,7 +291,6 @@ auto Among::install_propagators(Propagators & propagators) -> void
                     // Recomputing it walked the value set per variable per call, and
                     // on a search that calls this a million times it was the single
                     // biggest cost in the propagator.
-                    auto voi_set = values_of_interest_set(values_of_interest);
                     for (const auto & var : can_be_either_or_must_vars) {
                         {
                             // Both sets have to be named locals: each_interval_minus()

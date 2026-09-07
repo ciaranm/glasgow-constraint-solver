@@ -74,12 +74,25 @@ not a `must_match` one, and it has some value of interest exactly when it is not
 at a 40-value set, **2.7x** at 400 and **3.9x** at 5000, for no change to a single
 inference — the proof is byte-identical.
 
-The rewrite that did *not* pay is worth recording next to it, because it was the
-first idea and it is a reasonable one: taking the surviving predicate against an
-`IntervalSet` instead, whether by set difference or by `State::domain_intersects_with`'s
-no-copy merge-walk. It measures as *exactly* neutral — at 40 values, at 5000, and
-on a shape built so the `none_of` cannot short-circuit at all. Asymptotics are not
-a reason on their own; the early exit already bounds it in practice.
+Asking the two surviving questions of the value set *as a set* pays on top of
+that, and the reason it is worth doing is not the speed. `State` answers both at
+interval level — `domain_intersects_with()` for "is any value of interest still
+here" and `domain_is_subset_of()` for "is this domain inside the set" — and using
+them means `among.cc` reaches for `State`'s per-value iterators nowhere at all,
+which is a property that can be checked by inspection rather than by profiling.
+That it is also **1.7x** at a 40-value set, **3.0x** at 400 and **1.6x** at 5000
+is a bonus, not the argument.
+
+**A warning attached to those numbers, because they were wrong here first.** This
+paragraph originally said the interval version measured "exactly neutral". It does
+not; the binary measured was stale, because the change carried a compile error
+(`move` on a `gcs::` type is not found by ADL, where `move` on a `std::vector` is)
+and the build check being used was `grep -c " error "`, which never matches
+either compiler's output. A benchmark that links a library which failed to rebuild
+compares a binary against itself, and the answer it gives — "no difference" — is
+the answer it would give for any change at all. Check a build's *exit status*, and
+treat "the change made no difference" as a claim needing the same suspicion as any
+other.
 
 **The cheapest H1a of all is where the conclusions are already intervals and only
 the search for them is per-value.** `In`'s constant-set filter emitted one

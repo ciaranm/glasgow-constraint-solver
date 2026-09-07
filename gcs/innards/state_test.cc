@@ -203,6 +203,85 @@ TEST_CASE("domains_intersect / domain_intersects_with handle views")
     }
 }
 
+TEST_CASE("domain_is_subset_of handles views, holes and constants")
+{
+    State state;
+    auto a = state.allocate_integer_variable_with_state(1_i, 5_i);
+    auto holey = state.allocate_integer_variable_with_state(1_i, 10_i);
+    // holey is now {1..3, 5..6, 8..10}.
+    (void)state.infer(holey != 4_i);
+    (void)state.infer(holey != 7_i);
+
+    auto set_of = [](std::initializer_list<std::pair<Integer, Integer>> ivs) {
+        IntervalSet<Integer> r;
+        for (const auto & [l, u] : ivs)
+            r.insert_at_end(l, u);
+        return r;
+    };
+
+    SECTION("simple variable, no offset --- the no-copy path")
+    {
+        CHECK(state.domain_is_subset_of(a, set_of({{1_i, 5_i}})));
+        CHECK(state.domain_is_subset_of(a, set_of({{0_i, 9_i}})));
+        CHECK_FALSE(state.domain_is_subset_of(a, set_of({{2_i, 5_i}})));
+        CHECK_FALSE(state.domain_is_subset_of(a, set_of({{1_i, 4_i}})));
+        // A set covering both ends but not the middle: the case a bounds-only
+        // test would get wrong.
+        CHECK_FALSE(state.domain_is_subset_of(a, set_of({{1_i, 2_i}, {4_i, 5_i}})));
+    }
+
+    SECTION("a domain with holes needs only the values it still has")
+    {
+        CHECK(state.domain_is_subset_of(holey, set_of({{1_i, 3_i}, {5_i, 6_i}, {8_i, 10_i}})));
+        // The holes themselves need not be covered.
+        CHECK_FALSE(state.domain_is_subset_of(holey, set_of({{1_i, 6_i}})));
+        CHECK(state.domain_is_subset_of(holey, set_of({{1_i, 10_i}})));
+    }
+
+    SECTION("offset view")
+    {
+        // a + 5 in {6..10}.
+        CHECK(state.domain_is_subset_of(a + 5_i, set_of({{6_i, 10_i}})));
+        CHECK_FALSE(state.domain_is_subset_of(a + 5_i, set_of({{1_i, 5_i}})));
+    }
+
+    SECTION("negated view, including one with holes")
+    {
+        // -a in {-5..-1}.
+        CHECK(state.domain_is_subset_of(-a, set_of({{-5_i, -1_i}})));
+        CHECK_FALSE(state.domain_is_subset_of(-a, set_of({{-4_i, -1_i}})));
+        // -holey in {-10..-8, -6..-5, -3..-1}.
+        CHECK(state.domain_is_subset_of(-holey, set_of({{-10_i, -8_i}, {-6_i, -5_i}, {-3_i, -1_i}})));
+        CHECK_FALSE(state.domain_is_subset_of(-holey, set_of({{-10_i, -5_i}})));
+    }
+
+    SECTION("negated view with offset")
+    {
+        // -a + 8 in {3..7}.
+        CHECK(state.domain_is_subset_of(-a + 8_i, set_of({{3_i, 7_i}})));
+        CHECK_FALSE(state.domain_is_subset_of(-a + 8_i, set_of({{4_i, 7_i}})));
+    }
+
+    SECTION("constant")
+    {
+        CHECK(state.domain_is_subset_of(constant_variable(3_i), set_of({{1_i, 5_i}})));
+        CHECK_FALSE(state.domain_is_subset_of(constant_variable(9_i), set_of({{1_i, 5_i}})));
+    }
+
+    SECTION("agrees with the per-value meaning it replaces")
+    {
+        for (Integer lo = 0_i; lo <= 11_i; ++lo)
+            for (Integer hi = lo; hi <= 11_i; ++hi) {
+                auto set = set_of({{lo, hi}});
+                bool all = true;
+                for (const auto & v : state.each_value_immutable(holey))
+                    if (! set.contains(v))
+                        all = false;
+                CHECK(state.domain_is_subset_of(holey, set) == all);
+            }
+    }
+}
+
 TEST_CASE("copy_of_values / domains_intersect on multi-interval negated views")
 {
     State state;
