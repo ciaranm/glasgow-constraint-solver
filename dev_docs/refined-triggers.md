@@ -111,6 +111,16 @@ The owner processes its fired set the next time it runs in the propagation queue
 — firing and processing are *decoupled* (the owner is the schedulable unit). This
 matters for one subtlety (*abandoned fires*, below).
 
+The round boundary replays the round's inferences through one of two variants:
+`requeue`, or `requeue_unless_already_seen` when some propagator in the round
+claimed `EnableButIdempotent`. **Both fire watches**, and the claim gates only the
+coarse triggers. A claim says the claimant need not be re-woken by what it has
+already seen, which for a coarse trigger costs at most a delay — the next change
+wakes it anyway — but for a watch costs the wake outright, because each inference
+is replayed exactly once and a watch not fired against it is never offered it
+again. Getting this wrong is invisible in everything but the node count; see
+issue #889, where it turned nmseq/100 from 767 nodes into 1,089,375.
+
 ### Trigger masks
 
 A literal can only *become* entailed on certain kinds of change, mirroring the
@@ -269,6 +279,11 @@ For anyone changing this code:
 - **Trigger masks must over-approximate.** A mask must include *every* `Inference`
   granularity that could make the literal newly entailed; too narrow a mask drops
   a fire (a missed inference). The differential catches this.
+- **Every replay path must fire watches.** A watch is a one-shot subscription and
+  each inference is replayed once, so any path that walks the round's inferences
+  and skips the watch index loses the wake permanently. `requeue` and
+  `requeue_unless_already_seen` share `fire_refined_watches` for exactly this
+  reason; a new variant must call it too.
 - **Catch-up runs at root re-propagation only**, keyed off an empty fired set.
   That is where new clauses appear (after a restart unwind) and where the edits
   land in the persistent root epoch, keeping the non-backtrackable `set_up`
@@ -293,6 +308,10 @@ refined path must behave byte-for-byte like the scan oracle:
   that exercises the engine mechanism directly (the index, fired-watch inbox,
   consume, re-arm, restore, `is_watching`), with a coarse-vs-refined laziness
   comparison. Retired once refined triggers fold into the real `Linear`.
+- `gcs/innards/propagators_test.cc` — a watch must fire whether or not the round
+  has an idempotence claimant. Neither vehicle above co-registers a claiming
+  propagator, which is how the claim-path gap in the replay survived (#889), so
+  this one is a pair of unit cases rather than a differential.
 
 Each load-bearing piece has a **mutation test** recorded in the relevant PR:
 inject the bug, confirm a differential catches it, before trusting the check.

@@ -796,19 +796,43 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
         }
     };
 
-    auto requeue = [&](const SimpleIntegerVariableID & v, const Inference inf) {
+    // Wake whatever this inference wakes: the coarse triggers, and then any
+    // refined watch whose literal it has newly entailed.
+    //
+    // HonourClaims picks the round-boundary variant. A run that claimed
+    // idempotence must not be re-woken by an inference it had already seen
+    // (everything recorded up to its run's end, its own inferences included), so
+    // the replay passes true, with claim_protected flagging the claimants whose
+    // runs ended after the inference being replayed -- and only when the round
+    // produced claims at all, the claim-free path being the hot one. It is a
+    // template parameter so that the two variants can share one body without the
+    // shared part becoming a call: this body runs once per inference, and
+    // factoring just the watch loop out into a lambda they both call cost 1.1% of
+    // tsp's instructions, the compiler declining to inline it into a function this
+    // size. What this generates is what writing the body out twice generates.
+    //
+    // The claim gates the coarse triggers only. Every replay of an inference
+    // fires watches, because a watch is a one-shot subscription and each
+    // inference is replayed exactly once: a fire skipped here is a wake lost for
+    // good rather than merely deferred. Waking a claimant through its own watch
+    // costs it a re-run it may not need; not waking it silently drops pruning,
+    // which is the far worse trade and is invisible in everything but the node
+    // count (issue #889).
+    //
+    // A watch is only tested when the current inference granularity is in its
+    // trigger_mask -- e.g. an `x==v` watch is skipped on a mere bound move, since
+    // x==v can only become true when x is instantiated. This gates the expensive
+    // test_literal; the firing of a watch outside its mask would be a no-op
+    // anyway (the literal cannot have changed status), so this is
+    // semantics-preserving.
+    auto requeue_honouring = [&]<bool HonourClaims_>(const SimpleIntegerVariableID & v, const Inference inf) {
         if (v.index < _imp->iv_triggers.size())
             for (auto & [p, mask] : _imp->iv_triggers[v.index].ids_and_masks)
-                if (mask & (1 << to_underlying(inf)))
+                if ((mask & (1 << to_underlying(inf))) && (! HonourClaims_ || ! _imp->claim_protected[p]))
                     enqueue_if_idle(p);
 
-        // Refined watches: fire any whose literal is now entailed, delivering the
-        // payload to its owner and consuming the watch. A watch is only tested when
-        // the current inference granularity is in its trigger_mask -- e.g. an `x==v`
-        // watch is skipped on a mere bound move, since x==v can only become true when
-        // x is instantiated. This gates the expensive test_literal; the firing of a
-        // watch outside its mask would be a no-op anyway (the literal cannot have
-        // changed status), so this is semantics-preserving.
+        // Fire any watch whose literal is now entailed, delivering the payload to
+        // its owner and consuming the watch.
         if (v.index < _imp->refined_watches_by_var.size()) {
             const auto inf_bit = 1u << to_underlying(inf);
             auto & watches = _imp->refined_watches_by_var[v.index];
@@ -829,19 +853,10 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
         }
     };
 
-    // A run that claimed idempotence must not be re-woken by any inference it
-    // had already seen (everything recorded up to its run's end, its own
-    // inferences included): the round-boundary replay uses this variant, with
-    // claim_protected flagging the claimants whose runs ended after the
-    // inference being replayed, when (and only when) the round produced
-    // claims -- the plain requeue above keeps the claim-free hot path free of
-    // the extra load. Refined watches are consumed on their first fire in the
-    // requeue above, so this coarse-only replay does not re-fire them.
+    auto requeue = [&](const SimpleIntegerVariableID & v, const Inference inf) { requeue_honouring.template operator()<false>(v, inf); };
+
     auto requeue_unless_already_seen = [&](const SimpleIntegerVariableID & v, const Inference inf) {
-        if (v.index < _imp->iv_triggers.size())
-            for (auto & [p, mask] : _imp->iv_triggers[v.index].ids_and_masks)
-                if ((mask & (1 << to_underlying(inf))) && ! _imp->claim_protected[p])
-                    enqueue_if_idle(p);
+        requeue_honouring.template operator()<true>(v, inf);
     };
 
     // A contradiction or an abort ends a round without replaying it, so a

@@ -274,6 +274,96 @@ TEST_CASE("A view of a distinct variable does not downgrade the claim")
     CHECK(runs == 1);
 }
 
+// A refined watch is a one-shot subscription to a literal, and each inference is
+// replayed to the wake machinery exactly once. So the round-boundary replay has
+// to fire watches whichever path it takes: the claim-free one, or the one that
+// gates coarse triggers on the already-seen rule. It did not, and because a
+// dropped wake costs only pruning, nothing failed --- the tree just grew. It
+// grew silently for the learned-nogood store, which is a watch client: refined
+// took 259,103 recursions on `langford --size=11 --restarts=100` where the scan
+// path it is meant to match took 258,670. And it grew catastrophically for the
+// first client whose whole verdict rides on a watch --- reified equals against a
+// constant, 767 nodes on nmseq/100 against 1,089,375 (issue #889).
+
+namespace
+{
+    // Fires once: removes 7 from the middle of x's domain. Interior, so it is
+    // exactly the granularity a `!= 7` watch subscribes to and a bounds trigger
+    // would miss.
+    auto install_hole_punching_propagator(Propagators & propagators, SimpleIntegerVariableID x, PropagatorState state_to_return, int & runs) -> void
+    {
+        Triggers triggers;
+        triggers.on_change = {x};
+        propagators.install(
+            ConstraintID{NumberedConstraint{1}},
+            [&runs, x, state_to_return](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                ++runs;
+                if (state.in_domain(x, 7_i))
+                    inference.infer(logger, x != 7_i, NoJustificationNeeded{}, NoReason{});
+                return state_to_return;
+            },
+            triggers);
+    }
+
+    // Woken only by its watch: scope_only keeps x in scope (degree, adjacency)
+    // while arming no coarse trigger, so a second run can only be the watch.
+    auto install_watching_propagator(Propagators & propagators, SimpleIntegerVariableID x, int & runs) -> void
+    {
+        Triggers triggers;
+        triggers.scope_only = {x};
+        triggers.refined.emplace_back(x != 7_i, 0u);
+        propagators.install(
+            ConstraintID{NumberedConstraint{2}},
+            [&runs](const State &, auto &, ProofLogger * const) -> PropagatorState {
+                ++runs;
+                return PropagatorState::Enable;
+            },
+            triggers);
+    }
+}
+
+TEST_CASE("A refined watch fires when the round has an idempotence claimant")
+{
+    State state;
+    Stats stats;
+    Propagators propagators{stats};
+    auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
+
+    int puncher_runs = 0, watcher_runs = 0;
+    install_hole_punching_propagator(propagators, x, PropagatorState::EnableButIdempotent, puncher_runs);
+    install_watching_propagator(propagators, x, watcher_runs);
+
+    REQUIRE(propagators.propagate(Literals{}, state, nullptr));
+    CHECK(! state.in_domain(x, 7_i));
+
+    // Both run in the first pass, before the hole exists. The puncher's claim
+    // sends the boundary down the already-seen path, which protects the puncher
+    // from its own inference -- and must still fire the watcher's watch.
+    CHECK(puncher_runs == 1);
+    CHECK(watcher_runs == 2);
+}
+
+TEST_CASE("A refined watch fires when the round has no idempotence claimant")
+{
+    State state;
+    Stats stats;
+    Propagators propagators{stats};
+    auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
+
+    int puncher_runs = 0, watcher_runs = 0;
+    install_hole_punching_propagator(propagators, x, PropagatorState::Enable, puncher_runs);
+    install_watching_propagator(propagators, x, watcher_runs);
+
+    REQUIRE(propagators.propagate(Literals{}, state, nullptr));
+    CHECK(! state.in_domain(x, 7_i));
+
+    // The same wake, on the claim-free path: the watcher must not be able to
+    // tell the two apart. The puncher re-runs here because its own inference
+    // wakes it back through its coarse trigger.
+    CHECK(puncher_runs == 2);
+    CHECK(watcher_runs == 2);
+}
+
 // Propagators::shared_derived_data: the store that lets several constraints
 // over one shared input derive something from it once between them. Keyed by
 // (input address, type), created empty on the first ask, and the same object
