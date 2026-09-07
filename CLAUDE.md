@@ -74,6 +74,17 @@ cmake -S . -B build -DGCS_ENABLE_VIEW_WRAP_SWEEP=ON
 The harness and `--view-wrap=N` / `--view-position=K` argv flags on each
 test are always built; only the ctest registrations are gated.
 
+Enable the large-domain guard, a development tripwire that turns work
+proportional to a variable's domain width into a test failure (issue #833):
+```shell
+cmake -S . -B build-guard -DGCS_LARGE_DOMAIN_GUARD=ON
+```
+Off by default, and deliberately not user-facing: what protects a user is a
+constraint having somewhere cheap to fall back to, not an exception thrown from
+the middle of propagation. Turning it on also registers `large_domain_audit_test`,
+which probes every constraint class over a `0..10^9` domain against a table of
+expected outcomes. See `dev_docs/large-domains.md`.
+
 By default the data-driven constraint tests run with generous per-solve
 solution/recursion caps (`GCS_TEST_CAP_DEFAULTS=ON`) so a pathological
 random instance can't dominate the parallel suite. A capped run checks

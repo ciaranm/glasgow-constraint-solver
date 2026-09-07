@@ -108,6 +108,7 @@ add_library(glasgow_constraint_solver
         constraints/tree/tree.cc
         constraints/value_precede/value_precede.cc
         innards/integer_overflow.cc
+        innards/large_domain_guard.cc
         innards/literal.cc
         innards/power.cc
         innards/proofs/am1_from_pairs.cc
@@ -151,6 +152,14 @@ target_include_directories(glasgow_constraint_solver PUBLIC
 # via FetchContent or find_package.
 add_library(GlasgowConstraintSolver::glasgow_constraint_solver ALIAS glasgow_constraint_solver)
 
+# PUBLIC, not PRIVATE: the guard's checks sit in State's header-inline value
+# loops, so a test or example compiled against the library has to agree with the
+# library about whether they are there. A mismatch would be an ODR violation
+# rather than a merely surprising build.
+if(GCS_LARGE_DOMAIN_GUARD)
+    target_compile_definitions(glasgow_constraint_solver PUBLIC GCS_LARGE_DOMAIN_GUARD)
+endif()
+
 if(GCS_COMPILER_HAS_STACKTRACE AND NOT MSVC)
     # stacktrace is only used in .cc files, not public headers, so PRIVATE suffices.
     # stdc++exp is the libstdc++ support library for <stacktrace>/<print>; it is
@@ -181,6 +190,15 @@ if(GCS_BUILD_TESTS)
     add_executable(solve_test solve_test.cc)
     target_link_libraries(solve_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME solve_test COMMAND $<TARGET_FILE:solve_test>)
+
+    # The large-domain audit lane (issue #833). Always built, so it cannot rot
+    # while the guard is off, but registered as a test only when the guard is on:
+    # without it every probe passes trivially and the lane would assert nothing.
+    add_executable(large_domain_audit_test large_domain_audit_test.cc)
+    target_link_libraries(large_domain_audit_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    if(GCS_LARGE_DOMAIN_GUARD)
+        add_test(NAME large_domain_audit_test COMMAND $<TARGET_FILE:large_domain_audit_test>)
+    endif()
 
     # Checks that the GCS_VERBOSE_LOGGING proof annotation resolves gcs source
     # frames, which depends on the debug info the Release build keeps (-g1 on

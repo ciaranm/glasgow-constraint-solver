@@ -409,6 +409,15 @@ Inside the propagator body, the `State` parameter exposes:
 
 These are read-only — modifying the state goes through `inference`.
 
+Every one of the value-iterating forms above costs time proportional to how
+*wide* the domain is, and a declared domain of `0..1000000000` is an ordinary
+input rather than a mistake — so a loop over one is a hang, not a slow path. Read
+[large-domains.md](large-domains.md) before writing one: it says when the loop is
+really an interval operation written out longhand (in which case
+`IntervalSet::each_interval_minus()` and `InferenceTracker::infer_not_in_range()`
+give you the same pruning in time proportional to the number of *intervals*), and
+how to check your constraint with the `GCS_LARGE_DOMAIN_GUARD` build.
+
 ## Making inferences
 
 The `inference` parameter is templated; treat it as exposing:

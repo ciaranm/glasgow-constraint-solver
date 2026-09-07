@@ -4,6 +4,7 @@
 #include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/am1_from_pairs.hh>
 #include <gcs/innards/proofs/comparator_network.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -1396,6 +1397,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 };
 
                 auto range = (t_hi - t_lo + 1_i).raw_value;
+                GCS_CHECK_LARGE_DOMAIN("the horizon a disjunctive time-table is being sized by", range);
                 vector<int> mand_load(range, 0);
 
                 // Only a task known present puts a mandatory part into the
