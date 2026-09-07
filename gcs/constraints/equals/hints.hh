@@ -22,12 +22,41 @@ namespace gcs::innards::hints
      * verdicts). RUP-derivable, so no emit_justification and no subhint; it takes
      * the default `(constraint_id <originator>)` wire form.
      *
+     * The bare form therefore means "one RUP against the equality rows" and
+     * nothing else. Every derivation in the family that needs lemmas emitted
+     * ahead of its conclusion names a subhint: EqualsNotInRange below for the
+     * interval bridge, EqualsNoOverlap for the disjointness walk.
+     *
      * \ingroup Innards
      */
     struct Equals
     {
         ConstraintID originator;
         static constexpr std::string_view hint_name = "equals";
+    };
+
+    /**
+     * \brief equals's "not in this interval, across the equality" hint.
+     *
+     * The symmetric-difference rule's conclusion is a range literal, and a range
+     * literal asserts only order atoms while the equality rows are a bit-sum, so
+     * the conclusion is not RUP on its own: two ge-layer bound lemmas have to
+     * carry its endpoints across first (justify_not_in_range_across_equality).
+     * That makes it a three-line derivation wearing, until issue #866, the same
+     * wire form as the family's one-line RUP prunings -- so the only way to tell
+     * them apart was to notice that the asserted literal was spelled as a range,
+     * which is keying off literal spelling, exactly what the hint vocabulary
+     * exists to avoid.
+     *
+     * Nothing beyond the subhint: the emission is a lambda at the call site
+     * rather than an emit_justification here, and an external justifier gets the
+     * interval and the operands from the asserted literal and the reason.
+     *
+     * \ingroup Innards
+     */
+    struct EqualsNotInRange : Equals
+    {
+        static constexpr std::string_view subhint_name = "not_in_range";
     };
 
     /**

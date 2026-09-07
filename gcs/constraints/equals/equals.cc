@@ -243,6 +243,13 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         // first; each is RUP via the contradictory-binary-sums configuration. See
         // justify_not_in_range_across_equality. Views and constants take the
         // per-value path.
+        //
+        // Hence the not_in_range subhint rather than the family's base hint: at
+        // AssertionLevel::Inferences the lemmas are not written, and a justifier
+        // reading only the annotation would otherwise see this three-line
+        // derivation and a one-line RUP pruning wearing the same wire form
+        // (issue #866). The per-value fallback below is a genuine one-line RUP,
+        // so it keeps the base hint.
         auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v1}) &&
             std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v2});
 
@@ -262,7 +269,8 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
                     ReasonLiterals not_in_range_reason = reason;
                     not_in_range_reason.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
                     inference.infer_not_in_range(logger, pruned, lo, hi,
-                        JustifyExplicitly{[=](const ReasonLiterals & r) { bridge(pruned, other, lo, hi, r); }, ThenRUP::Yes, hints::Equals{owner}},
+                        JustifyExplicitly{
+                            [=](const ReasonLiterals & r) { bridge(pruned, other, lo, hi, r); }, ThenRUP::Yes, hints::EqualsNotInRange{{owner}}},
                         ExplicitReason{std::move(not_in_range_reason)});
                 }
                 else
