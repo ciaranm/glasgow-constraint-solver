@@ -36,6 +36,12 @@ library. For an introduction to *using* the solver, start with the top-level
   documents draw on. Also carries the family list — authoritative for what
   counts as a family — and the variant template for presolvers. Read before
   writing or auditing a family document.
+- [Constraint family documents](constraints/README.md) — the per-family
+  documents (semantics, frontend coverage, OPB encoding, one entry per
+  inference rule with its proof technique and assertion hint, robustness
+  limits, measured CPU and proof performance, and what wants work). Index plus
+  the template that governs them. Read the template before writing or auditing
+  one.
 - [Reification](reification.md) — additional machinery for *reified* constraints:
   the `ReificationCondition` static and `EvaluatedReificationCondition` runtime
   types, the `install_reified_dispatcher` helper, the OPB encoding pattern,
