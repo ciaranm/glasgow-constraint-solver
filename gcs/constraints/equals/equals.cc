@@ -153,7 +153,7 @@ namespace
 
 namespace gcs::innards::hints
 {
-    auto emit_justification(ProofLogger & logger, const EqualsNoOverlap & w, const ReasonLiterals &) -> void
+    auto emit_justification(ProofLogger & logger, const EqualsNoOverlap & w, const ReasonLiterals & reason) -> void
     {
         // Two lemma shapes, each carrying one bound across the reified equality.
         // The cond-guarded halves of the model constraint are `cond -> v1 <= v2`
@@ -169,35 +169,101 @@ namespace gcs::innards::hints
             logger.emit_rup_proof_line(WPBSum{} + 1_i * ! w.cond + 1_i * (w.v1 < k) + 1_i * (w.v2 >= k) >= 1_i, ProofLevel::Temporary);
         };
 
+        // The walk is re-read out of the reason, not out of the domains. Both
+        // are the same walk when nothing has moved, but a justification does not
+        // run at the moment its inference was decided: by the time it does,
+        // earlier pushes in the same propagation have landed, and a domain read
+        // here can be narrower than the one the reason was built from -- at
+        // which point the lemmas stop lining up with the literals they exist to
+        // let unit propagation see through, and the conclusion's RUP check
+        // fails. Reading the reason cannot go stale, because the reason is what
+        // the conclusion is asserted under. This rule was the family's only
+        // justification that touched state at all (issue #870).
+        //
+        // It is also the reconstructibility claim, exercised: the family
+        // document says an external justifier can rebuild this derivation from
+        // the assertion alone, and everything below is read from literals such a
+        // justifier is handed too.
+        //
         // What each move owes the conclusion's RUP check, given that the check
         // has cond and the reason's literals as units and is carrying `v1 >= p`:
         //
-        //   AnchorV1Lower       the reason literal is `v1 >= lo` itself.
-        //   JumpToV2Lower       `v2 >= lo` is a reason literal; one lemma turns
-        //                       it into `v1 >= lo`.
-        //   SkipV1Hole          nothing: `~[v1 in lo..hi]` and `v1 >= lo` meet in
-        //                       the range literal's own reverse reification,
-        //                       which gives `v1 >= hi + 1`.
-        //   SkipV2Hole          `v1 >= lo` crosses to `v2 >= lo`, that and
-        //                       `~[v2 in lo..hi]` give `v2 >= hi + 1` through
-        //                       v2's reverse reification, and that crosses back.
-        //   StopAboveV1Upper    nothing: `v1 >= hi` and the reason's `v1 <= lo`
-        //                       are opposite ends of v1's own order chain.
-        //   StopAboveV2Upper    `v1 >= hi` crosses to `v2 >= hi`, against the
-        //                       reason's `v2 <= lo`.
-        walk_no_overlap(w.state->copy_of_values(w.v1), w.state->copy_of_values(w.v2), [&](NoOverlapStep kind, Integer lo, Integer hi) {
-            switch (kind) {
-            case NoOverlapStep::AnchorV1Lower:
-            case NoOverlapStep::SkipV1Hole:
-            case NoOverlapStep::StopAboveV1Upper: break;
-            case NoOverlapStep::JumpToV2Lower: v2_lower_reaches_v1(lo); break;
-            case NoOverlapStep::SkipV2Hole:
-                v1_lower_reaches_v2(lo);
-                v2_lower_reaches_v1(hi + 1_i);
+        //   `v1 >= lo`          the anchor; the reason literal is the fact.
+        //   `v2 >= lo`          the same start reached through v2; one lemma
+        //                       turns it into `v1 >= lo`.
+        //   `~[v1 in lo..hi]`   nothing: that and `v1 >= lo` meet in the range
+        //                       literal's own reverse reification, which gives
+        //                       `v1 >= hi + 1`.
+        //   `~[v2 in lo..hi]`   `v1 >= lo` crosses to `v2 >= lo`, that and the
+        //                       literal give `v2 >= hi + 1` through v2's reverse
+        //                       reification, and that crosses back.
+        //   `v1 <= lo`          nothing: `v1 >= p` and it are opposite ends of
+        //                       v1's own order chain.
+        //   `v2 <= lo`          `v1 >= p` crosses to `v2 >= p`, against it.
+        if (reason.empty())
+            throw UnexpectedException{"equals no-overlap witness has no reason to re-walk"};
+
+        // A reason literal is a ProofLiteralOrFlag in general; every literal this
+        // witness's reason holds is a plain condition on one of the two operands.
+        auto as_condition = [](const ProofLiteralOrFlag & literal) -> const IntegerVariableCondition * {
+            if (const auto * proof_literal = std::get_if<ProofLiteral>(&literal))
+                if (const auto * plain = std::get_if<Literal>(proof_literal))
+                    return std::get_if<IntegerVariableCondition>(plain);
+            return nullptr;
+        };
+
+        auto p = optional<Integer>{};
+        for (std::size_t i = 0; i < reason.size();) {
+            const auto * cond = as_condition(reason[i]);
+            if (! cond || (cond->var != w.v1 && cond->var != w.v2))
+                throw UnexpectedException{"equals no-overlap witness cannot re-walk its own reason"};
+            auto on_v2 = (cond->var == w.v2);
+
+            switch (cond->op) {
+                using enum VariableConditionOperator;
+            case GreaterEqual:
+                if (on_v2)
+                    v2_lower_reaches_v1(cond->value);
+                p = cond->value;
+                ++i;
                 break;
-            case NoOverlapStep::StopAboveV2Upper: v1_lower_reaches_v2(hi); break;
+
+            case NotEqual:
+            case NotInRange: {
+                // One maximal run of values that operand cannot take, and the
+                // walk's position steps past it. A run is one range literal --
+                // unless the operand is a view, which has none, and is then
+                // spelled value by value (#882). So consecutive single-value
+                // literals on the same operand are one run, and cost the two
+                // lemmas a range literal would rather than two per value.
+                auto lo = cond->value;
+                auto hi = (cond->op == NotInRange ? cond->upper_value : cond->value);
+                for (++i; cond->op == NotEqual && i < reason.size(); ++i) {
+                    const auto * next = as_condition(reason[i]);
+                    if (! next || next->op != NotEqual || next->var != cond->var || next->value != hi + 1_i)
+                        break;
+                    hi = next->value;
+                }
+
+                if (on_v2) {
+                    v1_lower_reaches_v2(lo);
+                    v2_lower_reaches_v1(hi + 1_i);
+                }
+                p = hi + 1_i;
+            } break;
+
+            case Less:
+                if (on_v2) {
+                    if (! p)
+                        throw UnexpectedException{"equals no-overlap witness reached its stop before its anchor"};
+                    v1_lower_reaches_v2(*p);
+                }
+                ++i;
+                break;
+
+            default: throw UnexpectedException{"equals no-overlap witness cannot re-walk a reason literal of this shape"};
             }
-        });
+        }
     }
 }
 
@@ -330,13 +396,13 @@ namespace
     auto no_overlap_justification(const State & state, ProofLogger * const, IntegerVariableID v1, IntegerVariableID v2, Literal cond,
         const ConstraintID & owner, bool want_reasons) -> pair<hints::EqualsNoOverlap, Reason>
     {
-        hints::EqualsNoOverlap no_overlap{{owner}, &state, v1, v2, cond};
+        hints::EqualsNoOverlap no_overlap{{owner}, v1, v2, cond};
 
-        // Assembling the reason is linear in the length of the witness. Unlike
-        // the walk in emit_justification, which is the same shape but only runs
-        // when a proof is actually being written, this one sits on the
-        // propagation path -- so with proofs off it is built, never read, and
-        // thrown away. That is the situation want_reasons() exists for, and when
+        // Assembling the reason is linear in the length of the witness, and it
+        // is the *only* walk of the domains: emit_justification re-reads the
+        // walk out of the literals below rather than doing it again. This one
+        // sits on the propagation path, so with proofs off it is built, never
+        // read, and thrown away. That is the situation want_reasons() exists for, and when
         // this witness was per-value the cost was not academic: issue #864
         // measured 78 GB and 160 s at width 10^9, and a bad_alloc on a smaller
         // machine. The must-not-hold pass below was guarded for the same reason

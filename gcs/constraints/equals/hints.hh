@@ -5,12 +5,9 @@
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/reason.hh>
-#include <gcs/innards/state-fwd.hh>
-#include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
 #include <string_view>
-#include <utility>
 
 namespace gcs::innards::hints
 {
@@ -62,24 +59,25 @@ namespace gcs::innards::hints
     /**
      * \brief equals's "domains don't overlap" hint, carried in a reified verdict.
      *
-     * Extends the base with the `no_overlap` subhint and the emit context the
-     * internal proof writer reads to re-walk the disjointness: the operands and
-     * the reification condition. The State pointer is valid because the verdict
-     * is consumed synchronously while the constraint is live. The data is held
-     * for emit_justification only; with no own hint_sexpr the hint takes the
-     * default identity-plus-subhint wire form.
+     * Extends the base with the `no_overlap` subhint and the only context the
+     * lemmas cannot be written without: the two operands and the reification
+     * condition, which is what the lemmas are *about*. The walk itself comes out
+     * of the reason at emit time, so nothing here describes the domains, and no
+     * State pointer is held -- a justification may read the reason and the
+     * model, and anything it reads out of state is a bound that has since moved
+     * (issue #870). The data is held for emit_justification only; with no own
+     * hint_sexpr the hint takes the default identity-plus-subhint wire form.
      *
-     * Nothing here says how the reason spelled its runs, because the lemmas do
-     * not depend on it: a run is stepped over inside one variable, by its range
-     * literal's reverse reification or by its eq atoms walking the order chain,
-     * and either way the witness owes it nothing.
+     * The reason's spelling of a run does not change the lemmas, though it does
+     * decide where they fall: a run is stepped over inside one variable, by its
+     * range literal's reverse reification or by its eq atoms walking the order
+     * chain, and either way the witness owes that step nothing.
      *
      * \ingroup Innards
      */
     struct EqualsNoOverlap : Equals
     {
         static constexpr std::string_view subhint_name = "no_overlap";
-        const State * state;
         IntegerVariableID v1, v2;
         Literal cond;
     };
