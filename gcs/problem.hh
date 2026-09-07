@@ -136,6 +136,11 @@ namespace gcs
          *
          * The returned handle is only meaningful for as long as this Problem
          * (or a search state created from it) is alive.
+         *
+         * \throws InvalidProblemDefinitionException if the bounds fall outside
+         * Integer::min_bounded_value() .. Integer::max_bounded_value(). That cap
+         * is on what may be *declared*, not on arithmetic; see Integer for why it
+         * sits where it does.
          */
         [[nodiscard]] auto create_integer_variable(Integer lower, Integer upper, const std::optional<std::string> & name = std::nullopt)
             GCS_LIFETIME_BOUND -> SimpleIntegerVariableID;
@@ -147,6 +152,10 @@ namespace gcs
          *
          * The returned handle is only meaningful for as long as this Problem
          * (or a search state created from it) is alive.
+         *
+         * \throws InvalidProblemDefinitionException if the smallest or largest
+         * value given falls outside Integer::min_bounded_value() ..
+         * Integer::max_bounded_value(); the holes in between are unconstrained.
          */
         [[nodiscard]] auto create_integer_variable(const std::vector<Integer> & domain, const std::optional<std::string> & name = std::nullopt)
             GCS_LIFETIME_BOUND -> SimpleIntegerVariableID;
@@ -156,6 +165,9 @@ namespace gcs
          * whose domain goes from lower to upper (inclusive). The final argument
          * gives an optional name that will appear in some output; it does not
          * have to be unique.
+         *
+         * \throws InvalidProblemDefinitionException on the same bounds condition
+         * as Problem::create_integer_variable.
          */
         [[nodiscard]] auto create_integer_variable_vector(std::size_t how_many, Integer lower, Integer upper,
             const std::optional<std::string> & name = std::nullopt) GCS_LIFETIME_BOUND -> std::vector<IntegerVariableID>;
@@ -170,6 +182,9 @@ namespace gcs
          * [ a, b, c ] = create_n_integer_variables<3>(1_i, 3_i);
          * ```
          * Otherwise, use Problem::create_integer_variable_vector instead.
+         *
+         * \throws InvalidProblemDefinitionException on the same bounds condition
+         * as Problem::create_integer_variable.
          */
         template <std::size_t n_>
         [[nodiscard]] auto create_n_integer_variables(Integer lower, Integer upper, const std::optional<std::string> & name = std::nullopt)
