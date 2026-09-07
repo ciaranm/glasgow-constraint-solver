@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <algorithm>
 #include <optional>
 #include <vector>
 
@@ -419,4 +420,62 @@ TEST_CASE("Position-based value orders count positions from the smallest value o
     CHECK(conditions_from(value_order::split_largest_first(), current, propagators, var) == vector<IntegerVariableCondition>{var > 7_i, var <= 7_i});
     // Position 6 / 2 = 3, counting from 5, is 8. From the top it would be 7.
     CHECK(conditions_from(value_order::median(), current, propagators, var) == vector<IntegerVariableCondition>{var == 8_i, var != 8_i});
+}
+
+TEST_CASE("random is a permutation of the domain, drawn lazily")
+{
+    // It used to materialise the domain and shuffle it, which is O(width)
+    // whether or not the search reads more than one value. Drawn a value at a
+    // time instead (issue #879), it still has to be a permutation: every value
+    // exactly once, or search is unsound one way and incomplete the other.
+    State state;
+    auto x = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 12_i)};
+    for (auto h : {2_i, 3_i, 7_i, 11_i})
+        REQUIRE(Inference::Instantiated != state.infer_not_equal(x, h));
+
+    Stats stats;
+    Propagators propagators{stats};
+    auto current = state.current();
+    auto expected = values_of(current, x);
+    auto generate = value_order::random(31337);
+
+    // Several draws, because a permutation bug can hide behind one lucky one.
+    for (int draw = 0; draw < 50; ++draw) {
+        vector<Integer> got;
+        for (auto && cond : generate(current, propagators, x))
+            got.push_back(cond.value);
+
+        REQUIRE(got.size() == expected.size());
+        auto sorted = got;
+        std::sort(sorted.begin(), sorted.end());
+        CHECK(sorted == expected);
+    }
+}
+
+TEST_CASE("random does not enumerate a domain the search only reads the start of")
+{
+    // The laziness itself: a billion-value domain, of which the search takes
+    // three values before descending. dev_docs/large-domains.md calls exactly
+    // this legitimate for smallest_first; random now has the same property.
+    State state;
+    auto x = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 1000000000_i)};
+    REQUIRE(Inference::Instantiated != state.infer_not_in_range(x, 11_i, 499999999_i));
+
+    Stats stats;
+    Propagators propagators{stats};
+    auto current = state.current();
+
+    vector<Integer> got;
+    for (auto && cond : value_order::random(4)(current, propagators, x)) {
+        got.push_back(cond.value);
+        if (got.size() == 3)
+            break;
+    }
+
+    REQUIRE(got.size() == 3);
+    for (auto v : got)
+        CHECK(current.in_domain(x, v));
+    CHECK(got[0] != got[1]);
+    CHECK(got[1] != got[2]);
+    CHECK(got[0] != got[2]);
 }

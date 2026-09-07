@@ -2,10 +2,10 @@
 #include <gcs/interval_set.hh>
 #include <gcs/search_heuristics.hh>
 
-#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <random>
+#include <unordered_map>
 
 using std::generator;
 using std::make_shared;
@@ -14,11 +14,12 @@ using std::nullopt;
 using std::optional;
 using std::random_device;
 using std::shared_ptr;
+using std::size_t;
 using std::tuple;
 using std::uint_fast32_t;
 using std::uniform_int_distribution;
+using std::unordered_map;
 using std::vector;
-using std::ranges::shuffle;
 
 namespace
 {
@@ -317,12 +318,39 @@ namespace
         return [rand = move(rand)](
                    const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
             return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-                vector<Integer> values;
-                for (auto v : s.each_value(var))
-                    values.push_back(v);
-                shuffle(values, *rand);
-                for (auto v : values)
-                    co_yield var == v;
+                // A shuffled enumeration of the domain, drawn a value at a time
+                // rather than materialised and shuffled up front. This is
+                // Fisher-Yates with the array left implicit: position j of the
+                // shuffle is drawn uniformly from [j, size), and the map holds
+                // only the positions a draw has displaced, so it grows with the
+                // values the search actually asks for rather than with the
+                // domain's width. Same permutation distribution as shuffling the
+                // whole domain --- it is the same algorithm --- but a search that
+                // reads one value from a billion-value domain and descends does
+                // not pay for the other billion (issue #879).
+                //
+                // Every other value order here is width-independent because it
+                // needs one value. This one is width-independent because it is
+                // lazy, which is the same reason smallest_first() always was.
+                auto values = s.copy_of_values(var);
+                auto size = values.size().as_index();
+                unordered_map<size_t, size_t> displaced;
+                auto at = [&](size_t i) {
+                    auto f = displaced.find(i);
+                    return f == displaced.end() ? i : f->second;
+                };
+
+                for (size_t j = 0; j < size; ++j) {
+                    // Swap the implicit array's j'th and r'th entries, then hand
+                    // out the j'th. Nothing reads position j again --- every later
+                    // draw is from [j + 1, size) --- so only the entry landing at
+                    // r has to be remembered.
+                    uniform_int_distribution<size_t> dist(j, size - 1);
+                    auto r = dist(*rand);
+                    auto picked = at(r);
+                    displaced[r] = at(j);
+                    co_yield var == values.nth_value(position(picked));
+                }
             }(rand, s, var);
         };
     }
