@@ -1,4 +1,5 @@
 #include <gcs/innards/assertion_hints.hh>
+#include <gcs/innards/integer_overflow.hh>
 #include <gcs/innards/interval_tree.hh>
 #include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -2294,59 +2295,76 @@ auto NamesAndIDsTracker::reification_shape(const WPBSumLE & ineq, const HalfReif
     });
 
     // work out how big the reification constant needs to be, by adding together
-    // positive terms in the inequality and negating
+    // positive terms in the inequality and negating.
+    //
+    // This is where a domain too wide for the proof model bites: the sum ranges
+    // over every term, so a row relating two wide variables needs room for both,
+    // and the constant is negated again when the row is rendered. Integer's own
+    // arithmetic catches the overflow, but reports it as a bare arithmetic
+    // failure from deep inside model writing, with the OPB already half written
+    // and nothing naming the variable at fault. Restate it as something a caller
+    // can act on. Problem and State refuse such domains up front
+    // (Integer::max_bounded_value()), so reaching this means a caller built a
+    // wide bound by some other route (issue #852).
     Integer max_contribution_from_positive_terms = 0_i;
 
-    for (auto & [w, v] : ineq.lhs.terms) {
-        overloaded{
-            [&, w = w](const ProofLiteral &) { max_contribution_from_positive_terms += max(0_i, w); }, //
-            [&, w = w](const ProofFlag &) { max_contribution_from_positive_terms += max(0_i, w); },    //
-            [&, w = w](const IntegerVariableID & var) {
-                overloaded{
-                    [&](const SimpleIntegerVariableID & var) {
-                        for (const auto & [bit_value, bit_lit] : each_bit(var))
-                            max_contribution_from_positive_terms += max(0_i, w * bit_value);
-                    }, //
-                    [&](const ViewOfIntegerVariableID & view) {
-                        // A registered view is *emitted* over its own proof-only
-                        // bit-vector (BinEnc(V) directly encodes the view value),
-                        // so the reification constant must be sized from those
-                        // bits too. Sizing it from the underlying variable's bits
-                        // + then_add (the X representation) instead gives a span
-                        // matching the view's value range but smaller than its
-                        // bit-vector's, leaving the reified line valid only modulo
-                        // V's domain bound -- which RUP can't fold in.
-                        if (auto v_proof_id = find_view(view)) {
-                            for (const auto & [bit_value, bit_lit] : each_bit(*v_proof_id))
+    try {
+        for (auto & [w, v] : ineq.lhs.terms) {
+            overloaded{
+                [&, w = w](const ProofLiteral &) { max_contribution_from_positive_terms += max(0_i, w); }, //
+                [&, w = w](const ProofFlag &) { max_contribution_from_positive_terms += max(0_i, w); },    //
+                [&, w = w](const IntegerVariableID & var) {
+                    overloaded{
+                        [&](const SimpleIntegerVariableID & var) {
+                            for (const auto & [bit_value, bit_lit] : each_bit(var))
                                 max_contribution_from_positive_terms += max(0_i, w * bit_value);
-                        }
-                        // The term is w * view = w * ((negate_first ? -actual : actual) + then_add).
-                        // The variable part w * (negate_first ? -actual : actual) has per-bit max
-                        // contribution max(0, ±w * bit_value), with the sign flip depending on
-                        // negate_first. The constant part w * then_add applies regardless and is
-                        // not affected by negate_first.
-                        else if (! view.negate_first) {
-                            for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
-                                max_contribution_from_positive_terms += max(0_i, w * bit_value);
-                            max_contribution_from_positive_terms += max(0_i, w * view.then_add);
-                        }
-                        else {
-                            for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
-                                max_contribution_from_positive_terms += max(0_i, -w * bit_value);
-                            max_contribution_from_positive_terms += max(0_i, w * view.then_add);
-                        }
-                    },                                                                                                                      //
-                    [&](const ConstantIntegerVariableID & cvar) { max_contribution_from_positive_terms += max(0_i, w * cvar.const_value); } //
-                }
-                    .visit(var);
-            }, //
-            [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
-                for (const auto & [bit_value, bit_lit] : each_bit(var))
-                    max_contribution_from_positive_terms += max(0_i, w * bit_value);
-            },                                                                                             //
-            [&, w = w](const ProofBitVariable &) { max_contribution_from_positive_terms += max(0_i, w); }, //
+                        }, //
+                        [&](const ViewOfIntegerVariableID & view) {
+                            // A registered view is *emitted* over its own proof-only
+                            // bit-vector (BinEnc(V) directly encodes the view value),
+                            // so the reification constant must be sized from those
+                            // bits too. Sizing it from the underlying variable's bits
+                            // + then_add (the X representation) instead gives a span
+                            // matching the view's value range but smaller than its
+                            // bit-vector's, leaving the reified line valid only modulo
+                            // V's domain bound -- which RUP can't fold in.
+                            if (auto v_proof_id = find_view(view)) {
+                                for (const auto & [bit_value, bit_lit] : each_bit(*v_proof_id))
+                                    max_contribution_from_positive_terms += max(0_i, w * bit_value);
+                            }
+                            // The term is w * view = w * ((negate_first ? -actual : actual) + then_add).
+                            // The variable part w * (negate_first ? -actual : actual) has per-bit max
+                            // contribution max(0, ±w * bit_value), with the sign flip depending on
+                            // negate_first. The constant part w * then_add applies regardless and is
+                            // not affected by negate_first.
+                            else if (! view.negate_first) {
+                                for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
+                                    max_contribution_from_positive_terms += max(0_i, w * bit_value);
+                                max_contribution_from_positive_terms += max(0_i, w * view.then_add);
+                            }
+                            else {
+                                for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
+                                    max_contribution_from_positive_terms += max(0_i, -w * bit_value);
+                                max_contribution_from_positive_terms += max(0_i, w * view.then_add);
+                            }
+                        },                                                                                                                      //
+                        [&](const ConstantIntegerVariableID & cvar) { max_contribution_from_positive_terms += max(0_i, w * cvar.const_value); } //
+                    }
+                        .visit(var);
+                }, //
+                [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
+                    for (const auto & [bit_value, bit_lit] : each_bit(var))
+                        max_contribution_from_positive_terms += max(0_i, w * bit_value);
+                },                                                                                             //
+                [&, w = w](const ProofBitVariable &) { max_contribution_from_positive_terms += max(0_i, w); }, //
+            }
+                .visit(v);
         }
-            .visit(v);
+    }
+    catch (const IntegerOverflow &) {
+        throw ProofError{"cannot size the reification constant for a half-reified row: the sum of its positive contributions does not fit "
+                         "in an Integer. The variables involved may have domains near Integer::max_bounded_value(), or be views offsetting "
+                         "one outwards, or the coefficients may be too large"};
     }
 
     // Usually it would be fine to say 0_i rather than -1_i here, because if a constraint
@@ -2354,6 +2372,14 @@ auto NamesAndIDsTracker::reification_shape(const WPBSumLE & ineq, const HalfReif
     // not. However, for syntactic wrangling reasons, we probably want the implication
     // to always be there.
     auto clamped_reif_const = min(-max_contribution_from_positive_terms + ineq.rhs, -1_i);
+
+    // The rendered row negates this again (emit_inequality_to.cc), and the most
+    // negative Integer has no negation, so catch it here where there is still
+    // something useful to say rather than at the negation.
+    if (clamped_reif_const == Integer::min_value())
+        throw ProofError{"the reification constant for a half-reified row is the most negative Integer, which the >= rendering cannot "
+                         "negate. The variables involved may have domains near Integer::max_bounded_value(), or be views offsetting one "
+                         "outwards, or the coefficients may be too large"};
 
     // if we have a false literal on the left hand side, adjusting the degree of falsity
     // up by the sum of positive terms is enough that it will be trivially true.

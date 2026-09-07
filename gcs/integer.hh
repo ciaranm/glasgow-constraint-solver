@@ -108,6 +108,40 @@ namespace gcs
         {
             return Integer(std::numeric_limits<decltype(raw_value)>::max());
         }
+
+        /**
+         * \name The widest bounds a variable's domain may declare.
+         *
+         * A variable's domain must lie within these, and Problem and State
+         * enforce it. They are a quarter of the machine range, which is two
+         * bits of headroom rather than the obvious one, because writing the
+         * proof model costs more than a single carry: a half-reified row's
+         * reification constant is the sum of the positive contributions of
+         * *every* term, so a row relating two variables needs room for both,
+         * and that constant is then negated when the row is rendered in `>=`
+         * form -- and the most negative machine integer has no negation.
+         *
+         * The boundary is measured, not chosen. At `+/-2^61` `LessThan`, `Plus`
+         * and `AllDifferent` all write their model; at `+/-2^62` all three
+         * abort part-way through, leaving a truncated OPB (issue #852).
+         *
+         * Arithmetic is deliberately *not* held to this: intermediate results
+         * are expected to exceed it, which is what the headroom is for. This
+         * bounds what may be *declared*, so that the ordinary routes into the
+         * solver cannot reach the cliff by accident. Nothing stops a caller
+         * computing a wider value and using it anyway.
+         */
+        ///@{
+        static inline constexpr auto min_bounded_value() -> Integer
+        {
+            return Integer(std::numeric_limits<decltype(raw_value)>::min() / 4);
+        }
+
+        static inline constexpr auto max_bounded_value() -> Integer
+        {
+            return Integer(std::numeric_limits<decltype(raw_value)>::max() / 4);
+        }
+        ///@}
     };
 
     ///@{

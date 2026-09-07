@@ -1,5 +1,7 @@
+#include <gcs/innards/integer_overflow.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 
 #include <util/overloaded.hh>
@@ -88,20 +90,42 @@ namespace
     }
 }
 
+namespace
+{
+    // Writing a row folds constant terms into the right-hand side and negates
+    // every weight to convert <= into >=, so a row whose coefficients and bounds
+    // together do not fit in an Integer fails here -- part-way through building
+    // the string, with the OPB already half written and nothing in the arithmetic
+    // failure naming what was being emitted. Restate it as something a caller can
+    // act on. Variable domains are capped so the ordinary routes cannot reach
+    // this (Integer::max_bounded_value()); large coefficients, or views that
+    // offset a domain outwards, still can. See issue #852.
+    [[noreturn]] auto rethrow_as_proof_error() -> void
+    {
+        throw ProofError{"cannot write a pseudo-Boolean row whose coefficients and variable bounds together do not fit in an Integer; "
+                         "the variables involved may have domains near Integer::max_bounded_value(), or the coefficients may be too large"};
+    }
+}
+
 auto gcs::innards::emit_inequality_to(NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     string & out, EnsureNames ensure_names) -> void
 {
     // build up the inequality, adjusting as we go for constant terms,
     // and converting from <= to >=.
-    Integer rhs = -ineq.rhs;
-    for (auto & [w, v] : ineq.lhs.terms) {
-        if (0_i == w)
-            continue;
-        append_or_fold_term_to(names_and_ids_tracker, w, v, out, rhs, ensure_names);
-    }
+    try {
+        Integer rhs = -ineq.rhs;
+        for (auto & [w, v] : ineq.lhs.terms) {
+            if (0_i == w)
+                continue;
+            append_or_fold_term_to(names_and_ids_tracker, w, v, out, rhs, ensure_names);
+        }
 
-    out += ">= ";
-    append_number_to(out, rhs);
+        out += ">= ";
+        append_number_to(out, rhs);
+    }
+    catch (const IntegerOverflow &) {
+        rethrow_as_proof_error();
+    }
 }
 
 auto gcs::innards::emit_reified_inequality_to(NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
@@ -113,41 +137,46 @@ auto gcs::innards::emit_reified_inequality_to(NamesAndIDsTracker & names_and_ids
     // coefficient, converted from <= to >= as usual.
     auto shape = names_and_ids_tracker.reification_shape(ineq, half_reif);
 
-    Integer rhs = -shape.effective_rhs;
-    for (auto & [w, v] : ineq.lhs.terms) {
-        if (0_i == w)
-            continue;
-        append_or_fold_term_to(names_and_ids_tracker, w, v, out, rhs, ensure_names);
-    }
-
-    // Each reifying term appears negated. A flag or bit negation is a cheap
-    // struct copy, but negating a condition literal builds a whole new
-    // variant chain just to name it -- and both polarities of a condition are
-    // always introduced together, so the negated condition's literal IS the
-    // negation of the condition's literal. Look up the condition as given and
-    // flip the XLiteral instead.
-    auto w = shape.reif_coefficient;
-    for (auto & r : half_reif)
-        overloaded{
-            [&](const ProofFlag & f) { append_or_fold_term_to(names_and_ids_tracker, w, ! f, out, rhs, ensure_names); }, //
-            [&](const ProofLiteral & lit) {
-                overloaded{
-                    [&](const TrueLiteral &) { /* negated: contributes nothing */ }, //
-                    [&](const FalseLiteral &) { rhs += w; },                         //
-                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                        auto xlit = EnsureNames::Yes == ensure_names ? names_and_ids_tracker.xliteral_for_ensuring(cond)
-                                                                     : names_and_ids_tracker.xliteral_for(cond);
-                        append_term_to(out, -w, names_and_ids_tracker.pb_file_string_for(! xlit));
-                    } //
-                }
-                    .visit(simplify_literal(names_and_ids_tracker, lit));
-            },                                                                                                                     //
-            [&](const ProofBitVariable & bit) { append_or_fold_term_to(names_and_ids_tracker, w, ! bit, out, rhs, ensure_names); } //
+    try {
+        Integer rhs = -shape.effective_rhs;
+        for (auto & [w, v] : ineq.lhs.terms) {
+            if (0_i == w)
+                continue;
+            append_or_fold_term_to(names_and_ids_tracker, w, v, out, rhs, ensure_names);
         }
-            .visit(r);
 
-    out += ">= ";
-    append_number_to(out, rhs);
+        // Each reifying term appears negated. A flag or bit negation is a cheap
+        // struct copy, but negating a condition literal builds a whole new
+        // variant chain just to name it -- and both polarities of a condition are
+        // always introduced together, so the negated condition's literal IS the
+        // negation of the condition's literal. Look up the condition as given and
+        // flip the XLiteral instead.
+        auto w = shape.reif_coefficient;
+        for (auto & r : half_reif)
+            overloaded{
+                [&](const ProofFlag & f) { append_or_fold_term_to(names_and_ids_tracker, w, ! f, out, rhs, ensure_names); }, //
+                [&](const ProofLiteral & lit) {
+                    overloaded{
+                        [&](const TrueLiteral &) { /* negated: contributes nothing */ }, //
+                        [&](const FalseLiteral &) { rhs += w; },                         //
+                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                            auto xlit = EnsureNames::Yes == ensure_names ? names_and_ids_tracker.xliteral_for_ensuring(cond)
+                                                                         : names_and_ids_tracker.xliteral_for(cond);
+                            append_term_to(out, -w, names_and_ids_tracker.pb_file_string_for(! xlit));
+                        } //
+                    }
+                        .visit(simplify_literal(names_and_ids_tracker, lit));
+                },                                                                                                                     //
+                [&](const ProofBitVariable & bit) { append_or_fold_term_to(names_and_ids_tracker, w, ! bit, out, rhs, ensure_names); } //
+            }
+                .visit(r);
+
+        out += ">= ";
+        append_number_to(out, rhs);
+    }
+    catch (const IntegerOverflow &) {
+        rethrow_as_proof_error();
+    }
 }
 
 auto gcs::innards::emit_inequality_to(

@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <vector>
 
 using namespace gcs;
 using namespace std::string_literals;
@@ -50,4 +51,19 @@ TEST_CASE("Problem rejects duplicate variable names")
 
     CHECK_NOTHROW(p.create_integer_variable(0_i, 1_i, "dup"s));
     CHECK_THROWS_AS(p.create_integer_variable(0_i, 1_i, "dup"s), NamingError);
+}
+
+TEST_CASE("Problem rejects a domain too wide for the proof model")
+{
+    // The boundary is measured rather than chosen: at these bounds LessThan,
+    // Plus and AllDifferent all write their model, and one bit wider all three
+    // abort part-way through emission and leave a truncated OPB (issue #852).
+    Problem p;
+    CHECK_NOTHROW(p.create_integer_variable(Integer::min_bounded_value(), Integer::max_bounded_value()));
+    CHECK_THROWS_AS(p.create_integer_variable(Integer::min_bounded_value() - 1_i, 0_i), InvalidProblemDefinitionException);
+    CHECK_THROWS_AS(p.create_integer_variable(0_i, Integer::max_bounded_value() + 1_i), InvalidProblemDefinitionException);
+    CHECK_THROWS_AS(p.create_integer_variable(Integer::min_value() / 2_i, Integer::max_value() / 2_i), InvalidProblemDefinitionException);
+
+    // The vector overload goes through the same check.
+    CHECK_THROWS_AS(p.create_integer_variable(std::vector<Integer>{0_i, Integer::max_value() / 2_i}), InvalidProblemDefinitionException);
 }

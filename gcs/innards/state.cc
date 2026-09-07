@@ -14,6 +14,14 @@
 #include <variant>
 #include <vector>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#else
+#include <fmt/core.h>
+#endif
+
 using namespace gcs;
 using namespace gcs::innards;
 
@@ -30,6 +38,12 @@ using std::pair;
 using std::string;
 using std::tuple;
 using std::vector;
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
+#else
+using fmt::format;
+#endif
 
 namespace
 {
@@ -131,6 +145,21 @@ auto State::allocate_integer_variable_with_state(Integer lower, Integer upper) -
 {
     if (lower > upper)
         throw InvalidProblemDefinitionException{"variable created with lower bound greater than upper bound"};
+    // Every route to a variable comes through here, including the auxiliaries
+    // constraints mint for themselves, so this is the one place that can stop a
+    // domain too wide for the proof model to be written (issue #852). It refuses
+    // rather than narrowing: silently shrinking a declared domain would change
+    // what the model means.
+    //
+    // The numbers are spelled out because this message can reach someone who is
+    // using the solver rather than working on it: naming only the constants
+    // would send them to the source to find out what they are.
+    if (lower < Integer::min_bounded_value() || upper > Integer::max_bounded_value())
+        throw InvalidProblemDefinitionException{format("variable created with domain {}..{}, which is outside the widest supported "
+                                                       "domain of {}..{} (Integer::min_bounded_value() .. "
+                                                       "Integer::max_bounded_value()); the proof model cannot be written for a domain "
+                                                       "this wide",
+            lower.raw_value, upper.raw_value, Integer::min_bounded_value().raw_value, Integer::max_bounded_value().raw_value)};
     _imp->integer_variable_states.back().emplace_back(lower, upper);
     return SimpleIntegerVariableID{_imp->integer_variable_states.back().size() - 1};
 }
