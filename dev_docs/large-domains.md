@@ -122,10 +122,14 @@ computing both algorithms in one binary reports zero disagreements over ten seed
 Look for this shape first; it is free.
 
 **Check byte-identity with `GCS_PRESERVE_PROOF_FILES=all`, not `=1`.** The latter
-keeps only the last instance's files, since every case writes to the same
-basename, so a run over 31 instances leaves six artefacts to compare out of 124.
-That is how the claim above this one came to be believed when it was false: the
-files that moved were not among the ones the check looked at.
+keeps only the last instance's files under each basename, and `among_test` writes
+its 31 proving instances under three basenames: 26 as `among_test_w0_pall`, 3 as
+`among_test_dup`, 2 as `among_test_selfref`. At four artefacts apiece — `.opb`,
+`.pbp`, `.scp`, `.varmap` — `=1` leaves twelve files to compare out of 124, and
+that is how the claim above this one came to be believed when it was false. The
+near miss is the part worth stating: the four proofs that moved are `w0_pall`
+0001, 0002, 0003 and 0006, and the only `w0_pall` proof `=1` leaves behind is
+0026 — so not one of the differences was ever in front of the check.
 
 H1a is the one worth looking for first, because it is not a trade-off at all.
 The tree already has the machinery: `IntervalSet::each_interval_minus()`,
