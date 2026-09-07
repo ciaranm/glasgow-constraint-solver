@@ -575,6 +575,18 @@ if(GCS_BUILD_TESTS)
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> ${mode})
     endforeach()
     add_test(NAME equals_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test>)
+    # Mutation lanes (#869): each corrupts one step of an equals derivation and
+    # passes only if veripb refuses the result. The control comes first because
+    # it is what makes the other five mean anything -- it checks that the same
+    # four instances verify when they are not corrupted. equals_mutations.hh
+    # records which instance each lane needs and why a smaller one is slack.
+    add_test(NAME equals_mutation_control
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test> --mutate=control)
+    foreach(mutation fixed_operand_reason bridge_lemmas no_overlap_stop no_overlap_lemmas no_overlap_selector)
+        add_test(NAME equals_mutation_${mutation}
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                --basename equals_mutation_${mutation} $<TARGET_FILE:equals_test> --mutate=${mutation})
+    endforeach()
     foreach(linmode incremental stateless)
         add_test(NAME linear_constant_constraint_${linmode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_constant_test>)

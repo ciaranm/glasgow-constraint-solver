@@ -918,6 +918,23 @@ reason. And check that the run being mutated really produced the inference at
 all, or the harness is checking an empty proof. If a mutation verifies anyway,
 that is a finding about the honest derivation.
 
+Registering a **control** alongside the lanes is what makes them mean
+something: the same instances, uncorrupted, and veripb must accept. A lane whose
+instance does not verify honestly either is green for no reason at all. The
+equals family's `--mutate=control` is the pattern (`equals_mutation_control`).
+
+Mutating a **reason** rather than an emitted step has a trap of its own, and it
+is not obvious. Dropping a literal from a reason is only a corruption when that
+literal traces back to a *search decision*. Anything a propagator derived is
+written into the proof as a clause in its own right, so the checker has it
+whether or not the reason repeats it — which means a rule that fires during root
+propagation has a reason that merely restates the database, and dropping from it
+changes nothing veripb can see. Such a lane goes green on an empty corruption.
+Arrange for the fact to arrive under a decision (a reified constraint whose
+condition the search sets, say, with a fixed branching order so it is set first),
+or mutate an emitted lemma instead. `equals_mutations.hh` records two instances
+that accept the mutation for this reason before the third one bites.
+
 ## Adding a new constraint: checklist
 
 1. Header file with class declaration, Doxygen comments, the phases it

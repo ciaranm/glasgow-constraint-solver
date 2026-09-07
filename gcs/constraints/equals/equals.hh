@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_EQUALS_EQUALS_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/innards/equals_mutations.hh>
 #include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/reification.hh>
@@ -16,7 +17,8 @@ namespace gcs
     namespace innards
     {
         auto enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state, auto & inference,
-            const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState;
+            const ReasonLiterals & reason, const ConstraintID & owner, EqualsProofMutation mutation = equals_proof_mutation::None{})
+            -> PropagatorState;
     }
 
     /**
@@ -30,6 +32,7 @@ namespace gcs
         IntegerVariableID _v1, _v2;
         ReificationCondition _cond;
         bool _neq;
+        innards::EqualsProofMutation _proof_mutation = innards::equals_proof_mutation::None{};
         innards::EvaluatedReificationCondition _evaluated_cond = innards::evaluated_reif::Deactivated{};
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
@@ -38,6 +41,11 @@ namespace gcs
 
     public:
         ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool neq = false);
+
+        /// Testing only: corrupt one step of the derivations this constraint
+        /// emits, so a mutation lane can check that veripb refuses the result.
+        /// See innards::EqualsProofMutation. Never use this outside a test.
+        auto with_proof_mutation(innards::EqualsProofMutation mutation) -> ReifiedEquals &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
