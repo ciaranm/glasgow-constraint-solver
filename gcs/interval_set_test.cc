@@ -1087,3 +1087,47 @@ TEST_CASE("nth_value rejects a position outside the set")
     IntervalSet<int> empty;
     CHECK_THROWS_AS(empty.nth_value(0), UnexpectedException);
 }
+
+TEST_CASE("for_each_reversed matches each_reversed")
+{
+    // The non-coroutine mirror of for_each(). State's for_each_value_* use it to
+    // hand a negated view's values out ascending without a generator frame
+    // (issue #890), so it has to agree with each_reversed() exactly.
+    IntervalSet<int> s1(5, 9), s2, s3;
+    s2.insert_at_end(1, 2);
+    s2.insert_at_end(7, 7);
+    s2.insert_at_end(10, 13);
+    // s3 stays empty.
+
+    for (const auto & set : {s1, s2, s3}) {
+        vector<int> from_generator, from_callback;
+        for (auto v : set.each_reversed())
+            from_generator.push_back(v);
+        set.for_each_reversed([&](int v) { from_callback.push_back(v); });
+        CHECK(from_callback == from_generator);
+
+        vector<int> forwards;
+        set.for_each([&](int v) { forwards.push_back(v); });
+        reverse(forwards);
+        CHECK(from_callback == forwards);
+    }
+}
+
+TEST_CASE("for_each_reversed stops early when the callback says so")
+{
+    IntervalSet<int> set;
+    set.insert_at_end(1, 3);
+    set.insert_at_end(8, 10);
+
+    vector<int> seen;
+    set.for_each_reversed([&](int v) {
+        seen.push_back(v);
+        return seen.size() < 4;
+    });
+    CHECK(seen == vector<int>{10, 9, 8, 3});
+
+    // A void callback runs to completion, as for_each() does.
+    vector<int> all;
+    set.for_each_reversed([&](int v) -> void { all.push_back(v); });
+    CHECK(all == vector<int>{10, 9, 8, 3, 2, 1});
+}
