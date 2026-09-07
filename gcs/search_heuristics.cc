@@ -1,10 +1,11 @@
 #include <gcs/innards/propagators.hh>
+#include <gcs/interval_set.hh>
 #include <gcs/search_heuristics.hh>
 
-#include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <random>
-#include <ranges>
+#include <unordered_map>
 
 using std::generator;
 using std::make_shared;
@@ -13,11 +14,12 @@ using std::nullopt;
 using std::optional;
 using std::random_device;
 using std::shared_ptr;
+using std::size_t;
 using std::tuple;
 using std::uint_fast32_t;
 using std::uniform_int_distribution;
+using std::unordered_map;
 using std::vector;
-using std::ranges::shuffle;
 
 namespace
 {
@@ -284,19 +286,84 @@ auto gcs::variable_order::with_smallest_value(vector<IntegerVariableID> vars) ->
         });
 }
 
+auto gcs::variable_order::with_largest_value(const Problem & problem) -> BranchVariableHeuristic
+{
+    return with_largest_value(problem.all_normal_variables());
+}
+
+auto gcs::variable_order::with_largest_value(vector<IntegerVariableID> vars) -> BranchVariableHeuristic
+{
+    return variable_order::in_order_of(
+        vars, [](const CurrentState & state, const innards::Propagators &, const IntegerVariableID & a, const IntegerVariableID & b) {
+            return state.upper_bound(a) > state.upper_bound(b);
+        });
+}
+
 namespace
 {
+    // A position drawn as a size_t index, as the Integer position
+    // IntervalSet::nth_value() takes. The distributions below stay size_t-typed
+    // and keep their original bounds, so a given seed draws exactly what it drew
+    // when these heuristics read a materialised vector of values.
+    auto position(std::size_t index) -> Integer
+    {
+        return Integer(static_cast<long long>(index));
+    }
+
+    // Where the three splitting value orders cut: the value at position
+    // size / 2 - 1, the largest of the lower half, so that "var <= v" and
+    // "var > v" divide the domain as evenly as its size allows.
+    //
+    // Asked of the domain's interval set rather than by counting values up to
+    // that position. A domain the branching heuristics are most likely to meet
+    // this way is a wide one --- splitting is the standard answer to "too many
+    // values to enumerate" --- and dropping size / 2 - 1 values from an
+    // each_value() generator walked half of it at every branching decision
+    // (issue #879).
+    auto split_point(const CurrentState & s, const IntegerVariableID & var) -> Integer
+    {
+        auto values = s.copy_of_values(var);
+        return values.nth_value(values.size() / 2_i - 1_i);
+    }
+
     auto random_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
     {
         return [rand = move(rand)](
                    const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
             return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-                vector<Integer> values;
-                for (auto v : s.each_value(var))
-                    values.push_back(v);
-                shuffle(values, *rand);
-                for (auto v : values)
-                    co_yield var == v;
+                // A shuffled enumeration of the domain, drawn a value at a time
+                // rather than materialised and shuffled up front. This is
+                // Fisher-Yates with the array left implicit: position j of the
+                // shuffle is drawn uniformly from [j, size), and the map holds
+                // only the positions a draw has displaced, so it grows with the
+                // values the search actually asks for rather than with the
+                // domain's width. Same permutation distribution as shuffling the
+                // whole domain --- it is the same algorithm --- but a search that
+                // reads one value from a billion-value domain and descends does
+                // not pay for the other billion (issue #879).
+                //
+                // Every other value order here is width-independent because it
+                // needs one value. This one is width-independent because it is
+                // lazy, which is the same reason smallest_first() always was.
+                auto values = s.copy_of_values(var);
+                auto size = values.size().as_index();
+                unordered_map<size_t, size_t> displaced;
+                auto at = [&](size_t i) {
+                    auto f = displaced.find(i);
+                    return f == displaced.end() ? i : f->second;
+                };
+
+                for (size_t j = 0; j < size; ++j) {
+                    // Swap the implicit array's j'th and r'th entries, then hand
+                    // out the j'th. Nothing reads position j again --- every later
+                    // draw is from [j + 1, size) --- so only the entry landing at
+                    // r has to be remembered.
+                    uniform_int_distribution<size_t> dist(j, size - 1);
+                    auto r = dist(*rand);
+                    auto picked = at(r);
+                    displaced[r] = at(j);
+                    co_yield var == values.nth_value(position(picked));
+                }
             }(rand, s, var);
         };
     }
@@ -306,11 +373,9 @@ namespace
         return [rand = move(rand)](
                    const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
             return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-                vector<Integer> values;
-                for (auto v : s.each_value(var))
-                    values.push_back(v);
-                uniform_int_distribution<size_t> dist(0, values.size() - 1);
-                auto val = values.at(dist(*rand));
+                auto values = s.copy_of_values(var);
+                uniform_int_distribution<size_t> dist(0, (values.size() - 1_i).as_index());
+                auto val = values.nth_value(position(dist(*rand)));
                 co_yield var != val;
                 co_yield var == val;
             }(rand, s, var);
@@ -322,27 +387,26 @@ namespace
         return [rand = move(rand)](
                    const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
             return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-                vector<Integer> values;
-                for (auto v : s.each_value(var))
-                    values.push_back(v);
+                auto values = s.copy_of_values(var);
+                auto size = values.size();
                 // An interior interval needs a plain variable and at least three
                 // values (so lo/hi can both be strictly inside the bounds, making the
                 // reject branch a genuine hole). Otherwise fall back to a value reject.
                 const auto * svar = std::get_if<SimpleIntegerVariableID>(&var);
-                if (svar && values.size() >= 3) {
-                    uniform_int_distribution<size_t> dist(1, values.size() - 2);
+                if (svar && size >= 3_i) {
+                    uniform_int_distribution<size_t> dist(1, (size - 2_i).as_index());
                     auto i = dist(*rand);
                     auto j = dist(*rand);
                     if (i > j)
                         std::swap(i, j);
-                    auto lo = values.at(i);
-                    auto hi = values.at(j);
+                    auto lo = values.nth_value(position(i));
+                    auto hi = values.nth_value(position(j));
                     co_yield not_in_range(var, lo, hi);
                     co_yield in_range(var, lo, hi);
                 }
                 else {
-                    uniform_int_distribution<size_t> dist(0, values.size() - 1);
-                    auto val = values.at(dist(*rand));
+                    uniform_int_distribution<size_t> dist(0, (size - 1_i).as_index());
+                    auto val = values.nth_value(position(dist(*rand)));
                     co_yield var != val;
                     co_yield var == val;
                 }
@@ -417,8 +481,7 @@ auto gcs::value_order::split_smallest_first() -> BranchValueGenerator
 {
     return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
         return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-            auto mid = s.domain_size(var) / 2_i;
-            auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
+            auto v = split_point(s, var);
             co_yield var <= v;
             co_yield var > v;
         }(s, var);
@@ -429,8 +492,7 @@ auto gcs::value_order::split_largest_first() -> BranchValueGenerator
 {
     return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
         return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-            auto mid = s.domain_size(var) / 2_i;
-            auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
+            auto v = split_point(s, var);
             co_yield var > v;
             co_yield var <= v;
         }(s, var);
@@ -444,8 +506,7 @@ namespace
         return [rand = move(rand)](
                    const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
             return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-                auto mid = s.domain_size(var) / 2_i;
-                auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
+                auto v = split_point(s, var);
                 if (uniform_int_distribution(0, 1)(*rand) == 0) {
                     co_yield var <= v;
                     co_yield var > v;
@@ -505,10 +566,8 @@ auto gcs::value_order::median() -> BranchValueGenerator
 {
     return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
         return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-            vector<Integer> values;
-            for (auto v : s.each_value(var))
-                values.push_back(v);
-            auto v = values.at(values.size() / 2);
+            auto values = s.copy_of_values(var);
+            auto v = values.nth_value(values.size() / 2_i);
             co_yield var == v;
             co_yield var != v;
         }(s, var);

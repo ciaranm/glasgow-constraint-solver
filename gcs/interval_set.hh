@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTERVAL_SET_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTERVAL_SET_HH
 
+#include <gcs/exception.hh>
 #include <gcs/interval_set-fwd.hh>
 
 #include <gch/small_vector.hpp>
@@ -132,6 +133,50 @@ namespace gcs
         [[nodiscard]] auto upper() const -> Int_
         {
             return intervals.back().second;
+        }
+
+        /**
+         * \brief Returns the value at zero-based position \p n, counting up from
+         * lower().
+         *
+         * nth_value(0) is lower(), and nth_value(size() - 1) is upper(). The
+         * position is an index into the *values*, not into the intervals: for
+         * {1..4, 8..10}, nth_value(3) is 4 and nth_value(4) is 8.
+         *
+         * Walks the stored intervals accumulating their widths, so this costs
+         * <code>O(intervals)</code> where counting values one at a time to reach
+         * position \p n costs <code>O(n)</code>. Selecting the middle value of a
+         * contiguous billion-value domain is a subtraction and an addition, not
+         * half a billion increments.
+         *
+         * This exists so that a caller wanting one value out of a set it has no
+         * reason to enumerate --- a branching heuristic choosing a split point, a
+         * median, or a uniformly random member --- need not walk the set to find
+         * it (issue #833).
+         *
+         * \note \p n must be at least zero and less than size(). Unlike lower()
+         * and upper(), which are undefined on an empty set, an out-of-range
+         * position throws: a silently wrong answer here is a wrong branching
+         * decision rather than a crash, and those are expensive to track down.
+         *
+         * \sa size(), lower(), upper()
+         */
+        [[nodiscard]] auto nth_value(Int_ n) const -> Int_
+        {
+            // Checked before the walk, not left to fall out of it: a negative
+            // position satisfies n < width against the first interval and would
+            // otherwise be answered with a value below lower().
+            if (n < Int_(0))
+                throw UnexpectedException{"IntervalSet::nth_value() asked for a negative position"};
+
+            for (const auto & [l, u] : intervals) {
+                auto width = u - l + Int_(1);
+                if (n < width)
+                    return l + n;
+                n -= width;
+            }
+
+            throw UnexpectedException{"IntervalSet::nth_value() asked for a position past the end of the set"};
         }
 
         /**

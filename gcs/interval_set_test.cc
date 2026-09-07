@@ -1006,3 +1006,84 @@ TEST_CASE("intersect_with brute-force cross-check with multi-interval sets")
         for (const auto & b : {s0, s1, s2, s3, s4, s5})
             CHECK(expand(intersected_with(a, b)) == brute_force(a, b));
 }
+
+TEST_CASE("nth_value on a single interval")
+{
+    IntervalSet<int> set(5, 10);
+    for (int n = 0; n < set.size(); ++n)
+        CHECK(set.nth_value(n) == 5 + n);
+    CHECK(set.nth_value(0) == set.lower());
+    CHECK(set.nth_value(set.size() - 1) == set.upper());
+}
+
+TEST_CASE("nth_value crosses gaps")
+{
+    // The case a single-interval implementation gets wrong: position 4 is the
+    // first value after the hole, not lower() + 4.
+    IntervalSet<int> set;
+    set.insert_at_end(1, 4);
+    set.insert_at_end(8, 10);
+
+    CHECK(set.nth_value(0) == 1);
+    CHECK(set.nth_value(3) == 4);
+    CHECK(set.nth_value(4) == 8);
+    CHECK(set.nth_value(6) == 10);
+}
+
+TEST_CASE("nth_value brute-force cross-check against enumeration")
+{
+    // nth_value(n) must be the n'th value each() hands out, for every set in a
+    // small library of shapes: singletons, adjacent-but-for-one-value intervals,
+    // and a run of single-value intervals where every step crosses a gap.
+    IntervalSet<int> s1(7, 7), s2(-4, 3), s3, s4, s5;
+    s3.insert_at_end(1, 1);
+    s3.insert_at_end(3, 3);
+    s3.insert_at_end(5, 5);
+
+    s4.insert_at_end(-10, -8);
+    s4.insert_at_end(-6, -6);
+    s4.insert_at_end(0, 4);
+    s4.insert_at_end(100, 101);
+
+    s5.insert_at_end(2, 3);
+    s5.insert_at_end(5, 6);
+
+    for (const auto & set : {s1, s2, s3, s4, s5}) {
+        vector<int> expanded;
+        for (auto v : set.each())
+            expanded.push_back(v);
+
+        REQUIRE(int(expanded.size()) == set.size());
+        for (int n = 0; n < set.size(); ++n)
+            CHECK(set.nth_value(n) == expanded[n]);
+    }
+}
+
+TEST_CASE("nth_value does not walk the values it skips")
+{
+    // The property the branching heuristics need (issue #833): the cost is the
+    // number of intervals, not the position asked for. An interval set this wide
+    // cannot be enumerated at all, so a test that returns is itself the evidence.
+    IntervalSet<long long> huge(0, 4000000000LL);
+    CHECK(huge.nth_value(2000000000LL) == 2000000000LL);
+    CHECK(huge.nth_value(4000000000LL) == 4000000000LL);
+
+    IntervalSet<long long> holey;
+    holey.insert_at_end(0, 999999999LL);
+    holey.insert_at_end(3000000000LL, 3999999999LL);
+    CHECK(holey.nth_value(999999999LL) == 999999999LL);
+    CHECK(holey.nth_value(1000000000LL) == 3000000000LL);
+}
+
+TEST_CASE("nth_value rejects a position outside the set")
+{
+    IntervalSet<int> set;
+    set.insert_at_end(1, 2);
+    set.insert_at_end(9, 9);
+
+    CHECK_THROWS_AS(set.nth_value(3), UnexpectedException);
+    CHECK_THROWS_AS(set.nth_value(-1), UnexpectedException);
+
+    IntervalSet<int> empty;
+    CHECK_THROWS_AS(empty.nth_value(0), UnexpectedException);
+}

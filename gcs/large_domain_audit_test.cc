@@ -596,6 +596,124 @@ namespace
 
 namespace
 {
+    /* Branching heuristics, which the constraint lane above cannot see.
+     *
+     * The rows above all use the default branch heuristic, and the default is
+     * one of the lazy ones, so nothing there ever asks a value order to do
+     * something expensive. Heuristics also sit outside the guard's remit in a
+     * second way: they are not propagators, so no amount of sharpening a
+     * constraint's probe reaches them. That combination is how #879 -- seven of
+     * the thirteen value orders doing work proportional to the domain's width,
+     * at *every* branching decision rather than once at the root -- survived the
+     * whole of the rest of this lane.
+     *
+     * These rows need no separate stopping rule. solve_with_state() calls
+     * branch_generator.begin() before the trace callback, and begin() runs the
+     * value order up to its first co_yield -- so probe()'s "stop at the root"
+     * has already made exactly one branching decision by the time it returns.
+     * One call of one heuristic over a 10^9 domain is precisely what is being
+     * measured here.
+     *
+     * The probe problem is two unconstrained wide variables. Nothing propagates,
+     * so whatever work a row does is the heuristic's own; two rather than one so
+     * that a variable order has something to choose between.
+     */
+    struct HeuristicProbe
+    {
+        string name;
+        Expect expect;
+        function<auto(const Problem &)->BranchHeuristic> branch;
+    };
+
+    auto heuristic_probe(const HeuristicProbe & probe_case) -> Result
+    {
+        try {
+            Problem problem;
+            auto vars = wide(problem, 2);
+            solve_with(problem,
+                SolveCallbacks{.solution = [](const CurrentState &) { return false; },
+                    .trace = [](const CurrentState &) { return false; },
+                    .branch = probe_case.branch(problem),
+                    .stats_report = silent_stats_report()});
+            return {false, false, {}};
+        }
+        catch (const LargeDomainGuardTripped & e) {
+            return {true, false, e.what()};
+        }
+        catch (const std::bad_alloc &) {
+            return {true, false, "std::bad_alloc, at a site the guard does not check"};
+        }
+        catch (const std::exception & e) {
+            return {false, true, e.what()};
+        }
+    }
+
+    auto all_heuristic_probes() -> vector<HeuristicProbe>
+    {
+        vector<HeuristicProbe> probes;
+
+        // Every value order is measured against the same variable order, and
+        // every variable order against the same value order, so a row names one
+        // heuristic and nothing else. smallest_in is the value order used for
+        // the variable-order rows because it reads one bound and stops.
+        auto add_value_order = [&](string name, Expect expect, BranchValueGenerator val) {
+            probes.push_back(HeuristicProbe{"value_order::" + name, expect,
+                [val = move(val)](const Problem & p) { return branch_with(variable_order::in_order(p.all_normal_variables()), val); }});
+        };
+
+        auto add_variable_order = [&](string name, Expect expect, function<auto(const Problem &)->BranchVariableHeuristic> var) {
+            probes.push_back(HeuristicProbe{
+                "variable_order::" + name, expect, [var = move(var)](const Problem & p) { return branch_with(var(p), value_order::smallest_in()); }});
+        };
+
+        // The six that read a bound, or hand values out lazily so that the
+        // search reads one and stops. dev_docs/large-domains.md calls the lazy
+        // case legitimate explicitly: asking for a generator over a billion
+        // values and reading one of them is not work proportional to the width.
+        add_value_order("smallest_in", Expect::Clean, value_order::smallest_in());
+        add_value_order("smallest_out", Expect::Clean, value_order::smallest_out());
+        add_value_order("largest_in", Expect::Clean, value_order::largest_in());
+        add_value_order("largest_out", Expect::Clean, value_order::largest_out());
+        add_value_order("smallest_first", Expect::Clean, value_order::smallest_first());
+        add_value_order("largest_first", Expect::Clean, value_order::largest_first());
+
+        // The three splits and the median, which used to walk to their chosen
+        // position a value at a time and now ask the domain's interval set for
+        // it (#879). split_smallest_first is the one that mattered most: it is
+        // the heuristic one naturally reaches *for* a wide domain.
+        add_value_order("split_smallest_first", Expect::Clean, value_order::split_smallest_first());
+        add_value_order("split_largest_first", Expect::Clean, value_order::split_largest_first());
+        add_value_order("split_random", Expect::Clean, value_order::split_random(1234));
+        add_value_order("median", Expect::Clean, value_order::median());
+
+        // The two that draw a random position, likewise.
+        add_value_order("random_out", Expect::Clean, value_order::random_out(1234));
+        add_value_order("reject_random_interval", Expect::Clean, value_order::reject_random_interval(1234));
+
+        // A shuffled enumeration of the domain, which is O(width) if it is
+        // produced up front. Drawn lazily instead, so like smallest_first it
+        // costs what the search reads rather than what the domain holds.
+        add_value_order("random", Expect::Clean, value_order::random(1234));
+
+        // Variable orders read domain *sizes* and bounds, never values --
+        // including dom_wdeg, whose weighting schemes take domain_size() into
+        // the score. Rows rather than a comment saying so, because that is the
+        // property #833 wants checkable rather than argued.
+        add_variable_order("in_order", Expect::Clean, [](const Problem & p) { return variable_order::in_order(p.all_normal_variables()); });
+        add_variable_order("dom", Expect::Clean, [](const Problem & p) { return variable_order::dom(p); });
+        add_variable_order("dom_then_deg", Expect::Clean, [](const Problem & p) { return variable_order::dom_then_deg(p); });
+        add_variable_order(
+            "dom_wdeg", Expect::Clean, [](const Problem & p) { return variable_order::dom_wdeg(p, WeightingScheme::CurrentArityCurrentDomain); });
+        add_variable_order("with_smallest_value", Expect::Clean, [](const Problem & p) { return variable_order::with_smallest_value(p); });
+        add_variable_order("with_largest_value", Expect::Clean, [](const Problem & p) { return variable_order::with_largest_value(p); });
+        add_variable_order("random", Expect::Clean, [](const Problem & p) { return variable_order::random(p, 1234); });
+
+        return probes;
+    }
+}
+
+namespace
+{
     /* How does the *proof* grow with the domain's width?
      *
      * Out of scope for fixing: several of these have no viable fix today, and a
@@ -707,6 +825,26 @@ TEST_CASE("Large domain audit")
         // updated, not a regression; a Clean that starts tripping is the
         // regression. Both are failures here on purpose: each row's outcome is
         // pinned, so the table cannot drift away from what the code does.
+        CHECK(result.tripped == expected_trip);
+    }
+}
+
+TEST_CASE("Large domain heuristic audit")
+{
+    // Same pinning rule as the constraint lane: a row that stops tripping is a
+    // failure too, so the table cannot drift away from what the code does.
+    println("");
+    println("{:<40} {:<16} {:<16} {}", "heuristic", "expected", "actual", "");
+    for (const auto & probe_case : all_heuristic_probes()) {
+        auto result = heuristic_probe(probe_case);
+        auto actual = result.broken ? "BROKEN PROBE" : (result.tripped ? "trips" : "survives");
+        auto expected_trip = (probe_case.expect == Expect::KnownTrip);
+        auto agrees = (! result.broken) && (result.tripped == expected_trip);
+        println("{:<40} {:<16} {:<16} {}", probe_case.name, describe(probe_case.expect), actual, agrees ? "" : "<-- MISMATCH");
+
+        INFO("heuristic: " << probe_case.name);
+        INFO("detail: " << result.detail);
+        CHECK_FALSE(result.broken);
         CHECK(result.tripped == expected_trip);
     }
 }

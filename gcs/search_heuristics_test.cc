@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <algorithm>
 #include <optional>
 #include <vector>
 
@@ -227,4 +228,275 @@ TEST_CASE("dom_wdeg wired into solve_with finds every solution")
             .branch = branch_with(variable_order::dom_wdeg(problem, scheme), value_order::smallest_first())});
 
     CHECK(solutions == 6);
+}
+
+// Every position-based value order used to materialise the domain, or walk to
+// its chosen position one value at a time, and index into it. Asking the
+// domain's interval set for the value at that position instead (issue #879)
+// has to agree exactly, holes and all: a split point that lands somewhere else
+// silently changes the shape of every search tree, and one that lands in a hole
+// is not a value the variable can take.
+namespace
+{
+    auto values_of(const CurrentState & s, IntegerVariableID var) -> vector<Integer>
+    {
+        vector<Integer> result;
+        for (auto v : s.each_value(var))
+            result.push_back(v);
+        return result;
+    }
+
+    auto conditions_from(const BranchValueGenerator & generate, const CurrentState & s, const Propagators & p, IntegerVariableID var)
+        -> vector<IntegerVariableCondition>
+    {
+        vector<IntegerVariableCondition> result;
+        for (auto && cond : generate(s, p, var))
+            result.push_back(cond);
+        return result;
+    }
+}
+
+TEST_CASE("Position-based value orders agree with enumerating the domain")
+{
+    // Shapes chosen so that the answer differs from lower() + position: a hole
+    // straddling the midpoint, a hole either side of it, and single-value
+    // intervals where every step crosses a gap. The contiguous case is in there
+    // too, as the control.
+    auto holes = GENERATE(vector<Integer>{}, vector<Integer>{5_i}, vector<Integer>{2_i, 3_i, 4_i}, vector<Integer>{8_i, 9_i},
+        vector<Integer>{2_i, 4_i, 6_i, 8_i}, vector<Integer>{1_i, 2_i, 3_i, 7_i, 8_i, 9_i});
+
+    State state;
+    auto x = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 10_i)};
+    for (const auto & h : holes)
+        REQUIRE(Inference::Instantiated != state.infer_not_equal(x, h));
+
+    Stats stats;
+    Propagators propagators{stats};
+    auto current = state.current();
+    auto values = values_of(current, x);
+    REQUIRE(values.size() >= 3);
+
+    // The definitions these heuristics had before they became interval queries.
+    auto split_at = values.at(values.size() / 2 - 1);
+    auto median_at = values.at(values.size() / 2);
+
+    CHECK(conditions_from(value_order::split_smallest_first(), current, propagators, x) ==
+        vector<IntegerVariableCondition>{x <= split_at, x > split_at});
+    CHECK(conditions_from(value_order::split_largest_first(), current, propagators, x) ==
+        vector<IntegerVariableCondition>{x > split_at, x <= split_at});
+    CHECK(conditions_from(value_order::median(), current, propagators, x) == vector<IntegerVariableCondition>{x == median_at, x != median_at});
+
+    // split_random picks one of the two orderings, but always about the same point.
+    auto split = conditions_from(value_order::split_random(7), current, propagators, x);
+    REQUIRE(split.size() == 2);
+    CHECK(((split[0] == (x <= split_at) && split[1] == (x > split_at)) || (split[0] == (x > split_at) && split[1] == (x <= split_at))));
+}
+
+TEST_CASE("Random value orders only ever draw a value the variable can take")
+{
+    // A position drawn uniformly used to index a vector of the domain's values,
+    // so it could not name a hole. nth_value() has to keep that property: a
+    // branch on x == v for a v not in the domain is an immediately failed
+    // subtree, and on x != v it is a wasted one.
+    State state;
+    auto x = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 20_i)};
+    for (auto h : {1_i, 2_i, 3_i, 7_i, 11_i, 12_i, 13_i, 14_i, 19_i})
+        REQUIRE(Inference::Instantiated != state.infer_not_equal(x, h));
+
+    Stats stats;
+    Propagators propagators{stats};
+    auto current = state.current();
+    auto generate_out = value_order::random_out(99), generate_reject = value_order::reject_random_interval(99);
+
+    for (int draw = 0; draw < 200; ++draw) {
+        auto out = conditions_from(generate_out, current, propagators, x);
+        REQUIRE(out.size() == 2);
+        CHECK(current.in_domain(x, out[0].value));
+
+        // reject_random_interval yields a range whose two ends are both drawn
+        // positions, so both have to be values; the interior may be holes.
+        auto reject = conditions_from(generate_reject, current, propagators, x);
+        REQUIRE(reject.size() == 2);
+        for (auto && cond : reject)
+            CHECK(current.in_domain(x, cond.value));
+    }
+}
+
+TEST_CASE("Position-based value orders do not walk the domain to find their value")
+{
+    // The property #879 is about. A domain this wide cannot be enumerated at
+    // all, so a test that returns at once is itself the evidence; the audit lane
+    // in large_domain_audit_test.cc pins the same thing against the guard.
+    State state;
+    auto x = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 1000000000_i)};
+    // {0..10} u {500000000..1000000000}: 500000012 values, so position
+    // 250000005 is the split point and 250000006 the median, both well inside
+    // the upper interval.
+    REQUIRE(Inference::Instantiated != state.infer_not_in_range(x, 11_i, 499999999_i));
+    REQUIRE(state.domain_size(x) == 500000012_i);
+
+    Stats stats;
+    Propagators propagators{stats};
+    auto current = state.current();
+
+    auto split_at = 500000000_i + 250000005_i - 11_i;
+    auto median_at = split_at + 1_i;
+    CHECK(conditions_from(value_order::split_smallest_first(), current, propagators, x) ==
+        vector<IntegerVariableCondition>{x <= split_at, x > split_at});
+    CHECK(conditions_from(value_order::median(), current, propagators, x) == vector<IntegerVariableCondition>{x == median_at, x != median_at});
+
+    auto out = conditions_from(value_order::random_out(5), current, propagators, x);
+    REQUIRE(out.size() == 2);
+    CHECK(current.in_domain(x, out[0].value));
+}
+
+TEST_CASE("Position-based value orders wired into solve_with find every solution")
+{
+    // Complete search over a domain with holes: which value a heuristic picks
+    // only changes the order the tree is explored in, so all of them must still
+    // enumerate the same solutions. The holes are the point --- an off-by-one in
+    // a position query shows up here as a lost or repeated solution.
+    auto which = GENERATE(0, 1, 2, 3, 4, 5);
+
+    Problem problem;
+    vector<IntegerVariableID> xs;
+    for (int i = 0; i < 3; ++i)
+        xs.push_back(problem.create_integer_variable(vector<Integer>{1_i, 2_i, 5_i, 8_i, 9_i}));
+    for (unsigned i = 0; i < xs.size(); ++i)
+        for (unsigned j = i + 1; j < xs.size(); ++j)
+            problem.post(NotEquals{xs[i], xs[j]});
+    problem.post(LessThan{xs[0], xs[2]});
+
+    auto val = [&]() -> BranchValueGenerator {
+        switch (which) {
+        case 0: return value_order::split_smallest_first();
+        case 1: return value_order::split_largest_first();
+        case 2: return value_order::split_random(which + 1);
+        case 3: return value_order::median();
+        case 4: return value_order::random_out(which + 1);
+        default: return value_order::reject_random_interval(which + 1);
+        }
+    }();
+
+    int solutions = 0;
+    solve_with(problem,
+        SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                           ++solutions;
+                           return true;
+                       },
+            .branch = branch_with(variable_order::dom(problem), val)});
+
+    // 5 * 4 * 3 = 60 injective triples, halved by x[0] < x[2].
+    CHECK(solutions == 30);
+}
+
+TEST_CASE("with_largest_value branches on the variable whose domain reaches highest")
+{
+    // Declared and documented in the header since it was written, but never
+    // defined, so any caller got a link error; found by the large-domain
+    // heuristic audit lane, which names every heuristic and so link-checks them.
+    State state;
+    auto a = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 5_i)};
+    auto b = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 9_i)};
+    auto c = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 7_i)};
+
+    Problem dummy;
+    Stats stats;
+    Propagators propagators{stats};
+    auto select = variable_order::with_largest_value(vector{a, b, c})(dummy, state, propagators);
+    CHECK(select(state.current(), propagators) == b);
+
+    auto smallest = variable_order::with_smallest_value(vector{a, b, c})(dummy, state, propagators);
+    REQUIRE(Inference::Instantiated != state.infer_greater_than_or_equal(b, 3_i));
+    CHECK(smallest(state.current(), propagators) == a);
+}
+
+TEST_CASE("Position-based value orders count positions from the smallest value of a view")
+{
+    // CurrentState::each_value() hands a *negated* view's values out in
+    // descending order --- it applies the view to the underlying domain in
+    // stored order, and negation reverses it --- where copy_of_values() sorts.
+    // So the old "materialise each_value() and index it" spelling counted
+    // positions from the top of a negated view's domain: median() picked the
+    // wrong value for an even-sized domain, and split_smallest_first() cut so
+    // that "var <= v" kept the *larger* part. The interval query counts from
+    // lower(), which is what a position means.
+    //
+    // Nothing in the tree branches on a view today, so no proof moved when this
+    // changed; the property is pinned here rather than left to that staying true.
+    State state;
+    auto x = state.allocate_integer_variable_with_state(0_i, 5_i);
+    auto var = IntegerVariableID{-x + 10_i}; // values 5..10, six of them
+    Stats stats;
+    Propagators propagators{stats};
+    auto current = state.current();
+
+    REQUIRE(current.domain_size(var) == 6_i);
+    REQUIRE(current.lower_bound(var) == 5_i);
+    REQUIRE(current.upper_bound(var) == 10_i);
+
+    // Six values, so the lower half is 5..7 and the split point is 7. Counted
+    // from the top --- what the old spelling did --- it would have been 8.
+    CHECK(conditions_from(value_order::split_smallest_first(), current, propagators, var) == vector<IntegerVariableCondition>{var <= 7_i, var > 7_i});
+    CHECK(conditions_from(value_order::split_largest_first(), current, propagators, var) == vector<IntegerVariableCondition>{var > 7_i, var <= 7_i});
+    // Position 6 / 2 = 3, counting from 5, is 8. From the top it would be 7.
+    CHECK(conditions_from(value_order::median(), current, propagators, var) == vector<IntegerVariableCondition>{var == 8_i, var != 8_i});
+}
+
+TEST_CASE("random is a permutation of the domain, drawn lazily")
+{
+    // It used to materialise the domain and shuffle it, which is O(width)
+    // whether or not the search reads more than one value. Drawn a value at a
+    // time instead (issue #879), it still has to be a permutation: every value
+    // exactly once, or search is unsound one way and incomplete the other.
+    State state;
+    auto x = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 12_i)};
+    for (auto h : {2_i, 3_i, 7_i, 11_i})
+        REQUIRE(Inference::Instantiated != state.infer_not_equal(x, h));
+
+    Stats stats;
+    Propagators propagators{stats};
+    auto current = state.current();
+    auto expected = values_of(current, x);
+    auto generate = value_order::random(31337);
+
+    // Several draws, because a permutation bug can hide behind one lucky one.
+    for (int draw = 0; draw < 50; ++draw) {
+        vector<Integer> got;
+        for (auto && cond : generate(current, propagators, x))
+            got.push_back(cond.value);
+
+        REQUIRE(got.size() == expected.size());
+        auto sorted = got;
+        std::sort(sorted.begin(), sorted.end());
+        CHECK(sorted == expected);
+    }
+}
+
+TEST_CASE("random does not enumerate a domain the search only reads the start of")
+{
+    // The laziness itself: a billion-value domain, of which the search takes
+    // three values before descending. dev_docs/large-domains.md calls exactly
+    // this legitimate for smallest_first; random now has the same property.
+    State state;
+    auto x = IntegerVariableID{state.allocate_integer_variable_with_state(0_i, 1000000000_i)};
+    REQUIRE(Inference::Instantiated != state.infer_not_in_range(x, 11_i, 499999999_i));
+
+    Stats stats;
+    Propagators propagators{stats};
+    auto current = state.current();
+
+    vector<Integer> got;
+    for (auto && cond : value_order::random(4)(current, propagators, x)) {
+        got.push_back(cond.value);
+        if (got.size() == 3)
+            break;
+    }
+
+    REQUIRE(got.size() == 3);
+    for (auto v : got)
+        CHECK(current.in_domain(x, v));
+    CHECK(got[0] != got[1]);
+    CHECK(got[1] != got[2]);
+    CHECK(got[0] != got[2]);
 }
