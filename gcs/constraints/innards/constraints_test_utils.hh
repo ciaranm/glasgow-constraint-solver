@@ -7,6 +7,7 @@
 #include <gcs/scp_reader.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
+#include <gcs/stats.hh>
 
 #include <gcs/constraints/innards/cake_probe.hh>
 
@@ -25,6 +26,7 @@
 #include <map>
 #include <optional>
 #include <random>
+#include <set>
 #include <string>
 #include <tuple>
 #include <unordered_set>
@@ -207,6 +209,92 @@ namespace gcs::test_innards
         }
         catch (const std::exception &) {
             // Not a missing keyword, so not this guard's business: see above.
+        }
+    }
+
+    /**
+     * \brief Assert that the model read back from a test's `.scp` has the
+     * solution set the model that wrote it had.
+     *
+     * check_scp_writer_reader_symmetry above asks whether read_scp has a *case*
+     * for what the writer emitted. It cannot ask whether that case rebuilds the
+     * same constraint, and a description that parses can still say something
+     * else: issue #865 was a NotEqualsIff describing itself as an `equals_iff`
+     * over a negated condition, which is a different sentence about the same
+     * solution set and so invisible to a reader that only has to parse it. Two
+     * cancelling errors are one repair away from being one error, and that
+     * repair -- fixing the keyword, or the condition, but not both -- emits the
+     * opposite constraint. This is what notices.
+     *
+     * Solution sets rather than counts: the values are already in hand, and a
+     * count is a weak witness for a family whose modes differ by which half of
+     * the space they keep.
+     *
+     * Opt-in, and strict where the symmetry check is deliberately forgiving.
+     * read_scp does not promise that every *instance* round-trips -- a view
+     * operand does not render as a term the grammar parses, and the anonymous
+     * `_N` variable names a test usually gets are not names Problem::check_name()
+     * accepts -- so a caller has to hand this an instance that can round-trip,
+     * bare handles under names of its own choosing. In exchange, anything thrown
+     * from here is a finding about the writer rather than a limitation of the
+     * probe.
+     */
+    inline auto check_scp_round_trip_solutions(
+        const std::string & proof_name, const std::vector<std::string> & variable_names, const std::set<std::vector<int>> & expected) -> void
+    {
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+        using std::println;
+#else
+        using fmt::println;
+#endif
+        std::ifstream scp_in{proof_name + ".scp"};
+        if (! scp_in)
+            throw UnexpectedException{"no .scp was written for " + proof_name + ", so its description cannot be read back"};
+        std::string scp{std::istreambuf_iterator<char>{scp_in}, std::istreambuf_iterator<char>{}};
+
+        Problem rebuilt;
+        auto model = read_scp(rebuilt, scp);
+
+        std::vector<IntegerVariableID> vars;
+        for (const auto & name : variable_names) {
+            auto v = model.variables.find(name);
+            if (v == model.variables.end())
+                throw UnexpectedException{"the .scp written for " + proof_name + " has no variable named " + name};
+            vars.push_back(v->second);
+        }
+
+        std::set<std::vector<int>> actual;
+        solve_with(rebuilt,
+            SolveCallbacks{
+                .solution = [&](const CurrentState & s) -> bool {
+                    std::vector<int> values;
+                    for (const auto & v : vars)
+                        values.push_back(s(v).raw_value);
+                    actual.insert(std::move(values));
+                    return true;
+                },
+                .stats_report = silent_stats_report() //
+            });
+
+        if (actual != expected) {
+            // Reported as a set difference, not a pair of counts, because the
+            // counts are exactly what does not move: #865's partial-repair shape
+            // hands back the opposite constraint, whose solution set is the same
+            // size as the intended one. A count-based check would print two
+            // equal numbers and pass.
+            std::size_t only_here = 0, only_there = 0;
+            for (const auto & solution : actual)
+                if (! expected.contains(solution))
+                    ++only_here;
+            for (const auto & solution : expected)
+                if (! actual.contains(solution))
+                    ++only_there;
+            println(std::cerr,
+                "the model read back from {}.scp has {} solutions against {}, {} of them not solutions of the posted model, and {} of the posted "
+                "model's missing",
+                proof_name, actual.size(), expected.size(), only_here, only_there);
+            throw UnexpectedException{"the .scp written for " + proof_name +
+                " describes a different constraint from the one that was posted: it parses, but it does not mean the same thing"};
         }
     }
 

@@ -335,6 +335,78 @@ auto run_wide_proved_no_overlap_equals_test() -> void
     verify_proof_and_clean_up(proof_name);
 }
 
+// What the constraint *says* it is, and whether it means what it says.
+//
+// The equals family writes six descriptions, and one of them used to be a
+// description of a different constraint: a NotEqualsIff came out as an
+// `equals_iff` over a negated condition, because ReifiedEquals::clone() dropped
+// the flag that picks the keyword and Problem::post clones (issue #865). That is
+// the same constraint said backwards, so it cost nothing -- until half of it
+// were repaired, at which point the two negations stop cancelling and the .scp
+// says the opposite of what was posted.
+//
+// So both halves are pinned here, because either alone passes on the bug. The
+// keyword and its condition are read out of the .scp, which is what catches a
+// flag that stops reaching s_expr(); and the description is read back with
+// read_scp and re-solved, which is what catches a keyword and a condition that
+// no longer agree with each other. Every other proving test in this file
+// exercises the writer, and none of them can see either failure:
+// check_scp_writer_reader_symmetry asks only that the reader has a case.
+//
+// Named variables and bare handles, deliberately: an instance has to be one
+// read_scp can rebuild for the semantic half to run at all.
+template <typename Constraint_>
+auto run_scp_description_equals_test(const string & which, const string & description, const function<auto(int, int, int)->bool> & is_satisfying)
+    -> void
+{
+    println(cerr, "equals scp description {}: expecting ({})", which, description);
+
+    Problem p;
+    auto x = p.create_integer_variable(0_i, 3_i, "x");
+    auto y = p.create_integer_variable(0_i, 3_i, "y");
+    auto b = p.create_integer_variable(0_i, 1_i, "b");
+    if constexpr (is_same_v<Constraint_, Equals> || is_same_v<Constraint_, NotEquals>)
+        p.post(Constraint_{x, y});
+    else
+        p.post(Constraint_{x, y, b == 1_i});
+
+    set<vector<int>> expected;
+    for (int xv = 0; xv <= 3; ++xv)
+        for (int yv = 0; yv <= 3; ++yv)
+            for (int bv = 0; bv <= 1; ++bv)
+                if (is_satisfying(xv, yv, bv))
+                    expected.insert(vector{xv, yv, bv});
+
+    const string proof_name = "equals_test_scp_" + which;
+    set<vector<int>> actual;
+    solve_for_tests_with_callbacks(
+        p, make_optional(proof_name),
+        [&](const CurrentState & s) -> bool {
+            actual.insert(vector{extract_from_state(s, x), extract_from_state(s, y), extract_from_state(s, b)});
+            return true;
+        },
+        [](const CurrentState &) -> bool { return true; });
+
+    if (actual != expected)
+        throw UnexpectedException{"equals scp description test for " + which + " found " + std::to_string(actual.size()) + " solutions, expecting " +
+            std::to_string(expected.size())};
+
+    // The label is whatever the constraint id came out as, so match from the
+    // space after it; without that leading space "equals x y)" is a substring of
+    // "not_equals x y)" and the plain form's pin would pass on the negated one.
+    std::ifstream scp{proof_name + ".scp"};
+    if (! scp)
+        throw UnexpectedException{"equals scp description test for " + which + " wrote no .scp"};
+    const string scp_text{std::istreambuf_iterator<char>{scp}, std::istreambuf_iterator<char>{}};
+    if (scp_text.find(" " + description + ")") == string::npos) {
+        println(cerr, "the .scp for {} does not describe itself as ({}):\n{}", which, description, scp_text);
+        throw UnexpectedException{"equals scp description test for " + which + " wrote a description other than (" + description + ")"};
+    }
+
+    check_scp_round_trip_solutions(proof_name, {"x", "y", "b"}, expected);
+    verify_proof_and_clean_up(proof_name);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -397,6 +469,21 @@ auto main(int argc, char * argv[]) -> int
                 run_wide_proved_no_overlap_equals_test();
             else
                 run_wide_no_overlap_equals_test();
+        }
+        // Bare handles under names of our own choosing, so read_scp can rebuild
+        // what the writer wrote; proofs on, because the .scp is only written
+        // when a proof is.
+        if (proofs && view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+            run_scp_description_equals_test<Equals>("equals", "equals x y", [](int xv, int yv, int) { return xv == yv; });
+            run_scp_description_equals_test<EqualsIf>(
+                "equals_if", "equals_if (b = 1) x y", [](int xv, int yv, int bv) { return (! bv) || xv == yv; });
+            run_scp_description_equals_test<EqualsIff>(
+                "equals_iff", "equals_iff (b = 1) x y", [](int xv, int yv, int bv) { return (xv == yv) == (bv == 1); });
+            run_scp_description_equals_test<NotEquals>("not_equals", "not_equals x y", [](int xv, int yv, int) { return xv != yv; });
+            run_scp_description_equals_test<NotEqualsIf>(
+                "not_equals_if", "not_equals_if (b = 1) x y", [](int xv, int yv, int bv) { return (! bv) || xv != yv; });
+            run_scp_description_equals_test<NotEqualsIff>(
+                "not_equals_iff", "not_equals_iff (b = 1) x y", [](int xv, int yv, int bv) { return (xv != yv) == (bv == 1); });
         }
         for (auto & [r1, r2] : data) {
             run_equals_test<Equals>("equals", proofs, view_cfg, r1, r2, [](int a, int b, int) { return a == b; });
