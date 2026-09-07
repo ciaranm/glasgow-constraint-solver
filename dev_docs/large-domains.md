@@ -52,31 +52,58 @@ The tree already has the machinery: `IntervalSet::each_interval_minus()`,
 that removes "everything not in this small given set" one value at a time is an
 interval operation written out longhand, and rewriting it keeps GAC.
 
-### A trap: a bound that is obvious is not necessarily RUP
+### Getting a range removal past the checker
 
-`ArrayMinMax` has no hull bound on the loose side — for a max it posts
-`result >= lb(var_i)` for every i but never `result <= max_i ub(var_i)`, so the
-per-value union sweep is what establishes it (issue #815, which proposes adding
-the bound as a small, obviously-correct first fix).
+Replacing a per-value removal with a range one is not free in the proof, and the
+reason it is not is worth understanding once, because it decides which
+interval rewrites are cheap.
 
-It is obviously correct, and it is **not a small fix**, because it does not
-verify. Negating it gives `result > max_i ub(var_i)`; each selector asserts
-`result <= var_i`, so every selector must be false and the al1 row fails. That
-argument needs to carry an order atom on `result` across the half-reified row
-relating `result` and `var_i`, which is a linear row over the *bits* — and unit
-propagation does not cross a bit sum on a wide domain, where nothing fixes an
-individual bit. Adding the bound with `JustifyUsingRUP` fails VeriPB on
-`min_max_constraint` and `min_max_constraint_view_mixed`. Making it verify needs
-an explicit `pol` per selector, over line numbers `define_proof_model` does not
-currently keep.
+The conclusion side is fine. Negating `result NOT IN [lo, hi]` gives two opposing
+bounds on `result`, and those *do* contradict through the bit rows — that is the
+configuration `justify_not_in_range_across_equality()` already relies on, and it
+holds even for a signed 63-bit variable.
 
-The interval rewrite of the union sweep is the better target anyway: it fixes the
-general case rather than only the narrow-array one, and the range-removal proof
-pattern it needs already exists and verifies fifty lines further down the same
-file (`min_max.cc:199`, `infer_not_in_range` with a value-independent
-justification emitted once per interval).
+**The blocker is the reason side.** A reason literal `var NOT IN [lo, hi]` is the
+*disjunction* `~ge_lo(var) OR ge_{hi+1}(var)`, and RUP cannot case split. Unit
+propagation can *refute* "result >= lo and var <= lo-1 and f_i", but it cannot
+*derive* "var >= lo" from "result >= lo and f_i". The per-value form never meets
+this, because `result = val` pins every bit of `result`, which pins every bit of
+`var` through the linear row, deciding both halves of the disjunction at once. A
+range pins no bit, so both halves stay open.
 
-H3 has two precedents in the tree for what a good cap looks like:
+The fix is to restate each refutation as a clause the checker can propagate — the
+two ge-layer bound lemmas — and only then draw the conclusion. For `ArrayMinMax`
+that is, per variable `i`:
+
+```
+rup  ~f_i \/ ~ge_lo(result) \/ ge_lo(var_i)             [crosses the half-reified row]
+rup  ~ge_{hi+1}(var_i) \/ ge_{hi+1}(result)             [crosses the unconditional row]
+rup  ~f_i \/ ~in(result,lo,hi) \/ in(var_i,lo,hi)
+```
+
+then RUP the conclusion. **3n+1 lines per interval, independent of the range
+width**, which is the property that matters: the point of the rewrite is to
+replace 9.2x10^18 steps with a constant number, so a procedure linear in `hi-lo`
+would be worthless.
+
+Which of the two lemmas carries the selector depends on which row it crosses. For
+`max` the model has `result >= var_i` unconditionally and `result <= var_i` under
+`f_i`, so the *lower* lemma needs the selector; for `min` it is the upper one.
+This is `justify_not_in_range_across_equality()` generalised from an
+unconditional equality to one that holds only under a guard.
+
+Views keep the per-value path: a view's atoms are spelled through the view and
+the lemmas have not been shown to bridge that. Same restriction, and same reason,
+as the single-support range path in the same file.
+
+**The related trap.** The *hull bound* `result <= max_i ub(var_i)`, which #815
+proposes as a small first fix, is a different problem and is still open. There the
+selector has to be *derived* rather than assumed — the RUP negation does not hand
+you `f_i` — so the lemmas above do not apply and it needs `pol` over OPB line
+numbers `define_proof_model` does not keep. The interval rewrite above makes it
+unnecessary for the case that motivated it.
+
+H3 has two precedents in the tree for what a good cap looks like:H3 has two precedents in the tree for what a good cap looks like:
 `ExtensionalDomainBitmaps::max_words` and `cumulative.cc`'s
 `max_knapsack_capacity`. Both are far above anything a real model asks for, both
 degrade to a named weaker rung rather than silently doing less, and the comment
