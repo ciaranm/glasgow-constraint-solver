@@ -303,11 +303,15 @@ namespace
         });
 
         // --- Counting family.
-        add("Among", Expect::KnownTrip, [](Problem & p) {
-            // H1a: removes everything outside a small given value set, one value
-            // at a time. That branch needs the count pinned -- with slack in it
-            // the propagator has nothing to conclude -- so the count is fixed to
-            // the whole scope, forcing every variable into the value set.
+        add("Among", Expect::Clean, [](Problem & p) {
+            // Was H1a: it removed everything outside a small given value set one
+            // value at a time. Now the complement of the value set goes in as
+            // ranges, so a wide domain costs two removals. That branch needs the
+            // count pinned -- with slack in it the propagator has nothing to
+            // conclude -- so the count is fixed to the whole scope, forcing every
+            // variable into the value set. The two values of interest sit at the
+            // bottom, which leaves a range on each side of them and so exercises
+            // both sides of the proof's per-value-of-interest case split.
             auto v = wide(p, 3);
             p.post(Among{v, {1_i, 2_i}, p.create_integer_variable(3_i, 3_i)});
         });
