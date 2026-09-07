@@ -288,7 +288,7 @@ namespace
         add("AllDifferentExcept", Expect::KnownTrip, [](Problem & p) { p.post(AllDifferentExcept{wide(p, 4), {0_i}}); });
         add("SymmetricAllDifferent", Expect::NoWidePosition, [](Problem & p) { p.post(SymmetricAllDifferent{narrow(p, 4, 0_i, 3_i)}); });
         add("AllEqual", Expect::Clean, [](Problem & p) { p.post(AllEqual{wide(p, 3)}); });
-        add("AllEqual/holes", Expect::KnownTrip, [](Problem & p) {
+        add("AllEqual/holes", Expect::Clean, [](Problem & p) {
             // all_equal.cc:114 prunes every variable to the intersection of all
             // the domains once any of them has holes. It takes the difference as
             // intervals (each_interval_minus) but then walks each interval a
@@ -296,7 +296,7 @@ namespace
             // hole. Bounds propagation runs first and would collapse a merely
             // narrow partner, so the hole has to be spread across the full width:
             // a two-value domain at the extremes leaves the whole middle of the
-            // other variable to remove.
+            // other variable to remove -- which is now one range removal.
             //
             // Note this row used to trip on the `In` that create_integer_variable
             // posts to carve the hole, rather than on AllEqual at all. With that

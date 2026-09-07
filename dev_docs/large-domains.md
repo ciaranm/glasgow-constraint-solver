@@ -124,6 +124,25 @@ Views keep the per-value path: a view's atoms are spelled through the view and
 the lemmas have not been shown to bridge that. Same restriction, and same reason,
 as the single-support range path in the same file.
 
+**Two things that make an interval rewrite pay, learned on `AllEqual`.**
+
+*Keep the per-value spelling for a width-1 interval.* A range literal of one value
+*is* the eq atom — the proof machinery never makes an interval of one — so saying
+it as `infer_not_equal` is the identical inference, and finding its reason costs
+no set construction. Over holey domains most removed intervals are single values,
+and routing them through the interval path instead cost 2% on a search.
+
+*Do not pay for machinery the common case does not need.* Where the reason names a
+witness that can vary within an interval, the general answer is to split the
+interval by which variable accounts for which part. But almost always one variable
+explains the whole of it, and a scan for a single covering witness is a few
+allocation-free merge-walks, where building a leftover set to subtract from costs
+an allocation whatever happens. Check for the easy case first and only then split.
+
+Together these take a rewrite that was 2.5% slower on holey-domain search back to
+level, while keeping the wide case (200 ms of work, and 131 seconds in the audit
+probe) at nothing.
+
 **Where the equality is guarded by a conjunction, the same lemmas take a longer
 guard.** `Element`'s model is `result - array[i] == 0` half-reified on the
 conjunction of index conditions, so it is `ArrayMinMax`'s shape with the selector
@@ -296,13 +315,13 @@ table, which is a snapshot for orientation.
 
 | | constraints |
 |---|---|
-| **KnownTrip** (20) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `AllEqual/holes`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (36) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, `AllEqual` without holes, `Among`, `In`, `GlobalCardinality`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
+| **Clean** (37) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, `AllEqual` with holes and without, `Among`, `In`, `GlobalCardinality`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
 
-`Among`, `In`, `GlobalCardinality`, `Table` and `Element` started as `KnownTrip`
-and are now `Clean`, by the interval rewrites rather than by a weaker arm: all of
-them still propagate at their original strength.
+`Among`, `In`, `AllEqual/holes`, `GlobalCardinality`, `Table` and `Element` started
+as `KnownTrip` and are now `Clean`, by the interval rewrites rather than by a
+weaker arm: all of them still propagate at their original strength.
 
 `GlobalCardinality` mattered most of the five, because it was the rule's own
 counterexample: already the bounds arm, and still enumerating, so it had nothing
@@ -419,8 +438,8 @@ previous version of it went stale, see below.
 |---|---|---|
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
-| **Steps only** | 1.0x / 10x | `AllEqual/holes` (22-row OPB fixed, 16987 → 169987 steps), `GlobalCardinality/hall` (34-row, 33984 → 339984) |
-| neither | 1.0x / 1.0x | everything else, 59 of 70 |
+| **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 33984 → 339984 steps) |
+| neither | 1.0x / 1.0x | everything else, 61 of 70 |
 
 `Multiply`, `Divide` and `Modulus` sit in the last row but are not flat: their OPB
 grows 1.8x for a 10x width, which is the bit-width of the product, not a per-value
@@ -445,14 +464,15 @@ and a checker feature is the only way out.
 H1a sites — a propagator expanding an interval by hand — and all three are stage 4
 work rather than evidence:
 
-* `AllEqual/holes` is the starkest. `all_equal.cc` already computes the values to
-  remove with `each_interval_minus`, and then expands each interval one value at a
-  time. The interval is literally in hand when the per-value loop starts. The only
-  real obstacle is that the reason names a *witness* — some variable whose domain
-  lacks that value — which can differ across one interval, because the difference
-  is taken against the intersection of every domain. Differencing against each
-  variable separately gives ranges with a constant witness, at the cost of
-  overlapping removals, which are idempotent.
+* `AllEqual/holes` was the starkest: `all_equal.cc` already computed the values to
+  remove with `each_interval_minus` and then expanded each interval one value at a
+  time, so the interval was literally in hand when the per-value loop started. The
+  obstacle was that the reason names a *witness* — some variable whose domain lacks
+  that value — which can differ across one interval, because the difference is
+  taken against the intersection of every domain. **Done**: 16987 → 169987 steps
+  became a flat 37. The witness is resolved by splitting the interval by which
+  variable accounts for which part, and striking off what is accounted for, so each
+  part is still removed exactly once.
 * `GlobalCardinality`'s just-met-demand branch
   (`bounds_global_cardinality.cc`) removed every value of a variable *except*
   one, which is two range removals — and its reason was already hoisted out of the
