@@ -164,6 +164,13 @@ auto run_holes_test(bool proofs) -> void
 //
 // x is the full range; y is missing the lower half of the middle band and z the
 // upper half, so the band leaves x as one interval that neither alone witnesses.
+//
+// Bare variables only, like run_holes_test above, and gated the same way. The view
+// lanes would add nothing here -- nothing is wrapped -- but they would share this
+// fixed proof basename with the plain lane, and the two lanes share a working
+// directory and delete their proofs once veripb has run. Under `ctest -j` that
+// races: 5 rounds in 6 of `ctest -R all_equal -j 8` failed before the gate, either
+// losing the file outright or parsing one still being written.
 auto run_mixed_witness_test(bool proofs) -> void
 {
     print(cerr, "all_equal mixed witness{}", proofs ? " with proofs:" : ":");
@@ -304,9 +311,10 @@ auto main(int argc, char * argv[]) -> int
             continue;
         for (const auto & doms : data)
             run_test(proofs, view_cfg, doms);
-        if (run_holes)
+        if (run_holes) {
             run_holes_test(proofs);
-        run_mixed_witness_test(proofs);
+            run_mixed_witness_test(proofs);
+        }
         if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
             // Degenerate collections with genuine constants (issue #254).
             run_all_equal_collection_test(proofs, "empty", {});
