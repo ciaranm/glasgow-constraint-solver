@@ -115,17 +115,16 @@ is the part worth reading carefully:
 | `Clean` | has a position where a wide domain is meaningful, and survives one |
 | `KnownTrip` | likewise, and does not. This is the work #833 is about |
 | `NoWidePosition` | no variable it takes can meaningfully be wide — successors index an array, Booleans are `{0,1}`. Structural immunity, not a working fallback |
-| `HazardNotReached` | the source has a per-value site, but this probe does not reach it. **Not** a clean bill of health: a gap in the probe, tracked below |
+| `HazardNotReached` | the source has a per-value site, but this probe does not reach it. **Not** a clean bill of health: a gap in the probe. No row uses this today — every gap has been closed — but the outcome stays, because it is what to reach for rather than guessing when a probe cannot get at a site |
 
 ### Where we stand
 
-67 probes, run on `7d014207`. The trips:
+68 probes, run on `7d014207`.
 
 | | constraints |
 |---|---|
-| **KnownTrip** (21) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Among`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `In`, `ArrayMinMax`, `LexSmartTable`, `Table`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **HazardNotReached** (5) | `GlobalCardinality`, `Element`, `NegativeTable`, `Disjunctive2D`, `MinDistance` |
-| **Clean** (27) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` under `BC`, `AllEqual`, `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `BinPacking`, `DifferenceConstraints`, `Nogoods` |
+| **KnownTrip** (24) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `AllEqual/holes`, `Among`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality`, `In`, `ArrayMinMax`, `Element`, `LexSmartTable`, `Table`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
+| **Clean** (30) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` under `BC`, `AllEqual` without holes, `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
 
 Three things in that table were not what #833 predicted, and are worth
@@ -142,22 +141,50 @@ recording because they change what the later stages have to do:
    the probe passes without touching the hazard. A probe that does not reach a
    path proves nothing about it, which is what `HazardNotReached` exists to say.
 
-### Known gaps in the lane
+### What the sharpening pass found
 
-Each of these is a probe that needs sharpening rather than a constraint that is
-known good:
+Six probes originally passed without touching the site they were meant to test.
+Chasing each one down split them three ways, and the split is the useful part:
+"survives" meant three different things.
 
-* `GlobalCardinality` — `propagate_bounds_global_cardinality` enumerates values,
-  but not on a probe of this shape.
-* `Element` — the per-value support remainder is not reached from a narrow index
-  at the root.
-* `NegativeTable` — does not take the residue path the positive table dies in.
-* `Disjunctive2D` — the time-table pass is not reached at the root.
-* `MinDistance` — its per-value sites need more sites than this probe has.
-* `AllEqual` — the probe has no holes, so `all_equal.cc`'s hole path never runs.
-* The lane runs without proof logging. H2′ (`NValue`) is caught anyway, because
-  the per-value work is in `prepare()`, but a constraint whose *encoding* alone
-  is per-value would not be. A proofs axis is the obvious next addition.
+**Three were real hazards behind a condition the probe did not meet.** Each is
+now a `KnownTrip`:
+
+* `GlobalCardinality` needs the *just-met-demand* branch
+  (`bounds_global_cardinality.cc:127`), where the number of variables that can
+  take a cover value equals that value's count lower bound, so each is forced to
+  it by removing every other value one at a time. Three variables, one cover
+  value, a count pinned at three.
+* `Element` needs the array entries to be **narrow**. The GAC sweep erases each
+  entry's domain from the result's still-unsupported set, so a *wide* entry
+  erases everything in one `erase_range` and leaves no remainder — the original
+  probe made the hazard disappear by being too wide.
+* `AllEqual` needs holes *and* a large difference. Bounds propagation runs first
+  (`all_equal.cc:95`) and collapses a merely narrow partner, so the hole has to
+  be spread across the full width: a two-value domain at the extremes leaves the
+  whole middle of the other variable to be removed one value at a time.
+
+**Three were not hazards at all**, and the entry in #833's source list was about
+a sibling rather than the constraint itself. Each is now `Clean`:
+
+* `NegativeTable` is watched-literal over tuples and never iterates a domain, so
+  it takes none of the residue path the positive `Table` dies in.
+* `Disjunctive2D` is pairwise, with no value loop and no span-indexed array, and
+  installs no 1D `Disjunctive` child that would have one.
+* `MinDistance`'s per-value loops are all over its *position* variables, and
+  `prepare()` `define_bound()`s those to `0..n-1` of the distance matrix
+  (`min_distance.cc:92-93`), so they cannot be wide. Its wide position is the
+  objective, which it reasons about by bounds.
+
+The moral for anyone adding a row: **a probe that survives has proved nothing
+until you have checked it reached the code you meant to test.** Two of the three
+real hazards above were hidden by the probe being *more* extreme than necessary,
+which is not the direction one expects to have to correct.
+
+One deliberate non-axis: the lane runs **without proof logging**. `NValue`'s
+H2′ is caught anyway, because its per-value work is in `prepare()`, but a
+constraint whose *encoding* alone were per-value would not be. That is by
+design — see below.
 
 ## Proofs
 
