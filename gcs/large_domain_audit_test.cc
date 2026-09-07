@@ -244,9 +244,22 @@ namespace
             p.post(NotEquals{v[0], v[1]});
         });
         add("ReifiedEquals", Expect::Clean, [](Problem & p) {
-            auto v = wide(p, 2);
+            // Wide *and non-overlapping*, because that is the only shape in which
+            // the interesting rule fires. Two operands over the same wide interval
+            // -- what this probe used to be -- always intersect, so
+            // infer_cond_when_undecided returned StillUndecided and the no-overlap
+            // reason walk this row exists to test was never reached: the same
+            // "more extreme than necessary" mistake the probe-sharpening pass
+            // corrected elsewhere, and the reason #864 went unnoticed here.
+            //
+            // The walk is not one of State's iterators, so before #864 was fixed
+            // this probe still reported Clean: it cost 78 GB and 160 s and merely
+            // had the RAM to finish. Its guard coverage is hand-added in
+            // equals.cc, in the same way as Element's and AllEqual's.
+            auto lo = p.create_integer_variable(wide_lo, probe_width / 2_i);
+            auto hi = p.create_integer_variable(probe_width / 2_i + 1_i, probe_width);
             auto r = p.create_integer_variable(0_i, 1_i);
-            p.post(EqualsIff{v[0], v[1], r == 1_i});
+            p.post(EqualsIff{lo, hi, r == 1_i});
         });
 
         // --- Linear.

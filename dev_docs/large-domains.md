@@ -261,17 +261,37 @@ Two kinds of check, and the difference matters:
   `State`'s iterators are not the only way a propagator walks a domain. It can
   build an `IntervalSet` of its own and walk that, or take an interval and expand
   it with a plain `for (Integer v = lo; v <= hi; ++v)`. `State` sees neither, so
-  each such loop needs its own counter declared at the loop. Two sites carry one:
-  `element.cc`'s sweep over unsupported result values (now only on its per-value
-  view path) and `all_equal.cc`'s expansion of the intersection difference. The
-  counter does not belong in `IntervalSet::each()` itself, which is a general
-  container used for deliberate enumeration — tabulation, and the tests.
+  each such loop needs its own counter declared at the loop. Three sites carry
+  one: `element.cc`'s sweep over unsupported result values (now only on its
+  per-value view path), `all_equal.cc`'s expansion of the intersection
+  difference, and `equals.cc`'s no-overlap reason. The counter does not belong in
+  `IntervalSet::each()` itself, which is a general container used for deliberate
+  enumeration — tabulation, and the tests.
 
-  Both were found the same way, and it is worth naming the smell: **a row that
-  starts passing when you did not fix it.** Neither site allocated a suspicious
-  amount or crashed; each simply ran for a minute or two and finished, so the row
-  came out `Clean` on a machine with 16 GB free and `KnownTrip` on a smaller one.
-  If a probe stops tripping, measure what it costs before believing it.
+  The first two were found the same way, and it is worth naming the smell: **a
+  row that starts passing when you did not fix it.** Neither site allocated a
+  suspicious amount or crashed; each simply ran for a minute or two and finished,
+  so the row came out `Clean` on a machine with 16 GB free and `KnownTrip` on a
+  smaller one. If a probe stops tripping, measure what it costs before believing
+  it.
+
+  The third was not found by the lane at all, and is the more uncomfortable case
+  (#864, from the `equals` family audit in #863). It is not a pruning loop but a
+  **reason**: one literal per value, assembled on the propagation path and then
+  discarded unread whenever the tracker does not materialise reasons. Two things
+  hid it. Its `ReifiedEquals` probe had *both* operands over the same wide
+  interval, so they always intersected and the rule never fired — the probe being
+  more extreme than necessary, exactly what the sharpening pass corrected
+  elsewhere. And once the probe was fixed to disjoint operands, it still reported
+  `Clean`: 160 s and 78 GB on a machine with 2 TB, where the same shape had died
+  with `bad_alloc` at 2.6 GB for the person who reported it.
+
+  Both halves generalise. **The lane's `bad_alloc` fallback is a property of the
+  machine, not of the code** — on a large-memory node it will not fire, so a
+  `Clean` row that nothing instruments is only as strong as the box it ran on.
+  And a reason is a place to look that a search for pruning loops will not reach:
+  guard the assembly on `InferenceTrackerBase::want_reasons()` first, then count
+  the walk that survives it.
 * **`GCS_CHECK_LARGE_DOMAIN`** checks a size up front, for the H3 sites that
   commit to a whole array at once.
 
