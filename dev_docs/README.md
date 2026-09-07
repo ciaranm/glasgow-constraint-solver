@@ -46,6 +46,12 @@ library. For an introduction to *using* the solver, start with the top-level
   measuring the wall-time impact of a performance-sensitive change, the
   rationale for each pick, the harness pattern for comparing two builds,
   and what to capture. Use when quantifying a refactor's perf impact.
+- [Cross-solver benchmarking](cross-solver-benchmarking.md) — comparing gcs
+  against another solver rather than against another build of gcs: why a time
+  ratio only means anything over an identical search tree, how to pin one and
+  verify it, how to choose a model a family document can defend, and the
+  `equals` family's first measured numbers. The harness lives in the
+  `gcs-benchmarks` repo.
 - [Large domains](large-domains.md) — the policy for constraints whose work is
   proportional to how *wide* a variable's domain is: the rule that every
   bounds-consistency path must be width-independent, the hazard taxonomy, the
