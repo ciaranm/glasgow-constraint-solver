@@ -16,9 +16,12 @@ The tracking issue is [#833](https://github.com/ciaranm/glasgow-constraint-solve
 
 This is the backstop the rest of the policy hangs off. A model may legitimately
 declare `var 0..1000000000`, and `fzn-glasgow` gives a domainless FlatZinc `var
-int` a domain of about 9.2×10^18 values, so a wide domain is an ordinary input
-rather than a mistake to be refused. What makes that safe is not a check that
-rejects it, but every constraint having somewhere cheap to fall back to. A
+int` a domain spanning billions of billions of values, so a wide domain is an
+ordinary input rather than a mistake to be refused. (Deliberately not a figure:
+what it is exactly depends on `Integer::max_bounded_value()`, which #853 changes,
+and pinning it here coupled two branches whose CI could not see each other.) What
+makes that safe is not a check that rejects it, but every constraint having
+somewhere cheap to fall back to. A
 constraint may drop to propagating almost nothing over a wide domain — that is
 allowed, and it should say so on the stats channel — but it must stay correct
 and it must stay cheap.
