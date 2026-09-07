@@ -806,6 +806,14 @@ keyword and the condition together, and stays correct. Fixing either half on
 its own emits the *opposite* constraint, and the SCP symmetry check will not
 catch it, because it only checks that the keyword parses.
 
+The fix is also known to be local: a sweep of every `clone()` under
+`gcs/constraints/` and `gcs/presolvers/` found this to be the **only** one that
+drops a constructor argument. The two constraints with the closest shape both
+pass everything through —
+`ReifiedCompareLessThanOrMaybeEqual(_v1, _v2, _reif_cond, _or_equal, _vars_swapped)`
+and the corresponding `LexCompareGreaterThanOrMaybeEqual`. So this is one
+missing argument in one function, not a pattern to hunt down.
+
 **Two derivations share one wire hint.** Rules 1 and 2 both emit
 `equals:((constraint_id N))`, but rule 1 is a bare RUP and rule 2 needs two
 bridge lemmas first. An external justifier has to discriminate on whether the
