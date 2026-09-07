@@ -56,6 +56,13 @@ library. For an introduction to *using* the solver, start with the top-level
   the others off changes no bound anywhere. `Element`'s `consistency::Auto` is
   the first client (issue #902). Read before choosing triggers that
   under-report what a hole would affect.
+- [Template: a constraint family document](constraints/TEMPLATE.md) — the
+  skeleton every per-family document under `dev_docs/constraints/` follows,
+  plus the conventions and the closed vocabularies (proof technique,
+  consistency level, offline-reconstructibility verdict, frontend cell) those
+  documents draw on. Also carries the family list — authoritative for what
+  counts as a family — and the variant template for presolvers. Read before
+  writing or auditing a family document.
 - [Reification](reification.md) — additional machinery for *reified* constraints:
   the `ReificationCondition` static and `EvaluatedReificationCondition` runtime
   types, the `install_reified_dispatcher` helper, the OPB encoding pattern,
@@ -119,10 +126,12 @@ library. For an introduction to *using* the solver, start with the top-level
   writing or checking, records which candidates are too large to
   proof-log at all, and lists the argument-shape traps. Use when
   changing proof logging, scaffolding, encodings or hinting.
-- [Frontend support matrix](frontend-support-matrix.md) — single source of
-  truth for which gcs propagators each frontend (MiniZinc, XCSP3, CPMpy)
-  exposes, plus where the solver-side gaps are tracked. Update when adding
-  a propagator or a frontend binding.
+- [Frontend support matrix](frontend-support-matrix.md) — which gcs
+  propagators each frontend (MiniZinc, XCSP3, CPMpy) exposes, plus where the
+  solver-side gaps are tracked. **Being retired**: its rows are migrating into
+  the per-family documents under `dev_docs/constraints/`. Update the family
+  document rather than this file, and delete this one once every family carries
+  its rows.
 - [Proof logging for `Cumulative`](cumulative-proof-logging.md) — concrete
   walk-through of the three-inference proof for the time-table propagator:
   the `pol`-over-`active=1`-flags idiom, the "extended-reason pinning"
