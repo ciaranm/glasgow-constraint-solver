@@ -160,11 +160,17 @@ set(GCS_TEST_MAX_RECURSIONS "1500" CACHE STRING "Default per-solve search-node c
 # landing unnoticed -- there is otherwise no compiler -Werror anywhere, so a warning
 # in new code is invisible to every lane and the build goes green with it in.
 #
-# Only the GCC lane, on purpose: clang and Apple Clang still have a few hundred
-# pre-existing warnings each (mostly -Winconsistent-missing-override and
-# -Wunused-lambda-capture), and MSVC is on /W3 with no equivalent, so those lanes
-# would fail immediately. GCC's baseline has been zero since #710. This option has
-# no effect on MSVC.
+# Only the GCC lane, on purpose. GCC's baseline has been zero since #710, and MSVC
+# is on /W3 with no equivalent. Clang's baseline is now three sites, all in one file
+# and all -Wunused-lambda-capture -- 36 diagnostics, since each is reported once per
+# template instantiation, and 36 is what a clang lane would actually print:
+# element.cc captures array_has_nonconstants into three propagators that read it only
+# in the branch an `if constexpr` discards for a constant array, so clang reports the
+# capture unused in that instantiation and the capture is load-bearing in the other.
+# Removing it breaks the variable-array build. Turning this option on for a clang lane
+# therefore wants -Wno-unused-lambda-capture, which is a useful warning to give up
+# tree-wide for three lines, so it has not been done. This option has no effect on
+# MSVC.
 #
 # It applies to the fetched dependencies too, since it is a global option set before
 # the FetchContent subdirectories are added. That is intentional -- it is what was
