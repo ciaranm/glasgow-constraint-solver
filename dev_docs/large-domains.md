@@ -351,6 +351,22 @@ Two kinds of check, and the difference matters:
   And a reason is a place to look that a search for pruning loops will not reach:
   guard the assembly on `InferenceTrackerBase::want_reasons()` first, then count
   the walk that survives it.
+
+  What the counter at that site now counts is *moves of an interval walk*, not
+  values (#867). A reason that says "these two domains do not overlap" one value
+  at a time is width-proportional by construction, and the guard is then the only
+  thing standing between a wide model and the cliff. Restating it over runs —
+  "v1 has nothing in [lo, hi]", "v2 has nothing in [lo, hi]", and the bounds that
+  separate them — makes the same fact cost one literal per run instead, which for
+  two hole-free domains on opposite sides of a point is two literals at any
+  width. **A width-proportional reason is worth trying to restate before it is
+  worth guarding**, because the guard only converts a hang into an exception,
+  whereas the restatement removes the width from the cost. The interval
+  vocabulary this uses is `dev_docs/range_literals_spec.md`; its one gap is
+  views, which have no range literal (#882), so a run of values a *view* cannot
+  take is still spelled out one value at a time and the counter still covers it.
+  Note the granularity: it is that run that degrades, not the rule, so a view
+  pays for its own holes rather than for the width of anything.
 * **`GCS_CHECK_LARGE_DOMAIN`** checks a size up front, for the H3 sites that
   commit to a whole array at once.
 

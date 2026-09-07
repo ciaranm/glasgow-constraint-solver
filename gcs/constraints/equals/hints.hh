@@ -34,11 +34,16 @@ namespace gcs::innards::hints
      * \brief equals's "domains don't overlap" hint, carried in a reified verdict.
      *
      * Extends the base with the `no_overlap` subhint and the emit context the
-     * internal proof writer reads to emit the per-value RUP lemmas: the operands,
-     * the bounds walked over, and the reification condition. The State pointer is
-     * valid because the verdict is consumed synchronously while the constraint is
-     * live. The data is held for emit_justification only; with no own hint_sexpr
-     * the hint takes the default identity-plus-subhint wire form.
+     * internal proof writer reads to re-walk the disjointness: the operands and
+     * the reification condition. The State pointer is valid because the verdict
+     * is consumed synchronously while the constraint is live. The data is held
+     * for emit_justification only; with no own hint_sexpr the hint takes the
+     * default identity-plus-subhint wire form.
+     *
+     * Nothing here says how the reason spelled its runs, because the lemmas do
+     * not depend on it: a run is stepped over inside one variable, by its range
+     * literal's reverse reification or by its eq atoms walking the order chain,
+     * and either way the witness owes it nothing.
      *
      * \ingroup Innards
      */
@@ -47,7 +52,6 @@ namespace gcs::innards::hints
         static constexpr std::string_view subhint_name = "no_overlap";
         const State * state;
         IntegerVariableID v1, v2;
-        std::pair<Integer, Integer> v1_bounds;
         Literal cond;
     };
 

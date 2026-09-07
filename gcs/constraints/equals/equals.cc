@@ -11,6 +11,7 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
+#include <gcs/interval_set.hh>
 
 #include <util/overloaded.hh>
 
@@ -44,15 +45,159 @@ using std::print;
 using fmt::print;
 #endif
 
+namespace
+{
+    // One move of the no-overlap walk. The walk is the certificate that two
+    // domains are disjoint, stated over *runs* rather than values: see
+    // walk_no_overlap below for what it maintains and why these are the moves.
+    enum class NoOverlapStep
+    {
+        AnchorV1Lower,    ///< the walk starts at v1's lower bound: `v1 >= lo`.
+        JumpToV2Lower,    ///< `v2 >= lo`, so under cond v1 is there too. lo == hi.
+        SkipV1Hole,       ///< v1 has no value in [lo, hi], so it is already past hi.
+        SkipV2Hole,       ///< v2 has no value in [lo, hi], so under cond neither has v1.
+        StopAboveV1Upper, ///< `v1 <= lo` and the walk has reached hi > lo: contradiction.
+        StopAboveV2Upper  ///< `v2 <= lo` and the walk has reached hi > lo: contradiction, under cond.
+    };
+
+    // Walk two disjoint domains, reporting a certificate of their disjointness
+    // whose length is the number of runs it takes to say it, not the number of
+    // values the domains span.
+    //
+    // The walk carries one invariant up the number line: at each point p, the
+    // facts reported so far (together with the reification condition, which
+    // makes the two operands equal) force `v1 >= p`. It starts at v1's lower
+    // bound, and each move pushes p past one maximal run of values v1 cannot
+    // take -- either because v1 itself has nothing there, or because *v2* has
+    // nothing there and under cond v1 must be wherever v2 is. p is strictly
+    // increasing, so the walk stops after at most one move per interval of
+    // either domain, and it stops by running p off the top of one of the two
+    // domains, which is the contradiction the conclusion needs.
+    //
+    // Both consumers -- the reason builder, which turns each move into a
+    // literal, and emit_justification, which turns each move into zero, one or
+    // two lemmas -- go through here, because the lemmas' whole job is to let
+    // unit propagation see that reason's literals through, so the two must be
+    // reporting the same walk.
+    //
+    // \p d1 and \p d2 must be non-empty and disjoint, which is exactly the
+    // condition the rule fires under.
+    template <typename Step_>
+    auto walk_no_overlap(const IntervalSet<Integer> & d1, const IntervalSet<Integer> & d2, Step_ && step) -> void
+    {
+        vector<pair<Integer, Integer>> i1, i2;
+        for (const auto & i : d1.each_interval())
+            i1.push_back(i);
+        for (const auto & i : d2.each_interval())
+            i2.push_back(i);
+        if (i1.empty() || i2.empty())
+            throw UnexpectedException{"equals no-overlap walk over an empty domain"};
+
+        auto [lb1, ub1] = pair{i1.front().first, i1.back().second};
+        auto [lb2, ub2] = pair{i2.front().first, i2.back().second};
+
+        // Establish `v1 >= p` for the first time. If v2 starts above v1 does,
+        // v2's own lower bound gets us there and v1's is never mentioned --
+        // which is what makes the bounds-disjoint case a two-literal reason.
+        auto p = lb1;
+        if (p < lb2) {
+            step(NoOverlapStep::JumpToV2Lower, lb2, lb2);
+            p = lb2;
+        }
+        else
+            step(NoOverlapStep::AnchorV1Lower, lb1, lb1);
+
+        // The cursors only ever move forwards, because p does; each keeps the
+        // first interval of its domain that has not already been passed.
+        std::size_t j1 = 0, j2 = 0;
+        while (true) {
+            if (p > ub1) {
+                step(NoOverlapStep::StopAboveV1Upper, ub1, p);
+                return;
+            }
+            if (p > ub2) {
+                step(NoOverlapStep::StopAboveV2Upper, ub2, p);
+                return;
+            }
+
+            // p <= ub1 and p <= ub2, so neither search runs off the end.
+            while (i1[j1].second < p)
+                ++j1;
+            while (i2[j2].second < p)
+                ++j2;
+
+            if (p < i1[j1].first) {
+                // p is outside v1. It may be outside v2 as well, in which case
+                // the v2-free run from here could be the longer of the two and
+                // taking it would end the walk in fewer moves. Take v1's anyway:
+                // its move costs no lemmas, v2's costs two, and the choice only
+                // ever changes the move count by a constant factor -- the bound
+                // is one move per interval of either domain either way.
+                auto hi = i1[j1].first - 1_i;
+                step(NoOverlapStep::SkipV1Hole, p, hi);
+                p = hi + 1_i;
+            }
+            else {
+                // p is a value of v1, so disjointness says it is not one of v2,
+                // and v2's next interval starts strictly above it.
+                if (i2[j2].first <= p)
+                    throw UnexpectedException{"equals no-overlap walk over domains that do overlap"};
+                auto hi = i2[j2].first - 1_i;
+                step(NoOverlapStep::SkipV2Hole, p, hi);
+                p = hi + 1_i;
+            }
+        }
+    }
+
+}
+
 namespace gcs::innards::hints
 {
     auto emit_justification(ProofLogger & logger, const EqualsNoOverlap & w, const ReasonLiterals &) -> void
     {
-        for (Integer val = w.v1_bounds.first; val <= w.v1_bounds.second; ++val)
-            if (w.state->in_domain(w.v1, val))
-                logger.emit_rup_proof_line(WPBSum{} + 1_i * (w.v1 != val) + 1_i * (w.v2 == val) + 1_i * ! w.cond >= 1_i, ProofLevel::Temporary);
-            else
-                logger.emit_rup_proof_line(WPBSum{} + 1_i * (w.v2 != val) + 1_i * (w.v1 == val) + 1_i * ! w.cond >= 1_i, ProofLevel::Temporary);
+        // Two lemma shapes, each carrying one bound across the reified equality.
+        // The cond-guarded halves of the model constraint are `cond -> v1 <= v2`
+        // and `cond -> v1 >= v2`, so each lemma's negation supplies a pair of
+        // opposing bounds against one of them: the Theorem 2.9 configuration
+        // that makes it RUP, exactly as in justify_not_in_range_across_equality
+        // (which cannot be reused directly here only because these halves are
+        // reified, so the lemmas carry the extra `! cond`).
+        auto v2_lower_reaches_v1 = [&](Integer k) {
+            logger.emit_rup_proof_line(WPBSum{} + 1_i * ! w.cond + 1_i * (w.v2 < k) + 1_i * (w.v1 >= k) >= 1_i, ProofLevel::Temporary);
+        };
+        auto v1_lower_reaches_v2 = [&](Integer k) {
+            logger.emit_rup_proof_line(WPBSum{} + 1_i * ! w.cond + 1_i * (w.v1 < k) + 1_i * (w.v2 >= k) >= 1_i, ProofLevel::Temporary);
+        };
+
+        // What each move owes the conclusion's RUP check, given that the check
+        // has cond and the reason's literals as units and is carrying `v1 >= p`:
+        //
+        //   AnchorV1Lower       the reason literal is `v1 >= lo` itself.
+        //   JumpToV2Lower       `v2 >= lo` is a reason literal; one lemma turns
+        //                       it into `v1 >= lo`.
+        //   SkipV1Hole          nothing: `~[v1 in lo..hi]` and `v1 >= lo` meet in
+        //                       the range literal's own reverse reification,
+        //                       which gives `v1 >= hi + 1`.
+        //   SkipV2Hole          `v1 >= lo` crosses to `v2 >= lo`, that and
+        //                       `~[v2 in lo..hi]` give `v2 >= hi + 1` through
+        //                       v2's reverse reification, and that crosses back.
+        //   StopAboveV1Upper    nothing: `v1 >= hi` and the reason's `v1 <= lo`
+        //                       are opposite ends of v1's own order chain.
+        //   StopAboveV2Upper    `v1 >= hi` crosses to `v2 >= hi`, against the
+        //                       reason's `v2 <= lo`.
+        walk_no_overlap(w.state->copy_of_values(w.v1), w.state->copy_of_values(w.v2), [&](NoOverlapStep kind, Integer lo, Integer hi) {
+            switch (kind) {
+            case NoOverlapStep::AnchorV1Lower:
+            case NoOverlapStep::SkipV1Hole:
+            case NoOverlapStep::StopAboveV1Upper: break;
+            case NoOverlapStep::JumpToV2Lower: v2_lower_reaches_v1(lo); break;
+            case NoOverlapStep::SkipV2Hole:
+                v1_lower_reaches_v2(lo);
+                v2_lower_reaches_v1(hi + 1_i);
+                break;
+            case NoOverlapStep::StopAboveV2Upper: v1_lower_reaches_v2(hi); break;
+            }
+        });
     }
 }
 
@@ -177,36 +322,75 @@ namespace
     auto no_overlap_justification(const State & state, ProofLogger * const, IntegerVariableID v1, IntegerVariableID v2, Literal cond,
         const ConstraintID & owner, bool want_reasons) -> pair<hints::EqualsNoOverlap, Reason>
     {
-        auto v1_bounds = state.bounds(v1);
-        hints::EqualsNoOverlap no_overlap{{owner}, &state, v1, v2, v1_bounds, cond};
+        hints::EqualsNoOverlap no_overlap{{owner}, &state, v1, v2, cond};
 
-        // The reason below is one literal per value in v1's bounds range, so
-        // assembling it is linear in how wide the domain is. Unlike the walk in
-        // emit_justification, which is the same shape but only runs when a proof
-        // is actually being written, this one sits on the propagation path -- so
-        // with proofs off it is built, never read, and thrown away. That is the
-        // situation want_reasons() exists for, and the cost is not academic:
-        // issue #864 measured 78 GB and 160 s at width 10^9, and a bad_alloc on
-        // a smaller machine. The must-not-hold pass below was guarded for the
-        // same reason in fea9508d; this call site was missed.
-        //
-        // Nothing here confines the *proof's* per-value cost, which is genuine:
-        // see #867 for whether a cheaper certificate exists.
+        // Assembling the reason is linear in the length of the witness. Unlike
+        // the walk in emit_justification, which is the same shape but only runs
+        // when a proof is actually being written, this one sits on the
+        // propagation path -- so with proofs off it is built, never read, and
+        // thrown away. That is the situation want_reasons() exists for, and when
+        // this witness was per-value the cost was not academic: issue #864
+        // measured 78 GB and 160 s at width 10^9, and a bad_alloc on a smaller
+        // machine. The must-not-hold pass below was guarded for the same reason
+        // in fea9508d; this call site was missed.
         if (! want_reasons)
             return pair{no_overlap, Reason{}};
 
-        // State's own iterators are not involved -- this walks a bounds range and
-        // asks in_domain -- so the audit lane cannot see it without saying so.
-        LargeDomainIterationCounter guard{"the number of values one reified equals no-overlap reason has walked"};
-        ReasonLiterals reason{{v1 >= v1_bounds.first, v1 <= v1_bounds.second}};
+        // State's own iterators are not involved -- this walks domains directly
+        // -- so the audit lane cannot see it without saying so.
+        LargeDomainIterationCounter guard{"the number of literals one reified equals no-overlap reason has walked"};
+        ReasonLiterals reason;
 
-        for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val) {
-            guard.step();
-            if (state.in_domain(v1, val))
-                reason.emplace_back(v2 != val);
+        // A run of values one operand cannot take is one range condition -- unless
+        // that operand is a view, which has no range literal (#882), in which case
+        // it is spelled out, the same degradation generic_reason and
+        // ProofLogger::infer already make. Only the run is spelled out: the rest of
+        // the walk is unaffected, so a view pays for its own holes and not for the
+        // width of anything.
+        //
+        // The witness does not care which spelling a run got. Stepping `v1 >= lo`
+        // to `v1 >= hi + 1` is the range literal's reverse reification in one case
+        // and the eq atoms walking the order chain in the other; either way it is
+        // internal to that variable and needs no lemma from us. Which is why this
+        // is a fallback in the reason and nowhere else.
+        auto skip_run = [&](IntegerVariableID var, Integer lo, Integer hi) {
+            if (lo == hi || ! std::holds_alternative<ViewOfIntegerVariableID>(var)) {
+                guard.step();
+                reason.emplace_back(not_in_range(var, lo, hi));
+            }
             else
-                reason.emplace_back(v1 != val);
-        }
+                for (auto val = lo; val <= hi; ++val) {
+                    guard.step();
+                    reason.emplace_back(var != val);
+                }
+        };
+
+        // One literal per move of the walk: the runs that make the two domains
+        // disjoint, rather than the values in them. In the common shape -- two
+        // hole-free domains lying on opposite sides of some point -- that is the
+        // two bounds that separate them and nothing else.
+        walk_no_overlap(state.copy_of_values(v1), state.copy_of_values(v2), [&](NoOverlapStep kind, Integer lo, Integer hi) {
+            switch (kind) {
+            case NoOverlapStep::AnchorV1Lower:
+                guard.step();
+                reason.emplace_back(v1 >= lo);
+                break;
+            case NoOverlapStep::JumpToV2Lower:
+                guard.step();
+                reason.emplace_back(v2 >= lo);
+                break;
+            case NoOverlapStep::SkipV1Hole: skip_run(v1, lo, hi); break;
+            case NoOverlapStep::SkipV2Hole: skip_run(v2, lo, hi); break;
+            case NoOverlapStep::StopAboveV1Upper:
+                guard.step();
+                reason.emplace_back(v1 <= lo);
+                break;
+            case NoOverlapStep::StopAboveV2Upper:
+                guard.step();
+                reason.emplace_back(v2 <= lo);
+                break;
+            }
+        });
 
         return pair{no_overlap, ExplicitReason{reason}};
     }

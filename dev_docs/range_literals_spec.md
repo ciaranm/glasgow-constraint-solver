@@ -160,6 +160,21 @@ it. Revisit only if a propagator's explicit scaffolding turns out to need
 the per-value spelling (it can always construct its reason explicitly), or
 if the small-interval overhead grows beyond the noise it currently is.
 
+*Second consumer (2026-09, #867):* `ReifiedEquals`' no-overlap rule is the
+first propagator to take the "construct it explicitly" route, and it is worth
+recording what that looked like, because it was not just a spelling change.
+Saying "these two domains are disjoint" per value costs one literal and one
+lemma per value; saying it over runs needs a *walk* — an invariant (`v1 >= p`)
+carried up the number line, one move per run, each move either a hole of v1
+(free: the range literal's own reverse reification steps `p` over it) or a run
+where v2 is empty (two bound-crossing lemmas, the reified analogue of
+`justify_not_in_range_across_equality`). The witness and the reason come out of
+the *same* walk, in the same order, because the lemmas exist precisely to let
+unit propagation see that reason's literals through; writing them as two
+independent functions is how they drift. A run whose variable is a view is
+spelled per value, per §9.1 — one run, not the whole rule, and the witness does
+not notice, because stepping over a run is internal to that variable either way.
+
 ## 5. Why this is believed complete (and what still needs proving)
 
 Intra-variable falsification induction: if interval F is truly excluded by
@@ -361,6 +376,17 @@ and which branching were active.
    (`ProofLogger::infer_not_in_range` already branches; reasons likewise).
    Folding views in = deview the interval onto the underlying variable;
    deferred, do not block on it.
+
+   *Priced (2026-09, #882):* eight sites now carry a view detour — three that
+   throw and five that degrade, two of those being the same code written twice
+   — and since the interval vocabulary became the ordinary one, the gap between
+   them is a domain width rather than a constant. #882 has the inventory, and
+   the two candidate designs: deview onto the underlying variable, or define
+   range literals over a registered view's own bits and let the *cuts* cross
+   the view's defining equality. The second is a live possibility because a
+   range literal never crosses an equality — only its two order cuts do, one
+   bound at a time (#867/#881) — but that is a hand UP analysis, so it is a
+   reason to test it, not to adopt it (§1).
 2. **Reasons are resolved at four sites** in `proof_logger.cc` (two `infer`
    paths, `emit_under_reason`, `reason_to_lits`). Any reason-vocabulary
    change must hit all four; missing one no-ops silently (cost a day, twice).
