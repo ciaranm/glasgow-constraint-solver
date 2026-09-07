@@ -6,6 +6,7 @@
 #include <gcs/solve.hh>
 #include <gcs/stats.hh>
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
@@ -31,6 +32,7 @@ using std::string;
 using std::tuple;
 using std::variant;
 using std::vector;
+using std::ranges::includes;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -335,6 +337,125 @@ auto run_wide_proved_no_overlap_equals_test() -> void
     verify_proof_and_clean_up(proof_name);
 }
 
+// The family's assertion-hint inventory, read off a real proof.
+//
+// At AssertionLevel::Inferences the solver emits `a` lines and hints and
+// nothing else: the lemmas an explicit derivation writes are absent, and an
+// external justifier is expected to rebuild each derivation from the
+// annotation, the asserted literal and the reason. So the annotation has to say
+// which derivation it was. Until issue #866 the interval bridge -- a conclusion
+// that is only RUP once two bound lemmas have carried its endpoints across the
+// equality -- arrived under the same `equals:((constraint_id _N))` as the
+// family's one-line RUP prunings, and the only way to tell a three-line
+// derivation from a one-line one was to notice that the asserted literal was
+// spelled as a range. That is keying off literal spelling, which is what the
+// hint vocabulary exists to avoid.
+//
+// Two instances, because no one instance fires all three shapes: a holey
+// Equals reaches the bridge and, once search fixes an operand, the
+// fixed-operand RUP; a bounds-disjoint reified one reaches the no-overlap walk.
+//
+// An unrecognised subhint fails as well. The inventory is a closed list that
+// the family document quotes rule by rule, so a fourth shape should have to
+// come here and be named rather than appearing on the wire unannounced.
+namespace
+{
+    struct EqualsHintsSeen
+    {
+        bool bare = false;
+        set<string> subhints;
+        int annotations = 0;
+    };
+
+    auto equals_hints_in_proof(const string & proof_name) -> EqualsHintsSeen
+    {
+        const string annotation = "::equals:(", field = "(subhint ";
+
+        EqualsHintsSeen seen;
+        std::ifstream proof{proof_name + ".pbp"};
+        if (! proof)
+            throw UnexpectedException{"equals hint inventory test wrote no proof for " + proof_name};
+        for (string line; getline(proof, line);) {
+            auto at = line.find(annotation);
+            if (at == string::npos)
+                continue;
+            ++seen.annotations;
+            auto subhint = line.find(field, at);
+            if (subhint == string::npos)
+                seen.bare = true;
+            else {
+                auto from = subhint + field.size();
+                auto to = line.find(')', from);
+                if (to == string::npos)
+                    throw UnexpectedException{"unterminated (subhint ...) in " + proof_name + ".pbp: " + line};
+                seen.subhints.insert(line.substr(from, to - from));
+            }
+        }
+        return seen;
+    }
+
+    auto prove_at_inference_assertion_level(Problem & p, const string & proof_name) -> EqualsHintsSeen
+    {
+        auto options = ProofOptions{ProofFileNames{proof_name}};
+        options.set_assertion_level(AssertionLevel::Inferences);
+        solve_with(p, SolveCallbacks{.stats_report = silent_stats_report()}, make_optional(options));
+
+        auto seen = equals_hints_in_proof(proof_name);
+        if (0 == seen.annotations)
+            throw UnexpectedException{
+                "equals hint inventory test found no equals annotations at all in " + proof_name + ".pbp, so it is not testing what it thinks it is"};
+        dispose_of_proof_files(proof_name);
+        return seen;
+    }
+}
+
+auto run_hint_inventory_equals_test() -> void
+{
+    const set<string> inventory{"no_overlap", "not_in_range"};
+
+    // {0..5} against {0,1,4,5}: the symmetric difference is the single run
+    // {2,3}, which is a range-literal conclusion and so takes the bridge, and
+    // once search fixes the surviving operand the other is forced by a plain
+    // RUP. Both operands are bare handles, or the bridge degrades to per-value
+    // prunings that really are one-line RUPs (#882).
+    println(cerr, "equals hint inventory, interval bridge: expecting a not_in_range subhint and a bare hint");
+    {
+        Problem p;
+        auto x = p.create_integer_variable(0_i, 5_i);
+        auto y = p.create_integer_variable(vector<Integer>{0_i, 1_i, 4_i, 5_i});
+        p.post(Equals{x, y});
+
+        auto seen = prove_at_inference_assertion_level(p, "equals_test_hints_bridge");
+        if (! seen.subhints.contains("not_in_range"))
+            throw UnexpectedException{"the equals interval bridge did not annotate its conclusion with the not_in_range subhint, so a justifier "
+                                      "cannot tell a three-line derivation from a one-line RUP"};
+        if (! seen.bare)
+            throw UnexpectedException{"the equals hint inventory instance produced no bare-hint assertion, so it is not showing that the two wire "
+                                      "forms are distinguishable"};
+        if (! includes(inventory, seen.subhints))
+            throw UnexpectedException{"the equals interval bridge instance carried a subhint outside the family's inventory: add it here and to "
+                                      "dev_docs/constraints/equals.md"};
+    }
+
+    // Bounds-disjoint operands under an iff: the undecided pass forces the
+    // condition false, which is the walk.
+    println(cerr, "equals hint inventory, no-overlap walk: expecting a no_overlap subhint");
+    {
+        Problem p;
+        auto x = p.create_integer_variable(0_i, 3_i);
+        auto y = p.create_integer_variable(5_i, 8_i);
+        auto b = p.create_integer_variable(0_i, 1_i);
+        p.post(EqualsIff{x, y, b == 1_i});
+
+        auto seen = prove_at_inference_assertion_level(p, "equals_test_hints_no_overlap");
+        if (! seen.subhints.contains("no_overlap"))
+            throw UnexpectedException{"the equals no-overlap walk did not annotate its verdict with the no_overlap subhint"};
+        if (! includes(inventory, seen.subhints))
+            throw UnexpectedException{"the equals no-overlap instance carried a subhint outside the family's inventory: add it here and to "
+                                      "dev_docs/constraints/equals.md"};
+    }
+}
+
 // What the constraint *says* it is, and whether it means what it says.
 //
 // The equals family writes six descriptions, and one of them used to be a
@@ -470,6 +591,11 @@ auto main(int argc, char * argv[]) -> int
             else
                 run_wide_no_overlap_equals_test();
         }
+        // Reads its own proof rather than solving twice, and needs bare handles
+        // for the same reason as the descriptions below.
+        if (proofs && view_wrap_config_is_effectively_bare(view_cfg, n_positions))
+            run_hint_inventory_equals_test();
+
         // Bare handles under names of our own choosing, so read_scp can rebuild
         // what the writer wrote; proofs on, because the .scp is only written
         // when a proof is.
