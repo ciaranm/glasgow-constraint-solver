@@ -113,6 +113,42 @@ Views keep the per-value path: a view's atoms are spelled through the view and
 the lemmas have not been shown to bridge that. Same restriction, and same reason,
 as the single-support range path in the same file.
 
+**Where the equality is guarded by a conjunction, the same lemmas take a longer
+guard.** `Element`'s model is `result - array[i] == 0` half-reified on the
+conjunction of index conditions, so it is `ArrayMinMax`'s shape with the selector
+replaced by a tuple of index atoms. Per removed range and per feasible index
+tuple, with `G` standing for the negated guard (the disjunction of
+`index_d != x_d` over the dimensions):
+
+```
+rup  G \/ result < lo      \/ array[i] >= lo
+rup  G \/ result >= hi + 1 \/ array[i] < hi + 1
+rup  G \/ ~in(result, lo, hi)
+```
+
+Both lemmas need the guard here, where `ArrayMinMax` needs it on only one of the
+two, because there the model has one direction unconditionally and here neither
+holds outside the guard. Each is RUP for the same reason: its negation supplies
+opposing bounds across an equality. With both in the database, the entry's own
+`~in(array[i], lo, hi)` from the reason is a clause whose every literal is now
+falsified, so the third line is propagation and the tuple walk then finishes as
+it did per value.
+
+**Two lemmas per tuple, independent of the range width.** A disjunctive reason
+literal is fine in this direction, which is worth being precise about: the trap is
+needing to *derive* a bound from `var NOT IN [lo, hi]`, and unit propagation cannot
+case split. *Refuting* it is ordinary propagation once both of its literals are
+falsified, which is exactly what the two lemmas arrange.
+
+Checked by negative control rather than assumed: with the two lemmas suppressed
+and everything else unchanged, VeriPB rejects the tuple line.
+
+A constant-entry array needs no lemmas — the model row pins every bit of `result`
+to the constant, so there is no crossing — and that branch is now covered by
+`element_test`'s `constgac` mode. It had no coverage at all before, because
+`ElementConstantArray` is bounds-only by default, so nothing in the suite ran the
+GAC propagator's constant instantiation.
+
 **Where the conclusion needs a counting argument, only the case split changes.**
 `Among` is the third shape, and it is much cheaper than `ArrayMinMax`'s. Its
 conclusion does not follow from one row: it needs `pol` over the encoding's
@@ -242,12 +278,17 @@ table, which is a snapshot for orientation.
 
 | | constraints |
 |---|---|
-| **KnownTrip** (22) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `AllEqual/holes`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality`, `In`, `ArrayMinMax`, `Element`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (33) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` under `BC`, `AllEqual` without holes, `Among`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **KnownTrip** (21) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `AllEqual/holes`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality`, `In`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
+| **Clean** (34) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, `AllEqual` without holes, `Among`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
 
-`Among` and `Table` started as `KnownTrip` and are now `Clean`, by the interval
-rewrites rather than by a weaker arm: both still propagate GAC.
+`Among`, `Table` and `Element` started as `KnownTrip` and are now `Clean`, by the
+interval rewrites rather than by a weaker arm: all three still propagate GAC.
+
+`ArrayMinMax` is *not* in that list even though its union sweep was rewritten the
+same way, and that is correct: it has a second per-value sweep, the full-GAC pass
+over the array variables, which a probe with every variable wide still reaches. A
+constraint can have more than one hazard, and a row flips only when all are gone.
 
 Three things in that table were not what #833 predicted, and are worth
 recording because they change what the later stages have to do:
@@ -344,8 +385,8 @@ previous version of it went stale, see below.
 |---|---|---|
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
-| **Steps only** | 1.0x / 10x | `AllEqual/holes` (22-row OPB fixed, 16987 → 169987 steps), `GlobalCardinality` (30-row, 18024 → 180024), `Element` (32-row, 27981 → 279981) |
-| neither | 1.0x / 1.0x | everything else, 58 of 69 |
+| **Steps only** | 1.0x / 10x | `AllEqual/holes` (22-row OPB fixed, 16987 → 169987 steps), `GlobalCardinality` (30-row, 18024 → 180024) |
+| neither | 1.0x / 1.0x | everything else, 59 of 69 |
 
 `Multiply`, `Divide` and `Modulus` sit in the last row but are not flat: their OPB
 grows 1.8x for a 10x width, which is the bit-width of the product, not a per-value
@@ -384,8 +425,10 @@ work rather than evidence:
   loop and constant, so it is a simpler case than `Among`'s. Under this document's
   own rule it is a broken fallback arm rather than a missing one, so it is
   scheduled work regardless.
-* `Element` walks the result values its array does not support (`element.cc`),
-  which for a narrow array over a wide result is mostly intervals.
+* `Element` walked the result values its array does not support (`element.cc`),
+  which for a narrow array over a wide result is mostly intervals. **Done**, and it
+  collapsed as predicted: 27981 → 279981 steps became a flat 108. Two of the three
+  are left.
 
 So the survey currently supports **no** VeriPB feature request at all: every row
 whose steps grow at a fixed encoding is a propagator that has an interval and

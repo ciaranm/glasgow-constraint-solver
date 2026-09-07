@@ -78,11 +78,18 @@ auto run_element_test(bool proofs, const string & mode, const ViewWrapConfig & v
     check_results(proof_name, expected, actual);
 }
 
+// `gac` selects the arm rather than a different instance, so the pair of modes
+// is comparable. ElementConstantArray is bounds-only by default, which left the
+// GAC propagator's constant-array instantiation reachable through
+// with_consistency but never actually run by anything: the sweep over result
+// values the array does not support is a different code path from the
+// bounds-only one above it, and it is the path the interval removals live in.
 auto run_element_constant_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> var_range, pair<int, int> idx_range,
-    const vector<int> & array) -> void
+    const vector<int> & array, bool gac = false) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 2);
-    print(cerr, "element constant [{}] {} {} {} {}", view_wrap_config_label(view_cfg), var_range, idx_range, array, proofs ? " with proofs:" : ":");
+    print(cerr, "element constant{} [{}] {} {} {} {}", gac ? " gac" : "", view_wrap_config_label(view_cfg), var_range, idx_range, array,
+        proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, int>> expected, actual;
@@ -96,10 +103,14 @@ auto run_element_constant_test(bool proofs, const string & mode, const ViewWrapC
     vector<Integer> a;
     for (const auto & v : array)
         a.push_back(Integer(v));
-    p.post(ElementConstantArray{var, idx, &a});
+    if (gac)
+        p.post(ElementConstantArray{var, idx, &a}.with_consistency(consistency::GAC{}));
+    else
+        p.post(ElementConstantArray{var, idx, &a});
 
     auto proof_name = proofs ? make_optional("element_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
-    solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{var, CheckConsistency::BC}, pair{idx, CheckConsistency::GAC}});
+    solve_for_tests_checking_consistency(
+        p, proof_name, expected, actual, tuple{pair{var, gac ? CheckConsistency::GAC : CheckConsistency::BC}, pair{idx, CheckConsistency::GAC}});
 
     check_results(proof_name, expected, actual);
 }
@@ -359,6 +370,10 @@ auto main(int argc, char * argv[]) -> int
             else if (mode == "const") {
                 for (auto & [r1, r2, r3] : const_data)
                     run_element_constant_test(proofs, mode, view_cfg, r1, r2, r3);
+            }
+            else if (mode == "constgac") {
+                for (auto & [r1, r2, r3] : const_data)
+                    run_element_constant_test(proofs, mode, view_cfg, r1, r2, r3, true);
             }
             else if (mode == "const2d") {
                 for (auto & [r1, r2, r3, r4] : const2d_data)

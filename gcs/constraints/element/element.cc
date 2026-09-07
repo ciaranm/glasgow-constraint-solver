@@ -42,6 +42,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::function;
+using std::holds_alternative;
 using std::max;
 using std::min;
 using std::optional;
@@ -50,6 +51,7 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::adjacent_find;
+using std::ranges::all_of;
 using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -622,13 +624,100 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
 
                 // The set left over is the result's domain minus what the array
                 // covers, so a narrow array over a wide result leaves nearly the
-                // whole domain to walk a value at a time. The guard belongs here
-                // rather than only on State's iterators: this walks an IntervalSet
-                // the propagator built for itself, which those never see, and a
-                // walk of that shape is the same #833 hazard however the values
-                // were obtained. Without it the probe's outcome is decided by how
-                // much memory the machine happens to have -- 16 GB and 81 s here,
-                // a bad_alloc somewhere smaller -- which is not a test result.
+                // whole domain to remove. It is already an IntervalSet, so the
+                // removals go in as ranges: the values removed are the same
+                // either way -- a value survives iff some array entry can take it
+                // -- and the search does not change, only how many inferences it
+                // takes to get there.
+                //
+                // Views keep the per-value path. The range justification below has
+                // to carry an order atom from result_var across the model's
+                // half-reified equality to the array entry, and a view's atoms are
+                // spelled through the view; that crossing has not been shown to
+                // bridge one. Same restriction, and the same reason, as
+                // min_max.cc's range path. (Among's range path needs no such
+                // restriction, because its lines stay within one variable.)
+                auto all_simple = holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{result_var}) &&
+                    all_of(considered_vars, [](const IntegerVariableID & v) { return holds_alternative<SimpleIntegerVariableID>(v); });
+
+                if (all_simple) {
+                    for (auto [range_lo, range_hi] : still_to_find_support_for.each_interval()) {
+                        Reason reason;
+                        if (inference.want_reasons()) {
+                            ReasonLiterals extra;
+                            for (const auto & var : considered_vars)
+                                extra.push_back(not_in_range(var, range_lo, range_hi));
+                            reason = with_extra(generic_reason(vector<IntegerVariableID>{index_vars.begin(), index_vars.end()}), std::move(extra));
+                        }
+                        inference.infer_not_in_range(logger, result_var, range_lo, range_hi,
+                            JustifyExplicitly{//
+                                [&, range_lo = range_lo, range_hi = range_hi](const ReasonLiterals & reason) {
+                                    // Same walk over the feasible index choices as the
+                                    // per-value form below, but each tuple needs its
+                                    // conclusion carried across the model's equality
+                                    // first. A range asserts only order atoms, where a
+                                    // single value pins every bit, so the two ge-layer
+                                    // bound lemmas have to be stated: under this tuple's
+                                    // guard, result inside [lo, hi] puts the array entry
+                                    // inside it too. Each is RUP because its negation
+                                    // supplies opposing bounds across the equality. With
+                                    // both in the database, the entry's own range literal
+                                    // from the reason is a clause whose every literal is
+                                    // now falsified, and the tuple line is propagation.
+                                    //
+                                    // Two lemmas per tuple, independent of how wide the
+                                    // range is, which is the property that matters.
+                                    WPBSum sum_so_far;
+                                    auto rule_out = [&](auto && self, unsigned d) -> void {
+                                        gch::small_vector<size_t, dimensions_> guard_elem;
+                                        state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
+                                            if (d + 1 == dimensions_) {
+                                                auto guard = sum_so_far + 1_i * (index_vars.at(d) != v);
+                                                if constexpr (! std::is_same_v<EntryType_, Integer>) {
+                                                    elem.push_back((v - index_starts.at(d)).as_index());
+                                                    auto array_var = get_array_var<dimensions_>(elem, *array);
+                                                    elem.pop_back();
+                                                    if (holds_alternative<SimpleIntegerVariableID>(array_var)) {
+                                                        logger->emit_rup_proof_line_under_reason(reason,
+                                                            guard + 1_i * (result_var < range_lo) + 1_i * (array_var >= range_lo) >= 1_i,
+                                                            ProofLevel::Temporary);
+                                                        logger->emit_rup_proof_line_under_reason(reason,
+                                                            guard + 1_i * (result_var >= range_hi + 1_i) + 1_i * (array_var < range_hi + 1_i) >= 1_i,
+                                                            ProofLevel::Temporary);
+                                                    }
+                                                }
+                                                logger->emit_rup_proof_line_under_reason(
+                                                    reason, guard + 1_i * not_in_range(result_var, range_lo, range_hi) >= 1_i, ProofLevel::Temporary);
+                                            }
+                                            else {
+                                                auto save_sum_so_far = sum_so_far;
+                                                sum_so_far += 1_i * (index_vars.at(d) != v);
+                                                elem.push_back((v - index_starts.at(d)).as_index());
+                                                self(self, d + 1);
+                                                elem.pop_back();
+                                                sum_so_far = save_sum_so_far;
+                                            }
+                                        });
+                                        if (! sum_so_far.terms.empty())
+                                            logger->emit_rup_proof_line_under_reason(reason,
+                                                sum_so_far + 1_i * not_in_range(result_var, range_lo, range_hi) >= 1_i, ProofLevel::Temporary);
+                                    };
+                                    rule_out(rule_out, 0);
+                                },
+                                ThenRUP::Yes, hints::Element{owner}},
+                            reason);
+                    }
+
+                    return scope_has_aliasing ? PropagatorState::Enable : PropagatorState::EnableButIdempotent;
+                }
+
+                // A view keeps the per-value walk, and so keeps the guard: this
+                // walks an IntervalSet the propagator built for itself, which
+                // State's iterators never see, and a walk of that shape is the
+                // same #833 hazard however the values were obtained. Without it
+                // the probe's outcome is decided by how much memory the machine
+                // happens to have -- 16 GB and 81 s here, a bad_alloc somewhere
+                // smaller -- which is not a test result.
                 LargeDomainIterationCounter unsupported_guard{"the number of unsupported result values one Element propagation has walked"};
 
                 for (auto value : still_to_find_support_for.each()) {
