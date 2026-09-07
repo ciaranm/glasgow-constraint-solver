@@ -104,6 +104,12 @@ measured at, the date, and anything about the machine that mattered. A figure
 without that is worse than no figure, because it will be quoted a year later.
 Cite numbers that are in a table somewhere; do not report a remembered one.
 
+A figure **measured elsewhere** — an issue's pre-merge A/B, another machine,
+an earlier toolchain — is still worth keeping, but it goes in its own labelled
+paragraph saying where it came from, never in a table beside figures from this
+audit. Say outright that the two sets should not be mixed; otherwise someone
+will put them in one table and compute a ratio across them.
+
 **Vocabularies verbatim.** Proof techniques from [Appendix
 A](#appendix-a-proof-technique-vocabulary), consistency levels from [Appendix
 B](#appendix-b-consistency-level-vocabulary), reconstructibility verdicts from
@@ -139,6 +145,10 @@ and replace the italicised instructions with content.
 
 > **Maturity** production | experimental | checker-only | decomposition-only ·
 > **Audited** *yyyy-mm-dd* at `<commit>` · **Open issues** #nnn, #nnn
+
+*When nothing is open, say so and point at [Next steps](#next-steps) for what
+this audit would file — an empty issue list and an unaudited family should not
+read the same.*
 
 *One short paragraph: what this family is for, and the single most important
 thing a reader should know before touching it.*
@@ -186,11 +196,16 @@ would be wanted.*
 
 ### Relation to other families
 
-*Four directions, because the audit needs all of them: what decomposes **into**
-this family; what this family posts as **child constraints**; which
-**presolvers** rewrite it or rewrite into it; and whether it is reachable only
-via a decomposition from a frontend, in which case nothing exercises the
-propagator directly.*
+*Five directions, because the audit needs all of them: what decomposes
+**into** this family; what this family posts as **child constraints**; what
+other families **share its code** (an exported helper called from elsewhere is
+a coupling a reader will not otherwise see, and a change to it is a change to
+them); which **presolvers** rewrite it or rewrite into it; and whether it is
+reachable only via a decomposition from a frontend, in which case nothing
+exercises the propagator directly.*
+
+*If the family list marks this family as a candidate merge with another,
+settle it here and say which way, so the next reader does not re-open it.*
 
 ## The proof model
 
@@ -285,6 +300,16 @@ buy.*
 `### Rule: <short-name>` — so that the whole corpus can be swept for rules.
 Every field appears in every entry.*
 
+*A rule is **one inference the propagator makes**, not one propagator: a single
+propagator that pushes a bound, removes a value and detects a contradiction is
+three rules. Expect this section to be the bulk of the document — the smallest
+constraint in the solver has nine rules.*
+
+*Facts that hold for **every** rule in the family — the hint type they all
+share, an invariant like "no justification reads `state`" — go in a short
+preamble here rather than being repeated in each entry. Anything that varies
+between rules stays in the entries, even when most of them agree.*
+
 ### Rule: short-name
 
 - **Infers** — *what is inferred: a bound push, a value removal, a
@@ -334,6 +359,12 @@ Every field appears in every entry.*
 - *whether the derivation has been shown to be tight — a mutation that VeriPB
   should refuse, and does.*
 
+*Then, as a separate list, **what the tests do not cover**. This is the half
+that makes the section worth writing: the domain widths the suite never reaches,
+the check that turns out to be weaker than its name suggests, the evidence that
+was never recorded. A test section that only inventories what exists has not
+audited anything.*
+
 ### Benchmarks and examples
 
 *Which in-repo examples and MiniZinc Challenge instances exercise this family.
@@ -358,6 +389,16 @@ from a different search.*
 *The proof axis, which the paper's headline table is made of: proof size, VeriPB
 verification time, the ratio of verification to solve time, and which instances
 are too large to verify at all. Same provenance requirement.*
+
+*Two things to separate out, because a raw proof size conflates them. First,
+this family's **own** contribution against what the shared layers (the
+order-literal and equality-literal definitions, the range-literal layer) emit
+around it — for a cheap constraint the shared layers dominate, and a proof-size
+figure that does not say so will be read as this family's cost. Second, the
+size and verification time at the **assertion levels** as well as fully
+justified, since that difference is what an external justifier consumes; report
+how many assertions carry this family's hint, and what share of the proof's
+assertions that is.*
 
 ## Status, gaps, and next steps
 
@@ -387,6 +428,10 @@ the reason the audit was worth writing down.*
 has certified this constraint before, if anyone, and in what proof system; and
 what is novel here. Without this the attribution has to be reconstructed for
 thirty families at writing time.*
+
+*"There is none" is a good answer when it is argued: for some families nobody
+publishes a propagation algorithm and all the interesting content is on the
+proof side, which is itself something a survey wants to say.*
 
 ## Further reading
 
@@ -529,7 +574,8 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `at_most_one.md` | `at_most_one/` | |
 | `bin_packing.md` | `bin_packing/` | existing note `bin-packing.md` |
 | `circuit.md` | `circuit/` | includes subcircuit |
-| `comparison.md` | `comparison/`, `equals/` | *candidate merge*: equality and inequality primitives, including `ReifiedEquals` |
+| `comparison.md` | `comparison/` | twelve classes over `ReifiedCompareLessThanOrMaybeEqual`; **not** merged with `equals` — same reified-dispatcher pattern, no shared code, separate encodings |
+| `equals.md` | `equals/` | **written** — the pilot. `Equals`, `NotEquals` and the four reified forms |
 | `count.md` | `count/` | see `among` |
 | `cumulative.md` | `cumulative/` | the largest family; notes `cumulative-proof-logging.md`, `certified-makespan-bounds.md`, `rule-counters.md` |
 | `difference.md` | `difference/` | difference constraints; note `difference-logic.md`, whose presolver half belongs under `dev_docs/presolvers/` |
