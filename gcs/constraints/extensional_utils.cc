@@ -720,10 +720,24 @@ auto gcs::innards::propagate_extensional(
         residues.support.resize(table.vars.size());
         residues.base.resize(table.vars.size());
         for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
-            auto [lo, hi] = state.bounds(table.vars[idx]);
+            // Sized from the values the *table* holds at this position, exactly
+            // as the bitmaps above are, and for the same reason: a value outside
+            // that range appears in no tuple, so it is unsupported by
+            // construction and there is never a witness to remember for it. The
+            // variable's own bounds are the wrong measure, and on a wide domain
+            // a disastrous one -- three `var 0..10^9` positions asked for 12 GB
+            // of residue rows and died at install (issue #833).
+            //
+            // Where the bitmaps declined the position -- a wildcard, or a table
+            // range too wide to rasterise -- there is no row, and the lookups
+            // below fall back to the scan on their own: `have_row` is already a
+            // bounds check, because a value outside the row has always been
+            // possible.
+            const auto & p = bitmaps.positions[idx];
+            auto lo = p.usable ? Integer{p.base} : state.lower_bound(table.vars[idx]);
+            auto n_values = p.usable ? p.n_values : std::size_t{0};
             residues.base[idx] = lo.raw_value;
-            GCS_CHECK_LARGE_DOMAIN("the domain an extensional residue row is being sized by", (hi - lo).raw_value + 1);
-            residues.support[idx].assign(static_cast<std::size_t>((hi - lo).raw_value + 1), ExtensionalResidues::none);
+            residues.support[idx].assign(n_values, ExtensionalResidues::none);
         }
         residues.initialised = true;
     }
