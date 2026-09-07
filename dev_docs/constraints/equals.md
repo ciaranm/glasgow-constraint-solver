@@ -2,8 +2,9 @@
 
 > **Maturity** production ·
 > **Audited** 2026-09-07 at `7d014207` ·
-> **Open issues** none open specific to this family; see [Next
-> steps](#next-steps) for the three this audit would file
+> **Open issues** #864, #865, #866, #867, #870 specific to this family; #868 and
+> #869 are audit-wide prerequisites it also blocks on. All seven were filed by
+> this audit; tracked under #871.
 
 Six posted classes over one implementation: an equality between two operands,
 optionally reified, optionally negated. It is the smallest interesting
@@ -620,7 +621,8 @@ alias" bug the dup tests were added for.
   which branch that value took (`y = val` for a value in v1's domain, `x = val`
   for one outside it). So the emitter's `State *` is a convenience, not
   information the justifier lacks. This is the one rule in the family where the
-  verdict is worth checking rather than assuming.
+  verdict is worth checking rather than assuming, and the reason **#870** holds
+  that the `State *` is removable.
 - **Proof size** — `width + 1` lines: one lemma per value in v1's bounds range,
   plus the conclusion. Emitted at `ProofLevel::Temporary`, so the lemmas are
   deleted.
@@ -671,9 +673,9 @@ What the tests do **not** cover:
   check that what was parsed means the same thing. The `NotEqualsIff` keyword
   flip passes it. A semantic round-trip is available —
   `cake_probe_chain` — but only under `GCS_TEST_CAKE`.
-- **No mutation evidence recorded.** Nothing in the file or in this document
-  demonstrates that VeriPB *refuses* a mangled equals derivation, so the
-  derivations are not known to be tight.
+- **No mutation evidence recorded (#869).** Nothing in the file or in this
+  document demonstrates that VeriPB *refuses* a mangled equals derivation, so
+  the derivations are accepted but not known to be tight.
 
 ### Benchmarks and examples
 
@@ -711,7 +713,9 @@ propagator gets, so the only lever left is *how often it is woken*, which is
 what issue #819 addressed. A timed run's own wall clock (23.29 s here) is not
 comparable with an uninstrumented one.
 
-**Cross-solver comparison: `Not measured.`** Doing it properly needs an
+**Cross-solver comparison: `Not measured.`** Filed as **#868**, which is an
+audit-wide prerequisite rather than an equals task — every family document will
+have to leave this section empty until it exists. Doing it properly needs an
 identical-search-tree harness against Gecode, Choco and ACE on a
 clique-encoded model, and a note on the fact that those solvers would normally
 use a specialised all-different rather than a disequality clique — which makes
@@ -776,7 +780,8 @@ was missed. It is what turns a wide-domain `EqualsIff` into a `std::bad_alloc`.
 
 Guarding it does not remove the O(width) cost when proofs *are* on — that is
 inherent to the per-value witness — but it does confine it to proving runs, and
-it is a one-line change with the pattern already in the file's history.
+it is a one-line change with the pattern already in the file's history. Filed as
+**#864**; whether a cheaper certificate exists at all is **#867**.
 
 ### Known limitations
 
@@ -806,7 +811,8 @@ keyword and the condition together, and stays correct. Fixing either half on
 its own emits the *opposite* constraint, and the SCP symmetry check will not
 catch it, because it only checks that the keyword parses.
 
-The fix is also known to be local: a sweep of every `clone()` under
+Filed as **#865**. The fix is also known to be local: a sweep of every
+`clone()` under
 `gcs/constraints/` and `gcs/presolvers/` found this to be the **only** one that
 drops a constructor argument. The two constraints with the closest shape both
 pass everything through —
@@ -814,7 +820,7 @@ pass everything through —
 and the corresponding `LexCompareGreaterThanOrMaybeEqual`. So this is one
 missing argument in one function, not a pattern to hunt down.
 
-**Two derivations share one wire hint.** Rules 1 and 2 both emit
+**Two derivations share one wire hint (#866).** Rules 1 and 2 both emit
 `equals:((constraint_id N))`, but rule 1 is a bare RUP and rule 2 needs two
 bridge lemmas first. An external justifier has to discriminate on whether the
 asserted literal is a range literal, rather than on the hint. The mechanism for
@@ -830,38 +836,38 @@ a plain variable on the far side.
 
 ### Next steps
 
-Ranked. None of these are filed yet; the first three are what this audit would
-open.
+Ranked, and all filed. #864 and #865 are small and self-contained; #867 is a
+research question rather than a fix.
 
-1. **Guard `no_overlap_justification` on `want_reasons()`.** One line, removes
+1. **#864 — Guard `no_overlap_justification` on `want_reasons()`.** One line, removes
    a `std::bad_alloc` on wide domains with proofs off, and follows a pattern
    already applied to the neighbouring pass in `fea9508d`. Add a wide-domain
    case to the test file at the same time — the current suite tops out at
    `[-10, 10]` and cannot see this.
-2. **Fix `clone()` to pass `_neq`, and check the emitted `.scp` changes as
-   expected.** Small, but it must be done as one change: it flips both the
+2. **#865 — Fix `clone()` to pass `_neq`, and check the emitted `.scp` changes
+   as expected.** Small, but it must be done as one change: it flips both the
    keyword and the condition, and half of it is silently wrong. Worth pairing
    with a semantic round-trip assertion (solve the re-read model, compare
    solution counts) so the symmetry check stops passing on an equivalent-but-
    unintended description. Also makes the `not_equals_iff` reader path reachable
    from the writer.
-3. **Give the not-in-range bridge its own subhint.** Removes the one place in
+3. **#866 — Give the not-in-range bridge its own subhint.** Removes the one place in
    this family where an external justifier must key off literal shape instead
    of the hint. Cheap, and the pattern is already there in
    `EqualsNoOverlap`.
-4. **Consider an interval-wise no-overlap witness.** Rule 9's per-value walk is
+4. **#867 — Consider an interval-wise no-overlap witness.** Rule 9's per-value walk is
    the only super-logarithmic thing here. Whether an interval-wise certificate
    exists is a real question, not a refactor: the witness genuinely is
    per-value, since it says *for each value* which side excludes it. A cheaper
    alternative may be to bound the rule and fall back to leaving the verdict
    undecided when the range is wide — a strength loss, but a bounded one.
-5. **Measure against Gecode, Choco and ACE.** Needs an identical-search-tree
+5. **#868 — Measure against Gecode, Choco and ACE.** Needs an identical-search-tree
    harness and a defensible choice of model, since those solvers would not
    normally encode an all-different as a disequality clique.
-6. **Record a mutation.** Show that VeriPB refuses a mangled equals
+6. **#869 — Record a mutation.** Show that VeriPB refuses a mangled equals
    derivation, so the derivations are known to be tight rather than merely
    accepted.
-7. **Drop the `State *` from `EqualsNoOverlap`.** The reconstructibility
+7. **#870 — Drop the `State *` from `EqualsNoOverlap`.** The reconstructibility
    analysis above shows the asserted clause already carries what the emitter
    reads it for. Removing it would make the family's justifications uniformly
    free of `state` access, which is the invariant everywhere else.

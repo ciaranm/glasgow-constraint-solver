@@ -19,4 +19,12 @@ constraints and do not restate it.
   propagation time). The pilot for this template.
 
 Everything else is still to write; the family list in
-[`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan.
+[`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
+is the tracker for the arc — including the method that produced the pilot, and
+the decisions already settled.
+
+The point of the arc is not a complete set of documents. It is that by the time
+the audit is done, the solver is in a good state to write the
+proof-logging-for-CP paper: each family gets read carefully, its problems get
+filed and fixed, and the document is the record of that pass. Expect the fixing
+to outweigh the writing — the pilot filed seven issues.
