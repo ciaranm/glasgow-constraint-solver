@@ -1,5 +1,7 @@
+#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/innards/equals_mutations.hh>
 #include <gcs/current_state.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
@@ -580,9 +582,206 @@ auto run_scp_description_equals_test(const string & which, const string & descri
     verify_proof_and_clean_up(proof_name);
 }
 
+// Mutation lanes: one deliberately corrupted proof, which
+// run_test_and_expect_verify_failure.bash passes only if veripb rejects. See
+// EqualsProofMutation for what each corruption is and why it is that one.
+//
+// Each lane also checks that the run it corrupted made the inference at all --
+// the pruning is still made, since these change only the proof -- because a
+// mutation lane over a rule that never fired is checking an empty proof and
+// passes for the wrong reason. What that check can be differs by rule: for the
+// two whose conclusion is a root-propagation fact, it is the fact; for the
+// fixed-operand rule, which fires only under a search assignment, it is that
+// the enumeration completed, since every solution of x = y over {0..3} is
+// reached through a node where one operand is fixed and the other is not.
+auto run_mutation_equals_test(const string & which, const string & proof_name) -> void
+{
+    using namespace gcs::innards::equals_proof_mutation;
+
+    auto root_only = [&](Problem & p, const function<auto(const CurrentState &)->void> & check) {
+        solve_with(p,
+            SolveCallbacks{
+                .trace = [&](const CurrentState & s) -> bool {
+                    check(s);
+                    return false;
+                },                                    //
+                .stats_report = silent_stats_report() //
+            },
+            make_optional<ProofOptions>(ProofFileNames{proof_name}));
+    };
+
+    // {0..20} against {0..5} + {14..20}: the symmetric difference is the run
+    // {6..13}, so the conclusion is a range literal and takes the two-lemma
+    // bridge.
+    //
+    // The width is not arbitrary, and neither are the endpoints. Omitting the
+    // lemmas from a *narrow* interval is not caught: on {0..5} against
+    // {0,1,4,5} the conclusion `~[x in 2..3]` is RUP against the equality rows
+    // unaided, and so is `~[x in 3..7]` of {0..11}, which is the same thing for
+    // a different reason -- an endpoint on a power of two is one bit rather
+    // than a sum. Measured across widths 5 to 16 with the hole at the middle
+    // third: rejected at every width but 5 and 11. So the lemmas are
+    // load-bearing, and a lane that says so has to be asked about an interval
+    // whose endpoints are not bit boundaries.
+    auto interval_bridge_instance = [&](innards::EqualsProofMutation mutation) {
+        vector<Integer> yv;
+        for (Integer v = 0_i; v <= 20_i; ++v)
+            if (v <= 5_i || v >= 14_i)
+                yv.push_back(v);
+
+        Problem p;
+        auto x = p.create_integer_variable(0_i, 20_i);
+        auto y = p.create_integer_variable(yv);
+        p.post(Equals{x, y}.with_proof_mutation(mutation));
+
+        auto fired = false;
+        root_only(p, [&](const CurrentState & s) { fired = ! s.in_domain(x, 6_i) && ! s.in_domain(x, 13_i); });
+        if (! fired)
+            throw UnexpectedException{"mutation lane " + which + ": the interval bridge did not prune, so its proof has nothing in it to corrupt"};
+    };
+
+    // Interleaved and disjoint under an iff, so the undecided pass forces the
+    // condition false through the walk, over several runs rather than one.
+    auto no_overlap_instance = [&](innards::EqualsProofMutation mutation) {
+        vector<Integer> lower_first, upper_first;
+        for (Integer v = 0_i; v <= 15_i; ++v)
+            ((v / 4_i) % 2_i == 0_i ? lower_first : upper_first).push_back(v);
+
+        Problem p;
+        auto x = p.create_integer_variable(lower_first);
+        auto y = p.create_integer_variable(upper_first);
+        auto b = p.create_integer_variable(0_i, 1_i);
+        p.post(EqualsIff{x, y, b == 1_i}.with_proof_mutation(mutation));
+
+        auto fired = false;
+        root_only(p, [&](const CurrentState & s) { fired = s.has_single_value(b) && s(b) == 0_i; });
+        if (! fired)
+            throw UnexpectedException{"mutation lane " + which +
+                ": the no-overlap rule did not decide the condition, so its proof has nothing in it "
+                "to corrupt"};
+    };
+
+    // A walk one of whose literals is not already in the proof's database, which
+    // is what it takes for dropping a reason literal to be a corruption at all.
+    //
+    // Every literal of a root-firing walk is one of the operands' bounds or
+    // holes. The bounds are OPB axioms, and a fact some other propagator derived
+    // at the root is a unit clause the checker has too -- so at the root the
+    // reason is a restatement of the database, dropping from it corrupts
+    // nothing, and the lane goes green on an empty corruption. (Both were tried:
+    // a bare {0..3, 8..11} against {4..7, 12..15}, and the same with x's upper
+    // bound pushed by an unconditional LessThanEqual. VeriPB accepts the
+    // mutation on each.) A search decision is the exception, because a decision
+    // is not written to the database: what is written is the implication from
+    // it. So the disjointness has to appear under one.
+    //
+    // Hence z, whose first decision pushes x's upper bound to 9 and leaves the
+    // two operands disjoint but neither of them fixed, which is the shape the
+    // walk fires on. Its stop is then `x <= 9`, a fact the reason has to carry
+    // because nothing else states it unconditionally. Branching in a fixed order
+    // rather than the tests' random one, since the lane needs that decision
+    // taken first and taken at all.
+    auto decided_bound_no_overlap_instance = [&](innards::EqualsProofMutation mutation) {
+        Problem p;
+        auto z = p.create_integer_variable(0_i, 1_i);
+        auto x = p.create_integer_variable(0_i, 20_i);
+        auto y = p.create_integer_variable(10_i, 15_i);
+        auto b = p.create_integer_variable(0_i, 1_i);
+        p.post(LessThanEqualIf{x, 9_c, z == 1_i});
+        p.post(EqualsIff{x, y, b == 1_i}.with_proof_mutation(mutation));
+
+        auto fired = false;
+        solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState & s) -> bool { return fired = fired || (s(z) == 1_i && s(b) == 0_i), true; }, //
+                .branch = branch_with(variable_order::in_order({z, x, y, b}), value_order::largest_first()),                     //
+                .stats_report = silent_stats_report()                                                                            //
+            },
+            make_optional<ProofOptions>(ProofFileNames{proof_name}));
+        if (! fired)
+            throw UnexpectedException{
+                "mutation lane " + which + ": no solution reached the decision the walk was to fire under, so the proof may not contain it"};
+    };
+
+    // The fixed-operand rule only fires under a search assignment, so this one
+    // enumerates; every solution of x = y over {0..3} is reached through a node
+    // where one operand is fixed and the other is not.
+    auto fixed_operand_instance = [&](innards::EqualsProofMutation mutation) {
+        Problem p;
+        auto x = p.create_integer_variable(0_i, 3_i);
+        auto y = p.create_integer_variable(0_i, 3_i);
+        p.post(Equals{x, y}.with_proof_mutation(mutation));
+
+        auto solutions = 0;
+        solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState &) -> bool { return ++solutions, true; }, //
+                .stats_report = silent_stats_report()                                        //
+            },
+            make_optional<ProofOptions>(ProofFileNames{proof_name}));
+        if (4 != solutions)
+            throw UnexpectedException{"mutation lane " + which + ": expected 4 solutions, got " + std::to_string(solutions)};
+    };
+
+    // The controls. A mutation lane that goes green because its instance's
+    // *honest* proof does not verify either is worth nothing, and these four
+    // shapes are not otherwise covered: three of them exist to give a rule a
+    // margin of one, which is not what the rest of this file is arranged for.
+    if (which == "control") {
+        if (! can_run_veripb()) {
+            println(cerr, "no veripb, so not checking the mutation lanes' honest proofs");
+            return;
+        }
+        // Spelled out rather than looped over: the four have four different
+        // closure types, and erasing them into a std::function just to iterate
+        // is both gratuitous and something MSVC would not parse.
+        fixed_operand_instance(None{});
+        verify_proof_and_clean_up(proof_name);
+        interval_bridge_instance(None{});
+        verify_proof_and_clean_up(proof_name);
+        no_overlap_instance(None{});
+        verify_proof_and_clean_up(proof_name);
+        decided_bound_no_overlap_instance(None{});
+        verify_proof_and_clean_up(proof_name);
+        println(cerr, "every mutation lane's instance verifies when it is not corrupted");
+        return;
+    }
+
+    if (which == "fixed_operand_reason")
+        fixed_operand_instance(DropFixedOperandReason{});
+    else if (which == "bridge_lemmas")
+        interval_bridge_instance(OmitBridgeLemmas{});
+    else if (which == "no_overlap_stop")
+        decided_bound_no_overlap_instance(DropNoOverlapStopLiteral{});
+    else if (which == "no_overlap_lemmas")
+        no_overlap_instance(OmitNoOverlapLemmas{});
+    else if (which == "no_overlap_selector")
+        no_overlap_instance(FlipNoOverlapSelector{});
+    else
+        throw UnexpectedException{"unknown equals mutation lane " + which};
+
+    println(cerr, "wrote a deliberately corrupted proof to {}.pbp", proof_name);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
+
+    // A mutation lane runs one instance, writes one knowingly wrong proof, and
+    // leaves the verdict to the wrapper script.
+    string mutation, proof_basename = "equals_test_mutation";
+    for (int a = 1; a < argc; ++a) {
+        string arg = argv[a];
+        if (arg.starts_with("--mutate="))
+            mutation = arg.substr(arg.find('=') + 1);
+        else if (arg == "--proof-files-basename" && a + 1 < argc)
+            proof_basename = argv[++a];
+    }
+    if (! mutation.empty()) {
+        run_mutation_equals_test(mutation, proof_basename);
+        return EXIT_SUCCESS;
+    }
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Single-position config that names a position the constraint doesn't

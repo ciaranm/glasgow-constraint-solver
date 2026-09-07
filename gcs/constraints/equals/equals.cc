@@ -1,5 +1,6 @@
 #include <gcs/constraints/equals/equals.hh>
 #include <gcs/constraints/equals/hints.hh>
+#include <gcs/constraints/innards/equals_mutations.hh>
 #include <gcs/constraints/innards/justify_not_in_range.hh>
 #include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/exception.hh>
@@ -162,11 +163,20 @@ namespace gcs::innards::hints
         // that makes it RUP, exactly as in justify_not_in_range_across_equality
         // (which cannot be reused directly here only because these halves are
         // reified, so the lemmas carry the extra `! cond`).
+        //
+        // Testing only, and never on by default: `omit` emits no lemmas at all,
+        // and `selector` states each of them under cond rather than ! cond. See
+        // EqualsProofMutation.
+        auto omit = std::holds_alternative<equals_proof_mutation::OmitNoOverlapLemmas>(w.mutation);
+        auto selector = std::holds_alternative<equals_proof_mutation::FlipNoOverlapSelector>(w.mutation) ? Literal{w.cond} : Literal{! w.cond};
+
         auto v2_lower_reaches_v1 = [&](Integer k) {
-            logger.emit_rup_proof_line(WPBSum{} + 1_i * ! w.cond + 1_i * (w.v2 < k) + 1_i * (w.v1 >= k) >= 1_i, ProofLevel::Temporary);
+            if (! omit)
+                logger.emit_rup_proof_line(WPBSum{} + 1_i * selector + 1_i * (w.v2 < k) + 1_i * (w.v1 >= k) >= 1_i, ProofLevel::Temporary);
         };
         auto v1_lower_reaches_v2 = [&](Integer k) {
-            logger.emit_rup_proof_line(WPBSum{} + 1_i * ! w.cond + 1_i * (w.v1 < k) + 1_i * (w.v2 >= k) >= 1_i, ProofLevel::Temporary);
+            if (! omit)
+                logger.emit_rup_proof_line(WPBSum{} + 1_i * selector + 1_i * (w.v1 < k) + 1_i * (w.v2 >= k) >= 1_i, ProofLevel::Temporary);
         };
 
         // The walk is re-read out of the reason, not out of the domains. Both
@@ -268,15 +278,19 @@ namespace gcs::innards::hints
 }
 
 auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state, auto & inference,
-    const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState
+    const ReasonLiterals & reason, const ConstraintID & owner, EqualsProofMutation mutation) -> PropagatorState
 {
+    // Testing only, and never on by default: see EqualsProofMutation.
+    auto drop_fixed_operand_reason = std::holds_alternative<equals_proof_mutation::DropFixedOperandReason>(mutation);
+
     auto val1 = state.optional_single_value(v1);
     if (val1) {
         inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{hints::Equals{owner}},
             ExplicitReason{//
                 [&] {
                     auto r = reason;
-                    r.emplace_back(v1 == *val1);
+                    if (! drop_fixed_operand_reason)
+                        r.emplace_back(v1 == *val1);
                     return r;
                 }()});
         return PropagatorState::DisableUntilBacktrack;
@@ -288,7 +302,8 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
             ExplicitReason{//
                 [&] {
                     auto r = reason;
-                    r.emplace_back(v2 == *val2);
+                    if (! drop_fixed_operand_reason)
+                        r.emplace_back(v2 == *val2);
                     return r;
                 }()});
         return PropagatorState::DisableUntilBacktrack;
@@ -319,7 +334,10 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v1}) &&
             std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v2});
 
-        auto bridge = [logger](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonLiterals & r) {
+        auto omit_bridge_lemmas = std::holds_alternative<equals_proof_mutation::OmitBridgeLemmas>(mutation);
+        auto bridge = [logger, omit_bridge_lemmas](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonLiterals & r) {
+            if (omit_bridge_lemmas)
+                return; // testing only: leaves the conclusion claiming to be RUP unaided
             // Plain equality pruned = other, so the flag forces other into the same [lo, hi].
             justify_not_in_range_across_equality(
                 *logger, r, std::get<SimpleIntegerVariableID>(IntegerVariableID{pruned}), lo, hi, IntegerVariableID{other}, lo, hi);
@@ -394,9 +412,9 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 namespace
 {
     auto no_overlap_justification(const State & state, ProofLogger * const, IntegerVariableID v1, IntegerVariableID v2, Literal cond,
-        const ConstraintID & owner, bool want_reasons) -> pair<hints::EqualsNoOverlap, Reason>
+        const ConstraintID & owner, bool want_reasons, EqualsProofMutation mutation) -> pair<hints::EqualsNoOverlap, Reason>
     {
-        hints::EqualsNoOverlap no_overlap{{owner}, v1, v2, cond};
+        hints::EqualsNoOverlap no_overlap{{owner}, v1, v2, cond, mutation};
 
         // Assembling the reason is linear in the length of the witness, and it
         // is the *only* walk of the domains: emit_justification re-reads the
@@ -466,6 +484,12 @@ namespace
             }
         });
 
+        // Testing only: the walk's last literal is its stop, so without it the
+        // reason climbs to a position and never says the position is impossible.
+        // See EqualsProofMutation.
+        if (std::holds_alternative<equals_proof_mutation::DropNoOverlapStopLiteral>(mutation) && ! reason.empty())
+            reason.pop_back();
+
         return pair{no_overlap, ExplicitReason{reason}};
     }
 
@@ -479,6 +503,12 @@ ReifiedEquals::ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID
 {
 }
 
+auto ReifiedEquals::with_proof_mutation(const EqualsProofMutation mutation) -> ReifiedEquals &
+{
+    _proof_mutation = mutation;
+    return *this;
+}
+
 auto ReifiedEquals::clone() const -> unique_ptr<Constraint>
 {
     // _neq must come along: both Problem::post and Problem::create_propagators
@@ -488,7 +518,9 @@ auto ReifiedEquals::clone() const -> unique_ptr<Constraint>
     // flip lives in the derived constructors' negated conditions -- so dropping
     // it made a NotEqualsIff describe itself as an equals_iff over a negated
     // condition, which is the same constraint said backwards.
-    return make_unique<ReifiedEquals>(_v1, _v2, _cond, _neq);
+    auto cloned = make_unique<ReifiedEquals>(_v1, _v2, _cond, _neq);
+    cloned->with_proof_mutation(_proof_mutation);
+    return cloned;
 }
 
 auto ReifiedEquals::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
@@ -558,9 +590,10 @@ auto ReifiedEquals::define_proof_model(ProofModel & model, const State &) -> voi
 
 auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
 {
-    auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2, owner = constraint_id()](const State & state, auto & inference,
-                                            ProofLogger * const logger, const Literal & cond) -> PropagatorState {
-        return visit([&](auto & v1, auto & v2) { return enforce_equality(logger, v1, v2, state, inference, ReasonLiterals{cond}, owner); }, v1, v2);
+    auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2, owner = constraint_id(), mutation = _proof_mutation](const State & state,
+                                            auto & inference, ProofLogger * const logger, const Literal & cond) -> PropagatorState {
+        return visit(
+            [&](auto & v1, auto & v2) { return enforce_equality(logger, v1, v2, state, inference, ReasonLiterals{cond}, owner, mutation); }, v1, v2);
     };
 
     auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, owner = constraint_id()](const State & state, auto & inference,
@@ -585,7 +618,8 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         return PropagatorState::Enable;
     };
 
-    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger,
+    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, owner = constraint_id(), mutation = _proof_mutation](const State & state, auto & inference,
+                                         ProofLogger * const logger,
                                          const IntegerVariableCondition & cond) -> ReificationVerdictFor<EqualsJustification> {
         // Aliased non-constant operands: equality definitely holds regardless of
         // domain. Returning MustHold here lets the dispatcher pin the cond
@@ -630,7 +664,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         else {
             // not equals is forced if there's no overlap between domains
             if (! state.domains_intersect(v1, v2)) {
-                auto [no_overlap, reason] = no_overlap_justification(state, logger, v1, v2, cond, owner, inference.want_reasons());
+                auto [no_overlap, reason] = no_overlap_justification(state, logger, v1, v2, cond, owner, inference.want_reasons(), mutation);
                 return reification_verdict::MustNotHold<EqualsJustification>{
                     .justification = JustifyExplicitly{no_overlap, ThenRUP::Yes}, //
                     .reason = reason                                              //
@@ -732,6 +766,8 @@ auto ReifiedEquals::s_expr(const innards::ProofModel * const model) const -> SEx
 }
 
 template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2,
-    const State & state, SimpleInferenceTracker & inference, const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState;
+    const State & state, SimpleInferenceTracker & inference, const ReasonLiterals & reason, const ConstraintID & owner, EqualsProofMutation mutation)
+    -> PropagatorState;
 template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2,
-    const State & state, EagerProofLoggingInferenceTracker & inference, const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState;
+    const State & state, EagerProofLoggingInferenceTracker & inference, const ReasonLiterals & reason, const ConstraintID & owner,
+    EqualsProofMutation mutation) -> PropagatorState;

@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_EQUALS_HINTS_HH
 
 #include <gcs/constraint_id.hh>
+#include <gcs/constraints/innards/equals_mutations.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/reason.hh>
@@ -73,6 +74,11 @@ namespace gcs::innards::hints
      * range literal's reverse reification or by its eq atoms walking the order
      * chain, and either way the witness owes that step nothing.
      *
+     * The mutation is testing-only and is carried here because this is the only
+     * place it can be: the emission is an emit_justification rather than a
+     * lambda at the call site, so the hint is the whole of what it is handed.
+     * See EqualsProofMutation.
+     *
      * \ingroup Innards
      */
     struct EqualsNoOverlap : Equals
@@ -80,6 +86,7 @@ namespace gcs::innards::hints
         static constexpr std::string_view subhint_name = "no_overlap";
         IntegerVariableID v1, v2;
         Literal cond;
+        EqualsProofMutation mutation = equals_proof_mutation::None{};
     };
 
     auto emit_justification(ProofLogger & logger, const EqualsNoOverlap & no_overlap, const ReasonLiterals & reason) -> void;
