@@ -5,6 +5,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -174,18 +175,40 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 namespace
 {
     auto no_overlap_justification(const State & state, ProofLogger * const, IntegerVariableID v1, IntegerVariableID v2, Literal cond,
-        const ConstraintID & owner) -> pair<hints::EqualsNoOverlap, Reason>
+        const ConstraintID & owner, bool want_reasons) -> pair<hints::EqualsNoOverlap, Reason>
     {
         auto v1_bounds = state.bounds(v1);
+        hints::EqualsNoOverlap no_overlap{{owner}, &state, v1, v2, v1_bounds, cond};
+
+        // The reason below is one literal per value in v1's bounds range, so
+        // assembling it is linear in how wide the domain is. Unlike the walk in
+        // emit_justification, which is the same shape but only runs when a proof
+        // is actually being written, this one sits on the propagation path -- so
+        // with proofs off it is built, never read, and thrown away. That is the
+        // situation want_reasons() exists for, and the cost is not academic:
+        // issue #864 measured 78 GB and 160 s at width 10^9, and a bad_alloc on
+        // a smaller machine. The must-not-hold pass below was guarded for the
+        // same reason in fea9508d; this call site was missed.
+        //
+        // Nothing here confines the *proof's* per-value cost, which is genuine:
+        // see #867 for whether a cheaper certificate exists.
+        if (! want_reasons)
+            return pair{no_overlap, Reason{}};
+
+        // State's own iterators are not involved -- this walks a bounds range and
+        // asks in_domain -- so the audit lane cannot see it without saying so.
+        LargeDomainIterationCounter guard{"the number of values one reified equals no-overlap reason has walked"};
         ReasonLiterals reason{{v1 >= v1_bounds.first, v1 <= v1_bounds.second}};
 
-        for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
+        for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val) {
+            guard.step();
             if (state.in_domain(v1, val))
                 reason.emplace_back(v2 != val);
             else
                 reason.emplace_back(v1 != val);
+        }
 
-        return pair{hints::EqualsNoOverlap{{owner}, &state, v1, v2, v1_bounds, cond}, ExplicitReason{reason}};
+        return pair{no_overlap, ExplicitReason{reason}};
     }
 
     // equals's reified verdicts are either a plain RUP (the singleton / forced
@@ -297,7 +320,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         return PropagatorState::Enable;
     };
 
-    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, owner = constraint_id()](const State & state, auto &, ProofLogger * const logger,
+    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger,
                                          const IntegerVariableCondition & cond) -> ReificationVerdictFor<EqualsJustification> {
         // Aliased non-constant operands: equality definitely holds regardless of
         // domain. Returning MustHold here lets the dispatcher pin the cond
@@ -342,7 +365,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         else {
             // not equals is forced if there's no overlap between domains
             if (! state.domains_intersect(v1, v2)) {
-                auto [no_overlap, reason] = no_overlap_justification(state, logger, v1, v2, cond, owner);
+                auto [no_overlap, reason] = no_overlap_justification(state, logger, v1, v2, cond, owner, inference.want_reasons());
                 return reification_verdict::MustNotHold<EqualsJustification>{
                     .justification = JustifyExplicitly{no_overlap, ThenRUP::Yes}, //
                     .reason = reason                                              //

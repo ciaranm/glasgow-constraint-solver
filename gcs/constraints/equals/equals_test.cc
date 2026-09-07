@@ -1,8 +1,10 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/current_state.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
+#include <gcs/stats.hh>
 
 #include <cstdlib>
 #include <functional>
@@ -187,6 +189,53 @@ auto run_no_overlap_equals_test(bool proofs) -> void
     check_results(proof_name, expected, actual);
 }
 
+// A reified equals whose operands are wide and do not overlap. Nothing else in
+// this file goes anywhere near this shape: every other domain here lives inside
+// [-10, 10], and range_infer_test works inside [0, 40], so the no-overlap rule
+// had never been asked a question whose answer depends on the width at all.
+//
+// What this pins is the *answer*: root propagation alone must decide the
+// condition, at a width where deciding it by looking at values cannot work.
+// Note what it does not pin. It would have passed before #864 was fixed too --
+// the unguarded reason walk gave the same answer, having spent 78 GB and 160 s
+// to do it, with proofs off. Cost is not checkable from here; the ReifiedEquals
+// row of the large-domain audit lane is what holds that down, and it has the
+// guard instrumentation to fail rather than merely take a long time.
+//
+// Proofs off only, and deliberately. The rule's justification emits one RUP line
+// per value in the operand's range, so the proof genuinely is linear in the
+// width and a proving run at 10^9 is hopeless rather than merely slow; whether a
+// cheaper certificate exists is #867. run_no_overlap_equals_test above carries
+// the proof coverage, at a width a checker can survive.
+//
+// Solutions are not enumerated: there are ~2.5e17 of them. Search stops at the
+// first node, which is reached only once root propagation has finished.
+auto run_wide_no_overlap_equals_test() -> void
+{
+    const auto width = 1000000000_i;
+    println(cerr, "wide no overlap equals: expecting the condition to be false after root propagation");
+
+    Problem p;
+    auto x = p.create_integer_variable(0_i, width / 2_i);
+    auto y = p.create_integer_variable(width / 2_i + 1_i, width);
+    auto b = p.create_integer_variable(0_i, 1_i);
+    p.post(EqualsIff{x, y, b == 1_i});
+
+    bool reached_a_node = false, condition_is_false = false;
+    auto check = [&](const CurrentState & s) {
+        reached_a_node = true;
+        condition_is_false = s.has_single_value(b) && s(b) == 0_i;
+        return false;
+    };
+
+    solve_with(p, SolveCallbacks{.solution = check, .trace = check, .stats_report = silent_stats_report()});
+
+    if (! reached_a_node)
+        throw UnexpectedException{"wide no overlap equals test never reached a node"};
+    if (! condition_is_false)
+        throw UnexpectedException{"wide no overlap equals did not force its condition false at the root"};
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -241,8 +290,11 @@ auto main(int argc, char * argv[]) -> int
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        if (run_no_overlap)
+        if (run_no_overlap) {
             run_no_overlap_equals_test(proofs);
+            if (! proofs)
+                run_wide_no_overlap_equals_test();
+        }
         for (auto & [r1, r2] : data) {
             run_equals_test<Equals>("equals", proofs, view_cfg, r1, r2, [](int a, int b, int) { return a == b; });
             run_equals_test<EqualsIf>("equals if", proofs, view_cfg, r1, r2, [](int a, int b, int f) { return (! f) || (a == b); });
