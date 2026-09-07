@@ -1,6 +1,7 @@
 #include <gcs/constraints/all_equal/all_equal.hh>
 #include <gcs/constraints/all_equal/hints.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -116,10 +117,26 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
                 for (size_t i = 1; i < n; ++i)
                     common.intersect_with(state.copy_of_values(vars[i]));
 
+                // The interval is already in hand and is then written out one value
+                // at a time, so this is an H1a site with nothing standing in its way
+                // except the witness: which variable is missing a value can change
+                // within one interval, because the difference is taken against the
+                // intersection of every domain. Differencing per variable instead
+                // would give constant-witness ranges (#833).
+                //
+                // Until then the guard has to see it, and it cannot otherwise: this
+                // is a plain integer loop over an interval, not one of State's
+                // iterators and not IntervalSet::each(). Without the counter the probe
+                // takes 131 seconds and 16 GB and then *passes*, so whether the row
+                // trips is decided by how much memory the machine has -- the same
+                // defect the Element sweep had, in a different place.
+                LargeDomainIterationCounter expansion_guard{"the number of values one AllEqual intersection pruning has walked"};
+
                 for (size_t i = 0; i < n; ++i) {
                     auto vi_set = state.copy_of_values(vars[i]);
                     for (auto [l, u] : vi_set.each_interval_minus(common)) {
                         for (Integer val = l; val <= u; ++val) {
+                            expansion_guard.step();
                             IntegerVariableID witness = vars[0];
                             for (size_t j = 0; j < n; ++j)
                                 if (! state.in_domain(vars[j], val)) {

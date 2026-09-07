@@ -35,7 +35,6 @@ using std::erase_if;
 using std::make_unique;
 using std::move;
 using std::optional;
-using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -153,9 +152,18 @@ auto In::install_propagators(Propagators & propagators) -> void
     for (const auto & V : _var_vals)
         triggers.on_change.emplace_back(V);
 
+    // The permitted values as intervals, built once: the set is fixed for the
+    // life of the constraint, and step 1 below takes the domain's difference
+    // against it on every call. insert_at_end needs them ascending, which holds
+    // because prepare() sorts and uniques _val_vals (and folds in any constant
+    // members) and runs before this -- see constraint.cc.
+    IntervalSet<Integer> val_vals_set;
+    for (const auto & v : _val_vals)
+        val_vals_set.insert_at_end(v);
+
     propagators.install(
         constraint_id(),
-        [var = _var, var_vals = _var_vals, val_vals = _val_vals, selectors = _selectors, owner = constraint_id()](
+        [var = _var, var_vals = _var_vals, val_vals = _val_vals, val_vals_set = move(val_vals_set), selectors = _selectors, owner = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Step 1: filter dom(var) — drop any value that no source supports.
             if (var_vals.empty()) {
@@ -163,18 +171,23 @@ auto In::install_propagators(Propagators & propagators) -> void
                 // over constants): each contiguous run of unsupported values is one
                 // interval conclusion, RUP with no reason since asserting var in
                 // [lo, hi] walks the order chain past every supported value into the
-                // at-least-one. Collect the runs first so the domain is not mutated
-                // mid-iteration.
-                vector<pair<Integer, Integer>> runs;
-                for (auto v : state.each_value_immutable(var)) {
-                    if (binary_search(val_vals, v))
-                        continue;
-                    if (! runs.empty() && runs.back().second + 1_i == v)
-                        runs.back().second = v;
-                    else
-                        runs.emplace_back(v, v);
-                }
-                for (const auto & [lo, hi] : runs)
+                // at-least-one.
+                //
+                // The conclusions were already interval-level; what was per-value was
+                // finding them, by walking the domain and grouping maximal runs. The
+                // runs a merge against the permitted set yields are the same
+                // intervals: a run breaks exactly where the domain has a hole or a
+                // permitted value intervenes, which is where each_interval_minus ends
+                // one too. So this emits the identical inferences and changes nothing
+                // in the proof -- it just stops taking O(|D(var)|) to find them.
+                //
+                // The copy has to be a named local, and so does the permitted set:
+                // each_interval_minus() hands out a generator borrowing both, which
+                // must outlive it (see IntervalSet's class documentation). It also
+                // means the domain may be modified as we go, which the old code
+                // needed a separate collection pass to allow.
+                auto var_values = state.copy_of_values(var);
+                for (auto [lo, hi] : var_values.each_interval_minus(val_vals_set))
                     inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{hints::In{owner}}, NoReason{});
             }
             else {

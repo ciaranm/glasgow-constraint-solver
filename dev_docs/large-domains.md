@@ -61,6 +61,17 @@ Neither the audit lane nor the test suite can tell these two apart — both are
 the loop for its exit condition before reaching for an interval rewrite, and put
 any rewrite of a hot query through a before/after benchmark.
 
+**The cheapest H1a of all is where the conclusions are already intervals and only
+the search for them is per-value.** `In`'s constant-set filter emitted one
+`infer_not_in_range` per maximal run of forbidden values, and found those runs by
+walking the domain and grouping consecutive ones. A merge against the permitted
+set yields the same runs — a run breaks exactly where the domain has a hole or a
+permitted value intervenes, which is where `each_interval_minus` ends one too — so
+the rewrite changes nothing at all in the proof. Verified rather than argued: at a
+fixed seed the OPB, the proof, and the test output are byte-identical before and
+after, and a differential check computing both algorithms in one binary reports
+zero disagreements over ten seeds. Look for this shape first; it is free.
+
 H1a is the one worth looking for first, because it is not a trade-off at all.
 The tree already has the machinery: `IntervalSet::each_interval_minus()`,
 `InferenceTracker::infer_not_in_range()`, and
@@ -228,13 +239,20 @@ Two kinds of check, and the difference matters:
   one value from it, which is fine. An early version of this guard checked the
   width and condemned `Plus`, `Abs`, `LessThan` and `LinearEquality` for it.
 
-  `State`'s iterators are not the only way a propagator walks a domain: it can
-  also build an `IntervalSet` of its own and walk that, which `State` never sees.
-  Such a loop needs its own counter, declared at the loop. `Element`'s sweep over
-  the result values the array does not support (`element.cc`) is the one such site
-  outside proof logging, and it is instrumented. The counter does not belong in
-  `IntervalSet::each()` itself, which is a general container used for deliberate
-  enumeration — tabulation, and the tests.
+  `State`'s iterators are not the only way a propagator walks a domain. It can
+  build an `IntervalSet` of its own and walk that, or take an interval and expand
+  it with a plain `for (Integer v = lo; v <= hi; ++v)`. `State` sees neither, so
+  each such loop needs its own counter declared at the loop. Two sites carry one:
+  `element.cc`'s sweep over unsupported result values (now only on its per-value
+  view path) and `all_equal.cc`'s expansion of the intersection difference. The
+  counter does not belong in `IntervalSet::each()` itself, which is a general
+  container used for deliberate enumeration — tabulation, and the tests.
+
+  Both were found the same way, and it is worth naming the smell: **a row that
+  starts passing when you did not fix it.** Neither site allocated a suspicious
+  amount or crashed; each simply ran for a minute or two and finished, so the row
+  came out `Clean` on a machine with 16 GB free and `KnownTrip` on a smaller one.
+  If a probe stops tripping, measure what it costs before believing it.
 * **`GCS_CHECK_LARGE_DOMAIN`** checks a size up front, for the H3 sites that
   commit to a whole array at once.
 
@@ -278,12 +296,19 @@ table, which is a snapshot for orientation.
 
 | | constraints |
 |---|---|
-| **KnownTrip** (21) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `AllEqual/holes`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality`, `In`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (34) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, `AllEqual` without holes, `Among`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **KnownTrip** (20) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `AllEqual/holes`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
+| **Clean** (35) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, `AllEqual` without holes, `Among`, `In`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
 
-`Among`, `Table` and `Element` started as `KnownTrip` and are now `Clean`, by the
-interval rewrites rather than by a weaker arm: all three still propagate GAC.
+`Among`, `In`, `Table` and `Element` started as `KnownTrip` and are now `Clean`, by
+the interval rewrites rather than by a weaker arm: all four still propagate GAC.
+
+**`In` is worth more than its own row.** `create_integer_variable` over a vector
+posts an `In` to carve the holes, so any probe that builds a sparse variable that
+way was tripping inside `In` before it reached the constraint it meant to test.
+`AllEqual/holes` was one: its row was measuring the wrong constraint, and only
+turned into a real `AllEqual` trip once `In` was fixed. A row names the probe, not
+necessarily the culprit.
 
 `ArrayMinMax` is *not* in that list even though its union sweep was rewritten the
 same way, and that is correct: it has a second per-value sweep, the full-GAC pass

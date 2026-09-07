@@ -297,6 +297,10 @@ namespace
             // narrow partner, so the hole has to be spread across the full width:
             // a two-value domain at the extremes leaves the whole middle of the
             // other variable to remove.
+            //
+            // Note this row used to trip on the `In` that create_integer_variable
+            // posts to carve the hole, rather than on AllEqual at all. With that
+            // fixed the row still trips, but now on the site the comment describes.
             auto holey = p.create_integer_variable(vector<Integer>{wide_lo, probe_width});
             auto full = wide_var(p);
             p.post(AllEqual{vector<IntegerVariableID>{holey, full}});
@@ -347,7 +351,14 @@ namespace
             auto v = wide(p, 3);
             p.post(GlobalCardinality{v, {1_i}, {p.create_integer_variable(3_i, 3_i)}});
         });
-        add("In", Expect::KnownTrip, [](Problem & p) {
+        add("In", Expect::Clean, [](Problem & p) {
+            // Its conclusions were always interval-level; what was per-value was
+            // finding them, by walking the domain to group maximal runs. A merge
+            // against the permitted set yields the same runs without the walk.
+            //
+            // This one is load-bearing beyond its own row: create_integer_variable
+            // over a vector posts an In, so any probe that builds a holey variable
+            // that way was tripping here first, whatever else it meant to test.
             auto v = wide(p, 1);
             p.post(In{v[0], vector<Integer>{1_i, 2_i, 3_i}});
         });
