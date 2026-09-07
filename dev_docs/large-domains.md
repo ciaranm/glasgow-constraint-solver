@@ -345,7 +345,9 @@ but to nothing that evaluates the size being checked.
 `gcs/large_domain_audit_test.cc` posts every constraint class once over a
 `0..10^9` domain, installs it, propagates at the root and nowhere else. It is
 built always (so it cannot rot) but registered as a ctest case only when the
-guard is on, since without the guard every probe passes trivially.
+guard is on, since without the guard every probe passes trivially. A second
+table does the same for the branching heuristics; see below, and note that the
+first table cannot see them at all.
 
 Each row pins the outcome we currently expect, so the lane is green today and
 each piece of #833 flips rows rather than introducing failures. **A row that
@@ -365,8 +367,9 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-70 probes. The lane itself is the authority — run it rather than trusting this
-table, which is a snapshot for orientation.
+70 constraint probes, plus 20 heuristic ones in the second table. The lane
+itself is the authority — run it rather than trusting this table, which is a
+snapshot for orientation.
 
 | | constraints |
 |---|---|
@@ -458,6 +461,85 @@ One deliberate non-axis: the lane runs **without proof logging**. `NValue`'s
 H2′ is caught anyway, because its per-value work is in `prepare()`, but a
 constraint whose *encoding* alone were per-value would not be. That is by
 design — see below.
+
+### Branching heuristics (#879)
+
+The constraint lane cannot see a heuristic, and that is not a gap in the probes
+but a gap in what the lane is pointed at. Seven of the thirteen value orders did
+work proportional to the domain's width, and they survived every other stage of
+this issue for two reasons at once: a heuristic is not a propagator, so no amount
+of sharpening a constraint's row reaches one; and the rows all take the *default*
+branch heuristic, which is one of the lazy ones, so nothing there ever asked a
+value order to do something expensive.
+
+The cost also lands in the worst place. A constraint's per-value site runs once at
+the root, or once per propagation; a value order runs at **every branching
+decision**. And the one most likely to meet a wide domain is
+`split_smallest_first`, because splitting is the standard answer to "too many
+values to enumerate" — so the heuristic reached for precisely because the domain
+is wide was one that could not survive it.
+
+`gcs/large_domain_audit_test.cc` now carries a second table, twenty rows: every
+value order against a fixed variable order, and every variable order against a
+fixed value order, so a row names one heuristic and nothing else. It needs no
+stopping rule of its own — `solve_with_state()` calls `branch_generator.begin()`
+*before* the trace callback, and `begin()` runs the value order up to its first
+`co_yield`, so the existing "stop at the root" probe has already made exactly one
+branching decision by the time it returns.
+
+Two shapes, and only one of them is an interval query:
+
+* **Six needed a position.** The three splits want the value at `size / 2 - 1`,
+  `median` the one at `size / 2`, and `random_out` and
+  `reject_random_interval` a uniformly drawn position. All six are
+  `IntervalSet::nth_value()`, which walks the interval list accumulating widths:
+  `O(intervals)` where counting values to reach the position was `O(n)`. That is
+  the whole fix, and it is the H1a shape again — the conclusion was already a
+  single value, only the search for it was per-value.
+* **`random` needed laziness, not a query.** A shuffled enumeration of the domain
+  really is `O(width)`; what was wrong was paying it up front. It is now
+  Fisher–Yates with the array left implicit — position `j` drawn uniformly from
+  `[j, size)`, with a map holding only the positions a draw has displaced — so it
+  costs what the search reads rather than what the domain holds. Same permutation
+  distribution, because it is the same algorithm. This is the same reason
+  `smallest_first` was always fine: the guard section above calls the lazy case
+  legitimate explicitly.
+
+The **variable** orders were all clean already, `dom_wdeg`'s weighting schemes
+included: they read `domain_size()` and bounds, never values. They get rows
+anyway, because "no heuristic does work proportional to a domain's width" is a
+property worth having checkable rather than argued — and because a row names its
+heuristic, which link-checks it. That is how `variable_order::with_largest_value`
+turned out to be declared and documented in the public header and never defined
+at all.
+
+**What it costs, measured per call at a fixed seed** (ns, one core of an EPYC
+7643, Release, mean of a long run; `split_sm` and `median` shown, the others
+track them):
+
+| domain | `split_smallest_first` before | after | `median` before | after |
+|---|---|---|---|---|
+| width 4 | 131 | 67 | 214 | 66 |
+| width 256 | 1 716 | 67 | 3 838 | 66 |
+| width 4096 | 25 822 | 67 | 55 812 | 67 |
+| width 4096, 64 holes | 26 234 | 243 | 56 504 | 243 |
+| width 10⁶ | 6 317 324 | 67 | 25 540 065 | 65 |
+| width 10⁸ | 629 960 951 | 68 | 2 899 422 752 | 68 |
+
+Flat in the width, as intended, and **faster at every width including the
+narrowest** — the old spelling paid for a `std::generator` frame and the
+`std::function` the view application needs, where the new one copies a
+two-element inline vector. The holey rows are the honest cost: `nth_value()` is
+`O(intervals)`, so 64 holes cost about four times one interval, and nothing about
+the domain's width enters either way.
+
+`random` is the one place where laziness is not free. Handing out a **full**
+enumeration of a narrow domain costs 25 ns per value eagerly and 79 ns lazily —
+a hash-map operation where there used to be a vector index. End to end that is
+invisible: a full-enumeration search over nine-value domains measured 3 940
+ns/node before and 3 912 after, i.e. no difference outside noise, because a
+branching decision is a per-cent of what a node costs. The trade is a constant
+against an asymptote, which is the right way round.
 
 ## Proofs
 
