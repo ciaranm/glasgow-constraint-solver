@@ -589,6 +589,30 @@ auto State::copy_of_values(const VarType_ & var) const -> IntervalSet<Integer>
 }
 
 template <IntegerVariableIDLike VarType_>
+auto State::domain_is_subset_of(const VarType_ & var, const IntervalSet<Integer> & set) const -> bool
+{
+    auto [actual_var, negate_first, then_add] = deview(var);
+    if (negate_first) {
+        // Negated views are rare, and the same story as domain_intersects_with:
+        // materialise the view's values via copy_of_values, which handles the
+        // negation and the re-sort it forces.
+        return set.contains_all_of(copy_of_values(var));
+    }
+    return visit_actual(
+        actual_var,
+        [&](const SimpleIntegerVariableID & v) -> bool {
+            // Common case: walk the stored interval set against `set` directly,
+            // no copy.
+            if (then_add == 0_i)
+                return set.contains_all_of(state_of(v));
+            // An offset would need an offset-aware merge-walk; materialise
+            // instead, as domain_intersects_with does for the same reason.
+            return set.contains_all_of(copy_of_values(var));
+        },
+        [&](const ConstantIntegerVariableID & v) -> bool { return set.contains(v.const_value + then_add); });
+}
+
+template <IntegerVariableIDLike VarType_>
 auto State::domain_intersects_with(const VarType_ & var, const IntervalSet<Integer> & set) const -> bool
 {
     auto [actual_var, negate_first, then_add] = deview(var);
@@ -875,6 +899,11 @@ namespace gcs
     template auto State::domain_intersects_with(const SimpleIntegerVariableID &, const IntervalSet<Integer> &) const -> bool;
     template auto State::domain_intersects_with(const ViewOfIntegerVariableID &, const IntervalSet<Integer> &) const -> bool;
     template auto State::domain_intersects_with(const ConstantIntegerVariableID &, const IntervalSet<Integer> &) const -> bool;
+
+    template auto State::domain_is_subset_of(const IntegerVariableID &, const IntervalSet<Integer> &) const -> bool;
+    template auto State::domain_is_subset_of(const SimpleIntegerVariableID &, const IntervalSet<Integer> &) const -> bool;
+    template auto State::domain_is_subset_of(const ViewOfIntegerVariableID &, const IntervalSet<Integer> &) const -> bool;
+    template auto State::domain_is_subset_of(const ConstantIntegerVariableID &, const IntervalSet<Integer> &) const -> bool;
 
     template auto State::infer(const VariableConditionFrom<IntegerVariableID> &) -> Inference;
     template auto State::infer(const VariableConditionFrom<SimpleIntegerVariableID> &) -> Inference;

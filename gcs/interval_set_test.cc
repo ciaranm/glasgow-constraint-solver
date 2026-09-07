@@ -300,6 +300,53 @@ TEST_CASE("Contains any of")
         }
 }
 
+TEST_CASE("Contains all of")
+{
+    // Same shape as the any-of case above, cross-checked against the per-value
+    // meaning: every value of s2 is in s1.
+    IntervalSet<int> set1(5, 10), set2(3, 6), set3(8, 11), set4(6, 8);
+    for (const auto & s1 : vector{set1, set2, set3, set4})
+        for (const auto & s2 : vector{set1, set2, set3, set4}) {
+            bool all = true;
+            for (const auto & w : s2.each())
+                if (! s1.contains(w))
+                    all = false;
+
+            CHECK(s1.contains_all_of(s2) == all);
+        }
+}
+
+TEST_CASE("Contains all of, with holes on both sides")
+{
+    // The case a single-interval test would get wrong: a run of `other` that
+    // spans a gap in this set is not contained, even though both of its ends are.
+    IntervalSet<int> holey;
+    holey.insert_at_end(1, 3);
+    holey.insert_at_end(7, 9);
+
+    IntervalSet<int> spanning(3, 7), inside(7, 8), across_gap(2, 8), empty;
+
+    CHECK(! holey.contains_all_of(spanning));
+    CHECK(holey.contains_all_of(inside));
+    CHECK(! holey.contains_all_of(across_gap));
+    CHECK(holey.contains_all_of(empty));
+    CHECK(holey.contains_all_of(holey));
+    CHECK(! empty.contains_all_of(inside));
+    CHECK(empty.contains_all_of(empty));
+
+    // Every subset of the holey set is contained, and nothing else is; checked
+    // exhaustively against the per-value meaning over the whole span.
+    for (int lo = 0; lo <= 11; ++lo)
+        for (int hi = lo; hi <= 11; ++hi) {
+            IntervalSet<int> range(lo, hi);
+            bool all = true;
+            for (int v = lo; v <= hi; ++v)
+                if (! holey.contains(v))
+                    all = false;
+            CHECK(holey.contains_all_of(range) == all);
+        }
+}
+
 TEST_CASE("Default-constructed set is empty")
 {
     IntervalSet<int> set;

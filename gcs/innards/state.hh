@@ -487,6 +487,20 @@ namespace gcs::innards
         [[nodiscard]] auto domain_intersects_with(const VarType_ &, const IntervalSet<Integer> & set) const -> bool;
 
         /**
+         * Returns true if every value left in the variable's domain is in the
+         * given IntervalSet. Equivalent to "for all v in domain(var), v in set" —
+         * but walks the stored interval set against \p set via merge, with no copy
+         * in the common case of a SimpleIntegerVariableID with no view offset, and
+         * stops at the first value of the domain that \p set does not cover.
+         *
+         * This is the containment counterpart of domain_intersects_with(), and is
+         * the interval-level way to ask a question that would otherwise be a
+         * per-value walk of the domain (issue #833).
+         */
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto domain_is_subset_of(const VarType_ &, const IntervalSet<Integer> & set) const -> bool;
+
+        /**
          * Returns true if the two variables' domains share any value.
          * Equivalent to "for some v in domain(var1), v in domain(var2)" —
          * but the common case of two SimpleIntegerVariableIDs with no view

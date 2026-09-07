@@ -174,6 +174,37 @@ namespace gcs
         }
 
         /**
+         * \brief Returns true if every value in \p other is also in this set.
+         *
+         * Equivalent to (but cheaper than) testing each value of \p other for
+         * membership one at a time: walks both interval lists via merge in
+         * <code>O(intervals(this) + intervals(other))</code>, without copying
+         * either side, and stops at the first value of \p other this set does not
+         * cover. An empty \p other is contained vacuously.
+         *
+         * This is the containment counterpart of contains_any_of(), and exists so
+         * that "is this domain inside that set" need not be asked value by value.
+         *
+         * \sa contains_any_of(), each_interval_minus()
+         */
+        [[nodiscard]] auto contains_all_of(const IntervalSet & other) const -> bool
+        {
+            // A run of consecutive values in `other` has to sit inside a *single*
+            // interval of this set: the intervals here never touch, so a run
+            // spanning two of them would have to cross the gap between, and that
+            // gap is by definition not in this set.
+            auto i = intervals.begin();
+            for (const auto & [lo, hi] : other.intervals) {
+                while (i != intervals.end() && i->second < lo)
+                    ++i;
+                if (i == intervals.end() || lo < i->first || hi > i->second)
+                    return false;
+            }
+
+            return true;
+        }
+
+        /**
          * \brief Returns true if the set cannot be described by a single interval.
          *
          * Equivalently, returns true if there is at least one integer strictly between
