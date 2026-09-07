@@ -7,6 +7,7 @@
 #include <gcs/stats.hh>
 
 #include <cstdlib>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <random>
@@ -189,6 +190,50 @@ auto run_no_overlap_equals_test(bool proofs) -> void
     check_results(proof_name, expected, actual);
 }
 
+// A reified equals whose operands are disjoint but *interleaved*: each one's
+// values sit in the other's holes, so no bound separates them and the witness
+// has to account for every run. This is the shape the interval certificate of
+// #867 exists for, and the only one in this file that reaches the two moves
+// that carry a range literal -- "v1 has nothing in [lo, hi]", which needs no
+// lemma, and "v2 has nothing in [lo, hi]", which needs two.
+//
+// Both orders are run, because the walk is not symmetric: it climbs v1's domain,
+// so which operand is first decides whether it starts at v1's lower bound or at
+// v2's, and whether it ends by running off the top of v1 or of v2. Between them
+// the two orders reach all six moves.
+//
+// Proofs on, and it is the proof that is the point: the reason is stated over
+// intervals, and the conclusion is only RUP if the lemmas emitted alongside it
+// let unit propagation see those interval literals through. Verified, so a
+// missing lemma is a red lane rather than a silently weaker proof.
+auto run_holey_no_overlap_equals_test(bool proofs, bool swapped) -> void
+{
+    print(cerr, "holey no overlap equals {}{}", swapped ? "swapped" : "plain", proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    // Two blocks each, interleaved: {0..3, 8..11} against {4..7, 12..15}.
+    vector<Integer> lower_first, upper_first;
+    for (Integer v = 0_i; v <= 15_i; ++v)
+        ((v / 4_i) % 2_i == 0_i ? lower_first : upper_first).push_back(v);
+
+    set<tuple<int, int, int>> expected, actual;
+    for (const auto & xv : swapped ? upper_first : lower_first)
+        for (const auto & yv : swapped ? lower_first : upper_first)
+            expected.emplace(static_cast<int>(xv.raw_value), static_cast<int>(yv.raw_value), 0);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto x = p.create_integer_variable(swapped ? upper_first : lower_first);
+    auto y = p.create_integer_variable(swapped ? lower_first : upper_first);
+    auto b = p.create_integer_variable(0_i, 1_i);
+    p.post(EqualsIff{x, y, b == 1_i});
+
+    auto proof_name = proofs ? make_optional("equals_test_holey_" + string{swapped ? "swapped" : "plain"}) : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{x, y, b});
+
+    check_results(proof_name, expected, actual);
+}
+
 // A reified equals whose operands are wide and do not overlap. Nothing else in
 // this file goes anywhere near this shape: every other domain here lives inside
 // [-10, 10], and range_infer_test works inside [0, 40], so the no-overlap rule
@@ -202,11 +247,9 @@ auto run_no_overlap_equals_test(bool proofs) -> void
 // row of the large-domain audit lane is what holds that down, and it has the
 // guard instrumentation to fail rather than merely take a long time.
 //
-// Proofs off only, and deliberately. The rule's justification emits one RUP line
-// per value in the operand's range, so the proof genuinely is linear in the
-// width and a proving run at 10^9 is hopeless rather than merely slow; whether a
-// cheaper certificate exists is #867. run_no_overlap_equals_test above carries
-// the proof coverage, at a width a checker can survive.
+// Proofs off only, and deliberately: at this width the *reason* is the thing
+// under test and it is only built when reasons are wanted. The proof side has
+// its own test below, at a width whose regression is slow rather than fatal.
 //
 // Solutions are not enumerated: there are ~2.5e17 of them. Search stops at the
 // first node, which is reached only once root propagation has finished.
@@ -234,6 +277,62 @@ auto run_wide_no_overlap_equals_test() -> void
         throw UnexpectedException{"wide no overlap equals test never reached a node"};
     if (! condition_is_false)
         throw UnexpectedException{"wide no overlap equals did not force its condition false at the root"};
+}
+
+// The same shape, proved, and this one pins the *cost*: it fails if the witness
+// goes back to being one line per value.
+//
+// Before #867 the rule's justification emitted one RUP line per value in the
+// first operand's bounds range, so a proving run at this width wrote a hundred
+// megabytes of proof for a fact that two bounds settle -- which is why the test
+// above could only be run with proofs off. The interval witness states it in a
+// fixed handful of lines at any width, so the assertion is on the proof's line
+// count, checked before the proof is handed to veripb.
+//
+// The bound is loose, and deliberately not a pinned figure. Most of what a proof
+// this small contains is fixed overhead -- the header, the initial bound axioms,
+// the order-encoding definitions the conclusion's literals pull in -- and that
+// part is free to move as unrelated proof scaffolding changes, whereas the thing
+// under test is whether the witness is a constant or a million lines. Any
+// threshold between the two separates them; pinning the exact figure would only
+// buy a lane that goes red for reasons that have nothing to do with this rule.
+//
+// The width is 10^6 rather than the 10^9 above: a regression must fail, not
+// wedge, and at 10^9 a per-value witness would fill the disk before anything
+// could notice.
+auto run_wide_proved_no_overlap_equals_test() -> void
+{
+    const auto width = 1000000_i;
+    const auto line_budget = 1000;
+    println(cerr, "wide no overlap equals with proofs: expecting a proof of well under {} lines", line_budget);
+
+    Problem p;
+    auto x = p.create_integer_variable(0_i, width / 2_i);
+    auto y = p.create_integer_variable(width / 2_i + 1_i, width);
+    auto b = p.create_integer_variable(0_i, 1_i);
+    p.post(EqualsIff{x, y, b == 1_i});
+
+    // Solutions are not enumerated: there are ~2.5e11 of them. Stopping at the
+    // first node still completes a checkable proof, exactly as
+    // check_initialisation_only_for_tests does.
+    const string proof_name = "equals_test_wide_proved";
+    solve_with(
+        p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }}, make_optional<ProofOptions>(ProofFileNames{proof_name}));
+
+    auto lines = 0;
+    {
+        std::ifstream proof{proof_name + ".pbp"};
+        if (! proof)
+            throw UnexpectedException{"wide proved no overlap equals wrote no proof"};
+        for (string line; getline(proof, line);)
+            ++lines;
+    }
+    println(cerr, "wide no overlap equals proof is {} lines", lines);
+    if (lines > line_budget)
+        throw UnexpectedException{"wide proved no overlap equals wrote " + std::to_string(lines) +
+            " proof lines, which is not a witness whose size is independent of the domain width"};
+
+    verify_proof_and_clean_up(proof_name);
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -292,7 +391,11 @@ auto main(int argc, char * argv[]) -> int
             continue;
         if (run_no_overlap) {
             run_no_overlap_equals_test(proofs);
-            if (! proofs)
+            run_holey_no_overlap_equals_test(proofs, false);
+            run_holey_no_overlap_equals_test(proofs, true);
+            if (proofs)
+                run_wide_proved_no_overlap_equals_test();
+            else
                 run_wide_no_overlap_equals_test();
         }
         for (auto & [r1, r2] : data) {
