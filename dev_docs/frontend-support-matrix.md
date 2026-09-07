@@ -1,5 +1,12 @@
 # Frontend support matrix
 
+> **This document is being retired.** Its rows are migrating into the
+> "Concrete constraints and frontend coverage" table of each per-family
+> document under `dev_docs/constraints/`, which is why those tables use the
+> cell vocabulary below. Update the family document rather than this file, and
+> delete this one once every family carries its rows. See
+> [`constraints/TEMPLATE.md`](constraints/TEMPLATE.md).
+
 The same constraint shows up under three frontends — FlatZinc/MiniZinc
 (`minizinc/`), XCSP3 (`xcsp/`), and (planned) CPMpy. This document is the
 single source of truth for "which gcs propagator do we have, and which
