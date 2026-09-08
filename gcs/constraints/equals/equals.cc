@@ -676,16 +676,49 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
 
     // on_change for the shared set, because the undecided pass reads in_domain and
     // domains_intersect, and the must-hold pass intersects the two domains.
+    //
+    // Unless one operand is a constant, which collapses both of those reads. With
+    // v2 pinned at c its optional_single_value is always set, so the undecided pass
+    // never reaches the domains_intersect arm at all: it reports MustHold exactly
+    // when v1 is instantiated to c, and MustNotHold exactly when c leaves v1's
+    // domain -- its "v1 fixed to something other than c" and "! in_domain(v1, c)"
+    // arms being the same fact stated twice, since fixing v1 elsewhere removes c.
+    // The must-hold pass likewise finds the constant's single value and fixes v1 to
+    // it on its first wake, and the must-not-hold pass removes it, both returning
+    // DisableUntilBacktrack, so once the condition is decided the condition's own
+    // trigger is all that arm ever needs.
+    //
+    // So the propagator turns on two facts about the other operand: whether it is
+    // instantiated, and whether c is still in its domain. on_instantiated covers
+    // the first -- every State::change_state_for_* that leaves a domain a singleton
+    // reports Inference::Instantiated, whichever operation got it there. A refined
+    // watch on `other != c` covers the second, and wakes only the propagator whose
+    // value was the one removed, where on_change wakes every propagator posted on
+    // that variable. In a model that posts a reified equality per (variable, value)
+    // pair -- FlatZinc's int_eq_reif against a constant, which is what
+    // `x == sum(bool2int(xs[i] == v))` flattens to -- that is the difference
+    // between one wake per interior removal and one per value in the domain
+    // (issue #889).
+    //
+    // Two constant operands need no special case: on_change registers no wake for a
+    // constant either, and every pass decides outright on the one call every
+    // propagator gets when search starts.
     Triggers triggers;
-    triggers.on_change = {_v1, _v2};
+    if (is_constant_variable(_v1) != is_constant_variable(_v2)) {
+        auto [other, constant] = is_constant_variable(_v2) ? pair{_v1, constant_value_of(_v2)} : pair{_v2, constant_value_of(_v1)};
+        triggers.on_instantiated = {_v1, _v2};
+        triggers.refined.emplace_back(other != constant, 0u);
+    }
+    else
+        triggers.on_change = {_v1, _v2};
 
-    // But an unconditional NotEquals only ever runs the must-not-hold pass, which
-    // reads nothing but optional_single_value and disables itself until backtrack
-    // once it has acted -- so on_instantiated cannot miss its wake, and the wakes
-    // it drops are the expensive ones: fixing a vertex removes one value from each
-    // of its d neighbours, and under on_change each of those interior removals
-    // woke every other not-equals on that neighbour to find neither end fixed
-    // (issue #819).
+    // An unconditional NotEquals, constant operand or not, only ever runs the
+    // must-not-hold pass, which reads nothing but optional_single_value and
+    // disables itself until backtrack once it has acted -- so on_instantiated
+    // cannot miss its wake, and the wakes it drops are the expensive ones: fixing
+    // a vertex removes one value from each of its d neighbours, and under
+    // on_change each of those interior removals woke every other not-equals on
+    // that neighbour to find neither end fixed (issue #819).
     Triggers triggers_when_must_not_hold;
     triggers_when_must_not_hold.on_instantiated = {_v1, _v2};
 

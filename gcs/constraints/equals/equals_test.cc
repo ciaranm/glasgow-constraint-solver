@@ -194,6 +194,75 @@ auto run_no_overlap_equals_test(bool proofs) -> void
     check_results(proof_name, expected, actual);
 }
 
+// The nmseq shape in miniature: an indicator b[v] per value, each posted as a
+// reified equality between x and the *constant* v, plus a driver g[v] that
+// punches v out of x's interior on its own.
+//
+// The driver is what makes this lane different from every other one here. Every
+// other test posts a single constraint over its operands, so nothing ever
+// removes an interior value from one: the only domain event a propagator is
+// asked about is an instantiation, and a trigger that can see nothing finer
+// passes. Nor is it enough to punch the hole with a disequality against another
+// branched variable -- tried, and the search fixed b[v] before it ever got round
+// to making the hole, so the interesting node was never reached. g[v] = 1 makes
+// the hole directly, from a variable the brancher can reach while b[v] is still
+// free, and then b[v] = 0 is a pruning nothing else in the model can make.
+//
+// A trigger that misses it loses no solutions -- search still finds the right
+// answer, just after exploring a subtree it should have pruned -- so this is
+// checked as consistency at every node, not as a solution set. It is what stands
+// behind the constant-operand triggers in ReifiedEquals::install_propagators;
+// dropping the refined watch and leaving only on_instantiated fails it. Note
+// that g[v]'s own constraint has a constant operand too, so the not-equals-if
+// arm of the same reasoning is under test alongside the equals-iff one. See
+// issue #889.
+auto run_value_indicator_equals_test(bool proofs, int n) -> void
+{
+    print(cerr, "value indicator equals {}{}", n, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    // x takes some value; b says which; g[v] may forbid v, and may not forbid
+    // the value x actually takes.
+    set<tuple<int, vector<int>, vector<int>>> expected, actual;
+    for (int xv = 0; xv < n; ++xv) {
+        vector<int> bs;
+        for (int v = 0; v < n; ++v)
+            bs.push_back(xv == v ? 1 : 0);
+        for (int mask = 0; mask < (1 << n); ++mask) {
+            if (mask & (1 << xv))
+                continue;
+            vector<int> gs;
+            for (int v = 0; v < n; ++v)
+                gs.push_back((mask >> v) & 1);
+            expected.emplace(xv, bs, gs);
+        }
+    }
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto x = p.create_integer_variable(0_i, Integer{n - 1});
+    vector<IntegerVariableID> bs, gs;
+    for (int v = 0; v < n; ++v) {
+        bs.push_back(p.create_integer_variable(0_i, 1_i));
+        gs.push_back(p.create_integer_variable(0_i, 1_i));
+    }
+
+    for (int v = 0; v < n; ++v) {
+        p.post(EqualsIff{x, constant_variable(Integer{v}), bs[v] == 1_i});
+        p.post(NotEqualsIf{x, constant_variable(Integer{v}), gs[v] == 1_i});
+    }
+
+    // Every position is GAC, and each is achieved by a single propagator over
+    // its own scope: b[v] = 1 dies exactly when v leaves x, g[v] = 1 dies
+    // exactly when x is fixed at v, and x loses v exactly when b[v] = 0 or
+    // g[v] = 1. No deduction here crosses two constraints.
+    auto proof_name = proofs ? make_optional("equals_test_value_indicator_" + std::to_string(n)) : nullopt;
+    solve_for_tests_checking_consistency(
+        p, proof_name, expected, actual, tuple{pair{x, CheckConsistency::GAC}, pair{bs, CheckConsistency::GAC}, pair{gs, CheckConsistency::GAC}});
+
+    check_results(proof_name, expected, actual);
+}
+
 // A reified equals whose operands are disjoint but *interleaved*: each one's
 // values sit in the other's holes, so no bound separates them and the witness
 // has to account for every run. This is the shape the interval certificate of
@@ -837,6 +906,8 @@ auto main(int argc, char * argv[]) -> int
             continue;
         if (run_no_overlap) {
             run_no_overlap_equals_test(proofs);
+            run_value_indicator_equals_test(proofs, 4);
+            run_value_indicator_equals_test(proofs, 6);
             run_holey_no_overlap_equals_test(proofs, false);
             run_holey_no_overlap_equals_test(proofs, true);
             run_holey_no_overlap_view_equals_test(proofs);

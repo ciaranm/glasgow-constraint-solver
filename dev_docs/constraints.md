@@ -345,8 +345,17 @@ These wake the propagator on any change to a whole *variable*. A propagator that
 instead cares about specific *literals* (`x = v`, `x >= k`, ...) on many variables
 and is otherwise dormant can arm **refined per-literal watches** via
 `Triggers::refined` and the `RefinedWatchContext` — see [Refined
-triggers](refined-triggers.md). That is a specialised mechanism (its first client
-is the learned-nogood store); most constraints want the coarse triggers above.
+triggers](refined-triggers.md). Most constraints want the coarse triggers above;
+reach for a watch when the propagator's whole verdict turns on a literal and
+`on_change` would therefore wake it for every *other* value too. `ReifiedEquals`
+against a constant `c` is the small case — instantiation plus `x != c` is the
+whole of what it reads, where `on_change` woke it once per value in `x`'s domain
+(issue #889) — and the learned-nogood store is the large one.
+
+A refined-watch literal puts its variable in the propagator's **scope** (so
+degree and adjacency are unchanged) without arming a coarse trigger; use
+`Triggers::scope_only` to declare scope for a variable that neither mechanism
+mentions.
 
 ### install_initialiser
 

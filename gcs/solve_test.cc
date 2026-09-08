@@ -318,6 +318,62 @@ TEST_CASE("Learned nogoods: refined matches scan under restarts")
     CHECK(refined.solutions == scan.solutions);
 }
 
+// The same differential, over a model that contains an idempotence claimant.
+//
+// The pigeonhole above does not: NotEquals never claims, so every round ends on
+// the claim-free replay path, and the claim-gated one -- which for a long time
+// fired no refined watches at all -- was never reached. Element claims, so this
+// instance reaches it, and on the engine before issue #889 refined and scan part
+// company here: 30 restarts and 45 learned nogoods against 29 and 43. It is a
+// small copy of `langford --size=11 --restarts=100`, where the same gap is
+// 259,103 recursions against 258,670.
+//
+// Same rules as above: deterministic branching, so the trees can only differ
+// through propagation, and the instance has to restart and learn or the
+// differential says nothing. dom_then_deg is safe here despite reading degree,
+// because a refined-watch literal puts its variable in the propagator's scope
+// exactly as a coarse trigger does -- which is also why the two paths agree on
+// every count once the engine is fixed.
+TEST_CASE("Learned nogoods: refined matches scan under restarts, with a claimant")
+{
+    auto run = [](bool scan) -> Stats {
+        set_learned_nogoods_scan(scan);
+
+        Problem p;
+        const int k = 6;
+        vector<IntegerVariableID> position, solution;
+        for (int i = 0; i < 2 * k; ++i) {
+            position.emplace_back(p.create_integer_variable(0_i, Integer{2 * k - 1}));
+            solution.emplace_back(p.create_integer_variable(1_i, Integer{k}));
+        }
+        p.post(AllDifferent{position});
+        for (int i = 0; i < k; ++i) {
+            auto i_var = p.create_integer_variable(Integer{i + 1}, Integer{i + 1});
+            p.post(Element{i_var, position[i], &solution});
+            p.post(Element{i_var, position[i + k], &solution});
+            p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i]});
+        }
+
+        return solve_with(p,
+            SolveCallbacks{
+                .branch = branch_with(variable_order::dom_then_deg(p), value_order::smallest_first()), .restarts = RestartSchedule::luby(1)},
+            nullopt);
+    };
+
+    auto refined = run(false);
+    auto scan = run(true);
+    set_learned_nogoods_scan(false);
+
+    CHECK(refined.restarts > 0);
+    CHECK(refined.learned_nogoods > 0);
+
+    CHECK(refined.recursions == scan.recursions);
+    CHECK(refined.failures == scan.failures);
+    CHECK(refined.restarts == scan.restarts);
+    CHECK(refined.learned_nogoods == scan.learned_nogoods);
+    CHECK(refined.solutions == scan.solutions);
+}
+
 // An unsatisfiable Langford-pairing instance (size 5): rich enough that
 // AllDifferent and Element prune at the root, so the root node emits
 // guess-independent propagation that later restart passes do not re-derive.

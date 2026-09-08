@@ -160,6 +160,28 @@ ten-term not-equals and was a reproducible 6.9% there. Both had identical
 `nodes` *and* identical `effectfulPropagations` — which is the shape to insist
 on, and the one that says the fixpoint at every node is untouched.
 
+**When every coarse trigger is too coarse, watch the literal.** `on_change` is
+the finest coarse granularity there is, and it is still per *variable*: a
+propagator that only cares whether one particular value is still in a domain
+wakes for every removal from it. A model that posts one such propagator per
+(variable, value) pair then wakes `d` of them for each removal, `d - 1` of which
+find nothing. `nmseq` — FlatZinc's `int_eq_reif(x, c, b)`, from
+`x == sum(bool2int(xs[i] == v))` — did exactly that: 130,756 `Equals` calls per
+node at 4.4% effectful, 82% of the model's propagation time, at a per-call cost
+(52 ns) that was already fine. Registering the two literals the propagator
+actually turns on instead (`Triggers::refined`, see refined-triggers.md) took it
+to 4.4M calls at 98.6% effectful on an identical tree — 22.6x fewer, 2.1x faster
+end to end — and the C++ `magic_series --size=300`, the same shape, to 2.6x
+fewer propagations for 10.5% fewer instructions (issue #889). The lever is the
+same one as #807 and #819; what is different is that no coarse trigger could
+have expressed it.
+
+Watches are not free: the engine tests every watch armed on a variable against
+each inference on it, so the scan is the same length as the coarse trigger list
+and only the per-item body is cheaper (a `test_literal` against a full propagator
+call). Reach for one when the propagator's whole verdict turns on a *literal*,
+not when it merely reads a few values.
+
 **A `_micros` share is not necessarily wake cost.** `GCS_PROPAGATOR_STATS=time`
 brackets the propagator call, so a contradiction's `throw
 TrackedPropagationFailed` unwinds inside the sample. `lin_not_equals` on `tpp`
