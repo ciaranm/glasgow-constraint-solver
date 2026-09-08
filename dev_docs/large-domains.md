@@ -202,6 +202,52 @@ Together these take a rewrite that was 2.5% slower on holey-domain search back t
 level, while keeping the wide case (200 ms of work, and 131 seconds in the audit
 probe) at nothing.
 
+**A third, learned on `Element` (#878): a domain's runs are not free to read.**
+Not every H1a site is an inference at all. `Element`'s GAC sweep subtracts each
+array entry's domain from the result's still-unsupported set, which is internal
+bookkeeping — the set of values removed from `result` is identical either way, so
+the proof does not change and there is nothing to get past the checker. What is
+left is purely a question of cost, and the run-level form of that subtraction has
+to get the runs from somewhere.
+
+Four shapes were measured on `langford --size=11`, whose 25.7M `element` calls
+are the only variable-array `Element` in a hot loop in the benchmark set (`qap`,
+`tsp`, `table_layout` and `p_dispersion` all post the constant-array form, which
+takes a different branch, and `hitori` and `seat_moving` post the variable one
+but finish in under a tenth of a second). Instructions retired and cycles,
+median of five pinned runs, with the search identical in all five:
+
+| how the entry's domain is subtracted | instructions | cycles |
+|---|---|---|
+| a run of `erase()` per value — before (#515's fallback) | 47.587e9 | 19.789e9 |
+| **contiguity test, else `copy_of_values()` + `for_each_interval()`** | **47.170e9 (−0.88%)** | **19.734e9 (−0.28%)** |
+| `copy_of_values()` + `for_each_interval()`, unconditionally | 47.640e9 (+0.11%) | 19.821e9 (+0.16%) |
+| a new zero-copy `State::for_each_interval_immutable()`, unconditionally | 47.324e9 (−0.55%) | 20.220e9 (+2.18%) |
+| the same, in the holey branch only | 47.581e9 (−0.01%) | 20.440e9 (+3.29%) |
+
+All four fix the hazard — none of them walks a value — so what separates them is
+what the *contiguous* entry pays, which is most entries here. Two things in that
+table are worth carrying forward.
+
+Dropping the contiguity test and materialising every entry costs 0.1% of the
+instructions, which is the `small_vector` copy, so the test earns its keep. And
+the shape that avoids the copy altogether is the one that loses: both zero-copy
+variants retire no more instructions than the per-value fallback and burn 2–3%
+more cycles than anything else in the table. Nothing in `branch-misses` or
+`L1-icache-load-misses` accounts for that (three more pinned runs, medians): all
+four sit at 0.167–0.168e9 branch misses, and the variant with the *best* icache
+figure — 0.125e9, against 0.142e9 for the per-value fallback — has the
+second-worst cycles. So the extra cycles are stall this measurement does not
+explain, and chasing it further was not worth doing once the answer was "don't".
+**Do not reach for a new `State` iteration primitive for a per-entry inner loop
+on the strength of the copy it saves; measure it, because the copy is not what
+costs.**
+
+Instructions retired is the metric that settles a comparison like this one, and
+worth reaching for before wall time: identical search makes it reproducible to
+0.002% here, where wall time and cycles move ±1% between batches and about 3%
+between one hour and the next.
+
 **Where the equality is guarded by a conjunction, the same lemmas take a longer
 guard.** `Element`'s model is `result - array[i] == 0` half-reified on the
 conjunction of index conditions, so it is `ArrayMinMax`'s shape with the selector
@@ -407,14 +453,14 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-70 constraint probes, plus 20 heuristic ones in the second table. The lane
+71 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
 | **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (37) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, `AllEqual` with holes and without, `Among`, `In`, `GlobalCardinality`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **Clean** (38) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms and with a holey entry, `AllEqual` with holes and without, `Among`, `In`, `GlobalCardinality`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality`, `Table` and `Element` started
@@ -474,7 +520,8 @@ now a `KnownTrip`:
 * `Element` needs the array entries to be **narrow**. The GAC sweep erases each
   entry's domain from the result's still-unsupported set, so a *wide* entry
   erases everything in one `erase_range` and leaves no remainder — the original
-  probe made the hazard disappear by being too wide.
+  probe made the hazard disappear by being too wide. (And a narrow entry reaches
+  only half of that sweep; see below.)
 * `AllEqual` needs holes *and* a large difference. Bounds propagation runs first
   (`all_equal.cc:95`) and collapses a merely narrow partner, so the hole has to
   be spread across the full width: a two-value domain at the extremes leaves the
@@ -496,6 +543,20 @@ The moral for anyone adding a row: **a probe that survives has proved nothing
 until you have checked it reached the code you meant to test.** Two of the three
 real hazards above were hidden by the probe being *more* extreme than necessary,
 which is not the direction one expects to have to correct.
+
+**And bracketing an axis with two probes is not the same as covering it.** The
+`Element` bullet above is the case to learn this from, because sharpening it
+once was not enough. The row it produced makes the array entries narrow, which
+reaches the sweep's remainder; the row it replaced made them wide, which reaches
+the `erase_range` that leaves no remainder. Between the two sits the shape that
+reaches neither: an entry that is wide *and* has a hole in it. Both rows said
+`Clean` while that shape walked a 10^9-value entry one value at a time (#878):
+4.2 s of root propagation at that width, and 0 ms after the fix. The branch is
+not selected by the width at all — it is selected by
+`domain_size(entry) == hi - lo + 1`, which a narrow entry satisfies and a wide
+contiguous one satisfies too. Before adding a row, read the *condition* on the
+branch and pick the probe from that, rather than reasoning about the axis the
+issue is named after. `Element/holey` is that row.
 
 One deliberate non-axis: the lane runs **without proof logging**. `NValue`'s
 H2′ is caught anyway, because its per-value work is in `prepare()`, but a
@@ -606,18 +667,21 @@ separately, because they mean different things:
 
 ### Results at 10^3 → 10^4
 
-Re-measured over all 70 probes after the interval rewrites landed for
+Re-measured over all 71 probes after the interval rewrites landed for
 `ArrayMinMax`, `Table`, `Among`, `Element`, `In`, `GlobalCardinality` and
-`AllEqual/holes`. The figures move, so re-run the survey rather than
-quoting this table after touching any propagator's removal loop — that is how the
-previous version of it went stale, see below.
+`AllEqual/holes`, and again after #878 — which moved nothing: `Element/holey` is
+a new row at a flat 41 rows and 51 steps, and the rewrite behind it changes which
+values get removed not at all, so no other row could have moved either. The
+figures move, so re-run the survey rather than quoting this table after touching
+any propagator's removal loop — that is how the previous version of it went
+stale, see below.
 
 | | growth (opb / steps) | constraints |
 |---|---|---|
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 33984 → 339984 steps) |
-| neither | 1.0x / 1.0x | everything else, 61 of 70 |
+| neither | 1.0x / 1.0x | everything else, 62 of 71 |
 
 The last row means "does not grow with the width", not "identical at both widths",
 and three entries in it are worth naming so nobody reads them as a promise.
@@ -679,7 +743,7 @@ whose steps grow at a fixed encoding is a propagator that has an interval and
 spells it out. That is a real conclusion rather than a gap in the survey, and it
 should be re-tested after stage 4 rather than assumed to stay true — a genuine
 candidate would be a growing row whose removed set provably is not an interval,
-and none of the 70 probes produces one today.
+and none of the 71 probes produces one today.
 
 Two things kept this table wrong for longer than it should have been. The probe
 sharpening of PR #849 turned exactly these three rows from `HazardNotReached` into
