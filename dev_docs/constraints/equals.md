@@ -218,30 +218,32 @@ merging the documents would bury two distinct OPB encodings in one section.
 ### OPB encoding
 
 The operands are compared through their **bit** (binary) encodings, not their
-order literals. Writing `⟦v⟧` for the bit sum of `v`:
+order literals. Writing `BinEnc(v)` for the bit-sum encoding of `v` --- the
+notation [`justification-techniques.md`](../justification-techniques.md) and
+the thesis both use:
 
 ```
-MustHold      (Equals)          ⟦v1⟧ - ⟦v2⟧ = 0
+MustHold      (Equals)          BinEnc(v1) - BinEnc(v2) = 0
                                   split into two rows, le and ge
 
-MustNotHold   (NotEquals)       ne                     ->  ⟦v1⟧ - ⟦v2⟧ >= 1
-                                ¬ne                    ->  ⟦v1⟧ - ⟦v2⟧ <= -1
+MustNotHold   (NotEquals)       ne                     ->  BinEnc(v1) - BinEnc(v2) >= 1
+                                ¬ne                    ->  BinEnc(v1) - BinEnc(v2) <= -1
                                   with one fresh flag ne per constraint
 
-If            (EqualsIf)        cond                   ->  ⟦v1⟧ - ⟦v2⟧ = 0
+If            (EqualsIf)        cond                   ->  BinEnc(v1) - BinEnc(v2) = 0
                                   split into le and ge, each half-reified
 
-NotIf         (NotEqualsIf)     gt                     ->  ⟦v1⟧ - ⟦v2⟧ >= 1
-                                ¬gt                    ->  ⟦v1⟧ - ⟦v2⟧ <= 0
-                                lt                     ->  ⟦v1⟧ - ⟦v2⟧ <= -1
-                                ¬lt                    ->  ⟦v1⟧ - ⟦v2⟧ >= 0
-                                lt + gt + ¬cond        >=  1
+NotIf         (NotEqualsIf)     gt                     ->  BinEnc(v1) - BinEnc(v2) >= 1
+                                ¬gt                    ->  BinEnc(v1) - BinEnc(v2) <= 0
+                                lt                     ->  BinEnc(v1) - BinEnc(v2) <= -1
+                                ¬lt                    ->  BinEnc(v1) - BinEnc(v2) >= 0
+                                cond                   ->  lt + gt >= 1
 
-Iff           (EqualsIff,       cond                   ->  ⟦v1⟧ - ⟦v2⟧ = 0
+Iff           (EqualsIff,       cond                   ->  BinEnc(v1) - BinEnc(v2) = 0
                NotEqualsIff)      split into le and ge, each half-reified
-                                gt                     ->  ⟦v1⟧ - ⟦v2⟧ >= 1
-                                lt                     ->  ⟦v1⟧ - ⟦v2⟧ <= -1
-                                lt + gt + cond         >=  1
+                                gt                     ->  BinEnc(v1) - BinEnc(v2) >= 1
+                                lt                     ->  BinEnc(v1) - BinEnc(v2) <= -1
+                                ¬cond                  ->  lt + gt >= 1
 ```
 
 The encoding is **definitional**: every row states part of what the constraint
@@ -278,7 +280,7 @@ row parses against cake's re-derived model.
 | `@c[id][gt]`, `@c[id][lt]` | the two strict comparisons | `MustNotHold` |
 | `@b[id][gt][r]`, `@b[id][gt][f]` | forward/reverse halves of the `gt` selector | `NotIf` (both), `Iff` (`[r]` only) |
 | `@b[id][lt][r]`, `@b[id][lt][f]` | ditto for `lt` | `NotIf` (both), `Iff` (`[r]` only) |
-| `@c[id][al1]` | the at-least-one tying `lt`, `gt` and the condition | `NotIf`, `Iff` |
+| `@c[id][al1]` | the at-least-one: `cond -> lt + gt >= 1` for `NotIf`, `¬cond -> lt + gt >= 1` for `Iff` | `NotIf`, `Iff` |
 
 The selector-flag rows are labelled with the flag's own name plus a role suffix
 (`pb_file_string_for(flag) + "[r]"`), not with `@c[id][...]`, because that is
@@ -523,7 +525,24 @@ Nine rules. The first four are the must-hold pass (`enforce_equality`), the
 fifth is the must-not-hold pass, and the last four are the reified verdicts of
 the undecided pass.
 
-Three facts hold for all nine and are not repeated in each entry.
+Four facts hold for all nine and are not repeated in each entry.
+
+**What licenses the RUP.** Every rule here is an instance of a published
+justification procedure, except rule 9, which is ours. The chain is always the
+same: our encoding gives each operand atomic bound and equality literals over a
+binary backbone, `Inv1` plus **Theorem 3.3** make unit propagation complete for
+the implied atomic literals *within* one variable, and one of
+**Theorems 2.7–2.9** carries a fact *across* the equality rows.
+[`justification-techniques.md`](../justification-techniques.md) states those
+facts and their preconditions; each rule below names the procedure it is an
+instance of. The reification condition rides along in every reason by
+**Theorem 2.6**, which reduces a step stated under a conjunction of literals to
+the same step with those literals assumed — so it is never mentioned again.
+
+The precondition that matters for this family is Theorem 2.9's **`B ∈ {0,1}`**.
+The equality is two rows, `BinEnc(v1) - BinEnc(v2) >= 0` and `<= 0`, so each
+half has degree 0 and a bound crosses it. A family whose row degree could grow
+past 1 would lose that licence; see Example 2.15 for the counterexample.
 
 **No hint carries operand data.** All three hint types in the family derive
 from `hints::Equals`, whose wire form is `(constraint_id <id>)`, and nothing
@@ -566,7 +585,12 @@ reason is what the conclusion is asserted under.
 - **Strength** — `GAC` on its own, for two distinct operands.
 - **Algorithm** — two `optional_single_value` reads. O(1).
 - **Why it is true** — immediate from `v1 = v2`.
-- **Proof technique** — `RUP`.
+- **Proof technique** — `RUP`, by **JP 3.12 (equality propagation)**, whose
+  correctness proof is **Theorem 2.8** applied twice: the negated conclusion
+  propagates `v1 = v` and `¬(v2 = v)`, the first of which fixes every bit of
+  `BinEnc(v1)`, the equality rows then fix every bit of `BinEnc(v2)`, and that
+  contradicts the definition of `v2 = v`. This is the inference the thesis uses
+  to introduce that procedure.
 - **Reason** — the base reason (the condition literal) plus `v1 = *val1`.
   Minimal.
 - **Assertion** — the clause `other = v ∨ ¬(v1 = v) ∨ ¬cond`, e.g.
@@ -596,6 +620,13 @@ reason is what the conclusion is asserted under.
 - **Why it is true** — if `v1 = v2` then any value in neither domain is in
   neither variable's support.
 - **Proof technique** — `RUP+hints` — two bound lemmas, then the conclusion.
+  Each lemma is an instance of **JP 3.2 (comparison)** against one half of the
+  equality, licensed by **Theorem 2.9** with `B = 0`: the lemma's negation
+  supplies a lower bound on one operand, the equality half, and an upper bound
+  on the other, which is exactly 2.9's contradictory triple. The *conclusion*
+  is then a plain RUP once the lemmas are in place. Nothing here is novel; what
+  is specific to us is only that the conclusion is spelled as a range literal,
+  which is why the lemmas are needed at all (below).
 - **Reason** — the base reason plus `not_in_range(other, lo, hi)`. A fresh
   snapshot per interval, so the justification's repeated materialisations do
   not see an accumulating literal. Minimal.
@@ -635,13 +666,26 @@ reason is what the conclusion is asserted under.
   unaided. The lemmas are load-bearing in general, and a narrow fixture would
   have reported that they are not.
 
-Why the bridge is needed at all: a range literal asserts only *order* atoms,
-never bits, and the equality rows are a *bit*-sum equality — so
-`¬(y ∈ [4,6])` is not RUP from `¬(x ∈ [4,6])` on its own. Each bridge lemma is
-RUP because its negation supplies a pair of opposing bounds that contradict the
-equality at the bit level. The lemmas mention no range literal, so any literal
-sharing those endpoints can reuse them. The pairing assumes a **same-sign**
-link; a sign-flipped link, as `Abs` has, needs the mirrored pairing.
+Why the bridge is needed at all, and this is the part worth being precise
+about, because the neighbouring facts are easy to conflate:
+
+- **A range literal cannot cross the equality.** It asserts only *order* atoms,
+  never bits, and the equality rows are a *bit*-sum equality — so
+  `¬(y ∈ [4,6])` is not RUP from `¬(x ∈ [4,6])` on its own. Nothing in
+  Theorems 2.7–2.9 applies to a literal that never touches the bit sum.
+- **A single bound can.** Each bridge lemma's negation supplies a lower bound on
+  one operand, an equality half, and an upper bound on the other, which is
+  Theorem 2.9's contradictory triple with `B = 0`. So the lemmas do not work
+  around a limitation of bounds; they *convert* the range literal's endpoints
+  into bounds, which are the only thing that crosses.
+- **What Example 2.15 rules out is neither of those.** It is the counterexample
+  to relaxing `B ∈ {0,1}`, over a middle row of degree 3. An equality half has
+  degree 0, so it is inside the theorem, and a two-term linear row with a
+  larger constant is outside it.
+
+The lemmas mention no range literal, so any literal sharing those endpoints can
+reuse them. The pairing assumes a **same-sign** link; a sign-flipped link, as
+`Abs` has, needs the mirrored pairing.
 
 ### Rule: symmetric-difference-values
 
@@ -651,7 +695,7 @@ link; a sign-flipped link, as `Abs` has, needs the mirrored pairing.
 - **Algorithm** — the same merge-walk, then a per-value loop over each removed
   interval. O(removed **values**).
 - **Why it is true** — as rule 2.
-- **Proof technique** — `RUP`.
+- **Proof technique** — `RUP`, by **JP 3.12** per value, exactly as rule 1.
 - **Reason** — the base reason plus `other ≠ val`, rebuilt per value. Minimal.
 - **Assertion** — `pruned ≠ val ∨ ¬(other ≠ val) ∨ ¬cond`.
 - **Hint** — `hints::Equals{owner}`.
@@ -673,7 +717,10 @@ link; a sign-flipped link, as `Abs` has, needs the mirrored pairing.
   domain intersection.
 - **Algorithm** — two `bounds` reads, four `infer_*` calls. O(1).
 - **Why it is true** — immediate from `v1 = v2`.
-- **Proof technique** — `RUP`.
+- **Proof technique** — `RUP`, by **JP 3.2 (comparison)** against one half of
+  the equality, licensed by **Theorem 2.9** with `B = 0` — the same licence as
+  rule 2's bridge lemmas, and the same shape: a lone bound *does* cross a
+  bit-sum equality, because each half is a difference row of degree 0.
 - **Reason** — the base reason plus the one bound literal being carried across.
   Minimal.
 - **Assertion** — e.g. `v2 ≥ lb1 ∨ ¬(v1 ≥ lb1) ∨ ¬cond`.
@@ -699,7 +746,10 @@ differ at all, so up to three of them can be no-ops. This is deliberate:
 - **Algorithm** — two `optional_single_value` reads. O(1). This is the busiest
   rule in the solver on clique-encoded models.
 - **Why it is true** — immediate from `v1 ≠ v2`.
-- **Proof technique** — `RUP`.
+- **Proof technique** — `RUP`, by **JP 3.1 (not-equals)**, licensed by
+  **Theorem 2.8**: the negated conclusion propagates `v1 = v` and `v2 = v`,
+  which by 2.8 fix both bit sums to `v`, contradicting the `ne` flag's
+  reification.
 - **Reason** — stated outright as `{cond, v1 = *value1}` rather than deferred,
   since the value is already in hand and both literals sit inline. Guarded on
   `want_reasons()`, so it costs nothing when nothing will read it. Minimal.
@@ -729,7 +779,11 @@ paying for a throw.
 - **Strength** — `GAC` on the condition.
 - **Algorithm** — one handle comparison. O(1).
 - **Why it is true** — `x = x`.
-- **Proof technique** — `RUP`.
+- **Proof technique** — `RUP`. No procedure needed and none applies: the
+  asserted literal is unit, so its negation alone falsifies the `al1` row
+  against the reification of `lt` and `gt`, both of which are unsatisfiable
+  with the operands aliased. **Theorem 2.6** is what lets the step be stated
+  with no reason at all.
 - **Reason** — `NoReason{}`; the fact is unconditional.
 - **Assertion** — the condition literal alone.
 - **Hint** — `hints::Equals{owner}`.
@@ -752,7 +806,10 @@ alias" bug the dup tests were added for.
 - **Strength** — `GAC` on the condition.
 - **Algorithm** — two `optional_single_value` reads and a comparison. O(1).
 - **Why it is true** — the constraint is decided by the assignment.
-- **Proof technique** — `RUP`.
+- **Proof technique** — `RUP`, by **JP 3.1** or **JP 3.12** according to which
+  way the verdict falls, with **Theorem 2.6** carrying it through the
+  reification: the two equality literals fix both bit sums by **Theorem 2.8**,
+  and the selector flags' reifications then decide the condition.
 - **Reason** — `{v1 = *value1, v2 = *value2}`. Minimal.
 - **Assertion** — the condition literal, plus the negations of the two
   equalities.
@@ -773,7 +830,11 @@ alias" bug the dup tests were added for.
   O(log intervals) depending on the domain representation.
 - **Why it is true** — the fixed value has no partner.
 - **Reason** — `{v1 = *value1, v2 ≠ *value1}`. Minimal.
-- **Proof technique** — `RUP`.
+- **Proof technique** — `RUP`, by **JP 3.12** against the `cond ->` equality
+  half: `v1 = v` fixes `BinEnc(v1)` by **Theorem 2.8**, the half-reified rows
+  would fix `BinEnc(v2)` to `v` under `cond`, and `v2 ≠ v` contradicts that —
+  so `cond` cannot hold. **Theorem 2.6** is doing the reified step here rather
+  than riding along.
 - **Assertion** — `¬cond ∨ ¬(v1 = v) ∨ ¬(v2 ≠ v)`.
 - **Hint** — `hints::Equals{owner}`.
 - **Offline reconstructibility** — `offline`.
@@ -801,21 +862,34 @@ alias" bug the dup tests were added for.
   be wherever `v2` is. `p` strictly increases, so the walk stops after at most
   one move per interval, and it stops by running `p` off the top of one of the
   two domains, which is the contradiction the conclusion needs. The six moves,
-  and what each costs:
+  and the fact each one states:
 
-  | Move | Reason literal | Lemmas |
-  |---|---|---|
-  | start at v1's lower bound | `v1 ≥ lb1` | — |
-  | v2 starts higher, jump to it | `v2 ≥ lb2` | 1 |
-  | a hole of v1 | `¬[v1 ∈ lo..hi]` | — |
-  | a run where v2 is empty | `¬[v2 ∈ lo..hi]` | 2 |
-  | p ran off the top of v1 | `v1 ≤ ub1` | — |
-  | p ran off the top of v2 | `v2 ≤ ub2` | 1 |
+  | Move | Fact stated |
+  |---|---|
+  | start at v1's lower bound | `v1 ≥ lb1` |
+  | v2 starts higher, jump to it | `v2 ≥ lb2` |
+  | a hole of v1 | `¬[v1 ∈ lo..hi]` |
+  | a run where v2 is empty | `¬[v2 ∈ lo..hi]` |
+  | p ran off the top of v1 | `v1 ≤ ub1` |
+  | p ran off the top of v2 | `v2 ≤ ub2` |
 
-  A hole of `v1` is free: the range literal's own reverse reification steps
-  `p` over it. A run where `v2` is empty costs the two bound-crossing lemmas.
+  Nothing above is about VeriPB: the walk is sound as an argument about
+  integers, and someone auditing that can stop reading here. What each move
+  *costs to certify* — nothing for a move inside `v1`, one or two lemmas for a
+  move that crosses to `v2` — is under **Proof size**.
 - **Proof technique** — `RUP+hints` — at most two lemmas per run, then the
-  conclusion.
+  conclusion. **No published procedure: this rule is ours.** The thesis states
+  the same fact as **JP 3.13 (equality infeasibility)**, one RUP line per
+  surviving value followed by a contradiction against the generic reason, which
+  is what gcs emitted until #881 and is O(domain width). The interval walk
+  below replaces it and is argued from scratch under *Why it is true*; each
+  individual lemma is still an instance of **JP 3.2** against one half-reified
+  equality row, licensed by **Theorem 2.9** with `B = 0`, and the extra `! cond`
+  each carries is **Theorem 2.6**.
+
+  This is the one rule in either audited family that an external justifier
+  cannot rebuild by replaying a procedure it already knows, which is why the
+  reconstructibility verdict below is the interesting one.
 - **Reason** — one literal per move of the walk, so one per run rather than
   one per value. For the common shape — two hole-free domains on opposite
   sides of a point — that is `{v2 ≥ lb2, v1 ≤ ub1}`, **two literals at any
@@ -850,9 +924,24 @@ alias" bug the dup tests were added for.
   consecutive `NotEqual`s, which is what a view's run degrades to) is a run,
   and a `Less` is the stop; whose variable it names says whether lemmas are
   owed.
-- **Proof size** — two lines per run where the run belongs to `v2`, none where
-  it belongs to `v1`, plus one conclusion. Emitted at `ProofLevel::Temporary`,
-  so the lemmas are deleted.
+- **Proof size** — per move of the walk, which is where *Why it is true*'s
+  table stops and this one starts:
+
+  | Move | Lemmas |
+  |---|---|
+  | start at v1's lower bound | — |
+  | v2 starts higher, jump to it | 1 |
+  | a hole of v1 | — |
+  | a run where v2 is empty | 2 |
+  | p ran off the top of v1 | — |
+  | p ran off the top of v2 | 1 |
+
+  A move inside `v1` is free: the range literal's own reverse reification steps
+  `p` over it, which is `Inv1` and Theorem 3.3 doing the work within one
+  variable. A move that crosses to `v2` needs Theorem 2.9's triple assembled,
+  which costs the two bound lemmas. So: two lines per run belonging to `v2`,
+  none for a run belonging to `v1`, plus one conclusion. Emitted at
+  `ProofLevel::Temporary`, so the lemmas are deleted.
 
   *Measured 2026-09-08 at `76bfd836`, same machine and build as [Robustness
   and limits](#robustness-and-limits). `v1` the even values of `[0, 2n)`, `v2`
@@ -1257,21 +1346,30 @@ binary (dis)equality is not a constraint anyone publishes a propagation
 algorithm for, and the interesting content here is entirely on the proof side.
 Two things are worth citing:
 
-- The bit-level bound-opposition argument the bridge lemmas rely on is what
-  the code calls the "Theorem 2.9 / Justification Procedure 3.2" configuration;
-  the range-literal layer that needs it is specified in
-  `dev_docs/range_literals_spec.md`, and `range_infer_test.cc` is the worked
-  single-inference demonstration.
+- **Almost every rule here is a published justification procedure**, from
+  McIlree's thesis (2026): JP 3.1 for the not-equals pruning, JP 3.12 for the
+  equality propagation, JP 3.2 for every bound that crosses, resting on
+  Theorems 2.7–2.9 for the unit-propagation facts and Theorem 3.3 with `Inv1`
+  for completeness within a variable. The code cites the same results as the
+  "Theorem 2.9 / Justification Procedure 3.2" configuration, and
+  `range_infer_test.cc` is the worked single-inference demonstration.
+  [`justification-techniques.md`](../justification-techniques.md) collects them;
+  the attribution for this family is essentially all to that thesis.
+- **One rule is not**, and it is the family's only novel proof content: the
+  interval-wise disjointness witness (#867/#881) replaces JP 3.13's per-value
+  statement — see below.
 - The trigger-narrowing result (issue #819) is an ordinary engineering
   measurement, but the *shape* of it — that an avoided no-op wake is worth
   ~15 ns while a delayed inference costs a co-registered O(n·d) propagator a
   whole extra run — is the transferable finding, and it generalises to every
   cheap binary constraint in the solver.
-- The **interval-wise disjointness certificate** (#867/#881) is, as far as
-  this audit found, novel — and it is the one thing in this family that is a
-  proof technique rather than an application of one. "These two domains do not
-  overlap" has an obvious per-value witness and no obvious interval-wise one,
-  because the fact really is stated value by value. Restating it as a *walk* —
+- The **interval-wise disjointness certificate** (#867/#881) is the rule
+  referred to above, and as far as this audit found it is novel — the one thing
+  in this family that is a proof technique rather than an application of one.
+  The published alternative is **JP 3.13**, which states the same fact one
+  value at a time, and which is what gcs emitted until #881. "These two domains
+  do not overlap" has an obvious per-value witness and no obvious interval-wise
+  one, because the fact really is stated value by value. Restating it as a *walk* —
   an invariant `v1 ≥ p` carried up the number line, one move per maximal run
   `v1` cannot occupy, ending by pushing `p` off the top of one domain — makes
   it cost one literal per run and at most two lines per run, at any domain
@@ -1285,6 +1383,12 @@ Two things are worth citing:
 
 ## Further reading
 
+- [`dev_docs/justification-techniques.md`](../justification-techniques.md) —
+  **read this alongside the inference catalogue.** It is what licenses the
+  `RUP` in every rule's Proof technique field: the unit-propagation facts
+  (Theorems 2.6–2.9), the completeness invariant `Inv1` and Theorem 3.3, the
+  published justification procedures each rule instantiates, and the
+  precondition (`B ∈ {0,1}`) that says when the argument stops working.
 - `dev_docs/constraints.md` — the generic three-phase structure, the inference
   and justification APIs, and the OPB building blocks this family uses without
   extending.

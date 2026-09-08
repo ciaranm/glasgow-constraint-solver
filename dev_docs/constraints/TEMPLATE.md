@@ -110,6 +110,23 @@ paragraph saying where it came from, never in a table beside figures from this
 audit. Say outright that the two sets should not be mixed; otherwise someone
 will put them in one table and compute a ratio across them.
 
+**Notation.** Write the bit-sum encoding of a variable as **`BinEnc(v)`**,
+which is the thesis's own notation and so the one a reader of both will
+recognise. Do not use `⟦v⟧`: semantic brackets already mean Boolean condition
+evaluation, and they are awkward to type.
+
+**"Lemma" is ours, informally, and stays undefined on purpose.** These
+documents, ten others under `dev_docs/`, and several headers
+(`comparator_network.hh` most of all) use "lemma" for an intermediate
+constraint a justification derives and adds to the proof before asserting its
+conclusion — normally at `ProofLevel::Temporary`, so it is deleted again. It is
+**not** a VeriPB concept, and the reason it is not defined here is that the
+thing it would name — a nameable, reusable derived statement — is a feature
+VeriPB cannot soundly have. So there is nothing formal to point at, and
+inventing a local definition would only compete with the informal usage
+everywhere else. Keep using the word; if VeriPB ever grows a `lemma`, we change
+the terminology across the tree in one go rather than per document.
+
 **Vocabularies verbatim.** Proof techniques from [Appendix
 A](#appendix-a-proof-technique-vocabulary), consistency levels from [Appendix
 B](#appendix-b-consistency-level-vocabulary), reconstructibility verdicts from
@@ -334,9 +351,21 @@ between rules stays in the entries, even when most of them agree.*
   single most-often-fudged line.*
 - **Why it is true** — *the mathematical argument, stated independently of any
   proof system. Someone should be able to check the rule is sound from this
-  line without knowing what VeriPB is.*
+  line without knowing what VeriPB is. So no proof-line counts, no emission
+  costs and no VeriPB vocabulary belong here — those go in **Proof technique**
+  and **Proof size**. It is an easy field to leak into, because for a rule
+  whose argument and whose derivation have the same shape the two want to be
+  written as one table; keep them apart anyway, since the whole value of this
+  field is being readable by someone auditing soundness rather than proofs.*
 - **Proof technique** — *from [Appendix
-  A](#appendix-a-proof-technique-vocabulary), verbatim.*
+  A](#appendix-a-proof-technique-vocabulary), verbatim, **and what licenses
+  it**: the justification procedure this rule is an instance of, and the
+  theorem behind that procedure, per
+  [justification-techniques.md](../justification-techniques.md). Where there is
+  no published procedure — the rule is ours — say so outright, because that is
+  precisely what an external justifier cannot replay, and then owe the
+  argument to **Why it is true**. State the procedure's **preconditions**: they
+  are what tells a later reader whether the citation survives a change.*
 - **Reason** — *which literals go into the reason, and whether that set is
   minimal. The reason is what the external tool sees; a non-minimal one costs
   it trimming work. A justification reads the reason, never `state`.*
@@ -488,22 +517,32 @@ and have no such notes; there is no need to manufacture one.*
 Use these names verbatim in the **Proof technique** field. A rule may name more
 than one.
 
-| Name | Meaning |
-|---|---|
-| `RUP` | plain reverse unit propagation, no hints |
-| `RUP+hints` | RUP with explicit constraint-id hints |
-| `pol` | a cutting-planes derivation: linear combination, with `saturate` / division as needed |
-| `extended reason` | a hypothetical literal pinned into the reason so the inference becomes RUP-derivable |
-| `redundance` | extension-variable introduction, i.e. defining a `ProofFlag` |
-| `dominance` | a dominance-rule derivation |
-| `cases` | the VeriPB 3 `cases` rule |
-| `chain scaffolding` | root-level per-value chains that a later RUP resolves against, as the diagram-shaped constraints use |
-| `counting argument` | pigeonhole or an at-most-one recurrence carrying an exact coefficient |
-| `sorting network` | a derivation through a network's comparator rows |
-| `a` oracle | an unchecked assertion — **not** a proof, and always also a gap |
-| `not logged` | the inference is made but nothing is emitted — always also a gap |
+**A name is not an argument.** `RUP` says which VeriPB rule we emit; it does
+not say why unit propagation will succeed, which depends on the shape of the
+row and the encoding underneath it. So the field takes a name from this table
+**and** the result that licenses it — see
+[justification-techniques.md](../justification-techniques.md), which collects
+the handful of unit-propagation facts the solver leans on and maps them onto
+the published justification procedures. Cite a procedure and a theorem; do not
+paraphrase the proof.
 
-Adding a name here is fine; inventing one locally is not.
+| Name | Meaning | Where the licence comes from |
+|---|---|---|
+| `RUP` | plain reverse unit propagation, no hints | a justification procedure (JP 3.1, 3.2, 3.12, 3.15, …) resting on Thm 2.6–2.9 |
+| `RUP+hints` | RUP with explicit constraint-id hints | as `RUP`; the hint is for the reader, not the checker |
+| `pol` | a cutting-planes derivation: linear combination, with `saturate` / division as needed | the derivation itself, stated in the rule |
+| `extended reason` | a hypothetical literal pinned into the reason so the inference becomes RUP-derivable | Thm 2.6, plus whatever licenses the underlying step |
+| `redundance` | extension-variable introduction, i.e. defining a `ProofFlag` | Thm 2.4 (extension variables) |
+| `dominance` | a dominance-rule derivation | the dominance rule's own side conditions — state them |
+| `cases` | the VeriPB 3 `cases` rule | `dev_docs/`'s `cases`-rule notes |
+| `chain scaffolding` | root-level per-value chains that a later RUP resolves against, as the diagram-shaped constraints use | the family's own argument |
+| `counting argument` | pigeonhole or an at-most-one recurrence carrying an exact coefficient | the family's own argument |
+| `sorting network` | a derivation through a network's comparator rows | the network's comparator rows, per family |
+| `a` oracle | an unchecked assertion — **not** a proof, and always also a gap | nothing; that is the point |
+| `not logged` | the inference is made but nothing is emitted — always also a gap | nothing |
+
+Adding a name here is fine; inventing one locally is not. Adding one **without**
+saying what licenses it is how the table stopped being useful the first time.
 
 ## Appendix B: consistency level vocabulary
 
