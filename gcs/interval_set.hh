@@ -586,6 +586,36 @@ namespace gcs
         }
 
         /**
+         * \brief Calls \p f(lower, upper) for each stored interval, in ascending
+         * order.
+         *
+         * Non-coroutine alternative to each_interval(), and the interval-level
+         * mirror of for_each(): no heap-allocated generator frame, the
+         * iteration inlines into the caller. Prefer this over each_interval()
+         * in hot loops, for the same reason for_each() exists -- a propagator
+         * subtracting one variable's domain from a set runs one of these per
+         * array entry per call (element.cc, issue #878).
+         *
+         * If \p f returns \c bool, returning \c false stops iteration early.
+         * If \p f returns \c void, iteration always runs to completion.
+         *
+         * \sa each_interval(), for_each()
+         */
+        template <typename F_>
+        auto for_each_interval(F_ && f) const -> void
+        {
+            if constexpr (std::is_void_v<std::invoke_result_t<F_ &, Int_, Int_>>) {
+                for (const auto & [l, u] : intervals)
+                    f(l, u);
+            }
+            else {
+                for (const auto & [l, u] : intervals)
+                    if (! f(l, u))
+                        return;
+            }
+        }
+
+        /**
          * \brief Returns a generator that yields each integer strictly between lower()
          * and upper() that is not a member of the set, in ascending order.
          *
