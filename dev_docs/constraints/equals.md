@@ -1199,11 +1199,9 @@ per-value cost (#864 and #867, fixed in #873 and #881).
 ### Next steps
 
 Ranked. **No propagation or proof bug in this family is outstanding**: the
-seven the first audit filed are #864–#870, and only #868 is still open. The
-first three items below are a shared mechanism, an engine cost and a
-benchmark, all reached through this family rather than owned by it; the fourth
-is a hole in its own test coverage that writing the per-rule tightness field
-surfaced.
+seven the first audit filed are #864–#870, and only #868 is still open. All
+three items below are a shared mechanism, an engine cost and a benchmark, all
+reached through this family rather than owned by it.
 
 1. **#882 — Give views a range literal.** The largest remaining item, and this
    family is where the price is most visible: rule 2 is skipped wholesale for
@@ -1230,20 +1228,27 @@ surfaced.
    other two solvers. The hard part is settled and worth reusing — the model
    has to come from an external suite, because the natural gcs benchmark for
    this family is a disequality clique and no other solver would be given one.
-4. **Thread the proof mutation through the must-not-hold pass.** Not filed as
-   an issue yet, and small. `with_proof_mutation` reaches `enforce_equality`, so
-   `fixed_operand_reason` corrupts rule 1's reason but not rule 5's — and rule
-   5 is the busiest rule in the solver and 13,309 of the 13,323 equals-hinted
-   assertions in the family's own proof benchmark. The corruption already
-   exists; only the lambda's capture list and one lane registration are
-   missing. Worth doing before the next family's mutation lane is written,
-   since "the corruption exists but does not reach the rule I care about" is
-   the shape of mistake it demonstrates.
 
-**Not to do, having been considered:** bounding rule 9 and leaving the verdict
-undecided when the range is wide. That was the fallback the first audit
-proposed in case an interval-wise certificate did not exist. It does exist
-(#881), so a deliberate strength loss buys nothing.
+**Not to do, having been considered.** Two.
+
+*Bounding rule 9* and leaving the verdict undecided when the range is wide.
+That was the fallback the first audit proposed in case an interval-wise
+certificate did not exist. It does exist (#881), so a deliberate strength loss
+buys nothing.
+
+*Filling in the six `Not shown.` tightness fields.* Mutation coverage is a
+development tool, not a completeness target — it earns its keep while a rule's
+derivation is being written or changed, and mutating the other six rules for
+the sake of the tally would not. So the fields say which rules have the
+evidence and which do not, and the answer to "should I add a lane" is decided
+by what is being changed, not by the count.
+
+The one worth knowing about, if a lane is ever wanted here: `with_proof_mutation`
+reaches `enforce_equality`, so `fixed_operand_reason` corrupts rule 1's reason
+but not **rule 5's** — the busiest rule in the solver, and 13,309 of the 13,323
+equals-hinted assertions in the family's own proof benchmark. The corruption
+already exists; only the lambda's capture list and one lane registration are
+missing. Cheap if that rule is ever touched, and not worth doing before then.
 
 ## Prior art
 
@@ -1335,11 +1340,12 @@ wanted and could not find, which is the same test the first pass applied.
 - **A rule entry gains a `Tightness` field.** The template asked under Tests
   "whether the derivation has been shown to be tight", which is the right
   question at the wrong altitude: a mutation lane corrupts *one rule's* step,
-  so the evidence is per-rule and belongs beside that rule's proof size.
-  Putting it there is what surfaced the gap now ranked fourth in [Next
-  steps](#next-steps) — six of nine rules answer `Not shown.`, and one of
-  those six is the busiest rule in the solver. Under the old shape this family
-  could answer "yes, tight" and stop.
+  so the evidence is per-rule and belongs beside that rule's proof size. Under
+  the old shape this family could answer "yes, tight" for the family and stop,
+  where three of its five lanes are one rule and six of its nine rules have no
+  lane at all. The point of the field is **not** to be filled in everywhere —
+  see [Next steps](#next-steps) — it is that someone changing a rule can see at
+  a glance whether a lane will catch them.
 - **Say what the family's own benchmark does not exercise.** `ortho_latin`
   reaches two of nine rules. That was true at the first audit too and went
   unsaid; it is the sort of thing a cross-family pivot over these documents
