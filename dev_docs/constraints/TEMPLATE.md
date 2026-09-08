@@ -144,11 +144,21 @@ and replace the italicised instructions with content.
 # `Family`: one-line statement of what it enforces
 
 > **Maturity** production | experimental | checker-only | decomposition-only ·
-> **Audited** *yyyy-mm-dd* at `<commit>` · **Open issues** #nnn, #nnn
+> **Audited** *yyyy-mm-dd* at `<commit>`; re-audited *yyyy-mm-dd* at
+> `<commit>` · **Open issues** #nnn, #nnn
 
 *When nothing is open, say so and point at [Next steps](#next-steps) for what
 this audit would file — an empty issue list and an unaudited family should not
 read the same.*
+
+*A **re-audit** is a distinct event, and the status line carries both dates,
+because a reader needs to know which commit each figure was taken at. When the
+audit's own issues get fixed the document has to be brought back into line with
+them and re-measured; fixing four issues in one family moved its rule
+catalogue, its robustness section and both performance tables. Open the
+re-audit with a short `issue → PR → what it changed here` table, so the diff
+against the first pass is legible, and say outright which figures were taken
+again.*
 
 *One short paragraph: what this family is for, and the single most important
 thing a reader should know before touching it.*
@@ -342,6 +352,11 @@ between rules stays in the entries, even when most of them agree.*
   provenance if there is one.*
 - **Gaps** — *whether this rule is logged at all, and whether the propagator is
   weakened when proofs are enabled. `None.` is the expected answer.*
+- **Tightness** — *whether a mutation of **this rule's** derivation has been
+  shown to be refused by VeriPB, and which corruption. `Not shown.` is an
+  acceptable answer, and marks a rule whose proof is accepted but not known to
+  be tight. Where a lane's instance took work to build, say what the slack
+  instances were: that part is reusable, and the corruption rarely is.*
 
 ## Evidence
 
@@ -356,8 +371,11 @@ between rules stays in the entries, even when most of them agree.*
 - *whether the tests are seeded (`--seed=N`) and so byte-reproducible;*
 - *whether any real instance has been ported into a data-driven test, and
   which repros have not been;*
-- *whether the derivation has been shown to be tight — a mutation that VeriPB
-  should refuse, and does.*
+- *whether the derivations have been shown to be tight, and whether a
+  **control** lane checks that the same instances verify uncorrupted — without
+  one, a mutation lane can be green because its instance does not verify
+  either. The per-rule evidence goes in that rule's **Tightness** field; this
+  is the inventory and the harness.*
 
 *Then, as a separate list, **what the tests do not cover**. This is the half
 that makes the section worth writing: the domain widths the suite never reaches,
@@ -384,6 +402,12 @@ from a different search.*
 
 *Caption every table with the build, commit, date and machine.*
 
+*Say what the chosen benchmark does **not** exercise. A family's natural
+benchmark often reaches a small minority of its rules — read that off the
+proof's assertions rather than guessing — and a per-inference cost quoted from
+it is an average over those. Without this line, a cross-family pivot over these
+documents will silently compare unlike things.*
+
 ### Proof performance
 
 *The proof axis, which the paper's headline table is made of: proof size, VeriPB
@@ -398,7 +422,12 @@ figure that does not say so will be read as this family's cost. Second, the
 size and verification time at the **assertion levels** as well as fully
 justified, since that difference is what an external justifier consumes; report
 how many assertions carry this family's hint, and what share of the proof's
-assertions that is.*
+assertions that is, broken down by wire form.*
+
+*The own-versus-shared split wants a **measurement**, not an estimate. Vary
+whatever the family's cost is proportional to, count the lines each layer
+emits, and give the two as functions of it. "2n against 10n + 1" is a finding;
+"the shared layers dominate" is a guess that happens to be right.*
 
 ## Status, gaps, and next steps
 
