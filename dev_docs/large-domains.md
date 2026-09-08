@@ -183,6 +183,81 @@ Views keep the per-value path: a view's atoms are spelled through the view and
 the lemmas have not been shown to bridge that. Same restriction, and same reason,
 as the single-support range path in the same file.
 
+### The two-lemma RUP shape does not generalise; `pol` does
+
+`Abs` (#875) is the case that shows where the shape above stops working, and it
+is worth reading before copying it into a fourth constraint.
+
+`Abs`' model is two half-reified rows, `v2 - v1 == 0` under `v1 >= 0` and
+`v2 + v1 == 0` under `v1 < 0`. That looks like `ArrayMinMax`'s guarded equality
+with a two-valued selector, so the same two ge-layer bound lemmas ought to work.
+They do not, and the reason is not the guard: it is that **unit propagation
+cannot add two PB bound constraints to a row.** Negating such a lemma leaves one
+bound on each side of the equality, and a bound over a bit-vector fixes no bit
+unless it happens to be tight enough to force one.
+
+Measured, because the failure is arithmetic rather than structural. On
+`abs_test`'s own `v1 = [-6, 8]`, `v2 = [0, 15]`, the negated lemma gives
+`v1 >= -6` — which forces `b3` through the two's-complement bound — and
+`v2 >= 7`, which forces nothing. The row then normalises to a slack of exactly
+**8** against a largest remaining coefficient of **8**, and a coefficient has to
+*exceed* the slack to propagate. One short.
+
+So why does `element.cc` verify? **Because its arithmetic lines up, not because
+the shape is sound.** A probe built for the question — `result` in `[0, 63]`,
+three entries in `{0, 40}`, so the removed run `[41, 63]` puts `result >= 41`
+against `array <= 40` with neither bound tight — verifies, and grinding through
+its propagation by hand shows why: `result >= 41` forces the top bit because 41
+exceeds what five bits can hold, which drops the row's slack below `array`'s top
+coefficient, which forces that, and so on for several rounds. Change the widths
+and that cascade stops. **Treat the guarded two-lemma RUP shape as a property of
+the instances it has been run on.**
+
+The route that does not depend on the arithmetic is `pol`, which is what every
+other helper in `abs/justify.cc` already used: the model half, plus the defining
+item of each atom whose arithmetic the step uses, summed and saturated. The
+operands cancel, the constant comes out negative, and saturation leaves a clause
+over order atoms. Two shapes come out of it, and their asymmetry is the useful
+part:
+
+* Concluding on the variable the guard is *about* (`Abs`' image direction,
+  `~[v2 in lo..hi]`) has to close both sign branches, because the conclusion's
+  negation says nothing about the sign. Four resolutions, then one clause per
+  branch whose only free literal is the sign; the two signs being a literal and
+  its negation, the conclusion follows by RUP. Six lines.
+* Concluding on the guard variable itself (the preimage direction,
+  `~[v1 in lo..hi]`) is cheaper, provided the caller **splits each run at zero**
+  first. Then `v1 >= lo >= 0` propagates `v1 >= 0` up the ge layer, so the
+  conclusion's own negation decides the sign and only the active branch is
+  needed. Three lines, and no case split left over.
+
+Neither count depends on the range's width, which is the property that matters.
+
+### Sabotaging proof lines one at a time under-reports
+
+The same work produced a methodology result worth having, because the obvious way
+to check a new justification is misleading.
+
+Dropping each of `Abs`' twelve new proof lines in turn and re-running `abs_test`
+at a pinned seed marks **eight of the twelve as droppable**; only one is
+individually load-bearing, and that one only because of a row added specifically
+to reach it. Emptying either justification wholesale is rejected, so the lines
+are jointly necessary and individually redundant — VeriPB's unit propagation has
+several routes to the same conclusion, and removing one leaves the others.
+
+Greedily minimising instead gives a four-line set that passes the pinned seed.
+It keeps only the *upper* lemma of each pair and only one of the two sign
+branches, which cannot be right by symmetry, and it is not: the same four-line
+set is **rejected on four of ten seeds**. The suite's randomised rows do not
+separate the halves of a symmetric rule at any one seed, so a minimisation run
+against one of them is fitting the fixtures.
+
+Two rules follow. **Sabotage the whole justification, not its lines** — that is
+the test that distinguishes a load-bearing derivation from a decorative one.
+And **keep a derivation you can state end to end**, rather than the subset a
+particular seed happens to need; the full set here passes ten seeds plain and
+three view-wrapped, and each of its lines has a stated role.
+
 **Two things that make an interval rewrite pay, learned on `AllEqual`.**
 
 *Keep the per-value spelling for a width-1 interval.* A range literal of one value
@@ -366,12 +441,13 @@ Two kinds of check, and the difference matters:
   `State`'s iterators are not the only way a propagator walks a domain. It can
   build an `IntervalSet` of its own and walk that, or take an interval and expand
   it with a plain `for (Integer v = lo; v <= hi; ++v)`. `State` sees neither, so
-  each such loop needs its own counter declared at the loop. Three sites carry
-  one: `element.cc`'s sweep over unsupported result values (now only on its
-  per-value view path), `all_equal.cc`'s expansion of the intersection
-  difference, and `equals.cc`'s no-overlap reason. The counter does not belong in
-  `IntervalSet::each()` itself, which is a general container used for deliberate
-  enumeration — tabulation, and the tests.
+  each such loop needs its own counter declared at the loop. Four constraints
+  carry one, over five sites: `element.cc`'s sweep over unsupported result values
+  (now only on its per-value view path), `all_equal.cc`'s expansion of the
+  intersection difference, `equals.cc`'s no-overlap reason, and `abs.cc`'s two
+  interior hole loops. The counter does not belong in `IntervalSet::each()`
+  itself, which is a general container used for deliberate enumeration —
+  tabulation, and the tests.
 
   The first two were found the same way, and it is worth naming the smell: **a
   row that starts passing when you did not fix it.** Neither site allocated a
@@ -397,6 +473,23 @@ Two kinds of check, and the difference matters:
   And a reason is a place to look that a search for pruning loops will not reach:
   guard the assembly on `InferenceTrackerBase::want_reasons()` first, then count
   the walk that survives it.
+
+  `abs.cc`'s two loops (#875) put a number on the first half. Its 10^9 shapes
+  were reported as surviving in 129 s on a 2 TB box; re-measured here, the image
+  shape takes 42 s and **16.4 GB**, and the preimage shape does not finish at
+  all — `bad_alloc` after 45 s and 23.7 GB under a cap. So the same two rows
+  would have come out one `Clean` and one `KnownTrip` on this 30 GB machine, and
+  both `Clean` on the big one, from the identical code. That is the argument for
+  instrumenting a loop rather than leaving it to the fallback, made concrete:
+  neither reading was a fact about `Abs`.
+
+  It also took two probes rather than a sharpened one. The `Abs` row posts two
+  bare wide variables, which never *reach* either loop: the image of `v1`'s whole
+  domain is the whole of `v2`'s, so `each_interval_minus()` yields nothing. One
+  row per loop, because a probe that reaches one reaches neither the other (a
+  contiguous `v2` has a contiguous preimage). Checked one at a time that each row
+  trips its own counter and not the other's — with two counters in one propagator,
+  a row that trips *a* guard proves nothing about which loop it exercised.
 
   What the counter at that site now counts is *moves of an interval walk*, not
   values (#867). A reason that says "these two domains do not overlap" one value
@@ -453,14 +546,14 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-71 constraint probes, plus 20 heuristic ones in the second table. The lane
+73 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
 | **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (38) | the arithmetic family, comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms and with a holey entry, `AllEqual` with holes and without, `Among`, `In`, `GlobalCardinality`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **Clean** (40) | the arithmetic family (with two rows of its own for `Abs`' interior holes), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms and with a holey entry, `AllEqual` with holes and without, `Among`, `In`, `GlobalCardinality`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality`, `Table` and `Element` started
@@ -667,11 +760,12 @@ separately, because they mean different things:
 
 ### Results at 10^3 → 10^4
 
-Re-measured over all 71 probes after the interval rewrites landed for
+Re-measured over all 73 probes after the interval rewrites landed for
 `ArrayMinMax`, `Table`, `Among`, `Element`, `In`, `GlobalCardinality` and
-`AllEqual/holes`, and again after #878 — which moved nothing: `Element/holey` is
-a new row at a flat 41 rows and 51 steps, and the rewrite behind it changes which
-values get removed not at all, so no other row could have moved either. The
+`AllEqual/holes`, and again after #878 and #875 — which moved nothing but their
+own rows: `Element/holey` is flat at 41 rows and 51 steps, `Abs/hole` at 30 and
+46, `Abs/hole-preimage` at 26 and 64, and none of the three rewrites changes
+which values get removed, so no other row could have moved either. The
 figures move, so re-run the survey rather than quoting this table after touching
 any propagator's removal loop — that is how the previous version of it went
 stale, see below.
@@ -681,7 +775,7 @@ stale, see below.
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 33984 → 339984 steps) |
-| neither | 1.0x / 1.0x | everything else, 62 of 71 |
+| neither | 1.0x / 1.0x | everything else, 64 of 73 |
 
 The last row means "does not grow with the width", not "identical at both widths",
 and three entries in it are worth naming so nobody reads them as a promise.
@@ -743,7 +837,7 @@ whose steps grow at a fixed encoding is a propagator that has an interval and
 spells it out. That is a real conclusion rather than a gap in the survey, and it
 should be re-tested after stage 4 rather than assumed to stay true — a genuine
 candidate would be a growing row whose removed set provably is not an interval,
-and none of the 71 probes produces one today.
+and none of the 73 probes produces one today.
 
 Two things kept this table wrong for longer than it should have been. The probe
 sharpening of PR #849 turned exactly these three rows from `HazardNotReached` into
