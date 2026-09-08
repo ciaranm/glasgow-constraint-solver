@@ -541,6 +541,34 @@ namespace gcs
         }
 
         /**
+         * \brief Calls \p f(value) for each value in the set in descending order.
+         *
+         * Non-coroutine alternative to each_reversed(), and the mirror of
+         * for_each(): no heap-allocated generator frame, the iteration inlines
+         * into the caller.
+         *
+         * If \p f returns \c bool, returning \c false stops iteration early.
+         * If \p f returns \c void, iteration always runs to completion.
+         *
+         * \sa for_each(), each_reversed()
+         */
+        template <typename F_>
+        auto for_each_reversed(F_ && f) const -> void
+        {
+            if constexpr (std::is_void_v<std::invoke_result_t<F_ &, Int_>>) {
+                for (auto lu = intervals.rbegin(); lu != intervals.rend(); ++lu)
+                    for (Int_ i = lu->second; i >= lu->first; --i)
+                        f(i);
+            }
+            else {
+                for (auto lu = intervals.rbegin(); lu != intervals.rend(); ++lu)
+                    for (Int_ i = lu->second; i >= lu->first; --i)
+                        if (! f(i))
+                            return;
+            }
+        }
+
+        /**
          * \brief Returns a generator that yields each stored interval as a
          * (lower, upper) pair, in ascending order.
          *

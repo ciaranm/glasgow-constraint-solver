@@ -500,3 +500,31 @@ TEST_CASE("random does not enumerate a domain the search only reads the start of
     CHECK(got[1] != got[2]);
     CHECK(got[0] != got[2]);
 }
+
+TEST_CASE("smallest_first and largest_first run the right way round on a negated view")
+{
+    // The symptom #890 was filed for. CurrentState::each_value() used to hand a
+    // negated view's values out descending, so smallest_first() yielded the
+    // largest first and was indistinguishable from largest_first(). These two
+    // cannot use a position query --- they want the lazy generator, which is
+    // exactly what makes them safe on a wide domain --- so the fix was to the
+    // iteration order itself.
+    State state;
+    auto x = state.allocate_integer_variable_with_state(0_i, 5_i);
+    for (auto h : {1_i, 4_i})
+        REQUIRE(Inference::Instantiated != state.infer_not_equal(x, h));
+    // x is {0, 2, 3, 5}, so -x + 10 is {5, 7, 8, 10}.
+    auto var = IntegerVariableID{-x + 10_i};
+    Stats stats;
+    Propagators propagators{stats};
+    auto current = state.current();
+
+    CHECK(conditions_from(value_order::smallest_first(), current, propagators, var) ==
+        vector<IntegerVariableCondition>{var == 5_i, var == 7_i, var == 8_i, var == 10_i});
+    CHECK(conditions_from(value_order::largest_first(), current, propagators, var) ==
+        vector<IntegerVariableCondition>{var == 10_i, var == 8_i, var == 7_i, var == 5_i});
+
+    // And the bound-reading pair still agree with them about which end is which.
+    CHECK(conditions_from(value_order::smallest_in(), current, propagators, var)[0] == (var == 5_i));
+    CHECK(conditions_from(value_order::largest_in(), current, propagators, var)[0] == (var == 10_i));
+}

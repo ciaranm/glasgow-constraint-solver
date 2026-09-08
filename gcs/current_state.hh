@@ -128,7 +128,14 @@ namespace gcs
         [[nodiscard]] auto in_domain(const IntegerVariableID, Integer) const -> bool;
 
         /**
-         * \brief Returns a generator that gives each value in the variable's domain.
+         * \brief Returns a generator that gives each value in the variable's domain,
+         * in ascending order.
+         *
+         * Ascending in the variable's own values, so a negated view's values come out
+         * smallest first even though the underlying domain is walked backwards to do
+         * it (issue #890).
+         *
+         * \sa CurrentState::each_value_reversed()
          */
         [[nodiscard]] auto each_value(const IntegerVariableID) const -> std::generator<Integer>;
 

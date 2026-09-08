@@ -338,3 +338,81 @@ TEST_CASE("copy_of_values / domains_intersect on multi-interval negated views")
         CHECK(state.domains_intersect(d, -a)); // symmetry
     }
 }
+
+TEST_CASE("Every way of iterating a domain hands values out in ascending order")
+{
+    // Issue #890: the each_value family applied a view to the underlying domain
+    // in stored order, and negation reverses that, so a negated view's values
+    // came out descending --- where copy_of_values() and each_value_reversed()
+    // sorted them. The four entry points and copy_of_values() have to agree,
+    // and ascending has to mean ascending in the *variable's own* values.
+    State state;
+    auto x = state.allocate_integer_variable_with_state(0_i, 9_i);
+    for (auto h : {2_i, 3_i, 6_i})
+        REQUIRE(Inference::Contradiction != state.infer_not_equal(x, h));
+    // x is now {0, 1, 4, 5, 7, 8, 9}: holes, so a single-interval walk would not
+    // catch a reversal, and an even count, so a symmetric one would not either.
+
+    auto ascending = [](const vector<Integer> & vs) {
+        return std::is_sorted(vs.begin(), vs.end()) && std::adjacent_find(vs.begin(), vs.end()) == vs.end();
+    };
+
+    for (auto var : {IntegerVariableID{x}, IntegerVariableID{x + 100_i}, IntegerVariableID{-x}, IntegerVariableID{-x + 20_i}}) {
+        // Bound to a local rather than iterated off the temporary:
+        // IntervalSet::each() borrows the set it is called on, and only
+        // P2718R0's extended lifetime for range-init temporaries makes
+        // `copy_of_values(var).each()` safe --- so on a compiler without it, the
+        // set is gone before the first value is read. GCC 15 has it and GCC 14
+        // does not, which is a difference between two of the CI lanes.
+        auto values = state.copy_of_values(var);
+        vector<Integer> from_copy;
+        for (auto v : values.each())
+            from_copy.push_back(v);
+
+        vector<Integer> immutable, mutable_, for_immutable, for_mutable;
+        for (auto v : state.each_value_immutable(var))
+            immutable.push_back(v);
+        for (auto v : state.each_value_mutable(var))
+            mutable_.push_back(v);
+        state.for_each_value_immutable(var, [&](Integer v) { for_immutable.push_back(v); });
+        state.for_each_value_mutable(var, [&](Integer v) { for_mutable.push_back(v); });
+
+        CHECK(ascending(from_copy));
+        CHECK(immutable == from_copy);
+        CHECK(mutable_ == from_copy);
+        CHECK(for_immutable == from_copy);
+        CHECK(for_mutable == from_copy);
+
+        // And the reversed generator really is the other direction, rather than
+        // accidentally agreeing with a walk that was already backwards.
+        vector<Integer> reversed;
+        for (auto v : values.each_reversed())
+            reversed.push_back(v);
+        auto flipped = from_copy;
+        std::reverse(flipped.begin(), flipped.end());
+        CHECK(reversed == flipped);
+    }
+
+    // A constant is a one-value domain whichever way it is asked for.
+    vector<Integer> constant;
+    for (auto v : state.each_value_immutable(ConstantIntegerVariableID{7_i}))
+        constant.push_back(v);
+    CHECK(constant == vector<Integer>{7_i});
+}
+
+TEST_CASE("Early exit from a domain walk stops at the smallest values, views included")
+{
+    // The other half of ascending: for_each_value_*'s early exit has to give up
+    // the *first* values in the variable's own order, or a caller that stops
+    // after k of them gets the wrong k for a negated view.
+    State state;
+    auto x = state.allocate_integer_variable_with_state(0_i, 5_i);
+    auto var = IntegerVariableID{-x + 10_i}; // 5..10
+
+    vector<Integer> first_three;
+    state.for_each_value_immutable(var, [&](Integer v) {
+        first_three.push_back(v);
+        return first_three.size() < 3;
+    });
+    CHECK(first_three == vector<Integer>{5_i, 6_i, 7_i});
+}

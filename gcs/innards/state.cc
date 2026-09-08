@@ -683,16 +683,28 @@ auto State::domains_intersect(const IntegerVariableID & var1, const IntegerVaria
 
 namespace
 {
-    auto each_value_generator(IntervalSet<Integer> set, std::function<auto(Integer)->Integer> apply) -> generator<Integer>
+    auto each_value_generator(IntervalSet<Integer> set, std::function<auto(Integer)->Integer> apply, bool descending_underlying) -> generator<Integer>
     {
         // Counted as the values are handed out rather than checked against the
         // domain's width up front: a caller that reads one value from a very
         // wide domain -- which is what a branching heuristic does -- is doing
         // nothing wrong, and only a caller that walks the whole thing is.
         LargeDomainIterationCounter guard{"the number of values one each_value_*() generator has yielded"};
-        for (auto i : set.each()) {
-            guard.step();
-            co_yield apply(i);
+        if (descending_underlying) {
+            // A negated view maps the underlying domain order onto its own
+            // reversed, so walking the stored set backwards is what yields the
+            // view's values in ascending order. See the ascending() note in the
+            // header: this costs nothing, where re-sorting afterwards would.
+            for (auto i : set.each_reversed()) {
+                guard.step();
+                co_yield apply(i);
+            }
+        }
+        else {
+            for (auto i : set.each()) {
+                guard.step();
+                co_yield apply(i);
+            }
         }
     }
 
@@ -710,7 +722,8 @@ auto State::each_value_immutable(const VarType_ & var) const -> generator<Intege
     auto apply = [negate_first = negate_first, then_add = then_add](Integer v) -> Integer { return apply_view(v, negate_first, then_add); };
 
     return visit_actual(
-        actual_var, [&](const SimpleIntegerVariableID & v) { return each_value_generator(state_of(v), apply); },
+        actual_var,
+        [&, negate_first = negate_first](const SimpleIntegerVariableID & v) { return each_value_generator(state_of(v), apply, negate_first); },
         [&](const ConstantIntegerVariableID & v) { return each_value_constant_generator(v.const_value, apply); });
 }
 
@@ -722,7 +735,8 @@ auto State::each_value_mutable(const VarType_ & var) const -> generator<Integer>
     auto apply = [negate_first = negate_first, then_add = then_add](Integer v) -> Integer { return apply_view(v, negate_first, then_add); };
 
     return visit_actual(
-        actual_var, [&](const SimpleIntegerVariableID & v) { return each_value_generator(state_of(v), apply); },
+        actual_var,
+        [&, negate_first = negate_first](const SimpleIntegerVariableID & v) { return each_value_generator(state_of(v), apply, negate_first); },
         [&](const ConstantIntegerVariableID & v) { return each_value_constant_generator(v.const_value, apply); });
 }
 
