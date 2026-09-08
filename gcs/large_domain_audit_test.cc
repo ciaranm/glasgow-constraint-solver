@@ -417,6 +417,27 @@ namespace
             auto result = wide_var(p);
             p.post(Element{result, p.create_integer_variable(0_i, 2_i), narrow(p, 3, 1_i, 3_i)}.with_consistency(consistency::BC{}));
         });
+        add("Element/holey", Expect::Clean, [](Problem & p) {
+            // Neither row above reaches the sweep's other half. They erase each
+            // entry's domain from the result's still-unsupported set, and an
+            // entry that is one contiguous run goes in as a single erase_range
+            // however wide it is -- so a narrow entry exercises the remainder
+            // and a wide entry exercises the fast path, and nothing exercises an
+            // entry that is wide *and* has a hole in it, which is the shape that
+            // used to be walked a value at a time (#878). One value knocked out
+            // of a full-width entry is enough: domain_size stops matching
+            // hi - lo + 1 while the domain is still 10^9 wide.
+            //
+            // Three entries and a free index on purpose. With the index fixed
+            // the equality propagator takes over instead, which is a different
+            // path with its own holey handling and would have made this row
+            // about that one.
+            auto result = wide_var(p);
+            auto entries = wide(p, 3);
+            for (const auto & e : entries)
+                p.post(NotEquals{e, ConstantIntegerVariableID{5_i}});
+            p.post(Element{result, p.create_integer_variable(0_i, 2_i), entries});
+        });
 
         // --- Ordering.
         add("IncreasingChain", Expect::Clean, [](Problem & p) { p.post(Increasing{wide(p, 4)}); });

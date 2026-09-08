@@ -600,17 +600,30 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                                 if (array_has_nonconstants)
                                     considered_vars.push_back(array_var);
                                 // Subtract array_var's domain from the still-unsupported
-                                // set. When that domain is a single contiguous run (the
-                                // common case) this is one erase_range rather than one
-                                // erase per value — the dominant cost of the GAC support
-                                // sweep (issue #515). A holey domain must still go value
-                                // by value: erase_range would also drop values in the
-                                // holes, which this array entry does not support.
+                                // set. A contiguous domain goes in as one erase_range
+                                // however wide it is, which was the point of issue #515
+                                // — but the fallback it left for a domain with holes
+                                // in it went value by value, and one hole is all it
+                                // takes to stop the size matching the span, so a
+                                // 10^9-wide entry missing a single value got walked a
+                                // billion times (issue #878). A hole changes nothing
+                                // about the shape of the answer: the domain is a set of
+                                // runs either way, and each run is one erase_range.
+                                //
+                                // The contiguity test stays rather than the run path
+                                // subsuming it, because reading the runs needs the
+                                // domain materialised and paying for that on every entry
+                                // of every call is not free. Four shapes were measured
+                                // and all four fix #878; this is the only one that is
+                                // also faster than what it replaces, and
+                                // dev_docs/large-domains.md has the numbers.
                                 auto [lo, hi] = state.bounds(array_var);
                                 if (state.domain_size(array_var) == hi - lo + 1_i)
                                     still_to_find_support_for.erase_range(lo, hi);
-                                else
-                                    state.for_each_value_immutable(array_var, [&](Integer v) { still_to_find_support_for.erase(v); });
+                                else {
+                                    auto entry_values = state.copy_of_values(array_var);
+                                    entry_values.for_each_interval([&](Integer l, Integer h) { still_to_find_support_for.erase_range(l, h); });
+                                }
                             }
                         }
                         else {

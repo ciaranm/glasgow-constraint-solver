@@ -1131,3 +1131,65 @@ TEST_CASE("for_each_reversed stops early when the callback says so")
     set.for_each_reversed([&](int v) -> void { all.push_back(v); });
     CHECK(all == vector<int>{10, 9, 8, 3, 2, 1});
 }
+
+TEST_CASE("for_each_interval matches each_interval")
+{
+    // The non-coroutine mirror of each_interval(), for callers that run it once
+    // per array entry per propagation (element.cc's GAC support sweep, issue
+    // #878). It has to agree with each_interval() exactly.
+    IntervalSet<int> s1(5, 9), s2, s3;
+    s2.insert_at_end(1, 2);
+    s2.insert_at_end(7, 7);
+    s2.insert_at_end(10, 13);
+    // s3 stays empty.
+
+    for (const auto & set : {s1, s2, s3}) {
+        vector<pair<int, int>> from_generator, from_callback;
+        for (auto i : set.each_interval())
+            from_generator.push_back(i);
+        set.for_each_interval([&](int l, int u) { from_callback.emplace_back(l, u); });
+        CHECK(from_callback == from_generator);
+
+        // And the values it describes are the values the set has.
+        vector<int> expanded;
+        for (auto [l, u] : from_callback)
+            for (int v = l; v <= u; ++v)
+                expanded.push_back(v);
+        vector<int> values;
+        set.for_each([&](int v) { values.push_back(v); });
+        CHECK(expanded == values);
+    }
+}
+
+TEST_CASE("for_each_interval stops early when the callback says so")
+{
+    IntervalSet<int> set;
+    set.insert_at_end(1, 3);
+    set.insert_at_end(8, 10);
+    set.insert_at_end(20, 20);
+
+    vector<pair<int, int>> seen;
+    set.for_each_interval([&](int l, int u) {
+        seen.emplace_back(l, u);
+        return seen.size() < 2;
+    });
+    CHECK(seen == vector<pair<int, int>>{{1, 3}, {8, 10}});
+
+    // A void callback runs to completion, as for_each() does.
+    vector<pair<int, int>> all;
+    set.for_each_interval([&](int l, int u) -> void { all.emplace_back(l, u); });
+    CHECK(all == vector<pair<int, int>>{{1, 3}, {8, 10}, {20, 20}});
+}
+
+TEST_CASE("for_each_interval over a set no walk of values could cross")
+{
+    // The property the #878 rewrite needs: the cost is the number of runs, not
+    // the number of values. Two runs a billion values wide, and a test that
+    // returns at all is the evidence.
+    IntervalSet<long long> holey(0, 1000000000LL);
+    holey.erase(5);
+
+    vector<pair<long long, long long>> runs;
+    holey.for_each_interval([&](long long l, long long u) { runs.emplace_back(l, u); });
+    CHECK(runs == vector<pair<long long, long long>>{{0, 4}, {6, 1000000000LL}});
+}
