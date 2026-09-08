@@ -358,8 +358,15 @@ TEST_CASE("Every way of iterating a domain hands values out in ascending order")
     };
 
     for (auto var : {IntegerVariableID{x}, IntegerVariableID{x + 100_i}, IntegerVariableID{-x}, IntegerVariableID{-x + 20_i}}) {
+        // Bound to a local rather than iterated off the temporary:
+        // IntervalSet::each() borrows the set it is called on, and only
+        // P2718R0's extended lifetime for range-init temporaries makes
+        // `copy_of_values(var).each()` safe --- so on a compiler without it, the
+        // set is gone before the first value is read. GCC 15 has it and GCC 14
+        // does not, which is a difference between two of the CI lanes.
+        auto values = state.copy_of_values(var);
         vector<Integer> from_copy;
-        for (auto v : state.copy_of_values(var).each())
+        for (auto v : values.each())
             from_copy.push_back(v);
 
         vector<Integer> immutable, mutable_, for_immutable, for_mutable;
@@ -379,7 +386,7 @@ TEST_CASE("Every way of iterating a domain hands values out in ascending order")
         // And the reversed generator really is the other direction, rather than
         // accidentally agreeing with a walk that was already backwards.
         vector<Integer> reversed;
-        for (auto v : state.copy_of_values(var).each_reversed())
+        for (auto v : values.each_reversed())
             reversed.push_back(v);
         auto flipped = from_copy;
         std::reverse(flipped.begin(), flipped.end());
