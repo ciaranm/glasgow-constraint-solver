@@ -75,11 +75,11 @@ namespace
     // either domain, and it stops by running p off the top of one of the two
     // domains, which is the contradiction the conclusion needs.
     //
-    // Both consumers -- the reason builder, which turns each move into a
-    // literal, and emit_justification, which turns each move into zero, one or
-    // two lemmas -- go through here, because the lemmas' whole job is to let
-    // unit propagation see that reason's literals through, so the two must be
-    // reporting the same walk.
+    // Only the reason builder walks here, turning each move into a literal.
+    // emit_justification does not: it reads the same walk back out of those
+    // literals instead (#870), because the lemmas' whole job is to let unit
+    // propagation see that reason's literals through, and taking the walk from
+    // the reason is what makes the two certain to be reporting the same one.
     //
     // \p d1 and \p d2 must be non-empty and disjoint, which is exactly the
     // condition the rule fires under.
