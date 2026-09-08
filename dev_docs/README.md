@@ -29,6 +29,14 @@ library. For an introduction to *using* the solver, start with the top-level
   building blocks, and the testing pattern. Start here when adding any new
   constraint — and for the umbrella-header directory layout, which presolvers
   under `gcs/presolvers/` share.
+- [Justification techniques](justification-techniques.md) — why our proof
+  steps are RUP, rather than merely that they are. Collects the
+  unit-propagation facts the solver leans on (Theorems 2.6–2.9 of McIlree's
+  thesis), the completeness invariant `Inv1` behind them, the published
+  justification procedures our constraints instantiate, and the preconditions
+  that say when each argument stops working. Cite it from a constraint's
+  documentation or comments instead of restating the proof; read it before
+  claiming a new inference is RUP.
 - [Template: a constraint family document](constraints/TEMPLATE.md) — the
   skeleton every per-family document under `dev_docs/constraints/` follows,
   plus the conventions and the closed vocabularies (proof technique,
