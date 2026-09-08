@@ -3,6 +3,7 @@
 #include <gcs/constraints/abs/justify.hh>
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -239,11 +240,21 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             }
             auto image_set = pieces_to_set(image_pieces);
 
+            // Both interior loops expand an interval by hand, which State's
+            // iterators never see, so each carries its own counter -- the same
+            // reason element.cc and all_equal.cc do (issues #855, #875). Without
+            // one the audit lane's Abs rows report Clean however wide the domain
+            // is, since nothing here allocates and nothing crashes: the 10^9
+            // shape simply runs for a couple of minutes.
+            LargeDomainIterationCounter image_guard{"the number of values one Abs image pruning has walked"};
+            LargeDomainIterationCounter preimage_guard{"the number of values one Abs preimage pruning has walked"};
+
             auto [post_v2_lb, post_v2_ub] = state.bounds(v2);
             for (auto [lo, hi] : v2_set.each_interval_minus(image_set)) {
                 auto clipped_lo = max(lo, post_v2_lb);
                 auto clipped_hi = min(hi, post_v2_ub);
                 for (Integer val = clipped_lo; val <= clipped_hi; ++val) {
+                    image_guard.step();
                     if (! state.in_domain(v2, val))
                         continue;
                     inference.infer_not_equal(logger, v2, val,
@@ -269,6 +280,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 auto clipped_lo = max(lo, post_v1_lb);
                 auto clipped_hi = min(hi, post_v1_ub);
                 for (Integer val = clipped_lo; val <= clipped_hi; ++val) {
+                    preimage_guard.step();
                     if (! state.in_domain(v1, val))
                         continue;
                     inference.infer_not_equal(

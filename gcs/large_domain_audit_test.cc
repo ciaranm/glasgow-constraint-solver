@@ -188,8 +188,31 @@ namespace
         // --- Arithmetic. These are the six that already implement the policy
         // #833 asks for, as consistency::Auto: tabulate within a budget, else BC.
         add("Abs", Expect::Clean, [](Problem & p) {
+            // Two bare wide variables never reach the interior pruning: the
+            // image of v1's domain is then the whole of v2's, so
+            // each_interval_minus yields nothing and both hole loops are
+            // skipped. The two rows below are the ones that reach them.
             auto v = wide(p, 2);
             p.post(Abs{v[0], v[1]});
+        });
+        add("Abs/hole", Expect::KnownTrip, [](Problem & p) {
+            // H1: the image loop, abs.cc. The removed values have to be a hole
+            // in the *image* rather than merely outside v2's bounds, because
+            // bounds propagation clips the latter first -- which is exactly what
+            // the loop's clipped_lo / clipped_hi are for. So v1's image is
+            // {0, w} and everything strictly between is left for the loop.
+            auto v1 = p.create_integer_variable(vector<Integer>{-probe_width, 0_i, probe_width});
+            auto v2 = wide_var(p);
+            p.post(Abs{v1, v2});
+        });
+        add("Abs/hole-preimage", Expect::KnownTrip, [](Problem & p) {
+            // H1: the mirrored preimage loop, which the row above does not
+            // reach -- v2 contiguous makes its preimage contiguous, so that
+            // difference is empty. Hole in v2 instead, and the two halves of
+            // v1 either side of zero are what is left over.
+            auto v2 = p.create_integer_variable(vector<Integer>{0_i, probe_width});
+            auto v1 = p.create_integer_variable(-probe_width, probe_width);
+            p.post(Abs{v1, v2});
         });
         add("Plus", Expect::Clean, [](Problem & p) {
             auto v = wide(p, 3);
