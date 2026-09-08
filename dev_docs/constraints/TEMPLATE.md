@@ -354,9 +354,13 @@ between rules stays in the entries, even when most of them agree.*
   weakened when proofs are enabled. `None.` is the expected answer.*
 - **Tightness** — *whether a mutation of **this rule's** derivation has been
   shown to be refused by VeriPB, and which corruption. `Not shown.` is an
-  acceptable answer, and marks a rule whose proof is accepted but not known to
-  be tight. Where a lane's instance took work to build, say what the slack
-  instances were: that part is reusable, and the corruption rarely is.*
+  ordinary answer, not a defect: mutation lanes are a development tool, worth
+  their cost while a derivation is being written or changed and not worth
+  adding for the sake of the tally. The field exists so that someone about to
+  change a rule can see whether a lane will catch them, which is a different
+  question from whether every rule has one. Where a lane's instance took work
+  to build, say what the slack instances were: that part is reusable, and the
+  corruption rarely is.*
 
 ## Evidence
 
@@ -371,11 +375,13 @@ between rules stays in the entries, even when most of them agree.*
 - *whether the tests are seeded (`--seed=N`) and so byte-reproducible;*
 - *whether any real instance has been ported into a data-driven test, and
   which repros have not been;*
-- *whether the derivations have been shown to be tight, and whether a
-  **control** lane checks that the same instances verify uncorrupted — without
-  one, a mutation lane can be green because its instance does not verify
-  either. The per-rule evidence goes in that rule's **Tightness** field; this
-  is the inventory and the harness.*
+- *whether any derivation has been shown to be tight, and — where lanes exist
+  — whether a **control** lane checks that the same instances verify
+  uncorrupted, without which a mutation lane can be green because its instance
+  does not verify either. The per-rule evidence goes in that rule's
+  **Tightness** field; this is the inventory and the harness. Partial coverage
+  is the expected state, so say which rules have a lane rather than treating
+  the rest as outstanding work.*
 
 *Then, as a separate list, **what the tests do not cover**. This is the half
 that makes the section worth writing: the domain widths the suite never reaches,
