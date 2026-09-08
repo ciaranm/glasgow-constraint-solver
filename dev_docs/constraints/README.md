@@ -42,6 +42,16 @@ constraints and do not restate it.
   else's interior pruning to stay on. Its third pass records #1088, which made
   `LessThan(x, x)` a root contradiction rather than a construction-time
   throw.
+- [`element.md`](element.md) — `Element`, `Element2D` and their constant-array
+  forms: four posted classes over one templated implementation and **four**
+  propagators, and the first family in the arc that is not binary. One
+  half-reified equality **per array cell**, so its encoding is linear in the
+  array and the slowest proof to verify in the curated set is its; the first with
+  a real option (`with_consistency`), the first to claim idempotence, the first
+  whose propagators are not all GAC, and the only one whose dominant wire hint
+  belongs to another family — 93% of the assertions it is responsible for
+  arrive labelled `equals`, because it reuses `enforce_equality`. Three of its
+  six rules are published justification procedures; two are ours.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
