@@ -65,6 +65,67 @@ auto gcs::innards::justify_abs_hole(ProofLogger & logger, const ReasonLiterals &
     // rest follows by RUP
 }
 
+auto gcs::innards::justify_abs_hole_range(ProofLogger & logger, const ReasonLiterals & reason, const SimpleIntegerVariableID & v1,
+    const SimpleIntegerVariableID & v2, Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le,
+    ProofLine abs_neg_ge) -> void
+{
+    auto & ids = logger.names_and_ids_tracker();
+
+    // Each resolution is the model half plus the defining item of the two atoms
+    // whose arithmetic it uses; the halves' bit coefficients are the operands'
+    // own, so v1's and v2's terms cancel and saturation leaves a clause.
+    //
+    // v1 >= 0 branch, where abs_nonneg_le is v2 <= v1 and abs_nonneg_ge is
+    // v2 >= v1. v2 >= lo carries to v1 >= lo, and v2 <= hi to v1 <= hi.
+    emit_resolution(logger, abs_nonneg_le, ids.need_pol_item_defining_literal(v2 >= lo), ids.need_pol_item_defining_literal(v1 < lo));
+    emit_resolution(logger, abs_nonneg_ge, ids.need_pol_item_defining_literal(v2 < hi + 1_i), ids.need_pol_item_defining_literal(v1 >= hi + 1_i));
+
+    // v1 < 0 branch, where abs_neg_le is v2 <= -v1 and abs_neg_ge is v2 >= -v1,
+    // so the range is mirrored: v2 >= lo carries to v1 <= -lo, and v2 <= hi to
+    // v1 >= -hi.
+    emit_resolution(logger, abs_neg_le, ids.need_pol_item_defining_literal(v2 >= lo), ids.need_pol_item_defining_literal(v1 >= -lo + 1_i));
+    emit_resolution(logger, abs_neg_ge, ids.need_pol_item_defining_literal(v2 < hi + 1_i), ids.need_pol_item_defining_literal(v1 < -hi));
+
+    // With each branch's pair in the database, v2 inside [lo, hi] falsifies
+    // every literal of that branch's reason literal, leaving the sign. Spelled
+    // with the two order atoms rather than the range literal, so no range flag
+    // has to be defined for this line.
+    logger.emit_rup_proof_line_under_reason(
+        reason, WPBSum{} + 1_i * (v1 < 0_i) + 1_i * (v2 < lo) + 1_i * (v2 >= hi + 1_i) >= 1_i, ProofLevel::Temporary);
+    logger.emit_rup_proof_line_under_reason(
+        reason, WPBSum{} + 1_i * (v1 >= 0_i) + 1_i * (v2 < lo) + 1_i * (v2 >= hi + 1_i) >= 1_i, ProofLevel::Temporary);
+
+    // The two signs being a literal and its negation, the rest follows by RUP.
+}
+
+auto gcs::innards::justify_abs_preimage_range(ProofLogger & logger, const SimpleIntegerVariableID & v1, const SimpleIntegerVariableID & v2,
+    Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le, ProofLine abs_neg_ge) -> void
+{
+    auto & ids = logger.names_and_ids_tracker();
+
+    if (lo >= 0_i) {
+        // v1 inside [lo, hi] with lo >= 0 forces the sign, and that is the first
+        // resolution: v1 >= lo and v1 <= -1 are contradictory arithmetic, so
+        // saturation leaves `v1 < lo \/ v1 >= 0`.
+        emit_resolution(logger, ids.need_pol_item_defining_literal(v1 >= lo), ids.need_pol_item_defining_literal(v1 < 0_i));
+
+        // Then the two bounds the nonneg row licenses, in the other direction to
+        // the image case: v1 >= lo carries to v2 >= lo, v1 <= hi to v2 <= hi.
+        emit_resolution(logger, abs_nonneg_ge, ids.need_pol_item_defining_literal(v1 >= lo), ids.need_pol_item_defining_literal(v2 < lo));
+        emit_resolution(logger, abs_nonneg_le, ids.need_pol_item_defining_literal(v1 < hi + 1_i), ids.need_pol_item_defining_literal(v2 >= hi + 1_i));
+    }
+    else {
+        // hi < 0, so v1 <= hi forces the sign the other way, and the mirror runs
+        // through the neg row: v1 >= lo gives v2 <= -lo, v1 <= hi gives
+        // v2 >= -hi.
+        emit_resolution(logger, ids.need_pol_item_defining_literal(v1 < hi + 1_i), ids.need_pol_item_defining_literal(v1 >= 0_i));
+        emit_resolution(logger, abs_neg_le, ids.need_pol_item_defining_literal(v1 >= lo), ids.need_pol_item_defining_literal(v2 >= -lo + 1_i));
+        emit_resolution(logger, abs_neg_ge, ids.need_pol_item_defining_literal(v1 < hi + 1_i), ids.need_pol_item_defining_literal(v2 < -hi));
+    }
+
+    // rest follows by RUP
+}
+
 auto gcs::innards::justify_abs_v2_ge_zero(ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, ProofLine abs_nonneg_ge) -> void
 {
     if (holds_alternative<ConstantIntegerVariableID>(v1))
