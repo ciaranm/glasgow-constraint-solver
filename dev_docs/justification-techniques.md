@@ -58,7 +58,7 @@ invariants, produces a checkable proof. Those are the reason the *shape* of
 what we emit is right; the facts below are the reason each individual step goes
 through.
 
-## The four facts
+## The five facts
 
 | Fact | Result | Statement | What it licenses |
 |---|---|---|---|
@@ -66,12 +66,20 @@ through.
 | An equality on a bit sum fixes every bit | **Thm 2.8** | `Σ2ⁱℓᵢ ≥ A` together with `Σ2ⁱℓᵢ ≤ A`, for `0 ≤ A < 2ᵏ`, always unit propagates to a complete assignment of the bits summing to `A` | a *value* crossing an equality — the fact behind `[x = v] ⊢ [y = v]` |
 | A bound, a difference row, a bound | **Thm 2.9** | for `A + B − C > 0` and **`B ∈ {0,1}`**, a lower bound on one bit sum, a row `BinEnc(X) − BinEnc(Y) ≥ B`, and an upper bound on the other always unit propagate to contradiction | a *bound* crossing an equality half or a comparison row |
 | A reified step reduces to its consequent | **Thm 2.6** | for `C := ρ ⇒ D`, `¬C` propagates every literal of `ρ`, so `C` is RUP with respect to `F` exactly when `D` is RUP with respect to `F↾ρ` | every reified verdict, and every justification stated under a reason |
+| An emptied domain is a conflict | **Thm 3.2** | if `domR(Xi)` is empty for some set `R` of atomic literals on `Xi`, unit propagation on `F↾R` must conflict | the **collapse** step of every rule that rules out a variable's values one at a time and then concludes |
 
 Theorem 2.6 is why a reason costs nothing structurally: stating an inference
 under a conjunction of literals reduces to the unreified question with those
 literals assumed. Theorems 2.7 to 2.9 are, in the thesis's own words, relied on
 implicitly in several published works and had not been written down anywhere
 before it.
+
+Theorem 3.2 is the one to reach for when a derivation has the shape *"rule out
+each value in turn, then conclude"*, which is what most of the non-binary
+families do. The per-value lines establish that no value of some variable
+survives; 3.2 turns that into the conflict the conclusion is RUP against. It
+sits in Chapter 3 rather than 2 because it is about the *defined domain* of an
+encoded CP variable, not about bit sums.
 
 ### Where the third one stops
 
@@ -112,6 +120,9 @@ families land on:
 |---|---|---|---|
 | **JP 3.1** (Not-Equals) | `rup x=v ∧ y=v ⇒ 0 ≥ 1` | Thm 2.8 | `equals`'s not-equal-to-fixed-operand rule |
 | **JP 3.2** (Comparison) | `rup y≥v ∧ x≥u ⇒ 0 ≥ 1`, precondition `B ∈ {0,1}` | Thm 2.9 | every bound transfer in `comparison`, and `equals`'s bounds-intersection and interval-bridge rules |
+| **JP 3.9** (Empty intersection for Element) | per `w` in the entry's domain, `rup R ⇒ y=v + xv=w ≥ 1`; then `rup R ⇒ y=v ≥ 1` | Thm 2.8 per line, Thm 3.2 for the collapse | `element`'s index-support rule |
+| **JP 3.10** (Missing value for Element) | per index value `i`, `rup R ⇒ z=v + y=i ≥ 1`; then collapse | as JP 3.9 | `element`'s per-value result-union rule |
+| **JP 3.11** (Single value for Element) | one step, `rup R ⇒ xi=v ≥ 1`, with the index a singleton | Thm 2.8 | `element`'s selected-entry rule, in the entry-pruning direction |
 | **JP 3.12** (Equality propagation) | `rup y=v ⇒ x=v ≥ 1` | Thm 2.8, twice | `equals`'s equal-to-fixed-operand rule, and its per-value symmetric-difference fallback |
 | **JP 3.13** (Equality infeasibility) | a per-value RUP for each surviving value, then a generic-reason contradiction | JP 3.12 for each line | **nothing any more** — see below |
 
@@ -128,6 +139,8 @@ the reified form Theorem 2.6 reduces back to the stated one.
 
 ### Where we depart from a published procedure
 
+Two families have a rule that no procedure covers.
+
 **`equals`'s disjointness witness no longer follows JP 3.13.** The published
 procedure states "these two domains do not overlap" one value at a time: a RUP
 line per surviving value, then a contradiction against the generic reason. That
@@ -136,6 +149,21 @@ reason length. The witness now used is an **interval walk** — an invariant
 `v1 ≥ p` carried up the number line, one move per maximal run, at most two
 lines per run — which is not in the thesis and is argued from scratch in
 [`constraints/equals.md`](constraints/equals.md).
+
+**`element`'s interval result-union rule has no published form either.** JP 3.10
+states "this result value is supported by no entry" one value at a time. When
+the result and every entry it considers are bare variables, `element` states the
+same thing over an *interval* — which costs two extra bound lemmas per index
+tuple to carry a range literal across the model's half-reified equality, and is
+then independent of how wide the interval is. The per-value form is kept as the
+fallback, and is JP 3.10 exactly. See
+[`constraints/element.md`](constraints/element.md).
+
+`element`'s bounds-consistency arm is a third case, and a milder one: its
+derivation is JP 3.10's tuple walk with a bound as the conclusion instead of a
+value. The procedure is not stated for that conclusion, but nothing in the
+argument depends on which literal is concluded, so this is a gap in the
+published list rather than a new technique.
 
 That distinction is the one an external justifier most needs. Everywhere a
 family cites a procedure number, a tool that knows the procedure can rebuild
