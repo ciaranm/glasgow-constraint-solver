@@ -3,6 +3,7 @@
 #include <gcs/constraints/abs/justify.hh>
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -29,6 +30,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::get;
 using std::holds_alternative;
 using std::max;
 using std::min;
@@ -239,11 +241,52 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             }
             auto image_set = pieces_to_set(image_pieces);
 
+            // Both interior loops expand an interval by hand, which State's
+            // iterators never see, so each carries its own counter -- the same
+            // reason element.cc and all_equal.cc do (issues #855, #875). Without
+            // one the audit lane's Abs rows report Clean however wide the domain
+            // is, since nothing here allocates and nothing crashes: the 10^9
+            // shape simply runs for a couple of minutes.
+            LargeDomainIterationCounter image_guard{"the number of values one Abs image pruning has walked"};
+            LargeDomainIterationCounter preimage_guard{"the number of values one Abs preimage pruning has walked"};
+
+            // A range removal needs a range literal in its reason, and a view has
+            // none (issue #882), so anything but two plain variables keeps the
+            // per-value path. A constant v2 keeps it too, which is not merely the
+            // same restriction: the range lemmas below resolve against v2's
+            // order-encoding flags, and a constant has none.
+            auto both_simple = holds_alternative<SimpleIntegerVariableID>(v1) && holds_alternative<SimpleIntegerVariableID>(v2);
+
             auto [post_v2_lb, post_v2_ub] = state.bounds(v2);
             for (auto [lo, hi] : v2_set.each_interval_minus(image_set)) {
                 auto clipped_lo = max(lo, post_v2_lb);
                 auto clipped_hi = min(hi, post_v2_ub);
+                if (clipped_lo > clipped_hi)
+                    continue;
+
+                // Removing the run in one go. The values removed are the same
+                // either way -- a v2 value survives iff v1 holds it or its
+                // negation -- so the search does not change, only how many
+                // inferences it takes to get there.
+                if (both_simple && clipped_lo < clipped_hi) {
+                    inference.infer_not_in_range(logger, v2, clipped_lo, clipped_hi,
+                        JustifyExplicitly{
+                            [logger, v1s = get<SimpleIntegerVariableID>(v1), v2s = get<SimpleIntegerVariableID>(v2), clipped_lo = clipped_lo,
+                                clipped_hi = clipped_hi, abs_nonneg_le, abs_nonneg_ge, abs_neg_le, abs_neg_ge](const ReasonLiterals & r) {
+                                // The four halves stay optional in the capture and are
+                                // dereferenced here: define_proof_model does not run at
+                                // all with proofs off, so a capture-list dereference is
+                                // reading an empty optional on every call.
+                                justify_abs_hole_range(
+                                    *logger, r, v1s, v2s, clipped_lo, clipped_hi, *abs_nonneg_le, *abs_nonneg_ge, *abs_neg_le, *abs_neg_ge);
+                            },
+                            ThenRUP::Yes, hints::Abs{originator}},
+                        ExplicitReason{ReasonLiterals{{not_in_range(v1, clipped_lo, clipped_hi), not_in_range(v1, -clipped_hi, -clipped_lo)}}});
+                    continue;
+                }
+
                 for (Integer val = clipped_lo; val <= clipped_hi; ++val) {
+                    image_guard.step();
                     if (! state.in_domain(v2, val))
                         continue;
                     inference.infer_not_equal(logger, v2, val,
@@ -268,7 +311,45 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             for (auto [lo, hi] : v1_set.each_interval_minus(preimage_set)) {
                 auto clipped_lo = max(lo, post_v1_lb);
                 auto clipped_hi = min(hi, post_v1_ub);
+                if (clipped_lo > clipped_hi)
+                    continue;
+
+                if (both_simple) {
+                    // Split at zero. A run that straddles it does have a single
+                    // image to name -- abs([lo, hi]) is [0, max(-lo, hi)] -- but
+                    // its own negation then decides nothing about v1's sign, and
+                    // the justification would need the two-branch treatment the
+                    // other direction uses. One split instead, and each piece
+                    // proves itself.
+                    for (auto [piece_lo, piece_hi] : {pair{clipped_lo, min(clipped_hi, -1_i)}, pair{max(clipped_lo, 0_i), clipped_hi}}) {
+                        if (piece_lo > piece_hi)
+                            continue;
+
+                        if (piece_lo < piece_hi) {
+                            auto image_lo = piece_lo >= 0_i ? piece_lo : -piece_hi;
+                            auto image_hi = piece_lo >= 0_i ? piece_hi : -piece_lo;
+                            inference.infer_not_in_range(logger, v1, piece_lo, piece_hi,
+                                JustifyExplicitly{
+                                    [logger, v1s = get<SimpleIntegerVariableID>(v1), v2s = get<SimpleIntegerVariableID>(v2), piece_lo = piece_lo,
+                                        piece_hi = piece_hi, abs_nonneg_le, abs_nonneg_ge, abs_neg_le, abs_neg_ge](const ReasonLiterals &) {
+                                        justify_abs_preimage_range(
+                                            *logger, v1s, v2s, piece_lo, piece_hi, *abs_nonneg_le, *abs_nonneg_ge, *abs_neg_le, *abs_neg_ge);
+                                    },
+                                    ThenRUP::Yes, hints::Abs{originator}},
+                                ExplicitReason{ReasonLiterals{not_in_range(v2, image_lo, image_hi)}});
+                            continue;
+                        }
+
+                        preimage_guard.step();
+                        if (state.in_domain(v1, piece_lo))
+                            inference.infer_not_equal(
+                                logger, v1, piece_lo, JustifyUsingRUP{hints::Abs{originator}}, ExplicitReason{ReasonLiterals{v2 != abs(piece_lo)}});
+                    }
+                    continue;
+                }
+
                 for (Integer val = clipped_lo; val <= clipped_hi; ++val) {
+                    preimage_guard.step();
                     if (! state.in_domain(v1, val))
                         continue;
                     inference.infer_not_equal(

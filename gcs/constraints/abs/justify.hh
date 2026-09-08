@@ -10,6 +10,49 @@ namespace gcs::innards
     // from dom(v1).
     auto justify_abs_hole(ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v1, IntegerVariableID v2, Integer val) -> void;
 
+    // The range form of the same removal: justifies `~[v2 in lo..hi]` from a
+    // reason saying v1 holds nothing in [lo, hi] and nothing in [-hi, -lo].
+    //
+    // The per-value form gets away with two RUP lines because `v2 == val` pins
+    // every bit of v2, which pins v1's through whichever half-reified row is
+    // active. A range pins no bit, and the bounds it does give sit on *opposite
+    // sides* of the row, so closing it means adding two PB bound constraints to
+    // the row --- which unit propagation cannot do. (This is why the guarded
+    // two-lemma RUP shape min_max.cc and element.cc use does not transfer here.
+    // There the guard is falsified by the conclusion's own negation, and the
+    // remaining slack arithmetic happens to line up; measured on Abs it misses
+    // by one, see dev_docs/large-domains.md.)
+    //
+    // So each branch's two bounds are derived by `pol` instead, in the same
+    // resolution shape as the consequence-bound helpers below: the model half,
+    // plus the defining item of each atom whose arithmetic is used. That leaves
+    // one clause per branch whose only free literal is the sign, and the two
+    // signs being a literal and its negation, the conclusion follows by RUP.
+    //
+    // Four resolutions and two RUP lines per removed range, independent of its
+    // width, which is the property that matters. Both variables must be plain:
+    // a range literal on a view is not available (issue #882), and a constant
+    // has no order-encoding atoms to resolve against. Width-1 ranges are left
+    // to justify_abs_hole, which is what they canonicalise to anyway.
+    auto justify_abs_hole_range(ProofLogger & logger, const ReasonLiterals & reason, const SimpleIntegerVariableID & v1,
+        const SimpleIntegerVariableID & v2, Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le,
+        ProofLine abs_neg_ge) -> void;
+
+    // The mirrored direction: justifies `~[v1 in lo..hi]` where the caller's
+    // reason says v2 holds nothing in abs([lo, hi]). Takes no ReasonLiterals: all
+    // three of its lines are pol consequences of the model alone, so unlike the
+    // image direction none of them has to be stated under the reason.
+    //
+    // Cheaper than the above, and the asymmetry is the interesting part. [lo, hi]
+    // must lie wholly on one side of zero, which the caller arranges by splitting
+    // at zero; the conclusion's own negation then decides v1's sign, so only the
+    // active branch is needed and there is no case split left to close. Three
+    // resolutions: the sign, and the two bounds it licenses.
+    //
+    // Same plain-variable requirement as above.
+    auto justify_abs_preimage_range(ProofLogger & logger, const SimpleIntegerVariableID & v1, const SimpleIntegerVariableID & v2, Integer lo,
+        Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le, ProofLine abs_neg_ge) -> void;
+
     // The bound proofs below share their resolution shape between the
     // prepare-time initialiser and the run-time propagator. The initialiser
     // calls them with empty ReasonLiterals (the operand bound RUPs from

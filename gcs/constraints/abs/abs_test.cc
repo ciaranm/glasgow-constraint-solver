@@ -89,6 +89,49 @@ auto run_dup_abs_test(bool proofs, pair<int, int> x_range) -> void
     check_results(proof_name, expected, actual);
 }
 
+// Interior hole pruning over sparse domains (issue #875). The interval removals
+// live only on this path, and nothing in the data table can reach it: every row
+// there is a contiguous range or a constant, and a contiguous domain has no
+// interior hole to remove.
+//
+// The two loops need different shapes, which is why this takes both domains as
+// value lists. The preimage loop wants a hole in v2, and the random rows above
+// do reach that one. The *image* loop wants v1's image under abs to skip a run
+// that v2 contains, which takes a hole in v1 -- and before this existed, no test
+// in the suite reached it at all.
+auto run_abs_hole_test(bool proofs, const string & label, const vector<int> & v1_values, const vector<int> & v2_values) -> void
+{
+    // Sizes and extremes rather than the lists: preimage_far's v1 is 101 values
+    // wide and dumping it buries every other line of the run.
+    print(cerr, "abs holes [{}] v1={} values in [{},{}] v2={} values in [{},{}]{}", label, v1_values.size(), v1_values.front(), v1_values.back(),
+        v2_values.size(), v2_values.front(), v2_values.back(), proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<pair<int, int>> expected, actual;
+    for (auto a : v1_values)
+        for (auto b : v2_values)
+            if (b == abs(a))
+                expected.emplace(a, b);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    auto to_integers = [](const vector<int> & values) {
+        vector<Integer> result;
+        for (auto v : values)
+            result.push_back(Integer{v});
+        return result;
+    };
+
+    Problem p;
+    auto v1 = p.create_integer_variable(to_integers(v1_values));
+    auto v2 = p.create_integer_variable(to_integers(v2_values));
+    p.post(Abs{v1, v2});
+
+    auto proof_name = proofs ? make_optional("abs_test_holes_" + label) : nullopt;
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{IntegerVariableID{v1}, IntegerVariableID{v2}});
+
+    check_results(proof_name, expected, actual);
+}
+
 // Targeted tests for the proofs Abs::prepare emits for its four consequence
 // bounds. Domains are picked so that one specific bound is non-trivial, so a
 // proof failure points unambiguously at that bound. Uses
@@ -200,6 +243,33 @@ auto main(int argc, char * argv[]) -> int
         run_abs_initialiser_test("wide_asym_ub_dominant", {-5, 50}, {0, 80});
     }
 
+    // Sparse-domain hole rows, keyed to the two interior loops. Bare handles
+    // only: the interval path needs plain variables (a view has no range
+    // literal, #882), so a view-wrapped run takes the per-value path instead and
+    // these rows would say nothing about it.
+    auto contiguous = [](int lo, int hi) {
+        vector<int> result;
+        for (int v = lo; v <= hi; ++v)
+            result.push_back(v);
+        return result;
+    };
+    vector<tuple<string, vector<int>, vector<int>>> hole_data = {// Image loop. v1's image is {0, 1} u [8, 10], so [2, 7] has no preimage
+        // and is removed as one run of six. Nothing clips it first: v1 spans
+        // zero, so neither lower bound moves, and the two upper bounds coincide.
+        {"image_gap", {-1, 0, 1, 8, 9, 10}, contiguous(0, 10)},
+        // The same image reached from below zero, so the reason's live literal
+        // is the mirrored ~[v1 in -7..-2] rather than ~[v1 in 2..7].
+        {"image_gap_neg", {-10, -9, -8, 0, 1}, contiguous(0, 10)},
+        // An image run starting at zero, where the removed range and its mirror
+        // overlap at zero. v1 keeps a negative value so that v2's lower bound is
+        // not lifted past the run before the loop sees it.
+        {"image_gap_from_zero", {-3, 3, 4, 5}, contiguous(0, 5)},
+        // Preimage loop, with a run whose distance from zero is the point: the
+        // sign the justification needs is 31 order atoms away from the bound the
+        // conclusion's negation gives it. The random rows all leave runs
+        // adjacent to zero, where that step is free.
+        {"preimage_far", contiguous(-50, 50), {30, 40}}};
+
     // Bare-handle dup ranges. Skipped under the view-wrap sweep.
     vector<pair<int, int>> dup_data = {
         {-3, 3}, {-5, 0}, {0, 5}, {-1, 1}, {2, 5} //
@@ -210,9 +280,12 @@ auto main(int argc, char * argv[]) -> int
             continue;
         for (auto & [r1, r2] : data)
             run_abs_test(proofs, view_cfg, r1, r2);
-        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions))
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
             for (auto & x_range : dup_data)
                 run_dup_abs_test(proofs, x_range);
+            for (auto & [label, v1_values, v2_values] : hole_data)
+                run_abs_hole_test(proofs, label, v1_values, v2_values);
+        }
     }
 
     return EXIT_SUCCESS;
