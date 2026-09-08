@@ -250,20 +250,22 @@ else.
 
 ### OPB encoding
 
-One inequality over the operands' **bit** encodings. Writing `⟦v⟧` for the bit
-sum of `v`, and `d` for `0` in the `<=` form and `−1` in the `<` form:
+One inequality over the operands' **bit** encodings. Writing `BinEnc(v)` for
+the bit-sum encoding of `v` --- the notation
+[`justification-techniques.md`](../justification-techniques.md) and the thesis
+both use --- and `d` for `0` in the `<=` form and `−1` in the `<` form:
 
 ```
-MustHold      ⟦left⟧ - ⟦right⟧ <= d
+MustHold      BinEnc(left) - BinEnc(right) <= d
 
-MustNotHold   ⟦right⟧ - ⟦left⟧ <= -d-1        the integer negation
+MustNotHold   BinEnc(right) - BinEnc(left) <= -d-1        the integer negation
 
-If            cond  ->  ⟦left⟧ - ⟦right⟧ <= d
+If            cond  ->  BinEnc(left) - BinEnc(right) <= d
 
-NotIf         cond  ->  ⟦right⟧ - ⟦left⟧ <= -d-1
+NotIf         cond  ->  BinEnc(right) - BinEnc(left) <= -d-1
 
-Iff           cond  ->  ⟦left⟧ - ⟦right⟧ <= d          role r
-              ¬cond ->  ⟦right⟧ - ⟦left⟧ <= -d-1       role f
+Iff           cond  ->  BinEnc(left) - BinEnc(right) <= d          role r
+              ¬cond ->  BinEnc(right) - BinEnc(left) <= -d-1       role f
 ```
 
 The encoding is **definitional** and as small as an encoding gets: **one row**
@@ -474,11 +476,46 @@ verdicts, and two belong to the both-constant initialiser.
 Three facts hold for all seven and are not repeated in each entry.
 
 **Every rule is a bare RUP.** The family contains no `JustifyExplicitly`, emits
-no lemma, and writes nothing at `ProofLevel::Temporary`. So the **Proof
-technique** field is `RUP` for all seven, the **Proof size** is one line for
-all seven, and the **Offline reconstructibility** verdict is `offline` for all
-seven — the assertion alone determines the derivation, against one or two rows
-whose labels the OPB carries.
+no lemma, and writes nothing at `ProofLevel::Temporary`. So the **Proof size**
+is one line for all seven, and the **Offline reconstructibility** verdict is
+`offline` for all seven — the assertion alone determines the derivation,
+against one or two rows whose labels the OPB carries. Each rule's **Proof
+technique** field says `RUP` and then which procedure licenses it, which is
+where the seven differ.
+
+**And every rule is licensed by the same published procedure.** The four bound
+transfers are instances of **JP 3.2 (comparison)**, whose correctness proof is
+**Theorem 2.9**: the negated conclusion supplies a lower bound on one operand,
+this family's single row, and an upper bound on the other, which is exactly
+2.9's contradictory triple. The three condition rules reduce to the same thing
+or to nothing, and every one of the seven carries its reification condition by
+**Theorem 2.6**.
+[`justification-techniques.md`](../justification-techniques.md) states the
+facts; nothing in this family departs from a published procedure, which is
+worth saying because [`equals.md`](equals.md) has one rule that does.
+
+**The precondition is `B ∈ {0,1}`, and this family is exactly it.** Theorem 2.9
+requires the middle row's degree to be 0 or 1, and **Example 2.15** is the
+counterexample to relaxing that — a middle row of degree 3 over which unit
+propagation stalls. `left ≤ right` is `right − left ≥ 0` and `left < right` is
+`right − left ≥ 1`, so the family's two spellings *are* the theorem's two
+admissible degrees and there is nothing else it can emit. That is a stronger
+guarantee than most families get, and it is worth knowing which way round the
+dependency runs: the encoding is inside the theorem because a comparison has
+only these two forms, not because anything checks.
+
+It is also the sharpest available answer to why a two-term
+`LinearLessThanEqual` is *not* interchangeable with this family on the proof
+side, whatever [CPU performance](#cpu-performance) says about speed: a linear
+row with a constant outside `{0,1}` is outside Theorem 2.9 and needs JP 3.15
+instead.
+
+JP 3.2's correctness proof also handles a case this family hits, and takes
+care over it: if either operand is **not** two's-complement encoded the three
+constraints are not literally Theorem 2.9's, but they are in the state 2.9's
+own proof reaches after propagating the most significant bit, so the argument
+still applies. Both encodings occur here, since a non-negative operand is
+plain binary.
 
 **There is one wire form.** `hints::Comparison`, wire form
 `(constraint_id <id>)`, with no subhint and no payload beyond the owning
@@ -499,12 +536,20 @@ derivations of different *length*, and here they are all length one.
 - **Strength** — `GAC`. For a binary comparison the bounds pruning *is* domain
   consistency: a value `k` of `left` is supported iff some value of `right`
   exceeds it (or equals it), and whether one does depends only on `ub(right)`.
-  Holes in either domain cannot remove support. This is asserted rather than
-  argued — `comparison_test` runs the whole matrix under
+  Holes in either domain cannot remove support. The thesis states the same
+  thing, and states it as the reason this family's justification is simple —
+  *"Because bounds-consistency and domain-consistency are equivalent for this
+  constraint, the only kind of inference we need to be able to justify is
+  `y≥v ∧ x≥u ⇒ 0 ≥ 1`."* It is also checked rather than only argued:
+  `comparison_test` runs the whole matrix under
   `solve_for_tests_checking_gac`, so every value left in a domain at every node
   is checked against the solution set.
 - **Algorithm** — two `bounds()` reads, two `infer_*_or_stop` calls. O(1).
 - **Why it is true** — immediate from `left ≤ right`.
+- **Proof technique** — `RUP`, by **JP 3.2 (comparison)**, licensed by
+  **Theorem 2.9** with `B ∈ {0,1}` as above. The negated conclusion gives
+  `left ≥ k` and `right ≤ k − 1 + [or_equal]`, which with this family's single
+  row is 2.9's triple.
 - **Reason** — the base reason (the condition literal) plus the one bound
   literal being carried across: `{cond, right ≤ ub(right)}` for the first
   inference and `{cond, left ≥ lb(left)}` for the second. Minimal. **Not**
@@ -537,6 +582,11 @@ the propagate loop sees `tracker.contradicted()` instead of paying for a throw.
   comparison.
 - **Algorithm** — as rule 1. O(1).
 - **Why it is true** — `¬(left ≤ right)` is `right ≤ left − 1`.
+- **Proof technique** — `RUP`, by **JP 3.2** against the negated row, which
+  `define_proof_model` emits with the operands exchanged and the margin
+  flipped. Degree 0 or 1 either way, so the licence is the same; that the
+  *negation* of a comparison is a comparison is what keeps this family inside
+  one theorem.
 - **Reason** — `{cond, left ≤ ub(left)}` and `{cond, right ≥ lb(right)}`.
   Minimal, and likewise unguarded.
 - **Assertion** — as rule 1 with the operands exchanged and the margin flipped.
@@ -553,6 +603,10 @@ the propagate loop sees `tracker.contradicted()` instead of paying for a throw.
 - **Strength** — `GAC` on the condition.
 - **Algorithm** — two `bounds()` reads and one comparison. O(1).
 - **Why it is true** — every remaining assignment satisfies the comparison.
+- **Proof technique** — `RUP`. **Theorem 2.6** is doing the work: the asserted
+  literal is the condition, so the step is the reified form of "the negated row
+  is contradicted", and 2.6 reduces it to that unreified question — which is
+  JP 3.2 against the negated row under the two bound literals in the reason.
 - **Reason** — `{left ≤ ub(left), right ≥ lb(right)}`. Minimal — exactly the
   two bounds that make the argument, and no condition literal, since the
   condition is what is being inferred.
@@ -570,6 +624,8 @@ the propagate loop sees `tracker.contradicted()` instead of paying for a throw.
 - **Strength** — `GAC` on the condition.
 - **Algorithm** — as rule 3. O(1).
 - **Why it is true** — no remaining assignment satisfies the comparison.
+- **Proof technique** — `RUP`, the mirror of rule 3: **Theorem 2.6** over
+  JP 3.2 against the `cond ->` row.
 - **Reason** — `{left ≥ lb(left), right ≤ ub(right)}`. Minimal.
 - **Assertion** — the negated condition literal plus the two bound negations.
 - **Gaps** — `None.`
@@ -584,6 +640,11 @@ the propagate loop sees `tracker.contradicted()` instead of paying for a throw.
 - **Strength** — `GAC` on the condition.
 - **Algorithm** — one handle comparison. O(1).
 - **Why it is true** — `x ≤ x`, and never `x < x`.
+- **Proof technique** — `RUP`, and no procedure applies because there is
+  nothing to cross: with both operands the same handle the row reads
+  `BinEnc(x) − BinEnc(x) ≤ d`, whose left side is identically zero, so it is
+  either trivially true (`d = 0`) or trivially false (`d = −1`) and the
+  condition follows by **Theorem 2.6** alone.
 - **Reason** — `NoReason{}`; the fact is unconditional.
 - **Assertion** — the condition literal alone. Measured, for
   `LessThanIff{x, x, b == 1}`:
@@ -608,6 +669,10 @@ aliasing for exactly this reason.
 - **Strength** — `GAC` on the condition.
 - **Algorithm** — one comparison of two `Integer`s, done in `prepare()`. O(1).
 - **Why it is true** — the constraint is decided by the model.
+- **Proof technique** — `RUP`. As rule 5: the two constants make the row's left
+  side a known integer, so no bit-sum reasoning is needed and **Theorem 2.6**
+  gives the condition. This is why the assertion below is a unit — the two
+  constant literals are root-level facts and resolve away.
 - **Reason** — `{left = c1, right = c2}`. Minimal, and both literals are
   root-level facts.
 - **Assertion** — the condition literal, plus the negations of the two
@@ -627,6 +692,8 @@ aliasing for exactly this reason.
 - **Strength** — n/a; the model is infeasible.
 - **Algorithm** — as rule 6. O(1).
 - **Why it is true** — the model asserts a false statement about two constants.
+- **Proof technique** — `RUP`, as rule 6, with the condition already decided so
+  the conclusion is the empty clause rather than a literal.
 - **Reason** — `{cond, left = c1, right = c2}`. Minimal.
 - **Assertion** — the empty clause. Measured, for
   `LessThan{5, 3}`, which is the whole proof:
@@ -985,6 +1052,14 @@ separate. There is nothing here of the kind #819 and #889 found in `equals`.
   constraint and Θ(n²) with a global one, and `examples/difference_chain/` is
   it. The paper is about the global propagator; what it makes measurable here
   is the *decomposed* case, which is this family.
+- **The justification is entirely published, and there is nothing novel on the
+  proof side.** Every rule is JP 3.2 or a Theorem 2.6 reduction to it, from
+  McIlree's thesis (2026) — which also states the strength claim below, as the
+  reason a comparison's justification is simple: *"Because bounds-consistency
+  and domain-consistency are equivalent for this constraint, the only kind of
+  inference we need to be able to justify is `y≥v ∧ x≥u ⇒ 0 ≥ 1`."* This is the
+  first family in the arc with a completely empty novelty column, and that is a
+  useful thing for the paper to be able to say about something.
 - **The propagation algorithm has no literature and does not need one.** A
   binary inequality is two bound pushes; nobody publishes that. As with
   `equals`, the interesting content is on the proof side — and here it is
@@ -1001,6 +1076,11 @@ separate. There is nothing here of the kind #819 and #889 found in `equals`.
 
 ## Further reading
 
+- [`dev_docs/justification-techniques.md`](../justification-techniques.md) —
+  what licenses the `RUP` in all seven rules. For this family it is one
+  procedure (JP 3.2) and one theorem (2.9), and the theorem's `B ∈ {0,1}`
+  precondition happens to be exactly the family's two row shapes, so this is
+  the cheapest family in the arc to read alongside it.
 - `dev_docs/constraints.md` — the generic three-phase structure, the inference
   and justification APIs, and the OPB building blocks this family uses without
   extending.
