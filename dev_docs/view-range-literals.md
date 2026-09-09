@@ -20,8 +20,9 @@ own order atoms and its own equality atoms, joined to `X` by a single
 definitional link axiom plus lazily emitted atom-level biconditionals. Range
 literals join that list: `[V in a..b]` is an ordinary range literal over `V`,
 reified against `V`'s own two order cuts, with `V`'s own partition, coverings
-and containment edges. Every interval request on either side is mirrored onto
-the other, and the two literals are joined by **two** rup clauses. Nothing
+and containment edges. Every interval named on either side is mirrored onto the
+other — *named*, not requested, which §3 is entirely about — and the two
+literals are joined by **two** rup clauses. Nothing
 above the encoding layer knows any of this happened: a propagator says
 `infer_not_in_range(operand, lo, hi)` and states hole runs as range conditions
 over the operand, whether or not the operand is a view.
@@ -111,9 +112,10 @@ failure. `mirror_invar_across_view_link` is therefore called from `need_invar`
 whenever a range condition that already has a name reaches a proof line. It is
 idempotent, and after the first time it is a set probe.
 
-Literals that are never named need nothing, and cost nothing: a fact only ever
-enters a variable's literal family through a named literal or through a bound,
-and both of those cross.
+A literal that is never named needs nothing, because a fact only ever enters a
+variable's literal family through a named literal or through a bound, and both
+of those cross. As it happens that set turns out to be empty — §4 — but the rule
+does not depend on it being, and should not be changed to.
 
 One consequence worth knowing about: `need_invar` is now genuinely re-entrant,
 because resolving a literal while emitting a covering can re-enter it.
