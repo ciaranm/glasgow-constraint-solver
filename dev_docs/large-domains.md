@@ -183,42 +183,70 @@ Views keep the per-value path: a view's atoms are spelled through the view and
 the lemmas have not been shown to bridge that. Same restriction, and same reason,
 as the single-support range path in the same file.
 
-### The two-lemma RUP shape does not generalise; `pol` does
+### Theorem 2.9 is what makes the two-lemma shape work, and it wants a *difference*
 
-`Abs` (#875) is the case that shows where the shape above stops working, and it
-is worth reading before copying it into a fourth constraint.
+The bound-lemma shape above is not a trick that happens to work: it is an
+instance of **Theorem 2.9 (Contradictory constraints on binary sums)** in
+chapter 2 of Matthew's thesis
+(*Pseudo-Boolean Proof Logging for Constraint Propagation Algorithms*,
+Glasgow 2026, <https://theses.gla.ac.uk/86049/>; and see
+[range_literals_spec.md](range_literals_spec.md) Appendix B3). Read the theorem before adapting the
+shape to a new constraint, because its hypotheses are exactly the thing that can
+fail.
 
-`Abs`' model is two half-reified rows, `v2 - v1 == 0` under `v1 >= 0` and
-`v2 + v1 == 0` under `v1 < 0`. That looks like `ArrayMinMax`'s guarded equality
-with a two-valued selector, so the same two ge-layer bound lemmas ought to work.
-They do not, and the reason is not the guard: it is that **unit propagation
-cannot add two PB bound constraints to a row.** Negating such a lemma leaves one
-bound on each side of the equality, and a bound over a bit-vector fixes no bit
-unless it happens to be tight enough to force one.
+The theorem says: for two's-complement sums `x` and `y`, the three constraints
 
-Measured, because the failure is arithmetic rather than structural. On
-`abs_test`'s own `v1 = [-6, 8]`, `v2 = [0, 15]`, the negated lemma gives
-`v1 >= -6` — which forces `b3` through the two's-complement bound — and
-`v2 >= 7`, which forces nothing. The row then normalises to a slack of exactly
-**8** against a largest remaining coefficient of **8**, and a coefficient has to
-*exceed* the slack to propagate. One short.
+```
+y >= A            x - y >= B            x <= C
+```
 
-So why does `element.cc` verify? **Because its arithmetic lines up, not because
-the shape is sound.** A probe built for the question — `result` in `[0, 63]`,
-three entries in `{0, 40}`, so the removed run `[41, 63]` puts `result >= 41`
-against `array <= 40` with neither bound tight — verifies, and grinding through
-its propagation by hand shows why: `result >= 41` forces the top bit because 41
-exceeds what five bits can hold, which drops the row's slack below `array`'s top
-coefficient, which forces that, and so on for several rounds. Change the widths
-and that cascade stops. **Treat the guarded two-lemma RUP shape as a property of
-the instances it has been run on.**
+**always unit propagate to contradiction**, provided `A + B - C > 0` and
+`B ∈ {0, 1}`. The proof is a slack cascade, and it turns on C2 containing exactly
+the opposite literals to C1's and C3's with the same coefficients.
 
-The route that does not depend on the arithmetic is `pol`, which is what every
-other helper in `abs/justify.cc` already used: the model half, plus the defining
-item of each atom whose arithmetic the step uses, summed and saturated. The
-operands cancel, the constant comes out negative, and saturation leaves a clause
-over order atoms. Two shapes come out of it, and their asymmetry is the useful
-part:
+`justify_not_in_range_across_equality()` is that configuration with `B = 0`: the
+equality row is the difference `x - y >= 0`, and the two lemmas put a *lower*
+bound on one operand against an *upper* bound on the other. `min_max.cc` and
+`element.cc`'s guarded versions are the same thing with a selector carried
+through. So they are sound by a proven theorem, for any domain width — a probe
+built to doubt it (`result` in `[0, 63]`, entries in `{0, 40}`, so the removed
+run `[41, 63]` puts `result >= 41` against `array <= 40` with neither bound
+tight) verifies, and the cascade it verifies through is the theorem's own.
+
+**What `Abs` shows is where the hypotheses stop holding, not that the shape is
+unreliable.** `Abs`' model is two half-reified rows: `v2 - v1 == 0` under
+`v1 >= 0`, and `v2 + v1 == 0` under `v1 < 0`.
+
+* The **non-negative** branch is a difference, so it is Theorem 2.9 and the two
+  bound lemmas work. Verified by putting that branch back on the RUP shape:
+  `abs_test` passes at three seeds.
+* The **negative** branch links `v2` to `-v1`, so the row is a **sum**. The
+  lemma's negation then supplies *two lower bounds* rather than a lower and an
+  upper, and there is no assignment of the theorem's `x` and `y` to `v1` and
+  `v2` that makes the row its `x - y >= B`. Outside the hypothesis, and not
+  merely in principle: on `abs_test`'s own `v1 = [-6, 8]`, `v2 = [0, 15]` with
+  `lo = -6`, the three constraints normalise to slacks 5, 8 and 8 against largest
+  remaining coefficients 4, 8 and 8, so by **Proposition 2.1** (`C` propagates
+  `l_i` iff `slack(C) < a_i`) nothing propagates at all. Same family as the
+  thesis' own **Example 2.15**, which is the warning that generalisations of 2.9
+  do not always hold.
+
+So the rule to take away is about the *pairing*, not about `Abs`: **the two-lemma
+shape needs a lower bound on one operand and an upper bound on the other, across
+a row that is their difference.** A sign-flipped link does not qualify, and
+`justify_not_in_range.hh`'s suggestion that it just needs "the mirrored pairing"
+is too optimistic — the mirrored pairing is the non-propagating configuration
+above.
+
+`pol` is what does not care, which is why `abs/justify.cc` uses it for both
+branches: the model half, plus the defining item of each atom whose arithmetic
+the step uses, summed and saturated. The operands cancel, the constant comes out
+negative, and saturation leaves a clause over order atoms. The non-negative
+branch could use the cheaper RUP form, and does not, for uniformity — three
+resolutions against two RUP lines is not worth a second code path on a
+proof-writing path.
+
+Two shapes come out of it, and their asymmetry is the useful part:
 
 * Concluding on the variable the guard is *about* (`Abs`' image direction,
   `~[v2 in lo..hi]`) has to close both sign branches, because the conclusion's
