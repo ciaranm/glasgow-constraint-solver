@@ -16,9 +16,11 @@ namespace gcs::innards
     // each of which is RUP by Theorem 2.9 of Matthew's thesis (contradictory
     // constraints on binary sums): its negation supplies a *lower* bound on one
     // operand against an *upper* bound on the other, across a row that is their
-    // difference, which always unit propagates to contradiction. The lemmas
-    // mention no range literal, so any literal sharing these endpoints can reuse
-    // them.
+    // difference, which always unit propagates to contradiction. Their
+    // *conclusions* mention no range literal, which is what lets any literal
+    // sharing these endpoints reuse them; the emitted lines are still written
+    // under the caller's reason, which does name the range literal, and are
+    // Temporary, so they do not persist past the conclusion.
     //
     // [other_lo, other_hi] are the bounds the range forces on `other` through the
     // equality; for a plain `pruned = other` they are [lo, hi].

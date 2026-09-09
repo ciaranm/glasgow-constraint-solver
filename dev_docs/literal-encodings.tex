@@ -600,11 +600,17 @@ the bit vector of a derived representation is sized from $[l_W,u_W]$, and can be
 range $[1,8]$ too but a bit vector spanning $[0,15]$, and a view $X+10^6$ has a
 much wider one.  Any coefficient bound or big-$M$ computed for a line mentioning
 $W$ must be measured against $\BinEnc(W)$, not against the value range of $X$.
-Second, the solver's implementation allocates no magnitude bit that cannot reach
-a value of the domain, so a variable with range $[0,0]$ has the empty sum,
-identically zero; the thesis's ``least strictly positive $h$'' would give it one
-bit.  This is a deliberate divergence, for conformance with the verified
-encoder \code{cake\_pb\_cp}.
+Second, the implementation's width rule diverges from Step~7 in two places, both
+deliberate and both for conformance with the verified encoder
+\code{cake\_pb\_cp}.  It allocates no magnitude bit that cannot reach a value of
+the domain, so a variable with range $[0,0]$ has the empty sum, identically zero,
+where the thesis's ``least strictly positive $h$'' gives it one bit.  And it
+sizes from the \emph{signed} upper bound, $\max\{|l_W|,\,u_W+1\}$ rather than
+$\max\{|u_W|+1,\,|l_W|\}$, which differs exactly for a wholly-negative singleton
+at a power of two: $\{-2\}$ gets two bits rather than three, $\{-8\}$ four rather
+than five.  Both encodings cover the definition range, so \cref{thm:p1p2} is
+indifferent; but a view $-X$ of a variable fixed at a power of two meets the
+second one.
 \end{remark}
 
 \paragraph{Step 8: standardise constraints.}
@@ -743,9 +749,14 @@ The solver optionally uses a compact encoding in which an equality atom at a
 definition bound is defined by its one non-trivial cut only
 ($\ateq{w}{l_W}\Leftrightarrow\natge{w}{l_W+1}$, and dually at
 $u_W$).  This is off by default, because the eager form matches
-\code{cake\_pb\_cp}'s.  Every argument below survives it, because the dropped
-cut is a pinned unit by \invCut{} and \inv{Bound}, but the reader checking the
-proofs against an implementation should be aware of the variation.
+\code{cake\_pb\_cp}'s.  Under that variant \invCut{} \emph{fails} at the
+definition bounds: the dropped cut is not a pinned atom but no atom at all ---
+for $X\in[3,9]$ the equality atom at $3$ is defined and $\atge{x}{3}$ is never
+created.  Everything below is therefore stated for the default encoding.  The
+compact variant should be sound, the dropped cut being a constant of the
+encoding rather than a fact, but making the results unconditional would mean
+rereading every appeal to \invCut{} at a definition bound with a constant in
+place of the atom, and we have not done that.
 \end{remark}
 
 \begin{lemmaT}[Propagation of contradictory bound literals]
@@ -794,7 +805,10 @@ $t$ in the proof.
   representation $W$ with $v<v'$, if $\Def(\atge{w}{v})$ and
   $\Def(\atge{w}{v'})$ appear in $F_t$, then either $\atge{w}{v''}$ is defined
   for some $v<v''<v'$, or the constraint
-  $\atge{w}{v'}\Rightarrow\atge{w}{v}\geq 1$ appears in $F_t$.
+  $\natge{w}{v}$ appears in $F_t$.  A representation whose bounds are not a
+  consequence of the model --- a free bit-sum introduced inside the proof ---
+  is exempt, and its owner derives the bounds explicitly instead; no interval
+  literal is defined over such a variable today.
 
 \item[\inv{Bound}: boundary pins.]
   For every defined $\atge{w}{v}$ with $v\leq l_W$, the unit $\atge{w}{v}$
@@ -807,8 +821,8 @@ $t$ in the proof.
   $\atge{w}{b+1}$.
 
 \item[\invPart{}: the partition.]
-  If any interval literal is defined for $W$, then there is a finite set of
-  \emph{boundaries} $\Bdry(W)\subseteq[l_W,u_W+1]$ with
+  If any interval literal with non-empty in-bounds part is defined for $W$, then
+  there is a finite set of \emph{boundaries} $\Bdry(W)\subseteq[l_W,u_W+1]$ with
   $l_W,u_W+1\in\Bdry(W)$.  The \emph{cells} $\Cells(W)$ are the intervals
   $[p,p'-1]$ for consecutive $p<p'$ in $\Bdry(W)$; they partition $[l_W,u_W]$.
   Every cell is a defined literal --- an equality atom if it has width one, an
@@ -828,9 +842,13 @@ $t$ in the proof.
   $F_t$ contains a clause $\overline{E}\vee C_1\vee\cdots\vee C_k$ where each
   $C_i$ is a defined literal that is a union of adjacent cells, and
   $\bigcup_i C_i = S$.
-  \emph{(iii) The root covering.}  $F_t$ contains a clause
+  \emph{(iii) The root covering.}  If $\Bdry(W)$ exists, $F_t$ contains a clause
   $C_1\vee\cdots\vee C_m\geq 1$ where the $C_i$ are defined literals that are
-  unions of adjacent cells with $\bigcup_i C_i = [l_W,u_W]$.
+  unions of adjacent cells with $\bigcup_i C_i = [l_W,u_W]$.  A representation
+  with no interval literal, or with only out-of-bounds ones, has no partition and
+  no root covering, and this clause holds vacuously --- which is what lets
+  \cref{lem:covering} and \cref{thm:complete} still say something about a plain
+  order/equality variable, the entire setting of the thesis.
 
 \item[\invCont{}: containment.]
   For any two defined equality or interval literals $E\subsetneq E'$ of the same
@@ -844,13 +862,20 @@ $t$ in the proof.
   every defined atomic variable of a derived $W$, the two clauses linking it to
   the corresponding atomic variable of the base $X$ appear in $F_t$.
 
-\item[\invName{}: everything is named.]
-  Every defined interval literal has appeared in some emitted proof line other
-  than its own reification.
+\item[\invName{}: cells are named.]
+  Every cell has appeared in some emitted proof line other than its own
+  reification.
+
+  Deliberately about cells, not about every interval literal.  A literal whose
+  in-bounds part is empty is defined with no partition, no covering and no
+  containment edge, and nothing names it; \invRep{} does not suffer, because such
+  a literal can only arise from an explicit request, and the request path
+  establishes \invRep{} for itself.  See the remark after \cref{lem:transport}.
 
 \end{description}
-
-\invChain{} and \inv{Bound} come from the thesis, generalised only by being
+apparatus.  \invName{} is a hygiene condition that \invRep{} needs for the
+interval literals created as cells, and only for those --- see the remark after
+\cref{lem:transport}.
 stated per representation.  \invCut{} is implicit there; we make it explicit
 because both new literal kinds depend on it.  \invPart{}, \invCover{} and
 \invCont{} are the interval apparatus.  \invRep{} is the multi-representation
@@ -859,8 +884,9 @@ literals, and only for them --- see the remark after \cref{lem:transport}.
 
 \begin{remark}
 Nothing above depends on the search state.  Every clause named is a tautology of
-the encoding, RUP at the moment it is emitted, and is emitted at the top proof
-level.  The alternative --- emitting a covering over whatever facts currently
+the encoding, emitted at the top proof level, and derivable there from what
+precedes it --- by RUP, except for the ge-links, which are cutting-planes steps
+(see the discussion after \cref{eq:inlink}).  The alternative --- emitting a covering over whatever facts currently
 witness an exclusion --- is also sound, but makes the invariant depend on what
 was live when, and drags a level-aware registry of live conclusions into the
 encoding layer.  It was implemented, and rejected for complexity rather than for
@@ -926,13 +952,28 @@ representation:
      \label{eq:inlink}
 \end{align}
 
-Each is RUP at the point it is emitted.  For the ge-link this is Theorem~2.9 of
-the thesis applied to $\Def(\atge{w}{v})$, $\Link(W)$ and the corresponding half
-of $\Def((\atge{w}{v})^X)$, whose $\BinEnc$ terms cancel exactly; in the solver
-it is emitted as an explicit cutting-planes step rather than as a RUP line, so
-that the derivation is checkable in one pass.  For the eq-link, asserting one
-side and the negation of the other propagates both cuts through
-\cref{eq:deq1}, carries each across by the ge-links, and closes on
+The eq-link and the in-link are RUP at the point they are emitted.  \textbf{The
+ge-link is not}, and this is worth being precise about, because the natural
+assumption is that it is.  Summing $\Def(\atge{w}{v})$, $\Link(W)$ and the
+corresponding half of $\Def((\atge{w}{v})^X)$ does make the $\BinEnc$ terms
+cancel exactly, and saturating leaves the clause --- but that is a
+\emph{cutting-planes} derivation, not a unit-propagation one.  What would make
+the configuration RUP is Theorem~2.9 of the thesis, and it requires the middle
+constraint's right-hand side to lie in $\{0,1\}$; here that constraint is a half
+of $\Link(W)$, so the right-hand side is $\pm c_W$, and the theorem does not
+apply once $|c_W|>1$.  Example~2.15 of the thesis is a counterexample of exactly
+this shape.
+
+Nor is this a corner case.  Checking the clause as a RUP line with a verifier
+over a three-bit base, only $c_W = 0$ succeeds at every threshold; $X\in[0,7]$
+with $W = X+1$ and $v=6$ is a concrete rejection, and other offsets fail at some
+thresholds and not others.  The solver is unaffected, because
+\code{need\_gevar} emits these by \code{pol}; but a future simplification of that
+emission to a RUP line would fail on the first view with a nonzero offset, and
+would fail intermittently, which is worse.
+
+For the eq-link, asserting one side and the negation of the other propagates both
+cuts through \cref{eq:deq1}, carries each across by the ge-links, and closes on
 \cref{eq:deq2} of the far side.  For the in-link, the same argument with
 \cref{eq:din1,eq:din2}, noting that for $s=-1$ the two cuts exchange roles ---
 which is exactly the endpoint swap in \cref{def:image}.
@@ -1083,7 +1124,7 @@ currently defined literals of $W$, not merely over the cells.
 
 \begin{lemmaN}[Cell exclusion]
 \label{lem:cell}
-Assume \invChain{}, \inv{Bound}, \invCut{}, \invPart{} and \invCont{}.  Let
+Assume \invChain{}, \invCut{}, \invPart{} and \invCont{}.  Let
 $U\subseteq L^W$ be a cut-normalised set of literals each of which propagates
 under $R$, suppose $F_t\!\restriction_R$ does not propagate to conflict, and
 write $D=\dm_U(W)$.  Let $C\in\Cells(W)$ be a cell with $D\cap C=\emptyset$.
@@ -1204,11 +1245,13 @@ Suppose not, and cut-normalise $U$ using \cref{lem:normalise}, which preserves
 both the defined domain and the property of propagating under $R$.
 
 Since $\dm_U(W)=\emptyset$, every integer is excluded by $U$ somehow.  In
-particular the values below any fixed point must be excluded, and no negative
-two-cut literal and no literal $\natge{w}{v}$ excludes a value below
-$v$; so $U$ contains at least one literal $\atge{w}{v}$.  Let $v^{+}$ be the
-largest value such that $\atge{w}{v^{+}}$ propagates under $R$; this exists
-because only finitely many bound variables are defined in a finite formula.
+particular the values below any fixed point must be excluded.  No literal
+$\natge{w}{v}$ excludes anything below $v$, and $U$ is finite --- it is a subset
+of $L^W$, and only finitely many atomic variables are defined in a finite
+formula --- so its negative two-cut literals between them exclude only a bounded
+set.  Hence $U$ contains at least one literal $\atge{w}{v}$.  Let $v^{+}$ be the
+largest value such that $\atge{w}{v^{+}}$ propagates under $R$; this exists for
+the same reason.
 Symmetrically, let $v^{-}$ be the smallest value such that
 $\natge{w}{v^{-}}$ propagates; this exists for the mirrored reason.
 
@@ -1264,8 +1307,10 @@ Consider a literal $\ell\in\ImpLits(\dm_U(X))\cap L^W$.  By \cref{eq:implits}
 there are six cases.
 
 \emph{Case 1: $\ell=\atge{w}{v}$, with $v'\notin D$ for all $v'<v$.}  In
-particular $D$ is bounded from below, so $U$ contains a positive bound literal,
-and we may let $v^{+}$ be the largest value with $\atge{w}{v^{+}}$ propagating.
+particular $D$ is bounded from below.  Since $U$ is finite, its negative two-cut
+literals exclude only a bounded set, so $U$ must contain a positive bound
+literal, and we may let $v^{+}$ be the largest value with $\atge{w}{v^{+}}$
+propagating.
 If $v^{+}>v$ then $\ell$ propagates by \cref{lem:chain}.  If $v^{+}=v$ then
 $\ell$ propagates by definition of $v^{+}$.  Otherwise $v^{+}<v$, so
 $v^{+}\notin D$, and $v^{+}$ is not excluded by any bound literal of $U$ (by
@@ -1284,9 +1329,9 @@ are $\atge{w}{v}$ and $\atge{w}{v+1}$ by \invCut{}; both
 $\atge{w}{v}\in\ImpLits$ and $\natge{w}{v+1}\in\ImpLits$, so they
 propagate by Cases 1 and 2, and \cref{eq:deq2} then propagates $\ell$.
 
-\emph{Case 4: $\ell=\nateq{w}{v}$, so $v\notin D$.}  If
-$\ateq{w}{v}\in U$ then $D=\{v\}$, contradiction; so consider what excludes $v$.
-If a bound literal does, then either $\atge{w}{v+1}$ or
+\emph{Case 4: $\ell=\nateq{w}{v}$, so $v\notin D$.}  Consider what excludes $v$;
+after cut normalisation the candidates are a bound literal and a negative
+two-cut literal.  If a bound literal does, then either $\atge{w}{v+1}$ or
 $\natge{w}{v}$ propagates by \cref{lem:chain}, and the corresponding
 clause of \cref{eq:deq1} propagates $\ell$.  If instead a negative two-cut
 literal $\overline{E}\in U$ with $v\in E$ does, then $\{v\}\subseteq E$; if
@@ -1310,6 +1355,26 @@ propagates by \cref{lem:cell}.  If $E$ is itself a current cell we are done; if
 not, \cref{lem:covering}(b) propagates $\ell$.
 \end{proof}
 
+\begin{remark}[What ``complete'' does and does not mean]
+\label{rem:domlimits}
+\cref{eq:domL} takes no account of $\Bnd(W)$, so $\dm_U(W)$ can contain values
+the variable's own bounds exclude, and \cref{thm:complete} is correspondingly
+narrower than its name suggests.  With cells $[1,3]$, $[4,6]$, $[7,10]$ on
+$[1,10]$ and $U = \{\overline{[1,3]}, \overline{[4,6]}\}$, unit propagation does
+derive $\atge{w}{7}$ --- through the root covering and the surviving cell --- but
+$\atge{w}{7}\notin\ImpLits(\dm_U)$, so the theorem does not claim it.  With
+$U$ extended by $\overline{[7,10]}$, unit propagation reaches a conflict while
+$\dm_U(W)$ is still non-empty, so \cref{thm:wipeout}'s hypothesis does not hold
+either.  Neither is a counterexample to anything stated; both are consequences of
+$\dm_U$ being computed from $U$ alone.
+
+This is the thesis's convention and we keep it, because it is what makes the
+theorems compose: \cref{sec:unsat} puts the root bound literals into the
+propagated set, at which point $\dm_U(W)\subseteq[l_W,u_W]$ and the gap closes.
+The reader should simply not read ``complete propagation'' as ``everything the
+solver's domain implies''.
+\end{remark}
+
 \paragraph{Lifting to a representation family.}
 
 \begin{lemmaN}[Unit transport]
@@ -1320,9 +1385,12 @@ $\ell^{W'}$ propagates under $R$.
 \end{lemmaN}
 
 \begin{proof}
-Images compose, $(\ell^{X})^{W'} = \ell^{W'}$, so it suffices to prove the claim
-for $W'=X$ and for $W$ derived, and then apply it twice.  By \invRep{} the
-atomic variable underlying $\ell^{X}$ is defined and the two linking clauses
+It suffices to show that a literal crosses a single link pair, in either
+direction and either polarity; a general $W\to W'$ transport is then at most two
+such crossings, through the base, because images compose:
+$(\ell^{X})^{W'} = \ell^{W'}$.  So take $W$ derived and consider its link to the
+base.  By \invRep{} the atomic variable underlying $\ell^{X}$ is defined and the
+two linking clauses
 \cref{eq:gelink}, \cref{eq:eqlink} or \cref{eq:inlink} appear in $F_t$.  Those
 two clauses are $\overline{p}\vee q$ and $\overline{q}\vee p$ for
 $p$ the positive literal of $W$'s atom and $q$ its image; a binary clause
@@ -1487,8 +1555,13 @@ the pair
   \qquad\text{and}\qquad
   \atge{y}{b'+1}\Rightarrow\atge{x}{b+1},
 \]
-each RUP by the Theorem~2.9 configuration, mentioning no interval literal and
-therefore reusable by any literal sharing those endpoints.  This is
+each RUP by the Theorem~2.9 configuration --- which does apply here, the middle
+constraint being an equality between two bit-sums, so its right-hand side is
+zero.  The lemmas' \emph{conclusions} mention only order atoms, which is what
+lets them be shared by any interval literal with those endpoints; they are
+nevertheless emitted under the propagator's reason, which does contain the
+interval literal, and are deleted with the scaffolding level rather than
+persisting.  This is
 \S3.4 material and we do not develop it here; we note only that the interval
 vocabulary does not change the situation, because an interval literal asserts
 only order atoms, never bits.
@@ -1580,9 +1653,10 @@ $\dm_L(X)\subseteq\dm_t(X)$ is between two subsets of the same set of integers.
 
 \begin{theoremT}
 \label{thm:btrup}
-If \invConflict{} and \invDomain{} are respected, and a complete solver always
-logs backtracking justifications, then every backtracking justification $B_t$
-follows by RUP.
+If \invConflict{} and \invDomain{} are respected, the literal-layer invariants
+\cref{thm:wipeout-family} needs hold --- \invChain{}, \invCut{} and \invRep{} ---
+and a complete solver always logs backtracking justifications, then every
+backtracking justification $B_t$ follows by RUP.
 \end{theoremT}
 
 \begin{proof}
@@ -1700,10 +1774,25 @@ $X$ with initial bounds $l$ and $u$, these are
   \label{eq:rootbounds}
 \end{equation}
 These follow by RUP by the same argument as \cref{cor:chainrup}, since the bound
-constraints $\Bnd(X)$ are present.  \inv{Bound} is the lazy generalisation
-actually implemented: the unit is emitted for whichever out-of-range cut is
-first created, and the same argument applies, because $\Bnd(W)$ is asserted for
-every representation, derived ones included.
+constraints $\Bnd(X)$ are present, and likewise for every representation, derived
+ones included, because $\Bnd(W)$ is asserted for each.
+
+\begin{remark}[The eager introduction is load-bearing, and the solver is lazier]
+\label{rem:lazypins}
+\invDomain{} needs \cref{eq:rootbounds} to be present from the start.  With
+$L=\emptyset$, \cref{eq:domL} gives $\dm_L(X)=\mathbb Z$, which is not contained
+in $\dm_t(X)$, so the base case of \cref{thm:maintain} fails without it.
+
+The implementation does not introduce these eagerly.  \inv{Bound} as stated ---
+a unit for each defined out-of-range cut --- is what it maintains, and atoms are
+created only when a proof line needs them, so a variable no proof line has
+mentioned has no atoms at all.  This is not known to cause trouble: a variable
+with no defined literal appears in no reason and no conclusion, so \invDomain{}
+is never appealed to for it.  But it is a real difference between the framework
+as stated here and the framework as implemented, we have not worked the lazy
+variant through, and the honest position is that the results below are proved
+for \cref{eq:rootbounds} as written.
+\end{remark}
 
 \begin{theoremT}
 \label{thm:maintain}
@@ -1884,9 +1973,10 @@ the only workable one, for three reasons.
     preserved set and the same enumeration conclusion.
 \end{itemize}
 
-One consequence deserves care.  Because atomic variables are not preserved, a
-solution witness must not be stated purely in terms of them.  It is stated over
-base equality literals, and unit propagation completes it --- through
+One consequence deserves care.  A solution witness \emph{is} written over atomic
+variables --- one base equality literal per variable --- even though atomic
+variables are not preserved.  That is sound only because unit propagation
+completes such a witness to the preserved bits, and onward --- through
 \cref{sec:optimality}'s step~1 --- to the bits of every derived representation.
 The completion argument is therefore load-bearing for enumeration in a way it is
 not for optimality, and a representation whose bits did not propagate from the
@@ -1947,9 +2037,11 @@ checked by RUP after the decisions have been asserted, discriminates.
 
 \subsubsection*{The witness suite}
 
-Each clause family has a deterministic counterexample that fails within
-milliseconds if the family is removed or weakened.  These are checked in as
-gate-on, verifier-checked tests, and any change to the clause set must run them.
+Each clause family has a counterexample that fails quickly if the family is
+removed or weakened.  All but one are deterministic tests, checked in as gate-on
+and verifier-checked; W4 is instead a standing regression net, the whole
+constraint suite run under interval-rejecting branching, and it is random rather
+than deterministic.  Any change to the clause set must run them all.
 
 \begin{center}
 \small
@@ -2133,11 +2225,16 @@ decision.  On $X$:
   \item there is no containment yet, nothing being nested.
 \end{itemize}
 Because the literal has now been \emph{named} --- by the root covering, if
-nothing else --- the mirroring hook fires, and $[X\in 5..10]$ maps to
-$[V\in 20..25]$: the endpoints swap because $\varphi_V$ reverses the order,
-and $30-10=20$, $30-5=25$.  On $V$ the partition is created in turn, with
-boundaries $\{10,20,26,30\}$, cells $[10,19]$, $[20,25]$, $[26,29]$, and its own
-root covering.  Finally the two clauses
+nothing else --- the mirroring hook fires for each cell in turn, and the images
+join $V$'s side.  It is worth following the order, because it is not the order
+one would guess.  The first literal the root covering names is $[1,4]$, whose
+image $[26,29]$ is what creates $V$'s partition, with boundaries
+$\{10,26,30\}$ and cells $[10,25]$, $[26,29]$; $V$'s own root covering is
+therefore $\atin{v}{10}{25}\vee\atin{v}{26}{29}\geq 1$, and rendering \emph{that}
+names $[10,25]$, whose image is a fresh request $[X\in 5..20]$ back on $X$.  Only
+then does $[5,10]$'s own image $[20,25]$ arrive and split $[10,25]$ at $20$.  The
+endpoints swap because $\varphi_V$ reverses the order: $30-10=20$, $30-5=25$.
+Finally the two clauses
 \[
   \natin{x}{5}{10}\vee\atin{v}{20}{25}
   \qquad\text{and}\qquad
@@ -2164,33 +2261,54 @@ $[V\in 15..23]$, and the link pair joins the two.
 
 The state now is: boundaries $\{1,5,7,11,16,21\}$ on $X$ and
 $\{10,15,20,24,26,30\}$ on $V$; five cells each, in bijection under $\varphi_V$;
-and defined non-cell literals $[X\in 5..10]$, $[X\in 11..20]$, $[X\in 7..15]$
-with their images.
+and non-cell literals $[X\in 5..10]$, $[X\in 11..20]$, $[X\in 7..15]$ and
+$[X\in 5..20]$, with their images.  The last of those is not something any
+caller asked for: it is the image of $V$'s first root covering, as above.  This
+is the general phenomenon of \cref{sec:open} item~6 --- the two sides hold the
+same literals, but arrive at them by different routes and hold them in different
+roles.
 
 \paragraph{A negative crossing.}
-Suppose the solver now decides $\neg[X\in 7..15]$ and, deeper in the subtree, a
-propagator's reason names $[V\in 15..23]$, which is the image.  In the replay,
-$\natin{x}{7}{15}$ is asserted.  It is a unit on neither of its cuts:
+Suppose the solver now decides $\natin{x}{7}{10}$ --- the \emph{cell} $[7,10]$,
+not the request $[7,15]$ --- and, deeper in the subtree, a propagator's reason
+names $[V\in 20..23]$, which is its image.  In the replay,
+$\natin{x}{7}{10}$ is asserted.  It is a unit on neither of its cuts:
 \cref{eq:din2} for it is the ternary clause
-$\atin{x}{7}{15}\vee\natge{x}{7}\vee\atge{x}{16}$, and with the first
-literal false and neither bound known, nothing propagates.  Its containment
-edges point the wrong way --- they carry $\natin{x}{7}{15}$ \emph{down}
-to $[7,10]$ and $[11,15]$, not across.  The only thing that carries the fact to
-$V$ is the \emph{first} clause of the link pair,
-$\natin{v}{15}{23}\vee\atin{x}{7}{15}$: with $\atin{x}{7}{15}$ false it
-propagates $\natin{v}{15}{23}$ in one step.  Read as an implication that
-clause says $\atin{v}{15}{23}\to\atin{x}{7}{15}$, which is not the direction
-anything needs; it is here for its contrapositive.  Delete it and the
-backtracking justification fails, while every individual line of the proof still
-verifies.  This is witness W6 in miniature; W7 is the mirror image --- a fact
-decided on $V$ and needed on $X$ --- and it needs the other clause.
+$\atin{x}{7}{10}\vee\natge{x}{7}\vee\atge{x}{11}$, and with the first literal
+false and neither bound known, nothing propagates.  Its containment edges are no
+help either: they run $\natin{x}{7}{10}\vee\atin{x}{5}{10}$ and
+$\natin{x}{7}{10}\vee\atin{x}{7}{15}$, both already satisfied by the decision, so
+neither propagates anything.  And there is nothing below to descend to: a cell
+has no covering, and no defined literal lies strictly inside it.  The only thing
+that
+carries the fact to $V$ is the first clause of its link pair,
+$\natin{v}{20}{23}\vee\atin{x}{7}{10}$: with $\atin{x}{7}{10}$ false it
+propagates $\natin{v}{20}{23}$ in one step.  Read as an implication that clause
+says $\atin{v}{20}{23}\to\atin{x}{7}{10}$, which is not the direction anything
+needs; it is here for its contrapositive.  Delete it and the backtracking
+justification fails, while every individual line of the proof still verifies.
+This is witness W6 in miniature; W7 is the mirror image --- a fact decided on
+$V$ and needed on $X$ --- and it needs the other clause.
+
+\paragraph{Why it has to be a cell.}
+Run the same argument on the \emph{request} $[7,15]$ instead and the conclusion
+is false: deleting that literal's first link clause leaves the proof verifying.
+The reason is that $[7,15]$ is a union of two cells, so the invariants supply a
+second route. Containment carries $\natin{x}{7}{15}$ \emph{down} to
+$\natin{x}{7}{10}$ and $\natin{x}{11}{15}$; those cells have link pairs of their
+own, which carry them to $\natin{v}{20}{23}$ and $\natin{v}{15}{19}$; and $V$'s
+request covering
+$\natin{v}{15}{23}\vee\atin{v}{15}{19}\vee\atin{v}{20}{23}$ lifts them back up.
+So it is the \emph{family} of first clauses that is load-bearing, and no single
+member of it, for any literal that is not a cell on both sides.  W6 to W9 are
+built on unsplit cells for exactly this reason.
 
 \paragraph{Why a nearby instance proves nothing.}
-Replace the decision by $\neg[X\in 1..15]$, whose interval abuts the lower bound.
-Now no link clause is needed at all.  \cref{eq:din2} for it is
+Take instead the decision $\natin{x}{1}{15}$, whose interval abuts the lower
+bound.  Now no link clause is needed at all.  \cref{eq:din2} for it is
 $\atin{x}{1}{15}\vee\natge{x}{1}\vee\atge{x}{16}$; the boundary pin
-$\atge{x}{1}$ of \inv{Bound} is a unit, so $\atge{x}{16}$ propagates.  The ge-link
-carries that to $\natge{v}{15}$, since $X\geq 16$ is $V\leq 14$, and the
+$\atge{x}{1}$ of \inv{Bound} is a unit, so $\atge{x}{16}$ propagates.  The
+ge-link carries that to $\natge{v}{15}$, since $X\geq 16$ is $V\leq 14$, and the
 \emph{forward} reification of the image literal $\atin{v}{15}{29}$ then falsifies
 it.  A green result on this instance says nothing whatever about the link pair,
 and three further shapes have the same property --- see \nsec{sec:coincidence},
@@ -2204,10 +2322,13 @@ where 80\% of small random instances turn out to be one of them.
 \item \textbf{Variables with no bit vector.}  As noted in
   \nsec{sec:notprovided}, interval literals need cuts to reify against.  The
   gate is whether the variable has a registered bit vector, not what its domain
-  looks like: a two-valued variable given a purely direct encoding is registered
-  with a one-element bit vector, and is therefore \emph{not} the failing case,
-  even though it has no order atoms until they are built lazily.  The failing
-  case is a direct-only variable of width three or more.  Consumers guard on the
+  looks like: a variable with domain exactly $\{0,1\}$, given a purely direct
+  encoding, is registered with a one-element bit vector, and is therefore
+  \emph{not} the failing case, even though it has no order atoms until they are
+  built lazily.  Note that the test is on the two \emph{values}, not on the
+  width: a direct-only variable with domain $\{5,6\}$ has no bit vector and does
+  throw.  So the failing case is any direct-only variable other than a
+  $\{0,1\}$ one.  Consumers guard on the
   same predicate, which resolves a view to its base --- correctly, since a view
   of a bit-vector-less variable would have to mirror onto a variable that cannot
   hold the mirror.
@@ -2221,13 +2342,18 @@ where 80\% of small random instances turn out to be one of them.
   OPB surface that a verified encoder conforms against.  The decision is open
   and should be taken alongside that work.
 
-\item \textbf{Assertion levels.}  Where the checker is asked to take the
-  definitional layer on trust rather than checking it, the linking clauses are
-  asserted rather than derived, and the covering and containment apparatus is
-  omitted entirely.  This is consistent --- if the definitions are not present,
-  neither are the facts they would let unit propagation derive --- but the
-  theorems above are stated for the fully-derived setting, and the trusted
-  settings are not separately exercised by the witness suite.
+\item \textbf{Assertion levels.}  The solver can be asked to \emph{assert} parts
+  of the proof rather than derive them, on a scale running
+  \textsc{Off} $<$ \textsc{Definitions} $<$ \textsc{Links} $<$
+  \textsc{Inferences} $<$ \textsc{Backtracking}.  At \textsc{Links} the atom
+  definitions and the linking clauses are asserted, but the covering and
+  containment apparatus is still emitted, as ordinary RUP lines: the guards on
+  it are all ``above \textsc{Links}''.  Above \textsc{Links} the interval
+  machinery is skipped entirely, and no cells exist.  So there is no setting in
+  which the links are asserted and the apparatus is dropped, which is what an
+  earlier draft of this entry claimed.  The theorems above are stated for the
+  fully-derived setting; the asserting levels are not separately exercised by the
+  witness suite.
 
 \item \textbf{Unregistered views.}  A view first encountered during proof
   logging, after the model is closed, cannot be given a representation variable,
