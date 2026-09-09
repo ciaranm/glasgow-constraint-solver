@@ -201,7 +201,7 @@ the range spec already assumes; and that in-bounds endpoints are partition
 boundaries — which is why `need_direct_encoding_for` cuts at `v` and `v+1` when a
 partition exists, and dropping that would break the base case above.
 
-Corroboration, which is not the argument but is worth having: 2998 randomly
+Corroboration, which is not the argument but is worth having: 3000 randomly
 generated view proofs verified with zero mirror-closure violations, over Equals,
 NotEquals, AllEqual, Min, Max, In, LessThan, LessThanEqual and AllDifferent with
 holey domains, three-view bases, and intervals pushed outside the definition
@@ -227,7 +227,7 @@ Measured two ways, both damning for the sweep as evidence. Over domain widths
 4–16 with 0–7 random requests per instance: **80% of instances cross successfully
 with no linking clause at all** — abut-high 39%, abut-low 23%, whole-range 12%,
 shattered 5.6% — and of the 20% that stall, a single wide cell accounts for 88%.
-And over 985 randomly generated instances that actually reach a conflict, with
+And over 987 randomly generated instances that actually reach a conflict, with
 the link clauses ablated: only **37 of them notice**. The sweep is about 96%
 coincidence.
 
