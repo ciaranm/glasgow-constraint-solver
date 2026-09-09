@@ -106,30 +106,26 @@ auto run_power_var_exp_test(bool proofs, pair<int, int> base_range, pair<int, in
 
 // A structurally constant exponent, which dispatches on its value: linear for
 // 0 and 1, a Multiply chain for small positive, a case analysis for negative
-// or enormous ones.
+// or enormous ones. The wraps invert the underlying domain, so the VISIBLE
+// domains stay base_range / result_range and the expected solution set is the
+// same under every wrap -- only the constraint-side encoding differs, which is
+// what the view sweep is for.
 auto run_power_const_exp_test(bool proofs, const PowerConsistency & level, bool check_gac, pair<int, int> base_range, long long exp,
-    pair<int, int> result_range, tuple<int, int, int, int> view_spec = {1, 0, 1, 0}) -> void
+    pair<int, int> result_range, vector<ViewWrap> wraps = {view_none(), view_none()}) -> void
 {
-    const auto & [m1, o1, m3, o3] = view_spec;
     print(cerr, "power {} {} {} ^ {} = {} views {} {}", level_name(level), check_gac ? "gac-checked" : "plain", base_range, exp, result_range,
-        view_spec, proofs ? " with proofs:" : ":");
+        view_wraps_label(wraps), proofs ? " with proofs:" : ":");
     cerr << flush;
     set<tuple<int, int>> expected, actual;
 
-    build_expected(expected, [&](int a, int c) { return power_is_satisfying(m1 * a + o1, exp, m3 * c + o3); }, base_range, result_range);
+    build_expected(expected, [&](int a, int c) { return power_is_satisfying(a, exp, c); }, base_range, result_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto v1 = p.create_integer_variable(Integer(base_range.first), Integer(base_range.second), "b");
-    auto v3 = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second), "r");
+    auto v1 = create_integer_variable_or_constant_with_view(p, base_range, wraps.at(0), "b");
+    auto v3 = create_integer_variable_or_constant_with_view(p, result_range, wraps.at(1), "r");
 
-    auto wrap = [&](SimpleIntegerVariableID v, int m, int o) -> IntegerVariableID {
-        IntegerVariableID result = v;
-        if (m == -1)
-            result = -result;
-        return result + Integer{o};
-    };
-    p.post(Power{wrap(v1, m1, o1), constant_variable(Integer{exp}), wrap(v3, m3, o3)}.with_consistency(level));
+    p.post(Power{v1, constant_variable(Integer{exp}), v3}.with_consistency(level));
 
     auto proof_name = proofs ? make_optional("power_test" + test_proof_suffix) : nullopt;
     if (check_gac)
@@ -286,20 +282,17 @@ auto main(int argc, char * argv[]) -> int
     if (! view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
         test_proof_suffix = "_" + view_wrap_config_label(view_cfg);
         auto wraps = wraps_for_positions(view_cfg, n_positions);
-        auto spec_of = [&](int pos) -> pair<int, int> {
-            if (wraps[static_cast<size_t>(pos)].bare)
-                return {1, 0};
-            return {wraps[static_cast<size_t>(pos)].negate ? -1 : 1, wraps[static_cast<size_t>(pos)].offset};
-        };
-        auto [m1, o1] = spec_of(0);
-        auto [m3, o3] = spec_of(1);
         for (bool proofs : {false, true}) {
             if (proofs && ! can_run_veripb())
                 break;
             for (const auto & level : vector<PowerConsistency>{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}}) {
                 bool is_bc = holds_alternative<consistency::BC>(level);
-                run_power_const_exp_test(proofs, level, ! is_bc, {-3, 3}, 2, {-2, 9}, tuple{m1, o1, m3, o3});
-                run_power_const_exp_test(proofs, level, ! is_bc, {-2, 3}, 3, {-8, 27}, tuple{m1, o1, m3, o3});
+                // The result slot is a DeterminedVariable, so want_tabulation() skips its level
+                // and Auto's budget is the base's 7 and 6 here, well inside
+                // default_tabulation_threshold() = 100 whatever the wraps do. GAC is checked at
+                // every level but BC.
+                run_power_const_exp_test(proofs, level, ! is_bc, {-3, 3}, 2, {-2, 9}, wraps);
+                run_power_const_exp_test(proofs, level, ! is_bc, {-2, 3}, 3, {-8, 27}, wraps);
             }
         }
         return EXIT_SUCCESS;
@@ -333,8 +326,8 @@ auto main(int argc, char * argv[]) -> int
             run_power_const_exp_test(proofs, level, ! is_bc, {-2, 2}, -3, {-2, 2});
 
             // Views on the base and the result.
-            run_power_const_exp_test(proofs, level, ! is_bc, {-2, 2}, 2, {-1, 8}, {1, 1, 1, -1});
-            run_power_const_exp_test(proofs, level, ! is_bc, {1, 3}, 3, {-8, 8}, {-1, 1, 1, 0});
+            run_power_const_exp_test(proofs, level, ! is_bc, {-2, 2}, 2, {-1, 8}, {view_offset(1), view_offset(-1)});
+            run_power_const_exp_test(proofs, level, ! is_bc, {1, 3}, 3, {-8, 8}, {view_neg_offset(1), view_offset(0)});
         }
 
         // Wider domains fall back on the chain without tabulation.

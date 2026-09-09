@@ -1481,6 +1481,26 @@ namespace gcs::test_innards
     }
 
     /**
+     * \brief The per-position (multiplier, offset) rendering of a wrap list, for
+     * a test's log line.
+     *
+     * Reads as the view spec the arithmetic tests used to pass around by hand:
+     * `(1, 0, -1, 5)` is a first position that is bare or identity-viewed, and a
+     * second that is `-v + 5`. A bare position and an identity view read the
+     * same, since they describe the same values.
+     */
+    inline auto view_wraps_label(const std::vector<ViewWrap> & wraps) -> std::string
+    {
+        std::string s = "(";
+        for (const auto & w : wraps) {
+            if (s.size() > 1)
+                s += ", ";
+            s += std::to_string(w.bare ? 1 : (w.negate ? -1 : 1)) + ", " + std::to_string(w.bare ? 0 : w.offset);
+        }
+        return s + ")";
+    }
+
+    /**
      * \brief Whether this config would produce no actual wrapping.
      *
      * True when wrap_index = 0 (view_none) or when single_position is set but

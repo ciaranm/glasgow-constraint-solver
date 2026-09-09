@@ -64,17 +64,6 @@ namespace
             .visit(level);
     }
 
-    auto wrap_label(const vector<ViewWrap> & wraps) -> string
-    {
-        string s = "(";
-        for (const auto & w : wraps) {
-            if (s.size() > 1)
-                s += ", ";
-            s += std::to_string(w.bare ? 1 : (w.negate ? -1 : 1)) + ", " + std::to_string(w.bare ? 0 : w.offset);
-        }
-        return s + ")";
-    }
-
     auto post_divmod(Problem & p, bool is_div, IntegerVariableID x, IntegerVariableID y, IntegerVariableID out, const DivideConsistency & level)
         -> void
     {
@@ -95,7 +84,7 @@ auto run_divmod_test(bool proofs, bool is_div, const DivideConsistency & level, 
     pair<int, int> out_range, vector<ViewWrap> wraps = {view_none(), view_none(), view_none()}) -> void
 {
     print(cerr, "{} {} {} {} {} {} views {} {}", is_div ? "divide" : "modulus", level_name(level), check_gac ? "gac-checked" : "plain", x_range,
-        y_range, out_range, wrap_label(wraps), proofs ? " with proofs:" : ":");
+        y_range, out_range, view_wraps_label(wraps), proofs ? " with proofs:" : ":");
     cerr << flush;
     set<tuple<int, int, int>> expected, actual;
 
