@@ -112,10 +112,22 @@ failure. `mirror_invar_across_view_link` is therefore called from `need_invar`
 whenever a range condition that already has a name reaches a proof line. It is
 idempotent, and after the first time it is a set probe.
 
-A literal that is never named needs nothing, because a fact only ever enters a
-variable's literal family through a named literal or through a bound, and both
-of those cross. As it happens that set turns out to be empty — §4 — but the rule
-does not depend on it being, and should not be changed to.
+**In a definitions-on proof there is in fact no such thing as an unnamed range
+literal**, which is what makes the rule complete rather than merely better than
+the alternative. `ProofLogger::emit` and `emit_under_reason` render with
+`EnsureNames::Yes`, so every `rup` / `a` / `ia` line takes each range condition
+through `xliteral_for_ensuring`. Every creation path writes such a line about the
+literal it has just created, in the same call: `ensure_partition_cut` writes the
+split covering, `init_interval_partition` the root covering,
+`define_invar_with_covering` the request covering, `link_immediate_containment`
+the containment edges. Only the `red` reifications go out through the ostream
+overload with `EnsureNames::No`. So a cell is linked when its own covering is
+written, not when some later solver fact happens to mention it.
+
+That is the invariant to preserve: **every non-`red` emission names its
+literals**. A future path that rendered a range literal without going through
+`need_all_proof_names_in` or `xliteral_for_ensuring` could leave one unlinked,
+and nothing would notice.
 
 One consequence worth knowing about: `need_invar` is now genuinely re-entrant,
 because resolving a literal while emitting a covering can re-enter it.
@@ -125,32 +137,77 @@ that does not exist yet. `define_invar_with_covering`'s single-cell path defines
 it in that case, and `define_plain_invar` is idempotent so that
 `ensure_partition_cut` does not then define it a second time.
 
-## 4. Every cell gets named, so in practice everything is linked
+## 4. The two sides hold the same literals, but not in the same roles
 
-A useful consequence of §3 that is worth stating explicitly, because it is not
-obvious and because it is what makes the cost predictable: **coverings name their
-cells.** `init_interval_partition` emits a root covering over every cell it
-creates, and `ensure_partition_cut` emits a split covering over the two halves it
-creates. Emitting either one renders those literals into a proof line, which
-takes them through `xliteral_for_ensuring`, which links them. So although the
-rule is "link on naming" rather than "link everything", nothing that exists ends
-up unlinked, and the two sides' literal families do in fact end up as affine
-images of each other.
+Because every literal is linked at creation (§3), and linking creates the mirror
+on the far side, the two sides end up holding **the same set of literals** up to
+the affine map. Measured on `equals_test --view-position=mixed`, 258 proofs, every
+registered (variable, view) pair whose view appears in the proof: 300 pairs, 300
+matches, no exceptions.
 
-Measured on `equals_test --view-position=mixed`, 258 proofs, every registered
-(variable, view) pair whose view appears in the proof: **300 pairs, 300 matches,
-no exceptions.**
+What does *not* correspond is a literal's **role**. `need_direct_encoding_for`'s
+eq-atom backfill re-enters `ensure_partition_cut` on the far side before the
+request's own second cut arrives, so the two sides reach the same set by
+different routes, and the same interval can be a root cell on one side and a
+split half or a request with its own covering on the other. Measured over 400
+sweep proofs: 66 contained such a difference, 297 literals in all, every proof
+verifying. So the split coverings and the containment DAGs genuinely differ.
 
-**Do not turn that into the correctness argument.** Nothing maintains the
-correspondence as an invariant — it is a downstream consequence of coverings
-naming their pieces, and a future change that emitted a covering differently, or
-that created a literal without a covering, would break it silently and without
-breaking any test that checks for it, because there is no such test. The
-load-bearing property is the one §3 actually enforces: *every named literal is
-linked*, plus per-side UP-completeness (the range spec's Lemma L1). Argue through
-those, not through the two sides having the same clauses.
+**Argue per side, never by isomorphism.** The correctness argument runs: every
+fact is a unit on every side (bounds via the ge-links, equalities via the
+eq-links, intervals via L1/L2), and then per-side UP-completeness — the range
+spec's Lemma L1 — derives every implied literal on the side that needs it. That
+argument does not care which role a literal plays, which is exactly why it
+survives the role differences. An argument that appealed to the two sides having
+the same clauses would not.
 
-## 5. The coincidence trap — read this before believing a green test
+## 5. Why this is complete
+
+The obligation is: in a backtrack-clause replay, after asserting the decisions,
+every logged inference's reason must become unit in trail order. The argument has
+three parts, and it was formalised rather than assumed.
+
+**Mirror closure.** For every registered `V = sX + c` and every other view `V'`
+of `X`, an interval exists on one iff its image exists on the others, with the
+link pair present for each view/underlying pair. This is §3's invariant plus the
+fact that `link` requests the far side, which itself mirrors onward — so a
+literal first seen on `V₁` reaches `V₂` through `X` in the same call.
+
+**Unit transport.** Any literal that is a unit on one side has its image a unit
+on every other side of the same base: ge-links for bounds, eq-links for
+equalities, L1/L2 for intervals (L1 carrying `+F_V` and `¬F_X`, L2 the other
+two). Two hops compose through the underlying variable.
+
+**Per-side UP-completeness.** For a single variable, given any set of unit
+literals from its own family, UP derives every bound implied by the surviving
+values, every interval and equality the surviving values are contained in, every
+one they are disjoint from, and contradiction if none survive. The interesting
+case is the last: induction on (number of current cells inside the literal,
+width), using containment for a cell under a rejected ancestor, reification and
+the chain for one cleared by a bound, and the covering for the step — which works
+because every in-bounds endpoint of every interval and equality is a partition
+boundary, so a cell is either wholly inside a literal or disjoint from it.
+Notably the root covering is *not* needed, matching the observation already
+recorded in §8.1 of the range spec.
+
+Together: assert the decisions; by transport the unit set on any side is the
+image of every fact so far; per-side completeness derives whatever that
+inference's reason needs on the side it is stated on; the inference clause fires;
+induct.
+
+**What it depends on**, and therefore what would break it: that every non-`red`
+emission names its literals (§3); that every domain change is logged eagerly, as
+the range spec already assumes; and that in-bounds endpoints are partition
+boundaries — which is why `need_direct_encoding_for` cuts at `v` and `v+1` when a
+partition exists, and dropping that would break the base case above.
+
+Corroboration, which is not the argument but is worth having: 2998 randomly
+generated view proofs verified with zero mirror-closure violations, over Equals,
+NotEquals, AllEqual, Min, Max, In, LessThan, LessThanEqual and AllDifferent with
+holey domains, three-view bases, and intervals pushed outside the definition
+bounds.
+
+## 6. The coincidence trap — read this before believing a green test
 
 The negative crossing is derivable *without any linking clause* in a large
 fraction of small configurations, for four separate reasons:
@@ -166,10 +223,13 @@ fraction of small configurations, for four separate reasons:
   near the range (Table reasons, equality holes, `x = v` branching, enumeration
   nogoods, width-1 `In` gaps) silently makes the case work.
 
-Measured over a sweep of domain widths 4–16 with 0–7 random requests per
-instance: **80% of instances cross successfully with no linking clause at all**
-— abut-high 39%, abut-low 23%, whole-range 12%, shattered 5.6% — and of the 20%
-that stall, a single wide cell accounts for 88%.
+Measured two ways, both damning for the sweep as evidence. Over domain widths
+4–16 with 0–7 random requests per instance: **80% of instances cross successfully
+with no linking clause at all** — abut-high 39%, abut-low 23%, whole-range 12%,
+shattered 5.6% — and of the 20% that stall, a single wide cell accounts for 88%.
+And over 985 randomly generated instances that actually reach a conflict, with
+the link clauses ablated: only **37 of them notice**. The sweep is about 96%
+coincidence.
 
 A discriminating instance therefore needs *all* of: the range strictly inside
 both variables' definition bounds; at least one interior cell of width ≥ 2 that
@@ -178,7 +238,7 @@ side's literal from the near side's negation rather than from a bound. This is
 why the `--view-wrap` sweep passing is not by itself evidence, and why the
 witnesses below are.
 
-## 6. The witnesses
+## 7. The witnesses
 
 `dev_docs/range_literals_spec.md` §8 is the suite; these four are its view half,
 all gate-on and veripb-verified.
@@ -227,7 +287,7 @@ interval then sits at the bottom of a covering-forced block and the bound
 crosses. And a witness stated as a RUP line of the fact you care about tests
 nothing at all here. Ablate before claiming a witness bites.
 
-## 7. Cost
+## 8. Cost
 
 Per interval literal per registered view: the mirrored literal on the other side
 (with its own partition maintenance) plus two rup lines. That is the same
@@ -256,7 +316,7 @@ price of the design; the slope was the point of the issue.
 VeriPB checks every `after` row in 0.01–0.02 s, against 5.4 s for the largest
 `before` row that finishes at all.
 
-## 8. The one residue
+## 9. The one residue
 
 A real variable with `lower == 0 && upper == 1` and no explicit representation
 is `DirectOnly`, so it has no bit vector and no order cuts to reify against, and

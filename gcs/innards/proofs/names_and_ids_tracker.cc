@@ -555,11 +555,19 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             case Equal: need_direct_encoding_for(var, cond.value); return _imp->atoms_for(var).eq_defs.at(cond.value.raw_value).first;
             case NotEqual: need_direct_encoding_for(var, cond.value); return _imp->atoms_for(var).eq_defs.at(cond.value.raw_value).second;
             case InRange:
-                static_cast<void>(need_invar(var, cond.value, cond.upper_value));
-                return _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).first;
             case NotInRange:
+                // A width-1 range IS the eq atom, so route it there rather than looking
+                // for an interval literal that need_invar deliberately did not make.
+                // in_range() / not_in_range() canonicalise this away at construction, so
+                // only a hand-built VariableConditionFrom gets here -- but the failure
+                // if it did would be an out_of_range from the lookup below, which says
+                // nothing about what went wrong.
+                if (cond.value == cond.upper_value)
+                    return need_pol_item_defining_literal(
+                        VariableConditionFrom<IntegerVariableID>{var, InRange == cond.op ? Equal : NotEqual, cond.value});
                 static_cast<void>(need_invar(var, cond.value, cond.upper_value));
-                return _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).second;
+                return InRange == cond.op ? _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).first
+                                          : _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).second;
             }
             throw NonExhaustiveSwitch{};
         }, //
@@ -576,11 +584,14 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
                 case Equal: need_direct_encoding_for(*v_id, cond.value); return _imp->atoms_for(*v_id).eq_defs.at(cond.value.raw_value).first;
                 case NotEqual: need_direct_encoding_for(*v_id, cond.value); return _imp->atoms_for(*v_id).eq_defs.at(cond.value.raw_value).second;
                 case InRange:
-                    static_cast<void>(need_invar(*v_id, cond.value, cond.upper_value));
-                    return _imp->invars_that_exist.at(*v_id).at(pair{cond.value, cond.upper_value}).first;
                 case NotInRange:
+                    // Width 1 is the eq atom on the view too; see the simple-variable arm.
+                    if (cond.value == cond.upper_value)
+                        return need_pol_item_defining_literal(
+                            VariableConditionFrom<IntegerVariableID>{var, InRange == cond.op ? Equal : NotEqual, cond.value});
                     static_cast<void>(need_invar(*v_id, cond.value, cond.upper_value));
-                    return _imp->invars_that_exist.at(*v_id).at(pair{cond.value, cond.upper_value}).second;
+                    return InRange == cond.op ? _imp->invars_that_exist.at(*v_id).at(pair{cond.value, cond.upper_value}).first
+                                              : _imp->invars_that_exist.at(*v_id).at(pair{cond.value, cond.upper_value}).second;
                 }
                 throw NonExhaustiveSwitch{};
             }
@@ -1309,6 +1320,14 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
     auto x = allocate_xliteral_meaning(id, lo, hi);
     _imp->store_condition(in_range(id, lo, hi), x);
 
+    // Between here and the invars_that_exist entry below, the literal is *findable but
+    // not defined*. Nothing may render it into a proof line in that window: doing so
+    // would reach xliteral_for_ensuring's range branch, re-enter need_invar, take the
+    // single-cell path, and define the literal a second time -- the idempotence guard
+    // above tests invars_that_exist, which is not yet populated. Nothing does, because
+    // the only emission in between is the reification, which goes through the ostream
+    // overload of emit_inequality_to with EnsureNames::No. Keep it that way.
+
     auto will_define = _imp->logger->get_assertion_level() <= AssertionLevel::Links;
     // Struggling to get clang-format to behave here...
     auto lines = will_define //
@@ -1415,6 +1434,14 @@ auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariabl
     // top-level partition, which gives wipeout detection at the literal level. It is
     // RUP from the bound axioms via the cells' reverse reifications and the order
     // chain.
+    //
+    // Defining a cell can re-enter here and insert further boundaries (mirroring a
+    // cell across a view link requests it on the far side, which requests it back).
+    // std::set iterators survive insertion, so the walk simply also visits the finer
+    // cells, and the covering can end up naming a since-split literal alongside its
+    // halves. That is still an at-least-one over a set that covers the range, so it is
+    // still RUP and still does its job -- but it is not always the leaf partition the
+    // name suggests.
     WPBSum root_covering;
     for (auto it = boundaries.begin(); next(it) != boundaries.end(); ++it) {
         auto cell_lo = *it, cell_hi = *next(it) - 1_i;

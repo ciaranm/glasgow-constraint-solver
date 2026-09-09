@@ -164,9 +164,10 @@ of the proof needs it. The same now goes for range ("in") conditions — a view
 has its own range literals, linked to the underlying variable's — but the
 linking there is less forgiving than for eq and ge atoms, because a *negated*
 range literal cannot cross on the atom links alone. If you are touching that
-machinery, read `dev_docs/view-range-literals.md` first; in particular, do not
-assume the two sides' literal families are affine images of each other, because
-they are not.
+machinery, read `dev_docs/view-range-literals.md` first; in particular, the two
+sides do hold the same literals, but not in the same *roles* — the same interval
+can be a partition cell on one side and a request with its own covering on the
+other — so argue per side rather than by assuming the structures match.
 
 ### If you are touching the view machinery itself
 

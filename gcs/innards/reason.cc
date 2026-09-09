@@ -32,6 +32,13 @@ namespace
                     // underlying variable's, so the proof layer needs no per-value
                     // spelling here (issue #882). A width-1 run canonicalises to a
                     // plain disequality on construction.
+                    //
+                    // Unlike ProofLogger::infer, this has no tracker to ask whether a
+                    // range literal can be built at all, so it cannot fall back for a
+                    // variable with no bits encoding. It does not need to: a bits-less
+                    // variable is a zero-one one, whose domain has no interior value
+                    // and so no run to state. Anything that made a wider variable
+                    // direct-only would have to revisit this.
                     optional<pair<Integer, Integer>> run;
                     auto flush = [&]() {
                         if (run) {
