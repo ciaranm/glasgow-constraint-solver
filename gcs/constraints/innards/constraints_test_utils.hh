@@ -1130,20 +1130,28 @@ namespace gcs::test_innards
         data.emplace_back(generate_random_data_item(rand, std::forward<Args_>(args))...);
     }
 
-    auto create_integer_variable_or_constant(Problem & problem, std::pair<int, int> bounds) -> IntegerVariableID
+    /// The optional name is passed on to Problem::create_integer_variable(), so a
+    /// test's proof log names its variables rather than numbering them.
+    auto create_integer_variable_or_constant(Problem & problem, std::pair<int, int> bounds, const std::optional<std::string> & name = std::nullopt)
+        -> IntegerVariableID
     {
-        return problem.create_integer_variable(Integer(bounds.first), Integer(bounds.second));
+        return problem.create_integer_variable(Integer(bounds.first), Integer(bounds.second), name);
     }
 
-    auto create_integer_variable_or_constant(Problem & problem, std::vector<int> values) -> IntegerVariableID
+    /// As above, for an explicitly enumerated domain.
+    auto create_integer_variable_or_constant(Problem & problem, std::vector<int> values, const std::optional<std::string> & name = std::nullopt)
+        -> IntegerVariableID
     {
         std::vector<Integer> vs;
         for (auto v : values)
             vs.push_back(Integer(v));
-        return problem.create_integer_variable(vs);
+        return problem.create_integer_variable(vs, name);
     }
 
-    auto create_integer_variable_or_constant(Problem &, int value) -> IntegerVariableID
+    /// A constant is not a variable, so there is nothing for a name to attach to:
+    /// the argument exists so that a caller iterating over mixed var/const argument
+    /// lists can pass one uniformly, and is ignored.
+    auto create_integer_variable_or_constant(Problem &, int value, const std::optional<std::string> & = std::nullopt) -> IntegerVariableID
     {
         return ConstantIntegerVariableID{Integer(value)};
     }
@@ -1268,18 +1276,22 @@ namespace gcs::test_innards
      * SimpleIntegerVariableID with domain [invert(lo), invert(hi)] (swapped if
      * needed for negation), then applies the view operators to land back on
      * the requested visible domain.
+     *
+     * The name, if given, goes on the underlying variable, which is what a proof
+     * log talks about; the visible domain is the one named in the test.
      */
-    auto create_integer_variable_or_constant_with_view(Problem & problem, std::pair<int, int> bounds, ViewWrap wrap) -> IntegerVariableID
+    auto create_integer_variable_or_constant_with_view(
+        Problem & problem, std::pair<int, int> bounds, ViewWrap wrap, const std::optional<std::string> & name = std::nullopt) -> IntegerVariableID
     {
         if (wrap.bare)
-            return create_integer_variable_or_constant(problem, bounds);
+            return create_integer_variable_or_constant(problem, bounds, name);
 
         auto u_lo = invert_view(wrap, bounds.first);
         auto u_hi = invert_view(wrap, bounds.second);
         if (u_lo > u_hi)
             std::swap(u_lo, u_hi);
 
-        IntegerVariableID v = problem.create_integer_variable(Integer(u_lo), Integer(u_hi));
+        IntegerVariableID v = problem.create_integer_variable(Integer(u_lo), Integer(u_hi), name);
         if (wrap.negate)
             v = -v;
         if (wrap.offset != 0)
@@ -1295,16 +1307,17 @@ namespace gcs::test_innards
      * Each value is inverted through the wrap so that, once the view applies
      * its transformation, the visible value set matches the input.
      */
-    auto create_integer_variable_or_constant_with_view(Problem & problem, std::vector<int> values, ViewWrap wrap) -> IntegerVariableID
+    auto create_integer_variable_or_constant_with_view(
+        Problem & problem, std::vector<int> values, ViewWrap wrap, const std::optional<std::string> & name = std::nullopt) -> IntegerVariableID
     {
         if (wrap.bare)
-            return create_integer_variable_or_constant(problem, values);
+            return create_integer_variable_or_constant(problem, values, name);
 
         std::vector<Integer> vs;
         for (auto value : values)
             vs.push_back(Integer(invert_view(wrap, value)));
 
-        IntegerVariableID v = problem.create_integer_variable(vs);
+        IntegerVariableID v = problem.create_integer_variable(vs, name);
         if (wrap.negate)
             v = -v;
         if (wrap.offset != 0)
@@ -1322,7 +1335,8 @@ namespace gcs::test_innards
      * that callers iterating over mixed var/const argument lists can apply a
      * wrap uniformly.
      */
-    auto create_integer_variable_or_constant_with_view(Problem & problem, int value, ViewWrap) -> IntegerVariableID
+    auto create_integer_variable_or_constant_with_view(Problem & problem, int value, ViewWrap, const std::optional<std::string> & = std::nullopt)
+        -> IntegerVariableID
     {
         return create_integer_variable_or_constant(problem, value);
     }
@@ -1332,17 +1346,20 @@ namespace gcs::test_innards
      *
      * `specs` and `wraps` must have equal size. Each element is dispatched to
      * the appropriate scalar overload of create_integer_variable_or_constant_with_view.
+     * A name, if given, is subscripted per element the way
+     * Problem::create_integer_variable_vector() does it.
      */
     template <typename Spec_>
-    auto create_integer_variable_or_constant_vector_with_views(
-        Problem & problem, const std::vector<Spec_> & specs, const std::vector<ViewWrap> & wraps) -> std::vector<IntegerVariableID>
+    auto create_integer_variable_or_constant_vector_with_views(Problem & problem, const std::vector<Spec_> & specs,
+        const std::vector<ViewWrap> & wraps, const std::optional<std::string> & name = std::nullopt) -> std::vector<IntegerVariableID>
     {
         if (specs.size() != wraps.size())
             throw UnexpectedException{"create_integer_variable_or_constant_vector_with_views: spec / wrap size mismatch"};
         std::vector<IntegerVariableID> result;
         result.reserve(specs.size());
         for (std::size_t i = 0; i < specs.size(); ++i)
-            result.push_back(create_integer_variable_or_constant_with_view(problem, specs.at(i), wraps.at(i)));
+            result.push_back(create_integer_variable_or_constant_with_view(
+                problem, specs.at(i), wraps.at(i), name.transform([&](const std::string & s) { return s + "[" + std::to_string(i) + "]"; })));
         return result;
     }
 
