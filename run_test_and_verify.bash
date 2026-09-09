@@ -52,7 +52,13 @@ else
     "$prog" --prove "$@" || exit 1
 fi
 
-veripb "${proofname}.opb" "${proofname}.pbp" || exit 1
+# --force-checked-deletion: deleting a constraint from VeriPB's core set needs a
+# deletion check, and by default a failed check is only a warning -- VeriPB
+# downgrades to unchecked deletion, drops its equi-enumerable / equi-optimal
+# guarantees, and still prints `s VERIFIED`. The solx and soli deletions the
+# solver emits are exactly the deletions that check applies to, so ask for the
+# strict behaviour. It is free for a proof that deletes nothing from core.
+veripb --force-checked-deletion "${proofname}.opb" "${proofname}.pbp" || exit 1
 
 # Writer/reader symmetry: whatever .scp the run wrote must be one gcs::read_scp
 # can rebuild. The chain harness re-solves the .scp as its first step, so a

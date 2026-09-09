@@ -77,6 +77,25 @@ namespace gcs::test_innards
     }
 
     /**
+     * \brief Always ask VeriPB to treat a failed checked deletion as an error.
+     *
+     * Deleting a constraint from VeriPB's *core* set needs a deletion check ---
+     * a proof that the remaining core still implies what is being removed. By
+     * default VeriPB does not fail when that check fails: it logs a warning,
+     * downgrades to unchecked deletion, and stops making the equi-enumerable /
+     * equi-optimal guarantees for the rest of the proof. A `s VERIFIED` line
+     * still comes out, so a proof that quietly lost its guarantees looks exactly
+     * like one that kept them.
+     *
+     * That is the failure mode the solver's `solx` and `soli` deletions are
+     * exposed to, so every test's verification asks for the strict behaviour
+     * instead. It costs nothing when nothing core is deleted, which is the case
+     * for every proof that logs no solution. See
+     * dev_docs/solution-clause-deletion.md.
+     */
+    inline constexpr const char * veripb_checked_deletion_flag = "--force-checked-deletion";
+
+    /**
      * The file extensions a proving run can leave beside its proof. Only .opb
      * and .pbp are always written; .scp and .varmap appear for the runs that ask
      * for them. std::remove and std::rename on an absent file are harmless
@@ -319,7 +338,7 @@ namespace gcs::test_innards
      */
     [[nodiscard]] inline auto verify_proof_and_dispose(const std::string & proof_name) -> bool
     {
-        if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
+        if (! run_veripb(veripb_checked_deletion_flag, proof_name + ".opb", proof_name + ".pbp"))
             return false;
         check_scp_writer_reader_symmetry(proof_name);
         cake_probe_chain(proof_name); // PROBE: measure workflow-2 chain (no-op unless GCS_TEST_CAKE)

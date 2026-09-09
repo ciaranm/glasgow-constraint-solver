@@ -221,6 +221,19 @@ namespace
             }
         }
 
+        // Whether the clause refuting this subtree has to go into VeriPB's core
+        // set. It does exactly when the level we are about to forget can hold a
+        // core constraint of its own, and there are only two things that put one
+        // there: a `solx` blocking clause, recorded by a solution leaf at the
+        // level it was found at, and the backtrack clause of a child that
+        // needed to be in core for the same reason. Both happen if and only if a
+        // solution was found somewhere under here, which is what
+        // this_subtree_contains_solution says. An optimisation problem logs
+        // `soli` rather than `solx` and deletes its superseded bounds by hand,
+        // so nothing core ever lands at a search level and no clause here needs
+        // promoting.
+        auto backtrack_clause_set = (this_subtree_contains_solution && ! problem.optional_minimise_variable()) ? ClauseSet::Core : ClauseSet::Derived;
+
         // Restart-nogood learning: each sibling refuted at this frame before the
         // cutoff yields a reduced nld-nogood --- the positive decisions on the path
         // to here (reduced_prefix) plus that refuted decision. The clause drops the
@@ -231,21 +244,32 @@ namespace
         // and the whole restart, and feed it to the store for the next pass.
         if (learned_nogoods && result == SearchResult::RestartCutoffHit && ! refuted_siblings.empty()) {
             for (const auto & sibling : refuted_siblings) {
-                // The refuted sibling heads the nogood; if it is not a plain
-                // condition (a proof-scaffolding literal) skip it.
-                auto sibling_cond = std::get_if<IntegerVariableCondition>(&sibling);
-                if (! sibling_cond)
-                    continue;
-                Nogood nogood = reduced_prefix;
-                nogood.push_back(*sibling_cond);
+                // The proof line goes out for every refuted sibling, whatever
+                // shape its decision has. On this path the frame is about to
+                // throw away the level below it without deriving a backtrack
+                // clause of its own, so when that level holds a core constraint
+                // --- a `solx` blocking clause, or a child's promoted backtrack
+                // clause --- this nogood is the only thing left that implies it,
+                // and skipping one would leave a deletion with nothing to check
+                // it against. It does imply it: dropping the refutation-flip
+                // decisions makes the nogood a subset of that sibling's
+                // backtrack clause.
                 if (logger) {
                     vector<Literal> decisions;
                     decisions.reserve(reduced_prefix.size() + 1);
                     for (const auto & cond : reduced_prefix)
                         decisions.push_back(cond);
-                    decisions.push_back(*sibling_cond);
-                    logger->emit_learned_nogood(decisions);
+                    decisions.push_back(sibling);
+                    logger->emit_learned_nogood(decisions, backtrack_clause_set);
                 }
+
+                // The store holds plain conditions, so a sibling that is not one
+                // (a proof-scaffolding literal) is not something it can record.
+                auto sibling_cond = std::get_if<IntegerVariableCondition>(&sibling);
+                if (! sibling_cond)
+                    continue;
+                Nogood nogood = reduced_prefix;
+                nogood.push_back(*sibling_cond);
                 learned_nogoods->add(move(nogood));
             }
         }
@@ -269,7 +293,7 @@ namespace
                 vector<Literal> guesses;
                 for (const auto & g : state.guesses())
                     guesses.push_back(g);
-                logger->backtrack(guesses);
+                logger->backtrack(guesses, backtrack_clause_set);
                 logger->forget_proof_level(depth + 1);
             }
         }

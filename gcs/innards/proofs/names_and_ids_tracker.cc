@@ -477,7 +477,7 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
                 for (Integer v = lower; v <= upper; ++v)
                     al1s += 1_i * (var == v);
 
-                auto line = _imp->logger->emit_rup_proof_line(al1s >= 1_i, ProofLevel::Top);
+                auto line = _imp->logger->emit_rup_proof_line(al1s >= 1_i, ProofLevel::TopAndCore);
                 result = _imp->variable_at_least_one_constraints.emplace(var, line).first;
             }
             return result->second;
@@ -499,7 +499,7 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
                     for (Integer v = lower; v <= upper; ++v)
                         al1s += 1_i * (*v_id == v);
 
-                    auto line = _imp->logger->emit_rup_proof_line(al1s >= 1_i, ProofLevel::Top);
+                    auto line = _imp->logger->emit_rup_proof_line(al1s >= 1_i, ProofLevel::TopAndCore);
                     result = _imp->variable_at_least_one_constraints.emplace(*v_id, line).first;
                 }
                 return result->second;
@@ -765,7 +765,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             visit(
                 [&](const auto & id) {
                     auto [_f_line, _r_line] =
-                        _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, id == v, ProofLevel::Top);
+                        _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, id == v, ProofLevel::TopAndCore);
                     forwards_line = _f_line;
                     reverse_line = _r_line;
                 },
@@ -787,7 +787,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             visit(
                 [&](const auto & id) {
                     auto [_f_line, _r_line] =
-                        _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
+                        _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::TopAndCore);
                     forwards_line = _f_line;
                     reverse_line = _r_line;
                 },
@@ -809,7 +809,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             visit(
                 [&](const auto & id) {
                     auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(
-                        WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id > v)) >= 2_i, id == v, ProofLevel::Top);
+                        WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id > v)) >= 2_i, id == v, ProofLevel::TopAndCore);
                     forwards_line = _f_line;
                     reverse_line = _r_line;
                 },
@@ -868,8 +868,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
 
                 auto assert_or_rup =
                     logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-                logger->emit(assert_or_rup, WPBSum{} + 1_i * ! v_cond + 1_i * x_cond >= 1_i, ProofLevel::Top);
-                logger->emit(assert_or_rup, WPBSum{} + 1_i * ! x_cond + 1_i * v_cond >= 1_i, ProofLevel::Top);
+                logger->emit(assert_or_rup, WPBSum{} + 1_i * ! v_cond + 1_i * x_cond >= 1_i, ProofLevel::TopAndCore);
+                logger->emit(assert_or_rup, WPBSum{} + 1_i * ! x_cond + 1_i * v_cond >= 1_i, ProofLevel::TopAndCore);
             });
         }
     }
@@ -932,7 +932,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     }
     else if (_imp->logger) {
         auto def_lines = visit(
-            [&](const auto & id) { return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::Top); }, id);
+            [&](const auto & id) { return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::TopAndCore); },
+            id);
         _imp->atoms_for(id).ge_defs.try_emplace(v.raw_value, def_lines);
     }
     else {
@@ -963,10 +964,10 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             emit_proof_line_now_or_at_start([this, id, v, ge_label](ProofLogger * const logger) {
                 visit(
                     [&](const auto & vid) {
-                        logger->emit(ImpliesProofRule{}, reify(WPBSum{} + (1_i * vid) >= v, {{vid >= v}}), ProofLevel::Top, std::nullopt,
+                        logger->emit(ImpliesProofRule{}, reify(WPBSum{} + (1_i * vid) >= v, {{vid >= v}}), ProofLevel::TopAndCore, std::nullopt,
                             ProofLineLabel{ge_label + "[r]"});
-                        logger->emit(ImpliesProofRule{}, reify(WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}}), ProofLevel::Top, std::nullopt,
-                            ProofLineLabel{ge_label + "[f]"});
+                        logger->emit(ImpliesProofRule{}, reify(WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}}), ProofLevel::TopAndCore,
+                            std::nullopt, ProofLineLabel{ge_label + "[f]"});
                     },
                     id);
             });
@@ -996,7 +997,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             auto annotation = AssertionAnnotation{.hint_name = hints::InitialBound::hint_name};
             auto line = visit(
                 [&](auto vid) {
-                    return logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::Top, annotation);
+                    return logger->emit(
+                        assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::TopAndCore, annotation);
                 },
                 id);
             // Remembered so that a step wanting this fact can cite it instead of
@@ -1049,7 +1051,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                         return;
                     ProofRule assert_or_rup =
                         logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-                    logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint);
+                    logger->emit(assert_or_rup, c, ProofLevel::TopAndCore, link_hint);
                 });
             }, //
             [&](const SimpleIntegerVariableID & id) {
@@ -1058,12 +1060,13 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 }
                 else if (_imp->assertion_level == AssertionLevel::Links) {
                     auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= *higher_gevar)) >= 1_i;
-                    emit_proof_line_now_or_at_start(
-                        [c = chain_con, link_hint](ProofLogger * const logger) { logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint); });
+                    emit_proof_line_now_or_at_start([c = chain_con, link_hint](ProofLogger * const logger) {
+                        logger->emit(AssertProofRule{}, c, ProofLevel::TopAndCore, link_hint);
+                    });
                 }
                 else {
                     auto pol = make_pol_chain_line(id >= v, ! (id >= *higher_gevar));
-                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::TopAndCore); });
                 }
             } //
         }
@@ -1080,7 +1083,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                         return;
                     ProofRule assert_or_rup =
                         logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-                    logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint);
+                    logger->emit(assert_or_rup, c, ProofLevel::TopAndCore, link_hint);
                 });
             }, //
             [&](const SimpleIntegerVariableID & id) {
@@ -1090,12 +1093,12 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 else if (_imp->assertion_level == AssertionLevel::Links) {
                     auto chain_con = WPBSum{} + (1_i * (id >= *prev(this_gevar))) + (1_i * ! (id >= v)) >= 1_i;
                     emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) {
-                        logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint);
+                        logger->emit(AssertProofRule{}, c, ProofLevel::TopAndCore, link_hint);
                     });
                 }
                 else {
                     auto pol = make_pol_chain_line(id >= *prev(this_gevar), ! (id >= v));
-                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::TopAndCore); });
                 }
             } //
         }
@@ -1141,8 +1144,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 auto d1 = WPBSum{} + 1_i * ! v_atom + 1_i * x_cond >= 1_i;
                 auto d2 = WPBSum{} + 1_i * ! x_cond + 1_i * v_atom >= 1_i;
                 emit_proof_line_now_or_at_start([d1, d2, link_hint](ProofLogger * const logger) {
-                    logger->emit(AssertProofRule{}, d1, ProofLevel::Top, link_hint);
-                    logger->emit(AssertProofRule{}, d2, ProofLevel::Top, link_hint);
+                    logger->emit(AssertProofRule{}, d1, ProofLevel::TopAndCore, link_hint);
+                    logger->emit(AssertProofRule{}, d2, ProofLevel::TopAndCore, link_hint);
                 });
                 return;
             }
@@ -1165,8 +1168,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 auto b2 = make_shared<PolBuilder>();
                 b2->add(*v_rev_line).add(link.second).add(d2_x).saturate();
                 emit_proof_line_now_or_at_start([b1, b2](ProofLogger * const logger) {
-                    b1->emit(*logger, ProofLevel::Top);
-                    b2->emit(*logger, ProofLevel::Top);
+                    b1->emit(*logger, ProofLevel::TopAndCore);
+                    b2->emit(*logger, ProofLevel::TopAndCore);
                 });
             }
         }
@@ -1211,7 +1214,7 @@ auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVari
                 else
                     edge += 1_i * not_in_range(id, clo, chi);
                 edge += 1_i * in_range(id, plo, phi);
-                _imp->logger->emit_rup_proof_line(move(edge) >= 1_i, ProofLevel::Top);
+                _imp->logger->emit_rup_proof_line(move(edge) >= 1_i, ProofLevel::TopAndCore);
             },
             id);
     };
@@ -1269,7 +1272,7 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
         ? visit(
               [&](const auto & id) {
                   return _imp->logger->emit_red_proof_lines_reifying(
-                      WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::Top);
+                      WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::TopAndCore);
               },
               id)
         : make_pair(ProofLine{}, ProofLine{});
@@ -1340,7 +1343,7 @@ auto NamesAndIDsTracker::ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID
     visit([&](const auto & id) { covering += 1_i * not_in_range(id, a, b); }, id);
     append_cell_literal_to(covering, id, a, p - 1_i);
     append_cell_literal_to(covering, id, p, b);
-    _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::Top);
+    _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::TopAndCore);
 }
 
 auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariableID id, Integer request_lo, Integer request_hi) -> void
@@ -1378,7 +1381,7 @@ auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariabl
             define_plain_invar(id, cell_lo, cell_hi);
         append_cell_literal_to(root_covering, id, cell_lo, cell_hi);
     }
-    _imp->logger->emit_rup_proof_line(move(root_covering) >= 1_i, ProofLevel::Top);
+    _imp->logger->emit_rup_proof_line(move(root_covering) >= 1_i, ProofLevel::TopAndCore);
 }
 
 auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofLiteral
@@ -1437,7 +1440,7 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
     visit([&](const auto & id) { covering += 1_i * not_in_range(id, lo, hi); }, id);
     for (auto it = boundaries.find(span_lo); *it != span_hi + 1_i; ++it)
         append_cell_literal_to(covering, id, *it, *next(it) - 1_i);
-    _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::Top);
+    _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::TopAndCore);
     return as_literal();
 }
 
@@ -1624,7 +1627,7 @@ auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
     }
 
     emit_proof_line_now_or_at_start([this, v_form_line, pol](ProofLogger * const logger) {
-        auto deview_line = pol->emit(*logger, ProofLevel::Top);
+        auto deview_line = pol->emit(*logger, ProofLevel::TopAndCore);
         register_deviewed_line(v_form_line, deview_line);
     });
 }

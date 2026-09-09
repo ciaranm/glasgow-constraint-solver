@@ -18,7 +18,30 @@ namespace gcs::innards
     {
         Current,
         Top,
-        Temporary
+        Temporary,
+        /**
+         * As Top --- kept for the whole proof --- and additionally moved into
+         * VeriPB's core set with a `core id`.
+         *
+         * Used for one thing: a variable's *encoding*.
+         *
+         * The deletion check that lets a `solx` blocking clause go away has to
+         * get from the preserved variables the clause is written over (a
+         * variable's bits) to the atoms the backtrack clause justifying it is
+         * written over (its order, equality and interval literals), and only
+         * core constraints count towards that check. The rows that make that
+         * crossing are a variable's encoding. They are OPB rows, hence already
+         * core, for anything that existed when the model was written; a literal
+         * first needed partway through the search is defined by a `red` in the
+         * proof instead, and without this would land in the derived set where
+         * the check cannot see it.
+         *
+         * Emitted by NamesAndIDsTracker, and only by it: the line is drawn
+         * structurally, at a variable's encoding rather than at whatever a check
+         * turns out to need, so a propagator's standing lemma stays derived.
+         * See dev_docs/solution-clause-deletion.md.
+         */
+        TopAndCore
     };
 }
 

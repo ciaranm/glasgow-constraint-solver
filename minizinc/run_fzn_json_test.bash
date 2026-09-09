@@ -35,9 +35,15 @@ if ! diff -u <(sort < "$jsondir/$testname.expected") "$testname.fzn.sols" ; then
     exit 2
 fi
 
+# --force-checked-deletion: a failed core deletion check is only a warning by
+# default -- VeriPB downgrades to unchecked deletion, drops its
+# equi-enumerable / equi-optimal guarantees and still prints `s VERIFIED`.
+# The solver deletes `solx` and `soli` constraints, which are exactly the
+# deletions that check applies to, so ask for the strict behaviour.
+# See dev_docs/solution-clause-deletion.md.
 if veripb --help >/dev/null 2>&1 ; then
     "$fznglasgow" -a --prove --proof-files-basename "$testname" "$infile" || exit 3
-    if ! veripb "$testname.opb" "$testname.pbp" ; then
+    if ! veripb --force-checked-deletion "$testname.opb" "$testname.pbp" ; then
         echo "Rerunning last 100 lines of proof verification in trace mode..."
         echo '$ ' veripb --trace "$(readlink -f "$testname.opb")" "$(readlink -f "$testname.pbp")"
         # the trace rerun fails again by construction; we still want exit 4
