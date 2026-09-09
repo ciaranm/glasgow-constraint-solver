@@ -15,13 +15,15 @@ namespace gcs::innards
     //
     // The per-value form gets away with two RUP lines because `v2 == val` pins
     // every bit of v2, which pins v1's through whichever half-reified row is
-    // active. A range pins no bit, and the bounds it does give sit on *opposite
-    // sides* of the row, so closing it means adding two PB bound constraints to
-    // the row --- which unit propagation cannot do. (This is why the guarded
-    // two-lemma RUP shape min_max.cc and element.cc use does not transfer here.
-    // There the guard is falsified by the conclusion's own negation, and the
-    // remaining slack arithmetic happens to line up; measured on Abs it misses
-    // by one, see dev_docs/large-domains.md.)
+    // active. A range pins no bit, so it needs the bound lemmas min_max.cc and
+    // element.cc use -- and those are Theorem 2.9, which wants a lower bound on
+    // one operand against an upper bound on the other across their *difference*.
+    // This constraint's negative branch links v2 to -v1, so its row is a sum and
+    // the negation gives two bounds on the same side: outside the theorem, with a
+    // measured non-propagating instance. The non-negative branch *is* a
+    // difference and would take the RUP form; pol is used for both so there is
+    // one shape to read. See the Theorem 2.9 section of
+    // dev_docs/large-domains.md.
     //
     // So each branch's two bounds are derived by `pol` instead, in the same
     // resolution shape as the consequence-bound helpers below: the model half,
