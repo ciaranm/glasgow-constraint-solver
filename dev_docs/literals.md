@@ -47,13 +47,21 @@ All in `gcs/innards/proofs/names_and_ids_tracker.cc` unless noted.
 These cover the *implementation*, and defer to the document above for the
 theory:
 
-- [range_literals_spec.md](range_literals_spec.md) — the reimplementation
-  specification: what was built, in what order, the witness suite as checked in,
-  and the edge-case inventory.
-- [view-range-literals.md](view-range-literals.md) — issue #882's write-up: the
-  ten deleted view detours, the ablation table, the measured proof sizes.
+- [range_literals_spec.md](range_literals_spec.md) — what was built, in what
+  order, which witness test guards what, and the edge-case inventory. Its
+  section numbers are cited from the code; don't renumber them.
+- [view-range-literals.md](view-range-literals.md) — issue #882's record: where
+  the naming trigger lives in the code, the measured role divergence between the
+  two sides, and the residue.
 - [view-proof-logging.md](view-proof-logging.md) — working with views as a
-  propagator author: `pol` cancellation, big-M sizing, the test harness.
+  propagator author: `pol` cancellation, big-M sizing, the test harness. Its
+  three numbered invariants are cited by number from `difference-logic.md` and
+  from `difference_constraints.cc`.
+
+Between them and the document above the rule is: **statements, arguments and
+measured numbers live in `literal-encodings.tex`; function names, test names,
+dates and decisions live in the Markdown.** A number in two places is a number
+that will disagree with itself.
 
 ## Further reading
 

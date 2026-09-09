@@ -24,30 +24,13 @@ Everything about how facts cross between the two — including the fact that uni
 propagation *cannot* do it without those clauses — is set out there, with a
 table of every crossing under "How facts move".
 
-The short version, for orientation:
-
-- A view `V = sX + c` gets its **own bit-vector** `BinEnc(V)`, its own order,
-  equality and range atoms, defined by reification exactly as chapter 3 defines
-  them for any integer variable. From the proof's point of view `V` is
-  indistinguishable from a bare variable, and every constraint body and
-  propagator inference that mentions the operand is logged purely in `V`'s atoms
-  and bits. The generic machinery never has to know it handed out a view.
-- The only thing tying `V` to `X` is a single **definitional link** axiom
-  `V - sX = c`, emitted as a `>=`/`<=` pair over the two bit vectors. This is the
-  one and only place the two encodings meet.
-- The tempting alternative — substituting `sX + c` and reasoning in `X`'s atoms
-  — makes the atoms appearing in the OPB depend on *which* wrapper a constraint
-  was given, so the generic constraint-logging code can no longer treat every
-  operand identically.
-- **Unit propagation cannot cross the link by itself.** Combining a `V`-fact
-  with the link is a *linear addition of two constraints*, and UP (hence RUP)
-  only ever derives forced literals from individual constraints — it never adds
-  two together. So a crossing must either be an explicit `pol` step, or be
-  pre-supplied in a form UP *can* consume.
-- **So we pre-derive the boundary as atom-level clauses**, lazily, for each atom
-  that actually appears: `[V >= v] <=> [X >= k]`, `[V = v] <=> [X = k]`, and
-  `[V in a..b] <=> [X in a'..b']`. Then a single atom crosses in one UP step. The
-  cost tracks the proof rather than the domain size.
+The one thing worth carrying in your head without opening it: a view gets its
+**own bit vector**, sharing no PB variable with its underlying variable's, and
+the two are related only by the definitional link axiom `V - sX = c`. Unit
+propagation cannot cross that link on its own — combining a `V`-fact with the
+link is a linear addition of two constraints, which UP never performs — so the
+framework pre-derives the crossing as atom-level clauses, lazily, for each atom
+that actually appears.
 
 The range-literal case is the one that is *not* like the others, because a
 negated range literal is a unit on neither of its cuts. Read

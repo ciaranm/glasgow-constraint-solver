@@ -12,8 +12,8 @@ inventory.
 `dev_docs/range_literals.md` and `dev_docs/range_literals_theory.md` on the
 `range-literals` branch (PR #281). That branch is retained, unmerged, as the
 archaeological record; its conclusions that survive are restated here or in
-`literal-encodings.tex`, and its conclusions that were wrong are listed in
-Appendix B with the test that catches each.
+`literal-encodings.tex`, and its conclusions that were wrong are listed, each
+with the witness that catches it, in that document's Appendix C.
 
 **Audience.** Someone implementing or reviewing the interval-literal layer of
 the proof encoding.
@@ -22,84 +22,45 @@ the proof encoding.
 
 ## 1. Two ways a proof goes wrong — read this first
 
-*Stated in full, with the rule that follows from it, in the "Interlude" of
-[literal-encodings](literal-encodings.tex).* In brief:
-
-- **P1.** A line we emit is not itself accepted by VeriPB. Loud, immediate,
-  local: veripb rejects at the line and the error points at the culprit.
-- **P2.** Every line checks individually, but the clause set does not keep UP
-  strong enough for **later** RUP checks — backtrack clauses, other constraints'
-  inferences — to re-derive the solver facts they depend on. The rejection lands
-  on an unrelated later line, only under composition, only for particular search
-  shapes.
-
-The operative consequence, which every section below assumes:
+*Stated in full in the "Interlude" of
+[literal-encodings](literal-encodings.tex).* The one-line version, which every
+section below assumes:
 
 > **A RUP check is strictly stronger than the single UP pass later checks rely
 > on, so every P2 clause looks deletable under P1 testing.**
 
-Any linking clause can be removed and a local test stays green. "This clause was
-never load-bearing in my tests" is *always* observable for P2 clauses on small
-tests. It is not evidence. The only evidence that a P2 clause is unnecessary is
-passing the witness suite of §8. Each clause family below is labelled with the
-failure mode it guards against.
+P1 is "a line we emit is rejected" — loud and local. P2 is "every line checks,
+but unit propagation is no longer strong enough for a backtrack clause three
+thousand lines later" — and the rejection lands nowhere near the cause. The only
+evidence that a P2 clause is unnecessary is passing the witness suite of §8.
 
 ## 2. The objects
 
-*Definitions and their PB forms are §3.3.1 of
-[literal-encodings](literal-encodings.tex); this is the one-line index.*
+*Their PB definitions are §3.3.1 of
+[literal-encodings](literal-encodings.tex).* This table is the mapping from
+the code's names, which that document does not use:
 
-| object | meaning | definition |
+| code | document | definition |
 |---|---|---|
-| bits | BinEnc(X) | core OPB |
-| `x>=v` (gevar) | order atom | reified on the bit sum; chained (Inv1) |
-| `x=v` (eqvar) | direct atom | `<=> (x>=v & ~x>=v+1)` |
-| `[x in a..b]` (invar) | interval literal | `<=> (x>=a & ~x>=b+1)`, `a < b` |
+| gevar | order atom `x>=v` | reified on the bit sum; chained (`Inv-Chain`) |
+| eqvar | equality atom `x=v` | `<=> (x>=v & ~x>=v+1)` |
+| invar | interval literal `[x in a..b]` | `<=> (x>=a & ~x>=b+1)`, `a < b` |
 
-An interval literal is a *wide equality atom*: same shape of definition, two
-cuts. **A width-1 interval IS the eq atom**: `need_invar(v, v)` must return the
-eq atom itself, never a separate flag. A separate width-1 flag is an unlinked
-doppelganger of the eq atom (same boundary cuts, different Boolean, nothing
-connects them) and is the subject of witness W1.
+`need_invar(v, v)` returns the eq atom itself, never a separate flag
+(Definition 3.2 there; witness W1).
 
 ## 3. The invariant: always-covered partitions
 
-*The statement and the proof of what these clauses buy have moved to §3.3.1 of
-[literal-encodings](literal-encodings.tex), where they are the invariants
-`Inv-Part`, `Inv-Cover` and `Inv-Cont`, and to
-[literals.md](literals.md), which maps each invariant to the function that
-maintains it.* What follows is the implementation summary only.
+*The invariants are `Inv-Part`, `Inv-Cover` and `Inv-Cont` of §3.3.1 of
+[literal-encodings](literal-encodings.tex); [literals.md](literals.md) maps each
+to the function that maintains it.* Two implementation facts that live here and
+nowhere else:
 
-Interval literals on each variable are maintained so that, at all times:
-
-1. **Partition** (`init_interval_partition`, `ensure_partition_cut`). The leaf
-   cells partition the variable's initial bound range. Cells are intervals;
-   width-1 cells are eq atoms. Every in-bounds endpoint of every defined eq or
-   interval literal is a partition boundary — which is why
-   `need_direct_encoding_for` cuts at `v` and `v+1` on a partitioned variable.
-2. **Every requested interval is a union of adjacent cells.** A request whose
-   endpoint falls strictly inside an existing cell splits that cell first
-   (at most 2 splits per request, one per endpoint).
-3. **Covering** (P2). Every non-cell literal carries one clause
-   `F -> C1 v ... v Ck` over a partition of itself into existing literals, and
-   every split cell carries `C -> C1 v C2`. Coverings compose through UP across
-   later refinements, so a covering is never revisited or re-emitted.
-4. **Root covering** (P2). One clause over the top-level partition, emitted at
-   partition creation. UP-redundant (see §5) and kept anyway.
-5. **Containment** (P2). Child-to-parent edges (`~C v F`) between immediate
-   neighbours, via a per-variable interval tree. Requests may overlap without
-   nesting, so the family is a DAG; cells remain a partition.
-6. **Reification** (P1+P2). The usual red pair per literal.
-
-All of these are **state-independent tautologies of the encoding, emitted at
-`ProofLevel::Top`**. There is no search-state bookkeeping, nothing to undo on
-backtrack, and emission order does not matter for soundness. The alternative
-("emit a covering over whatever facts currently witness the exclusion") is also
-sound but drags search state into the tracker; it was considered and rejected —
-refuted design 7 in Appendix C of `literal-encodings.tex`.
-
-Lazy throughout: nothing is defined for a variable until the first interval
-request, exactly as gevars are lazy today.
+- Everything is emitted at `ProofLevel::Top`. There is no search-state
+  bookkeeping and nothing to undo on backtrack, which is what makes the
+  invariant maintainable at definition time.
+- Lazy throughout: nothing is defined for a variable until its first interval
+  request, exactly as gevars are lazy today.
 
 ## 4. One vocabulary, end to end
 
@@ -151,55 +112,27 @@ not notice, because stepping over a run is internal to that variable either way.
 
 ## 5. Why this is complete
 
-*Resolved.* What this section used to record as lemma obligations L1 and L2 are
-now proved, as Theorems 3.3 / 3.3' (complete propagation of implied atomic
-literals, over a whole representation family) and Theorem 3.5, in
-[literal-encodings](literal-encodings.tex). Read §3.3.1 there for the argument
-and the invariants it depends on, and the "How facts move" table for which
-clause family carries which crossing.
-
-Two results from that write-up are worth knowing before touching this code:
-
-- **The root covering (§3.4) is UP-redundant.** Wipeout detection at the literal
-  level follows from the reverse reifications and the order chain alone: a
-  negated interval literal, combined with a bound that has reached its lower cut,
-  jumps the bound over the whole interval in one step. This was observed here in
-  §8.1 as an unexplained fact; it is now Remark 3.2 there, with a proof. We are
-  *not* proposing to remove the clause — see the change protocol.
-- **The coverings and containment edges exist for the reasons, not for wipeout.**
-  They are what makes a negated interval literal falsifiable by unit propagation,
-  which is what Lemma 3.4 (reason validity) needs.
-
-Empirical support, for calibration only: 3,204,000 randomized instances with
-interval inference enabled and zero veripb failures, once the only-then-known P2
-gap (width-1) was closed; every remaining failure class reproduced and then
-eliminated by exactly the clauses this spec mandates, validated by
-hand-elaborating the failing proofs.
+*Resolved and moved.* The lemma obligations this section used to record as L1
+and L2 are proved as Theorems 3.3 / 3.3' and Theorem 3.5 of
+[literal-encodings](literal-encodings.tex). Two of its results bear on this code
+directly: wipeout detection does **not** need the coverings (Remark 3.2 — the
+root covering is UP-redundant, and we keep it anyway), and the coverings and
+containment edges exist for reason validity (Lemma 3.4).
 
 ## 6. Cost model
 
-Per distinct requested interval: at most 2 cell splits (at most 4 new literals,
-of which width-1 pieces are eq atoms) plus the requested literal; 2 red lines
-per literal; binary coverings per split; one covering for the request; and
-`O(immediate neighbours)` containment edges. **Nothing is O(domain width)** —
-that was the point of interval literals, and the first implementation lost it
-twice, by materialising per-value eq atoms through reason naming and through
-`In`'s per-value root pruning.
-
-Known growth mode: a wide request over a heavily fragmented region gets a
-covering as wide as the number of prior boundaries inside it, bounded by request
-count rather than domain size. Acceptable; measure, don't pre-optimise. Flag
-reuse is high in practice (measured ~40x per flag under interval branching), so
-per-literal fixed costs amortise. The measured numbers, including what a view
-adds, are in the "Cost" part of
-[literal-encodings](literal-encodings.tex).
+*Measured numbers, including what a view adds, are the "Cost" part of
+[literal-encodings](literal-encodings.tex).* The rule to hold on to: **nothing
+is O(domain width)** — that was the point of interval literals, and the first
+implementation lost it twice, by materialising per-value eq atoms through reason
+naming and through `In`'s per-value root pruning.
 
 ## 7. What this branch already contains (kept from PR #281)
 
 Sound under this spec, and either already correct or a strict subset of §3:
 
 - `need_invar` reification + idempotence; Inv1 chain threading (`need_gevar`).
-- Laminar containment edges, immediate-parent/child (Phase A/B) — §3.5.
+- Laminar containment edges, immediate-parent/child (Phase A/B) — `Inv-Cont`.
 - The `BranchGuess` guess channel, `reject_random_interval` (width-1 → eq
   atom), backtrack clauses over range guesses; suite-default interval-reject
   branching as a standing regression net.
@@ -228,7 +161,8 @@ Sound under this spec, and either already correct or a strict subset of §3:
   off) with the width-1 guard.
 
 To be implemented fresh: partition + splits + coverings + root covering in
-`need_invar` (§3.1–3.4), `need_invar(v,v)` returning the eq atom, first-class
+`need_invar` (the partition, the coverings and the root covering),
+`need_invar(v,v)` returning the eq atom, first-class
 interval reason elements (§4), retiring the env gates once §8 is in place.
 
 *Status (2026-06-11, revised same day): all of the above implemented.
@@ -263,48 +197,22 @@ literals rather than by scanning them.*
 
 ## 8. The witness suite — the actual defence against re-simplification
 
-Each clause family has a deterministic counterexample that fails veripb
-within milliseconds if that family is removed or weakened. These MUST be
-checked in as gate-on, veripb-verified tests alongside the reimplementation,
-and any change to the clause set MUST run them. They are all tiny (2–3
-variables, 2–3 bits, one scripted decision pair) and were each found the
-expensive way.
+*What each witness guards, its shape, and the W6–W9 ablation matrix are the
+"Interlude" of [literal-encodings](literal-encodings.tex). This section is the
+operational record: which test, gated how, validated how.*
 
-- **W1 — width-1 unification** (else: first backtrack clause not RUP).
-  `a∈{0,2,3}, b∈{0,1,3}, c∈{0,1,2,3}`; `Equals(a,b)`, `Equals(b,c)`,
-  `NotEquals(a,c)`; branch `c≠0` then `c=0`. If width-1 removals make flags
-  instead of using eq atoms, the replay stalls in 6 steps: "b lost 1" is
-  locked inside `¬f[in_b_1_1]` with no link to `b=1`.
-- **W2 — reason falsifiability, exact match** (else: first backtrack clause
-  not RUP). `a∈0..4, b∈{0,4}`; `Equals(a,b)`, `NotEquals(a,b)`; branch
-  `a≠0` then `a=0`. Two variables suffice: the reason names `¬[b in 1..3]`,
-  and if that literal cannot be falsified by UP (no covering, hole concluded
-  in a different vocabulary), the replay stalls in 5 steps. Kills the
-  "two-variable isolation is safe" heuristic as well: safety claims made on
-  one vocabulary mode do not transfer.
-- **W3 — union coverage** (else: first backtrack clause not RUP).
-  `a∈{0,1,2,3,7}, b∈{0,4,5,6,7}, c∈0..7`; `Equals(a,b)`, `Equals(b,c)`,
-  `NotEquals(a,c)`; branch `c≠0` then `c=0`. b's combined hole [1,6] is
-  concluded as [1,3] and [4,6] separately; the reason names `¬[b in 1..6]`.
-  Containment points the wrong way; only the covering
-  `[1,6] → [1,3] ∨ [4,6]` (one RUP line) lets the replay through. This is
-  the partition invariant earning its keep: under §3, `[1,6]` is defined as a
-  union of cells and gets that covering when defined.
-- **W6/W7/W8/W9 — the view crossing** (else: backtrack clauses not RUP).
-  W6 and W7 are the two directions of a fact crossing between a view's range
-  literals and its underlying variable's; W8 and W9 are the *trigger*, a literal
-  the partition machinery created as a cell rather than one any caller
-  requested. All four are described, with their ablation matrix and with the
-  reason the `--view-wrap` sweep is not by itself evidence, in
-  `dev_docs/view-range-literals.md`.
-- **W4 — containment** (else: backtrack clauses over interval-reject
-  decisions not RUP). Regression net: the whole constraint suite runs under
-  `reject_random_interval` by default and fails on Count/Among/Element
-  within seconds if containment edges are dropped (this is how the need for
-  them was discovered). Keep `range_branch_test` as the focused version.
-- **W5 — root covering / wipeout** (to be written with the implementation):
-  a variable whose cells are all excluded must reach contradiction by UP at
-  the flag level.
+| | test | gate |
+|---|---|---|
+| W1 | `range_witness_w1_test.cc` | gate-on, veripb-verified |
+| W2 | `range_witness_w2_test.cc` | gate-on, veripb-verified |
+| W3 | `range_witness_w3_test.cc` | gate-on, veripb-verified |
+| W4 | `range_branch_test.cc`, plus the suite-wide `reject_random_interval` branching | always on |
+| W5 | `range_witness_w5_test.cc` | gate-on, veripb-verified |
+| W6–W9 | `range_witness_w{6,7,8,9}_test.cc` | gate-on, veripb-verified |
+
+They are all tiny — 2–3 variables, 2–3 bits, one scripted decision pair — and
+each was found the expensive way. Registration is in `gcs/CMakeLists.txt`, which
+points back at this section. Any change to the clause set MUST run them all.
 
 ### 8.1 Implementation notes (2026-06-11, first full implementation)
 
@@ -326,7 +234,7 @@ were removed:
   out); W5's wipeout is also derivable by the bound-axiom walk through
   reverse reifications and the order chain, independent of the root covering.
   They stay in the suite as composed end-to-end regression nets.
-- **Observation, not a proposal**: the root covering (§3.4) appears
+- **Observation, not a proposal**: the root covering (`Inv-Cover`(iii)) appears
   UP-redundant given the bound-axiom units, the reverse reifications,
   and the Inv1 chain (the walk derives both wipeout and the positive "last
   surviving piece"). Per the change protocol this is recorded for review, not
@@ -405,24 +313,9 @@ and which branching were active.
    codebase's `//` line-ending convention applies in cxxopts blocks only —
    write emission code so reformatting cannot reorder emission.
 
-## Appendix A — the failure that motivated all of this
+## Appendix — where the theory went
 
-The glossary that lived here — what a backtrack clause is, why it is checked by
-RUP, and how a missing P2 clause makes the trace *look* like "unit propagation
-cannot thread a bound across the equality" — is now "What this does not provide"
-in [literal-encodings](literal-encodings.tex), where it sits next to the
-statement of what actually is and is not derivable. The bound-crossing limit is
-real (thesis Example 2.15); it just was never the binding constraint.
-
-## Appendix B — refuted designs
-
-Moved to Appendix C of [literal-encodings](literal-encodings.tex), which lists
-each refuted design together with the witness that catches it, and adds the two
-that issue #882 produced (deviewing an interval, and "a registered view needs no
-interval linking").
-
-**Change protocol.** Any proposal to weaken or remove a clause family must
-(a) say which of W1 to W9 it expects to remain green and why, (b) run the full
-witness suite gate-on, and (c) account for the P1/P2 distinction explicitly —
-a local green test is not evidence. Three prior simplifications passed every
-test their authors thought to run.
+The P1/P2 glossary, the refuted-design list and the change protocol that used to
+live here are all in [literal-encodings](literal-encodings.tex): the
+"Interlude" and its Appendix C. That version also carries the two refutations
+issue #882 produced, and the witness that catches each.

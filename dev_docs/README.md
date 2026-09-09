@@ -147,9 +147,10 @@ library. For an introduction to *using* the solver, start with the top-level
 - [Range ("in") literals](range_literals_spec.md) — the implementation record
   for the interval-literal layer: the vocabulary propagator authors see
   (`infer_not_in_range` and interval reason elements), what was built and in
-  what order, the W1–W9 witness suite as checked in with its ablation notes, and
-  the inventory of edge cases. Read when touching range/interval reasons,
-  branching, or `infer_not_in_range`.
+  what order, which witness test guards what and how each was validated, and the
+  inventory of edge cases. The theory it used to carry is now in
+  `literal-encodings.tex`; this is what the code does. Its section numbers are
+  cited from nine tests and `gcs/CMakeLists.txt`, so do not renumber them.
 - [View proof logging](view-proof-logging.md) — working with
   `ViewOfIntegerVariableID` as a propagator author: the three invariants
   (representation consistency for `pol` cancellation, big-M sized to the
@@ -158,10 +159,10 @@ library. For an introduction to *using* the solver, start with the top-level
   `--view-wrap` / `--view-position` test harness. Read before emitting explicit
   `pol` over an operand that might be a view.
 - [Range literals on views](view-range-literals.md) — issue #882's record: the
-  ten view detours it deleted, why linking has to be triggered by a literal
-  being *named* rather than requested or defined, the W6–W9 ablation table, and
-  the measurement that 80% of small random configurations cross correctly with
-  no link at all — which is why a green `--view-wrap` sweep is not evidence.
+  view detours it deleted, where in the code the *naming* trigger lives and why
+  a request-driven one silently fails, the measured divergence between the two
+  sides' roles, and the residue. Two corrections are recorded here rather than
+  quietly fixed, because both were believed and written down first.
 - [arithmetic-proofs.md](arithmetic-proofs.md) — how Multiply/Divide/Modulus/Power propagate and justify against cake's encoding: the slot-keyed emitters, the ConditionalBound justification layer, the sign-case driver, and the hard-won RUP/pol rules.
 - [Decision-diagram proof strategies](decision-diagram-proof-strategies.md) — for
   the layered/partial-sum propagators (`Regular`, `MDD`, `Knapsack`,
