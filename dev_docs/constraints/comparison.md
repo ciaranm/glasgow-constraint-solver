@@ -2,10 +2,10 @@
 
 > **Maturity** production ·
 > **Audited** 2026-09-08 at `76bfd836` ·
-> **Open issues** none specific to this family. #868 is the audit-wide
-> cross-solver prerequisite; #598 would close a deliberate presolver gap that
-> is half about this family. Two findings from this audit are unfiled — see
-> [Next steps](#next-steps). Tracked under #871.
+> **Open issues** #907 (every reason built unguarded) and #908 (`MustNotHold`
+> and `NotIf` throw from `s_expr()`), both filed by this audit. #868 is the
+> audit-wide cross-solver prerequisite; #598 would close a deliberate presolver
+> gap that is half about this family. Tracked under #871.
 
 Twelve posted classes over one implementation and one propagator: an
 inequality between two operands, optionally reified, in either direction, with
@@ -948,7 +948,7 @@ performance](#cpu-performance) and [Next steps](#next-steps).
 ### Known limitations
 
 **`MustNotHold` and `NotIf` throw when an `.scp` is written, and leave a
-truncated file behind.** Both kinds propagate correctly — verified against
+truncated file behind** (#908). Both kinds propagate correctly — verified against
 brute force, `¬(x ≤ y)` giving exactly the 6 pairs of `x > y` and `¬(x < y)`
 the 10 of `x ≥ y` over `[0,3]²` — and both have a correct, labelled OPB row.
 What they do not have is a cake spelling, so `s_expr()` throws
@@ -1001,7 +1001,7 @@ reified forms behave the other way — `LessThanIff(x, x, c)` cheerfully forces
 Ranked. Two are findings of this audit and neither is filed yet; the third is
 the audit-wide prerequisite.
 
-1. **Guard the reason assembly on `want_reasons()`.** Not filed. Nine reason
+1. **#907 — guard the reason assembly on `want_reasons()`.** Nine reason
    constructions in `comparison.cc`, none guarded; the four on the enforce
    passes are the hot ones and guarding just those is **1.74x on
    `difference_chain -n 500`** (4.01 s to 2.30 s) at a byte-identical search
@@ -1011,7 +1011,8 @@ the audit-wide prerequisite.
    form. This is the largest single win the audit found and it is a handful of
    lines; the remaining five sites belong to the reified verdicts and the
    both-constant initialiser, which are not hot but should go the same way for
-   uniformity.
+   uniformity. A working patch is preserved at
+   `~/claude/tmp/famdocs-findings/`.
 2. **Find out what the rest of the comparison-versus-linear gap is.** Not
    filed. Guarded, the comparison spelling is still 1.55x the two-term linear
    one on an identical tree, and the difference is IPC-shaped rather than
