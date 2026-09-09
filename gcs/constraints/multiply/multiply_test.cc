@@ -55,37 +55,30 @@ namespace
     }
 }
 
-// Three distinct variables, optionally through views: constrain
-// (m1 * v1 + o1) * (m2 * v2 + o2) = (m3 * v3 + o3) and enumerate over the
-// underlying variables. With all multipliers 1 and offsets 0 this is the plain
-// case.
+// Three distinct variables, optionally through views. The wraps invert the
+// underlying domain, so the VISIBLE domains stay v1_range / v2_range / v3_range
+// and the expected solution set is the same under every wrap -- only the
+// constraint-side encoding differs, which is what the view sweep is for.
 string test_proof_suffix = "";
 
 auto run_multiply_test(bool proofs, const MultiplyConsistency & level, bool check_gac, pair<int, int> v1_range, pair<int, int> v2_range,
-    pair<int, int> v3_range, tuple<int, int, int, int, int, int> view_spec = {1, 0, 1, 0, 1, 0}) -> void
+    pair<int, int> v3_range, vector<ViewWrap> wraps = {view_none(), view_none(), view_none()}) -> void
 {
-    const auto & [m1, o1, m2, o2, m3, o3] = view_spec;
     print(cerr, "multiply {} {} {} {} {} views {} {}", level_name(level), check_gac ? "gac-checked" : "plain", v1_range, v2_range, v3_range,
-        view_spec, proofs ? " with proofs:" : ":");
+        view_wraps_label(wraps), proofs ? " with proofs:" : ":");
     cerr << flush;
     set<tuple<int, int, int>> expected, actual;
 
-    auto is_satisfying = [&](int a, int b, int c) { return (m1 * a + o1) * (m2 * b + o2) == (m3 * c + o3); };
+    auto is_satisfying = [&](int a, int b, int c) { return a * b == c; };
     build_expected(expected, is_satisfying, v1_range, v2_range, v3_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second), "v1");
-    auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second), "v2");
-    auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "v3");
+    auto v1 = create_integer_variable_or_constant_with_view(p, v1_range, wraps.at(0), "v1");
+    auto v2 = create_integer_variable_or_constant_with_view(p, v2_range, wraps.at(1), "v2");
+    auto v3 = create_integer_variable_or_constant_with_view(p, v3_range, wraps.at(2), "v3");
 
-    auto wrap = [&](SimpleIntegerVariableID v, int m, int o) -> IntegerVariableID {
-        IntegerVariableID result = v;
-        if (m == -1)
-            result = -result;
-        return result + Integer{o};
-    };
-    p.post(Multiply{wrap(v1, m1, o1), wrap(v2, m2, o2), wrap(v3, m3, o3)}.with_consistency(level));
+    p.post(Multiply{v1, v2, v3}.with_consistency(level));
 
     auto proof_name = proofs ? make_optional("multiply_test" + test_proof_suffix) : nullopt;
 
@@ -223,22 +216,18 @@ auto main(int argc, char * argv[]) -> int
     if (! view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
         test_proof_suffix = "_" + view_wrap_config_label(view_cfg);
         auto wraps = wraps_for_positions(view_cfg, n_positions);
-        auto spec_of = [&](int pos) -> pair<int, int> {
-            if (wraps[static_cast<size_t>(pos)].bare)
-                return {1, 0};
-            return {wraps[static_cast<size_t>(pos)].negate ? -1 : 1, wraps[static_cast<size_t>(pos)].offset};
-        };
-        auto [m1, o1] = spec_of(0);
-        auto [m2, o2] = spec_of(1);
-        auto [m3, o3] = spec_of(2);
         for (bool proofs : {false, true}) {
             if (proofs && ! can_run_veripb())
                 break;
             for (const auto & level : vector<MultiplyConsistency>{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}}) {
                 bool is_bc = holds_alternative<consistency::BC>(level);
-                run_multiply_test(proofs, level, ! is_bc, {1, 3}, {1, 3}, {1, 9}, tuple{m1, o1, m2, o2, m3, o3});
-                run_multiply_test(proofs, level, ! is_bc, {-2, 2}, {1, 2}, {-4, 4}, tuple{m1, o1, m2, o2, m3, o3});
-                run_multiply_test(proofs, level, ! is_bc, {-3, 2}, {-2, 3}, {-6, 7}, tuple{m1, o1, m2, o2, m3, o3});
+                // The product slot is a DeterminedVariable, so want_tabulation() skips its level
+                // and Auto's budget is 3 * 3, 5 * 2 and 6 * 6 here, well inside
+                // default_tabulation_threshold() = 100 whatever the wraps do. GAC is checked at
+                // every level but BC.
+                run_multiply_test(proofs, level, ! is_bc, {1, 3}, {1, 3}, {1, 9}, wraps);
+                run_multiply_test(proofs, level, ! is_bc, {-2, 2}, {1, 2}, {-4, 4}, wraps);
+                run_multiply_test(proofs, level, ! is_bc, {-3, 2}, {-2, 3}, {-6, 7}, wraps);
             }
         }
         return EXIT_SUCCESS;
@@ -257,9 +246,10 @@ auto main(int argc, char * argv[]) -> int
         generate_random_data(rand, random_bc_data, random_bounds(-10, 10, 3, 12), random_bounds(-10, 10, 3, 12), random_bounds(-80, 80, 10, 60));
         generate_random_data(rand, random_bc_data, random_bounds(0, 20, 2, 8), random_bounds(-6, 6, 2, 8), random_bounds(-60, 60, 20, 80));
     }
-    auto random_view_spec = [&]() -> tuple<int, int, int, int, int, int> {
-        uniform_int_distribution<int> sign(0, 1), offset(-3, 3);
-        return {sign(rand) ? 1 : -1, offset(rand), sign(rand) ? 1 : -1, offset(rand), sign(rand) ? 1 : -1, offset(rand)};
+    auto random_wraps = [&]() -> vector<ViewWrap> {
+        uniform_int_distribution<int> negate(0, 1), offset(-3, 3);
+        auto one = [&]() { return ViewWrap{false, negate(rand) == 1, offset(rand)}; };
+        return {one(), one(), one()};
     };
 
     for (bool proofs : {false, true}) {
@@ -271,11 +261,11 @@ auto main(int argc, char * argv[]) -> int
             // Small domains: Auto tabulates (3 * 3 * 9 = 81 <= threshold) and GAC
             // is forced, so both are GAC; BC is checked for soundness only.
             run_multiply_test(proofs, level, ! is_bc, {1, 3}, {1, 3}, {1, 9});
-            run_multiply_test(proofs, level, ! is_bc, {-2, 2}, {1, 2}, {-4, 4}, {1, 0, 1, 0, 1, 0});
+            run_multiply_test(proofs, level, ! is_bc, {-2, 2}, {1, 2}, {-4, 4}, {view_offset(0), view_offset(0), view_offset(0)});
 
             // Views, negatives, zero. 5 * 3 * 5 = 75 <= threshold.
-            run_multiply_test(proofs, level, ! is_bc, {-2, 2}, {0, 2}, {-2, 2}, {1, 2, -1, 1, 1, -1});
-            run_multiply_test(proofs, level, ! is_bc, {1, 3}, {1, 3}, {1, 5}, {-1, 0, 1, 0, -1, 2});
+            run_multiply_test(proofs, level, ! is_bc, {-2, 2}, {0, 2}, {-2, 2}, {view_offset(2), view_neg_offset(1), view_offset(-1)});
+            run_multiply_test(proofs, level, ! is_bc, {1, 3}, {1, 3}, {1, 5}, {view_neg(), view_offset(0), view_neg_offset(2)});
 
             // Aliased shapes, small: 7 * 10 = 70 and similar.
             run_alias_test(proofs, level, ! is_bc, "xxy", {-3, 3}, {0, 9});
@@ -304,7 +294,7 @@ auto main(int argc, char * argv[]) -> int
         // Wider domains: Auto falls back on bounds consistency; soundness and
         // completeness are still checked, per-node consistency is not.
         run_multiply_test(proofs, consistency::Auto{}, false, {-10, 10}, {-10, 10}, {-100, 100});
-        run_multiply_test(proofs, consistency::Auto{}, false, {2, 20}, {-8, 8}, {-160, 160}, {1, 0, 1, 1, 1, 0});
+        run_multiply_test(proofs, consistency::Auto{}, false, {2, 20}, {-8, 8}, {-160, 160}, {view_offset(0), view_offset(1), view_offset(0)});
         // A wide product with a small operand: the quotient estimate for the small operand can
         // fall outside its bit-encoding, so filter_quotient reports an inconsistent (empty)
         // quotient range on an infeasible node. Regression for a prove_quotient_bounds crash on
@@ -319,7 +309,7 @@ auto main(int argc, char * argv[]) -> int
             run_multiply_test(proofs, consistency::BC{}, false, r1, r2, r3);
         for (std::size_t x = 0; x < 4; ++x) {
             const auto & [r1, r2, r3] = random_bc_data.at(x);
-            run_multiply_test(proofs, consistency::BC{}, false, r1, r2, r3, random_view_spec());
+            run_multiply_test(proofs, consistency::BC{}, false, r1, r2, r3, random_wraps());
         }
     }
 
