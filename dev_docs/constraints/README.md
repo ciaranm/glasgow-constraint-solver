@@ -19,6 +19,15 @@ constraints and do not restate it.
   this template, and now also the first **re-audit**: it filed seven issues,
   six are fixed, and four of the fixes changed what the document says rather
   than only what the code does.
+- [`comparison.md`](comparison.md) — `LessThan`, `LessThanEqual`, their
+  `Greater*` mirrors and their eight reified forms: twelve posted constraints
+  over one propagator whose whole vocabulary is bounds, so one definitional OPB
+  row, **no proof flags and no view detour anywhere**, seven inference rules
+  each a single RUP, and 11.8% of its own proof. Nearly unreachable from the
+  frontends, which turn a binary ordering into a two-term linear inequality;
+  its real consumer is the difference-logic presolver. The audit's finding is a
+  reason assembled on every call whether or not anything reads it — 43% of the
+  cycles on a family-dominated benchmark.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
