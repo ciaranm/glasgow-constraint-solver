@@ -208,11 +208,24 @@ fact has to compose `view1 → b → view2`, needs both clauses. Every clause an
 every rule here is separately load-bearing, which is a stronger result than the
 spec records for W2 and W5, both of which are structural.
 
-Note for anyone adding to this set: the obvious control for W8 — decide
+`invar_view_test` sits alongside them and covers something different: the
+`need_pol_item_defining_literal` range arms, which no propagator reaches, and the
+sign arithmetic of the endpoint map in both directions — checked with
+`find_xliteral_for`, which does not introduce what it fails to find, so "the
+mirror exists at exactly these bounds and not at the neighbouring ones" is a real
+assertion. Both an off-by-one and a dropped endpoint-swap mutant are killed by
+it. It deliberately does **not** witness the link clauses, and says so: it states
+the crossings as RUP lines, and every one of them still verifies with the link
+pair deleted, because a RUP check is strictly stronger than the single
+unit-propagation pass the links exist for. That is §1's P1/P2 distinction, and it
+caught this document claiming otherwise in an earlier draft.
+
+Two notes for anyone adding to this set. The obvious control for W8 — decide
 `¬[b in 3..4]` instead of `¬[b in 3..5]`, so the decision names a fresh interval
 rather than a cell — verifies with *either* link clause removed, because the
 interval then sits at the bottom of a covering-forced block and the bound
-crosses. Ablate before claiming a witness bites.
+crosses. And a witness stated as a RUP line of the fact you care about tests
+nothing at all here. Ablate before claiming a witness bites.
 
 ## 7. Cost
 
