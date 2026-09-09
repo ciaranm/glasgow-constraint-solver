@@ -223,6 +223,43 @@ namespace gcs::innards
         auto forget_proof_level(int depth) -> void;
 
         /**
+         * \brief Relocate a set of already-emitted proof lines from the
+         * \p from_level bucket to the \p target_level bucket, so a later
+         * \c forget_proof_level deletes them at the target depth instead of the
+         * original one.
+         *
+         * Pure bookkeeping: emits nothing to the proof. This is the line-move
+         * half of the hoist primitive (see
+         * NamesAndIDsTracker::hoist_order_literal_to_level) -- moving a literal's
+         * definition to a shallower level so a backtrack forgets it later, or, at
+         * level 0, never. Lines not present in the \p from_level bucket are
+         * ignored.
+         *
+         * Moved lines may arrive in any id order relative to the target bucket: a
+         * hoisted definition can carry a *smaller* id than lines already resident
+         * there. This genuinely happens -- several guess literals hoisted to one
+         * level need not arrive in id order, and a hoist-to-Top lands a mid-range
+         * def id into a bucket whose tail is a large learned-nogood clause. The
+         * bucket is therefore kept sorted, disjoint and merged with the
+         * general-position IntervalSet::insert, not insert_at_end. Do not "optimise"
+         * this back to an append: out-of-order arrivals are the normal case and an
+         * append would corrupt the bucket's ordering.
+         */
+        auto move_proof_lines_to_level(const std::vector<ProofLine> & lines, int from_level, int target_level) -> void;
+
+        /**
+         * Hoist a search-introduced order literal `id >= v` to \p target_level:
+         * a thin wrapper over NamesAndIDsTracker::hoist_order_literal_to_level.
+         */
+        auto hoist_literal_to_level(const SimpleIntegerVariableID & id, Integer v, int target_level) -> void;
+
+        /**
+         * Hoist a search-introduced order literal `id >= v` to Top (permanent):
+         * a thin wrapper over NamesAndIDsTracker::hoist_order_literal_to_top.
+         */
+        auto hoist_literal_to_top(const SimpleIntegerVariableID & id, Integer v) -> void;
+
+        /**
          * Emit the specified text as a comment.
          */
         auto emit_proof_comment(const std::string &) -> void;
