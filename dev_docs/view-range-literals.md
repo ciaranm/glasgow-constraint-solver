@@ -123,21 +123,30 @@ that does not exist yet. `define_invar_with_covering`'s single-cell path defines
 it in that case, and `define_plain_invar` is idempotent so that
 `ensure_partition_cut` does not then define it a second time.
 
-## 4. What does *not* mirror, and why the argument cannot be an isomorphism
+## 4. Every cell gets named, so in practice everything is linked
 
-The final partition boundary sets on `V` and `X` do correspond — every
-cut-insertion path is mirrored — but **the literal families are not affine
-images of each other**. The eq-atom backfill inside `need_direct_encoding_for`
-re-enters `ensure_partition_cut` on the far side before the request's own second
-cut arrives, so the two sides split cells in different orders and end up with
-different intermediate literals: in one measured instance `b` carried former
-cells `[3..8]` and `[3..7]` while its view carried `[13..18]` and `[16..18]`.
-The split coverings and containment DAGs therefore differ.
+A useful consequence of §3 that is worth stating explicitly, because it is not
+obvious and because it is what makes the cost predictable: **coverings name their
+cells.** `init_interval_partition` emits a root covering over every cell it
+creates, and `ensure_partition_cut` emits a split covering over the two halves it
+creates. Emitting either one renders those literals into a proof line, which
+takes them through `xliteral_for_ensuring`, which links them. So although the
+rule is "link on naming" rather than "link everything", nothing that exists ends
+up unlinked, and the two sides' literal families do in fact end up as affine
+images of each other.
 
-So any correctness argument here has to go through **per-side UP-completeness**
-(the range spec's Lemma L1) plus "every named literal is linked", never through
-"the two sides have the same clauses". Do not write code that assumes the
-structures match.
+Measured on `equals_test --view-position=mixed`, 258 proofs, every registered
+(variable, view) pair whose view appears in the proof: **300 pairs, 300 matches,
+no exceptions.**
+
+**Do not turn that into the correctness argument.** Nothing maintains the
+correspondence as an invariant — it is a downstream consequence of coverings
+naming their pieces, and a future change that emitted a covering differently, or
+that created a literal without a covering, would break it silently and without
+breaking any test that checks for it, because there is no such test. The
+load-bearing property is the one §3 actually enforces: *every named literal is
+linked*, plus per-side UP-completeness (the range spec's Lemma L1). Argue through
+those, not through the two sides having the same clauses.
 
 ## 5. The coincidence trap — read this before believing a green test
 
