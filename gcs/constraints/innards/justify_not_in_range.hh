@@ -3,6 +3,8 @@
 
 #include <gcs/innards/proofs/proof_logger.hh>
 
+#include <optional>
+
 namespace gcs::innards
 {
     // Make a `~[pruned in lo..hi]` conclusion derivable across an equality between
@@ -33,8 +35,17 @@ namespace gcs::innards
     //
     // `other` must be a plain integer variable, equality-linked to `pruned` in the
     // proof model. Pass the same reason the caller hands to infer_not_in_range.
+    //
+    // `under` is for a link that holds only under a guard, which is what an
+    // equality that is one arm of a choice looks like: In's `V_i = var` holds
+    // only when V_i's selector is true, and so does ArrayMinMax's
+    // `result = var_i`. The guard rides along as one more `!flag` term on each
+    // lemma. That weakens both without disturbing what makes them RUP: the
+    // negation sets the flag, and the model's half-reified rows then supply the
+    // same pair of opposing bounds --- across the same difference --- that the
+    // unconditional case gets outright.
     auto justify_not_in_range_across_equality(ProofLogger & logger, const ReasonLiterals & reason, const SimpleIntegerVariableID & pruned, Integer lo,
-        Integer hi, IntegerVariableID other, Integer other_lo, Integer other_hi) -> void;
+        Integer hi, IntegerVariableID other, Integer other_lo, Integer other_hi, const std::optional<ProofFlag> & under = std::nullopt) -> void;
 }
 
 #endif

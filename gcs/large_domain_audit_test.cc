@@ -415,7 +415,7 @@ namespace
             auto v = wide(p, 1);
             p.post(In{v[0], vector<Integer>{1_i, 2_i, 3_i}});
         });
-        add("In/vars", Expect::KnownTrip, [](Problem & p) {
+        add("In/vars", Expect::Clean, [](Problem & p) {
             // In's other two constructors take variables in the value list, and
             // with one of those non-constant the propagator takes a different
             // branch entirely -- the branch that was still walking dom(var) a
@@ -432,7 +432,7 @@ namespace
             auto top = p.create_integer_variable(probe_width, probe_width);
             p.post(In{v, vector<IntegerVariableID>{bottom, top}});
         });
-        add("In/vars-single-support", Expect::KnownTrip, [](Problem & p) {
+        add("In/vars-single-support", Expect::Clean, [](Problem & p) {
             // Step 3, which the row above cannot reach: when exactly one source
             // still overlaps dom(var) and no constant does, that source has to
             // equal var, so everything it holds outside dom(var) comes off. Two
