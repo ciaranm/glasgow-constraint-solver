@@ -102,19 +102,12 @@ namespace gcs::innards
         const Hint_ & hint, const std::optional<AssertionAnnotation> & fallback_annotation = std::nullopt) -> void
     {
         if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
-            if (cond->op == VariableConditionOperator::NotInRange) {
-                auto needs_per_value_fallback = overloaded{
-                    [&](const SimpleIntegerVariableID & v) { return ! logger.names_and_ids_tracker().has_bit_representation(v); }, //
-                    [&](const ViewOfIntegerVariableID &) { return true; },                                                         //
-                    [&](const ConstantIntegerVariableID &) { return false; }                                                       //
-                }
-                                                    .visit(cond->var);
-                if (needs_per_value_fallback) {
+            if (cond->op == VariableConditionOperator::NotInRange)
+                if (! logger.names_and_ids_tracker().can_represent_range_literal_for(cond->var)) {
                     for (Integer val = cond->value; val <= cond->upper_value; ++val)
                         infer_explicitly(logger, cond->var != val, emit, then_rup, reason, hint, fallback_annotation);
                     return;
                 }
-            }
 
         if (logger.get_assertion_level() > AssertionLevel::Inferences)
             return;

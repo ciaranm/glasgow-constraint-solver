@@ -132,6 +132,20 @@ namespace gcs::innards
         // emit the at-least-one clause over the top-level partition.
         auto init_interval_partition(SimpleOrProofOnlyIntegerVariableID id, Integer request_lo, Integer request_hi) -> void;
 
+        // The single-variable half of need_invar: maintain the partition for a request
+        // whose literal is known not to exist yet, and define the literal with its
+        // covering. Split out so that need_invar can do this before mirroring the
+        // request across a view link, which recurses back through need_invar.
+        auto define_invar_with_covering(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void;
+
+        // Mirror an interval request between a registered view's proof-only variable and
+        // the variable it is a view of (in whichever direction applies, and to every
+        // registered view when called on the underlying), and emit the pair of rup lines
+        // making the two literals equivalent. The two encodings share nothing but their
+        // links, so without this a *negated* interval fact could not cross between them
+        // by unit propagation; see the comment on the definition.
+        auto mirror_invar_across_view_link(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -286,6 +300,19 @@ namespace gcs::innards
          * this is false.
          */
         [[nodiscard]] auto has_bit_representation(const SimpleOrProofOnlyIntegerVariableID &) const -> bool;
+
+        /**
+         * Can an interval-shaped fact about this variable be stated as a single range
+         * ("in") literal? Every range literal is reified against two order-encoding
+         * cuts, so it needs a bits encoding, and a zero-one variable defaults to the
+         * direct-only encoding, which has none. A view inherits the answer from the
+         * variable it wraps, because its own range literals are mirrored onto that
+         * variable's. A constant never needs a literal at all, so it always can.
+         *
+         * Producers of interval-shaped conclusions and reasons must fall back to
+         * per-value reasoning when this is false.
+         */
+        [[nodiscard]] auto can_represent_range_literal_for(const IntegerVariableID & var) const -> bool;
 
         /**
          * Say that we are going to need an at-least-one constraint for a

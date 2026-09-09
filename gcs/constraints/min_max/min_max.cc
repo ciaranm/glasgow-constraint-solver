@@ -271,40 +271,21 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 // selector true, so the model pins support_1 == result; two ge-layer bound
                 // lemmas then bridge result's absence from [lo, hi] across that equality,
                 // exactly as in equals.cc (the range literal asserts order atoms, never bits,
-                // so the conclusion is not RUP without them). Views and constants, where the
-                // bridge does not apply, keep the per-value path.
-                auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{*support_1}) &&
-                    std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{result});
-
+                // so the conclusion is not RUP without them). A view operand is no different:
+                // its range literals live on its own encoded variable, which is also what
+                // the model states the selector-pinned equality in.
                 for (auto [lo, hi] : support_1_set.each_interval_minus(result_set)) {
-                    if (both_simple) {
-                        // The support reason is the base reason plus the just-excluded
-                        // interval; with_extra copies the base, so each interval gets a
-                        // fresh reason rather than an accumulating literal.
-                        inference.infer_not_in_range(logger, *support_1, lo, hi,
-                            JustifyExplicitly{//
-                                [&, lo = lo, hi = hi](const ReasonLiterals & reason) {
-                                    rule_out_other_selectors(reason);
-                                    justify_not_in_range_across_equality(
-                                        *logger, reason, std::get<SimpleIntegerVariableID>(IntegerVariableID{*support_1}), lo, hi, result, lo, hi);
-                                },
-                                ThenRUP::Yes, hints::MinMax{owner}},
-                            want_reason ? with_extra(reason, ReasonLiterals{not_in_range(result, lo, hi)}) : Reason{});
-                    }
-                    else
-                        for (Integer val = lo; val <= hi; ++val)
-                            inference.infer(logger, *support_1 != val,
-                                JustifyExplicitly{//
-                                    [&, val = val](const ReasonLiterals & reason) {
-                                        rule_out_other_selectors(reason);
-                                        // now fish out the supporting variable, and show that it has to have its selector true
-                                        for (const auto & [idx, var] : enumerate(vars))
-                                            if (var == *support_1)
-                                                logger->emit_rup_proof_line_under_reason(reason,
-                                                    WPBSum{} + (1_i * (*support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
-                                    },
-                                    ThenRUP::Yes, hints::MinMax{owner}},
-                                reason);
+                    // The support reason is the base reason plus the just-excluded
+                    // interval; with_extra copies the base, so each interval gets a
+                    // fresh reason rather than an accumulating literal.
+                    inference.infer_not_in_range(logger, *support_1, lo, hi,
+                        JustifyExplicitly{//
+                            [&, lo = lo, hi = hi](const ReasonLiterals & reason) {
+                                rule_out_other_selectors(reason);
+                                justify_not_in_range_across_equality(*logger, reason, IntegerVariableID{*support_1}, lo, hi, result, lo, hi);
+                            },
+                            ThenRUP::Yes, hints::MinMax{owner}},
+                        want_reason ? with_extra(reason, ReasonLiterals{not_in_range(result, lo, hi)}) : Reason{});
                 }
             }
 

@@ -10,7 +10,8 @@ machinery.
 
 The short version: every constraint currently registered in the view-wrap
 sweep verifies under every wrap. Abs and AllDifferent — historically the
-hard cases — are now in that set.
+hard cases — are now in that set. (One constraint, `divide_modulus`, does fail
+that sweep, but on propagation strength rather than on its proof — issue #903.)
 
 ## Part 1 — The idea, on top of the thesis
 
@@ -159,7 +160,13 @@ You only need to think about views when your justification emits **explicit
 
 Reasons over a view (e.g. `{v ≥ lb, v ≤ ub}`) are fine: they are logged in
 the view's atoms and UP crosses to `X` through the eq/ge links if the rest
-of the proof needs it.
+of the proof needs it. The same now goes for range ("in") conditions — a view
+has its own range literals, linked to the underlying variable's — but the
+linking there is less forgiving than for eq and ge atoms, because a *negated*
+range literal cannot cross on the atom links alone. If you are touching that
+machinery, read `dev_docs/view-range-literals.md` first; in particular, do not
+assume the two sides' literal families are affine images of each other, because
+they are not.
 
 ### If you are touching the view machinery itself
 
@@ -203,6 +210,12 @@ actually exercised:
    link (`derive_deviewed_form_for`). Runtime emissions do *not*
    auto-derive the `X`-form (size); callers opt in with
    `_then_deview` / `PolBuilder` deview-mode.
+5. **Range-literal links `[V in a..b] ⇔ [X in a'..b']`** —
+   `NamesAndIDsTracker::mirror_invar_across_view_link` mirrors the interval onto
+   the other side and emits both rup clauses, triggered whenever a range literal
+   is *named* rather than when it is defined. See
+   `dev_docs/view-range-literals.md`, which explains why both clauses are needed
+   and why naming is the right trigger.
 
 The reification big-M lives in `NamesAndIDsTracker::reify`; the operand-form
 choice lives in the per-constraint `justify_*` helpers.

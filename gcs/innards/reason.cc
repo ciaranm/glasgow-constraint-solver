@@ -26,32 +26,28 @@ namespace
                 reason.push_back(var >= bounds.first);
                 reason.push_back(var <= bounds.second);
                 if (state.domain_has_holes(var)) {
-                    // Each maximal run of missing values is one range condition;
-                    // views take the per-value fallback, since folding views into
-                    // the interval machinery is deferred.
-                    if (std::holds_alternative<SimpleIntegerVariableID>(var)) {
-                        optional<pair<Integer, Integer>> run;
-                        auto flush = [&]() {
-                            if (run) {
-                                reason.push_back(not_in_range(var, run->first, run->second));
-                                run.reset();
-                            }
-                        };
-                        for (auto v = bounds.first + 1_i; v < bounds.second; ++v) {
-                            if (state.in_domain(var, v))
-                                flush();
-                            else if (run)
-                                run->second = v;
-                            else
-                                run = pair{v, v};
+                    // Each maximal run of missing values is one range condition,
+                    // whatever kind of variable this is: a view's range conditions are
+                    // range literals over its own encoded variable, linked to the
+                    // underlying variable's, so the proof layer needs no per-value
+                    // spelling here (issue #882). A width-1 run canonicalises to a
+                    // plain disequality on construction.
+                    optional<pair<Integer, Integer>> run;
+                    auto flush = [&]() {
+                        if (run) {
+                            reason.push_back(not_in_range(var, run->first, run->second));
+                            run.reset();
                         }
-                        flush();
+                    };
+                    for (auto v = bounds.first + 1_i; v < bounds.second; ++v) {
+                        if (state.in_domain(var, v))
+                            flush();
+                        else if (run)
+                            run->second = v;
+                        else
+                            run = pair{v, v};
                     }
-                    else {
-                        for (auto v = bounds.first + 1_i; v < bounds.second; ++v)
-                            if (! state.in_domain(var, v))
-                                reason.push_back(var != v);
-                    }
+                    flush();
                 }
             }
         }
