@@ -82,6 +82,11 @@
 \newcommand{\atge}[2]{#1_{\geq #2}}
 \newcommand{\ateq}[2]{#1_{= #2}}
 \newcommand{\atin}[3]{#1_{\in[#2,#3]}}
+% Negated forms: the bar sits over the variable name only, never over the
+% subscript, which otherwise stretches it unpleasantly.
+\newcommand{\natge}[2]{\overline{#1}_{\geq #2}}
+\newcommand{\nateq}[2]{\overline{#1}_{= #2}}
+\newcommand{\natin}[3]{\overline{#1}_{\in[#2,#3]}}
 \newcommand{\inv}[1]{\textnormal{\textsc{Inv-#1}}}
 \newcommand{\code}[1]{\texttt{#1}}
 % Unnumbered sections are referred to by title, so that the numbered ones
@@ -392,14 +397,14 @@ definition, writing $w$ for the PB name of the representation $W$.
     equal $v$:
     \begin{equation}
       \Def(\ateq{w}{v}) := \ateq{w}{v} \Leftrightarrow
-        \atge{w}{v} + \overline{\atge{w}{v+1}} \geq 2 .
+        \atge{w}{v} + \natge{w}{v+1} \geq 2 .
       \label{eq:defeq}
     \end{equation}
   \item An \textbf{interval variable} $\atin{w}{a}{b}$, for $a<b$, represents
     whether $W$ must take a value in the closed interval $[a,b]$:
     \begin{equation}
       \Def(\atin{w}{a}{b}) := \atin{w}{a}{b} \Leftrightarrow
-        \atge{w}{a} + \overline{\atge{w}{b+1}} \geq 2 .
+        \atge{w}{a} + \natge{w}{b+1} \geq 2 .
       \label{eq:defin}
     \end{equation}
 \end{enumerate}
@@ -435,8 +440,8 @@ representation variables, by \cref{eq:link}.
 Recalling $0$--$1$ literals, we can represent $W$ being at most $v$, not equal
 to $v$, or outside $[a,b]$ by negating the corresponding variables.
 Collectively we refer to literals of the form $\atge{w}{v}$,
-$\overline{\atge{w}{v}}$, $\ateq{w}{v}$, $\overline{\ateq{w}{v}}$,
-$\atin{w}{a}{b}$ and $\overline{\atin{w}{a}{b}}$ as \emph{atomic (constraint)
+$\natge{w}{v}$, $\ateq{w}{v}$, $\nateq{w}{v}$,
+$\atin{w}{a}{b}$ and $\natin{w}{a}{b}$ as \emph{atomic (constraint)
 literals}.
 
 \paragraph{Step 6: linearise constraints.}
@@ -669,7 +674,7 @@ Second, no linearisation mentions interval variables.  Interval literals do not
 appear in the model at all: they are introduced inside the proof, by redundance,
 as the proof needs them.  The one place where the question arises --- whether
 holes in an initial domain should be stated in the model as
-$\overline{\atin{x}{a}{b}}$ rather than derived at the root of the proof --- is
+$\natin{x}{a}{b}$ rather than derived at the root of the proof --- is
 an open decision recorded in \cref{sec:open}.
 
 \subsection{A Proof Logging Framework}
@@ -704,16 +709,16 @@ these amount, for a representation $W$ of $X$, to the PB constraints
 \begin{align}
   \Def^{\Rightarrow}(\atge{w}{v}) &:= \atge{w}{v} \Rightarrow \BinEnc(W)\geq v;
     \label{eq:dge1}\\
-  \Def^{\Leftarrow}(\atge{w}{v}) &:= \overline{\atge{w}{v}} \Rightarrow
+  \Def^{\Leftarrow}(\atge{w}{v}) &:= \natge{w}{v} \Rightarrow
     -\BinEnc(W)\geq -v+1; \label{eq:dge2}\\
   \Def^{\Rightarrow}(\ateq{w}{v}) &:= \ateq{w}{v} \Rightarrow
-    \atge{w}{v} + \overline{\atge{w}{v+1}} \geq 2; \label{eq:deq1}\\
-  \Def^{\Leftarrow}(\ateq{w}{v}) &:= \overline{\ateq{w}{v}} \Rightarrow
-    \overline{\atge{w}{v}} + \atge{w}{v+1} \geq 1; \label{eq:deq2}\\
+    \atge{w}{v} + \natge{w}{v+1} \geq 2; \label{eq:deq1}\\
+  \Def^{\Leftarrow}(\ateq{w}{v}) &:= \nateq{w}{v} \Rightarrow
+    \natge{w}{v} + \atge{w}{v+1} \geq 1; \label{eq:deq2}\\
   \Def^{\Rightarrow}(\atin{w}{a}{b}) &:= \atin{w}{a}{b} \Rightarrow
-    \atge{w}{a} + \overline{\atge{w}{b+1}} \geq 2; \label{eq:din1}\\
-  \Def^{\Leftarrow}(\atin{w}{a}{b}) &:= \overline{\atin{w}{a}{b}} \Rightarrow
-    \overline{\atge{w}{a}} + \atge{w}{b+1} \geq 1. \label{eq:din2}
+    \atge{w}{a} + \natge{w}{b+1} \geq 2; \label{eq:din1}\\
+  \Def^{\Leftarrow}(\atin{w}{a}{b}) &:= \natin{w}{a}{b} \Rightarrow
+    \natge{w}{a} + \atge{w}{b+1} \geq 1. \label{eq:din2}
 \end{align}
 
 We assume in what follows that any PB literal appearing in a derivation with
@@ -728,7 +733,7 @@ Note the asymmetry between $\Def^{\Rightarrow}$ and $\Def^{\Leftarrow}$ for the
 two-cut atoms, \cref{eq:deq1,eq:deq2,eq:din1,eq:din2}.  The forward direction is
 a \emph{conjunction}: asserting $\ateq{w}{v}$ or $\atin{w}{a}{b}$ makes both
 cuts units.  The reverse direction is a \emph{disjunction}: asserting
-$\overline{\ateq{w}{v}}$ or $\overline{\atin{w}{a}{b}}$ makes neither cut a
+$\nateq{w}{v}$ or $\natin{w}{a}{b}$ makes neither cut a
 unit; \cref{eq:deq2,eq:din2} become binary clauses that fire only when one of
 the two cuts is already known.  Almost everything in this section that is not
 already in the thesis exists because of that asymmetry.
@@ -736,7 +741,7 @@ already in the thesis exists because of that asymmetry.
 \begin{remark}
 The solver optionally uses a compact encoding in which an equality atom at a
 definition bound is defined by its one non-trivial cut only
-($\ateq{w}{l_W}\Leftrightarrow\overline{\atge{w}{l_W+1}}$, and dually at
+($\ateq{w}{l_W}\Leftrightarrow\natge{w}{l_W+1}$, and dually at
 $u_W$).  This is off by default, because the eager form matches
 \code{cake\_pb\_cp}'s.  Every argument below survives it, because the dropped
 cut is a pinned unit by \invCut{} and \inv{Bound}, but the reader checking the
@@ -747,7 +752,7 @@ proofs against an implementation should be aware of the variation.
 \label{lem:contra-bounds}
 Suppose two bound variables $\atge{w}{v}$ and $\atge{w}{v'}$ are defined for
 some representation $W$ and values $v\geq v'$.  Then if $\atge{w}{v}$ and
-$\overline{\atge{w}{v'}}$ propagate, further unit propagation will result in a
+$\natge{w}{v'}$ propagate, further unit propagation will result in a
 conflict.
 \end{lemmaT}
 
@@ -794,7 +799,7 @@ $t$ in the proof.
 \item[\inv{Bound}: boundary pins.]
   For every defined $\atge{w}{v}$ with $v\leq l_W$, the unit $\atge{w}{v}$
   appears in $F_t$; for every defined $\atge{w}{v}$ with $v>u_W$, the unit
-  $\overline{\atge{w}{v}}$ appears in $F_t$.
+  $\natge{w}{v}$ appears in $F_t$.
 
 \item[\invCut{}: cuts exist.]
   Whenever $\ateq{w}{v}$ is defined, so are $\atge{w}{v}$ and $\atge{w}{v+1}$;
@@ -831,7 +836,7 @@ $t$ in the proof.
   For any two defined equality or interval literals $E\subsetneq E'$ of the same
   representation $W$, there is a chain
   $E=E_0\subsetneq E_1\subsetneq\cdots\subsetneq E_m=E'$ of defined literals
-  such that each clause $\overline{E_j}\vee E_{j+1}$ appears in $F_t$.
+  such that each clause $\overline{E}_j\vee E_{j+1}$ appears in $F_t$.
 
 \item[\invRep{}: representation closure and linking.]
   For every $W,W'\in\Rep(X)$: if an atomic variable of $W$ is defined, then so is
@@ -875,22 +880,24 @@ literal satisfied by exactly the same values of $X$:
   \begin{array}{llll}
     (\atge{w}{v})^{W'} &=
       \begin{cases}
-        \atge{w'}{\theta(v)} & s=+1\\
-        \overline{\atge{w'}{\theta(v)+1}} & s=-1
+        \atge{w'}{\theta(v)} & s=+1\\[7pt]
+        \natge{w'}{\theta(v)+1} & s=-1
       \end{cases}
     &\qquad
-    (\ateq{w}{v})^{W'} &= \ateq{w'}{\theta(v)}\\[2.2ex]
+    (\ateq{w}{v})^{W'} &= \ateq{w'}{\theta(v)}\\[2.6ex]
     (\atin{w}{a}{b})^{W'} &=
       \begin{cases}
-        \atin{w'}{\theta(a)}{\theta(b)} & s=+1\\
+        \atin{w'}{\theta(a)}{\theta(b)} & s=+1\\[2pt]
         \atin{w'}{\theta(b)}{\theta(a)} & s=-1
       \end{cases}
     &\qquad
-    (\overline{\ell})^{W'} &= \overline{\ell^{W'}}
+    (\natin{w}{a}{b})^{W'} &= \overline{(\atin{w}{a}{b})^{W'}}
   \end{array}
 \]
-Taking images is functorial: $(\ell^{W'})^{W''} = \ell^{W''}$, and
-$\ell^{W}=\ell$.
+Negation commutes with taking images --- the last entry above, and likewise for
+the other two kinds --- so the negated image of an atom may be written by barring
+the atom inside, which is what \cref{eq:gelink,eq:eqlink,eq:inlink} do.  Taking
+images is functorial: $(\ell^{W'})^{W''} = \ell^{W''}$, and $\ell^{W}=\ell$.
 \end{definitionT}
 
 Two facts about \cref{def:image} are worth stating because they are what make
@@ -906,16 +913,16 @@ $\ell \Leftrightarrow \ell^{X}$, for each defined atom of each derived
 representation:
 \begin{align}
   \text{ge-link:}\quad
-    &\overline{\atge{w}{v}}\vee (\atge{w}{v})^{X}, \qquad
-     \overline{(\atge{w}{v})^{X}}\vee \atge{w}{v};
+    &\natge{w}{v}\vee (\atge{w}{v})^{X}, \qquad
+     (\natge{w}{v})^{X}\vee \atge{w}{v};
      \label{eq:gelink}\\
   \text{eq-link:}\quad
-    &\overline{\ateq{w}{v}}\vee \ateq{x}{\psi_W(v)}, \qquad
-     \overline{\ateq{x}{\psi_W(v)}}\vee \ateq{w}{v};
+    &\nateq{w}{v}\vee \ateq{x}{\psi_W(v)}, \qquad
+     \nateq{x}{\psi_W(v)}\vee \ateq{w}{v};
      \label{eq:eqlink}\\
   \text{in-link:}\quad
-    &\overline{\atin{w}{a}{b}}\vee (\atin{w}{a}{b})^{X}, \qquad
-     \overline{(\atin{w}{a}{b})^{X}}\vee \atin{w}{a}{b}.
+    &\natin{w}{a}{b}\vee (\atin{w}{a}{b})^{X}, \qquad
+     (\natin{w}{a}{b})^{X}\vee \atin{w}{a}{b}.
      \label{eq:inlink}
 \end{align}
 
@@ -941,9 +948,9 @@ correct and it is beside the point.  Unit propagation uses a clause in whichever
 direction has a unit, and the directions that matter here are the
 contrapositives,
 \[
-  \overline{(\atin{w}{a}{b})^X} \implies \overline{\atin{w}{a}{b}}
+  (\natin{w}{a}{b})^{X} \implies \natin{w}{a}{b}
   \qquad\text{and}\qquad
-  \overline{\atin{w}{a}{b}} \implies \overline{(\atin{w}{a}{b})^X},
+  \natin{w}{a}{b} \implies (\natin{w}{a}{b})^{X},
 \]
 and neither is derivable without its clause.  A negated interval literal is a
 unit on \emph{neither} of its cuts, by the asymmetry noted after
@@ -968,11 +975,11 @@ the values allowed the \emph{defined domain}, stated on the base's value scale,
 so that literals over different representations can be intersected directly:
 \begin{multline}
   \dm_L(X) := \{k : \forall\,\atge{w}{v}\in L .\ \varphi_W(k)\geq v\}
-      \cap \{k : \forall\,\overline{\atge{w}{v}}\in L .\ \varphi_W(k)< v\} \\
+      \cap \{k : \forall\,\natge{w}{v}\in L .\ \varphi_W(k)< v\} \\
     {}\cap \{k : \forall\,\ateq{w}{v}\in L .\ \varphi_W(k) = v\}
-      \cap \{k : \forall\,\overline{\ateq{w}{v}}\in L .\ \varphi_W(k)\neq v\} \\
+      \cap \{k : \forall\,\nateq{w}{v}\in L .\ \varphi_W(k)\neq v\} \\
     {}\cap \{k : \forall\,\atin{w}{a}{b}\in L .\ a\leq\varphi_W(k)\leq b\}
-      \cap \{k : \forall\,\overline{\atin{w}{a}{b}}\in L .\
+      \cap \{k : \forall\,\natin{w}{a}{b}\in L .\
         \varphi_W(k)<a \text{ or } \varphi_W(k)>b\}.
   \label{eq:domL}
 \end{multline}
@@ -987,12 +994,12 @@ $\dm_t(X)$ is
 \begin{align}
   \ImpLits(\dm_t(X)) := \bigcup_{W\in\Rep(X)}\Bigl(
     &\{\ateq{w}{v} : \dm_t(W)=\{v\}\}
-    \cup \{\overline{\ateq{w}{v}} : v\notin\dm_t(W)\} \notag\\
+    \cup \{\nateq{w}{v} : v\notin\dm_t(W)\} \notag\\
     {}\cup{}&\{\atge{w}{v} : \forall\,v'<v .\ v'\notin\dm_t(W)\}
-    \cup \{\overline{\atge{w}{v}} : \forall\,v'\geq v .\ v'\notin\dm_t(W)\}
+    \cup \{\natge{w}{v} : \forall\,v'\geq v .\ v'\notin\dm_t(W)\}
       \notag\\
     {}\cup{}&\{\atin{w}{a}{b} : \dm_t(W)\subseteq[a,b]\}
-    \cup \{\overline{\atin{w}{a}{b}} : \dm_t(W)\cap[a,b]=\emptyset\}\Bigr).
+    \cup \{\natin{w}{a}{b} : \dm_t(W)\cap[a,b]=\emptyset\}\Bigr).
   \label{eq:implits}
 \end{align}
 
@@ -1007,8 +1014,8 @@ It is convenient to normalise away positive two-cut literals once and for all.
 \label{lem:chain}
 If \invChain{} is respected, then for any $W$, if $\atge{w}{v}$ and
 $\atge{w}{v'}$ are both defined in $F_t$ for $v>v'$, then if $\atge{w}{v}$
-propagates so does $\atge{w}{v'}$, and if $\overline{\atge{w}{v'}}$ propagates
-so does $\overline{\atge{w}{v}}$.
+propagates so does $\atge{w}{v'}$, and if $\natge{w}{v'}$ propagates
+so does $\natge{w}{v}$.
 \end{lemmaT}
 
 \begin{proof}
@@ -1018,15 +1025,15 @@ consecutive terms.  Since only finitely many bound literals are defined in a
 finite formula, this sequence exists.  \invChain{} puts
 $\atge{w}{v_j}\Rightarrow\atge{w}{v_{j+1}}\geq 1$ in $F_t$ for each $j$, and each
 is a binary clause, so it propagates in one direction from $\atge{w}{v_j}$ and
-in the other from $\overline{\atge{w}{v_{j+1}}}$.  Chaining gives both claims.
+in the other from $\natge{w}{v_{j+1}}$.  Chaining gives both claims.
 \end{proof}
 
 \begin{lemmaN}[Cut normalisation]
 \label{lem:normalise}
 Let $R\subseteq L^W$ and let $R'$ be obtained from $R$ by replacing each
-positive literal $\ateq{w}{v}$ by $\{\atge{w}{v},\overline{\atge{w}{v+1}}\}$ and
+positive literal $\ateq{w}{v}$ by $\{\atge{w}{v},\natge{w}{v+1}\}$ and
 each positive literal $\atin{w}{a}{b}$ by
-$\{\atge{w}{a},\overline{\atge{w}{b+1}}\}$.  Then every literal of $R'$
+$\{\atge{w}{a},\natge{w}{b+1}\}$.  Then every literal of $R'$
 propagates under $R$, and $\dm_{R'}(W)=\dm_R(W)$.
 \end{lemmaN}
 
@@ -1087,13 +1094,13 @@ Then $\overline{C}$ propagates under $R$.
 Write $C=[p,q]$, so that $C$ is the literal $\atin{w}{p}{q}$ if $p<q$ and
 $\ateq{w}{p}$ if $p=q$; in either case \cref{eq:din1,eq:deq1} give the two
 clauses $\overline{C}\vee\atge{w}{p}$ and
-$\overline{C}\vee\overline{\atge{w}{q+1}}$, and both cuts are defined by
+$\overline{C}\vee\natge{w}{q+1}$, and both cuts are defined by
 \invCut{}.
 
 \emph{Case 1: some negative two-cut literal of $U$ contains $C$.}  That is,
 $\overline{E}\in U$ for a defined $E$ with $C\subseteq E$.  If $E=C$ we are
 done.  Otherwise $C\subsetneq E$, and \invCont{} gives a chain of binary clauses
-$\overline{C}\vee E_1$, $\overline{E_1}\vee E_2$, \dots, $\overline{E_{m-1}}\vee
+$\overline{C}\vee E_1$, $\overline{E}_1\vee E_2$, \dots, $\overline{E}_{m-1}\vee
 E$; reading each contrapositive in turn from $\overline{E}$ propagates
 $\overline{C}$.
 
@@ -1106,18 +1113,18 @@ $C\cap E=\emptyset$.
 
 So every value of $C$ is excluded by a bound literal of $U$.  Put
 $v^{+}=\max\{v : \atge{w}{v}\in U\}$ (with $v^{+}=-\infty$ if there is none)
-and $v^{-}=\min\{v : \overline{\atge{w}{v}}\in U\}$ (with $v^{-}=+\infty$ if
+and $v^{-}=\min\{v : \natge{w}{v}\in U\}$ (with $v^{-}=+\infty$ if
 there is none).  The values \emph{not} excluded by bounds of $U$ are exactly
 $[v^{+},v^{-}-1]$.  If $v^{-}\leq v^{+}$ then $\atge{w}{v^{+}}$ and
-$\overline{\atge{w}{v^{-}}}$ propagate and \cref{lem:contra-bounds} gives a
+$\natge{w}{v^{-}}$ propagate and \cref{lem:contra-bounds} gives a
 conflict, contrary to assumption.  So $[v^{+},v^{-}-1]$ is a non-empty interval
 disjoint from the interval $C$, and $C$ lies wholly on one side of it.
 \begin{itemize}[itemsep=1pt]
   \item If $q<v^{+}$: then $q+1\leq v^{+}$, and $\atge{w}{q+1}$ is defined, so
     \cref{lem:chain} propagates it from $\atge{w}{v^{+}}$.  The clause
-    $\overline{C}\vee\overline{\atge{w}{q+1}}$ then propagates $\overline{C}$.
+    $\overline{C}\vee\natge{w}{q+1}$ then propagates $\overline{C}$.
   \item If $p\geq v^{-}$: then $\atge{w}{p}$ is defined and \cref{lem:chain}
-    propagates $\overline{\atge{w}{p}}$ from $\overline{\atge{w}{v^{-}}}$.  The
+    propagates $\natge{w}{p}$ from $\natge{w}{v^{-}}$.  The
     clause $\overline{C}\vee\atge{w}{p}$ then propagates $\overline{C}$.
     \qedhere
 \end{itemize}
@@ -1137,8 +1144,8 @@ equality or interval literal of $W$ and let $S=E\cap[l,u]$.
 \begin{proof}
 \emph{(a)}  Write $E=[a,b]$.  If $b<l$ then $\atge{w}{b+1}$ is defined by
 \invCut{} with $b+1\leq l$, so it is a unit by \inv{Bound}, and
-$\overline{E}\vee\overline{\atge{w}{b+1}}$ propagates $\overline{E}$.  If $a>u$
-then $\atge{w}{a}$ is defined with $a>u$, so $\overline{\atge{w}{a}}$ is a unit
+$\overline{E}\vee\natge{w}{b+1}$ propagates $\overline{E}$.  If $a>u$
+then $\atge{w}{a}$ is defined with $a>u$, so $\natge{w}{a}$ is a unit
 by \inv{Bound}, and $\overline{E}\vee\atge{w}{a}$ propagates $\overline{E}$.
 
 \emph{(b)}  For a set that is a union of adjacent cells, define its \emph{rank}
@@ -1152,13 +1159,13 @@ propagates by hypothesis.  If $G$ has rank at least two then $G$ is not a cell,
 so \invCover{}(i) puts $\overline{G}\vee C_1\vee\cdots\vee C_k$ in $F_t$ with
 each $C_i$ a defined literal, a union of adjacent cells, properly contained in
 $G$ --- hence of strictly smaller rank --- and contained in $S$.  By induction
-each $\overline{C_i}$ propagates, so the covering propagates $\overline{G}$.
+each $\overline{C}_i$ propagates, so the covering propagates $\overline{G}$.
 
 Now for $E$ itself.  If $E\subseteq[l,u]$ then $E=S$, which is a union of
 adjacent cells by \invPart{}, and the claim applies directly.  Otherwise
 $E\neq S$, and \invCover{}(ii) puts $\overline{E}\vee C_1\vee\cdots\vee C_k$ in
 $F_t$ with each $C_i$ a defined literal that is a union of adjacent cells and
-$\bigcup_i C_i=S$; each $C_i\subseteq S$, so $\overline{C_i}$ propagates by the
+$\bigcup_i C_i=S$; each $C_i\subseteq S$, so $\overline{C}_i$ propagates by the
 claim, and the covering propagates $\overline{E}$.
 \end{proof}
 
@@ -1198,26 +1205,26 @@ both the defined domain and the property of propagating under $R$.
 
 Since $\dm_U(W)=\emptyset$, every integer is excluded by $U$ somehow.  In
 particular the values below any fixed point must be excluded, and no negative
-two-cut literal and no literal $\overline{\atge{w}{v}}$ excludes a value below
+two-cut literal and no literal $\natge{w}{v}$ excludes a value below
 $v$; so $U$ contains at least one literal $\atge{w}{v}$.  Let $v^{+}$ be the
 largest value such that $\atge{w}{v^{+}}$ propagates under $R$; this exists
 because only finitely many bound variables are defined in a finite formula.
 Symmetrically, let $v^{-}$ be the smallest value such that
-$\overline{\atge{w}{v^{-}}}$ propagates; this exists for the mirrored reason.
+$\natge{w}{v^{-}}$ propagates; this exists for the mirrored reason.
 
 If $v^{+}\geq v^{-}$ then \cref{lem:contra-bounds} gives a conflict.  So
 $v^{+}<v^{-}$, and in particular the value $v^{+}$ is not excluded by any bound
 literal of $U$.  It must therefore be excluded by a negative two-cut literal of
 $U$, and there are two cases.
 \begin{itemize}[itemsep=1pt]
-  \item $\overline{\ateq{w}{v^{+}}}\in U$.  Then $\atge{w}{v^{+}}$ propagates,
+  \item $\nateq{w}{v^{+}}\in U$.  Then $\atge{w}{v^{+}}$ propagates,
     and \cref{eq:deq2} --- the clause
-    $\ateq{w}{v^{+}}\vee\overline{\atge{w}{v^{+}}}\vee\atge{w}{v^{+}+1}$ ---
+    $\ateq{w}{v^{+}}\vee\natge{w}{v^{+}}\vee\atge{w}{v^{+}+1}$ ---
     propagates $\atge{w}{v^{+}+1}$, contradicting the maximality of $v^{+}$.
-  \item $\overline{\atin{w}{a}{b}}\in U$ with $a\leq v^{+}\leq b$.  By
+  \item $\natin{w}{a}{b}\in U$ with $a\leq v^{+}\leq b$.  By
     \invCut{}, $\atge{w}{a}$ is defined, and $a\leq v^{+}$, so
     \cref{lem:chain} propagates it.  Then \cref{eq:din2} --- the clause
-    $\atin{w}{a}{b}\vee\overline{\atge{w}{a}}\vee\atge{w}{b+1}$ --- propagates
+    $\atin{w}{a}{b}\vee\natge{w}{a}\vee\atge{w}{b+1}$ --- propagates
     $\atge{w}{b+1}$, and $b+1>v^{+}$, again contradicting maximality.
     \qedhere
 \end{itemize}
@@ -1263,24 +1270,24 @@ If $v^{+}>v$ then $\ell$ propagates by \cref{lem:chain}.  If $v^{+}=v$ then
 $\ell$ propagates by definition of $v^{+}$.  Otherwise $v^{+}<v$, so
 $v^{+}\notin D$, and $v^{+}$ is not excluded by any bound literal of $U$ (by
 maximality of $v^{+}$ and, on the other side, because
-$\overline{\atge{w}{v'}}\in U$ with $v'\leq v^{+}$ would give a conflict by
+$\natge{w}{v'}\in U$ with $v'\leq v^{+}$ would give a conflict by
 \cref{lem:contra-bounds}).  So $v^{+}$ is excluded by a negative two-cut
 literal, and exactly as in the two bullets of \cref{thm:wipeout} we derive
 $\atge{w}{v''}$ for some $v''>v^{+}$, contradicting maximality.
 
-\emph{Case 2: $\ell=\overline{\atge{w}{v}}$.}  Symmetric to Case 1, taking
-$v^{-}$ the smallest value with $\overline{\atge{w}{v^{-}}}$ propagating and
+\emph{Case 2: $\ell=\natge{w}{v}$.}  Symmetric to Case 1, taking
+$v^{-}$ the smallest value with $\natge{w}{v^{-}}$ propagating and
 using the other cut in each reverse reification.
 
 \emph{Case 3: $\ell=\ateq{w}{v}$, so $D=\{v\}$.}  Since $\ell$ is defined, so
 are $\atge{w}{v}$ and $\atge{w}{v+1}$ by \invCut{}; both
-$\atge{w}{v}\in\ImpLits$ and $\overline{\atge{w}{v+1}}\in\ImpLits$, so they
+$\atge{w}{v}\in\ImpLits$ and $\natge{w}{v+1}\in\ImpLits$, so they
 propagate by Cases 1 and 2, and \cref{eq:deq2} then propagates $\ell$.
 
-\emph{Case 4: $\ell=\overline{\ateq{w}{v}}$, so $v\notin D$.}  If
+\emph{Case 4: $\ell=\nateq{w}{v}$, so $v\notin D$.}  If
 $\ateq{w}{v}\in U$ then $D=\{v\}$, contradiction; so consider what excludes $v$.
 If a bound literal does, then either $\atge{w}{v+1}$ or
-$\overline{\atge{w}{v}}$ propagates by \cref{lem:chain}, and the corresponding
+$\natge{w}{v}$ propagates by \cref{lem:chain}, and the corresponding
 clause of \cref{eq:deq1} propagates $\ell$.  If instead a negative two-cut
 literal $\overline{E}\in U$ with $v\in E$ does, then $\{v\}\subseteq E$; if
 $E=\{v\}$ then $\ell\in U$, and otherwise \invCont{} gives a chain of binary
@@ -1291,11 +1298,11 @@ by bound literals, so this is the first case.
 \emph{Case 5: $\ell=\atin{w}{a}{b}$, with $D\subseteq[a,b]$.}  Since $\ell$ is
 defined, $\atge{w}{a}$ and $\atge{w}{b+1}$ are defined by \invCut{}.  Every
 $v<a$ is outside $D$ and every $v\geq b+1$ is outside $D$, so
-$\atge{w}{a}$ and $\overline{\atge{w}{b+1}}$ are in
+$\atge{w}{a}$ and $\natge{w}{b+1}$ are in
 $\ImpLits(\dm_U(X))\cap L^W$ and propagate by Cases 1 and 2.  \cref{eq:din2}
 then propagates $\ell$.
 
-\emph{Case 6: $\ell=\overline{\atin{w}{a}{b}}$, with $D\cap[a,b]=\emptyset$.}
+\emph{Case 6: $\ell=\natin{w}{a}{b}$, with $D\cap[a,b]=\emptyset$.}
 Write $E=[a,b]$ and $S=E\cap[l,u]$.  If $S=\emptyset$ then $\ell$ propagates by
 \cref{lem:covering}(a).  Otherwise, $S$ is a union of cells by \invPart{}, and
 every cell $C\subseteq S$ satisfies $D\cap C=\emptyset$, so $\overline{C}$
@@ -1417,20 +1424,20 @@ deletion --- correctly or, as has happened three times, incorrectly.
 \multicolumn{3}{@{}l}{\emph{Within one representation}}\\[2pt]
 $\atge{w}{v}$ & $\atge{w}{v'}$, $v'<v$ & order chain, \invChain{}
   (\cref{lem:chain}) \\
-$\overline{\atge{w}{v}}$ & $\overline{\atge{w}{v'}}$, $v'>v$ & the same clauses,
+$\natge{w}{v}$ & $\natge{w}{v'}$, $v'>v$ & the same clauses,
   read the other way \\
 $\ateq{w}{v}$ or $\atin{w}{a}{b}$ & its two cuts & $\Def^{\Rightarrow}$,
   \cref{eq:deq1,eq:din1} \\
 both cuts & $\ateq{w}{v}$ or $\atin{w}{a}{b}$ & $\Def^{\Leftarrow}$,
   \cref{eq:deq2,eq:din2} \\
-one cut crossing the literal & $\overline{\ateq{w}{v}}$ or
-  $\overline{\atin{w}{a}{b}}$ & $\Def^{\Rightarrow}$, contrapositive \\
-$\overline{\ateq{w}{v}}$ or $\overline{\atin{w}{a}{b}}$ & a bound stepping over
+one cut crossing the literal & $\nateq{w}{v}$ or
+  $\natin{w}{a}{b}$ & $\Def^{\Rightarrow}$, contrapositive \\
+$\nateq{w}{v}$ or $\natin{w}{a}{b}$ & a bound stepping over
   it & $\Def^{\Leftarrow}$: this is the hole jump, and the reason
   \cref{thm:wipeout} needs no covering \\
 $\overline{E'}$, $E\subsetneq E'$ & $\overline{E}$ & containment, \invCont{}
   (\cref{lem:contclosure}) \\
-$\overline{C_1},\dots,\overline{C_k}$ & $\overline{E}$ & covering, \invCover{}
+$\overline{C}_1,\dots,\overline{C}_k$ & $\overline{E}$ & covering, \invCover{}
   (\cref{lem:covering}) \\
 $E$ and all but one piece excluded & the surviving piece & covering \\
 every cell excluded & conflict & reverse reifications and the chain
@@ -1525,7 +1532,7 @@ decision variable all assignments are somehow partitioned by the branches.  In
 general, if there are $k$ decisions before a particular backtrack, the required
 backtracking justification is
 \begin{equation}
-  B_t := \sum_{i=0}^{k-1}\overline{d_i} \geq 1
+  B_t := \sum_{i=0}^{k-1}\overline{d}_i \geq 1
   \label{eq:bt}
 \end{equation}
 where each $d_i$ is an atomic literal representing the branching decision at
@@ -1597,16 +1604,16 @@ current branching variable $X$.}  Let $\dm_t(X)$ be the domain of $X$ after
 propagation at the current decision level.  The branching choices partition
 $\dm_t(X)$.  Since this is not a leaf node, backtracking justifications have
 already been logged for each of the $k$ child branches, each of the form
-$G\Rightarrow \overline{d_i}\geq 1$ where $G$ encodes the decisions above this
+$G\Rightarrow \overline{d}_i\geq 1$ where $G$ encodes the decisions above this
 level and $d_i$ is the $i$th branching decision on $X$; so each
-$\overline{d_i}$ propagates under $F_t\cup\{\neg B_t\}$.
+$\overline{d}_i$ propagates under $F_t\cup\{\neg B_t\}$.
 
 Now suppose $F_t\cup\{\neg B_t\}$ does not propagate to contradiction, and let
 $L$ be the set of atomic literals over representations of $X$ that propagate
 under unit propagation to fixpoint.  We must have $\dm_L(X)\neq\emptyset$, since
 otherwise \cref{thm:wipeout-family} gives a conflict; so pick $v\in\dm_L(X)$.
 By \invDomain{}, $v\in\dm_t(X)$, so some branch decision $d_i$ is satisfied by
-$v$, the branches being a partition of $\dm_t(X)$.  But $\overline{d_i}\in L$,
+$v$, the branches being a partition of $\dm_t(X)$.  But $\overline{d}_i\in L$,
 and $v\in\dm_L(X)$ means $v$ satisfies every literal of $L$, so $v$ does not
 satisfy $d_i$ --- a contradiction.  Note that $d_i$ may be stated over any
 representation of $X$, and that $\dm_L$ is computed over all of them, so no
@@ -1644,7 +1651,7 @@ valid immediately before the domain change.
 
 Two things about \cref{eq:propjust} are new.  First, $\ell$ may be a negated
 interval literal: a propagator that removes a run of values from a domain states
-that as one conclusion $\overline{\atin{w}{a}{b}}$, not as $b-a+1$ conclusions.
+that as one conclusion $\natin{w}{a}{b}$, not as $b-a+1$ conclusions.
 Second, $\ell$ and the literals of $R$ need not be stated over the same
 representation, and routinely are not.  A propagator whose operand is a view
 concludes over the view; a reason derived from the solver's domains is stated
@@ -1689,7 +1696,7 @@ initial bounds at the start of the proof, if not already present, and derive by
 RUP the units stating that they hold at the root decision level: for a variable
 $X$ with initial bounds $l$ and $u$, these are
 \begin{equation}
-  \atge{x}{l}\geq 1 \qquad\text{and}\qquad \overline{\atge{x}{u+1}}\geq 1 .
+  \atge{x}{l}\geq 1 \qquad\text{and}\qquad \natge{x}{u+1}\geq 1 .
   \label{eq:rootbounds}
 \end{equation}
 These follow by RUP by the same argument as \cref{cor:chainrup}, since the bound
@@ -1740,7 +1747,7 @@ by \cref{eq:rootbounds}.  Hence \invDomain{} is initially respected.
     --- base variable or view --- its own bit vector, and every derived
     representation its definitional link \cref{eq:link}.
   \item At the start of the proof, derive by RUP $\atge{x}{l}\geq 1$ and
-    $\overline{\atge{x}{u+1}}\geq 1$ for the bounds $l..u$ on each variable, and
+    $\natge{x}{u+1}\geq 1$ for the bounds $l..u$ on each variable, and
     likewise for any out-of-range cut subsequently created on any representation.
   \item Any time the solver backtracks, derive by RUP a backtracking
     justification $G\Rightarrow 0\geq 1$, where $G$ is the sequence of decisions
@@ -1789,7 +1796,7 @@ solution witness introduces
   -\BinEnc(W) \geq -o-1 \quad\text{for minimisation,}
 \]
 followed by a literal definition and the RUP constraint $\atge{w}{o+1}\geq 1$ or
-$\overline{\atge{w}{o}}\geq 1$.  This fits neatly into the framework, as the RUP
+$\natge{w}{o}\geq 1$.  This fits neatly into the framework, as the RUP
 constraint derived after a solution is found is simply a propagation
 justification with $R=\emptyset$, as if the objective-improving constraint had
 always been part of the model.  It has the effect of maintaining \invDomain{} by
@@ -2132,9 +2139,9 @@ and $30-10=20$, $30-5=25$.  On $V$ the partition is created in turn, with
 boundaries $\{10,20,26,30\}$, cells $[10,19]$, $[20,25]$, $[26,29]$, and its own
 root covering.  Finally the two clauses
 \[
-  \overline{\atin{x}{5}{10}}\vee\atin{v}{20}{25}
+  \natin{x}{5}{10}\vee\atin{v}{20}{25}
   \qquad\text{and}\qquad
-  \overline{\atin{v}{20}{25}}\vee\atin{x}{5}{10}
+  \natin{v}{20}{25}\vee\atin{x}{5}{10}
 \]
 are emitted.  The recursion terminates because the pair is recorded before the
 two \code{need} calls are made.
@@ -2143,14 +2150,14 @@ two \code{need} calls are made.
 Both endpoints fall strictly inside existing cells, so both cells split first:
 \begin{itemize}[itemsep=0pt]
   \item $[5,10]$ splits at $7$ into $[5,6]$ and $[7,10]$, with the split covering
-    $\overline{\atin{x}{5}{10}}\vee\atin{x}{5}{6}\vee\atin{x}{7}{10}$;
+    $\natin{x}{5}{10}\vee\atin{x}{5}{6}\vee\atin{x}{7}{10}$;
   \item $[11,20]$ splits at $16$ into $[11,15]$ and $[16,20]$, with its split
     covering.
 \end{itemize}
 Then $[7,15]$ is defined, with the covering
-$\overline{\atin{x}{7}{15}}\vee\atin{x}{7}{10}\vee\atin{x}{11}{15}$ and the two
-containment edges $\overline{\atin{x}{7}{10}}\vee\atin{x}{7}{15}$ and
-$\overline{\atin{x}{11}{15}}\vee\atin{x}{7}{15}$.  The root covering is
+$\natin{x}{7}{15}\vee\atin{x}{7}{10}\vee\atin{x}{11}{15}$ and the two
+containment edges $\natin{x}{7}{10}\vee\atin{x}{7}{15}$ and
+$\natin{x}{11}{15}\vee\atin{x}{7}{15}$.  The root covering is
 \emph{not} touched: to falsify $[5,10]$ later, unit propagation goes through its
 own split covering.  The same sequence then happens on $V$ for the image
 $[V\in 15..23]$, and the link pair joins the two.
@@ -2163,15 +2170,15 @@ with their images.
 \paragraph{A negative crossing.}
 Suppose the solver now decides $\neg[X\in 7..15]$ and, deeper in the subtree, a
 propagator's reason names $[V\in 15..23]$, which is the image.  In the replay,
-$\overline{\atin{x}{7}{15}}$ is asserted.  It is a unit on neither of its cuts:
+$\natin{x}{7}{15}$ is asserted.  It is a unit on neither of its cuts:
 \cref{eq:din2} for it is the ternary clause
-$\atin{x}{7}{15}\vee\overline{\atge{x}{7}}\vee\atge{x}{16}$, and with the first
+$\atin{x}{7}{15}\vee\natge{x}{7}\vee\atge{x}{16}$, and with the first
 literal false and neither bound known, nothing propagates.  Its containment
-edges point the wrong way --- they carry $\overline{\atin{x}{7}{15}}$ \emph{down}
+edges point the wrong way --- they carry $\natin{x}{7}{15}$ \emph{down}
 to $[7,10]$ and $[11,15]$, not across.  The only thing that carries the fact to
 $V$ is the \emph{first} clause of the link pair,
-$\overline{\atin{v}{15}{23}}\vee\atin{x}{7}{15}$: with $\atin{x}{7}{15}$ false it
-propagates $\overline{\atin{v}{15}{23}}$ in one step.  Read as an implication that
+$\natin{v}{15}{23}\vee\atin{x}{7}{15}$: with $\atin{x}{7}{15}$ false it
+propagates $\natin{v}{15}{23}$ in one step.  Read as an implication that
 clause says $\atin{v}{15}{23}\to\atin{x}{7}{15}$, which is not the direction
 anything needs; it is here for its contrapositive.  Delete it and the
 backtracking justification fails, while every individual line of the proof still
@@ -2181,9 +2188,9 @@ decided on $V$ and needed on $X$ --- and it needs the other clause.
 \paragraph{Why a nearby instance proves nothing.}
 Replace the decision by $\neg[X\in 1..15]$, whose interval abuts the lower bound.
 Now no link clause is needed at all.  \cref{eq:din2} for it is
-$\atin{x}{1}{15}\vee\overline{\atge{x}{1}}\vee\atge{x}{16}$; the boundary pin
+$\atin{x}{1}{15}\vee\natge{x}{1}\vee\atge{x}{16}$; the boundary pin
 $\atge{x}{1}$ of \inv{Bound} is a unit, so $\atge{x}{16}$ propagates.  The ge-link
-carries that to $\overline{\atge{v}{15}}$, since $X\geq 16$ is $V\leq 14$, and the
+carries that to $\natge{v}{15}$, since $X\geq 16$ is $V\leq 14$, and the
 \emph{forward} reification of the image literal $\atin{v}{15}{29}$ then falsifies
 it.  A green result on this instance says nothing whatever about the link pair,
 and three further shapes have the same property --- see \nsec{sec:coincidence},
@@ -2208,7 +2215,7 @@ where 80\% of small random instances turn out to be one of them.
 \item \textbf{Initial-domain gaps.}  Holes in an initial domain are currently
   derived at the root of the proof, by root propagation of the constraint that
   posts the domain.  They could instead be stated in the model, as
-  $\overline{\atin{x}{a}{b}}\geq 1$ rows forming part of the domain definition.
+  $\natin{x}{a}{b}\geq 1$ rows forming part of the domain definition.
   That formulation is equally definitional and slightly more direct, but it
   requires interval literals to exist during model writing, and it changes the
   OPB surface that a verified encoder conforms against.  The decision is open
