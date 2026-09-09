@@ -64,6 +64,17 @@ namespace
             .visit(level);
     }
 
+    auto wrap_label(const vector<ViewWrap> & wraps) -> string
+    {
+        string s = "(";
+        for (const auto & w : wraps) {
+            if (s.size() > 1)
+                s += ", ";
+            s += std::to_string(w.bare ? 1 : (w.negate ? -1 : 1)) + ", " + std::to_string(w.bare ? 0 : w.offset);
+        }
+        return s + ")";
+    }
+
     auto post_divmod(Problem & p, bool is_div, IntegerVariableID x, IntegerVariableID y, IntegerVariableID out, const DivideConsistency & level)
         -> void
     {
@@ -74,38 +85,30 @@ namespace
     }
 }
 
-// Three distinct variables, optionally through views: constrain
-// (m1 * x + o1) op (m2 * y + o2) = (m3 * out + o3), enumerating over the
-// underlying variables.
+// Three distinct variables, optionally through views. The wraps invert the
+// underlying domain, so the VISIBLE domains stay x_range / y_range / out_range
+// and the expected solution set is the same under every wrap -- only the
+// constraint-side encoding differs, which is what the view sweep is for.
 string test_proof_suffix = "";
 
 auto run_divmod_test(bool proofs, bool is_div, const DivideConsistency & level, bool check_gac, pair<int, int> x_range, pair<int, int> y_range,
-    pair<int, int> out_range, tuple<int, int, int, int, int, int> view_spec = {1, 0, 1, 0, 1, 0}) -> void
+    pair<int, int> out_range, vector<ViewWrap> wraps = {view_none(), view_none(), view_none()}) -> void
 {
-    const auto & [m1, o1, m2, o2, m3, o3] = view_spec;
     print(cerr, "{} {} {} {} {} {} views {} {}", is_div ? "divide" : "modulus", level_name(level), check_gac ? "gac-checked" : "plain", x_range,
-        y_range, out_range, view_spec, proofs ? " with proofs:" : ":");
+        y_range, out_range, wrap_label(wraps), proofs ? " with proofs:" : ":");
     cerr << flush;
     set<tuple<int, int, int>> expected, actual;
 
-    auto is_satisfying = [&](int a, int b, int c) {
-        return is_div ? div_ok(m1 * a + o1, m2 * b + o2, m3 * c + o3) : mod_ok(m1 * a + o1, m2 * b + o2, m3 * c + o3);
-    };
+    auto is_satisfying = [&](int a, int b, int c) { return is_div ? div_ok(a, b, c) : mod_ok(a, b, c); };
     build_expected(expected, is_satisfying, x_range, y_range, out_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto x = p.create_integer_variable(Integer(x_range.first), Integer(x_range.second), "x");
-    auto y = p.create_integer_variable(Integer(y_range.first), Integer(y_range.second), "y");
-    auto out = p.create_integer_variable(Integer(out_range.first), Integer(out_range.second), "out");
+    auto x = create_integer_variable_or_constant_with_view(p, x_range, wraps.at(0), "x");
+    auto y = create_integer_variable_or_constant_with_view(p, y_range, wraps.at(1), "y");
+    auto out = create_integer_variable_or_constant_with_view(p, out_range, wraps.at(2), "out");
 
-    auto wrap = [&](SimpleIntegerVariableID v, int m, int o) -> IntegerVariableID {
-        IntegerVariableID result = v;
-        if (m == -1)
-            result = -result;
-        return result + Integer{o};
-    };
-    post_divmod(p, is_div, wrap(x, m1, o1), wrap(y, m2, o2), wrap(out, m3, o3), level);
+    post_divmod(p, is_div, x, y, out, level);
 
     auto proof_name = proofs ? make_optional("divide_modulus_test" + test_proof_suffix) : nullopt;
 
@@ -237,22 +240,22 @@ auto main(int argc, char * argv[]) -> int
     if (! view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
         test_proof_suffix = "_" + view_wrap_config_label(view_cfg);
         auto wraps = wraps_for_positions(view_cfg, n_positions);
-        auto spec_of = [&](int pos) -> pair<int, int> {
-            if (wraps[static_cast<size_t>(pos)].bare)
-                return {1, 0};
-            return {wraps[static_cast<size_t>(pos)].negate ? -1 : 1, wraps[static_cast<size_t>(pos)].offset};
-        };
-        auto [m1, o1] = spec_of(0);
-        auto [m2, o2] = spec_of(1);
-        auto [m3, o3] = spec_of(2);
         for (bool proofs : {false, true}) {
             if (proofs && ! can_run_veripb())
                 break;
             for (bool is_div : {true, false})
                 for (const auto & level : vector<DivideConsistency>{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}}) {
                     bool is_bc = holds_alternative<consistency::BC>(level);
-                    run_divmod_test(proofs, is_div, level, ! is_bc, {-4, 4}, {-2, 3}, {-4, 4}, tuple{m1, o1, m2, o2, m3, o3});
-                    run_divmod_test(proofs, is_div, level, ! is_bc, {0, 5}, {1, 3}, {0, 5}, tuple{m1, o1, m2, o2, m3, o3});
+                    bool force_gac = holds_alternative<consistency::Tabulated>(level);
+                    // Inside Auto's budget under every wrap (3 * 2 * 4 = 24 for divide, 3 * 2 * 8 = 48
+                    // for modulus, against default_tabulation_threshold() = 100), so Auto tabulates and
+                    // GAC is checked at every level but BC.
+                    run_divmod_test(proofs, is_div, level, ! is_bc, {0, 2}, {1, 2}, {-1, 2}, wraps);
+                    // Over Auto's budget (486 and 108 for divide, 432 and 144 for modulus), where Auto
+                    // is documented to fall back on the decomposition: soundness and completeness at
+                    // every level, GAC only where it is promised.
+                    run_divmod_test(proofs, is_div, level, force_gac, {-4, 4}, {-2, 3}, {-4, 4}, wraps);
+                    run_divmod_test(proofs, is_div, level, force_gac, {0, 5}, {1, 3}, {0, 5}, wraps);
                 }
         }
         return EXIT_SUCCESS;
@@ -291,7 +294,7 @@ auto main(int argc, char * argv[]) -> int
                 run_divmod_test(proofs, is_div, level, ! is_bc, {0, 1}, {-1, 1}, {-2, 2});
 
                 // Views on each slot.
-                run_divmod_test(proofs, is_div, level, ! is_bc, {0, 2}, {0, 1}, {-1, 2}, {1, -1, 1, 1, -1, 1});
+                run_divmod_test(proofs, is_div, level, ! is_bc, {0, 2}, {0, 1}, {-1, 2}, {view_offset(-1), view_offset(1), view_neg_offset(1)});
 
                 // Negative divisors, mixed signs: GAC-checked only when
                 // forced, since the tree is over the Auto threshold.
