@@ -38,6 +38,15 @@ Doxyfile
 # ... and the committed VeriPB smoke fixture used by the Windows CI lane:
 !.github/veripb_smoke/*.opb
 !.github/veripb_smoke/*.pbp
+# LaTeX intermediates and output from dev_docs (.log is already covered above).
+# The built .pdf is not checked in: it is a binary that changes on every edit,
+# so build it when you want to read it.
+*.aux
+*.fdb_latexmk
+*.fls
+*.toc
+/dev_docs/*.out
+/dev_docs/*.pdf
 *~
 XCSP3-CPP-Parser
 generator

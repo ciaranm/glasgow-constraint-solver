@@ -7,6 +7,13 @@ literal at all, and every part of the solver that wanted to say something
 interval-shaped about a view carried its own detour — three that threw, and five,
 later seven, that silently degraded to one literal per value.
 
+**Theory.** The general account — what these literals are, what the invariants
+are, and why the design is complete — is
+[literal-encodings.tex](literal-encodings.tex), which subsumes the argument that
+used to be §5 here. This document is the issue-#882 implementation record: the
+sites that changed, the trigger that is easy to get wrong, the ablation table,
+and what was measured.
+
 **Audience.** Anyone touching `need_invar`, `simplify_literal`, the view
 machinery in `NamesAndIDsTracker`, or a propagator that emits explicit `pol`
 over a range literal. Read both of the documents above first; this one assumes
@@ -52,8 +59,8 @@ directions.
 
 Writing `F_V` for `[V in a..b]` and `F_X` for its image, the link is
 
-    L1:  ¬F_V ∨ F_X
-    L2:  ¬F_X ∨ F_V
+    L1:  ~F_V | F_X
+    L2:  ~F_X | F_V
 
 Each is RUP at emission: assert one and the negation of the other, and the
 forward reification gives that side's two cuts, the ge-links carry each cut
@@ -61,26 +68,15 @@ across (for `s = -1` the two cuts swap roles, which is exactly the endpoint
 swap above), and the far side's reverse reification fires.
 
 **Both clauses are needed, and each for its contrapositive rather than for its
-implication.** As implications, `F_V → F_X` and `F_X → F_V` are both already
-derivable by unit propagation — one forward reification, two ge-links, one
-reverse reification, no new clauses. That is what issue #882 observed, and it
-is true. But UP uses a clause in whichever direction has a unit, and the
-directions that matter are the negative ones:
-
-    ¬F_X ⟹ ¬F_V   (L1's contrapositive)
-    ¬F_V ⟹ ¬F_X   (L2's contrapositive)
-
-and neither is derivable without the clause. A negated interval literal is a
-unit on *neither* of its cuts — its reverse reification leaves only the binary
-clause `¬(Y≥p) ∨ (Y≥q+1)` — so all it can do is descend its own variable's
-containment edges, and it bottoms out at cells that are themselves unlinked
-range literals unless they happen to be width 1. Descending to width 1 is
-precisely the per-value shattering the interval vocabulary exists to avoid.
-The issue's argument ("a range literal never has to cross an equality: it is
-reified against its own two order cuts, so an interval fact decomposes into
-cross one bound, move within one variable, cross back") decomposes a
-*conjunction* of two bounds; a negated interval is a *disjunction* of two
-bounds, and UP cannot carry a disjunction across one disjunct at a time.
+implication.** As implications, both directions are already derivable by unit
+propagation — one forward reification, two ge-links, one reverse reification,
+no new clauses. That is what issue #882 observed, and it is true; it is also
+beside the point, because the directions unit propagation actually needs are the
+negative ones, and neither of those is derivable without its clause. The
+argument is Remark 3.1 of [literal-encodings.tex](literal-encodings.tex); the
+one-line version is that a negated interval literal is a *disjunction* of two
+bounds, not a conjunction, and unit propagation cannot carry a disjunction
+across one disjunct at a time.
 
 Both negative directions are ordinary rather than exotic. Search branches on
 real variables only — `reject_random_interval` requires a
@@ -155,51 +151,37 @@ verifying. So the split coverings and the containment DAGs genuinely differ.
 
 **Argue per side, never by isomorphism.** The correctness argument runs: every
 fact is a unit on every side (bounds via the ge-links, equalities via the
-eq-links, intervals via L1/L2), and then per-side UP-completeness — the range
-spec's Lemma L1 — derives every implied literal on the side that needs it. That
-argument does not care which role a literal plays, which is exactly why it
-survives the role differences. An argument that appealed to the two sides having
-the same clauses would not.
+eq-links, intervals via L1/L2), and then per-side UP-completeness derives every
+implied literal on the side that needs it. That argument does not care which
+role a literal plays, which is exactly why it survives the role differences. An
+argument that appealed to the two sides having the same clauses would not. This
+is Theorem 3.3' and the paragraph after it in
+[literal-encodings.tex](literal-encodings.tex).
 
 ## 5. Why this is complete
 
-The obligation is: in a backtrack-clause replay, after asserting the decisions,
-every logged inference's reason must become unit in trail order. The argument has
-three parts, and it was formalised rather than assumed.
+*Resolved, and moved.* The argument is now written out and proved, over a whole
+representation family and all three literal kinds, in §3.3.1 of
+[literal-encodings.tex](literal-encodings.tex) — see Lemma 3.E (unit transport),
+Theorems 3.2' and 3.3' (the family versions of wipeout and complete
+propagation), and Lemma 3.4 (reason validity). The three parts this document
+originally identified — mirror closure, unit transport, and per-side
+UP-completeness — survive as `Inv-Rep`, Lemma 3.E, and Theorem 3.3
+respectively.
 
-**Mirror closure.** For every registered `V = sX + c` and every other view `V'`
-of `X`, an interval exists on one iff its image exists on the others, with the
-link pair present for each view/underlying pair. This is §3's invariant plus the
-fact that `link` requests the far side, which itself mirrors onward — so a
-literal first seen on `V₁` reaches `V₂` through `X` in the same call.
+Two things from that write-up bear on this code specifically.
 
-**Unit transport.** Any literal that is a unit on one side has its image a unit
-on every other side of the same base: ge-links for bounds, eq-links for
-equalities, L1/L2 for intervals (L1 carrying `+F_V` and `¬F_X`, L2 the other
-two). Two hops compose through the underlying variable.
-
-**Per-side UP-completeness.** For a single variable, given any set of unit
-literals from its own family, UP derives every bound implied by the surviving
-values, every interval and equality the surviving values are contained in, every
-one they are disjoint from, and contradiction if none survive. The interesting
-case is the last: induction on (number of current cells inside the literal,
-width), using containment for a cell under a rejected ancestor, reification and
-the chain for one cleared by a bound, and the covering for the step — which works
-because every in-bounds endpoint of every interval and equality is a partition
-boundary, so a cell is either wholly inside a literal or disjoint from it.
-Notably the root covering is *not* needed, matching the observation already
-recorded in §8.1 of the range spec.
-
-Together: assert the decisions; by transport the unit set on any side is the
-image of every fact so far; per-side completeness derives whatever that
-inference's reason needs on the side it is stated on; the inference clause fires;
-induct.
-
-**What it depends on**, and therefore what would break it: that every non-`red`
-emission names its literals (§3); that every domain change is logged eagerly, as
-the range spec already assumes; and that in-bounds endpoints are partition
-boundaries — which is why `need_direct_encoding_for` cuts at `v` and `v+1` when a
-partition exists, and dropping that would break the base case above.
+- **Argue per side, never by isomorphism.** The correctness argument transports
+  every fact to one representation and then works there, which is why the role
+  differences of §4 do not matter. An argument that appealed to the two sides
+  having corresponding clause sets would be unsound reasoning even in the runs
+  where the correspondence holds, because nothing maintains it.
+- **What it depends on**, and therefore what would break it: that every
+  non-`red` emission names its literals (§3); that every domain change is logged
+  eagerly, as the range spec already assumes; and that in-bounds endpoints are
+  partition boundaries — which is why `need_direct_encoding_for` cuts at `v` and
+  `v+1` when a partition exists, and dropping that would break the base case of
+  the cell-exclusion lemma.
 
 Corroboration, which is not the argument but is worth having: 3000 randomly
 generated view proofs verified with zero mirror-closure violations, over Equals,
@@ -337,16 +319,25 @@ table is used for.
 
 ## 9. The one residue
 
-A real variable with `lower == 0 && upper == 1` and no explicit representation
-is `DirectOnly`, so it has no bit vector and no order cuts to reify against, and
-`need_invar` throws for it. That is pre-existing and applies to bare variables
-too. A view of such a variable *does* get bits, so its mirror would be the first
-thing to ask `need_invar` for a bits-less variable.
+A variable with no bit-vector representation has no order cuts to reify against,
+so `need_invar` throws for it. The gate is `has_bit_representation`, i.e.
+whether the variable is in `integer_variable_bits_to_size_and_proof_vars` — not
+what its domain looks like.
 
-It cannot arise — a two-value domain has no interior hole, `reject_random_interval`
-needs three values, and `each_interval_minus` on a two-value domain yields only
-width-1 intervals — but `ProofLogger::infer` and `infer_explicitly` fall back to
-per-value when `can_represent_range_literal_for` is false, and that predicate
-resolves a view to its underlying variable, so the case stays correct if it ever
-does. That is the bits-less fallback, which bare variables have too. It is not a
-view detour, and it is the only one left.
+**Correction (2026-09-09).** An earlier version of this section said the case
+was a real variable with `lower == 0 && upper == 1` and no explicit
+representation. That is wrong. `set_up_direct_only_variable_encoding`'s `{0,1}`
+branch calls `track_bits(id, 0, {{1, eqvar}})`, giving such a variable a
+one-element bit vector, so `has_bit_representation` is true for it and
+`need_invar` does *not* throw. Confirmed by probe: for a `{0,1}` direct-only
+variable, `need_invar(b, 0, 1)` returns a literal and the resulting proof
+verifies; for a width-6 direct-only variable, `has_bit_representation` is false
+and `need_invar` throws `range literal requested for a variable without a bits
+encoding`. So the throwing case is a **direct-only variable of width three or
+more**, which is a property of the variable and not of views.
+
+Either way this is not a view detour. `ProofLogger::infer` and `infer_explicitly`
+fall back to per-value when `can_represent_range_literal_for` is false, and that
+predicate resolves a view to its underlying variable, so a view of such a
+variable never asks for a mirror the underlying cannot hold. It is the bits-less
+fallback, which bare variables have too, and it is the only detour left.
