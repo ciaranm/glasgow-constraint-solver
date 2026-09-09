@@ -121,6 +121,19 @@ after — all 212 artefacts, not just the last instance's — and a differential
 computing both algorithms in one binary reports zero disagreements over ten seeds.
 Look for this shape first; it is free.
 
+*But check the constraint's other constructors before believing the row.* That
+rewrite was of the branch `In` takes when every candidate is a constant, and
+`In` has three constructors: with a *variable* among the candidates it takes the
+other branch, which went on walking `dom(var)` a value at a time, asking each
+value whether some source held it (#874). Three sites, in fact — that walk, the
+overlap test in step 2 (now `State::domains_intersect`, a merge walk that stops
+at the first common value), and the single-supporting-source pruning in step 3.
+Rewritten the same way, the whole rule is now interval-shaped: 29.4 s of root
+propagation at 10^9 becomes 22 µs, and, because the difference is also *fewer
+questions asked*, a narrow search-heavy shape — six sources over `1..8`, four
+`In`s and an `AllDifferent`, 26.1M solutions — goes from 14.9 s to 11.8 s with
+recursions, propagations and solutions all identical.
+
 **Check byte-identity with `GCS_PRESERVE_PROOF_FILES=all`, not `=1`.** The latter
 keeps only the last instance's files under each basename, and `among_test` writes
 its 31 proving instances under three basenames: 26 as `among_test_w0_pall`, 3 as
@@ -182,6 +195,35 @@ unconditional equality to one that holds only under a guard.
 Views keep the per-value path: a view's atoms are spelled through the view and
 the lemmas have not been shown to bridge that. Same restriction, and same reason,
 as the single-support range path in the same file.
+
+`In` (#874) is the case where *both* lemmas carry the selector, because both
+halves of its link are half-reified: the model says `V_i >= var` and
+`V_i <= var` each under `sel_i`, so neither bound crosses unconditionally. Same
+`3n+1` shape otherwise, and the same shape twice more in the mirror direction,
+where the single supporting source is pruned to `dom(var)`. Ruling out the other
+selectors is the first of the two: `! sel_j` follows from `dom(var)` holding
+nothing `V_j` could be, which is the guarded walk again, once per interval of
+`dom(var)` rather than once per value of it. With those out, the at-least-one row
+forces `sel_i`, the link to the surviving source is unconditional, and the
+conclusion's own two lemmas need no guard.
+
+**When the lemmas are load-bearing, and when they are decoration.** Dropping just
+the two bound lemmas from either of `In`'s range prunings, and leaving everything
+else, is *accepted* by VeriPB on a probe where the source's absence from the run
+follows from its declared bounds — a source over `0..400` and a run of `401..699`
+— and it is accepted on all 37 of `in_test`'s contiguous-domain proving rows,
+whose domains are a handful of values wide. It is *rejected* at both widths once
+the absence is an interior **hole** instead — on the 38th row, the first of the
+three `#874` added for exactly this. That is the distinction to reason
+from, and it is not the width: a bound that the model itself states is a third
+constraint the checker can put into the Theorem 2.9 configuration directly, so
+unit propagation crosses the equality with no help. A hole is stated only by a
+range literal, which is the disjunction RUP cannot split, and then the walk has
+to be spelled out. `in_test`'s rows were all of the first kind until `#874` added
+three sparse-domain ones; before those, sabotaging the lemmas changed nothing the
+suite could see. (`equals` records the neighbouring observation from its own
+mutation lane: there the exceptions are interval endpoints that land on a bit
+boundary, where a bound is one literal rather than a sum.)
 
 ### Theorem 2.9 is what makes the two-lemma shape work, and it wants a *difference*
 
@@ -574,14 +616,14 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-73 constraint probes, plus 20 heuristic ones in the second table. The lane
+75 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
 | **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (40) | the arithmetic family (with two rows of its own for `Abs`' interior holes), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms and with a holey entry, `AllEqual` with holes and without, `Among`, `In`, `GlobalCardinality`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **Clean** (42) | the arithmetic family (with two rows of its own for `Abs`' interior holes), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms and with a holey entry, `AllEqual` with holes and without, `Among`, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality`, `Table` and `Element` started
@@ -602,6 +644,21 @@ way was tripping inside `In` before it reached the constraint it meant to test.
 `AllEqual/holes` was one: its row was measuring the wrong constraint, and only
 turned into a real `AllEqual` trip once `In` was fixed. A row names the probe, not
 necessarily the culprit.
+
+**And it needed three rows, not one.** `In` has three constructors, and the
+original row used the all-constants one, which is the only spelling that takes
+the branch the rewrite above fixed. With a variable among the candidates the
+propagator takes the *other* branch, which was still walking `dom(var)` a value
+at a time — so the row read `Clean` for a constraint that tripped instantly the
+moment a model spelled it the way `member` does (#874). `In/vars` and
+`In/vars-single-support` are the two rows for it: the first for the filtering of
+`dom(var)`, the second for the pruning of the one source that still overlaps it,
+which needs exactly one source to overlap and so cannot be reached by the first.
+The moral generalises past this constraint: **a probe exercises one spelling of a
+constraint's API, and a constructor is as much a branch as an `if` is.** Reading
+the propagator for which of its arms the probe actually enters is the same
+discipline as reading the *condition* on a branch, which is what `Element/holey`
+taught.
 
 `ArrayMinMax` is *not* in that list even though its union sweep was rewritten the
 same way, and that is correct: it has a second per-value sweep, the full-GAC pass
@@ -788,22 +845,33 @@ separately, because they mean different things:
 
 ### Results at 10^3 → 10^4
 
-Re-measured over all 73 probes after the interval rewrites landed for
+Re-measured over all 75 probes after the interval rewrites landed for
 `ArrayMinMax`, `Table`, `Among`, `Element`, `In`, `GlobalCardinality` and
-`AllEqual/holes`, and again after #878 and #875 — which moved nothing but their
-own rows: `Element/holey` is flat at 41 rows and 51 steps, `Abs/hole` at 30 and
-46, `Abs/hole-preimage` at 26 and 64, and none of the three rewrites changes
-which values get removed, so no other row could have moved either. The
+`AllEqual/holes`, and again after #878, #875 and #874 — which moved nothing but
+their own rows: `Element/holey` is flat at 41 rows and 51 steps, `Abs/hole` at 30
+and 46, `Abs/hole-preimage` at 26 and 64, and none of the rewrites changes which
+values get removed, so no other row could have moved either. The
 figures move, so re-run the survey rather than quoting this table after touching
 any propagator's removal loop — that is how the previous version of it went
 stale, see below.
+
+**#874's two rows are the case for running this survey and not just the audit
+lane.** With the propagation fixed, `In/vars` was flat at 50 steps but
+`In/vars-single-support` read 7048 → **70048**: the rule's proof was still
+per-value even though its inferences were not, because the scaffolding that rules
+out the non-supporting sources' selectors emitted one line per value of
+`dom(var)`, and the reason it is emitted under named one literal per value too.
+The guard cannot see either — a reason is only materialised with proofs on, and
+the lane runs without them — so the survey was the only thing that showed it.
+The walk that fixes it is the same one the conclusions use, one interval at a
+time, and the row is now flat at 53.
 
 | | growth (opb / steps) | constraints |
 |---|---|---|
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 33984 → 339984 steps) |
-| neither | 1.0x / 1.0x | everything else, 64 of 73 |
+| neither | 1.0x / 1.0x | everything else, 66 of 75 |
 
 The last row means "does not grow with the width", not "identical at both widths",
 and three entries in it are worth naming so nobody reads them as a promise.
