@@ -8,6 +8,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/cumulative.hh>
+#include <gcs/constraints/dag.hh>
 #include <gcs/constraints/difference/difference_constraints.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
@@ -1166,6 +1167,42 @@ TEST_CASE("read_scp: the tree family enumerates correctly")
     auto subgraphs = enumerate("( (version 1) (variables (N0 0 1) (N1 0 1) (E0 0 1)) "
                                "(constraints (_1 subgraph (0) (1) (N0 N1) (E0))) (prob_type enumerate) )");
     CHECK(subgraphs.size() == 5);
+}
+
+TEST_CASE("read_scp: dag enumerates correctly")
+{
+    // A triangle 0 -> 1 -> 2 -> 0: one solution with no node selected, three with
+    // one (no edge has both endpoints), two each for the three pairs (the one edge
+    // between them, in or out), and with all three selected every edge subset but
+    // the whole triangle.
+    auto dags = enumerate("( (version 1) (variables (N0 0 1) (N1 0 1) (N2 0 1) (E0 0 1) (E1 0 1) (E2 0 1)) "
+                          "(constraints (_1 dag (0 1 2) (1 2 0) (N0 N1 N2) (E0 E1 E2))) (prob_type enumerate) )");
+    CHECK(dags.size() == 17);
+
+    // A self loop is a cycle of one, so its edge can never be selected, leaving
+    // the two node choices free.
+    auto loops = enumerate("( (version 1) (variables (N0 0 1) (E0 0 1)) "
+                           "(constraints (_1 dag (0) (0) (N0) (E0))) (prob_type enumerate) )");
+    CHECK(loops.size() == 2);
+}
+
+TEST_CASE("read_scp: dag survives write -> read -> write unchanged")
+{
+    Problem original;
+    std::vector<IntegerVariableID> ns, es;
+    for (int i = 0; i < 3; ++i)
+        ns.push_back(original.create_integer_variable(0_i, 1_i, "N" + std::to_string(i)));
+    for (int e = 0; e < 3; ++e)
+        es.push_back(original.create_integer_variable(0_i, 1_i, "E" + std::to_string(e)));
+    original.post(Dag{{{0, 1}, {1, 2}, {2, 0}}, ns, es});
+    auto scp_a = prove_to_scp(original, "scp_reader_dag_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_dag_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
 }
 
 TEST_CASE("read_scp: the tree family survives write -> read -> write unchanged")

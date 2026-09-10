@@ -275,7 +275,17 @@ library. For an introduction to *using* the solver, start with the top-level
   spanning tree, why the `start = end` corner needs a row of its own, why the
   counting rows cannot be more child constraints (a role must name everything
   that varies, so a second linear child collides on `c[id]`), and why the family
-  is deliberately not GAC.
+  is deliberately not GAC. Finally covers `Dag` (#791), which is not connectivity
+  but is this encoding with the root taken out — `lev[v][k]` is "a selected walk
+  of exactly k edges ends here", acyclicity is "no walk of as many edges as there
+  are nodes", and the level bound is exactly `|component| - 1` (measured: one
+  fewer rejects valid DAGs). Records why only the input graph's strongly connected
+  components need levels, why `Dag` is GAC for one reachability question per
+  candidate edge where `Reachable` needed cut vertices and a case split (acyclicity
+  is downward closed, so nothing is ever forced in), and the divergence between
+  what MiniZinc documents `dag` to mean and what `fzn_dag` enforces — the
+  decomposition omits `subgraph` on an edge's tail, so it has six solutions on a
+  two-node graph where `Dag` has five and Chuffed has four.
 - [SubCircuit: encoding and proofs](subcircuit-proof-logging.md) — the design
   note for `SubCircuit` (#788), behind MiniZinc's `subcircuit` and XCSP3-core's
   `<circuit>`: the position labelling, why the tour length can be a sum of

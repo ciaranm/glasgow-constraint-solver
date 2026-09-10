@@ -81,7 +81,8 @@ addressed.
 | graph reachability (`reachable`, `dreachable`, `connected`, `dconnected`) | `Reachable` / `DReachable` | ✓ | n/a | ? | `connected` / `dconnected` ride the same override, being `reachable` / `dreachable` with an existential root; see [^reach] |
 | `subgraph` | `Subgraph` | ✓ | n/a | n/a | Two implications per edge, so the constraint exists for the C++ and `.scp` interfaces rather than to infer anything the decomposition would not |
 | graph trees and paths (`tree`, `dtree`, `path`, `dpath`) | `Tree` / `DTree` / `Path` / `DPath` | ✓ | n/a | n/a | Also reached by `steiner`, `dsteiner`, `bounded_path`, `bounded_dpath` and both `weighted_spanning_tree` spellings, which the stdlib defines in terms of these; see [^treefam] |
-| the rest of `globals.graph` (`dag`, `network_flow`, `network_flow_cost`) | – | decomposition | n/a | n/a | Not on the reachability ladder: `dag` is an acyclicity labelling and `network_flow` decomposes to plain flow conservation. `dag` is tracked under [#791](https://github.com/ciaranm/glasgow-constraint-solver/issues/791), which measures what the fall-through costs: 24.5 GB of `.pbp` and 501 s of VeriPB for a twelve-node maximum-acyclic-subgraph instance, against 88.6 MB at eight nodes. The two `network_flow` spellings have **no tracking issue** — [#637](https://github.com/ciaranm/glasgow-constraint-solver/issues/637) put them outside its ladder and nothing has picked them up since. `subcircuit` was listed here too until [#788](https://github.com/ciaranm/glasgow-constraint-solver/issues/788) gave it `SubCircuit`; it has its own row above, beside `circuit`, where it belongs |
+| `dag` | `Dag` | ✓ | n/a | n/a | One override file rather than the family's `_int` / `_enum` pair, because `dag.mzn` does the `enum2int` itself and calls a single `fzn_dag`; no reified form, the stdlib's `fzn_dag_reif` being an `abort`. **Stricter than the decomposition it replaces**, deliberately: `fzn_dag` omits the `subgraph` condition on an edge's tail that `fzn_dreachable` posts explicitly, so the two disagree on solution counts; see [^dagsub] |
+| the rest of `globals.graph` (`network_flow`, `network_flow_cost`) | – | decomposition | n/a | n/a | `network_flow` decomposes to plain flow conservation, which is a linear constraint the solver already has, so the fall-through costs it much less than the reachability family's did. Both spellings have **no tracking issue**: [#637](https://github.com/ciaranm/glasgow-constraint-solver/issues/637) put them outside its ladder and nothing has picked them up since. `dag` was listed here too until [#791](https://github.com/ciaranm/glasgow-constraint-solver/issues/791) gave it `Dag`, and `subcircuit` until [#788](https://github.com/ciaranm/glasgow-constraint-solver/issues/788) gave it `SubCircuit`; both have rows of their own |
 | `SmartTable` | `SmartTable` | ✓ | n/a | ? | Glasgow-specific extension |
 
 ## Solver gaps tracked elsewhere
@@ -145,6 +146,28 @@ addressed.
     are **not** GAC — `Reachable` is, and the cardinality equality is, but their
     conjunction is not — so their tests use `solve_for_tests`. See
     [`connectivity-proofs.md`](connectivity-proofs.md).
+
+[^dagsub]: `Dag` takes the same fixed edge list and 0/1 variables as
+    `Reachable`, but no root: acyclicity needs nothing to unfold from, because a
+    walk of as many edges as there are nodes repeats one and so contains a cycle.
+    The OPB encoding is the reachability family's unfolding with that
+    substitution, restricted to the strongly connected components of the input
+    graph, so an input that is already acyclic costs nothing — see
+    [`connectivity-proofs.md`](connectivity-proofs.md). It is GAC, unlike the
+    tree and path family, and cheaply so.
+
+    The semantic divergence is worth stating plainly because it is visible in a
+    solution count rather than in a bug report. MiniZinc documents `dag` as
+    constraining "the subgraph \a ns and \a es ... to be a DAG", and
+    `fzn_dreachable` posts `subgraph(...)` explicitly; `fzn_dag` does not, and
+    its distance labelling only forces a selected edge's *head* to be selected.
+    So on a two-node graph with the single edge 0 to 1, the decomposition admits
+    `ns = [false, true], es = [true]` and `Dag` does not: six solutions against
+    five, measured. Chuffed's native `dag` agrees with neither, having four —
+    it enforces `subgraph` and additionally requires weak connectivity. `Dag`
+    follows the documentation. A model that wants the decomposition's exact
+    reading can post `dag` and `subgraph` together, which is what
+    `minizinc/tests/dagtest.mzn` does so that its differential lane agrees.
 
 [^cmp]: Both frontends reach a *linear* inequality rather than `Comparison` for essentially every binary ordering. MiniZinc 2.10's flattener emits `int_lin_le([1,-1],[x,y],d)` even for a bare `x <= y`, so `int_le` / `int_lt` are bound but hardly ever produced; XCSP3 gets there via the intension peephole of [^intaff]. Either arrival is lifted by the difference-logic presolver — a `Comparison` donor since [#596](https://github.com/ciaranm/glasgow-constraint-solver/pull/596) labelled its rows, counted separately as `DifferenceLogicStats::comparison_edges_lifted` — so which of the two a frontend produces is a question of *size*, not of reach: reaching a `Comparison` whose operand is a compound expression means paying for the auxiliary variable that built the operand, which is what [^intaff] removes. Reified comparisons (`int_le_reif`, an `le` inside an expression) still go to the `*Iff` constraints.
 
