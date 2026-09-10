@@ -91,9 +91,21 @@ half-reified edge's condition with `s_expr_term_of(Literal)`, which collapses a
 condition to the bare variable name, so `D >= 2` and `C = 1` were written
 identically and the `.scp` described a different problem than the one solved.
 
-Two related rules that fall out of the same principle — the `.scp` describes the
-*constraint*, not how it was propagated:
+Three related rules that fall out of the same principle — the `.scp` describes
+the *constraint*, not how it was propagated:
 
+- **A form with no keyword of its own is written as the constraint it
+  enforces.** The negated reification kinds are the case in point: a
+  `MustNotHold` comparison enforces the mirrored inequality — operands the
+  other way round, strictness flipped, which together turn `less_than` into
+  `greater_equal` over the same two terms — and a `MustNotHold` linear
+  inequality enforces `lin_less_equal` of the negated sum against
+  `-value - 1`. Both are written that way, and `NotIf` is the `_if` form of
+  each. The reader rebuilds an *equivalent* constraint rather than the one that
+  was posted, which is fine: the `.scp` is a description of the problem, and
+  the row `define_proof_model` emits for these forms is exactly the row the
+  mirrored spelling describes. Reaching for a keyword the verified encoder does
+  not have would be the mistake (issue #908).
 - **Alternative propagators share a keyword.** `Regular`, `RegularLegacy` and
   `RegularBacchus` all write `regular`. (Note the encodings do not all match:
   RegularLegacy's OPB is byte-identical to Regular's and chains, whereas
@@ -103,6 +115,13 @@ Two related rules that fall out of the same principle — the `.scp` describes t
   is written `_N`, which is exactly the spelling `Problem::check_name()`
   reserves — so the reader recreates it unnamed rather than passing the name
   through, mirroring what `post_autonumbered` does for `_N` constraint labels.
+
+`Constraint::s_expr()` is still allowed to throw, for an instance the grammar
+genuinely cannot express, and `write_scp` renders the whole file into memory
+before it opens it so that a throw leaves *no* `.scp` rather than one truncated
+mid-`(constraints`. A partial file is the worst of the three outcomes: it parses
+as far as it goes, and the complete `.opb` beside it gives no hint that anything
+is missing. `scp_writer_test` pins that.
 
 ## What `cake_pb_cp` does not encode
 
