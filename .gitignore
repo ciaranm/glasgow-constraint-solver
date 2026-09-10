@@ -3,6 +3,10 @@ perf.data
 perf.data.old
 html
 build*
+# ... but `build*` is unanchored, so it also swallows this documentation file,
+# which is not a build directory. Anchoring the pattern instead would stop
+# ignoring python/build, which scikit-build really does create.
+!dev_docs/building.md
 # scratch area for local experiments; contents must never be committed
 /tmp/
 Doxyfile

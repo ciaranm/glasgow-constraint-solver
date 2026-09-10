@@ -149,6 +149,12 @@ cmake --build build --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 cmake --build build --target docs
 ```
 
+There are more switches than these — ones that change what the test suite
+checks, a large-domain tripwire, a warnings-as-errors setting for one CI lane.
+Those are developer-facing rather than user-facing, and are catalogued in
+[`dev_docs/building.md`](dev_docs/building.md), along with the reasoning behind
+each build type's flags and the supported-toolchain matrix.
+
 Using the XCSP Solver
 ---------------------
 
@@ -415,7 +421,9 @@ Developer Documentation
 
 In-depth notes on individual subsystems live in the ``dev_docs/`` directory. These are aimed at
 developers (human or AI) working on the solver itself, not at end users. See ``dev_docs/README.md``
-for an index.
+for an index; [`dev_docs/building.md`](dev_docs/building.md) and
+[`dev_docs/code-style.md`](dev_docs/code-style.md) are the two to read before making any change,
+whatever it touches.
 
 Before submitting a contribution, please read ``CONTRIBUTING.md``. It covers the policy on
 AI-assisted contributions and the formatting (clang-format), build, and test requirements.

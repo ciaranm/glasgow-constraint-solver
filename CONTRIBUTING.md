@@ -25,7 +25,9 @@ quite a lot in propagators). The proof logging code is similarly high-risk.
 
 All contributions should pass both the `release` and `sanitize` build and tests
 before submission, including the full test suite (with VeriPB installed) in
-both modes. See `README.md` for details. Note that a default build applies
+both modes. See `README.md` for the build and test commands, and
+`dev_docs/building.md` for the build options, the supported toolchains, and
+what each CI lane covers. Note that a default build applies
 per-solve caps to the data-driven constraint tests, which check soundness and a
 partial proof but not completeness; when you have changed a propagator,
 configure with `-DGCS_TEST_CAP_DEFAULTS=OFF` so that they enumerate fully, as
@@ -70,6 +72,11 @@ check over the staged C++ is tracked in `.githooks/`. Enable it once per clone:
 ```shell
 git config core.hooksPath .githooks
 ```
+
+`clang-format` settles only the mechanical questions. The conventions it does
+not enforce --- the ordering of the `using` block, `using enum` placement, the
+`//` that pins an `overloaded{...}` visitor, the `#if` guard around `format()`
+--- are written down in `dev_docs/code-style.md`.
 
 It rejects a commit whose staged files are not formatted, printing the exact
 `clang-format -i` command to fix them; `git commit --no-verify` bypasses it for
