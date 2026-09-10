@@ -354,15 +354,9 @@ constraints may name the same view, and one variable may be named through
 several different views at once, which is precisely why representation
 variables have to be shared rather than private to a linearisation.
 
-We reject the alternative --- substituting $s X + c$ for the view wherever it
-occurs, and stating everything in $X$'s atoms --- for a reason that only becomes
-visible in \cref{sec:framework}.  It makes the atoms appearing in the encoding of
-a constraint depend on \emph{which} wrapper the constraint happened to be handed,
-so a generic constraint-logging procedure can no longer treat every operand
-identically, and a cutting-planes step that resolves an operand against a
-constraint body has to know which representation that body is stated in.  Giving
-the view a variable of its own costs one linear equality, and makes every operand
-look the same.
+A view therefore gets a variable of its own, at the cost of one linear equality.
+\Cref{sec:rationale} says why, and what the alternative --- substituting
+$sX+c$ wherever the view occurs --- would cost.
 
 \paragraph{Step 3: domain bound constraints.}
 For a representation $W$ of $X$ and domain state $\dm_0$, let $\Bnd(W,\dm_0)$
@@ -2188,6 +2182,7 @@ nothing about composition; and ``the suite passed'' must always be qualified by
 which gates and which branching were active.
 
 \subsubsection*{Cost}
+\phantomsection\addcontentsline{toc}{subsubsection}{Cost}\label{sec:cost}
 
 Per distinct interval literal requested on a representation: at most two cell
 splits, hence at most four new literals of which any width-one piece is an
@@ -2416,12 +2411,100 @@ where 80\% of small random instances turn out to be one of them.
 
 \end{enumerate}
 
+\section{Design rationale}
+\label{sec:rationale}
+
+The development above says what the encoding is and why it works.  Three of its
+choices are not forced, and each has an alternative that a reader will think of;
+the arguments are collected here rather than left in the construction, where they
+would interrupt it.  Designs that were tried and are \emph{wrong}, as opposed to
+merely worse than what we have, are under \cref{sec:refuted}.
+
+\paragraph{A binary encoding of the integer variables.}
+The thesis's reason is that $\BinEnc$ is a substitution and not a reformulation:
+a linear constraint stays a linear constraint, so P1 and P2 follow from a
+bijection between assignments rather than from an argument about what the
+constraints mean.  Two further reasons are worth stating, since $\BinEnc$ is
+admittedly ``a poor encoding from a solving perspective''.
+
+It is \emph{total}.  Every assignment to the bits denotes an integer, so a
+variable's encoding needs no auxiliary constraint to be well defined; $\Bnd(W)$
+restricts which integers are allowed, but nothing is needed to make the encoding
+mean anything in the first place.  Form preservation alone would not force the
+choice, because an order encoding also gives a linear term,
+$W = l_W + \sum_{v=l_W+1}^{u_W}\atge{w}{v}$ --- but that identity holds only
+where \invChain{} does, and a direct encoding needs an at-most-one for the same
+reason.  A bit vector needs nothing.
+
+It is \emph{compact}: $O(\log w)$ PB variables for a variable of width $w$,
+against $\Theta(w)$.  Bits are introduced unconditionally, at step~7, for every
+member of $\mathcal W$, whereas an atom is introduced only when a constraint or a
+propagator asks for one.  Encoding the variables themselves in order or direct
+form would therefore put $\Theta(w)$ variables into the formula before the solver
+had done anything, and nothing in this design is allowed to be proportional to a
+domain's width --- see \nsec{sec:cost}, where that is what the measurement is
+for.
+
+The price is propagation, and the design pays it explicitly.  Bit sums propagate
+badly: that is what thesis Theorems~2.7 to~2.9 are about, and what
+\nsec{sec:notprovided} restates here.  The atom families exist to supply what the
+bits cannot express, and the two are incomparable rather than ordered --- a
+single bit literal states that $W$ is even, which no atom does, and
+$\natge{w}{6}$ states $W\leq 5$, which no bit literal does.
+
+\paragraph{Equality and interval atoms, rather than conjunctions of inequality
+atoms.}
+Neither needs a Boolean of its own to be definable: $\ateq{w}{v}$ holds exactly
+when $\atge{w}{v}$ and $\natge{w}{v+1}$ do, and $\atin{w}{a}{b}$ exactly when
+$\atge{w}{a}$ and $\natge{w}{b+1}$ do.  A propagator could write the conjunction
+wherever it wants the fact, and the encoding could carry one atom family instead
+of three.
+
+The reason it does not is the negation.  Asserting the conjunction is harmless:
+both cuts become units either way.  Asserting its negation is not, because
+$\neg(\atge{w}{v}\wedge\natge{w}{v+1})$ is the disjunction
+$\natge{w}{v}\vee\atge{w}{v+1}$, which is a unit on neither cut.  Removing a
+value, or a run of values, is precisely asserting that negation --- so without a
+Boolean, the fact a propagator most often wants to state is the one fact unit
+propagation cannot use.  With one, the negation is a single literal,
+\cref{eq:deq2,eq:din2} are its reverse reifications, and the hole jump that
+\cref{thm:wipeout} turns on --- a bound at the lower cut stepping over the whole
+hole --- goes through in one step.
+
+Two things follow.  A reason is a set of literals concluding a single literal, so
+a propagator that removes a value needs a literal to conclude, and a conjunction
+gives it none.  And the same argument at width greater than one is why interval
+literals exist: not for strength, since $\atin{w}{a}{b}$ says exactly what its
+two cuts say, but because the alternative is $b-a+1$ separate equality atoms, so
+that naming a run of holes in a reason would cost the width of the run rather
+than one literal.
+
+Stated as a principle: the encoding gives a fact a Boolean of its own exactly
+when its \emph{negation} has to be usable as a unit.  That is also why there is
+no fourth family for $\leq$ --- $\natge{w}{v}$ already is one.
+
+\paragraph{A view with its own variable, rather than substituted away.}
+The alternative is to substitute $sX+c$ for the view wherever it occurs, and
+state everything in $X$'s atoms.  It would be sound, and it would save a linear
+equality and a bit vector for each view.  We do not do it, for a reason that only
+becomes visible in \cref{sec:framework}: it makes the atoms appearing in the
+encoding of a constraint depend on \emph{which} wrapper the constraint happened
+to be handed, so a generic constraint-logging procedure can no longer treat every
+operand identically, and a cutting-planes step that resolves an operand against a
+constraint body has to know which representation that body is stated in.  Giving
+the view a variable of its own costs one linear equality and makes every operand
+look the same.  The narrower version of the same question --- keep the view's
+variable, but state its \emph{intervals} on the base --- is the ``deviewing''
+entry of \cref{sec:refuted}, and fails the same way at the level of one atom
+kind.
+
 \section{Refuted designs}
 \label{sec:refuted}
 
 Each of the following was proposed, looked right, and is wrong.  They are
 recorded with the witness that catches each, so that a future simplification
-proposal can be tested rather than argued about.
+proposal can be tested rather than argued about.  Choices that are merely worse
+than the design we have, rather than wrong, are under \cref{sec:rationale}.
 
 \begin{enumerate}[itemsep=3pt]
 

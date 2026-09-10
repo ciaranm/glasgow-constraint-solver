@@ -140,9 +140,9 @@ library. For an introduction to *using* the solver, start with the top-level
   Matthew McIlree's thesis, covering the two things the thesis does not —
   interval literals, and several representations of one variable — with the
   encoding procedure, the nine invariants, the reproved completeness theorems,
-  a table of every way a fact can cross from one literal to another, and the
-  witness suite, coincidence trap and refuted designs that keep it from being
-  simplified back. **Read this before changing anything about atoms, coverings
+  a table of every way a fact can cross from one literal to another, the design
+  rationale for the choices that are not forced, and the witness suite,
+  coincidence trap and refuted designs that keep it from being simplified back. **Read this before changing anything about atoms, coverings
   or view links.** The three documents below are its implementation companions.
 - [Range ("in") literals](range_literals_spec.md) — the implementation record
   for the interval-literal layer: the vocabulary propagator authors see

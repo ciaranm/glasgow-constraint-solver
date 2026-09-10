@@ -5,7 +5,7 @@ what clauses hold the layer together, and why unit propagation can be relied on
 to re-derive a solver fact during a backtrack-clause replay — lives in one
 document:
 
-- **[literal-encodings.tex](literal-encodings.tex)**, 30 pages when typeset.
+- **[literal-encodings.tex](literal-encodings.tex)**, 34 pages when typeset.
 
 It is a revised and extended version of §3.2 and §3.3 of Matthew McIlree's
 thesis, covering the two things the thesis does not: **range ("in") literals**,
@@ -25,7 +25,7 @@ checked in.
 | "How facts move" | A table of every crossing and the clause family that carries it. Start here if you only read one page. |
 | §3.3.2–4 | Backtracking, optimality and enumeration, with the preserved set pinned down (base bits only). |
 | Interlude | The P1/P2 distinction, the W1–W9 witness suite and its ablation matrix, the coincidence trap, and the cost model. |
-| Appendices | A worked example; residues and open questions; the refuted designs, each with the witness that catches it. |
+| Appendices | A worked example; residues and open questions; the design rationale (why a binary encoding, why equality and interval atoms rather than conjunctions of inequality atoms, why a view gets its own variable); the refuted designs, each with the witness that catches it. |
 
 ## Where each invariant lives in the code
 
