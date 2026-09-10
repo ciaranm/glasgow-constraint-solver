@@ -856,6 +856,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(proof_model_tautology_test PRIVATE glasgow_constraint_solver)
     add_test(NAME proof_model_tautology_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:proof_model_tautology_test>)
 
+    add_executable(scp_writer_test innards/proofs/scp_writer_test.cc)
+    target_link_libraries(scp_writer_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME scp_writer_test COMMAND $<TARGET_FILE:scp_writer_test>)
+
     add_executable(duplicate_label_test innards/proofs/duplicate_label_test.cc)
     target_link_libraries(duplicate_label_test PRIVATE glasgow_constraint_solver)
     add_test(NAME duplicate_label_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:duplicate_label_test>)
