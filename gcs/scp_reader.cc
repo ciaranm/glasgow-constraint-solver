@@ -8,6 +8,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/cumulative.hh>
+#include <gcs/constraints/dag.hh>
 #include <gcs/constraints/difference/difference_constraints.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
@@ -723,6 +724,28 @@ namespace
             post_constraint(problem, Tree{move(edges), root, move(ns), move(es)}, label);
     }
 
+    auto read_dag(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label dag (from...) (to...) (ns...) (es...)): the subgraph picked out by
+        // ns and es has both endpoints of every selected edge selected, and no
+        // directed cycle.
+        if (terms.size() != 6)
+            throw ScpReadError{"dag is (label dag (from...) (to...) (ns...) (es...))"};
+        auto from = resolve_integer_list(terms[2], "the dag edge from list");
+        auto to = resolve_integer_list(terms[3], "the dag edge to list");
+        if (from.size() != to.size())
+            throw ScpReadError{"dag needs one from and one to per edge"};
+        vector<pair<size_t, size_t>> edges;
+        for (size_t e = 0; e != from.size(); ++e) {
+            if (from[e] < 0_i || to[e] < 0_i)
+                throw ScpReadError{"dag has a negative edge endpoint"};
+            edges.emplace_back(static_cast<size_t>(from[e].raw_value), static_cast<size_t>(to[e].raw_value));
+        }
+        auto ns = resolve_variable_list(variables, terms[4], "the dag node list");
+        auto es = resolve_variable_list(variables, terms[5], "the dag edge list");
+        post_constraint(problem, Dag{move(edges), move(ns), move(es)}, label);
+    }
+
     auto read_subgraph(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
     {
         // (label subgraph (from...) (to...) (ns...) (es...)): every selected edge
@@ -1375,6 +1398,9 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
         }
         else if (op == "tree" || op == "dtree") {
             read_tree(problem, variables, op, terms, label);
+        }
+        else if (op == "dag") {
+            read_dag(problem, variables, terms, label);
         }
         else if (op == "subgraph") {
             read_subgraph(problem, variables, terms, label);

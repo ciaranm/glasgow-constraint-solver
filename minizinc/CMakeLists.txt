@@ -127,6 +127,9 @@ set_tests_properties(minizinc-dconnected PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-subgraph COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_subgraph $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ subgraphtest true true)
 set_tests_properties(minizinc-subgraph PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-dag COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_dag $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ dagtest true true)
+set_tests_properties(minizinc-dag PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-tree COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_tree $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ treetest true true)
 set_tests_properties(minizinc-tree PROPERTIES SKIP_RETURN_CODE 66)
 

@@ -604,6 +604,10 @@ namespace
             auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
             p.post(DPath{{{0, 1}, {1, 2}}, r, t, ns, es});
         });
+        add("Dag", Expect::NoWidePosition, [](Problem & p) {
+            auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 3, 0_i, 1_i);
+            p.post(Dag{{{0, 1}, {1, 2}, {2, 0}}, ns, es});
+        });
         add("Reachable", Expect::NoWidePosition, [](Problem & p) {
             auto r = p.create_integer_variable(0_i, 2_i);
             auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);

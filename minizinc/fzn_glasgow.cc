@@ -937,6 +937,15 @@ auto main(int argc, char * argv[]) -> int
                 else
                     problem.post(Reachable{move(edges), r, ns, es});
             }
+            else if (id == "glasgow_dag") {
+                // As glasgow_subgraph, the redefinition has already shifted the
+                // endpoints to be zero-based.
+                auto from = arg_as_array_of_integer(data, args, 0);
+                auto to = arg_as_array_of_integer(data, args, 1);
+                const auto & ns = arg_as_array_of_var(data, args, 2);
+                const auto & es = arg_as_array_of_var(data, args, 3);
+                problem.post(Dag{edges_from_endpoints("dag", from, to), ns, es});
+            }
             else if (id == "glasgow_subgraph") {
                 auto from = arg_as_array_of_integer(data, args, 0);
                 auto to = arg_as_array_of_integer(data, args, 1);
