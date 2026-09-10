@@ -120,7 +120,16 @@ endif()
 option(GCS_ENABLE_EXECUTABLES "Build the example, benchmark and verified-encoding programs" ${_gcs_enable_executables_default})
 unset(_gcs_enable_executables_default)
 option(GCS_BUILD_TESTS "Build GCS tests" ${PROJECT_IS_TOP_LEVEL})
-option(GCS_ENABLE_VIEW_WRAP_SWEEP "Register the view-wrap proof-verification sweep (many tests, most failing today; opt in when working on view proof logging)" OFF)
+# The view-wrap proof-verification sweep: every wrap x every argument position,
+# for each constraint that threads a ViewWrapConfig through its test. That is
+# around 7200 extra tests, which is why it is opt-in -- not because they fail.
+# Every constraint registered in the sweep verifies under every wrap; SmartTable
+# is the one deliberate omission, because it over-prunes under views (#238).
+# This gates only the per-wrap registrations: the one --view-position=mixed test
+# per constraint is registered either way and is part of the ordinary suite, as
+# are the --view-wrap / --view-position flags on each test binary. Turn this on
+# when working on view proof logging. See dev_docs/view-proof-logging.md.
+option(GCS_ENABLE_VIEW_WRAP_SWEEP "Register the full per-wrap view proof-verification sweep (~7200 extra tests; opt in when working on view proof logging)" OFF)
 
 # The large-domain guard (issue #833). A development tripwire, not a user-facing
 # safety net: it turns work proportional to a variable's domain width -- a

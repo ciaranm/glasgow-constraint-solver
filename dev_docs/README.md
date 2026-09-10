@@ -10,6 +10,20 @@ library. For an introduction to *using* the solver, start with the top-level
 
 ## Contents
 
+- [Building, build options, and toolchains](building.md) — the developer's side
+  of the build: why each build type carries the debug information it does, why
+  the per-configuration flags must stay plain `set()` calls (issue #597), the
+  full option catalogue and what each one changes about what the tests
+  *check*, which test wrapper runs which kind of binary, the supported
+  compilers and standard libraries and their known gaps, and what each CI lane
+  covers. `README.md` has the user-facing version. Read before editing
+  `CMakeLists.txt` or relying on a C++23 library feature.
+- [Code style](code-style.md) — the conventions clang-format does not enforce:
+  the ordering of the `using` block and its `std::ranges::` group, how a
+  classic algorithm is replaced with its ranges equivalent, `using enum`
+  placement, the load-bearing `//` that pins an `overloaded{...}` visitor, and
+  the `#if` guard a file using `format()` must carry. `CONTRIBUTING.md` covers
+  clang-format itself.
 - [State and variables](state-and-variables.md) — how variables and their
   state are represented inside the solver: the `IntegerVariableID` family,
   the `State` class, the `IntervalSet` domain representation, chronological
@@ -26,9 +40,13 @@ library. For an introduction to *using* the solver, start with the top-level
 - [Implementing a constraint](constraints.md) — the structural pattern every
   constraint follows: class shape, the three install phases, the propagator
   framework, triggers, the inference and justification APIs, OPB encoding
-  building blocks, and the testing pattern. Start here when adding any new
-  constraint — and for the umbrella-header directory layout, which presolvers
-  under `gcs/presolvers/` share.
+  building blocks, and the testing pattern. Also the *order* to build a new
+  constraint in ("Bringing up a new constraint"): encoding first behind a
+  check-only propagator, then the consistency level stated in the tests, then
+  propagation with every inference cheated, then the cheats discharged one at a
+  time — and why none of those cheats may ever be merged. Start here when
+  adding any new constraint — and for the umbrella-header directory layout,
+  which presolvers under `gcs/presolvers/` share.
 - [Reification](reification.md) — additional machinery for *reified* constraints:
   the `ReificationCondition` static and `EvaluatedReificationCondition` runtime
   types, the `install_reified_dispatcher` helper, the OPB encoding pattern,
@@ -123,6 +141,9 @@ library. For an introduction to *using* the solver, start with the top-level
   W1–W5 witness suite as the regression defence against re-simplification.
   Read when touching range/interval reasons, branching, or `infer_not_in_range`.
 - [View proof logging](view-proof-logging.md) — how the proof layer handles
+  views (`ViewOfIntegerVariableID`): the V↔X link constraints that tie a view's
+  proof variable to its underlying variable, and how literals over views are
+  deviewed for emission. Read when touching view handling in proofs.
 - [arithmetic-proofs.md](arithmetic-proofs.md) — how Multiply/Divide/Modulus/Power propagate and justify against cake's encoding: the slot-keyed emitters, the ConditionalBound justification layer, the sign-case driver, and the hard-won RUP/pol rules.
 - [Decision-diagram proof strategies](decision-diagram-proof-strategies.md) — for
   the layered/partial-sum propagators (`Regular`, `MDD`, `Knapsack`,
@@ -132,9 +153,6 @@ library. For an introduction to *using* the solver, start with the top-level
   measured verdicts and defaults, a predictive rule to apply before implementing,
   and why scaffold deletion is unsafe while hinting the propagator's own RUPs is
   the high-value lever. Read when adding or tuning a diagram-shaped constraint.
-  views (`ViewOfIntegerVariableID`): the V↔X link constraints that tie a view's
-  proof variable to its underlying variable, and how literals over views are
-  deviewed for emission. Read when touching view handling in proofs.
 - [Proof logging for `Sort` / `ArgSort`](sortedness.md) — the fully-certified
   Mehlhorn–Thiel sortedness propagator proof: the permutation/root argument and
   the Hall-band pigeonhole over ranks. A worked companion to `constraints.md`.
@@ -152,6 +170,16 @@ library. For an introduction to *using* the solver, start with the top-level
   `glasgow_scp_solver` binary and the SCP chain test harness
   (`run_scp_chain.bash`, `scp_cases/`) for verifying constraint encodings
   against an external checker.
+- [`BinPacking`: design and staging](bin-packing.md) — the working-design note
+  for the `BinPacking` propagator (#148): the two forms (variable loads,
+  constant capacities) that share one propagator, the staging plan, and the
+  context for the extraction towards the unified path-DAG framework (#200).
+- [Slack-based waking for linear inequalities](linear-slack-waking.md) — waking
+  `ReifiedLinearInequality` only when a *covering* subset of its terms moves,
+  via the refined-watch API, instead of on every bound change of every term:
+  the per-term potential, the margin that decides how many to watch, and what
+  it is measured to be worth. Companion to
+  [refined-triggers.md](refined-triggers.md).
 - [`Knapsack`](knapsack.md) — the default per-call DP `Knapsack` (chosen
   for fastest proof verification) and the opt-in upfront-DAG
   `KnapsackUpfront` (#200), the *k*-coordinate generalisation of
