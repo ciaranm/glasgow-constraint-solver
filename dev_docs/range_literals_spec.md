@@ -255,7 +255,9 @@ Sound under this spec, and either already correct or a strict subset of §3:
   the corrected form of what the superseded analysis believed had to be a
   per-equality global covering. Caveat: this pairing is orientation-sensitive
   (same-sign links only, which is all current callers); a sign-flipped link
-  (Abs) needs the mirrored pairing — see the header comment.
+  (Abs) is *outside* Theorem 2.9's hypotheses rather than a mirrored instance of
+  it, and uses `pol` instead — see the Theorem 2.9 section of
+  [large-domains.md](large-domains.md).
 - The gated consumer in `enforce_equality` (`GCS_RANGE_INFERENCES`, default
   off) with the width-1 guard.
 

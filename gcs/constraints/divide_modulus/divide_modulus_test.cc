@@ -236,9 +236,11 @@ auto main(int argc, char * argv[]) -> int
                 for (const auto & level : vector<DivideConsistency>{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}}) {
                     bool is_bc = holds_alternative<consistency::BC>(level);
                     bool force_gac = holds_alternative<consistency::Tabulated>(level);
-                    // Inside Auto's budget under every wrap (3 * 2 * 4 = 24 for divide, 3 * 2 * 8 = 48
-                    // for modulus, against default_tabulation_threshold() = 100), so Auto tabulates and
-                    // GAC is checked at every level but BC.
+                    // Inside Auto's budget under every wrap (3 * 2 * 4 = 24 for divide, and 24 for
+                    // modulus too, against default_tabulation_threshold() = 100), so Auto tabulates
+                    // and GAC is checked at every level but BC. Modulus's third factor is the aux
+                    // |q| domain, which for max|x| = 2 is [0, 3] -- not the [0, 7] that the two
+                    // larger cases below get.
                     run_divmod_test(proofs, is_div, level, ! is_bc, {0, 2}, {1, 2}, {-1, 2}, wraps);
                     // Over Auto's budget (486 and 108 for divide, 432 and 144 for modulus), where Auto
                     // is documented to fall back on the decomposition: soundness and completeness at

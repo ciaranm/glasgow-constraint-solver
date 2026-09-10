@@ -233,10 +233,11 @@ unreliable.** `Abs`' model is two half-reified rows: `v2 - v1 == 0` under
 
 So the rule to take away is about the *pairing*, not about `Abs`: **the two-lemma
 shape needs a lower bound on one operand and an upper bound on the other, across
-a row that is their difference.** A sign-flipped link does not qualify, and
-`justify_not_in_range.hh`'s suggestion that it just needs "the mirrored pairing"
-is too optimistic — the mirrored pairing is the non-propagating configuration
-above.
+a row that is their difference.** A sign-flipped link does not qualify.
+`justify_not_in_range.hh` used to suggest that it just needs "the mirrored
+pairing"; that was too optimistic — the mirrored pairing *is* the
+non-propagating configuration above — and the header comment was corrected to
+say so.
 
 `pol` is what does not care, which is why `abs/justify.cc` uses it for both
 branches: the model half, plus the defining item of each atom whose arithmetic
