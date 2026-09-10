@@ -40,9 +40,13 @@ library. For an introduction to *using* the solver, start with the top-level
 - [Implementing a constraint](constraints.md) — the structural pattern every
   constraint follows: class shape, the three install phases, the propagator
   framework, triggers, the inference and justification APIs, OPB encoding
-  building blocks, and the testing pattern. Start here when adding any new
-  constraint — and for the umbrella-header directory layout, which presolvers
-  under `gcs/presolvers/` share.
+  building blocks, and the testing pattern. Also the *order* to build a new
+  constraint in ("Bringing up a new constraint"): encoding first behind a
+  check-only propagator, then the consistency level stated in the tests, then
+  propagation with every inference cheated, then the cheats discharged one at a
+  time — and why none of those cheats may ever be merged. Start here when
+  adding any new constraint — and for the umbrella-header directory layout,
+  which presolvers under `gcs/presolvers/` share.
 - [Reification](reification.md) — additional machinery for *reified* constraints:
   the `ReificationCondition` static and `EvaluatedReificationCondition` runtime
   types, the `install_reified_dispatcher` helper, the OPB encoding pattern,
