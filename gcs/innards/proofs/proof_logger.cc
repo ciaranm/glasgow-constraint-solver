@@ -183,11 +183,19 @@ struct ProofLogger::Imp
     optional<pair<ProofLine, ProofLine>> previous_soli_lines;
 
     string proof_file;
-    fstream proof;
     // A proof is many short lines; the default stream buffer makes for a
     // write syscall every few KB, which shows up at this volume. Installed
     // via pubsetbuf before open in start_proof.
+    //
+    // Declared before `proof`, and that order is load-bearing: members are
+    // destroyed in reverse, and ~fstream closes the file, which flushes
+    // whatever is still buffered. If the buffer went first, that final write
+    // would read freed memory. It only bites when the last flush is the
+    // destructor's --- end_proof() flushes explicitly, so a proof that runs to
+    // completion never notices --- but a solve that throws part-way through
+    // does, and silently lost the whole unflushed tail of the .pbp.
     vector<char> proof_stream_buffer;
+    fstream proof;
     int current_indent = 0;
     // How many `subproof` blocks deep we are. Constraints derived inside one do
     // not survive its `qed;`, so a line recorded at Top from in there must not
