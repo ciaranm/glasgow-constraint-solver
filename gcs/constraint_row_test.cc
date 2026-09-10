@@ -51,7 +51,6 @@ using std::ifstream;
 using std::istreambuf_iterator;
 using std::make_optional;
 using std::make_unique;
-using std::nullopt;
 using std::optional;
 using std::string;
 using std::unique_ptr;
@@ -133,15 +132,15 @@ namespace
         Problem p;
         post(p);
         p.add_presolver(CapturingPresolver<Constraint_>{&result.resolved});
-        // No .scp: s_expr() throws on the MustNotHold and NotIf forms of both
-        // families, which have no cake_pb_cp spelling --- and those are exactly
-        // the forms this has to cover, since they are the ones whose row states
-        // something other than what its label suggests. The .opb is written
-        // either way, and the .opb is the oracle here.
-        ProofFileNames names{basename};
-        names.s_expr_file = nullopt;
-        static_cast<void>(
-            solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(names)));
+        // The .scp is written like every other file. It used to be turned off
+        // here, because s_expr() threw on the MustNotHold and NotIf forms of
+        // both families --- which are exactly the forms this has to cover,
+        // since they are the ones whose row states something other than what
+        // its label suggests. Both now spell that row as the comparison or
+        // inequality it actually is (issue #908), so writing it is also a check
+        // that posting these forms under proofs gets all the way through.
+        static_cast<void>(solve_with(
+            p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(ProofFileNames{basename})));
         result.opb = read_file(basename + ".opb");
         for (const auto & suffix : {".opb"s, ".pbp"s, ".scp"s, ".varmap"s})
             std::remove((basename + suffix).c_str());
@@ -212,13 +211,14 @@ TEST_CASE("a linear's published role resolves to a row the .opb contains")
     // The three non-publishing donors really did emit rows --- publishing no
     // role is not the same as having emitted nothing. Without this the previous
     // check would pass just as well against a constraint that emitted no model
-    // at all. MustNotHold's goes out under the empty role, exactly the label a
-    // build-it-yourself citer would construct; publishing is what keeps it out
-    // of a pol.
+    // at all. MustNotHold's and NotIf's both go out under the empty role,
+    // exactly the label a build-it-yourself citer would construct --- and the
+    // label cake_pb_cp gives the negated-sum lin_less_equal they are spelled as;
+    // publishing is what keeps them out of a pol.
     CHECK(opb_has_row_labelled(run.opb, "c[" + run.resolved[2].id + "][r]"));
     CHECK(opb_has_row_labelled(run.opb, "c[" + run.resolved[2].id + "][f]"));
     CHECK(opb_has_row_labelled(run.opb, "c[" + run.resolved[3].id + "]"));
-    CHECK(opb_has_row_labelled(run.opb, "c[" + run.resolved[4].id + "][ltn]"));
+    CHECK(opb_has_row_labelled(run.opb, "c[" + run.resolved[4].id + "]"));
 }
 
 TEST_CASE("a comparison's published role resolves to a row the .opb contains")

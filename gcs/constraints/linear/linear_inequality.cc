@@ -24,12 +24,12 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <tuple>
 #include <vector>
 
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::make_pair;
 using std::make_shared;
 using std::nullopt;
 using std::optional;
@@ -37,6 +37,7 @@ using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::stringstream;
+using std::tuple;
 using std::unique_ptr;
 using std::variant;
 using std::vector;
@@ -176,10 +177,11 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model, const State
             // integer negation under cond, exactly as MustNotHold's is
             // unconditionally. `cond -> sum <= value` would state the opposite of
             // what the constraint means, and is what the row said until #644.
-            // s_expr throws on NotIf, so this form never reaches the cake chain and
-            // the invented role is fine.
+            // The empty role, not an invented one: s_expr() spells this form as
+            // the half-reified lin_less_equal of the negated sum, and that is what
+            // cake_pb_cp labels @c[<id>].
             _proof_lines =
-                pair{nullopt, model.add_labelled_constraint(constraint_id(), "ltn", terms >= _value + 1_i, HalfReifyOnConjunctionOf{cond.cond})};
+                pair{nullopt, model.add_labelled_constraint(constraint_id(), "", terms >= _value + 1_i, HalfReifyOnConjunctionOf{cond.cond})};
         }, //
         [&](const reif::Iff & cond) {
             // cake_pb_cp labels the iff halves r (cond -> ineq) and f (~cond -> its
@@ -383,16 +385,21 @@ auto ReifiedLinearInequality::s_expr(const ProofModel * const model) const -> SE
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    auto [rei, suffix] = overloaded{
-        [&](const reif::MustHold &) { return make_pair(false, ""); }, //
-        [&](const reif::If &) { return make_pair(true, "_if"); },     //
-        [&](const reif::Iff &) { return make_pair(true, "_iff"); },   //
-        [&](const auto &) {
-            throw UnexpectedException{"Unexpected reification type in s_expr"};
-            return make_pair(false, "");
-        } //
+    // MustNotHold and NotIf ask for the *negation* of the inequality to be
+    // enforced, and over the integers the negation of `sum <= value` is
+    // `-sum <= -value - 1`: the same lin_less_equal keyword with every
+    // coefficient and the bound negated, unconditionally or under the condition
+    // the form carries. That is precisely the row define_proof_model emits for
+    // them, so cake re-derives the row the proof cites rather than the one the
+    // un-negated spelling would have described.
+    auto [rei, negated, suffix] = overloaded{
+        [&](const reif::MustHold &) { return tuple{false, false, ""}; },   //
+        [&](const reif::MustNotHold &) { return tuple{false, true, ""}; }, //
+        [&](const reif::If &) { return tuple{true, false, "_if"}; },       //
+        [&](const reif::NotIf &) { return tuple{true, true, "_if"}; },     //
+        [&](const reif::Iff &) { return tuple{true, false, "_iff"}; }      //
     }
-                             .visit(_reif_cond);
+                                      .visit(_reif_cond);
 
     vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type() + suffix)};
     if (rei)
@@ -400,11 +407,11 @@ auto ReifiedLinearInequality::s_expr(const ProofModel * const model) const -> SE
 
     vector<SExpr> coeff_vars;
     for (const auto & [c, v] : _coeff_vars.terms) {
-        coeff_vars.push_back(SExpr::atom(c.to_string()));
+        coeff_vars.push_back(SExpr::atom((negated ? -c : c).to_string()));
         coeff_vars.push_back(tracker.s_expr_term_of(v));
     }
     terms.push_back(SExpr::list(std::move(coeff_vars)));
-    terms.push_back(SExpr::atom(_value.to_string()));
+    terms.push_back(SExpr::atom((negated ? -_value - 1_i : _value).to_string()));
 
     return SExpr::list(std::move(terms));
 }
