@@ -107,6 +107,55 @@ namespace
             std::remove((basename + ext).c_str());
         return scp;
     }
+
+    // The sole entry in a one-constraint .scp's (constraints ...) section,
+    // trimmed of its indentation.
+    auto sole_constraint_of(const string & scp) -> string
+    {
+        auto section = scp.find("(constraints\n");
+        REQUIRE(section != string::npos);
+        auto begin = scp.find_first_not_of(" \n", section + sizeof("(constraints\n") - 1);
+        auto end = scp.find('\n', begin);
+        REQUIRE(end != string::npos);
+        return scp.substr(begin, end - begin);
+    }
+
+    // Post one constraint over X, Y (-2..2) and C (0..1) and check three things
+    // about the .scp it writes: that the term is `expected_term`, that reading
+    // that term back gives exactly the same solutions, and that the rebuilt
+    // problem writes the identical .scp again.
+    template <typename Post_>
+    auto check_scp_round_trip(const string & basename, const string & expected_term, const Post_ & post) -> void
+    {
+        Problem original;
+        auto x = original.create_integer_variable(-2_i, 2_i, "X");
+        auto y = original.create_integer_variable(-2_i, 2_i, "Y");
+        auto c = original.create_integer_variable(0_i, 1_i, "C");
+        post(original, x, y, c);
+
+        set<map<string, long long>> solutions;
+        solve_with(original, //
+            SolveCallbacks{  //
+                .solution = [&](const CurrentState & state) -> bool {
+                    solutions.insert(map<string, long long>{{"X", state(x).raw_value}, {"Y", state(y).raw_value}, {"C", state(c).raw_value}});
+                    return true;
+                }},
+            std::make_optional<ProofOptions>(ProofFileNames{basename}));
+
+        std::ifstream in{basename + ".scp"};
+        string scp{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+        for (auto ext : {".opb", ".pbp", ".scp", ".varmap"})
+            std::remove((basename + ext).c_str());
+
+        CHECK(sole_constraint_of(scp) == expected_term);
+        // Parsing is not the point: the mirrored spelling has to mean the same
+        // thing as the form it was written for.
+        CHECK(enumerate(scp) == solutions);
+
+        Problem rebuilt;
+        read_scp(rebuilt, scp);
+        CHECK(prove_to_scp(rebuilt, basename + "_again") == scp);
+    }
 }
 
 TEST_CASE("read_scp: abs enumerates correctly")
@@ -361,6 +410,48 @@ TEST_CASE("read_scp: comparisons survive write -> read -> write unchanged")
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: the negated reification forms are written as what they enforce")
+{
+    // MustNotHold and NotIf have no keyword of their own, in either family, and
+    // used to throw from s_expr() rather than be written at all (issue #908).
+    // Each is now written as the constraint it actually enforces: a comparison
+    // mirrors --- operands the other way round and strictness flipped, which
+    // together turn `less` into `greater` over the same two terms --- and a
+    // linear inequality negates every coefficient and its bound. Both land back
+    // on ordinary keywords, so scp_reader rebuilds them without knowing they
+    // were ever negated.
+    check_scp_round_trip(
+        "scp_reader_cmp_mustnothold", "(_1 greater_equal X Y)", [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x, y, reif::MustNotHold{}, false});
+        });
+    check_scp_round_trip(
+        "scp_reader_cmp_mustnothold_oe", "(_1 greater_than X Y)", [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x, y, reif::MustNotHold{}, true});
+        });
+    check_scp_round_trip(
+        "scp_reader_cmp_notif", "(_1 greater_equal_if (C = 1) X Y)", [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID c) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x, y, reif::NotIf{c == 1_i}, false});
+        });
+    check_scp_round_trip("scp_reader_cmp_notif_oe", "(_1 greater_than_if (C = 1) X Y)",
+        [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID c) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x, y, reif::NotIf{c == 1_i}, true});
+        });
+    // The already-swapped form mirrors the other way, back to a `less`.
+    check_scp_round_trip(
+        "scp_reader_cmp_mustnothold_swapped", "(_1 less_equal Y X)", [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x, y, reif::MustNotHold{}, false, true});
+        });
+
+    check_scp_round_trip("scp_reader_lin_mustnothold", "(_1 lin_less_equal (-1 X -1 Y) -2)",
+        [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID) {
+            p.post(ReifiedLinearInequality{WeightedSum{} + 1_i * x + 1_i * y, 1_i, reif::MustNotHold{}});
+        });
+    check_scp_round_trip("scp_reader_lin_notif", "(_1 lin_less_equal_if (C = 1) (-1 X 1 Y) -2)",
+        [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID c) {
+            p.post(ReifiedLinearInequality{WeightedSum{} + 1_i * x + -1_i * y, 1_i, reif::NotIf{c == 1_i}});
+        });
 }
 
 TEST_CASE("read_scp: lex comparisons survive write -> read -> write unchanged")
