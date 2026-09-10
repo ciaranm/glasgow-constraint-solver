@@ -851,14 +851,8 @@ namespace
             auto x = p.create_integer_variable_vector(2, 0_i, 5_i, "x");
             auto b = p.create_integer_variable(0_i, 1_i, "b");
             post(p, x, b);
-            // No .scp: the MustNotHold and NotIf forms have no cake spelling
-            // and s_expr() throws on them, which is precisely why their @label
-            // is free to be the bare @c[<id>] --- and why the OPB is the only
-            // place their labelling can be checked.
-            ProofFileNames names{basename};
-            names.s_expr_file = nullopt;
-            static_cast<void>(
-                solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }}, make_optional<ProofOptions>(names)));
+            static_cast<void>(solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }},
+                make_optional<ProofOptions>(ProofFileNames{basename})));
             auto opb = read_file(basename + ".opb");
             for (auto ext : proof_file_extensions)
                 std::remove((basename + ext).c_str());

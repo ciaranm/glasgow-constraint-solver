@@ -53,23 +53,20 @@ namespace
 
     // The two negated reification forms have no derived class: the six
     // LinearLessThanEqual{,If,Iff} / LinearGreaterThanEqual{,If,Iff} spellings cover
-    // MustHold, If and Iff only, and scp_reader builds only those. Spelling them here
-    // gives them the same constructor shape as the derived classes, so the generic
-    // test functions below take them unchanged --- and gives them the coverage that
-    // being unreachable through the public API had cost them (issue #644: NotIf's OPB
-    // row stated the un-negated inequality, and both forms threw when they logged).
+    // MustHold, If and Iff only. Spelling them here gives them the same constructor
+    // shape as the derived classes, so the generic test functions below take them
+    // unchanged --- and gives them the coverage that being unreachable through the
+    // public API had cost them (issue #644: NotIf's OPB row stated the un-negated
+    // inequality, and both forms threw when they logged; issue #908: they threw
+    // again writing the .scp, so these two ran with it turned off).
     //
     // Each is its own constraint rather than the negation of a posted one, so the
     // satisfying predicate handed to the test functions is `>` where the positive
     // forms pass `<=`: what these enforce, when they enforce anything, is
-    // `sum > value`.
+    // `sum > value`. The .scp says so as well, spelling both as the lin_less_equal
+    // of the negated sum, which is what scp_reader reads back.
     struct LinearLessThanEqualNot : ReifiedLinearInequality
     {
-        // s_expr() throws on both negated kinds --- they have no cake_pb_cp
-        // spelling --- so these instances write no .scp. The .opb and .pbp veripb
-        // checks are written as usual.
-        static constexpr auto write_s_expr_file = WriteSExprFile::No;
-
         explicit LinearLessThanEqualNot(WeightedSum coeff_vars, Integer value) :
             ReifiedLinearInequality(std::move(coeff_vars), value, reif::MustNotHold{})
         {
@@ -78,23 +75,11 @@ namespace
 
     struct LinearLessThanEqualNotIf : ReifiedLinearInequality
     {
-        static constexpr auto write_s_expr_file = WriteSExprFile::No;
-
         explicit LinearLessThanEqualNotIf(WeightedSum coeff_vars, Integer value, IntegerVariableCondition cond) :
             ReifiedLinearInequality(std::move(coeff_vars), value, reif::NotIf{cond})
         {
         }
     };
-
-    // Yes unless the constraint type says otherwise, which only the two above do.
-    template <typename Constraint_>
-    constexpr auto write_s_expr_file_for() -> WriteSExprFile
-    {
-        if constexpr (requires { Constraint_::write_s_expr_file; })
-            return Constraint_::write_s_expr_file;
-        else
-            return WriteSExprFile::Yes;
-    }
 }
 
 template <typename Constraint_>
@@ -142,10 +127,9 @@ auto run_linear_test(bool proofs, const string & mode, const ViewWrapConfig & vi
     // term's trigger fails this on the first data item of every view configuration.
     constexpr auto level = is_same_v<Constraint_, LinearNotEquals> ? CheckConsistency::GAC : CheckConsistency::BC;
     if ((! is_same_v<Constraint_, LinearEquality>) && 1 == ineqs.size())
-        solve_for_tests_checking_consistency(
-            p, proof_name, expected, actual, tuple{pair{v1, level}, pair{v2, level}, pair{v3, level}}, write_s_expr_file_for<Constraint_>());
+        solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, level}, pair{v2, level}, pair{v3, level}});
     else
-        solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3}, write_s_expr_file_for<Constraint_>());
+        solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3});
 
     check_results(proof_name, expected, actual);
 }
@@ -244,10 +228,9 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, cons
             (! is_same_v<Constraint_, LinearNotEqualsIf>) && (! is_same_v<Constraint_, LinearNotEqualsIff>) && 1 == ineqs.size())
             solve_for_tests_checking_consistency(p, proof_name, expected, actual,
                 tuple{
-                    pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::GAC}},
-                write_s_expr_file_for<Constraint_>());
+                    pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::GAC}});
         else
-            solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4}, write_s_expr_file_for<Constraint_>());
+            solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});
 
         check_results(proof_name, expected, actual);
     }
