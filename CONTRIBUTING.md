@@ -18,11 +18,6 @@ should be able to see at a glance that AI was involved and which tool was used.
 change is correct---not merely that it compiles and passes tests. Rubber-stamping
 AI output without understanding it is not acceptable.
 
-Have particular care when working with logic. Our experience to date with
-Claude is that it knows the C++ libraries and language well, but that it can
-make subtle mistakes when dealing with complicated conditions (which show up
-quite a lot in propagators). The proof logging code is similarly high-risk.
-
 All contributions should pass both the `release` and `sanitize` build and tests
 before submission, including the full test suite (with VeriPB installed) in
 both modes. See `README.md` for the build and test commands, and
@@ -32,6 +27,67 @@ per-solve caps to the data-driven constraint tests, which check soundness and a
 partial proof but not completeness; when you have changed a propagator,
 configure with `-DGCS_TEST_CAP_DEFAULTS=OFF` so that they enumerate fully, as
 the two default-GCC Ubuntu CI lanes do.
+
+What agents are currently good and bad at here
+----------------------------------------------
+
+If you want a global constraint this solver does not have, this section is aimed
+at you: the answer to "could I get an agent to write it, and would that be worth
+anyone's time?" has changed recently enough to be worth writing down. It is not
+an invitation to send us unsupervised output --- what makes a contribution like
+that reviewable is the supervision described here, not the model that wrote it.
+
+This is a moving target, so it is dated, and it is one project's experience
+rather than a study. As of September 2026:
+
+**Implementing a global constraint is now a reasonable thing to attempt with an
+agent, under supervision.** We have found that Claude Opus 5, run at the `xhigh`
+reasoning effort, is generally able to implement a propagator from the
+literature --- read the paper, get the algorithm right, encode it in PB, and
+certify it --- provided two things hold.
+
+The first is that it works in *stages* rather than trying to land a whole
+constraint at once. `dev_docs/constraints.md` ("Bringing up a new constraint")
+sets out the staging we have found works: the encoding certified on its own
+before any propagation exists, the intended consistency level written into the
+tests before anything can pass it, then propagation, then the proofs. The gate
+at the end of each stage is what keeps a mistake attributable to the piece that
+caused it, which is most of the value.
+
+The second is that it actually reads the developer documentation for whatever it
+is touching. Most of what goes wrong when it does not is a convention or an
+invariant that *is* written down in `dev_docs/` and was not read. This is the
+single biggest lever, and it is why those documents exist in the form they do.
+
+**The weak spot is novel proof technique.** Reproducing a proof shape the tree
+already uses is reliable. Devising a new one is not: that is where you get
+derivations which verify but are needlessly baroque, or which lean on a step
+that happens to hold for the instance in front of them. Two triggers to watch
+for --- the constraint needs a technique that is not already somewhere in
+`dev_docs/`, or the technique it did use looks inelegant or suspicious to you.
+
+When either fires, what we have found effective is to tell Opus to **spawn a
+subagent on the Fable model as a critical proofs consultant, with narrow
+instructions**: one derivation, one question, and an instruction to attack the
+argument rather than to write code. It is good at that, and it is a good use of
+tokens --- considerably cheaper than finding the same problem from a rejected
+VeriPB line three stages later, and much cheaper than not finding it.
+
+**The older warning still holds where it always did.** Claude knows the C++
+language and libraries well, but makes subtle mistakes in complicated
+conditions, which propagators are full of. Read the branch structure yourself,
+particularly around the edge cases a paper glosses over.
+
+**Two things to check by hand, because nothing else will.** That no
+`AssertRatherThanJustifying` survives into the submission: an asserted proof
+still exits successfully, so the test suite passes with the cheats in, and only
+the `s UNDER ASSERTIONS` line on a real run gives it away (see
+`dev_docs/constraints.md`, "Bringing up a new constraint", stage 5). And that
+the consistency level claimed in the class comment is the one the tests
+actually check, with the caps off.
+
+None of this changes what you take on by submitting the work: you still have to
+be able to explain why each change is correct.
 
 Licensing
 =========

@@ -22,7 +22,8 @@ reasoning behind them.
 
 | If you are... | Start with |
 |---------------|------------|
-| adding or changing a constraint | [`dev_docs/constraints.md`](dev_docs/constraints.md), then [`reification.md`](dev_docs/reification.md) if it is reified |
+| adding a constraint that does not exist yet | [`dev_docs/constraints.md`](dev_docs/constraints.md), "Bringing up a new constraint" — the order to do the work in, before anything else |
+| changing an existing constraint | the rest of [`dev_docs/constraints.md`](dev_docs/constraints.md), then [`reification.md`](dev_docs/reification.md) if it is reified |
 | touching domains, backtracking, or the inference paths | [`state-and-variables.md`](dev_docs/state-and-variables.md) |
 | writing or debugging a justification | `constraints.md` (Justifications), [`infer-redesign.md`](dev_docs/infer-redesign.md), and the per-constraint proof notes in the index |
 | creating an auxiliary variable for a proof | [`variable-encodings.md`](dev_docs/variable-encodings.md) |
@@ -37,6 +38,30 @@ For orientation in the source itself, `README.md` (Navigating the Source Code)
 covers the public API in `gcs/`; `gcs/innards/` is everything that is not part
 of it, and `dev_docs/constraints.md` (The big picture) is the map of how a
 constraint, its propagators, its OPB definition and its proof fit together.
+
+## When to ask for a second opinion
+
+Reproducing a proof shape this tree already uses is reliable. Inventing one is
+where things go wrong, and the failure mode is quiet: a derivation that verifies
+but is needlessly baroque, or that leans on something which happens to hold for
+the instance in front of you.
+
+Two triggers. Either the constraint needs a proof technique that is not already
+somewhere in `dev_docs/`, or the technique you did use looks inelegant or
+suspicious *to you* — treat that feeling as evidence rather than as fussiness.
+
+When either fires, spawn a subagent on the **Fable** model as a critical proofs
+consultant, and keep its instructions narrow. Give it one derivation and one
+question; tell it what the encoding provides and what the reason contains; ask
+it to attack the argument, not to write code. A broad "review my proof logging"
+gets a vague answer, whereas "here is the `pol`, here is why I think each step
+is sound, find the case where it is not" gets a useful one. This is a good use
+of tokens: much cheaper than meeting the same problem as a rejected VeriPB line
+three stages later, and much cheaper than not meeting it.
+
+The staged method in `dev_docs/constraints.md` ("Bringing up a new constraint")
+is what makes this cheap to act on — each stage's gate localises the problem
+before you go asking about it.
 
 ## Mistakes that have been made here before
 
@@ -61,6 +86,13 @@ so that it is visible without following the link.
   tests run with per-solve caps by default, which check soundness and a partial
   proof only. When you have changed a propagator, configure with
   `-DGCS_TEST_CAP_DEFAULTS=OFF` and re-run.
+- **Never leave an `AssertRatherThanJustifying` in code you commit.** It emits
+  VeriPB's `a` rule, which puts an *unchecked* claim into the proof, so the
+  inference is not verified and the proof establishes nothing about it. It is
+  legitimate as temporary scaffolding while bringing a propagator up, and
+  nothing but you will catch it if it stays: `veripb` exits 0 on an asserted
+  proof, so the whole suite stays green. The only signal is `s UNDER ASSERTIONS`
+  instead of `s VERIFIED` on a real run. See `constraints.md`, stages 3 and 5.
 - **A proof that verifies is not the same as a derivation that is tight.**
   If you are claiming an inference is justified, sabotage the justification and
   check that VeriPB then rejects it — see `constraints.md` (Mutation testing).
