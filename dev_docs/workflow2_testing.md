@@ -82,6 +82,18 @@ Two narrower things neither check demands:
 - **Test-fixture constraints are exempt**, by the `test_...` naming convention
   (`test_tabulated_product`, `test_product_fragment`). Use that prefix for an
   ad-hoc Constraint that exists only to drive one piece of proof machinery.
+- **Neither check can catch a reader that misreads a keyword it does have.**
+  Both feed cake a `.scp` the *writer* produced: the chain runner's step 1
+  re-emits the curated file through `glasgow_scp_solver`, and cake re-derives
+  from the re-emission. So a reader that turns `lin_greater_equal` into an
+  equality re-emits `lin_equals`, and every step after that agrees with itself.
+  That is how `scp_chain_lin_greater_equal_unsat` passed for years with no
+  reader arm for its keyword at all (issue #908). Meaning is checked by
+  enumerating in `scp_reader_test` and *counting*, which is what a reader case
+  for a new keyword owes. To check a reader arm against cake rather than
+  against ourselves, run `cake_pb_cp` on the *hand-written* `.scp` and
+  `veripb` our `.pbp` against that OPB; the runner cannot, because a
+  re-emission is what it has.
 
 Worth knowing what this caught when it was turned on: `difference` and
 `cumulative_optional` had no reader case at all, and neither showed up in a hand

@@ -487,6 +487,27 @@ TEST_CASE("read_scp: linear constraints enumerate correctly")
     for (const auto & s :
         enumerate("( (version 1) (variables (X 0 2) (Y 0 2)) (constraints (_1 lin_not_equals (1 X 1 Y) 2)) (prob_type enumerate) )"))
         CHECK(s.at("X") + s.at("Y") != 2);
+    // The three spellings the writer never produces, because they normalise
+    // into lin_less_equal before anything is written: cake_pb_cp writes all
+    // three, so the reader has to have them. Counting matters here --- the
+    // three used to be prefix-matched into the equality family, which is a
+    // silently different constraint that parses just as well.
+    //
+    // X + Y >= 4: six of the sixteen pairs, against three read as an equality.
+    auto ge = enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_greater_equal (1 X 1 Y) 4)) (prob_type enumerate) )");
+    CHECK(ge.size() == 6);
+    for (const auto & s : ge)
+        CHECK(s.at("X") + s.at("Y") >= 4);
+    // X + Y > 4: strictness is a step, so this is the three above it.
+    auto gt = enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_greater_than (1 X 1 Y) 4)) (prob_type enumerate) )");
+    CHECK(gt.size() == 3);
+    for (const auto & s : gt)
+        CHECK(s.at("X") + s.at("Y") > 4);
+    // X + Y < 4: the complement of the `>=`, so ten.
+    auto lt = enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_less_than (1 X 1 Y) 4)) (prob_type enumerate) )");
+    CHECK(lt.size() == 10);
+    for (const auto & s : lt)
+        CHECK(s.at("X") + s.at("Y") < 4);
 }
 
 TEST_CASE("read_scp: a reified linear constraint enumerates correctly")
@@ -495,6 +516,41 @@ TEST_CASE("read_scp: a reified linear constraint enumerates correctly")
     for (const auto & s :
         enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_equals_iff (C = 1) (1 X 1 Y) 3)) (prob_type enumerate) )"))
         CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") == 3));
+    // Each normalised-away spelling in its half- and fully-reified forms: the
+    // strict step and the negation have to survive a reification condition too,
+    // and the iff cases pin the direction the `f` half goes in.
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_greater_equal_if (C = 1) (1 X 1 Y) 4)) "
+                                    "(prob_type enumerate) )"))
+        CHECK(((s.at("C") == 0) || (s.at("X") + s.at("Y") >= 4)));
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_greater_equal_iff (C = 1) (1 X 1 Y) 4)) "
+                                    "(prob_type enumerate) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") >= 4));
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_greater_than_iff (C = 1) (1 X 1 Y) 4)) "
+                                    "(prob_type enumerate) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") > 4));
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_less_than_if (C = 1) (1 X 1 Y) 4)) "
+                                    "(prob_type enumerate) )"))
+        CHECK(((s.at("C") == 0) || (s.at("X") + s.at("Y") < 4)));
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_less_than_iff (C = 1) (1 X 1 Y) 4)) "
+                                    "(prob_type enumerate) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") < 4));
+}
+
+TEST_CASE("read_scp: a linear keyword that is a near miss is unsupported, not something else")
+{
+    // The base is matched whole. A keyword the grammar does not have must come
+    // back as ScpUnsupportedConstraintError --- which is what
+    // glasgow_scp_solver --parse-only's exit 2 and the writer/reader symmetry
+    // check key off --- rather than being read as whichever family happened to
+    // be last in the dispatch.
+    CHECK_THROWS_AS(
+        enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_less_equal_wibble (1 X 1 Y) 4)) (prob_type enumerate) )"),
+        ScpUnsupportedConstraintError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_wibble (1 X 1 Y) 4)) (prob_type enumerate) )"),
+        ScpUnsupportedConstraintError);
+    // The equals family matches its base whole for the same reason.
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 equals_wibble X Y)) (prob_type enumerate) )"),
+        ScpUnsupportedConstraintError);
 }
 
 TEST_CASE("read_scp: linear constraints survive write -> read -> write unchanged")
