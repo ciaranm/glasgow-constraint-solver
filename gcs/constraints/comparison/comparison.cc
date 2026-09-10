@@ -43,6 +43,30 @@ using fmt::format;
 using fmt::print;
 #endif
 
+namespace
+{
+    // Does this reification condition ask for the *negation* of the inequality
+    // to be enforced? MustNotHold does unconditionally, NotIf does under its
+    // condition, and the other three do not.
+    //
+    // An inequality's negation is another inequality of the same family, with
+    // the operands the other way round and the strictness flipped: NOT(a < b)
+    // is a >= b. So the two negated forms are named and serialised as what they
+    // enforce, rather than having no spelling of their own; define_proof_model
+    // emits exactly that row for them, which is what keeps the name honest.
+    [[nodiscard]] auto enforces_the_negation(const ReificationCondition & cond) -> bool
+    {
+        return overloaded{
+            [](const reif::MustHold &) { return false; },   //
+            [](const reif::MustNotHold &) { return true; }, //
+            [](const reif::If &) { return false; },         //
+            [](const reif::NotIf &) { return true; },       //
+            [](const reif::Iff &) { return false; }         //
+        }
+            .visit(cond);
+    }
+}
+
 ReifiedCompareLessThanOrMaybeEqual::ReifiedCompareLessThanOrMaybeEqual(
     const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal, bool vars_swapped) :
     _v1(v1), _v2(v2), _reif_cond(cond), _or_equal(or_equal), _vars_swapped(vars_swapped)
@@ -88,13 +112,15 @@ auto ReifiedCompareLessThanOrMaybeEqual::define_proof_model(ProofModel & model, 
     // and their `_if` spellings all come back as @c[<id>], and the `_iff`
     // spelling as @c[<id>][r] and @c[<id>][f].
     //
-    // MustNotHold and NotIf have no `.scp` spelling at all --- s_expr() throws
-    // on them --- so they never reach cake, and the bare @c[<id>] is free for
-    // them too. It states the *negated* inequality, which is still a single
-    // difference inequality with the operands the other way round; anything
-    // citing @c[<id>] must therefore look at the reification condition to know
-    // which inequality it got (see
-    // gcs/presolvers/difference_logic/difference_logic.cc).
+    // MustNotHold and NotIf get the bare @c[<id>] too. Their row states the
+    // *negated* inequality, which is still a single difference inequality with
+    // the operands the other way round --- and that is a comparison in its own
+    // right, so it is also what they are named and spelled as (see
+    // enforces_the_negation() and s_expr()), and the label cake gives the
+    // mirrored row is the same bare @c[<id>]. What that costs a citer is that
+    // @c[<id>] no longer means `_v1 <op> _v2` for every form: anything citing
+    // it must look at the reification condition to know which inequality it got
+    // (see gcs/presolvers/difference_logic/difference_logic.cc).
     auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal, const string & role) {
         model.add_labelled_constraint(_constraint_id, role, WPBSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
     };
@@ -242,20 +268,28 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
 }
 
 // cake_pb_cp's names: less_than / less_equal / greater_than / greater_equal.
+// A form that enforces the negation is named for the inequality it enforces, so
+// a MustNotHold less_than is a greater_equal: both flips, since the negation
+// exchanges the operands and flips the strictness.
 auto ReifiedCompareLessThanOrMaybeEqual::constraint_type() const -> std::string
 {
-    return format("{}_{}", _vars_swapped ? "greater" : "less", _or_equal ? "equal" : "than");
+    auto negated = enforces_the_negation(_reif_cond);
+    return format("{}_{}", (_vars_swapped != negated) ? "greater" : "less", (_or_equal != negated) ? "equal" : "than");
 }
 
 auto ReifiedCompareLessThanOrMaybeEqual::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
 
+    // The negated forms take the suffix of the condition they carry, not of the
+    // reification kind: constraint_type() has already turned the negation into
+    // a comparison of its own, so a NotIf is that comparison, half-reified.
     auto reif_suffix = overloaded{
-        [&](const reif::MustHold &) -> string { return ""; },                                               //
-        [&](const reif::If &) -> string { return "_if"; },                                                  //
-        [&](const reif::Iff &) -> string { return "_iff"; },                                                //
-        [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_expr"}; } //
+        [&](const reif::MustHold &) -> string { return ""; },    //
+        [&](const reif::MustNotHold &) -> string { return ""; }, //
+        [&](const reif::If &) -> string { return "_if"; },       //
+        [&](const reif::NotIf &) -> string { return "_if"; },    //
+        [&](const reif::Iff &) -> string { return "_iff"; }      //
     }
                            .visit(_reif_cond);
 
@@ -267,6 +301,11 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_expr(const ProofModel * const model) 
     // The constraint enforces _v1 <op> _v2. cake reads "less A B" as A<=B but
     // "greater A B" as A>=B, so for the greater form the operands are reversed:
     // "greater _v2 _v1" reads as _v2 >= _v1, i.e. _v1 <= _v2.
+    //
+    // A negated form needs nothing here: negating exchanges the operands, and
+    // constraint_type() has already swapped less for greater, which exchanges
+    // them again. The two cancel, so a MustNotHold `less_than _v1 _v2` is
+    // `greater_equal _v1 _v2` --- the same two terms in the same order.
     terms.push_back(tracker.s_expr_term_of(_vars_swapped ? _v2 : _v1));
     terms.push_back(tracker.s_expr_term_of(_vars_swapped ? _v1 : _v2));
 
