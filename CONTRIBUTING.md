@@ -25,7 +25,11 @@ quite a lot in propagators). The proof logging code is similarly high-risk.
 
 All contributions should pass both the `release` and `sanitize` build and tests
 before submission, including the full test suite (with VeriPB installed) in
-both modes. See `README.md` for details.
+both modes. See `README.md` for details. Note that a default build applies
+per-solve caps to the data-driven constraint tests, which check soundness and a
+partial proof but not completeness; when you have changed a propagator,
+configure with `-DGCS_TEST_CAP_DEFAULTS=OFF` so that they enumerate fully, as
+the two default-GCC Ubuntu CI lanes do.
 
 Licensing
 =========
@@ -70,7 +74,11 @@ git config core.hooksPath .githooks
 It rejects a commit whose staged files are not formatted, printing the exact
 `clang-format -i` command to fix them; `git commit --no-verify` bypasses it for
 a one-off. The hook uses `clang-format-21` if present, otherwise `clang-format`,
-so install version 21 (CI pins 21.1.8) for results that match CI.
+so install version 21 (CI pins 21.1.8) for results that match CI --- and note
+that if neither is on `PATH` the hook warns and lets the commit through, so an
+installed clang-format is what makes it a check at all. It also only sees what
+is staged, whereas CI formats the whole tree; the two agree on a clean tree, but
+run the command above by hand if you are unsure.
 
 Developer Documentation
 =======================
