@@ -65,20 +65,27 @@
 \crefname{remarkN}{Remark}{Remarks}
 
 % ---------------------------------------------------------------------- macros
-\newcommand{\BinEnc}{\ensuremath{\operatorname{BinEnc}}}
-\newcommand{\Bnd}{\ensuremath{\operatorname{Bnd}}}
-\newcommand{\Def}{\ensuremath{\operatorname{Def}}}
-\newcommand{\Lin}{\ensuremath{\operatorname{Lin}}}
-\newcommand{\Aux}{\ensuremath{\operatorname{Aux}}}
-\newcommand{\Vars}{\ensuremath{\operatorname{Vars}}}
-\newcommand{\Rep}{\ensuremath{\operatorname{Rep}}}
-\newcommand{\Link}{\ensuremath{\operatorname{Link}}}
-\newcommand{\Cells}{\ensuremath{\operatorname{Cells}}}
-\newcommand{\Bdry}{\ensuremath{\operatorname{Bd}}}
-\newcommand{\dm}{\ensuremath{\operatorname{dom}}}
-\newcommand{\ImpLits}{\ensuremath{\operatorname{ImpLits}}}
-\newcommand{\Standardise}{\ensuremath{\operatorname{Standardise}}}
-\newcommand{\Linearise}{\ensuremath{\operatorname{Linearise}}}
+% Every function, set and procedure name goes through \fname, and every
+% constraint name through \globalcon, so that their fonts can be changed in one
+% place rather than hunted for.
+\newcommand{\fname}[1]{\ensuremath{\operatorname{#1}}}
+\newcommand{\globalcon}[1]{\ensuremath{\mathrm{#1}}}
+\newcommand{\BinEnc}{\fname{BinEnc}}
+\newcommand{\Bnd}{\fname{Bnd}}
+\newcommand{\Def}{\fname{Def}}
+\newcommand{\Lin}{\fname{Lin}}
+\newcommand{\Aux}{\fname{Aux}}
+\newcommand{\Vars}{\fname{Vars}}
+\newcommand{\Rep}{\fname{Rep}}
+\newcommand{\ViewLink}{\fname{ViewLink}}
+\newcommand{\Cells}{\fname{Cells}}
+\newcommand{\Bdry}{\fname{Bd}}
+\newcommand{\dm}{\fname{dom}}
+\newcommand{\ImpLits}{\fname{ImpLits}}
+\newcommand{\Standardise}{\fname{Standardise}}
+\newcommand{\Linearise}{\fname{Linearise}}
+\newcommand{\NeededReps}{\fname{NeededRepresentations}}
+\newcommand{\NeededAtomicVariables}{\fname{NeededAtomicVariables}}
 \newcommand{\atge}[2]{#1_{\geq #2}}
 \newcommand{\ateq}[2]{#1_{= #2}}
 \newcommand{\atin}[3]{#1_{\in[#2,#3]}}
@@ -116,19 +123,20 @@
 \section*{About this document}
 
 This is a revised and extended version of Sections~3.2 and~3.3 of the first
-author's PhD thesis, \emph{Proof Logging for Constraint Programming}
-(University of Glasgow, 2026), adapted and reused with substantial additions.
-It exists for three reasons: as the basis of a journal treatment of
-pseudo-Boolean proof logging for constraint programming; as the single
-authoritative account, for the Glasgow Constraint Solver's developers, of what
-a literal is and what makes the literal layer work; and as a target for
-adversarial review, since a subtle defect in this design is much cheaper to
-find now than to diagnose later from an incomprehensible verifier rejection.
+author's PhD thesis, \emph{Pseudo-Boolean Proof Logging for Constraint
+Propagation Algorithms} (University of Glasgow, 2026), adapted and reused with
+substantial additions.  It exists for three reasons: as the basis of a journal
+treatment of pseudo-Boolean proof logging for constraint programming; as the
+single authoritative account, for the Glasgow Constraint Solver's developers, of
+what a literal is and what makes the literal layer work; and as a target for
+adversarial review.  A subtle defect in this design is much cheaper to find now
+than to diagnose later from an incomprehensible verifier rejection.
 
-The thesis presents a single integer variable represented one way (a
-two's-complement bit vector) and carrying two families of atomic literal (order
-atoms $\atge{x}{v}$ and equality atoms $\ateq{x}{v}$).  Two things have changed
-in the solver since.
+The thesis presents a canonical pseudo-Boolean representation of integer
+variables using two's complement bit-vectors.  Additionally, there are two
+families of ``atomic literals'': inequality atoms $\atge{x}{v}$ and equality
+atoms $\ateq{x}{v}$.  The solver has since gained interval literals and views,
+neither of which the thesis covers.
 
 \begin{itemize}
   \item \textbf{Interval literals.}  There is now a third family, $\atin{x}{a}{b}$,
@@ -145,9 +153,9 @@ in the solver since.
     linking clauses.
 \end{itemize}
 
-Neither addition is conservative over the thesis's propagation results.  Order
-and equality atoms are complete under unit propagation given the order chain
-alone; interval literals are not, and need two further families of
+Neither addition is conservative over the thesis's propagation results.
+Inequality and equality atoms are complete under unit propagation given the
+order chain alone; interval literals are not, and need two further families of
 state-independent clause.  Facts move between two representations of the same
 variable only through linking clauses, and --- for interval literals --- the
 direction that a proof actually needs is the one that is \emph{not} derivable
@@ -212,7 +220,7 @@ equivalent to an input CSP, at least for some generalised definition of the
 word ``obvious''.  For clarity, we will talk about transforming a ``CP
 problem'' into a ``PB problem''.
 
-\subsubsection{The Difficulty of Equivalence}
+\subsubsection{Defining Equivalence for Proofs}
 
 The ultimate goal of encoding for proof logging purposes is to trust that the
 process preserves the integrity of the proof with respect to the original
@@ -226,19 +234,20 @@ So at one level, the only guarantees we really need are:
     objective is equal to the optimal value of the PB objective.
 \end{description}
 
-To make it easier to obtain these guarantees, we employ very restricted
-transformations with minimal reformulation --- much less than one might use if
-encoding in order to solve the problem with a PB or SAT system.  We want our
-encodings to be as ``dumb'' as possible, because we want to be extremely
-certain that the two properties hold.  So in practice, our working definition
-of equivalence is: ``the PB problem is the result of applying
-\cref{proc:encoding} to the CP problem''.
+However, to make it easier to obtain these guarantees, we should employ very
+restricted transformations with minimal reformulation, much less than one might
+use if encoding in order to use a PB or SAT system to solve the problem.  To put
+it simply, we want our encodings to be as ``dumb'' as possible because we want to
+be extremely certain the two properties hold.  So in practice, our working
+definition of equivalence is: ``the PB problem is the result of applying
+\cref{proc:encoding} to the CP problem''.  We will define this procedure shortly.
 
 The one substantive change to this section from the thesis is that the encoding
 now admits two further \emph{shared} classes of introduced variable, beyond the
 atomic constraint variables: \emph{representation variables} for affine views,
-and a third kind of atomic variable for intervals.  Both are still fully
-determined by an assignment to the original variables, which is what keeps P1
+and a third kind of atomic variable for intervals.  Both are still uniquely
+determined, semantically, by an assignment to the original variables: their
+definition constraints and their links leave no freedom.  That is what keeps P1
 and P2 easy to argue.
 
 \subsubsection{A Transformation Procedure}
@@ -252,55 +261,64 @@ the variables' values in exactly the same way as the original CP constraints.
 We have the freedom to introduce auxiliary variables at this stage to assist in
 the linearisation (such as the $u$ flag in \cref{ex:pbenc}).
 
-Three classes of introduced variable are \emph{shared} between linearisations
-rather than private to one, and each is fully determined by an assignment to
+Two classes of introduced variable are \emph{shared} between linearisations
+rather than private to one, and each is uniquely determined by an assignment to
 the original variables:
 
 \begin{itemize}
-  \item \textbf{Representation variables} name affine images $sX+c$ of an
-    original variable.  A constraint posted over a \emph{view} of $X$ is
-    linearised over the corresponding representation variable.
-  \item \textbf{Atomic constraint variables} are $0$--$1$ variables denoting
-    basic relationships between a variable and a value or an interval of values.
-  \item Both come with \emph{definition constraints}, which are fully reified
-    and hence entirely redundant.
+  \item \textbf{Representation variables} name affine views $sX+c$ of an
+    original variable.  A constraint posted over a view of $X$ is linearised
+    over the corresponding representation variable.
+  \item \textbf{Atomic constraint variables} (or simply \emph{atomic
+    variables}) are $0$--$1$ variables denoting basic relationships between a
+    variable and a value or an interval of values.
 \end{itemize}
 
-Everything else introduced by a linearisation is private to it.  The soundness
-of concatenating linearisations rests on exactly that division; see
-\cref{lem:composing}.
+Both come with \emph{definition constraints}, which are fully reified on fresh
+variables.  That makes them redundant in one specific sense: the values of the
+introduced variables are uniquely determined for any solution, so the solution
+set projected onto the original variables is unchanged, and in particular
+adding them cannot change satisfiability or the objective value.  It does not
+make them dispensable, since they are what the proof reasons with; nor does it
+mean that solutions can be counted without regard to them, which is what the
+preserved set of \cref{sec:enumeration} is for.
+
+All other variables introduced as part of a linearisation should not appear in
+other linearisations.  The soundness of concatenating linearisations rests on
+exactly that division; see \cref{lem:composing}.
 
 We assume we start with a general constraint satisfaction problem, with
 variable set $\mathcal V$, finite domains $\dm_0(X_i)$ for $X_i\in\mathcal V$,
 and constraints $\mathcal C$.  All domains can be assumed to be ranges of
 integers without holes, since any missing values can be modelled with
 additional constraints if necessary.  We also assume that the constraints are a
-flat list.
+flat list, without constructs such as loops that might be found in a
+higher-level modelling language.
 
 \begin{procedureT}
 \label{proc:encoding}
 For a CSP with variables $\mathcal V$, initial domain state (without holes)
 $\dm_0$, and constraints $\mathcal C$, we can produce a PB formula as follows.
 \begin{enumerate}[label=\arabic*:,leftmargin=2.6em,itemsep=1pt]
-  \item $\mathcal R \leftarrow \bigcup_{X\in\mathcal V}\{X\}
-        \cup \bigcup_{C\in\mathcal C}\text{NeededRepresentations}(C)$
-  \item $\Bnd(\mathcal R) \leftarrow \bigcup_{W\in\mathcal R}\Bnd(W,\dm_0)$
-  \item $\Link(\mathcal R) \leftarrow \bigcup_{W\in\mathcal R}\Link(W)$
+  \item $\mathcal W \leftarrow \bigcup_{X\in\mathcal V}\{X\}
+        \cup \bigcup_{C\in\mathcal C}\NeededReps(C)$
+  \item $\ViewLink(\mathcal W) \leftarrow \bigcup_{W\in\mathcal W}\ViewLink(W)$
+  \item $\Bnd(\mathcal W) \leftarrow \bigcup_{W\in\mathcal W}\Bnd(W,\dm_0)$
   \item $\mathcal A \leftarrow \bigcup_{C\in\mathcal C}
-        \text{NeededAtomicVariables}(C,\dm_0)$
+        \NeededAtomicVariables(C,\dm_0)$
   \item $\Def(\mathcal A) \leftarrow \bigcup_{y\in\mathcal A}\Def(y)$
   \item $\Lin(\mathcal C) \leftarrow \bigcup_{C\in\mathcal C}\Linearise(C,\dm_0)$
-  \item $F \leftarrow \BinEnc\bigl(\Bnd(\mathcal R)\cup\Link(\mathcal R)
+  \item $F \leftarrow \BinEnc\bigl(\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)
         \cup\Def(\mathcal A)\cup\Lin(\mathcal C)\bigr)$
   \item $F \leftarrow \Standardise(F)$
 \end{enumerate}
 \end{procedureT}
 
-Steps~1 and~3 are new; step~5 now has a third case.  The remainder of this
+Steps~1 and~2 are new; step~5 now has a third case.  The remainder of this
 section gives more detail on each stage along with soundness arguments, and
 introduces notation used throughout.
 
-\paragraph{Step 1 and 3: representations and their links.}
+\paragraph{Steps 1 and 2: representations and their links.}
 
 \begin{definitionT}[Representation]
 \label{def:rep}
@@ -313,40 +331,40 @@ to $W = s_W X + c_W$.  Write
 \]
 so that $\varphi_W$ is an order-preserving bijection $\mathbb Z\to\mathbb Z$
 when $s_W=+1$ and an order-reversing one when $s_W=-1$.  Every CP variable is a
-representation of itself, with $\varphi_X=\mathrm{id}$.  We write $\Rep(X)$ for
-the set of representations of $X$ occurring in the encoding, and
-$\mathcal R = \bigcup_{X\in\mathcal V}\Rep(X)$.  A representation $W\neq X$ is
-\emph{derived}, and $X$ is its \emph{base}; $\Rep$ is a partition of $\mathcal
-R$ by base.
+representation of itself, with $\varphi_X$ the identity function.  We write
+$\Rep(X)$ for the set of representations of $X$ occurring in the encoding, and
+$\mathcal W = \bigcup_{X\in\mathcal V}\Rep(X)$.  A representation $W\neq X$ is
+\emph{proper}, and $X$ is its \emph{base}; $\Rep$ is a partition of $\mathcal
+W$ by base.
 \end{definitionT}
 
-For each derived $W\in\Rep(X)$, $\Link(W)$ is the single linear equality
+For each proper $W\in\Rep(X)$, $\ViewLink(W)$ is the single linear equality
 \begin{equation}
-  \Link(W) \;:=\; W - s_W X = c_W ,
+  \ViewLink(W) \;:=\; W - s_W X = c_W ,
   \label{eq:link}
 \end{equation}
 which \Standardise{} will split into a $\geq$ and a $\leq$ row.  For a base
-variable, $\Link(X)$ is empty.
+variable, $\ViewLink(X)$ is empty.
 
 Representation variables arise because constraints are posted over
 \emph{operands}, and an operand may be a view.  A modelling layer that writes
-$\mathrm{AllDifferent}(X_1, X_2+1, X_3+2)$ is naming three operands, two of
-which are derived representations of $X_2$ and $X_3$.  Two different
+$\globalcon{AllDifferent}(X_1, X_2+1, X_3+2)$ is naming three operands, two of
+which are proper representations of $X_2$ and $X_3$.  Two different
 constraints may name the same view, and one variable may be named through
 several different views at once, which is precisely why representation
 variables have to be shared rather than private to a linearisation.
 
-The alternative --- substituting $s X + c$ for the view wherever it occurs, and
-stating everything in $X$'s atoms --- is rejected, for a reason that only
-becomes visible in \cref{sec:framework}: it makes the atoms appearing in the
-encoding of a constraint depend on \emph{which} wrapper the constraint happened
-to be handed, so a generic constraint-logging procedure can no longer treat
-every operand identically, and a cutting-planes step that resolves an operand
-against a constraint body has to know which representation that body is stated
-in.  Giving the view its own variable costs one linear equality and makes every
-operand look the same.
+We reject the alternative --- substituting $s X + c$ for the view wherever it
+occurs, and stating everything in $X$'s atoms --- for a reason that only becomes
+visible in \cref{sec:framework}.  It makes the atoms appearing in the encoding of
+a constraint depend on \emph{which} wrapper the constraint happened to be handed,
+so a generic constraint-logging procedure can no longer treat every operand
+identically, and a cutting-planes step that resolves an operand against a
+constraint body has to know which representation that body is stated in.  Giving
+the view a variable of its own costs one linear equality, and makes every operand
+look the same.
 
-\paragraph{Step 2: domain bound constraints.}
+\paragraph{Step 3: domain bound constraints.}
 For a representation $W$ of $X$ and domain state $\dm_0$, let $\Bnd(W,\dm_0)$
 be the two linear constraints
 \begin{equation}
@@ -360,29 +378,29 @@ When it is clear from context we omit $\dm_0$ and write $\Bnd(W)$.  We call
 $[\,\min\varphi_W(\dm_0(X)),\ \max\varphi_W(\dm_0(X))\,]$ the \emph{definition
 range} of $W$ and denote it $[l_W,u_W]$.
 
-Note that $\Bnd(W)$ for a derived $W$ is implied by $\Bnd(X)$ together with
-$\Link(W)$ (it is their sum, up to sign), so asserting it changes nothing.  It
+Note that $\Bnd(W)$ for a proper $W$ is implied by $\Bnd(X)$ together with
+$\ViewLink(W)$ (it is their sum, up to sign), so asserting it changes nothing.  It
 is asserted anyway, because unit propagation cannot add two constraints
 together, and several later arguments need $W$'s own bounds to be available as
 units on $W$'s own atoms.
 
-Clearly, if we construct a CSP with variables $\mathcal R$, constraints
-$\mathcal C \cup \Bnd(\mathcal R)\cup\Link(\mathcal R)$, and unrestricted
+Clearly, if we construct a CSP with variables $\mathcal W$, constraints
+$\mathcal C \cup \Bnd(\mathcal W)\cup\ViewLink(\mathcal W)$, and unrestricted
 integer domains, then this has exactly the same solution set as our original
-CSP, projected onto $\mathcal V$: every derived representation is determined by
+CSP, projected onto $\mathcal V$: every proper representation is determined by
 its base through \cref{eq:link}.
 
 \paragraph{Steps 4 and 5: atomic constraint variables.}
 These are fresh $0$--$1$ variables that can be shared between linearisations
 and have a special meaning.  For each supported constraint type $C$ we need to
-know which atomic variables it requires, so $\text{NeededAtomicVariables}$ is
+know which atomic variables it requires, so $\NeededAtomicVariables$ is
 defined on a per-constraint basis; usually this is immediately clear from the
 definition of $\Linearise(C,\dm_0)$.
 
 Each atomic variable $y$ requires a fully reified linear definition constraint
 $\Def(y)$ of the form $y\Leftrightarrow C$.  We allow three types of atomic
 variable definition, each associated with a \emph{representation}
-$W\in\mathcal R$ --- not merely with a CP variable --- and with one or two
+$W\in\mathcal W$ --- not merely with a CP variable --- and with one or two
 integers.  For clarity we always use subscripted names suggestive of the
 definition, writing $w$ for the PB name of the representation $W$.
 
@@ -449,7 +467,7 @@ For each constraint $C$ we require a function $\Linearise(C,\dm_0)$ turning it
 into a set of reified linear constraints $\Lin(C)$.  This can use
 representation variables, atomic literals, and further auxiliary variables.
 Write $\Vars(\Lin(C))$ for the set of variables appearing in the
-linearisation, and let $\Aux(C) = \Vars(\Lin(C))\setminus(\mathcal R\cup
+linearisation, and let $\Aux(C) = \Vars(\Lin(C))\setminus(\mathcal W\cup
 \mathcal A)$ be the auxiliary variables introduced.  We require:
 
 \begin{description}[font=\normalfont\bfseries,leftmargin=2.4em]
@@ -472,12 +490,12 @@ linearisation, and let $\Aux(C) = \Vars(\Lin(C))\setminus(\mathcal R\cup
     $\Aux(C_1)\cap\Aux(C_2)=\emptyset$ for all $C_1\neq C_2$.  Representation
     variables and atomic variables are \emph{not} auxiliary variables and may be
     shared freely.
-  \item[L4.] Most importantly, $\Lin(C)\cup\Def(\mathcal A)\cup\Link(\mathcal R)$
+  \item[L4.] Most importantly, $\Lin(C)\cup\Def(\mathcal A)\cup\ViewLink(\mathcal W)$
     must enforce the same restriction as $C$ on the variables in $\mathcal V$.
     That is, a valid assignment $\sigma:\mathcal V\to\mathbb Z$ satisfies $C$ if
     and only if it can be extended to a valid assignment
-    $\sigma^+:\Vars(\Lin(C)\cup\Def(\mathcal A)\cup\Link(\mathcal R))\to\mathbb Z$
-    satisfying $\Lin(C)\cup\Def(\mathcal A)\cup\Link(\mathcal R)$.
+    $\sigma^+:\Vars(\Lin(C)\cup\Def(\mathcal A)\cup\ViewLink(\mathcal W))\to\mathbb Z$
+    satisfying $\Lin(C)\cup\Def(\mathcal A)\cup\ViewLink(\mathcal W)$.
 \end{description}
 
 L3 is where representation variables differ from the thesis's presentation:
@@ -491,7 +509,7 @@ variable's value uniquely from the assignment to $\mathcal V$.
 Let $P$ be a CSP with variables $\mathcal V$ and constraints $\mathcal C$,
 where all domains are integer ranges.  After executing steps~1 to~6 of
 \cref{proc:encoding} let $P'$ be the CSP with constraints
-$\mathcal C' := \Lin(\mathcal C)\cup\Bnd(\mathcal R)\cup\Link(\mathcal R)
+$\mathcal C' := \Lin(\mathcal C)\cup\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)
 \cup\Def(\mathcal A)$, whose variables are precisely those occurring in
 $\mathcal C'$, and whose domain for every non-$0$--$1$ variable is $\mathbb Z$.
 Then:
@@ -506,48 +524,48 @@ Then:
 \begin{proof}
 Call a variable of $P'$ \emph{determined} if its value is a function of the
 restriction of an assignment to $\mathcal V$ alone.  Every variable in
-$\mathcal R\cup\mathcal A$ is determined: a derived representation by
+$\mathcal W\cup\mathcal A$ is determined: a proper representation by
 \cref{eq:link}, and an atomic variable by its definition constraint, which is a
-fully reified constraint over $\mathcal R$ (for $\atge{w}{v}$) or over
+fully reified constraint over $\mathcal W$ (for $\atge{w}{v}$) or over
 previously determined atomic variables (for $\ateq{w}{v}$ and $\atin{w}{a}{b}$,
 whose definitions mention only bound variables of the same representation).
 The determination is well founded because the dependency order is
-$\mathcal V \to \mathcal R \to \{\text{bound}\} \to
+$\mathcal V \to \mathcal W \to \{\text{bound}\} \to
 \{\text{equality},\text{interval}\}$, with no cycles.
 
 \emph{Part 1.}  Let $\sigma$ be a solution to $P$ and $C_1,\dots,C_n$ the
 constraints of $P$.  By validity, $\sigma$ satisfies $\Bnd(\mathcal V)$, and
 extending it by the determined values satisfies $\Bnd(\mathcal
-R)\cup\Link(\mathcal R)$.  By L4, $\sigma$ can be extended to a solution
-$\sigma_1$ of $\Bnd(\mathcal R)\cup\Link(\mathcal R)\cup\Def(\mathcal
+W)\cup\ViewLink(\mathcal W)$.  By L4, $\sigma$ can be extended to a solution
+$\sigma_1$ of $\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)\cup\Def(\mathcal
 A)\cup\Lin(C_1)$.
 
 Now assume we have extended $\sigma$ to a solution $\sigma_{k-1}$ of
-$\Bnd(\mathcal R)\cup\Link(\mathcal R)\cup\Def(\mathcal A)\cup
+$\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)\cup\Def(\mathcal A)\cup
 \bigcup_{i<k}\Lin(C_i)$.  By L4 again, $\sigma$ can be extended to a solution
-$\sigma'_k$ of $\Bnd(\mathcal R)\cup\Link(\mathcal R)\cup\Def(\mathcal
+$\sigma'_k$ of $\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)\cup\Def(\mathcal
 A)\cup\Lin(C_k)$.  Define $\sigma_k$ by
 \begin{align}
   \sigma_k(V) &= \sigma(V) && \text{if } V\in\mathcal V; \\
-  \sigma_k(V) &= \sigma_{k-1}(V) && \text{if } V\in\mathcal R\cup\mathcal A; \\
+  \sigma_k(V) &= \sigma_{k-1}(V) && \text{if } V\in\mathcal W\cup\mathcal A; \\
   \sigma_k(V) &= \sigma_{k-1}(V) && \text{if otherwise }
      V\in\Vars\bigl(\bigcup_{i<k}\Lin(C_i)\bigr); \\
   \sigma_k(V) &= \sigma'_k(V) && \text{if otherwise } V\in\Vars(\Lin(C_k)).
 \end{align}
 This is an extension of $\sigma$, and it satisfies both $\Lin(C_k)$ and
-$\Bnd(\mathcal R)\cup\Link(\mathcal R)\cup\Def(\mathcal A)\cup
+$\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)\cup\Def(\mathcal A)\cup
 \bigcup_{i<k}\Lin(C_i)$, because
 $\sigma_k(V)=\sigma_{k-1}(V)=\sigma'_k(V)$ for every $V\in\mathcal
-V\cup\mathcal R\cup\mathcal A$ --- each such $V$ being determined by $\sigma$,
+V\cup\mathcal W\cup\mathcal A$ --- each such $V$ being determined by $\sigma$,
 which all three assignments extend --- while
 $\Vars(\bigcup_{i<k}\Lin(C_i))\cap\Vars(\Lin(C_k))\subseteq
-\mathcal V\cup\mathcal R\cup\mathcal A$ by L3, so $\sigma_k$ is an extension of
+\mathcal V\cup\mathcal W\cup\mathcal A$ by L3, so $\sigma_k$ is an extension of
 both $\sigma_{k-1}$ and $\sigma'_k$.  The claim follows by induction.
 
 \emph{Part 2.}  Let $\sigma'$ be a solution to $P'$.  There is only one
 possible restriction of $\sigma'$ to a valid assignment to $\mathcal V$; and by
-L4, since $\sigma'$ satisfies $\Lin(C_i)\cup\Def(\mathcal A)\cup\Link(\mathcal
-R)$ for each $i$, that restriction must satisfy each $C_i$ and hence $P$.
+L4, since $\sigma'$ satisfies $\Lin(C_i)\cup\Def(\mathcal A)\cup\ViewLink(\mathcal
+W)$ for each $i$, that restriction must satisfy each $C_i$ and hence $P$.
 \end{proof}
 
 We refer to the result of steps~1 to~6 as the \emph{intermediate ILP}.  In the
@@ -565,7 +583,7 @@ is posted over the view $Z' = -Z + 7$ as $X - Z' \geq -4$, could be
   &u \Rightarrow X - Y > 0; \qquad \bar u \Rightarrow Y - X > 0;\\
   &X - Z' \geq -4 .
 \end{align}
-Line \cref{eq:exlink} is $\Link(Z')$, and $\Bnd(Z')$ is the image of
+Line \cref{eq:exlink} is $\ViewLink(Z')$, and $\Bnd(Z')$ is the image of
 $\Bnd(Z)$ under $\varphi_{Z'}(k) = -k+7$.
 \end{exampleT}
 
@@ -574,10 +592,10 @@ $\BinEnc$ turns the intermediate ILP into a $0$--$1$ ILP by replacing each
 occurrence of a non-Boolean variable with a binary exponential sum.  This may
 be a poor encoding from a solving perspective, but it maintains the form of the
 ILP, letting us ``pretend'' we have integer variables while working honestly
-with native PB constraints.  Every variable in $\mathcal R$ --- derived
+with native PB constraints.  Every variable in $\mathcal W$ --- proper
 representations included --- is replaced, and each gets its \emph{own} bit
 vector: $\BinEnc(W)$ and $\BinEnc(X)$ share no PB variables, and are related
-only by the encoded form of $\Link(W)$.
+only by the encoded form of $\ViewLink(W)$.
 
 Specifically, for any non-$0$--$1$ variable $W$ with definition range
 $[l_W,u_W]$: if $l_W\geq 0$, let $h$ be least with $2^h\geq u_W+1$ and define
@@ -595,7 +613,7 @@ the encoding.
 
 \begin{remark}
 Two width details matter in practice and neither affects the argument.  First,
-the bit vector of a derived representation is sized from $[l_W,u_W]$, and can be
+the bit vector of a proper representation is sized from $[l_W,u_W]$, and can be
 \emph{wider} than that of its base: a view of a variable with range $[1,8]$ has
 range $[1,8]$ too but a bit vector spanning $[0,15]$, and a view $X+10^6$ has a
 much wider one.  Any coefficient bound or big-$M$ computed for a line mentioning
@@ -636,8 +654,8 @@ of assignments to $\mathcal V$ (projected from full assignments) that satisfy
 $P'$.  Let $F^*$ be the $0$--$1$ linear CSP obtained after step~7.  Every
 solution to $P'$ corresponds to a solution of $F^*$, by assigning to each
 non-$0$--$1$ variable $W$ the unique $h$-bit vector representing its value ---
-note that this is well defined for a derived representation exactly as for a
-base one, since $\Link(W)$ and $\Bnd(W)$ force $W$'s value into $[l_W,u_W]$,
+note that this is well defined for a proper representation exactly as for a
+base one, since $\ViewLink(W)$ and $\Bnd(W)$ force $W$'s value into $[l_W,u_W]$,
 which its bit width covers.  Conversely, every solution to $F^*$ corresponds to
 a solution of $P'$ by decoding each bit vector.  The final formula $F$ obtained
 after step~8 has exactly the same solutions as $F^*$.
@@ -652,7 +670,7 @@ P2 holds.
 
 \begin{remark}
 The projection in \cref{thm:p1p2} is onto the bits of the \emph{base} variables
-only.  The bits of derived representations, and all atomic variables, are
+only.  The bits of proper representations, and all atomic variables, are
 determined but not projected onto.  This matters for enumeration; see
 \cref{sec:enumeration}.
 \end{remark}
@@ -662,15 +680,16 @@ determined but not projected onto.  This matters for enumeration; see
 To instantiate the encoding method for concrete CSPs we exhibit ``sufficiently
 obvious'' linearisations for all supported non-linear constraints.  These are
 unchanged from the thesis, and are not reproduced here; the encodings for
-$\mathrm{NotEquals}$, $\mathrm{Abs}$, $\mathrm{Element}$, $\mathrm{ArrayMin}$,
-$\mathrm{ArrayMax}$, $\mathrm{Count}$, $\mathrm{NValue}$,
-$\mathrm{AllDifferent}$ and $\mathrm{Table}$ satisfy L1 to L4 by inspection.
+$\globalcon{NotEquals}$, $\globalcon{Abs}$, $\globalcon{Element}$,
+$\globalcon{ArrayMin}$, $\globalcon{ArrayMax}$, $\globalcon{Count}$,
+$\globalcon{NValue}$, $\globalcon{AllDifferent}$ and $\globalcon{Table}$
+satisfy L1 to L4 by inspection.
 
 Two remarks are needed in the extended setting.
 
 First, a constraint's operands may be representations rather than base
 variables, and its linearisation is written over the operands.  Thus
-$\mathrm{AllDifferent}(W_1,\dots,W_n)$ linearises to
+$\globalcon{AllDifferent}(W_1,\dots,W_n)$ linearises to
 $u_{ij}\Rightarrow W_i - W_j > 0$ and $\bar u_{ij} \Rightarrow W_j - W_i > 0$
 over exactly the operands it was given, with no reference to their bases.  This
 is what ``the encoding is generic in the operand'' means, and it is the property
@@ -859,7 +878,7 @@ $t$ in the proof.
 \item[\invRep{}: representation closure and linking.]
   For every $W,W'\in\Rep(X)$: if an atomic variable of $W$ is defined, then so is
   the corresponding atomic variable of $W'$ (\cref{def:image} below); and for
-  every defined atomic variable of a derived $W$, the two clauses linking it to
+  every defined atomic variable of a proper $W$, the two clauses linking it to
   the corresponding atomic variable of the base $X$ appear in $F_t$.
 
 \item[\invName{}: cells are named.]
@@ -935,7 +954,7 @@ literal into a negative one, but leaves the polarity of equality and interval
 literals alone --- an interval is order-agnostic, a half-line is not.
 
 The linking clauses are exactly the clausal form of the biconditional
-$\ell \Leftrightarrow \ell^{X}$, for each defined atom of each derived
+$\ell \Leftrightarrow \ell^{X}$, for each defined atom of each proper
 representation:
 \begin{align}
   \text{ge-link:}\quad
@@ -954,13 +973,13 @@ representation:
 
 The eq-link and the in-link are RUP at the point they are emitted.  \textbf{The
 ge-link is not}, and this is worth being precise about, because the natural
-assumption is that it is.  Summing $\Def(\atge{w}{v})$, $\Link(W)$ and the
+assumption is that it is.  Summing $\Def(\atge{w}{v})$, $\ViewLink(W)$ and the
 corresponding half of $\Def((\atge{w}{v})^X)$ does make the $\BinEnc$ terms
 cancel exactly, and saturating leaves the clause --- but that is a
 \emph{cutting-planes} derivation, not a unit-propagation one.  What would make
 the configuration RUP is Theorem~2.9 of the thesis, and it requires the middle
 constraint's right-hand side to lie in $\{0,1\}$; here that constraint is a half
-of $\Link(W)$, so the right-hand side is $\pm c_W$, and the theorem does not
+of $\ViewLink(W)$, so the right-hand side is $\pm c_W$, and the theorem does not
 apply once $|c_W|>1$.  Example~2.15 of the thesis is a counterexample of exactly
 this shape.
 
@@ -1388,7 +1407,7 @@ $\ell^{W'}$ propagates under $R$.
 It suffices to show that a literal crosses a single link pair, in either
 direction and either polarity; a general $W\to W'$ transport is then at most two
 such crossings, through the base, because images compose:
-$(\ell^{X})^{W'} = \ell^{W'}$.  So take $W$ derived and consider its link to the
+$(\ell^{X})^{W'} = \ell^{W'}$.  So take $W$ proper and consider its link to the
 base.  By \invRep{} the atomic variable underlying $\ell^{X}$ is defined and the
 two linking clauses
 \cref{eq:gelink}, \cref{eq:eqlink} or \cref{eq:inlink} appear in $F_t$.  Those
@@ -1403,7 +1422,7 @@ combinations are therefore covered.
 \begin{remarkN}[Why naming, not requesting, is the trigger]
 \label{rem:naming}
 \cref{lem:transport} is only as good as \invRep{}, and \invRep{} is the
-invariant that is easiest to break silently.  Bound and equality atoms are
+invariant that is easiest to break silently.  Inequality and equality atoms are
 mirrored eagerly at the moment they are defined, so for them \invRep{} is
 maintained by construction.  Interval literals are not, because they come into
 existence two ways: because some consumer asked for one --- a conclusion, a
@@ -1557,14 +1576,14 @@ the pair
 \]
 each RUP by the Theorem~2.9 configuration --- which does apply here, the middle
 constraint being an equality between two bit-sums, so its right-hand side is
-zero.  The lemmas' \emph{conclusions} mention only order atoms, which is what
-lets them be shared by any interval literal with those endpoints; they are
+zero.  The lemmas' \emph{conclusions} mention only inequality atoms, which is
+what lets them be shared by any interval literal with those endpoints; they are
 nevertheless emitted under the propagator's reason, which does contain the
 interval literal, and are deleted with the scaffolding level rather than
 persisting.  This is
 \S3.4 material and we do not develop it here; we note only that the interval
 vocabulary does not change the situation, because an interval literal asserts
-only order atoms, never bits.
+only inequality atoms, never bits.
 
 We record the historical trap: when the literal layer is incomplete, a replay
 stalls, and the stalled trail's \emph{next} step is typically a bound crossing.
@@ -1575,7 +1594,7 @@ coverings, durable top-level lemmas --- for a problem that was a missing
 covering clause somewhere else entirely.
 
 \paragraph{Interval literals require a bit-vector representation.}
-\cref{eq:defin} reifies against two order atoms, which are in turn reified
+\cref{eq:defin} reifies against two inequality atoms, which are in turn reified
 against $\BinEnc(W)$.  A variable given a purely direct encoding --- one
 $0$--$1$ variable per value, with an at-least-one and an at-most-one clause,
 and no bit vector --- has no cuts to reify against, and no interval literals are
@@ -1774,7 +1793,7 @@ $X$ with initial bounds $l$ and $u$, these are
   \label{eq:rootbounds}
 \end{equation}
 These follow by RUP by the same argument as \cref{cor:chainrup}, since the bound
-constraints $\Bnd(X)$ are present, and likewise for every representation, derived
+constraints $\Bnd(X)$ are present, and likewise for every representation, proper
 ones included, because $\Bnd(W)$ is asserted for each.
 
 \begin{remark}[The eager introduction is load-bearing, and the solver is lazier]
@@ -1816,7 +1835,7 @@ Either way a contradiction is reached, so \invConflict{} is respected.
 Suppose instead a propagator has just made an inference that changed a domain,
 and logged $R\Rightarrow\ell\geq 1$.  The reason is valid at the point directly
 before the inference, so every literal of $R$, and hence $\ell$, propagates under
-$F_t\cup\{\neg B_t\}$.  If $\ell$ is stated over a derived representation $W$ of
+$F_t\cup\{\neg B_t\}$.  If $\ell$ is stated over a proper representation $W$ of
 $X$, then by \cref{lem:transport} its image on $X$ propagates too; either way the
 domain restriction $\ell$ encodes is incorporated into $\dm_L(X)$ for the
 propagated set $L$, since $\dm_L$ is computed over all representations.  Hence
@@ -1833,7 +1852,7 @@ by \cref{eq:rootbounds}.  Hence \invDomain{} is initially respected.
 \paragraph{Summary of the framework.}
 \begin{enumerate}[itemsep=1pt]
   \item Encode the problem using \cref{proc:encoding}, giving every operand
-    --- base variable or view --- its own bit vector, and every derived
+    --- base variable or view --- its own bit vector, and every proper
     representation its definitional link \cref{eq:link}.
   \item At the start of the proof, derive by RUP $\atge{x}{l}\geq 1$ and
     $\natge{x}{u+1}\geq 1$ for the bounds $l..u$ on each variable, and
@@ -1853,8 +1872,8 @@ by \cref{eq:rootbounds}.  Hence \invDomain{} is initially respected.
   \item Every defined interval literal must be maintained within its
     representation's partition, with its covering and its containment edges
     (\invPart{}, \invCover{}, \invCont{}).
-  \item Every defined atomic literal on a derived representation, and every one
-    on a base that has derived representations, must be mirrored onto the others
+  \item Every defined atomic literal on a proper representation, and every one
+    on a base that has proper representations, must be mirrored onto the others
     and joined to them by the linking clauses of
     \cref{eq:gelink,eq:eqlink,eq:inlink} --- for interval literals, triggered at
     the point the literal is \emph{named} (\invRep{}, \invName{}).
@@ -1911,17 +1930,18 @@ variables already known to propagate.  Three additions have to be checked in the
 extended encoding, and each extends the same recursion by one step.
 
 \begin{enumerate}[itemsep=1pt]
-  \item \textbf{Derived representations.}  Fixing $\BinEnc(X)$ reduces
-    $\Link(W)$, that is $\BinEnc(W) - s_W\BinEnc(X) = c_W$, to a pair of
+  \item \textbf{Proper representations.}  Fixing $\BinEnc(X)$ reduces
+    $\ViewLink(W)$, that is $\BinEnc(W) - s_W\BinEnc(X) = c_W$, to a pair of
     constraints of the form $\BinEnc(W)\geq A$ and $\BinEnc(W)\leq A$ for a
     constant $A$.  By Theorem~2.8 of the thesis these unit propagate to a fixed
     consistent assignment of every bit of $\BinEnc(W)$.  So the bits of every
-    derived representation propagate as soon as the base's bits are set.
-  \item \textbf{Bound and equality atoms} on any representation are fully
-    reified over that representation's bits, or over its bound atoms, so they
-    propagate by the existing recursion once step~1 has fired.
+    proper representation propagate as soon as the base's bits are set.
+  \item \textbf{Inequality and equality atoms} on any representation are fully
+    reified over that representation's bits, or over its inequality atoms, so
+    they propagate by the existing recursion once step~1 has fired.
   \item \textbf{Interval atoms} are fully reified, by \cref{eq:defin}, over two
-    bound atoms of the same representation, so they propagate once those do.
+    inequality atoms of the same representation, so they propagate once those
+    do.
 \end{enumerate}
 
 None of the linking clauses of \cref{eq:gelink,eq:eqlink,eq:inlink} is needed
@@ -1954,7 +1974,7 @@ The required property of the encoding is then:
 
 The extended encoding makes the choice of preserved set more delicate than it
 looks, and we state it explicitly: \textbf{the preserved set is the bits of the
-base variables only}.  It does not include the bits of derived representations,
+base variables only}.  It does not include the bits of proper representations,
 nor any atomic variable of any representation.  This is the right choice, and
 the only workable one, for three reasons.
 
@@ -1969,7 +1989,7 @@ the only workable one, for three reasons.
     exists to prevent.
   \item It is stable under adding a representation.  Two runs of the same solver
     that wrap the same variable in different views have different sets of
-    derived representations and therefore different encodings, but the same
+    proper representations and therefore different encodings, but the same
     preserved set and the same enumeration conclusion.
 \end{itemize}
 
@@ -1977,7 +1997,7 @@ One consequence deserves care.  A solution witness \emph{is} written over atomic
 variables --- one base equality literal per variable --- even though atomic
 variables are not preserved.  That is sound only because unit propagation
 completes such a witness to the preserved bits, and onward --- through
-\cref{sec:optimality}'s step~1 --- to the bits of every derived representation.
+\cref{sec:optimality}'s step~1 --- to the bits of every proper representation.
 The completion argument is therefore load-bearing for enumeration in a way it is
 not for optimality, and a representation whose bits did not propagate from the
 base's would break P3 rather than merely making a witness verbose.
@@ -2172,12 +2192,12 @@ point.  The known growth mode is a wide request over a heavily fragmented
 region, whose covering is as wide as the number of prior boundaries inside it,
 bounded by the request count rather than by the domain size.
 
-Per interval literal per derived representation: the mirrored literal on the
+Per interval literal per proper representation: the mirrored literal on the
 other side, with its own partition maintenance, plus two clauses.  This is the
-same constant factor that bound and equality atoms already pay for a wrapped
-variable.  Measured on a constraint over a bare variable of width $w$ and a
-two-value variable, so that root propagation prunes exactly one wide interior
-run:
+same constant factor that inequality and equality atoms already pay for a
+wrapped variable.  Measured on a constraint over a bare variable of width $w$
+and a two-value variable, so that root propagation prunes exactly one wide
+interior run:
 
 \begin{center}
 \small
@@ -2209,7 +2229,7 @@ constant is the price of the design; the slope was the point.
 
 Take $X$ with initial domain $1..20$, wrapped by the single registered view
 $V = -X + 30$, so $\varphi_V(k) = 30-k$ and $V$ has definition range $10..29$.
-The model contains $\Bnd(X)$, $\Bnd(V)$ and $\Link(V) := V + X = 30$, and
+The model contains $\Bnd(X)$, $\Bnd(V)$ and $\ViewLink(V) := V + X = 30$, and
 $\BinEnc(X)$ and $\BinEnc(V)$ are separate five-bit vectors.  No interval
 literal exists yet, and neither variable has a partition.
 
@@ -2324,10 +2344,10 @@ where 80\% of small random instances turn out to be one of them.
   gate is whether the variable has a registered bit vector, not what its domain
   looks like: a variable with domain exactly $\{0,1\}$, given a purely direct
   encoding, is registered with a one-element bit vector, and is therefore
-  \emph{not} the failing case, even though it has no order atoms until they are
-  built lazily.  Note that the test is on the two \emph{values}, not on the
-  width: a direct-only variable with domain $\{5,6\}$ has no bit vector and does
-  throw.  So the failing case is any direct-only variable other than a
+  \emph{not} the failing case, even though it has no inequality atoms until
+  they are built lazily.  Note that the test is on the two \emph{values}, not
+  on the width: a direct-only variable with domain $\{5,6\}$ has no bit vector
+  and does throw.  So the failing case is any direct-only variable other than a
   $\{0,1\}$ one.  Consumers guard on the
   same predicate, which resolves a view to its base --- correctly, since a view
   of a bit-vector-less variable would have to mirror onto a variable that cannot

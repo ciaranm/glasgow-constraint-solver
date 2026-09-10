@@ -65,5 +65,7 @@ that will disagree with itself.
 
 ## Further reading
 
-Matthew McIlree, *Proof Logging for Constraint Programming*, PhD thesis,
-University of Glasgow, 2026. <https://theses.gla.ac.uk/86049/>
+Matthew McIlree, *Pseudo-Boolean Proof Logging for Constraint Propagation
+Algorithms*, PhD thesis, University of Glasgow, 2026.
+<https://theses.gla.ac.uk/86049/> — that is the exact title; it is not "Proof
+Logging for Constraint Programming", which is the title of its chapter 3.

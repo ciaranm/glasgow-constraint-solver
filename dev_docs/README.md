@@ -355,8 +355,10 @@ the codebase.
 
 ## Further reading
 
-- Matthew McIlree, *Proof Logging for Constraint Programming*, PhD thesis,
-  University of Glasgow, 2026. <https://theses.gla.ac.uk/86049/> — the
+- Matthew McIlree, *Pseudo-Boolean Proof Logging for Constraint Propagation
+  Algorithms*, PhD thesis, University of Glasgow, 2026.
+  <https://theses.gla.ac.uk/86049/> — that is the exact title, and not "Proof
+  Logging for Constraint Programming", which is the title of its chapter 3. The
   foundations most of the proof-logging documents here build on: the PB proof
   system and its rules (chapter 2, including Theorems 2.7–2.9 on binary sums,
   which several documents cite by number), the encoding procedure and proof
