@@ -150,14 +150,14 @@ neither of which the thesis covers.
     may be wrapped by several views at once.  Each registered view is given its
     own encoded variable, its own bit vector, and its own complete family of
     atomic literals, joined to $X$'s by a definitional link and by atom-level
-    linking clauses.
+    linking constraints.
 \end{itemize}
 
 Neither addition is conservative over the thesis's propagation results.
 Inequality and equality atoms are complete under unit propagation given the
 order chain alone; interval literals are not, and need two further families of
 state-independent clause.  Facts move between two representations of the same
-variable only through linking clauses, and --- for interval literals --- the
+variable only through linking constraints, and --- for interval literals --- the
 direction that a proof actually needs is the one that is \emph{not} derivable
 from the others.  The theorems below are therefore restated over a
 \emph{representation family} and over all three literal kinds, and reproved.
@@ -878,7 +878,7 @@ $t$ in the proof.
 \item[\invRep{}: representation closure and linking.]
   For every $W,W'\in\Rep(X)$: if an atomic variable of $W$ is defined, then so is
   the corresponding atomic variable of $W'$ (\cref{def:image} below); and for
-  every defined atomic variable of a proper $W$, the two clauses linking it to
+  every defined atomic variable of a proper $W$, the two constraints linking it to
   the corresponding atomic variable of the base $X$ appear in $F_t$.
 
 \item[\invName{}: cells are named.]
@@ -953,7 +953,7 @@ a width-one case on either side.  Second, a sign flip converts a positive bound
 literal into a negative one, but leaves the polarity of equality and interval
 literals alone --- an interval is order-agnostic, a half-line is not.
 
-The linking clauses are exactly the clausal form of the biconditional
+The atom-level linking constraints are exactly the clausal form of the biconditional
 $\ell \Leftrightarrow \ell^{X}$, for each defined atom of each proper
 representation:
 \begin{align}
@@ -1536,6 +1536,12 @@ $\atge{w}{v}$, either polarity & its image on $X$ & ge-links,
 $\ateq{w}{v}$, either polarity & its image on $X$ & eq-links, \cref{eq:eqlink} \\
 $\atin{w}{a}{b}$, either polarity & its image on $X$ & in-links,
   \cref{eq:inlink}; \emph{both} clauses needed, see \cref{rem:bothlinks} \\
+every bit of $X$ fixed & every bit of $W$ fixed & $\ViewLink(W)$ and
+  thesis Theorem~2.8; the crossing the completion argument of
+  \cref{sec:optimality} needs.  Partial assignments cross too --- for $W=X+8$
+  over a three-bit base, $\ViewLink(W)$ forces $w_3$ from the empty assignment
+  --- but an atomic literal is not carried across this way in general; see
+  \nsec{sec:notprovided} \\
 anything on $W_1$ & its image on $W_2$ & two hops through the base
   (\cref{lem:transport}) \\[4pt]
 \multicolumn{3}{@{}l}{\emph{Between different variables}}\\[2pt]
@@ -1874,7 +1880,7 @@ by \cref{eq:rootbounds}.  Hence \invDomain{} is initially respected.
     (\invPart{}, \invCover{}, \invCont{}).
   \item Every defined atomic literal on a proper representation, and every one
     on a base that has proper representations, must be mirrored onto the others
-    and joined to them by the linking clauses of
+    and joined to them by the linking constraints of
     \cref{eq:gelink,eq:eqlink,eq:inlink} --- for interval literals, triggered at
     the point the literal is \emph{named} (\invRep{}, \invName{}).
 \end{enumerate}
@@ -1883,7 +1889,7 @@ Steps~1 to~6 are the thesis's framework; steps~7 to~9 are the literal-layer
 invariants stated as obligations.  Despite requiring a delicate set-up in terms
 of variable encodings and propagation properties, the resulting proof has a
 relatively intuitive structure: other than the definition, chain, covering,
-containment and linking clauses, it is essentially the solver writing down all
+containment and linking constraints, it is essentially the solver writing down all
 the facts that it learned, at the points that it learned them.
 
 \subsubsection{Optimality Proofs from Solution-Improving Search}
@@ -1944,7 +1950,8 @@ extended encoding, and each extends the same recursion by one step.
     do.
 \end{enumerate}
 
-None of the linking clauses of \cref{eq:gelink,eq:eqlink,eq:inlink} is needed
+None of the atom-level linking constraints of
+\cref{eq:gelink,eq:eqlink,eq:inlink} is needed
 for this argument, and none of the covering or containment clauses is either;
 they are implied clauses over variables that already propagate, and cannot
 block a propagation that would otherwise occur.
@@ -2130,7 +2137,7 @@ A randomised sweep over views is close to no evidence about the in-links, and it
 is worth knowing by how much, because the natural reaction to
 \cref{rem:bothlinks} is to test it rather than to prove it.
 
-The negative crossing of \cref{eq:inlink} succeeds \emph{with no linking clause
+The negative crossing of \cref{eq:inlink} succeeds \emph{with no linking constraint
 at all} whenever any of four things happens:
 
 \begin{itemize}[itemsep=1pt]
@@ -2147,10 +2154,10 @@ at all} whenever any of four things happens:
 
 Measured over domain widths $4$ to $16$ with zero to seven random interval
 requests per instance: \textbf{80\% of instances cross successfully with no
-linking clause at all} --- abutting above $39\%$, abutting below $23\%$, whole
+linking constraint at all} --- abutting above $39\%$, abutting below $23\%$, whole
 range $12\%$, fully shattered $5.6\%$ --- and of the $20\%$ that stall, a single
 wide cell accounts for $88\%$.  Measured the other way, over $987$ randomly
-generated instances that actually reach a conflict, ablating the link clauses
+generated instances that actually reach a conflict, ablating the link constraints
 makes only $37$ of them notice.  The sweep is about $96\%$ coincidence.
 
 A discriminating instance therefore needs \emph{all} of: an interval strictly
@@ -2216,7 +2223,7 @@ $10^6$ & 40 & \emph{timed out} & \textbf{106} & 106 & 106 \\
 The third column is the per-value fallback a view had before it owned interval
 literals: $2+36w$ lines, unwritable past $10^4$.  The remaining columns are flat.
 They are $106$ rather than $40$ because the view carries its own bit vector, its
-own atoms and the link clauses --- a constant, not a function of the width.  That
+own atoms and the link constraints --- a constant, not a function of the width.  That
 constant is the price of the design; the slope was the point.
 
 \appendix
@@ -2325,7 +2332,7 @@ built on unsplit cells for exactly this reason.
 
 \paragraph{Why a nearby instance proves nothing.}
 Take instead the decision $\natin{x}{1}{15}$, whose interval abuts the lower
-bound.  Now no link clause is needed at all.  \cref{eq:din2} for it is
+bound.  Now no link constraint is needed at all.  \cref{eq:din2} for it is
 $\atin{x}{1}{15}\vee\natge{x}{1}\vee\atge{x}{16}$; the boundary pin
 $\atge{x}{1}$ of \inv{Bound} is a unit, so $\atge{x}{16}$ propagates.  The
 ge-link carries that to $\natge{v}{15}$, since $X\geq 16$ is $V\leq 14$, and the
@@ -2366,7 +2373,7 @@ where 80\% of small random instances turn out to be one of them.
   of the proof rather than derive them, on a scale running
   \textsc{Off} $<$ \textsc{Definitions} $<$ \textsc{Links} $<$
   \textsc{Inferences} $<$ \textsc{Backtracking}.  At \textsc{Links} the atom
-  definitions and the linking clauses are asserted, but the covering and
+  definitions and the linking constraints are asserted, but the covering and
   containment apparatus is still emitted, as ordinary RUP lines: the guards on
   it are all ``above \textsc{Links}''.  Above \textsc{Links} the interval
   machinery is skipped entirely, and no cells exist.  So there is no setting in
