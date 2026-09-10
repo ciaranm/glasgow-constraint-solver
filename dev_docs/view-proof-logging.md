@@ -10,8 +10,7 @@ machinery.
 
 The short version: every constraint currently registered in the view-wrap
 sweep verifies under every wrap. Abs and AllDifferent — historically the
-hard cases — are now in that set. (One constraint, `divide_modulus`, does fail
-that sweep, but on propagation strength rather than on its proof — issue #903.)
+hard cases — are now in that set.
 
 ## Part 1 — The idea, on top of the thesis
 
