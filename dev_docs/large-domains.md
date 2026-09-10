@@ -352,6 +352,49 @@ worth reaching for before wall time: identical search makes it reproducible to
 0.002% here, where wall time and cycles move ±1% between batches and about 3%
 between one hour and the next.
 
+**A fourth, on `GlobalCardinality`'s closed propagator (#877): ask the cheap
+question before reaching for a new primitive, not after.** The closed restriction
+removes every value outside the cover from every variable, and it is idempotent
+— once a domain is inside the cover it stays there, since domains only shrink —
+so the number that matters is not what the removal costs but what the *no-op* run
+costs, which is every run but the first. Four shapes over two searches whose
+recursion and propagation counts are identical throughout: seven variables over
+`[0,5]` with the whole of it covered (`flat`, one interval per domain), and the
+same with the cover `{0,2,4}` (`holey`, three intervals per domain, one more than
+`IntervalSet`'s inline capacity, so the copy allocates). Instructions retired,
+median of five pinned runs:
+
+| how the non-cover runs are found | flat | holey |
+|---|---|---|
+| walk the domain grouping runs — before | 4.7313e9 | 156.98e6 |
+| `copy_of_values()` + `each_interval_minus()` | 4.5750e9 (−3.30%) | 146.86e6 (−6.45%) |
+| **`domain_is_subset_of()` first, else the above** | **4.4653e9 (−5.62%)** | **138.94e6 (−11.5%)** |
+| a new callback `IntervalSet::for_each_interval_minus()` | 4.4984e9 (−4.93%) | 141.36e6 (−9.95%) |
+| both | 4.4655e9 (−5.62%) | 138.97e6 (−11.5%) |
+
+The shape that wins is an existing `State` query rather than a new primitive, and
+it wins for a reason worth stating separately from the numbers: it answers the
+whole question without copying anything, and it can be false **at most once per
+variable**, because this propagator's own run is what makes the domain a subset.
+So the merge walk it duplicates on that one call is paid once, against a copy
+saved on every later call.
+
+The new primitive is then *subsumed*: with the early-out in, the generator form
+and the callback form agree to three figures, because the code they differ over
+is what almost never runs. That is `Element`'s finding arrived at from the other
+side — there the question was whether to avoid the copy in the inner loop and the
+answer was no; here the copy is worth avoiding, and the way to avoid it is a
+query that already exists. **Measure the new primitive against the cheap
+early-out, not against the code you are replacing.**
+
+One further step was measured and not taken. The propagator is not merely
+idempotent but *entailed* once every domain is inside the cover, so it could
+return `PropagatorState::DisableUntilBacktrack` and not run again in the subtree
+at all: another −0.70% / −1.74% on the two shapes, and half the propagation
+count (102474 → 51246 on `flat`). That is a claim about the engine rather than
+about domain width, and it changes a reported statistic, so it is left as a
+separate question.
+
 **Where the equality is guarded by a conjunction, the same lemmas take a longer
 guard.** `Element`'s model is `result - array[i] == 0` half-reified on the
 conjunction of index conditions, so it is `ArrayMinMax`'s shape with the selector
@@ -575,19 +618,20 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-73 constraint probes, plus 20 heuristic ones in the second table. The lane
+74 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
 | **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (40) | the arithmetic family (with two rows of its own for `Abs`' interior holes), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms and with a holey entry, `AllEqual` with holes and without, `Among`, `In`, `GlobalCardinality`, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **Clean** (41) | the arithmetic family (with two rows of its own for `Abs`' interior holes), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms and with a holey entry, `AllEqual` with holes and without, `Among`, `In`, `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
 
-`Among`, `In`, `AllEqual/holes`, `GlobalCardinality`, `Table` and `Element` started
-as `KnownTrip` and are now `Clean`, by the interval rewrites rather than by a
-weaker arm: all of them still propagate at their original strength.
+`Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`
+and `Element` started as `KnownTrip` and are now `Clean`, by the interval
+rewrites rather than by a weaker arm: all of them still propagate at their
+original strength.
 
 `GlobalCardinality` mattered most of the six, because it was the rule's own
 counterexample: already the bounds arm, and still enumerating, so it had nothing
@@ -596,6 +640,21 @@ which is two range removals however wide the domain is. **A second per-value sit
 remains** in its Hall reasoning, which the original probe could not reach — one
 cover value means there is no multi-value hall — so it now has a row of its own
 rather than being covered by association.
+
+It has a **third** site, and finding it was a lesson about the axes a row covers
+rather than about the constraint. `with_closed()` installs a propagator of its
+own — the one that restricts every variable to the cover — and nothing in the
+lane called `with_closed`, in either consistency arm, so neither of the rows
+above could reach it (#877). It is the same shape `In` had: the conclusions were
+always intervals, and what was per-value was *finding* them, by walking the
+domain and grouping maximal runs the cover misses. `GlobalCardinality/closed` is
+that row, and the fix is `each_interval_minus()` against the cover with a
+`domain_is_subset_of()` early-out in front of it. Linear in the width before
+(35 ms at 10^6, 351 at 10^7, 3505 at 10^8, **35088 at 10^9**), and 0 ms at every
+one of those widths after. The default
+BC level on purpose: the closed propagator is installed identically whichever
+level is chosen, so the row is about that propagator alone, where a GAC row would
+trip on the GAC arm's own sites (#876) and say nothing about this one.
 
 **`In` is worth more than its own row.** `create_integer_variable` over a vector
 posts an `In` to carve the holes, so any probe that builds a sparse variable that
@@ -679,6 +738,25 @@ not selected by the width at all — it is selected by
 contiguous one satisfies too. Before adding a row, read the *condition* on the
 branch and pick the probe from that, rather than reasoning about the axis the
 issue is named after. `Element/holey` is that row.
+
+**And an option that installs a propagator of its own needs a row for the
+option, not just for the constraint.** `GlobalCardinality`'s two rows were both
+about the propagator `with_consistency` selects; `with_closed` installs a
+*third* propagator alongside whichever of those runs, nothing in the lane called
+it, and so no row reached that code at all (#877). The question to ask when
+adding a constraint to the lane is not how many consistency arms it has but **how
+many propagators it can install**, and an option that adds one rather than
+choosing between them is the case a row per arm silently misses. Whether any
+other constraint has the same gap has not been checked here; #876 proposes that
+sweep — a row per arm and a row per `with_` option throughout — as its own piece
+of work.
+
+Where a constraint has both kinds of choice, keep the rows separate. The closed
+propagator is installed identically whichever consistency level is chosen, so
+`GlobalCardinality/closed` uses the default BC arm and is about that propagator
+alone. A closed row on the GAC arm would also trip, on the GAC arm's own unfixed
+sites (#876), and would then have gone on tripping after this fix — pinning a
+`KnownTrip` that says nothing about either site.
 
 One deliberate non-axis: the lane runs **without proof logging**. `NValue`'s
 H2′ is caught anyway, because its per-value work is in `prepare()`, but a
@@ -789,22 +867,24 @@ separately, because they mean different things:
 
 ### Results at 10^3 → 10^4
 
-Re-measured over all 73 probes after the interval rewrites landed for
+Re-measured over all 74 probes after the interval rewrites landed for
 `ArrayMinMax`, `Table`, `Among`, `Element`, `In`, `GlobalCardinality` and
-`AllEqual/holes`, and again after #878 and #875 — which moved nothing but their
-own rows: `Element/holey` is flat at 41 rows and 51 steps, `Abs/hole` at 30 and
-46, `Abs/hole-preimage` at 26 and 64, and none of the three rewrites changes
-which values get removed, so no other row could have moved either. The
-figures move, so re-run the survey rather than quoting this table after touching
-any propagator's removal loop — that is how the previous version of it went
-stale, see below.
+`AllEqual/holes`, and again after #878, #875 and #877 — which moved nothing but
+their own rows: `Element/holey` is flat at 41 rows and 51 steps, `Abs/hole` at 30
+and 46, `Abs/hole-preimage` at 26 and 64, `GlobalCardinality/closed` at 24 and
+83, and none of the four rewrites changes which values get removed, so no other
+row could have moved either. (Checked, for #877, by diffing a whole survey run
+against one from `main`: identical bar the new row.) The figures move, so re-run
+the survey rather than quoting this table after touching any propagator's removal
+loop — that is how the previous version of it went stale, and how the
+`GlobalCardinality/hall` figures below came to be corrected.
 
 | | growth (opb / steps) | constraints |
 |---|---|---|
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
-| **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 33984 → 339984 steps) |
-| neither | 1.0x / 1.0x | everything else, 64 of 73 |
+| **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 43988 → 439988 steps) |
+| neither | 1.0x / 1.0x | everything else, 65 of 74 |
 
 The last row means "does not grow with the width", not "identical at both widths",
 and three entries in it are worth naming so nobody reads them as a promise.
@@ -853,7 +933,7 @@ work rather than evidence:
   others; what resists is the *justification*, whose `pol` builds an at-most-one
   over the hall values plus the single removed value, so the removed value is
   named in the derivation rather than merely concluded. It has its own probe and
-  its own survey row now (33984 → 339984), and it is the most interesting
+  its own survey row now (43988 → 439988), and it is the most interesting
   remaining candidate for exactly that reason.
 * `Element` walked the result values its array does not support (`element.cc`),
   which for a narrow array over a wide result is mostly intervals. **Done**, and it
