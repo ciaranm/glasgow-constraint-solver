@@ -209,6 +209,15 @@ library. For an introduction to *using* the solver, start with the top-level
   (entailment-based 2WL), reduced-nld extraction, and the proof lifecycle
   (root-keeps-level-1, deep-first-unwind RUP for reduced clauses, `solx`-enabled
   enumeration). Read when touching restarts, nogoods, or branching heuristics.
+- [Deleting solution clauses from a proof](solution-clause-deletion.md) — why the
+  constraint VeriPB derives from a `solx` or a `soli` lands in its *core* set and
+  stays there, what a deletion check needs before one can be taken away again
+  (and why the check may only propagate over core, which is what forces every
+  variable's encoding across too), how a backtrack clause is made to pay for the
+  blocking clause below it, where the core/derived line is drawn and why it is
+  drawn structurally rather than by need, and the measured cost against a 4x
+  saving on a large enumeration. Read when touching solution logging, proof
+  levels, or `ProofLevel::TopAndCore`.
 - [Refined triggers](refined-triggers.md) — the per-literal watch mechanism that
   lets a propagator wake only when specific literals (`x = v`, `x >= k`, ...)
   become entailed, instead of on every change to a whole variable: the

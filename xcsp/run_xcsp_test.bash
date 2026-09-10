@@ -104,7 +104,13 @@ for pattern in ${required_patterns[@]+"${required_patterns[@]}"}; do
     fi
 done
 
-veripb "$testname".{opb,pbp} || exit 4
+# --force-checked-deletion: a failed core deletion check is only a warning by
+# default -- VeriPB downgrades to unchecked deletion, drops its
+# equi-enumerable / equi-optimal guarantees and still prints `s VERIFIED`.
+# The solver deletes `solx` and `soli` constraints, which are exactly the
+# deletions that check applies to, so ask for the strict behaviour.
+# See dev_docs/solution-clause-deletion.md.
+veripb --force-checked-deletion "$testname".{opb,pbp} || exit 4
 
 # Verification passed, so dispose of the proof unless asked to preserve it; the
 # failure paths above all exit first, leaving a failing proof to inspect.

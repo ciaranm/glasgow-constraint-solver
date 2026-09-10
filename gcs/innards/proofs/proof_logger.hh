@@ -39,6 +39,33 @@ namespace gcs::innards
 
     using ProofRule = std::variant<RUPProofRule, AssertProofRule, ImpliesProofRule>;
 
+    /**
+     * \brief Which of VeriPB's two constraint sets a clause the search derives
+     * should end up in.
+     *
+     * VeriPB splits its constraint database into a *core* set and a *derived*
+     * set. Deleting a derived constraint is free; deleting a core constraint
+     * needs a deletion check first --- a demonstration that what is left of the
+     * core still implies the constraint being removed --- and only constraints
+     * in the core count towards that check.
+     *
+     * Everything the solver derives lands in the derived set, which is what we
+     * want: the search deletes an enormous number of lines, and each one being
+     * free to delete is why forget_proof_level can do it with a `del range`.
+     * The exception is a clause we intend to *use* as the reason a core
+     * constraint may go away. The blocking clause a `solx` adds is core, so
+     * deleting it needs something in the core that implies it, and the
+     * backtrack clause for the subtree that solution was found in is exactly
+     * such a clause.
+     *
+     * \sa ProofLogger::backtrack, and dev_docs/solution-clause-deletion.md
+     */
+    enum class ClauseSet
+    {
+        Derived, ///< Leave it in the derived set: free to delete, no use as a deletion witness.
+        Core     ///< Move it to the core set, so it can justify deleting a solution-excluding clause.
+    };
+
     using ProofGoal = std::variant<ProofLine, std::string>;
     // No ostream operator for ProofGoal: a ProofLine goal is a constraint
     // reference and must be emitted relative to the current line, which needs
@@ -59,6 +86,8 @@ namespace gcs::innards
         auto emit_subproofs(const std::map<ProofGoal, Subproof> & subproofs) -> auto;
 
         auto log_stacktrace() -> void;
+
+        auto move_to_core(const ProofLine & line) -> void;
 
     public:
         /**
@@ -92,8 +121,16 @@ namespace gcs::innards
 
         /**
          * Log that we are backtracking.
+         *
+         * Pass \c ClauseSet::Core when the subtree being left behind had a
+         * solution excluded anywhere inside it. The backtrack clause is then
+         * moved into VeriPB's core set, where it can serve as the deletion
+         * check for every `solx` blocking clause and every deeper backtrack
+         * clause recorded at the level this frame is about to forget: it
+         * implies all of them, the solutions and subtrees they speak about
+         * lying under the very guesses it forbids.
          */
-        auto backtrack(const std::vector<Literal> & guesses) -> void;
+        auto backtrack(const std::vector<Literal> & guesses, ClauseSet = ClauseSet::Derived) -> void;
 
         /**
          * Derive a learned nogood --- the clause forbidding the given conjunction
@@ -101,8 +138,16 @@ namespace gcs::innards
          * its proof line. Used when restart learning records a nogood as the stack
          * unrolls: the clause is RUP from the refutation still in scope, and being
          * at Top it survives the restart's forget. Like backtrack() but kept.
+         *
+         * A restart unwind is the one place a frame discards the level below it
+         * without deriving a backtrack clause of its own, so when that level
+         * holds core clauses these nogoods are what has to justify deleting
+         * them: each is a subset of the backtrack clause of the sibling it was
+         * learned from, and so implies it. Pass \c ClauseSet::Core to put them
+         * where that check can see them: a nogood is something the search
+         * derived, not part of any variable's encoding, so nothing else does it.
          */
-        auto emit_learned_nogood(const std::vector<Literal> & decisions) -> ProofLine;
+        auto emit_learned_nogood(const std::vector<Literal> & decisions, ClauseSet = ClauseSet::Derived) -> ProofLine;
 
         /**
          * Log that we have reached an unsatisfiable conclusion at the end of the proof.

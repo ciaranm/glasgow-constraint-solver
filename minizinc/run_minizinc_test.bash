@@ -140,10 +140,16 @@ for reference in ${reference_solvers[@]+"${reference_solvers[@]}"} ; do
     fi
 done
 
+# --force-checked-deletion: a failed core deletion check is only a warning by
+# default -- VeriPB downgrades to unchecked deletion, drops its
+# equi-enumerable / equi-optimal guarantees and still prints `s VERIFIED`.
+# The solver deletes `solx` and `soli` constraints, which are exactly the
+# deletions that check applies to, so ask for the strict behaviour.
+# See dev_docs/solution-clause-deletion.md.
 if [[ "$doproofs" == "true" ]] && veripb --help >/dev/null ; then
     minizinc --solver "$solver_msc" -a ${solverflags[@]+"${solverflags[@]}"} "$minizincdir/tests/$testname.mzn" \
         --prove --proof-files-basename "$testname" | tee "$testname.glasgow.out" || exit 7
-    if ! veripb "$testname.opb" "$testname.pbp" ; then
+    if ! veripb --force-checked-deletion "$testname.opb" "$testname.pbp" ; then
         echo "Rerunning last 100 lines of proof verification in trace mode..."
         echo '$ ' veripb --trace "$(readlink -f "$testname.opb")" "$(readlink -f "$testname.pbp")"
         # the trace rerun fails again by construction; we still want exit 8

@@ -20,10 +20,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstdlib>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <string>
@@ -35,6 +38,7 @@ using namespace gcs::innards;
 using namespace gcs::test_innards;
 
 using std::function;
+using std::getline;
 using std::nullopt;
 using std::optional;
 using std::string;
@@ -456,6 +460,194 @@ TEST_CASE("Enumerate all solutions with restarts")
     CHECK(stats.solutions == 6);
     CHECK(stats.restarts > 0); // restarts actually fired during enumeration
     CHECK(stats.learned_nogoods > 0);
+    CHECK(verify_proof_and_dispose(proof_name));
+}
+
+namespace
+{
+    // The lines of a proof the solver has just written, for a test that wants to
+    // assert on its shape rather than only on whether VeriPB accepts it.
+    [[nodiscard]] auto read_proof_lines(const string & proof_name) -> vector<string>
+    {
+        std::ifstream proof{proof_name + ".pbp"};
+        REQUIRE(proof);
+        vector<string> lines;
+        for (string line; getline(proof, line);)
+            lines.push_back(line);
+        return lines;
+    }
+
+    // A proof line with its leading indent (subproofs indent theirs) removed.
+    [[nodiscard]] auto undented(const string & line) -> string
+    {
+        return line.substr(std::min(line.find_first_not_of(' '), line.size()));
+    }
+
+    // Whether this line is a rule that adds exactly one constraint, and so moves
+    // VeriPB's id counter on by one. Deletions, `core` moves, the `e` sanity
+    // check and comments do not.
+    [[nodiscard]] auto adds_a_constraint(const string & line) -> bool
+    {
+        auto text = undented(line);
+        for (const auto & rule : {"pol ", "rup ", "rup;", "rup>", "ia ", "a ", "red ", "solx ", "solx;", "soli "})
+            if (text.starts_with(rule))
+                return true;
+        return false;
+    }
+
+    // Whether a `del id X;` or `del range A B;` command --- with X, A and B the
+    // negative, relative ids the solver always emits --- takes out constraint
+    // `relative_id`. `range` is half-open.
+    [[nodiscard]] auto deletion_covers(const string & line, long long relative_id) -> bool
+    {
+        std::istringstream parse{undented(line)};
+        string del, kind;
+        if (! (parse >> del >> kind) || del != "del")
+            return false;
+        if (kind == "id") {
+            long long id{};
+            return (parse >> id) && id == relative_id;
+        }
+        else if (kind == "range") {
+            long long from{}, to{};
+            return (parse >> from >> to) && from <= relative_id && relative_id < to;
+        }
+        return false;
+    }
+}
+
+// The blocking clause a `solx` adds is a *core* constraint in VeriPB, so it stays
+// live --- slowing every later unit propagation down --- until something deletes
+// it, which needs a deletion check, which needs a core constraint that implies
+// it. The solver arranges one: the backtrack clause for the subtree the solution
+// was found in, moved across with `core id`. Losing any part of that leaves every
+// proof still verifying, just with a core set that grows once per solution, so
+// nothing else in the suite would notice. This pins the shape.
+TEST_CASE("Enumeration deletes its solution-excluding clauses")
+{
+    const auto proof_name = "solve_test_enumeration_deletes_solx";
+
+    Problem p;
+    auto a = p.create_integer_variable(1_i, 3_i);
+    auto b = p.create_integer_variable(1_i, 3_i);
+    p.post(NotEquals{a, b});
+
+    unsigned long long solutions = 0;
+    solve(
+        p,
+        [&](const CurrentState &) -> bool {
+            ++solutions;
+            return true;
+        },
+        ProofOptions{proof_name});
+    CHECK(solutions == 6);
+
+    auto lines = read_proof_lines(proof_name);
+
+    // A variable's encoding goes into core as it is written, not once some
+    // solution has shown up to need it: there are `core id` lines before the
+    // first solution is even logged, and each sits directly after the line that
+    // produced the constraint it names, rather than being batched up behind
+    // state saying what a later flush should sweep.
+    bool cored_before_any_solution = false;
+    for (std::size_t i = 1; i != lines.size(); ++i) {
+        if (lines[i].starts_with("solx"))
+            break;
+        if (undented(lines[i]).starts_with("core id"))
+            cored_before_any_solution = true;
+    }
+    CHECK(cored_before_any_solution);
+
+    for (std::size_t i = 1; i != lines.size(); ++i)
+        if (undented(lines[i]).starts_with("core id"))
+            CHECK(adds_a_constraint(lines[i - 1]));
+
+    unsigned long long excluded = 0;
+    for (std::size_t i = 0; i != lines.size(); ++i) {
+        if (! lines[i].starts_with("solx"))
+            continue;
+        ++excluded;
+
+        // Rendering the backtrack clause can introduce literals, whose
+        // definitions land between the solution and the clause; count them, so
+        // we know how far back the blocking clause has ended up by the time the
+        // clause is out. A subproof in there would consume ids of its own and
+        // throw the count off --- there is no reason for one, so require its
+        // absence rather than quietly miscount.
+        long long constraints_after_solx = 0;
+        std::size_t clause = i + 1;
+        for (; clause != lines.size() && ! undented(lines[clause]).starts_with("core id"); ++clause) {
+            REQUIRE(! lines[clause].contains("subproof"));
+            if (adds_a_constraint(lines[clause]))
+                ++constraints_after_solx;
+        }
+        REQUIRE(clause != lines.size());
+
+        // The backtrack clause is the last of those, and sits at -1, so the
+        // blocking clause is one further back for every definition in between.
+        auto blocking_clause = -1 - constraints_after_solx;
+
+        // The deletions the clause pays for follow it immediately, one of them
+        // taking the blocking clause out.
+        bool deleted = false;
+        for (auto del = clause + 1; del != lines.size() && undented(lines[del]).starts_with("del "); ++del)
+            if (deletion_covers(lines[del], blocking_clause))
+                deleted = true;
+        CHECK(deleted);
+    }
+    CHECK(excluded == solutions);
+
+    CHECK(verify_proof_and_dispose(proof_name));
+}
+
+// The counterpart for optimisation. A `soli` objective-improving constraint is
+// core too, and one accumulates per solution found; each is implied outright by
+// the next, strictly better one, so the next one's arrival is where the old one
+// goes. Largest-first values make the incumbent improve once per value rather
+// than landing on the optimum straight away.
+TEST_CASE("Optimisation deletes its superseded objective bounds")
+{
+    const auto proof_name = "solve_test_optimisation_deletes_soli";
+
+    Problem p;
+    auto v = p.create_integer_variable(1_i, 5_i);
+    p.minimise(v);
+
+    unsigned long long solutions = 0;
+    solve_with(p,
+        SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                           ++solutions;
+                           return true;
+                       },
+            .branch = branch_with(variable_order::dom_then_deg(p), value_order::largest_first())},
+        ProofOptions{proof_name});
+    CHECK(solutions == 5);
+
+    auto lines = read_proof_lines(proof_name);
+
+    // Each `soli` is followed by the `e` line the proof trimmer wants and the
+    // `objective < value` atom, and then --- for every solution but the first ---
+    // by the deletion of the pair the previous solution left behind: its
+    // objective-improving constraint and its atom.
+    unsigned long long improved = 0, superseded = 0;
+    for (std::size_t i = 0; i != lines.size(); ++i) {
+        if (! lines[i].starts_with("soli"))
+            continue;
+        REQUIRE(i + 4 < lines.size());
+        CHECK(lines[i + 1].starts_with("e "));
+        CHECK(lines[i + 2].starts_with("rup "));
+        if (improved++ == 0) {
+            // Nothing to supersede yet.
+            CHECK(! undented(lines[i + 3]).starts_with("del "));
+            continue;
+        }
+        CHECK(undented(lines[i + 3]).starts_with("del id "));
+        CHECK(undented(lines[i + 4]).starts_with("del id "));
+        ++superseded;
+    }
+    CHECK(improved == solutions);
+    CHECK(superseded == solutions - 1);
+
     CHECK(verify_proof_and_dispose(proof_name));
 }
 
