@@ -430,7 +430,7 @@ namespace
         const vector<SimpleIntegerVariableID> & nodes, const vector<DifferenceStaticBound> & static_bounds) -> void
     {
         for (const auto & sb : static_bounds) {
-            if (sb.cond && LiteralIs::DefinitelyTrue != state.test_literal(*sb.cond))
+            if (sb.cond && ! state.literal_is_entailed(*sb.cond))
                 continue;
             Reason why = sb.cond ? Reason{ExplicitReason{ReasonLiterals{{*sb.cond}}}} : Reason{NoReason{}};
             if (sb.is_lower) {
@@ -1350,7 +1350,7 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, Stat
                 memory.active_edges.reserve(m);
                 memory.active_flags.resize(m);
                 for (size_t e = 0; e < m; ++e) {
-                    char active = (! arc_conditions[e] || LiteralIs::DefinitelyTrue == state.test_literal(*arc_conditions[e])) ? 1 : 0;
+                    char active = (! arc_conditions[e] || state.literal_is_entailed(*arc_conditions[e])) ? 1 : 0;
                     memory.active_flags[e] = active;
                     if (active)
                         memory.active_edges.push_back(e);

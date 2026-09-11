@@ -853,6 +853,44 @@ auto State::test_literal(const IntegerVariableCondition & cond) const -> Literal
     throw NonExhaustiveSwitch{};
 }
 
+auto State::literal_is_entailed(const Literal & lit) const -> bool
+{
+    return overloaded{
+        [&](const IntegerVariableCondition & cond) -> bool { return literal_is_entailed(cond); }, //
+        [](const TrueLiteral &) { return true; },                                                 //
+        [](const FalseLiteral &) { return false; }                                                //
+    }
+        .visit(lit);
+}
+
+// Each arm is the DefinitelyTrue arm of test_literal above, and nothing else: the
+// reads that only separate DefinitelyFalse from Undecided are not made. For
+// NotEqual that is a whole has_single_value call saved on the common answer, and
+// for the bounds operators one of the two bounds. See the header for why a caller
+// would want this rather than test_literal.
+auto State::literal_is_entailed(const IntegerVariableCondition & cond) const -> bool
+{
+    switch (cond.op) {
+        using enum VariableConditionOperator;
+    case Equal:
+        // Entailed exactly when the domain is the single value: that implies the
+        // in_domain test_literal makes, and is one read rather than two.
+        return optional_single_value(cond.var) == cond.value;
+
+    case NotEqual: return ! in_domain(cond.var, cond.value);
+
+    case Less: return upper_bound(cond.var) < cond.value;
+
+    case GreaterEqual: return lower_bound(cond.var) >= cond.value;
+
+    case InRange: return lower_bound(cond.var) >= cond.value && upper_bound(cond.var) <= cond.upper_value;
+
+    case NotInRange: return ! domain_intersects_with(cond.var, IntervalSet<Integer>{cond.value, cond.upper_value});
+    }
+
+    throw NonExhaustiveSwitch{};
+}
+
 auto State::on_backtrack(std::function<auto()->void> f) -> void
 {
     _imp->on_backtracks.back().push_back(move(f));
