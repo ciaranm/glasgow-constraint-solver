@@ -179,6 +179,25 @@ for a real variable, `@po[index][...]` for a proof-only one) are out of
 scope deliberately: those rows may be deleted and re-emitted to keep the
 proof database small, so a repeat there is by design.
 
+That rule puts a **ceiling on how many children one constraint can
+install**, and the limit is the labels rather than the propagation. A
+child builds its label out of *its own* id and *its own* role, so a
+parent that has given several children its own id cannot rename them
+apart, and the second row under a name is refused. Since
+`LinearLessThanEqual` (as `MustHold`) uses the **empty** role while
+`LinearEquality` uses `le`/`ge`, two linear children under one parent id
+collide, whereas a `Reachable` child plus one `LinearEquality` child is
+fine and verifies. Confirmed by probe against a real build, not by
+reading the code. Roughly one child per role namespace is the ceiling,
+and anything past it has to be rows the parent writes itself with
+`add_labelled_constraint(id, role, ...)`, picking roles that name what
+varies (`indeg7`, `startdeg7`), plus its own propagator —
+`gcs/constraints/innards/graph_rules.{hh,cc}` is that pattern for the
+tree/path family. Giving children derived ids instead would mean growing
+`ConstraintID`, which is on the hot path (it is a `string_view` into the
+`Problem` name pool precisely so that it stays trivially copyable), so it
+has not been done.
+
 ## The header
 
 ```cpp
@@ -290,6 +309,20 @@ auto Foo::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 ```
+
+Argument validation splits across the constructor and `prepare()`, and the
+half that is easy to forget is the second one. A "size"-like parameter — a
+rectangle's width, a task's duration or demand, a capacity — that may be either
+a constant or an `IntegerVariableID` can only be checked in the constructor for
+the constant cases, because a variable's domain does not exist yet. Do not leave
+the variable case as an unchecked modelling assumption: check
+`initial_state.lower_bound(v) < 0_i` in `prepare()` and throw
+`InvalidProblemDefinitionException`, mirroring the constructor's constant check.
+A negative size has no sensible interpretation and otherwise produces nonsense
+silently. Both `Disjunctive2D` and `Cumulative` shipped with a constructor check,
+a comment saying the variable case was "checked in prepare()", and a `prepare()`
+that never did; `cumulative_test.cc`'s `expect_negative_size_throws` is the
+regression test shape to copy.
 
 State that needs to flow between phases (filtered task lists, proof-flag
 handles, cached line numbers) goes on the class as private members.
@@ -754,6 +787,50 @@ without proof verification (always), once with `--prove` if `veripb`
 is on `PATH`. The CMake test target points at `run_test_only.bash`
 which handles this.
 
+### Forcing a particular propagation situation
+
+When a test or probe needs to provoke one specific situation — a chosen
+inference, a Hall band, a particular matching commitment — post `In` constraints
+rather than trying to coax initial domains into the configuration or
+hand-building a search. `In` pins each variable to an explicit, possibly
+non-contiguous value set, so the propagator sees exactly the domains you meant,
+and the instance stays small and deterministic.
+
+### When the solution callback throws `VariableDoesNotHaveUniqueValue`
+
+`s(v)` in a solution callback is `optional_single_value(v)` unwrapped: it asserts
+that `v` is uniquely determined. The solver calls the callback on every feasible
+assignment to the **branch** set, not to every variable in the problem, so if the
+branch heuristic fixes every branch variable and the active propagators do not
+then force `v`, the read throws. It is the normal outcome for a derived or
+objective variable constrained only by inequalities (`makespan >= start[i] +
+length[i]`) when the propagator that ought to pin it is weak or, during
+bring-up, is still a checker that does not propagate at all.
+
+The fix is **not** to read `s.lower_bound(v)` instead. That papers over the gap
+and hides whichever propagator should have done the work. Either drop the custom
+branch so the default branches over every variable, or extend the branch variable
+list to cover every derived and objective variable the callback reads. Reach for
+`s.lower_bound` / `s.upper_bound` only when you genuinely want to display a
+bound, such as printing intermediate state from a debug callback.
+
+### Porting a reproduction program in
+
+When a standalone bug-reproduction program turns up, the preferred outcome is
+that the data-driven test for that constraint gains equivalent coverage and the
+repro is **deleted** — not registered with ctest, and not kept as a documented
+manual tool. Programs that are built but never run rot silently: one was
+unrunnable for eight months after an options-library conversion and nobody
+noticed. The data-driven framework also checks strictly more, since it
+brute-forces the expected solution set and verifies the proof rather than only
+observing that VeriPB accepted one.
+
+Before deciding anything about a repro, audit what it actually guards — the
+constraint shape, the argument kinds (views, constants), the bound ranges — and
+check each ingredient appears in the corresponding `*_test.cc`. Port the exact
+originally-failing instance as one of the new test instances, and size instances
+against the default caps so that most still check completeness when capped.
+
 ### Splitting a slow test for parallelism
 
 If a test takes a long time, it becomes a parallelism bottleneck —
@@ -917,6 +994,63 @@ repo root, which they source relative to their own `$0`. Changing what the
 wrappers delete — adding a sixth proof artifact, say — means changing that one
 file, and its extension list should stay in step with `proof_file_extensions`
 in `constraints_test_utils.hh`.
+
+### Pinning the random seed
+
+Every test main calls `establish_and_announce_seed(argc, argv)`, which takes a
+seed from the command line, invents one from `std::random_device` if there was
+none, and announces it:
+
+```
+./build/equals_test: random seed is 4262523410 (reproduce with --seed=4262523410)
+```
+
+The flag form is **`--seed=12345`**, parsed by prefix. Writing `--seed 12345`
+does not fail: the argument is simply not recognised, so the run picks a fresh
+random seed and announces a different one each time. Read the announced line back
+to confirm the flag took — that line is the only thing that makes the mistake
+visible.
+
+**Which artefacts depend on the seed.** Measured across 274 instances of
+`difference_logic_presolver_test`:
+
+| Artefact | Seed-dependent? |
+|---|---|
+| `.opb`, `.scp` | **No** — byte-identical across two *different* seeds |
+| `.pbp`, `.varmap` | **Yes** — search order decides which inferences get logged, in what order, and which literals get minted |
+
+So a "no new OPB content" claim can be checked with an unseeded diff, and is the
+strongest statement about the *model*; a `.pbp` or `.varmap` diff means nothing
+unless the seed is pinned identically on both sides. Say which you did. An
+unseeded run of that test showed 225 of 274 `.pbp` and `.varmap` files
+differing — all of it seed noise — where with the seed pinned all 1096 artefacts
+came out byte-identical and the evidence meant something.
+
+Proof **size** is seed noise at a scale that looks like a result: measuring the
+`.pbp` cost of one substitution unseeded gave −4.5%, +14.2% and −19.2% on three
+constraints, and with `--seed=1` on both sides the same three came out +0.02%,
++0.21% and +0.77%. Treat any unpinned proof-size delta as unmeasured, however
+large.
+
+**A mutation probe on a randomising test is not a probe without `--seed=N`.**
+`subcircuit_test` randomises its view-wrap configuration, so replacing a
+certificate with a plain `JustifyUsingRUP` came out *passing* on two of three
+unseeded runs — the wrap it happens to pick decides whether unit propagation
+reaches the conflict unaided. With `--seed=1` it rejects at n=5 every time, and
+n=3 and n=4 still pass, so the scenario *size* is the second half of the same
+trap. A probe that can silently come out the wrong way is worse than no probe,
+because it licenses deleting the thing it was supposed to protect.
+
+If a test does not call `establish_and_announce_seed`, `--seed=N` is silently
+ignored and its enumeration proof differs between two runs of the same binary.
+`cumulative_kaoc_test` was the one test in its family missing the call, and it
+looked harmless because the file draws no random data: every fixture is written
+out, and the randomness is in the *branching*, because `solve_for_tests` goes
+through `random_branch_with_optional_seed`, which falls back to `random_device`
+when no seed was stored. Every test that solves needs the call. The diagnostic
+order that settles this quickly is to run the same binary twice (which rules out
+the change under test), then `setarch -R` (which rules out ASLR), then grep the
+test for `establish_and_announce_seed`.
 
 ### Mutation testing: showing a derivation is tight
 
