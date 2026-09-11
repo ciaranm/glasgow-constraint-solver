@@ -142,28 +142,36 @@ library. For an introduction to *using* the solver, start with the top-level
   the root" belongs to the paper's root simplification stage rather than to its
   propagator), and what is deferred (incrementality, `IncImp`, root
   simplification).
-- [Range ("in") literals](range_literals_spec.md) — the design specification
-  for the interval-literal proof layer: reifying `[X∈[a,b]]` to its
-  order-chain cuts, the always-covered partition invariant, interval-tree
-  containment, and the P1/P2 (line-checkability vs replay-completeness)
-  distinction that governs which linking clauses are load-bearing — with the
-  W1–W9 witness suite as the regression defence against re-simplification.
-  Read when touching range/interval reasons, branching, or `infer_not_in_range`.
-- [View proof logging](view-proof-logging.md) — how the proof layer handles
-  `ViewOfIntegerVariableID`: the view's own encoded variable and bit-vector, the
-  single definitional link axiom, the atom-level eq/ge biconditionals that let
-  unit propagation carry one atom across the boundary, and the three invariants
+- [What a literal is](literals.md) — the index page for the literal layer, and
+  the map from each invariant to the function that maintains it. It points at
+  **[literal-encodings.tex](literal-encodings.tex)**, which is the single
+  authoritative account: a revised and extended version of §3.2 and §3.3 of
+  Matthew McIlree's thesis, covering the two things the thesis does not —
+  interval literals, and several representations of one variable — with the
+  encoding procedure, the nine invariants, the reproved completeness theorems,
+  a table of every way a fact can cross from one literal to another, the design
+  rationale for the choices that are not forced, and the witness suite,
+  coincidence trap and refuted designs that keep it from being simplified back. **Read this before changing anything about atoms, coverings
+  or view links.** The three documents below are its implementation companions.
+- [Range ("in") literals](range_literals_spec.md) — the implementation record
+  for the interval-literal layer: the vocabulary propagator authors see
+  (`infer_not_in_range` and interval reason elements), what was built and in
+  what order, which witness test guards what and how each was validated, and the
+  inventory of edge cases. The theory it used to carry is now in
+  `literal-encodings.tex`; this is what the code does. Its section numbers are
+  cited from nine tests and `gcs/CMakeLists.txt`, so do not renumber them.
+- [View proof logging](view-proof-logging.md) — working with
+  `ViewOfIntegerVariableID` as a propagator author: the three invariants
   (representation consistency for `pol` cancellation, big-M sized to the
   bit-vector, RUP cannot compose across constraints) that both historical
-  Abs/AllDifferent failures violated. Read before emitting explicit `pol` over
-  an operand that might be a view.
-- [Range literals on views](view-range-literals.md) — where the two documents
-  above meet, which for a long time they did not. A view's own range literals,
-  the pair of link clauses joining them to the underlying variable's, why both
-  clauses are needed and why linking has to be triggered by a literal being
-  *named* rather than requested or defined. Also the measurement that 80% of
-  small random configurations cross correctly with no link at all, which is why
-  a green `--view-wrap` sweep is not evidence and the W6–W9 witnesses are.
+  Abs/AllDifferent failures violated, how the machinery is laid out, and the
+  `--view-wrap` / `--view-position` test harness. Read before emitting explicit
+  `pol` over an operand that might be a view.
+- [Range literals on views](view-range-literals.md) — issue #882's record: the
+  view detours it deleted, where in the code the *naming* trigger lives and why
+  a request-driven one silently fails, the measured divergence between the two
+  sides' roles, and the residue. Two corrections are recorded here rather than
+  quietly fixed, because both were believed and written down first.
 - [arithmetic-proofs.md](arithmetic-proofs.md) — how Multiply/Divide/Modulus/Power propagate and justify against cake's encoding: the slot-keyed emitters, the ConditionalBound justification layer, the sign-case driver, and the hard-won RUP/pol rules.
 - [Decision-diagram proof strategies](decision-diagram-proof-strategies.md) — for
   the layered/partial-sum propagators (`Regular`, `MDD`, `Knapsack`,
@@ -353,3 +361,18 @@ library. For an introduction to *using* the solver, start with the top-level
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.
+
+## Further reading
+
+- Matthew McIlree, *Pseudo-Boolean Proof Logging for Constraint Propagation
+  Algorithms*, PhD thesis, University of Glasgow, 2026.
+  <https://theses.gla.ac.uk/86049/> — that is the exact title, and not "Proof
+  Logging for Constraint Programming", which is the title of its chapter 3. The
+  foundations most of the proof-logging documents here build on: the PB proof
+  system and its rules (chapter 2, including Theorems 2.7–2.9 on binary sums,
+  which several documents cite by number), the encoding procedure and proof
+  logging framework (chapter 3), and justification procedures for individual
+  propagators (§3.4 and chapters 4 onwards). Where a document here says
+  "the thesis", this is it. §3.2 and §3.3 have been revised and extended in
+  [literal-encodings.tex](literal-encodings.tex) to cover interval literals and
+  views; the rest stands as written.

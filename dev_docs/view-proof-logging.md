@@ -12,81 +12,29 @@ The short version: every constraint currently registered in the view-wrap
 sweep verifies under every wrap. Abs and AllDifferent — historically the
 hard cases — are now in that set.
 
-## Part 1 — The idea, on top of the thesis
+## Part 1 — The idea
 
-This assumes you know the proof-logging foundations from chapter 3 of
-Matthew's thesis. Recapping only what we build on:
+**The encoding-side account is now
+[literal-encodings.tex](literal-encodings.tex)**, a revised version of §3.2 and
+§3.3 of Matthew's thesis. A view gets its own *view variable* there
+(Definition 3.1); it has its own complete family of atomic
+literals, joined to the underlying variable's by the definitional link
+`V - sX = c` and by the atom-level linking clauses of eqs. (3.29) to (3.31).
+Everything about how facts cross between the two — including the fact that unit
+propagation *cannot* do it without those clauses — is set out there, with a
+table of every crossing under "How facts move".
 
-- Each integer variable is represented in the pseudo-Boolean model by a
-  **bit-vector** `BinEnc(X)` (magnitude bits, plus a sign bit / offset for
-  variables that can go negative).
-- On top of the bits sit **order atoms** `[X ≥ v]` and **equality atoms**
-  `[X = v]`, each *defined* by a reified constraint against the bits
-  (`[X ≥ v] ⇔ BinEnc(X) ≥ v`), together with the order-consistency chain
-  (`[X ≥ v] → [X ≥ v-1]`).
-- The OPB file states the constraints over these atoms/bits. The proof
-  derives new facts with **RUP** (unit propagation to contradiction),
-  **`pol`** (cutting-planes: add/multiply/saturate existing lines), and
-  **`red`** (redundance-based introduction of fresh atoms).
-- A propagator inference "literal `ℓ` follows from reason `R`" is logged
-  as the clause `¬R ∨ ℓ` and discharged either by RUP or by an explicit
-  derivation.
+The one thing worth carrying in your head without opening it: a view gets its
+**own bit vector**, sharing no PB variable with its underlying variable's, and
+the two are related only by the definitional link axiom `V - sX = c`. Unit
+propagation cannot cross that link on its own — combining a `V`-fact with the
+link is a linear addition of two constraints, which UP never performs — so the
+framework pre-derives the crossing as atom-level clauses, lazily, for each atom
+that actually appears.
 
-### The problem a view poses
-
-A view `V = sX + c` (`s = ±1`, `c` an integer) is just an affine image of
-`X`. The tempting move is to write every constraint over `V` by
-substituting `sX + c` and reasoning in `X`'s atoms. That breaks down
-because constraints are posted generically over "an operand", and one `X`
-may be wrapped by several views at once. Rewriting into `X`-space makes the
-atoms that appear in the OPB depend on *which* wrapper a constraint was
-given, so the generic constraint-logging code can no longer treat every
-operand identically.
-
-### What we do instead
-
-We give the view its **own encoded variable**. `V` gets its own bit-vector
-`BinEnc(V)`, its own order and equality atoms, all defined by reification
-exactly as chapter 3 defines them for any integer variable. From the
-proof's point of view `V` is indistinguishable from a bare variable, and
-*every* constraint body and propagator inference that mentions the operand
-is logged purely in `V`'s atoms and bits. The generic machinery never has
-to know it handed out a view.
-
-The only thing tying `V` to `X` is a single **definitional link** axiom:
-
-```
-V − sX = c
-```
-
-emitted as a `≥`/`≤` pair over the two bit-vectors. This is the one and
-only place the two encodings meet.
-
-### Why that works
-
-- **Everything from chapter 3 transfers for free.** `V` has the identical
-  structure to a bare variable, so any fact the chapter-3 machinery can
-  prove about a variable, it can prove about `V`. A constraint that is
-  stated and propagated entirely in `V`-space verifies with zero awareness
-  that `X` exists.
-- **The link is only needed when an inference crosses representations** —
-  e.g. two constraints share `X` through different views, or a
-  propagator's reason is naturally about `X` but its consequence is about
-  `V`. To move a fact from `V`-space to `X`-space you *add* the `V`-form
-  line to the link: the `BinEnc(V)` terms cancel and an `X`-form line
-  drops out (and symmetrically the other way).
-- **But unit propagation cannot do that crossing by itself.** Combining a
-  `V`-fact with the link is a *linear addition of two constraints*, and UP
-  (hence RUP) only ever derives forced literals from individual
-  constraints — it never adds two together. So a crossing must either be
-  an explicit `pol` step, or be pre-supplied in a form UP *can* consume.
-- **So we pre-derive the boundary as atom-level clauses.** For each atom
-  actually used, the framework derives the biconditionals
-  `[V ≥ v] ⇔ [X ≥ k]` and `[V = v] ⇔ [X = k]` as small clauses. Then any
-  time a proof needs to carry a *single atom* across the `V`/`X` boundary,
-  UP does it in one step — no bit-chasing, no `pol`. These are emitted
-  lazily, only for atoms that appear, so the cost tracks the proof rather
-  than the domain size.
+The range-literal case is the one that is *not* like the others, because a
+negated range literal is a unit on neither of its cuts. Read
+[view-range-literals.md](view-range-literals.md) before touching it.
 
 ### The three invariants that make it sound
 
