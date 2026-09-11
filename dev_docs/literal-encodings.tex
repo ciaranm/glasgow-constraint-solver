@@ -107,7 +107,7 @@
 % Invariant names, so a typo is a compile error rather than a silent
 % disagreement between two paragraphs.
 \newcommand{\invChain}{\inv{Chain}}
-\newcommand{\invCut}{\inv{Cut}}
+\newcommand{\invThresholds}{\inv{Thresholds}}
 \newcommand{\invPart}{\inv{Part}}
 \newcommand{\invCover}{\inv{Cover}}
 \newcommand{\invCont}{\inv{Cont}}
@@ -463,12 +463,16 @@ definition, writing $w$ for the PB name of the view variable $W$.
 \end{enumerate}
 
 Naturally, if an equality or interval variable is needed then so are the
-corresponding bound variables.
+corresponding bound variables.  We call those two the atom's \emph{thresholds}:
+$\atge{w}{v}$ and $\atge{w}{v+1}$ for $\ateq{w}{v}$, and $\atge{w}{a}$ and
+$\atge{w}{b+1}$ for $\atin{w}{a}{b}$.  A threshold is an atom, not a value ---
+the atom that says where the interval starts, or where it stops.
 
 An interval variable is a \emph{wide equality atom}: \cref{eq:defeq,eq:defin}
-are the same definition, cut at two values instead of at $v$ and $v+1$.  This
-is not a coincidence to be tidied away later, and we record the consequence
-immediately, because it is the single most expensive mistake available here.
+are the same definition, with thresholds at two values instead of at $v$ and
+$v+1$.  This is not a coincidence to be tidied away later, and we record the
+consequence immediately, because it is the single most expensive mistake
+available here.
 
 \begin{definitionT}[Width-one identification]
 \label{def:widthone}
@@ -495,22 +499,22 @@ variable.  Both polarities fold together and at the same place: the
 canonicalisation that performs the width-one identification of
 \cref{def:widthone} also rewrites $\atin{w}{a}{b}$ to $0$ and $\natin{w}{a}{b}$
 to $1$, so everything downstream sees only intervals of width at least two.
-There is no reified definition, no cut, nothing to name and nothing to cite.
+There is no reified definition, no threshold, nothing to name and nothing to cite.
 This is the encoding's general convention for a condition that is constant ---
 a condition on a constant variable folds the same way --- and not something
 special to intervals.
 
 An interval that is well formed but lies \emph{outside} the definition range is
 not a substitution: $\atin{w}{a}{b}$ with $a\leq b$ and $[a,b]\cap[l_W,u_W]$
-empty is a real variable with its reified definition and its two cuts, and the
+empty is a real variable with its reified definition and its two thresholds, and the
 boundary pins of \inv{Bound} falsify it by unit propagation.  It has no
 partition cell, no covering and no containment edge, which is why \invName{} is
 stated over cells rather than over every interval literal.
 
-An out-of-range \emph{cut}, $\atge{w}{v}$ with $v\leq l_W$ or $v>u_W$, is also a
+An out-of-range \emph{threshold}, $\atge{w}{v}$ with $v\leq l_W$ or $v>u_W$, is also a
 real variable, pinned by \inv{Bound}.  Substituting a constant for it instead
-would be wrong: the encoding needs it under a name, because it is the cut of
-some two-cut atom through \invCut{}, and \cref{lem:covering}(a) propagates
+would be wrong: the encoding needs it under a name, because it is the threshold of
+some membership atom through \invThresholds{}, and \cref{lem:covering}(a) propagates
 through exactly that.
 
 The cost of the substitution in the first case is the usual one: a caller that
@@ -831,9 +835,9 @@ proof, we mean that both directions of the reified definition for its
 underlying atomic variable have appeared in the accumulated formula and have
 not been deleted.
 
-Call the equality and interval atoms the \emph{two-cut} atoms, since each is
-defined by \cref{eq:defeq,eq:defin} from a pair of bound variables, and their
-literals the \emph{two-cut} literals.  From here on, when a two-cut atom is
+Call the equality and interval atoms the \emph{membership} atoms, since each
+asserts that $W$ takes a value in a set, and their literals the
+\emph{membership} literals.  From here on, when a membership atom is
 discussed through the set of values it names we write $\atset{w}{S}$ for the
 atom of $W$ that holds exactly when $W$ takes a value in the interval $S$, so
 that $\atset{w}{[a,b]}$ is $\atin{w}{a}{b}$ for $a<b$ and $\atset{w}{\{v\}}$ is
@@ -846,24 +850,24 @@ Note the asymmetry between
 $\Def^{\Rightarrow}$ and $\Def^{\Leftarrow}$ for them,
 \cref{eq:deq1,eq:deq2,eq:din1,eq:din2}.  The forward direction is
 a \emph{conjunction}: asserting $\ateq{w}{v}$ or $\atin{w}{a}{b}$ makes both
-cuts units.  The reverse direction is a \emph{disjunction}: asserting
-$\nateq{w}{v}$ or $\natin{w}{a}{b}$ makes neither cut a
+thresholds units.  The reverse direction is a \emph{disjunction}: asserting
+$\nateq{w}{v}$ or $\natin{w}{a}{b}$ makes neither threshold a
 unit; \cref{eq:deq2,eq:din2} become binary clauses that fire only when one of
-the two cuts is already known.  Almost everything in this section that is not
+the two thresholds is already known.  Almost everything in this section that is not
 already in the thesis exists because of that asymmetry.
 
 \begin{remark}
 The solver optionally uses a compact encoding in which an equality atom at a
-definition bound is defined by its one non-trivial cut only
+definition bound is defined by its one non-trivial threshold only
 ($\ateq{w}{l_W}\Leftrightarrow\natge{w}{l_W+1}$, and dually at
 $u_W$).  This is off by default, because the eager form matches
-\code{cake\_pb\_cp}'s.  Under that variant \invCut{} \emph{fails} at the
-definition bounds: the dropped cut is not a pinned atom but no atom at all ---
+\code{cake\_pb\_cp}'s.  Under that variant \invThresholds{} \emph{fails} at the
+definition bounds: the dropped threshold is not a pinned atom but no atom at all ---
 for $X\in[3,9]$ the equality atom at $3$ is defined and $\atge{x}{3}$ is never
 created.  Everything below is therefore stated for the default encoding.  The
-compact variant should be sound, the dropped cut being a constant of the
+compact variant should be sound, the dropped threshold being a constant of the
 encoding rather than a fact, but making the results unconditional would mean
-rereading every appeal to \invCut{} at a definition bound with a constant in
+rereading every appeal to \invThresholds{} at a definition bound with a constant in
 place of the atom, and we have not done that.
 \end{remark}
 
@@ -919,7 +923,7 @@ $t$ in the proof.
   If any $\atge{w}{v}$ with $v\leq l_W$ is defined, then for the largest such
   $v$ the unit $\atge{w}{v}$ appears in $F_t$; if any $\atge{w}{v}$ with
   $v>u_W$ is defined, then for the smallest such $v$ the unit $\natge{w}{v}$
-  appears in $F_t$.  One pin a side is enough: every other out-of-range cut
+  appears in $F_t$.  One pin a side is enough: every other out-of-range threshold
   follows from it by \invChain{}, through \cref{lem:chain}, which is why the
   arguments that use \inv{Bound} assume \invChain{} as well.  A view variable
   whose bounds are not a
@@ -927,7 +931,7 @@ $t$ in the proof.
   is exempt, and its owner derives the bounds explicitly instead; no interval
   literal is defined over such a variable today.
 
-\item[\invCut{}: cuts exist.]
+\item[\invThresholds{}: thresholds exist.]
   Whenever $\ateq{w}{v}$ is defined, so are $\atge{w}{v}$ and $\atge{w}{v+1}$;
   whenever $\atin{w}{a}{b}$ is defined, so are $\atge{w}{a}$ and
   $\atge{w}{b+1}$.
@@ -938,7 +942,7 @@ $t$ in the proof.
   $l_W,u_W+1\in\Bdry(W)$.  The \emph{cells} $\Cells(W)$ are the intervals
   $[p,p'-1]$ for consecutive $p<p'$ in $\Bdry(W)$; they partition $[l_W,u_W]$.
   For every cell $C$ the atom $\atset{w}{C}$ is defined --- an equality atom if
-  $C$ has width one, an interval atom otherwise.  For every defined two-cut atom
+  $C$ has width one, an interval atom otherwise.  For every defined membership atom
   $\atset{w}{E}$ of $W$ whose in-bounds part $E\cap[l_W,u_W]$ is non-empty, both
   endpoints of that part are boundaries; that is, $E\cap[l_W,u_W]$ is a union of
   adjacent cells.  $\Bdry(W)$ only ever grows.
@@ -966,8 +970,8 @@ $t$ in the proof.
   order/equality variable, the entire setting of the thesis.
 
 \item[\invCont{}: containment.]
-  For any two defined two-cut atoms $\atset{w}{E}$ and $\atset{w}{E'}$ of the
-  same view variable $W$ with $E\subsetneq E'$: if no defined two-cut atom
+  For any two defined membership atoms $\atset{w}{E}$ and $\atset{w}{E'}$ of the
+  same view variable $W$ with $E\subsetneq E'$: if no defined membership atom
   $\atset{w}{D}$ of $W$ has $E\subsetneq D\subsetneq E'$, then the clause
   $\natset{w}{E}\vee\atset{w}{E'}$ appears in $F_t$.  The arguments below use
   chains of these clauses rather than single edges; \cref{lem:contclosure}
@@ -993,7 +997,7 @@ $t$ in the proof.
 \end{description}
 
 \invChain{} and \inv{Bound} come from the thesis, generalised only by being
-stated per view variable.  \invCut{} is implicit there; we make it explicit
+stated per view variable.  \invThresholds{} is implicit there; we make it explicit
 because both new literal kinds depend on it.  \invPart{}, \invCover{} and
 \invCont{} are the interval apparatus.  \invView{} is the multi-view
 apparatus.  \invName{} is a hygiene condition that \invView{} needs for the
@@ -1037,7 +1041,7 @@ inside, which is what \cref{eq:gelink,eq:eqlink,eq:inlink} do.  Taking images is
 functorial: $(\ell^{W'})^{W''} = \ell^{W''}$, and $\ell^{W}=\ell$.
 \end{definitionT}
 
-Stating the two-cut case over the set rather than over the endpoints is what
+Stating the membership case over the set rather than over the endpoints is what
 makes it one line instead of four, and the two facts that make the design
 tractable are then immediate rather than needing an argument.  First, $\theta$ is
 an affine bijection, so $\theta(S)$ is an interval of the same width as $S$: the
@@ -1087,9 +1091,9 @@ emission to a RUP line would fail on the first view with a nonzero offset, and
 would fail intermittently, which is worse.
 
 For the eq-link, asserting one side and the negation of the other propagates both
-cuts through \cref{eq:deq1}, carries each across by the ge-links, and closes on
+thresholds through \cref{eq:deq1}, carries each across by the ge-links, and closes on
 \cref{eq:deq2} of the far side.  For the in-link, the same argument with
-\cref{eq:din1,eq:din2}, noting that for $s=-1$ the two cuts exchange roles ---
+\cref{eq:din1,eq:din2}, noting that for $s=-1$ the two thresholds exchange roles ---
 which is the endpoint reversal that $\theta(S)$ absorbs in \cref{def:image}.
 
 \begin{remarkN}[Both in-link clauses are needed, and neither for its implication]
@@ -1108,7 +1112,7 @@ contrapositives,
   \natin{w}{a}{b} \implies (\natin{w}{a}{b})^{X},
 \]
 and neither is derivable without its clause.  A negated interval literal is a
-unit on \emph{neither} of its cuts, by the asymmetry noted after
+unit on \emph{neither} of its thresholds, by the asymmetry noted after
 \cref{eq:din2}; all it can do is descend its own view variable's containment
 edges, and it bottoms out at cells that are themselves unlinked interval
 literals unless they happen to have width one.  Descending to width one is
@@ -1162,7 +1166,7 @@ We first establish everything for a single view variable $W$, writing $L^W$ for
 the atomic literals over atomic variables of $W$ defined in $F_t$, and $[l,u]$
 for $[l_W,u_W]$.  \cref{lem:transport} then lifts the results to a family.
 
-It is convenient to normalise away positive two-cut literals once and for all.
+It is convenient to normalise away positive membership literals once and for all.
 
 \begin{lemmaT}[Chain propagation]
 \label{lem:chain}
@@ -1182,7 +1186,7 @@ is a binary clause, so it propagates in one direction from $\atge{w}{v_j}$ and
 in the other from $\natge{w}{v_{j+1}}$.  Chaining gives both claims.
 \end{proof}
 
-\begin{lemmaN}[Cut normalisation]
+\begin{lemmaN}[Threshold normalisation]
 \label{lem:normalise}
 Let $R\subseteq L^W$ and let $R'$ be obtained from $R$ by replacing each
 positive literal $\ateq{w}{v}$ by $\{\atge{w}{v},\natge{w}{v+1}\}$ and
@@ -1193,21 +1197,21 @@ propagates under $R$, and $\dm_{R'}(W)=\dm_R(W)$.
 
 \begin{proof}
 The replacements are exactly what \cref{eq:deq1,eq:din1} propagate from the
-positive literal, and the cuts are defined by \invCut{}.  The two literal sets
+positive literal, and the thresholds are defined by \invThresholds{}.  The two literal sets
 allow the same values by \cref{eq:defeq,eq:defin}.
 \end{proof}
 
-Call a set of literals \emph{cut-normalised} if it contains no positive equality
-or interval literal.  \cref{lem:normalise} says that any set may be replaced by
-a cut-normalised one with the same defined domain, all of whose literals still
-propagate, so in the proofs below we may assume that the only two-cut literals
+Call a set of literals \emph{threshold-normalised} if it contains no positive
+membership literal.  \cref{lem:normalise} says that any set may be replaced by
+a threshold-normalised one with the same defined domain, all of whose literals still
+propagate, so in the proofs below we may assume that the only membership literals
 present are negative.  This is where the asymmetry bites: normalisation cannot be applied to
-a negative two-cut literal, and there is nothing else to do with one except
+a negative membership literal, and there is nothing else to do with one except
 propagate through the machinery of \invCover{} and \invCont{}.
 
 \begin{lemmaN}[Containment chains]
 \label{lem:contclosure}
-Assume \invCont{}.  Then for any two defined two-cut atoms $\atset{w}{E}$ and
+Assume \invCont{}.  Then for any two defined membership atoms $\atset{w}{E}$ and
 $\atset{w}{E'}$ of $W$ with $E\subsetneq E'$, there is a chain
 $E=E_0\subsetneq E_1\subsetneq\cdots\subsetneq E_m=E'$ with every
 $\atset{w}{E_j}$ defined and every clause
@@ -1215,7 +1219,7 @@ $\natset{w}{E_j}\vee\atset{w}{E_{j+1}}$ in $F_t$.
 \end{lemmaN}
 
 \begin{proof}
-By induction on the number of defined two-cut atoms $\atset{w}{D}$ of $W$ with
+By induction on the number of defined membership atoms $\atset{w}{D}$ of $W$ with
 $E\subsetneq D\subsetneq E'$.  If there are none, \invCont{} puts
 $\natset{w}{E}\vee\atset{w}{E'}$ in $F_t$, and the chain is that single edge.
 
@@ -1231,7 +1235,7 @@ the edge just obtained extends the chain it gives.
 \end{proof}
 
 \begin{remark}
-\invCont{} is maintained by emitting, whenever a two-cut atom $\atset{w}{E}$ is
+\invCont{} is maintained by emitting, whenever a membership atom $\atset{w}{E}$ is
 defined, the clause $\natset{w}{E}\vee\atset{w}{E'}$ for every \emph{minimal}
 $E'\supsetneq E$ whose atom is defined, and $\natset{w}{E''}\vee\atset{w}{E}$
 for every \emph{maximal} $E''\subsetneq E$ whose atom is defined --- which is
@@ -1254,8 +1258,8 @@ whose atoms are currently defined for $W$, not merely over the cells.
 
 \begin{lemmaN}[Cell exclusion]
 \label{lem:cell}
-Assume \invChain{}, \invCut{}, \invPart{} and \invCont{}.  Let $R$ be a set of
-literals, let $U\subseteq L^W$ be a cut-normalised set of literals each of which
+Assume \invChain{}, \invThresholds{}, \invPart{} and \invCont{}.  Let $R$ be a set of
+literals, let $U\subseteq L^W$ be a threshold-normalised set of literals each of which
 propagates under $R$, suppose $F_t\!\restriction_R$ does not propagate to conflict, and
 write $D=\dm_U(W)$.  Let $C\in\Cells(W)$ be a cell with $D\cap C=\emptyset$.
 Then $\natset{w}{C}$ propagates under $R$.
@@ -1265,12 +1269,12 @@ Then $\natset{w}{C}$ propagates under $R$.
 Write $C=[p,q]$, so that $\atset{w}{C}$ is $\atin{w}{p}{q}$ if $p<q$ and
 $\ateq{w}{p}$ if $p=q$; in either case \cref{eq:deq1,eq:din1} give the single PB
 constraint $\atset{w}{C}\Rightarrow\atge{w}{p}+\natge{w}{q+1}\geq 2$, and both
-cuts are defined by \invCut{}.  That constraint is not a pair of clauses, but it
-propagates like one in each direction: $\atset{w}{C}$ makes both cuts units, and
+thresholds are defined by \invThresholds{}.  That constraint is not a pair of clauses, but it
+propagates like one in each direction: $\atset{w}{C}$ makes both thresholds units, and
 either $\natge{w}{p}$ or $\atge{w}{q+1}$ propagates $\natset{w}{C}$, which is
 the direction used below.
 
-\emph{Case 1: some negative two-cut literal of $U$ names a set containing $C$.}
+\emph{Case 1: some negative membership literal of $U$ names a set containing $C$.}
 That is, $\natset{w}{E}\in U$ for a defined $\atset{w}{E}$ with $C\subseteq E$.
 If $E=C$ we are done.  Otherwise $C\subsetneq E$, and \cref{lem:contclosure}
 gives a chain of binary clauses $\natset{w}{C}\vee\atset{w}{E_1}$,
@@ -1278,8 +1282,8 @@ $\natset{w}{E_1}\vee\atset{w}{E_2}$, \dots,
 $\natset{w}{E_{m-1}}\vee\atset{w}{E}$; reading each contrapositive in turn from
 $\natset{w}{E}$ propagates $\natset{w}{C}$.
 
-\emph{Case 2: no negative two-cut literal of $U$ names a set containing $C$.}
-We claim that then no negative two-cut literal of $U$ names a set meeting $C$ at
+\emph{Case 2: no negative membership literal of $U$ names a set containing $C$.}
+We claim that then no negative membership literal of $U$ names a set meeting $C$ at
 all.  Let $\natset{w}{E}\in U$.  If $E\cap[l,u]=\emptyset$ then
 $E\cap C=\emptyset$ since $C\subseteq[l,u]$.
 Otherwise, by \invPart{}, $E\cap[l,u]$ is a union of adjacent cells, and $C$ is
@@ -1307,8 +1311,8 @@ disjoint from the interval $C$, and $C$ lies wholly on one side of it.
 
 \begin{lemmaN}[Covering completeness]
 \label{lem:covering}
-Assume \invChain{}, \inv{Bound}, \invCut{}, \invPart{} and \invCover{}.  Let
-$\atset{w}{E}$ be a defined two-cut atom of $W$ and let $S=E\cap[l,u]$.
+Assume \invChain{}, \inv{Bound}, \invThresholds{}, \invPart{} and \invCover{}.  Let
+$\atset{w}{E}$ be a defined membership atom of $W$ and let $S=E\cap[l,u]$.
 \begin{enumerate}[label=(\alph*),itemsep=1pt]
   \item If $S=\emptyset$ then $\natset{w}{E}$ propagates under any $R$.
   \item If $S\neq\emptyset$, $E$ is not currently a cell, and $\natset{w}{C}$
@@ -1318,12 +1322,12 @@ $\atset{w}{E}$ be a defined two-cut atom of $W$ and let $S=E\cap[l,u]$.
 
 \begin{proof}
 \emph{(a)}  Write $E=[a,b]$.  If $b<l$ then $\atge{w}{b+1}$ is defined by
-\invCut{} with $b+1\leq l$, so \inv{Bound} makes $\atge{w}{v}$ a unit for some
+\invThresholds{} with $b+1\leq l$, so \inv{Bound} makes $\atge{w}{v}$ a unit for some
 $b+1\leq v\leq l$, \cref{lem:chain} propagates $\atge{w}{b+1}$ from it, and
 \cref{eq:deq1,eq:din1} propagate $\natset{w}{E}$.  If $a>u$ then $\atge{w}{a}$
 is defined with $a>u$, so \inv{Bound} makes $\natge{w}{v}$ a unit for some
 $u<v\leq a$, \cref{lem:chain} propagates $\natge{w}{a}$ from it, and
-\cref{eq:deq1,eq:din1} propagate $\natset{w}{E}$ through the other cut.
+\cref{eq:deq1,eq:din1} propagate $\natset{w}{E}$ through the other threshold.
 
 \emph{(b)}  For a set that is a union of adjacent cells, define its \emph{rank}
 to be the number of cells it contains.  We first show, by induction on rank,
@@ -1374,20 +1378,20 @@ special-case it; the structural form does not.
 \label{thm:wipeout}
 Let $F_t$ be a set of PB constraints either in the encoding of a CP problem, as
 produced by \cref{proc:encoding}, or derived from it, and suppose \invChain{}
-and \invCut{} are respected.  Let $W$ be a view variable, and let $U\subseteq
+and \invThresholds{} are respected.  Let $W$ be a view variable, and let $U\subseteq
 L^W$ be a set of literals each of which propagates under some $R$.  If
 $\dm_U(W)=\emptyset$ then $F_t\!\restriction_R$ propagates to conflict.
 \end{theoremT}
 
 \begin{proof}
-Suppose not, and cut-normalise $U$ using \cref{lem:normalise}, which preserves
+Suppose not, and threshold-normalise $U$ using \cref{lem:normalise}, which preserves
 both the defined domain and the property of propagating under $R$.
 
 Since $\dm_U(W)=\emptyset$, every integer is excluded by $U$ somehow.  In
 particular the values below any fixed point must be excluded.  No literal
 $\natge{w}{v}$ excludes anything below $v$, and $U$ is finite --- it is a subset
 of $L^W$, and only finitely many atomic variables are defined in a finite
-formula --- so its negative two-cut literals between them exclude only a bounded
+formula --- so its negative membership literals between them exclude only a bounded
 set.  Hence $U$ contains at least one literal $\atge{w}{v}$.  Let $v^{+}$ be the
 largest value such that $\atge{w}{v^{+}}$ propagates under $R$; this exists for
 the same reason.
@@ -1396,7 +1400,7 @@ $\natge{w}{v^{-}}$ propagates; this exists for the mirrored reason.
 
 If $v^{+}\geq v^{-}$ then \cref{lem:contra-bounds} gives a conflict.  So
 $v^{+}<v^{-}$, and in particular the value $v^{+}$ is not excluded by any bound
-literal of $U$.  It must therefore be excluded by a negative two-cut literal of
+literal of $U$.  It must therefore be excluded by a negative membership literal of
 $U$, and there are two cases.
 \begin{itemize}[itemsep=1pt]
   \item $\nateq{w}{v^{+}}\in U$.  Then $\atge{w}{v^{+}}$ propagates,
@@ -1404,7 +1408,7 @@ $U$, and there are two cases.
     $\ateq{w}{v^{+}}\vee\natge{w}{v^{+}}\vee\atge{w}{v^{+}+1}$ ---
     propagates $\atge{w}{v^{+}+1}$, contradicting the maximality of $v^{+}$.
   \item $\natin{w}{a}{b}\in U$ with $a\leq v^{+}\leq b$.  By
-    \invCut{}, $\atge{w}{a}$ is defined, and $a\leq v^{+}$, so
+    \invThresholds{}, $\atge{w}{a}$ is defined, and $a\leq v^{+}$, so
     \cref{lem:chain} propagates it.  Then \cref{eq:din2} --- the clause
     $\atin{w}{a}{b}\vee\natge{w}{a}\vee\atge{w}{b+1}$ --- propagates
     $\atge{w}{b+1}$, and $b+1>v^{+}$, again contradicting maximality.
@@ -1415,11 +1419,11 @@ $U$, and there are two cases.
 \begin{remarkN}[The root covering is not load-bearing here]
 \label{rem:rootcovering}
 \cref{thm:wipeout} uses only the reverse reifications, the order chain, and the
-fact that both cuts of a two-cut literal are defined.  It does \emph{not} use
+fact that both thresholds of a membership literal are defined.  It does \emph{not} use
 \invCover{} at all, and in particular not the root covering \invCover{}(iii),
 which is the clause one would naively expect to be responsible for detecting
 wipeout at the literal level.  The reason is the second bullet above: a negated
-interval literal, combined with a bound that has reached its lower cut, jumps
+interval literal, combined with a bound that has reached its lower threshold, jumps
 the bound over the whole interval in one step.  Walking those jumps from the
 bottom of the domain is exactly a traversal of the excluded region.
 
@@ -1433,20 +1437,20 @@ before in this design --- see \nsec{sec:loadbearing}.
 \begin{theoremT}[Complete propagation of implied atomic literals]
 \label{thm:complete}
 Let $F_t$ be as in \cref{thm:wipeout}, and suppose \invChain{}, \inv{Bound},
-\invCut{}, \invPart{}, \invCover{} and \invCont{} are respected.  Let $W$ be a
+\invThresholds{}, \invPart{}, \invCover{} and \invCont{} are respected.  Let $W$ be a
 view variable and $U\subseteq L^W$ a set of literals each of which propagates
 under some $R$.  If $F_t\!\restriction_R$ does not propagate to contradiction,
 then every literal in $\ImpLits(\dm_U(X))\cap L^W$ propagates under $R$.
 \end{theoremT}
 
 \begin{proof}
-Cut-normalise $U$ by \cref{lem:normalise}, and write $D=\dm_U(W)$, which is
+Threshold-normalise $U$ by \cref{lem:normalise}, and write $D=\dm_U(W)$, which is
 non-empty since otherwise \cref{thm:wipeout} would give a contradiction.
 Consider a literal $\ell\in\ImpLits(\dm_U(X))\cap L^W$.  By \cref{eq:implits}
 there are six cases.
 
 \emph{Case 1: $\ell=\atge{w}{v}$, with $v'\notin D$ for all $v'<v$.}  In
-particular $D$ is bounded from below.  Since $U$ is finite, its negative two-cut
+particular $D$ is bounded from below.  Since $U$ is finite, its negative membership
 literals exclude only a bounded set, so $U$ must contain a positive bound
 literal, and we may let $v^{+}$ be the largest value with $\atge{w}{v^{+}}$
 propagating.
@@ -1455,32 +1459,32 @@ $\ell$ propagates by definition of $v^{+}$.  Otherwise $v^{+}<v$, so
 $v^{+}\notin D$, and $v^{+}$ is not excluded by any bound literal of $U$ (by
 maximality of $v^{+}$ and, on the other side, because
 $\natge{w}{v'}\in U$ with $v'\leq v^{+}$ would give a conflict by
-\cref{lem:contra-bounds}).  So $v^{+}$ is excluded by a negative two-cut
+\cref{lem:contra-bounds}).  So $v^{+}$ is excluded by a negative membership
 literal, and exactly as in the two bullets of \cref{thm:wipeout} we derive
 $\atge{w}{v''}$ for some $v''>v^{+}$, contradicting maximality.
 
 \emph{Case 2: $\ell=\natge{w}{v}$.}  Symmetric to Case 1, taking
 $v^{-}$ the smallest value with $\natge{w}{v^{-}}$ propagating and
-using the other cut in each reverse reification.
+using the other threshold in each reverse reification.
 
 \emph{Case 3: $\ell=\ateq{w}{v}$, so $D=\{v\}$.}  Since $\ell$ is defined, so
-are $\atge{w}{v}$ and $\atge{w}{v+1}$ by \invCut{}; both
+are $\atge{w}{v}$ and $\atge{w}{v+1}$ by \invThresholds{}; both
 $\atge{w}{v}\in\ImpLits$ and $\natge{w}{v+1}\in\ImpLits$, so they
 propagate by Cases 1 and 2, and \cref{eq:deq2} then propagates $\ell$.
 
 \emph{Case 4: $\ell=\nateq{w}{v}$, so $v\notin D$.}  Consider what excludes $v$;
-after cut normalisation the candidates are a bound literal and a negative
-two-cut literal.  If a bound literal does, then either $\atge{w}{v+1}$ or
+after threshold normalisation the candidates are a bound literal and a negative
+membership literal.  If a bound literal does, then either $\atge{w}{v+1}$ or
 $\natge{w}{v}$ propagates by \cref{lem:chain}, and \cref{eq:deq1} then
-propagates $\ell$ from whichever it is.  If instead a negative two-cut
+propagates $\ell$ from whichever it is.  If instead a negative membership
 literal $\natset{w}{E}\in U$ with $v\in E$ does, then $\{v\}\subseteq E$; if
 $E=\{v\}$ then $\ell\in U$, and otherwise \cref{lem:contclosure} gives a chain of
 binary clauses whose contrapositives propagate $\ell$ from $\natset{w}{E}$.  If a
-positive two-cut literal excludes $v$, cut normalisation has already replaced it
+positive membership literal excludes $v$, threshold normalisation has already replaced it
 by bound literals, so this is the first case.
 
 \emph{Case 5: $\ell=\atin{w}{a}{b}$, with $D\subseteq[a,b]$.}  Since $\ell$ is
-defined, $\atge{w}{a}$ and $\atge{w}{b+1}$ are defined by \invCut{}.  Every
+defined, $\atge{w}{a}$ and $\atge{w}{b+1}$ are defined by \invThresholds{}.  Every
 $v<a$ is outside $D$ and every $v\geq b+1$ is outside $D$, so
 $\atge{w}{a}$ and $\natge{w}{b+1}$ are in
 $\ImpLits(\dm_U(X))\cap L^W$ and propagate by Cases 1 and 2.  \cref{eq:din2}
@@ -1568,7 +1572,7 @@ one unlinked, and nothing would notice.
 \setcounter{theoremP}{1}
 \begin{theoremP}[Empty defined domain, family version]
 \label{thm:wipeout-family}
-Let $F_t$ be as in \cref{thm:wipeout}, and suppose \invChain{}, \invCut{} and
+Let $F_t$ be as in \cref{thm:wipeout}, and suppose \invChain{}, \invThresholds{} and
 \invView{} are respected.  Let $L$ be the atomic literals defined in $F_t$ for
 any view variable of $X$, and let $U\subseteq L$ be a set of literals each of
 which propagates under $R$.  If $\dm_U(X)=\emptyset$ then
@@ -1633,11 +1637,11 @@ $\atge{w}{v}$ & $\atge{w}{v'}$, $v'<v$ & order chain, \invChain{}
   (\cref{lem:chain}) \\
 $\natge{w}{v}$ & $\natge{w}{v'}$, $v'>v$ & the same clauses,
   read the other way \\
-$\ateq{w}{v}$ or $\atin{w}{a}{b}$ & its two cuts & $\Def^{\Rightarrow}$,
+$\ateq{w}{v}$ or $\atin{w}{a}{b}$ & its two thresholds & $\Def^{\Rightarrow}$,
   \cref{eq:deq1,eq:din1} \\
-both cuts & $\ateq{w}{v}$ or $\atin{w}{a}{b}$ & $\Def^{\Leftarrow}$,
+both thresholds & $\ateq{w}{v}$ or $\atin{w}{a}{b}$ & $\Def^{\Leftarrow}$,
   \cref{eq:deq2,eq:din2} \\
-one cut crossing the literal & $\nateq{w}{v}$ or
+one threshold crossing the literal & $\nateq{w}{v}$ or
   $\natin{w}{a}{b}$ & $\Def^{\Rightarrow}$, contrapositive \\
 $\nateq{w}{v}$ or $\natin{w}{a}{b}$ & a bound stepping over
   it & $\Def^{\Leftarrow}$: this is the hole jump, and the reason
@@ -1723,7 +1727,7 @@ covering clause somewhere else entirely.
 \cref{eq:defin} reifies against two inequality atoms, which are in turn reified
 against $\BinEnc(W)$.  A variable given a purely direct encoding --- one
 $0$--$1$ variable per value, with an at-least-one and an at-most-one clause,
-and no bit vector --- has no cuts to reify against, and no interval literals are
+and no bit vector --- has no thresholds to reify against, and no interval literals are
 available for it.  This is a property of the variable, not of views: whether a
 view may carry interval literals is decided by whether its \emph{base} has a bit
 vector.  Consumers that would state an interval fact fall back to stating it per
@@ -1799,7 +1803,7 @@ $\dm_L(X)\subseteq\dm_t(X)$ is between two subsets of the same set of integers.
 \begin{theoremT}
 \label{thm:btrup}
 If \invConflict{} and \invDomain{} are respected, the literal-layer invariants
-\cref{thm:wipeout-family} needs hold --- \invChain{}, \invCut{} and \invView{} ---
+\cref{thm:wipeout-family} needs hold --- \invChain{}, \invThresholds{} and \invView{} ---
 and a complete solver always logs backtracking justifications, then every
 backtracking justification $B_t$ follows by RUP.
 \end{theoremT}
@@ -1881,7 +1885,7 @@ taken on the base.  All three meet only through \cref{lem:transport}.
 \label{lem:reasons}
 If $R$ is a finite set of literals defined in $F_t$ with
 $R\subseteq\bigcup_i\ImpLits(\dm_t(X_i))$, and \invChain{}, \inv{Bound},
-\invCut{}, \invPart{}, \invCover{}, \invCont{}, \invView{} and \invDomain{} are
+\invThresholds{}, \invPart{}, \invCover{}, \invCont{}, \invView{} and \invDomain{} are
 respected, then $F_t\cup\{\neg B_t\}$ either propagates to contradiction or
 propagates every literal in $R$.
 \end{lemmaT}
@@ -1939,15 +1943,15 @@ for \cref{eq:rootbounds} as written.
 
 In the other direction the implementation is \emph{stronger} than \inv{Bound}
 asks, and this one costs measurable proof.  \code{fix\_bound} emits a pin for
-every out-of-range cut it creates, not one a side, so a variable can accumulate
+every out-of-range threshold it creates, not one a side, so a variable can accumulate
 hundreds of top-of-proof units that \cref{lem:chain} would supply from one.  On
 the TSP example this is $2{,}258$ pins over $68$ distinct variable-and-side
 pairs, the worst single variable carrying $255$ --- a cost variable with lower
-bound $0$ whose cuts run from $\atge{w}{-482}$ up to $\atge{w}{0}$, each pinned
+bound $0$ whose thresholds run from $\atge{w}{-482}$ up to $\atge{w}{0}$, each pinned
 separately.  Weakening the emission to match the invariant is not quite as
-simple as pinning the extreme cut, because the cuts are created one at a time
+simple as pinning the extreme threshold, because the thresholds are created one at a time
 and in no particular order, and the pin has to be a persistent top-of-proof line
-rather than one re-derived per use; the workable version pins the cut at the
+rather than one re-derived per use; the workable version pins the threshold at the
 definition bound once, on the first out-of-range request for the variable, and
 nothing after that.
 \end{remark}
@@ -1995,7 +1999,7 @@ by \cref{eq:rootbounds}.  Hence \invDomain{} is initially respected.
     view variable its definitional link \cref{eq:link}.
   \item At the start of the proof, derive by RUP $\atge{x}{l}\geq 1$ and
     $\natge{x}{u+1}\geq 1$ for the bounds $l..u$ on each variable, and
-    likewise for any out-of-range cut subsequently created on any view variable.
+    likewise for any out-of-range threshold subsequently created on any view variable.
   \item Any time the solver backtracks, derive by RUP a backtracking
     justification $G\Rightarrow 0\geq 1$, where $G$ is the sequence of decisions
     prior to backtracking.
@@ -2172,7 +2176,7 @@ incorrectly three times on the strength of tests that stayed green.
 \end{description}
 
 Everything in \cref{sec:atomprops} beyond the definitions themselves guards
-against P2.  \invChain{}, \invCut{}, \invPart{}, \invCover{}, \invCont{},
+against P2.  \invChain{}, \invThresholds{}, \invPart{}, \invCover{}, \invCont{},
 \invView{} and \invName{} contribute nothing to the validity of any individual
 line; they exist so that \cref{thm:complete-family} holds, and
 \cref{thm:complete-family} exists so that \cref{lem:reasons} holds, and
@@ -2261,7 +2265,7 @@ because wipeout is also derivable by the bound-axiom walk of
 \cref{rem:rootcovering}.  They remain in the suite as composed end-to-end
 regression nets.  Two known gaps: there is no deterministic witness for split
 coverings composing across refinements with no bound anchor (the shape
-\cref{lem:covering}(b) is proved for), and none for \invCut{} in isolation.
+\cref{lem:covering}(b) is proved for), and none for \invThresholds{} in isolation.
 
 \subsubsection*{The coincidence trap}
 \phantomsection\label{sec:coincidence}
@@ -2278,7 +2282,7 @@ at all} whenever any of four things happens:
     already inconsistent under unit propagation and the check passes vacuously;
   \item the interval abuts or extends below the lower bound, so that the
     boundary pin of \inv{Bound} --- through the order chain, if the pin is not
-    at the cut itself --- makes \cref{eq:din2} a unit, the ge-link carries it,
+    at the threshold itself --- makes \cref{eq:din2} a unit, the ge-link carries it,
     and the far side's \emph{forward} reification finishes the job;
   \item the interval abuts or extends above the upper bound, the mirror image;
   \item every cell inside the interval is a singleton --- and one well-placed
@@ -2402,7 +2406,7 @@ decision.  On $X$:
 \begin{itemize}[itemsep=0pt]
   \item the partition is created, with boundaries $\{1,5,11,21\}$ and cells
     $[1,4]$, $[5,10]$, $[11,20]$, each defined as an interval literal with its
-    two cuts threaded into the order chain;
+    two thresholds threaded into the order chain;
   \item the root covering
     $\atin{x}{1}{4}\vee\atin{x}{5}{10}\vee\atin{x}{11}{20}\geq 1$ is emitted;
   \item there is no containment yet, nothing being nested.
@@ -2455,7 +2459,7 @@ roles.
 Suppose the solver now decides $\natin{x}{7}{10}$ --- the \emph{cell} $[7,10]$,
 not the request $[7,15]$ --- and, deeper in the subtree, a propagator's reason
 names $[V\in 20..23]$, which is its image.  In the replay,
-$\natin{x}{7}{10}$ is asserted.  It is a unit on neither of its cuts:
+$\natin{x}{7}{10}$ is asserted.  It is a unit on neither of its thresholds:
 \cref{eq:din2} for it is the ternary clause
 $\atin{x}{7}{10}\vee\natge{x}{7}\vee\atge{x}{11}$, and with the first literal
 false and neither bound known, nothing propagates.  Its containment edges are no
@@ -2503,7 +2507,7 @@ where 80\% of small random instances turn out to be one of them.
 \begin{enumerate}[itemsep=3pt]
 
 \item \textbf{Variables with no bit vector.}  As noted in
-  \nsec{sec:notprovided}, interval literals need cuts to reify against.  The
+  \nsec{sec:notprovided}, interval literals need thresholds to reify against.  The
   gate is whether the variable has a registered bit vector, not what its domain
   looks like: a variable with domain exactly $\{0,1\}$, given a purely direct
   encoding, is registered with a one-element bit vector, and is therefore
@@ -2622,21 +2626,21 @@ wherever it wants the fact, and the encoding could carry one atom family instead
 of three.
 
 The reason it does not is the negation.  Asserting the conjunction is harmless:
-both cuts become units either way.  Asserting its negation is not, because
+both thresholds become units either way.  Asserting its negation is not, because
 $\neg(\atge{w}{v}\wedge\natge{w}{v+1})$ is the disjunction
-$\natge{w}{v}\vee\atge{w}{v+1}$, which is a unit on neither cut.  Removing a
+$\natge{w}{v}\vee\atge{w}{v+1}$, which is a unit on neither threshold.  Removing a
 value, or a run of values, is precisely asserting that negation --- so without a
 Boolean, the fact a propagator most often wants to state is the one fact unit
 propagation cannot use.  With one, the negation is a single literal,
 \cref{eq:deq2,eq:din2} are its reverse reifications, and the hole jump that
-\cref{thm:wipeout} turns on --- a bound at the lower cut stepping over the whole
+\cref{thm:wipeout} turns on --- a bound at the lower threshold stepping over the whole
 hole --- goes through in one step.
 
 Two things follow.  A reason is a set of literals concluding a single literal, so
 a propagator that removes a value needs a literal to conclude, and a conjunction
 gives it none.  And the same argument at width greater than one is why interval
 literals exist: not for strength, since $\atin{w}{a}{b}$ says exactly what its
-two cuts say, but because the alternative is $b-a+1$ separate equality atoms, so
+two thresholds say, but because the alternative is $b-a+1$ separate equality atoms, so
 that naming a run of holes in a reason would cost the width of the run rather
 than one literal.
 
@@ -2669,7 +2673,7 @@ than the design we have, rather than wrong, are under \cref{sec:rationale}.
 
 \begin{enumerate}[itemsep=3pt]
 
-\item \textbf{``Reify to the two cuts and use the order chain; no covering, no
+\item \textbf{``Reify to the two thresholds and use the order chain; no covering, no
   containment.''}  A falsification matrix of \emph{derivations} passes --- that
   is P1 only.  Caught by W4 (containment) and W2, W3, W5 (covering).
 
