@@ -3,7 +3,6 @@
 #include <gcs/constraints/innards/justify_not_in_range.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
-#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -234,8 +233,6 @@ auto In::install_propagators(Propagators & propagators) -> void
                         unsupported.erase_range(lo, hi);
                 }
 
-                LargeDomainIterationCounter unsupported_guard{"the number of values one In unsupported-value pruning has walked"};
-
                 for (auto [run_lo, run_hi] : unsupported.each_interval()) {
                     if (run_lo < run_hi) {
                         Reason reason;
@@ -273,26 +270,24 @@ auto In::install_propagators(Propagators & propagators) -> void
                         continue;
                     }
 
-                    // The per-value path. It is not State's own iterator any
-                    // more, so it carries its own counter for the large-domain
-                    // guard, in the same way as abs.cc's and element.cc's
-                    // (issues #855, #875).
-                    for (Integer v = run_lo; v <= run_hi; ++v) {
-                        unsupported_guard.step();
-                        if (! state.in_domain(var, v))
-                            continue;
-
+                    // The remaining case is a run of one value, where the range
+                    // form buys nothing: not_in_range would canonicalise to this
+                    // same != literal, and the two bound lemmas per source would
+                    // be pure cost. No loop and no iteration counter -- the
+                    // branch above takes every run of two or more, so this is
+                    // reached once per interval and never once per value.
+                    if (state.in_domain(var, run_lo)) {
                         Reason reason;
                         if (inference.want_reasons()) {
                             ReasonLiterals lits;
                             for (const auto & V : var_vals)
-                                lits.emplace_back(V != v);
+                                lits.emplace_back(V != run_lo);
                             reason = ExplicitReason{std::move(lits)};
                         }
 
-                        inference.infer_not_equal(logger, var, v,
+                        inference.infer_not_equal(logger, var, run_lo,
                             JustifyExplicitly{//
-                                [logger, var, v, &selectors](const ReasonLiterals & reason) {
+                                [logger, var, v = run_lo, &selectors](const ReasonLiterals & reason) {
                                     for (const auto & sel : selectors)
                                         logger->emit_rup_proof_line_under_reason(
                                             reason, WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i, ProofLevel::Temporary);
@@ -345,14 +340,13 @@ auto In::install_propagators(Propagators & propagators) -> void
                 // run -- nothing in it mentions what is being removed -- so it is
                 // assembled once rather than per conclusion.
                 //
-                // One literal per source per *interval* of dom(var) where a range
-                // can be said at all. The per-value spelling made both this and
-                // the scaffolding below O(var_vals x |D(var)|), which the guard
-                // does not see (a reason is only materialised with proofs on) and
-                // the audit lane does not run -- but the proof-scaling survey
-                // does, and it showed the single-support rule's proof growing
-                // tenfold per decade of width after the propagation had stopped
-                // doing so (#874).
+                // One literal per source per *interval* of dom(var). The per-value
+                // spelling made both this and the scaffolding below
+                // O(var_vals x |D(var)|), which the guard does not see (a reason is
+                // only materialised with proofs on) and the audit lane does not run
+                // -- but the proof-scaling survey does, and it showed the
+                // single-support rule's proof growing tenfold per decade of width
+                // after the propagation had stopped doing so (#874).
                 bool want_reason = inference.want_reasons();
                 Reason reason;
                 if (want_reason) {
@@ -403,8 +397,6 @@ auto In::install_propagators(Propagators & propagators) -> void
                     }
                 };
 
-                LargeDomainIterationCounter support_guard{"the number of values one In single-support pruning has walked"};
-
                 for (auto [run_lo, run_hi] : v_values.each_interval_minus(var_values)) {
                     if (run_lo < run_hi) {
                         // With the other selectors ruled out, V = var is forced,
@@ -425,16 +417,12 @@ auto In::install_propagators(Propagators & propagators) -> void
                         continue;
                     }
 
-                    for (Integer val = run_lo; val <= run_hi; ++val) {
-                        support_guard.step();
-                        if (! state.in_domain(V, val))
-                            continue;
-
-                        inference.infer_not_equal(logger, V, val,
+                    // A run of one value, for the same reason as step 1's.
+                    if (state.in_domain(V, run_lo))
+                        inference.infer_not_equal(logger, V, run_lo,
                             JustifyExplicitly{//
                                 [&](const ReasonLiterals & reason) { rule_out_other_selectors(reason); }, ThenRUP::Yes, hints::In{owner}},
                             reason);
-                    }
                 }
             }
 
