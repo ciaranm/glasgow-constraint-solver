@@ -215,6 +215,23 @@ namespace
             auto v1 = p.create_integer_variable(-probe_width, probe_width);
             p.post(Abs{v1, v2});
         });
+        add("Abs/view-hole", Expect::Clean, [](Problem & p) {
+            // The two rows above with one operand wrapped, and nothing else
+            // changed. They trip before #931, which is the same finding as
+            // Element/view-result one family down: the rule asked "can I say a
+            // range about these?" with a *type* test, so a view on either
+            // operand sent both hole loops down a per-value walk. The one
+            // genuine exemption left is a constant, which has no order-encoding
+            // atom for the lemmas to resolve against.
+            auto v1 = p.create_integer_variable(vector<Integer>{-probe_width, 0_i, probe_width});
+            auto v2 = wide_var(p);
+            p.post(Abs{v1, v2 + 1_i});
+        });
+        add("Abs/view-hole-preimage", Expect::Clean, [](Problem & p) {
+            auto v2 = p.create_integer_variable(vector<Integer>{0_i, probe_width});
+            auto v1 = p.create_integer_variable(-probe_width, probe_width);
+            p.post(Abs{v1 + 1_i, v2});
+        });
         add("Plus", Expect::Clean, [](Problem & p) {
             auto v = wide(p, 3);
             p.post(Plus{v[0], v[1], v[2]});
