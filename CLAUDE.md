@@ -26,6 +26,7 @@ reasoning behind them.
 | changing an existing constraint | the rest of [`dev_docs/constraints.md`](dev_docs/constraints.md), then [`reification.md`](dev_docs/reification.md) if it is reified |
 | touching domains, backtracking, or the inference paths | [`state-and-variables.md`](dev_docs/state-and-variables.md) |
 | writing or debugging a justification | `constraints.md` (Justifications), [`infer-redesign.md`](dev_docs/infer-redesign.md), and the per-constraint proof notes in the index |
+| wondering what the checker will accept, or why a proof is slow to check | [`veripb-facts.md`](dev_docs/veripb-facts.md) |
 | creating an auxiliary variable for a proof | [`variable-encodings.md`](dev_docs/variable-encodings.md) |
 | touching views | [`view-proof-logging.md`](dev_docs/view-proof-logging.md) |
 | making a propagator faster | [`propagator-performance.md`](dev_docs/propagator-performance.md), then [`benchmarking.md`](dev_docs/benchmarking.md) |

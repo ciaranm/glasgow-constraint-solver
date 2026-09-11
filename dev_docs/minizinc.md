@@ -139,6 +139,32 @@ The general recipe (see `gcs/constraints/lex/lex.cc` and the
    `.mzn` test, all set to `SKIP_RETURN_CODE 66` (which means
    "MiniZinc isn't installed, skip").
 
+### Never shift a `var` array inside a comprehension
+
+A redefinition that rebases an array of *variables* — `[x[i] - min(index_set(x))
+| i in index_set(x)]`, to hand a zero-based copy to a propagator that wants one —
+looks free and is not. The comprehension introduces a fresh FlatZinc variable per
+element, tied to the original by an `int_lin_eq`, and `LinearEquality` is bounds
+consistent by default, so a **hole** punched in the shifted copy never reaches
+the model's array; only its bounds do. Every value-pruning propagator behind such
+a redefinition is silently downgraded, and the damage lands on the search
+heuristic too, because a search annotation names the model's array: `first_fail`
+then reads stale domain sizes and `indomain_min` tries values already ruled out.
+
+Pass the **offset** instead and let `fzn_glasgow.cc` apply it as a view
+(`operator+(IntegerVariableID, Integer)`), which shares the domain outright and
+costs nothing to propagate. On `subcircuit` this was worth optimal-in-cap 4/15 →
+9/15 across the MiniZinc Challenge mario family;
+[subcircuit-proof-logging.md](subcircuit-proof-logging.md) has the measurements,
+the probe that separates cause from fix, and the list of redefinitions that still
+have the pattern (issue #803). Two details come with the change: the guard the
+comprehension used to make unnecessary (`if length(x) = 0 then true`) has to come
+back, and the constraint now gets views on every MiniZinc model, so it needs
+`add_view_tests` coverage.
+
+Shifting *parameters* in a comprehension costs nothing; this is only about arrays
+of `var`.
+
 ## When no predicate is the right answer
 
 Not every gcs feature wants an `mznlib/` override. The difference-logic
