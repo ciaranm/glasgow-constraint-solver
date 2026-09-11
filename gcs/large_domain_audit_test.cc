@@ -456,6 +456,23 @@ namespace
             auto result = wide_var(p);
             p.post(Element{result, p.create_integer_variable(0_i, 2_i), narrow(p, 3, 1_i, 3_i)});
         });
+        add("Element/index-support", Expect::Clean, [](Problem & p) {
+            // The *index* side, which none of the other Element rows can reach:
+            // they give the result a wide domain, so every entry overlaps it and
+            // no index value ever loses support. Here the result is narrow and
+            // one entry is wide and wholly above it, so that index value goes --
+            // and the justification for removing it states "no value of this
+            // entry is in the result's domain", which used to be one line per
+            // value of the entry (#900).
+            //
+            // Propagation is a merge walk either way, so this row is Clean
+            // before and after; the growth it is really here for is the proof's,
+            // which only the [.proofscaling] survey can see.
+            auto result = p.create_integer_variable(0_i, 2_i);
+            auto index = p.create_integer_variable(0_i, 1_i);
+            vector<IntegerVariableID> entries{p.create_integer_variable(0_i, 2_i), p.create_integer_variable(10_i, probe_width)};
+            p.post(Element{result, index, entries});
+        });
         add("Element/BC", Expect::Clean, [](Problem & p) {
             // The same instance as the GAC probe above, so the pair is
             // comparable: the weaker arm is what makes it clean, not an easier

@@ -12,6 +12,7 @@
 #include <set>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <version>
@@ -76,6 +77,77 @@ auto run_element_test(bool proofs, const string & mode, const ViewWrapConfig & v
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var, idx, array});
 
     check_results(proof_name, expected, actual);
+}
+
+// The index-support rule's justification has to say "no value of this entry is
+// in the result's domain", and the interesting shapes for it are the ones whose
+// domains are disjoint in more than the obvious way: with holes on either side,
+// lying below as well as above, touching without overlapping, and down to a
+// single value. Nothing in the table above reaches them, because a lo/hi pair
+// cannot state a hole and the random sweep's domains are too narrow to have one
+// worth stating (#900).
+//
+// Explicit value lists, so the domains are exactly what the row says.
+auto run_element_no_overlap_test(bool proofs, const ViewWrapConfig & view_cfg, const string & label, const vector<int> & result_values,
+    const vector<vector<int>> & entry_values) -> void
+{
+    auto wraps = wraps_for_positions(view_cfg, 2 + static_cast<int>(entry_values.size()));
+    print(cerr, "element no-overlap [{}] [{}] result={} entries={} {}", view_wrap_config_label(view_cfg), label, result_values, entry_values,
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    using Spec = std::variant<int, pair<int, int>, vector<int>>;
+    vector<Spec> specs;
+    specs.emplace_back(result_values);
+    specs.emplace_back(pair{0, static_cast<int>(entry_values.size()) - 1});
+    for (const auto & e : entry_values)
+        specs.emplace_back(e);
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected,
+        [&](const vector<int> & all) {
+            auto v = all.at(0), x = all.at(1);
+            return x >= 0 && cmp_less(x, entry_values.size()) && all.at(2 + x) == v;
+        },
+        specs);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto var = create_integer_variable_or_constant_with_view(p, result_values, wraps.at(0));
+    auto idx = create_integer_variable_or_constant_with_view(p, pair{0, static_cast<int>(entry_values.size()) - 1}, wraps.at(1));
+    vector<IntegerVariableID> array;
+    for (const auto & e : entry_values)
+        array.push_back(create_integer_variable_or_constant_with_view(p, e, wraps.at(array.size() + 2)));
+    p.post(Element{var, idx, &array}.with_consistency(consistency::GAC{}));
+
+    set<tuple<vector<int>>> got;
+    auto proof_name = proofs ? make_optional("element_test_nooverlap_" + label + "_" + view_wrap_config_label(view_cfg)) : nullopt;
+    vector<IntegerVariableID> all_vars{var, idx};
+    all_vars.insert(all_vars.end(), array.begin(), array.end());
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{all_vars});
+    check_results(proof_name, expected, actual);
+}
+
+auto run_all_no_overlap_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
+{
+    // Entry 0 always supports, so exactly one index value survives and the row
+    // is about entry 1 losing its own index value.
+    //
+    // Wholly above the result, with a hole of its own: the walk skips the
+    // result's gap and then runs off the top of it.
+    run_element_no_overlap_test(proofs, view_cfg, "above_holey", {0, 1, 2}, {{0, 1, 2}, {10, 11, 20, 21, 30}});
+    // Wholly below: the walk starts at the result's lower bound instead of the
+    // entry's, which is the move that never mentions the entry's own.
+    run_element_no_overlap_test(proofs, view_cfg, "below", {10, 11, 12}, {{10, 11, 12}, {1, 2, 3}});
+    // Interleaved holes: neither domain's gaps alone push the walk past the
+    // other, so both kinds of move are taken.
+    run_element_no_overlap_test(proofs, view_cfg, "interleaved", {0, 3, 6}, {{0, 3, 6}, {1, 2, 4, 5, 7}});
+    // Touching without overlapping: no gap at the boundary at all.
+    run_element_no_overlap_test(proofs, view_cfg, "adjacent", {0, 1, 2}, {{0, 1, 2}, {3, 4, 5}});
+    // One value on the unsupported side, and one on both sides.
+    run_element_no_overlap_test(proofs, view_cfg, "singleton_entry", {0, 1, 2}, {{0, 1, 2}, {9}});
+    run_element_no_overlap_test(proofs, view_cfg, "singleton_both", {4}, {{4}, {9}});
 }
 
 // `gac` selects the arm rather than a different instance, so the pair of modes
@@ -353,6 +425,8 @@ auto main(int argc, char * argv[]) -> int
             if (mode == "var") {
                 for (auto & [r1, r2, r3] : var_data)
                     run_element_test(proofs, mode, view_cfg, r1, r2, r3);
+
+                run_all_no_overlap_tests(proofs, view_cfg);
 
                 if (run_dup) {
                     // Dup-variable cases.

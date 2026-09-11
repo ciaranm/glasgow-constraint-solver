@@ -2,6 +2,7 @@
 #include <gcs/constraints/element/element.hh>
 #include <gcs/constraints/element/hints.hh>
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/innards/no_overlap_walk.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/large_domain_guard.hh>
@@ -411,10 +412,67 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
 
                                             if (elem.size() == dimensions_) {
                                                 auto array_var = get_array_var<dimensions_>(elem, *array);
-                                                state.for_each_value_immutable(array_var, [&](Integer v) {
-                                                    logger->emit_rup_proof_line_under_reason(reason,
-                                                        sum_so_far + 1_i * (index_vars.at(fixed_dim) != test_val) + 1_i * (array_var != v) >= 1_i,
-                                                        ProofLevel::Temporary);
+
+                                                // What this tuple owes is "no value of the entry is
+                                                // in result's domain", and it used to be said one
+                                                // value of the entry at a time -- so the proof of a
+                                                // single inference was linear in the entry's width,
+                                                // and naming `entry != v` made the encoding layer
+                                                // define an eq atom for every one of those values on
+                                                // top (#900). It is the same fact `equals`' no-overlap
+                                                // rule states, and the same walk certifies it over
+                                                // *runs*: see no_overlap_walk.hh for the invariant and
+                                                // what each move owes.
+                                                //
+                                                // Two lemma shapes carry a bound across this tuple's
+                                                // half-reified equality. The model states
+                                                // `result - entry == 0` under the conjunction of
+                                                // `index_d == x_d`, so in PB form the guard literals
+                                                // ride on both halves; negating a lemma sets every one
+                                                // of them false, which leaves the bare difference row
+                                                // and the pair of opposing bounds that makes it RUP by
+                                                // Theorem 2.9. That is the same argument as
+                                                // justify_not_in_range_across_equality's, with a
+                                                // conjunction's worth of guard literals in place of
+                                                // one reification literal -- more disjuncts, same
+                                                // configuration.
+                                                //
+                                                // It needs the row and the lemma's atoms to be in the
+                                                // same representation, which they are: an entry that
+                                                // is a view is registered while the model is written,
+                                                // so both the row and the atoms are over the view's
+                                                // own encoded variable.
+                                                //
+                                                // Model consequences, so they are emitted plainly
+                                                // rather than under the reason, exactly as equals
+                                                // does: a lemma that fails to line up can then only
+                                                // cost the conclusion its RUP check, never smuggle a
+                                                // state-dependent fact into the database.
+                                                auto guard = sum_so_far + 1_i * (index_vars.at(fixed_dim) != test_val);
+                                                auto entry_lower_reaches_result = [&](Integer k) {
+                                                    logger->emit_rup_proof_line(
+                                                        guard + 1_i * (array_var < k) + 1_i * (result_var >= k) >= 1_i, ProofLevel::Temporary);
+                                                };
+                                                auto result_lower_reaches_entry = [&](Integer k) {
+                                                    logger->emit_rup_proof_line(
+                                                        guard + 1_i * (result_var < k) + 1_i * (array_var >= k) >= 1_i, ProofLevel::Temporary);
+                                                };
+
+                                                auto entry_values = state.copy_of_values(array_var);
+                                                auto result_values = state.copy_of_values(result_var);
+                                                walk_no_overlap(entry_values, result_values, [&](NoOverlapStep kind, Integer lo, Integer hi) {
+                                                    switch (kind) {
+                                                        using enum NoOverlapStep;
+                                                    case AnchorV1Lower: break;                                 // the reason literal is the fact
+                                                    case JumpToV2Lower: result_lower_reaches_entry(lo); break; //
+                                                    case SkipV1Hole: break;                   // the range literal's own reverse reification
+                                                    case SkipV2Hole:                          //
+                                                        entry_lower_reaches_result(lo);       //
+                                                        result_lower_reaches_entry(hi + 1_i); //
+                                                        break;                                //
+                                                    case StopAboveV1Upper: break;             // both ends of the entry's own order chain
+                                                    case StopAboveV2Upper: entry_lower_reaches_result(hi); break;
+                                                    }
                                                 });
                                             }
                                             else
