@@ -638,40 +638,45 @@ if(GCS_BUILD_TESTS)
     # vehicle, and it therefore reaches the rules CumulativeRules leaves off by
     # default, which these four models cannot fire at all. See the list of lanes
     # not yet on that arm, below.
-    function(add_checkpoint_recovery_leak_check case mode)
-        add_test(NAME cumulative_checkpoint_recovery_${case}_${mode}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_checkpoint_recovery_leak_check.bash
-                $<TARGET_FILE:glasgow_scp_solver>
-                ${CMAKE_CURRENT_SOURCE_DIR}/constraints/cumulative/checkpoint_recovery_${case}.scp ${mode})
-        set_tests_properties(cumulative_checkpoint_recovery_${case}_${mode} PROPERTIES SKIP_RETURN_CODE 77
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering)
-    endfunction()
-    # Two tasks that must overlap and do not fit: the overflow contradiction and
-    # nothing else, which is the minimal end-state regression.
-    add_checkpoint_recovery_leak_check(overflow_only whole)
-    # Four tasks with four different durations, so the candidate set differs
-    # from one time point to the next and the weakening path is exercised. Fires
-    # both bound pushes as well as the overflow check.
-    add_checkpoint_recovery_leak_check(leak_check whole)
-    # Three tasks whose mandatory parts are all empty, so time-tabling sees
-    # nothing and the overload check is what refutes it. This is the (OC) arm:
-    # the contained tasks' own energy is what overflows the window.
-    add_checkpoint_recovery_leak_check(overload whole)
-    # And the (TTOC) arm, which supplies the same window and then adds the
-    # mandatory load of a task the window does *not* contain. Capacity 3 over
-    # [0,4): S1 (fixed at 0) and S2 are contained and carry 6 + 6 = 12 against a
-    # supply of 12, so (OC) alone finds nothing --- S0, which is not contained,
-    # has mandatory part [3,4) at height 2, and that is what tips it to 14 > 12.
-    # So the case cannot pass by accident on the plain overload check.
-    add_checkpoint_recovery_leak_check(ttoc whole)
-    # And each again in `no-block` mode, which never emits the per-time rows at
-    # all rather than deleting them afterwards. These are what stop the
-    # `startcheckpoint` ctest arm going vacuous: they fail if the encoding falls
-    # back for these models instead of dropping the block. See the script.
-    add_checkpoint_recovery_leak_check(overflow_only no-block)
-    add_checkpoint_recovery_leak_check(leak_check no-block)
-    add_checkpoint_recovery_leak_check(overload no-block)
-    add_checkpoint_recovery_leak_check(ttoc no-block)
+    # Only where the standalone .scp solver is built: these lanes run it, and
+    # GCS_ENABLE_EXECUTABLES=OFF (the MSVC frontends lane) leaves no such target
+    # for $<TARGET_FILE:> to name.
+    if(GCS_ENABLE_EXECUTABLES)
+        function(add_checkpoint_recovery_leak_check case mode)
+            add_test(NAME cumulative_checkpoint_recovery_${case}_${mode}
+                COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_checkpoint_recovery_leak_check.bash
+                    $<TARGET_FILE:glasgow_scp_solver>
+                    ${CMAKE_CURRENT_SOURCE_DIR}/constraints/cumulative/checkpoint_recovery_${case}.scp ${mode})
+            set_tests_properties(cumulative_checkpoint_recovery_${case}_${mode} PROPERTIES SKIP_RETURN_CODE 77
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering)
+        endfunction()
+        # Two tasks that must overlap and do not fit: the overflow contradiction and
+        # nothing else, which is the minimal end-state regression.
+        add_checkpoint_recovery_leak_check(overflow_only whole)
+        # Four tasks with four different durations, so the candidate set differs
+        # from one time point to the next and the weakening path is exercised. Fires
+        # both bound pushes as well as the overflow check.
+        add_checkpoint_recovery_leak_check(leak_check whole)
+        # Three tasks whose mandatory parts are all empty, so time-tabling sees
+        # nothing and the overload check is what refutes it. This is the (OC) arm:
+        # the contained tasks' own energy is what overflows the window.
+        add_checkpoint_recovery_leak_check(overload whole)
+        # And the (TTOC) arm, which supplies the same window and then adds the
+        # mandatory load of a task the window does *not* contain. Capacity 3 over
+        # [0,4): S1 (fixed at 0) and S2 are contained and carry 6 + 6 = 12 against a
+        # supply of 12, so (OC) alone finds nothing --- S0, which is not contained,
+        # has mandatory part [3,4) at height 2, and that is what tips it to 14 > 12.
+        # So the case cannot pass by accident on the plain overload check.
+        add_checkpoint_recovery_leak_check(ttoc whole)
+        # And each again in `no-block` mode, which never emits the per-time rows at
+        # all rather than deleting them afterwards. These are what stop the
+        # `startcheckpoint` ctest arm going vacuous: they fail if the encoding falls
+        # back for these models instead of dropping the block. See the script.
+        add_checkpoint_recovery_leak_check(overflow_only no-block)
+        add_checkpoint_recovery_leak_check(leak_check no-block)
+        add_checkpoint_recovery_leak_check(overload no-block)
+        add_checkpoint_recovery_leak_check(ttoc no-block)
+    endif()
 
     # #780's progress bar: the cumulative lanes that are *not* on the
     # `startcheckpoint` arm because a rule they fire still reads the per-time
