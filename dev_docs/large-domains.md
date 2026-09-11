@@ -618,7 +618,7 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-74 constraint probes, plus 20 heuristic ones in the second table. The lane
+75 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
@@ -867,7 +867,7 @@ separately, because they mean different things:
 
 ### Results at 10^3 → 10^4
 
-Re-measured over all 74 probes after the interval rewrites landed for
+Re-measured over all 75 probes after the interval rewrites landed for
 `ArrayMinMax`, `Table`, `Among`, `Element`, `In`, `GlobalCardinality` and
 `AllEqual/holes`, and again after #878, #875 and #877 — which moved nothing but
 their own rows: `Element/holey` is flat at 41 rows and 51 steps, `Abs/hole` at 30
@@ -884,7 +884,7 @@ loop — that is how the previous version of it went stale, and how the
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 43988 → 439988 steps) |
-| neither | 1.0x / 1.0x | everything else, 65 of 74 |
+| neither | 1.0x / 1.0x | everything else, 66 of 75 |
 
 The last row means "does not grow with the width", not "identical at both widths",
 and three entries in it are worth naming so nobody reads them as a promise.
@@ -946,7 +946,7 @@ whose steps grow at a fixed encoding is a propagator that has an interval and
 spells it out. That is a real conclusion rather than a gap in the survey, and it
 should be re-tested after stage 4 rather than assumed to stay true — a genuine
 candidate would be a growing row whose removed set provably is not an interval,
-and none of the 73 probes produces one today.
+and none of the 75 probes produces one today.
 
 Two things kept this table wrong for longer than it should have been. The probe
 sharpening of PR #849 turned exactly these three rows from `HazardNotReached` into
