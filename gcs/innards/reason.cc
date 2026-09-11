@@ -1,3 +1,4 @@
+#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 
@@ -9,13 +10,13 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::optional;
-using std::pair;
 
 namespace
 {
-    // Walk every value in each variable's domain (lower bound, upper bound, and
-    // any holes), appending the facts to `reason`. This is the materialisation
-    // of GenericReasonOver.
+    // State each variable's domain exactly -- its lower bound, its upper bound,
+    // and one range condition per interior run of missing values -- appending the
+    // facts to `reason`. This is the materialisation of GenericReasonOver. The
+    // cost is one step per run, not per value; see the note on the runs below.
     auto materialise_generic(const State & state, const std::vector<IntegerVariableID> & vars, ReasonLiterals & reason) -> void
     {
         for (const auto & var : vars) {
@@ -39,22 +40,31 @@ namespace
                     // variable is a zero-one one, whose domain has no interior value
                     // and so no run to state. Anything that made a wider variable
                     // direct-only would have to revisit this.
-                    optional<pair<Integer, Integer>> run;
-                    auto flush = [&]() {
-                        if (run) {
-                            reason.push_back(not_in_range(var, run->first, run->second));
-                            run.reset();
+                    //
+                    // The runs are read off the domain's intervals rather than found
+                    // by walking its values: the gap between two consecutive intervals
+                    // IS a maximal run of missing values, so this costs one step per
+                    // run where the walk cost one per value of the whole bounds range
+                    // (issue #935). copy_of_values() hands the intervals over in the
+                    // variable's own value order, negated views included, so the runs
+                    // come out ascending and identical to what the walk produced.
+                    // Inline rather than IntervalSet::each_gap_interval(), which is a
+                    // coroutine, because this is on the propagation path.
+                    //
+                    // One step per run is a much better cost but still not a bound --
+                    // a domain can have as many runs as it has values, and a reason
+                    // has to name every one -- so the counter stays, now measuring the
+                    // quantity that is actually unbounded.
+                    LargeDomainIterationCounter guard{"the number of runs one generic reason materialisation has stated"};
+                    auto values = state.copy_of_values(var);
+                    optional<Integer> prev_hi;
+                    values.for_each_interval([&](Integer lo, Integer hi) {
+                        if (prev_hi) {
+                            guard.step();
+                            reason.push_back(not_in_range(var, *prev_hi + 1_i, lo - 1_i));
                         }
-                    };
-                    for (auto v = bounds.first + 1_i; v < bounds.second; ++v) {
-                        if (state.in_domain(var, v))
-                            flush();
-                        else if (run)
-                            run->second = v;
-                        else
-                            run = pair{v, v};
-                    }
-                    flush();
+                        prev_hi = hi;
+                    });
                 }
             }
         }

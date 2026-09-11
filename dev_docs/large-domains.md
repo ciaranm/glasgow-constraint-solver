@@ -665,6 +665,18 @@ Two kinds of check, and the difference matters:
   covers the walk, which is what it was ever counting. The remaining variable
   with no range literal is a bits-less (direct-only, so zero-one) one, which has
   no interior run to state.
+
+  **The restatement and the walk that finds it are two different costs, and #935
+  is the one where only the second was wrong.** `materialise_generic()` in
+  `reason.cc` already stated a holey domain as one `not_in_range` per run — the
+  right output — but found those runs by testing every value between the bounds
+  for membership. A domain is an `IntervalSet`; its runs are the gaps between
+  consecutive intervals, so they can be read off rather than searched for. Three
+  variables of three values each, spread over `0..10^9`, cost 16.8 s of run-finding
+  under `Among` and now cost nothing measurable. **So the question to ask of an
+  interval rewrite is not only "is the output one literal per run" but "is the
+  work one step per run" — a site can pass the first and fail the second, and the
+  proof-scaling survey cannot tell, because the proof was already the right size.**
 * **`GCS_CHECK_LARGE_DOMAIN`** checks a size up front, for the H3 sites that
   commit to a whole array at once.
 
@@ -705,14 +717,14 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-81 constraint probes, plus 20 heuristic ones in the second table. The lane
+82 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
 | **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (47) | the arithmetic family (with four rows of its own for `Abs`' interior holes, two of them view-wrapped), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among`, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **Clean** (48) | the arithmetic family (with four rows of its own for `Abs`' interior holes, two of them view-wrapped), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among` contiguous and holey, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (15) | the graph and permutation family, and the Boolean constraints |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`
@@ -749,6 +761,15 @@ the answer for all of them at once; a lane that only ever asks it about bare
 variables cannot tell which ones were updated. With #931 there is no site left in
 the tree still answering it the old way, but that is a fact about today's tree
 and not a property the lane enforces — the rows are what enforce it.
+
+**`Among/holey` is the same lesson on a second axis: wide, holey, and reaching a
+*reason*.** The lane had ten wide-and-holey rows before it and not one of them
+reached a reason — `Among`, `Table`, `Nogoods`, `MinDistance` and `In/vars` all
+post contiguous wide variables — so `materialise_generic()`'s per-value
+run-finding, which sits behind the 31 constraints that call `generic_reason()`,
+was invisible here (#935). The axes a row can vary are the width, the holes, the
+variable's *kind*, and whether the probe gets as far as materialising a reason;
+most rows vary only the first.
 
 It has a **third** site, and finding it was a lesson about the axes a row covers
 rather than about the constraint. `with_closed()` installs a propagator of its
@@ -1020,7 +1041,7 @@ time, and the row is now flat at 93.
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 43988 → 439988 steps) |
-| neither | 1.0x / 1.0x | everything else, 72 of 81 |
+| neither | 1.0x / 1.0x | everything else, 73 of 82 |
 
 The last row means "does not grow with the width", not "identical at both widths",
 and three entries in it are worth naming so nobody reads them as a promise.
