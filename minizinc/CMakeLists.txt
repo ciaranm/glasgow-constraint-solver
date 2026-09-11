@@ -260,6 +260,17 @@ set_tests_properties(minizinc-globalcardinalityclosed PROPERTIES SKIP_RETURN_COD
 add_test(NAME minizinc-globalcardinalitylowup COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalitylowup true true)
 set_tests_properties(minizinc-globalcardinalitylowup PROPERTIES SKIP_RETURN_CODE 66)
 
+# A cover that repeats a value, which MiniZinc permits and GlobalCardinality does
+# not: the front end folds the repeat out and posts the count equality it stood
+# for (#922). The fzn pattern is what stops these passing vacuously -- if the
+# repeat were folded by MiniZinc's own wrapper instead, the solutions would still
+# agree and the builtin under test would never have run.
+add_test(NAME minizinc-globalcardinalityrepeated COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_global_cardinality $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalityrepeated true true)
+set_tests_properties(minizinc-globalcardinalityrepeated PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-globalcardinalityrepeatedclosed COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_global_cardinality_closed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalityrepeatedclosed true true)
+set_tests_properties(minizinc-globalcardinalityrepeatedclosed PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-increasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ increasing true true)
 set_tests_properties(minizinc-increasing PROPERTIES SKIP_RETURN_CODE 66)
 

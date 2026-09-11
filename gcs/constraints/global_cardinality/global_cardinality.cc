@@ -1,6 +1,7 @@
 #include <gcs/constraint.hh>
 #include <gcs/constraints/global_cardinality/global_cardinality.hh>
 #include <gcs/constraints/global_cardinality/hints.hh>
+#include <gcs/exception.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -14,6 +15,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <utility>
 #include <variant>
@@ -24,15 +26,67 @@ using namespace gcs::innards;
 
 using std::holds_alternative;
 using std::make_unique;
+using std::map;
 using std::move;
+using std::pair;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::adjacent_find;
 using std::ranges::sort;
-using std::ranges::unique;
+
+auto gcs::fold_repeated_cover_values(vector<Integer> & values, vector<IntegerVariableID> & counts)
+    -> vector<pair<IntegerVariableID, IntegerVariableID>>
+{
+    if (values.size() != counts.size())
+        throw InvalidProblemDefinitionException{"GlobalCardinality: values and counts must have the same size"};
+
+    vector<pair<IntegerVariableID, IntegerVariableID>> equalities;
+    map<Integer, std::size_t> first_seen;
+    vector<Integer> kept_values;
+    vector<IntegerVariableID> kept_counts;
+    kept_values.reserve(values.size());
+    kept_counts.reserve(counts.size());
+
+    for (const auto & [i, value] : enumerate(values)) {
+        auto [where, inserted] = first_seen.emplace(value, kept_values.size());
+        if (inserted) {
+            kept_values.push_back(value);
+            kept_counts.push_back(counts[i]);
+        }
+        else if (kept_counts[where->second] != counts[i]) {
+            // Repeating the same count variable as well as the value asks for
+            // nothing beyond what the kept entry already says, so it needs no
+            // equality -- and Equals over one variable and itself would be a
+            // constraint the .scp then has to carry for no reason.
+            equalities.emplace_back(kept_counts[where->second], counts[i]);
+        }
+    }
+
+    values = move(kept_values);
+    counts = move(kept_counts);
+    return equalities;
+}
 
 GlobalCardinality::GlobalCardinality(vector<IntegerVariableID> vars, vector<Integer> values, vector<IntegerVariableID> counts) :
     _vars(move(vars)), _values(move(values)), _counts(move(counts))
 {
+    // Both propagators index _counts by a cover position, and every phase after
+    // this one -- the encoding, the .scp term, the propagators -- assumes the two
+    // lists line up. Unchecked, a short _counts was a heap-buffer-overflow in
+    // sort_cover_values() rather than a diagnosable error.
+    if (_values.size() != _counts.size())
+        throw InvalidProblemDefinitionException{"GlobalCardinality: values and counts must have the same size"};
+
+    // Distinctness is a real precondition of both propagators, not just of the
+    // Hall reasoning that documents it: a repeated cover value doubled the demand
+    // for it, which lost solutions and emitted an inference VeriPB rejects
+    // (#922). Rejecting it here rather than folding it means the .scp keeps
+    // describing what was posted; fold_repeated_cover_values() is what a front
+    // end whose input permits repeats should call first.
+    auto sorted = _values;
+    sort(sorted);
+    if (adjacent_find(sorted) != sorted.end())
+        throw InvalidProblemDefinitionException{"GlobalCardinality: cover values must be pairwise distinct"};
 }
 
 auto GlobalCardinality::with_consistency(GlobalCardinalityConsistency level) -> GlobalCardinality &
@@ -122,15 +176,12 @@ auto GlobalCardinality::install_propagators(Propagators & propagators) -> void
     if (_closed) {
         // The cover as intervals, built once: it is fixed for the life of the
         // constraint, and every call takes each variable's domain difference
-        // against it. insert_at_end() needs its input ascending *and distinct*,
-        // and _values is neither in general -- sort_cover_values() only runs on
-        // the BC path, and nothing rejects a repeated cover value -- so sort and
-        // unique a copy here rather than assume either. Dedup on the copy only:
-        // _values stays as posted, since _counts is indexed alongside it and the
-        // proof model's per-value rows are numbered by that index.
+        // against it. insert_at_end() needs its input ascending and distinct;
+        // distinct the constructor guarantees, ascending it does not, because
+        // sort_cover_values() only runs on the BC path -- so sort a copy rather
+        // than assume _values is ordered.
         auto sorted_cover = _values;
         sort(sorted_cover);
-        sorted_cover.erase(unique(sorted_cover).begin(), sorted_cover.end());
         IntervalSet<Integer> cover_set;
         for (const auto & value : sorted_cover)
             cover_set.insert_at_end(value);
