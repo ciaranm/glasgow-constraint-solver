@@ -174,6 +174,22 @@ namespace
             name += "[" + *annotation + "]";
         return name;
     }
+
+    // A registered view V = s*X + c (s = -1 when negate_first, c = then_add) owns its
+    // own encoded variable, so an interval stated on V's value scale has a counterpart
+    // on X's. For s = +1 the interval just shifts; for s = -1 the order reverses, so
+    // the endpoints swap, and the map is its own inverse. Width is preserved either
+    // way -- which is why a width-1 request is the eq atom on both sides, and why the
+    // interval links below never have to deal with one.
+    auto interval_on_underlying(const ViewOfIntegerVariableID & view, Integer lo, Integer hi) -> std::pair<Integer, Integer>
+    {
+        return view.negate_first ? std::pair{view.then_add - hi, view.then_add - lo} : std::pair{lo - view.then_add, hi - view.then_add};
+    }
+
+    auto interval_on_view(const ViewOfIntegerVariableID & view, Integer lo, Integer hi) -> std::pair<Integer, Integer>
+    {
+        return view.negate_first ? std::pair{view.then_add - hi, view.then_add - lo} : std::pair{lo + view.then_add, hi + view.then_add};
+    }
 }
 
 struct NamesAndIDsTracker::Imp
@@ -359,6 +375,11 @@ struct NamesAndIDsTracker::Imp
     // already exists, need_view itself backfills via this map's setup.
     std::map<SimpleIntegerVariableID, std::vector<ProofOnlySimpleIntegerVariableID>> views_of_variable;
 
+    // Which view-side interval literals have had their [V in a..b] <=> [X in a'..b']
+    // link pair emitted. Mirroring runs from whichever side is asked first and then
+    // recurses to the other, so without this the pair would be written twice.
+    std::set<std::pair<ProofOnlySimpleIntegerVariableID, std::pair<Integer, Integer>>> invar_links_emitted;
+
     // For each V-form proof line that has a derived deview-form, the
     // corresponding deview-form line. Lookup via deviewed_line_for.
     map<ProofLine, ProofLine> deviewed_line_by_v_form;
@@ -534,11 +555,19 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             case Equal: need_direct_encoding_for(var, cond.value); return _imp->atoms_for(var).eq_defs.at(cond.value.raw_value).first;
             case NotEqual: need_direct_encoding_for(var, cond.value); return _imp->atoms_for(var).eq_defs.at(cond.value.raw_value).second;
             case InRange:
-                static_cast<void>(need_invar(var, cond.value, cond.upper_value));
-                return _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).first;
             case NotInRange:
+                // A width-1 range IS the eq atom, so route it there rather than looking
+                // for an interval literal that need_invar deliberately did not make.
+                // in_range() / not_in_range() canonicalise this away at construction, so
+                // only a hand-built VariableConditionFrom gets here -- but the failure
+                // if it did would be an out_of_range from the lookup below, which says
+                // nothing about what went wrong.
+                if (cond.value == cond.upper_value)
+                    return need_pol_item_defining_literal(
+                        VariableConditionFrom<IntegerVariableID>{var, InRange == cond.op ? Equal : NotEqual, cond.value});
                 static_cast<void>(need_invar(var, cond.value, cond.upper_value));
-                return _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).second;
+                return InRange == cond.op ? _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).first
+                                          : _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).second;
             }
             throw NonExhaustiveSwitch{};
         }, //
@@ -555,7 +584,14 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
                 case Equal: need_direct_encoding_for(*v_id, cond.value); return _imp->atoms_for(*v_id).eq_defs.at(cond.value.raw_value).first;
                 case NotEqual: need_direct_encoding_for(*v_id, cond.value); return _imp->atoms_for(*v_id).eq_defs.at(cond.value.raw_value).second;
                 case InRange:
-                case NotInRange: throw UnimplementedException{};
+                case NotInRange:
+                    // Width 1 is the eq atom on the view too; see the simple-variable arm.
+                    if (cond.value == cond.upper_value)
+                        return need_pol_item_defining_literal(
+                            VariableConditionFrom<IntegerVariableID>{var, InRange == cond.op ? Equal : NotEqual, cond.value});
+                    static_cast<void>(need_invar(*v_id, cond.value, cond.upper_value));
+                    return InRange == cond.op ? _imp->invars_that_exist.at(*v_id).at(pair{cond.value, cond.upper_value}).first
+                                              : _imp->invars_that_exist.at(*v_id).at(pair{cond.value, cond.upper_value}).second;
                 }
                 throw NonExhaustiveSwitch{};
             }
@@ -574,7 +610,14 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             case Equal: throw UnimplementedException{};
             case NotEqual: throw UnimplementedException{};
             case InRange:
-            case NotInRange: throw UnimplementedException{};
+            case NotInRange:
+                // Deview the interval onto the underlying variable, endpoints swapped
+                // for a negated view, and take its Def line: on this path there is no
+                // V-form line to be consistent with, because the view has no encoded
+                // variable of its own.
+                return need_pol_item_defining_literal(VariableConditionFrom<IntegerVariableID>{var.actual_variable, cond.op,
+                    var.negate_first ? var.then_add - cond.upper_value : cond.value - var.then_add,
+                    var.negate_first ? var.then_add - cond.value : cond.upper_value - var.then_add});
             }
             throw NonExhaustiveSwitch{};
         } //
@@ -602,8 +645,12 @@ auto NamesAndIDsTracker::need_proof_name(const VariableConditionFrom<SimpleOrPro
     case GreaterEqual: need_gevar(cond.var, cond.value); break;
     case InRange:
     case NotInRange:
-        if (! _imp->find_condition(cond))
-            static_cast<void>(need_invar(cond.var, cond.value, cond.upper_value));
+        // Unconditional, unlike the other operators: need_invar is not only where a
+        // range literal gets defined, it is also where it gets linked to its views'
+        // (or its underlying variable's) matching literal. A condition that already
+        // has a proof name may still be an unlinked partition cell, so short-circuiting
+        // on find_condition here silently drops the link. See need_invar.
+        static_cast<void>(need_invar(cond.var, cond.value, cond.upper_value));
         break;
     }
 }
@@ -1258,6 +1305,13 @@ auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVari
 
 auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
 {
+    // Idempotent: defining a literal twice would allocate it a second xliteral, emit a
+    // second reification pair and give it a duplicate containment-tree entry. The
+    // partition machinery can now be re-entered part way through (see the single-cell
+    // case in define_invar_with_covering), so this is reachable rather than defensive.
+    if (_imp->invars_that_exist[id].contains(pair{lo, hi}))
+        return;
+
     // Both order-encoding cuts; need_gevar threads them into the order chain, and
     // emits the bound-axiom units for any cut outside the definition bounds.
     need_gevar(id, lo);
@@ -1265,6 +1319,14 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
 
     auto x = allocate_xliteral_meaning(id, lo, hi);
     _imp->store_condition(in_range(id, lo, hi), x);
+
+    // Between here and the invars_that_exist entry below, the literal is *findable but
+    // not defined*. Nothing may render it into a proof line in that window: doing so
+    // would reach xliteral_for_ensuring's range branch, re-enter need_invar, take the
+    // single-cell path, and define the literal a second time -- the idempotence guard
+    // above tests invars_that_exist, which is not yet populated. Nothing does, because
+    // the only emission in between is the reification, which goes through the ostream
+    // overload of emit_inequality_to with EnsureNames::No. Keep it that way.
 
     auto will_define = _imp->logger->get_assertion_level() <= AssertionLevel::Links;
     // Struggling to get clang-format to behave here...
@@ -1372,6 +1434,14 @@ auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariabl
     // top-level partition, which gives wipeout detection at the literal level. It is
     // RUP from the bound axioms via the cells' reverse reifications and the order
     // chain.
+    //
+    // Defining a cell can re-enter here and insert further boundaries (mirroring a
+    // cell across a view link requests it on the far side, which requests it back).
+    // std::set iterators survive insertion, so the walk simply also visits the finer
+    // cells, and the covering can end up naming a since-split literal alongside its
+    // halves. That is still an at-least-one over a set that covers the range, so it is
+    // still RUP and still does its job -- but it is not always the leaf partition the
+    // name suggests.
     WPBSum root_covering;
     for (auto it = boundaries.begin(); next(it) != boundaries.end(); ++it) {
         auto cell_lo = *it, cell_hi = *next(it) - 1_i;
@@ -1382,6 +1452,134 @@ auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariabl
         append_cell_literal_to(root_covering, id, cell_lo, cell_hi);
     }
     _imp->logger->emit_rup_proof_line(move(root_covering) >= 1_i, ProofLevel::TopAndCore);
+}
+
+auto NamesAndIDsTracker::define_invar_with_covering(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
+{
+    // The literal is defined over its own two cuts even when they lie outside the
+    // definition bounds; the bound-axiom units falsify the out-of-bounds part by
+    // unit propagation. The partition only spans the definition range, so the
+    // covering is over the cells of the in-bounds intersection.
+    auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
+    auto span_lo = max(lo, lb), span_hi = min(hi, ub);
+
+    if (span_lo > span_hi || _imp->assertion_level > AssertionLevel::Links) {
+        // Entirely outside: the reification plus the bound axioms already falsify
+        // it, so there is nothing to cover;
+        // ...OR we are at a higher assertion level that doesn't need covering apparatus in the first place.
+        define_plain_invar(id, lo, hi);
+        return;
+    }
+
+    if (! _imp->interval_partitions.contains(id)) {
+        init_interval_partition(id, span_lo, span_hi);
+    }
+    else {
+        ensure_partition_cut(id, span_lo);
+        ensure_partition_cut(id, span_hi + 1_i);
+    }
+
+    // If the request is exactly one cell, the partition maintenance above defined it --
+    // unless we re-entered from inside that maintenance, which publishes a boundary
+    // before defining the two halves that boundary creates, so for that window the
+    // partition claims a cell that does not exist yet. Define it here in that case;
+    // ensure_partition_cut's own define_cell is idempotent and will not redo it.
+    const auto & boundaries = _imp->interval_partitions.at(id);
+    if (lo == span_lo && hi == span_hi && *next(boundaries.find(span_lo)) == span_hi + 1_i) {
+        define_plain_invar(id, lo, hi);
+        return;
+    }
+
+    // Otherwise define it, with a covering over the in-bounds cells it spans, so
+    // that falsifying those pieces falsifies it by unit propagation.
+    define_plain_invar(id, lo, hi);
+    WPBSum covering;
+    visit([&](const auto & id) { covering += 1_i * not_in_range(id, lo, hi); }, id);
+    for (auto it = boundaries.find(span_lo); *it != span_hi + 1_i; ++it)
+        append_cell_literal_to(covering, id, *it, *next(it) - 1_i);
+    _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::TopAndCore);
+}
+
+auto NamesAndIDsTracker::mirror_invar_across_view_link(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
+{
+    if (_imp->assertion_level > AssertionLevel::Links)
+        return;
+
+    // The interval-level analogue of the eq- and ge-atom links: `[V in a..b]` and
+    // `[X in a'..b']` are separate literals over separate bit-vectors, joined by two
+    // rup lines. Emitted once per view-side interval, from whichever side asked
+    // first; the other side's mirroring finds the pair already recorded.
+    //
+    // Both directions are load-bearing and neither is free.
+    //
+    //   ~[V in a..b] OR [X in a'..b']. UP: the forward reification of the V literal
+    //   gives V's two cuts, the ge-links carry each cut to X (for a negated view the
+    //   two cuts swap roles, which is exactly what the endpoint swap in
+    //   interval_on_underlying accounts for), and the reverse reification of the X
+    //   literal then fires.
+    //
+    //   ~[X in a'..b'] OR [V in a..b], symmetrically. This is the direction that is
+    //   *not* derivable from the existing families, contrary to the analysis in
+    //   issue #882: a negated range literal is a unit on neither of its cuts (the
+    //   reverse reification leaves only a binary clause), so all it can do is descend
+    //   its own variable's containment edges, bottoming out at cells that are
+    //   themselves unlinked range literals unless they are width 1. Descending to
+    //   width 1 is the per-value shattering the interval vocabulary exists to avoid.
+    //   The shape that needs it is routine rather than exotic: search branches on
+    //   real variables only (reject_random_interval requires a SimpleIntegerVariableID),
+    //   while generic_reason states hole runs over the *operand*, which under a wrap
+    //   is the view -- so a range decision on X has to reach a reason literal on V.
+    auto link = [&](const ProofOnlySimpleIntegerVariableID & v_id, Integer a, Integer b, const SimpleIntegerVariableID & x, Integer p, Integer q) {
+        // Recording the pair up front is what stops the recursion: the two need_invar
+        // calls below come straight back here, and stop on this test.
+        if (! _imp->invar_links_emitted.emplace(v_id, pair{a, b}).second)
+            return;
+        static_cast<void>(need_invar(v_id, a, b));
+        static_cast<void>(need_invar(x, p, q));
+
+        auto assert_or_rup = _imp->logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+        auto v_cond = in_range(v_id, a, b);
+        auto x_cond = in_range(x, p, q);
+        _imp->logger->emit(assert_or_rup, WPBSum{} + 1_i * ! v_cond + 1_i * x_cond >= 1_i, ProofLevel::TopAndCore);
+        _imp->logger->emit(assert_or_rup, WPBSum{} + 1_i * ! x_cond + 1_i * v_cond >= 1_i, ProofLevel::TopAndCore);
+    };
+
+    // Called for every range literal at the point it is *named*: from need_invar,
+    // outside its "already defined" guard, and again from xliteral_for_ensuring
+    // whenever a range condition that already has a proof name reaches a proof line.
+    // Naming is the right trigger and requesting is not, because the partition
+    // machinery defines cells directly through define_plain_invar, so a cell is never
+    // "requested" and both need_proof_name and xliteral_for_ensuring short-circuit on
+    // it. A decision, reason or conclusion that happens to name one of those cells
+    // would then get no link at all -- a silent unit-propagation dead end, and what a
+    // mixed view wrap on equals hit with `[view in 11..12]` and `[x in 1..2]` both
+    // defined and nothing joining them.
+    //
+    // Literals that are never named cost nothing here and need nothing: a fact only
+    // ever enters a variable's literal family through a named literal or a bound, and
+    // both of those cross.
+    //
+    // The two phases do not interleave: need_view can only register a view while the
+    // model is being written, and need_invar only works once the logger has taken
+    // over, so every view of a variable exists before any of its range literals do.
+    if (auto pid_ptr = std::get_if<ProofOnlySimpleIntegerVariableID>(&id)) {
+        auto view_it = _imp->view_proof_only_to_view.find(*pid_ptr);
+        if (view_it != _imp->view_proof_only_to_view.end()) {
+            const auto & view = view_it->second;
+            auto [x_lo, x_hi] = interval_on_underlying(view, lo, hi);
+            link(*pid_ptr, lo, hi, view.actual_variable, x_lo, x_hi);
+        }
+    }
+    else if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id)) {
+        if (auto it = _imp->views_of_variable.find(*sid_ptr); it != _imp->views_of_variable.end()) {
+            auto views_copy = it->second;
+            for (const auto & view_pid : views_copy) {
+                const auto & view = _imp->view_proof_only_to_view.at(view_pid);
+                auto [v_lo, v_hi] = interval_on_view(view, lo, hi);
+                link(view_pid, v_lo, v_hi, *sid_ptr, lo, hi);
+            }
+        }
+    }
 }
 
 auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofLiteral
@@ -1396,57 +1594,39 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
 
     auto as_literal = [&]() { return visit([&](const auto & id) -> ProofLiteral { return in_range(id, lo, hi); }, id); };
 
-    auto & for_this_var = _imp->invars_that_exist[id];
-    if (for_this_var.contains(pair{lo, hi}))
-        return as_literal();
+    if (! _imp->invars_that_exist[id].contains(pair{lo, hi})) {
+        if (! _imp->logger)
+            throw UnimplementedException{"range literals during model writing are not yet supported"};
+        if (! has_bit_representation(id))
+            throw ProofError{"range literal requested for a variable without a bits encoding"};
 
-    if (! _imp->logger)
-        throw UnimplementedException{"range literals during model writing are not yet supported"};
-    if (! has_bit_representation(id))
-        throw ProofError{"range literal requested for a variable without a bits encoding"};
-
-    // The literal is defined over its own two cuts even when they lie outside the
-    // definition bounds; the bound-axiom units falsify the out-of-bounds part by
-    // unit propagation. The partition only spans the definition range, so the
-    // covering is over the cells of the in-bounds intersection.
-    auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
-    auto span_lo = max(lo, lb), span_hi = min(hi, ub);
-
-    if (span_lo > span_hi || _imp->assertion_level > AssertionLevel::Links) {
-        // Entirely outside: the reification plus the bound axioms already falsify
-        // it, so there is nothing to cover;
-        // ...OR we are at a higher assertion level that doesn't need covering apparatus in the first place.
-        define_plain_invar(id, lo, hi);
-        return as_literal();
+        define_invar_with_covering(id, lo, hi);
     }
 
-    if (! _imp->interval_partitions.contains(id)) {
-        init_interval_partition(id, span_lo, span_hi);
-    }
-    else {
-        ensure_partition_cut(id, span_lo);
-        ensure_partition_cut(id, span_hi + 1_i);
-    }
-
-    // If the request is exactly one cell, it was defined just now.
-    const auto & boundaries = _imp->interval_partitions.at(id);
-    if (lo == span_lo && hi == span_hi && *next(boundaries.find(span_lo)) == span_hi + 1_i)
-        return as_literal();
-
-    // Otherwise define it, with a covering over the in-bounds cells it spans, so
-    // that falsifying those pieces falsifies it by unit propagation.
-    define_plain_invar(id, lo, hi);
-    WPBSum covering;
-    visit([&](const auto & id) { covering += 1_i * not_in_range(id, lo, hi); }, id);
-    for (auto it = boundaries.find(span_lo); *it != span_hi + 1_i; ++it)
-        append_cell_literal_to(covering, id, *it, *next(it) - 1_i);
-    _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::TopAndCore);
+    // Deliberately outside the definition guard: a literal can already exist without
+    // being linked. The partition machinery defines cells nobody asked for, straight
+    // through define_plain_invar, so the first time anything *names* one of those
+    // cells is the first opportunity to link it -- and that name may arrive on either
+    // side. Returning early here is what made an equals backtrack clause fail under a
+    // mixed view wrap with `[view in 11..12]` and `[x in 1..2]` both present and
+    // nothing joining them.
+    mirror_invar_across_view_link(id, lo, hi);
     return as_literal();
 }
 
 auto NamesAndIDsTracker::has_bit_representation(const SimpleOrProofOnlyIntegerVariableID & id) const -> bool
 {
     return _imp->integer_variable_bits_to_size_and_proof_vars.contains(id);
+}
+
+auto NamesAndIDsTracker::can_represent_range_literal_for(const IntegerVariableID & var) const -> bool
+{
+    return overloaded{
+        [&](const SimpleIntegerVariableID & v) { return has_bit_representation(v); },                 //
+        [&](const ViewOfIntegerVariableID & v) { return has_bit_representation(v.actual_variable); }, //
+        [&](const ConstantIntegerVariableID &) { return true; }                                       //
+    }
+        .visit(var);
 }
 
 auto NamesAndIDsTracker::view_bounds(const ViewOfIntegerVariableID & view) const -> pair<Integer, Integer>
@@ -1845,8 +2025,22 @@ auto NamesAndIDsTracker::xliteral_for_ensuring(const VariableConditionFrom<Simpl
     if (! f) {
         need_proof_name(cond);
         f = _imp->find_condition(cond);
-        if (! f)
-            throw ProofError{"still can't find literals for cond after introducing it"};
+        if (! f) {
+            auto which = visit(overloaded{//
+                                   [&](const SimpleIntegerVariableID & v) { return "i" + to_string(v.index); },
+                                   [&](const ProofOnlySimpleIntegerVariableID & v) { return "p" + to_string(v.index); }},
+                cond.var);
+            throw ProofError{"still can't find literals for cond after introducing it: " + which + " op=" + to_string(static_cast<int>(cond.op)) +
+                " [" + to_string(cond.value.raw_value) + "," + to_string(cond.upper_value.raw_value) + "]"};
+        }
+    }
+    else if (VariableConditionOperator::InRange == cond.op || VariableConditionOperator::NotInRange == cond.op) {
+        // Every range literal that reaches a proof line must be linked across its
+        // variable's view boundary, and this is the one place they all pass through:
+        // the partition machinery defines cells without going anywhere near
+        // need_proof_name, so a line naming an existing cell is otherwise the first
+        // and last chance to notice. Idempotent, and a set probe after the first time.
+        mirror_invar_across_view_link(cond.var, cond.value, cond.upper_value);
     }
     return *f;
 }

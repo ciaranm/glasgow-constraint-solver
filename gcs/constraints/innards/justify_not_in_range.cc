@@ -3,7 +3,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-auto gcs::innards::justify_not_in_range_across_equality(ProofLogger & logger, const ReasonLiterals & reason, const SimpleIntegerVariableID & pruned,
+auto gcs::innards::justify_not_in_range_across_equality(ProofLogger & logger, const ReasonLiterals & reason, const IntegerVariableID & pruned,
     Integer lo, Integer hi, IntegerVariableID other, Integer other_lo, Integer other_hi) -> void
 {
     // pruned >= lo -> other >= other_lo. Negation is pruned >= lo AND

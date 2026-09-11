@@ -322,50 +322,36 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         // its own (a range literal asserts order atoms, never bits, so it cannot
         // cross the bit-sum equality), so two bound-lemmas carry the bounds across
         // first; each is RUP via the contradictory-binary-sums configuration. See
-        // justify_not_in_range_across_equality. Views and constants take the
-        // per-value path.
+        // justify_not_in_range_across_equality. Either operand may be a view: its
+        // range literals live on its own encoded variable, which is also the
+        // representation the model states this equality in, so the lemmas resolve
+        // against it directly.
         //
         // Hence the not_in_range subhint rather than the family's base hint: at
         // AssertionLevel::Inferences the lemmas are not written, and a justifier
         // reading only the annotation would otherwise see this three-line
         // derivation and a one-line RUP pruning wearing the same wire form
-        // (issue #866). The per-value fallback below is a genuine one-line RUP,
-        // so it keeps the base hint.
-        auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v1}) &&
-            std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v2});
-
+        // (issue #866).
         auto omit_bridge_lemmas = std::holds_alternative<equals_proof_mutation::OmitBridgeLemmas>(mutation);
         auto bridge = [logger, omit_bridge_lemmas](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonLiterals & r) {
             if (omit_bridge_lemmas)
                 return; // testing only: leaves the conclusion claiming to be RUP unaided
             // Plain equality pruned = other, so the flag forces other into the same [lo, hi].
-            justify_not_in_range_across_equality(
-                *logger, r, std::get<SimpleIntegerVariableID>(IntegerVariableID{pruned}), lo, hi, IntegerVariableID{other}, lo, hi);
+            justify_not_in_range_across_equality(*logger, r, IntegerVariableID{pruned}, lo, hi, IntegerVariableID{other}, lo, hi);
         };
 
         auto prune = [&](const auto & pruned, const auto & other, const IntervalSet<Integer> & pruned_set, const IntervalSet<Integer> & other_set) {
             for (auto [lo, hi] : pruned_set.each_interval_minus(other_set)) {
-                if (both_simple) {
-                    // ExplicitReason holds an immutable snapshot (the base reason plus
-                    // the excluded interval), so the justification — which materialises
-                    // it once per bridge lemma plus once for the conclusion — gets a
-                    // fresh copy each time rather than an accumulating element.
-                    ReasonLiterals not_in_range_reason = reason;
-                    not_in_range_reason.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
-                    inference.infer_not_in_range(logger, pruned, lo, hi,
-                        JustifyExplicitly{
-                            [=](const ReasonLiterals & r) { bridge(pruned, other, lo, hi, r); }, ThenRUP::Yes, hints::EqualsNotInRange{{owner}}},
-                        ExplicitReason{std::move(not_in_range_reason)});
-                }
-                else
-                    for (Integer val = lo; val <= hi; ++val)
-                        inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{hints::Equals{owner}},
-                            ExplicitReason{//
-                                [&] {
-                                    auto r = reason;
-                                    r.emplace_back(other != val);
-                                    return r;
-                                }()});
+                // ExplicitReason holds an immutable snapshot (the base reason plus
+                // the excluded interval), so the justification — which materialises
+                // it once per bridge lemma plus once for the conclusion — gets a
+                // fresh copy each time rather than an accumulating element.
+                ReasonLiterals not_in_range_reason = reason;
+                not_in_range_reason.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
+                inference.infer_not_in_range(logger, pruned, lo, hi,
+                    JustifyExplicitly{
+                        [=](const ReasonLiterals & r) { bridge(pruned, other, lo, hi, r); }, ThenRUP::Yes, hints::EqualsNotInRange{{owner}}},
+                    ExplicitReason{std::move(not_in_range_reason)});
             }
         };
 
@@ -433,28 +419,17 @@ namespace
         LargeDomainIterationCounter guard{"the number of literals one reified equals no-overlap reason has walked"};
         ReasonLiterals reason;
 
-        // A run of values one operand cannot take is one range condition -- unless
-        // that operand is a view, which has no range literal (#882), in which case
-        // it is spelled out, the same degradation generic_reason and
-        // ProofLogger::infer already make. Only the run is spelled out: the rest of
-        // the walk is unaffected, so a view pays for its own holes and not for the
-        // width of anything.
+        // A run of values one operand cannot take is one range condition, whatever
+        // kind of variable that operand is: a view's range literals live on its own
+        // encoded variable, linked to the underlying variable's (#882). A width-1
+        // run canonicalises to a disequality on construction.
         //
-        // The witness does not care which spelling a run got. Stepping `v1 >= lo`
-        // to `v1 >= hi + 1` is the range literal's reverse reification in one case
-        // and the eq atoms walking the order chain in the other; either way it is
-        // internal to that variable and needs no lemma from us. Which is why this
-        // is a fallback in the reason and nowhere else.
+        // The witness does not care about any of this. Stepping `v1 >= lo` to
+        // `v1 >= hi + 1` is the range literal's reverse reification, which is
+        // internal to that variable and needs no lemma from us.
         auto skip_run = [&](IntegerVariableID var, Integer lo, Integer hi) {
-            if (lo == hi || ! std::holds_alternative<ViewOfIntegerVariableID>(var)) {
-                guard.step();
-                reason.emplace_back(not_in_range(var, lo, hi));
-            }
-            else
-                for (auto val = lo; val <= hi; ++val) {
-                    guard.step();
-                    reason.emplace_back(var != val);
-                }
+            guard.step();
+            reason.emplace_back(not_in_range(var, lo, hi));
         };
 
         // One literal per move of the walk: the runs that make the two domains

@@ -496,26 +496,18 @@ auto ProofLogger::conclude_none() -> void
 auto ProofLogger::infer(
     const Literal & lit, const Justification & why, const ReasonLiterals & reason, const optional<AssertionAnnotation> & annotation) -> void
 {
-    // A range conclusion on a view (folding views into the interval machinery is
-    // deferred) or on a plain variable without a bits encoding (no order cuts to
-    // reify against) cannot become a single range ("in") literal; fall back to one
-    // per-value line each, which is still correct, just not coalesced. Every other
-    // range conclusion rides the standard machinery: the condition's proof name is
-    // the range literal, or the eq atom for width 1.
+    // A range conclusion about a variable with no bits encoding has no order cuts to
+    // reify against, so it cannot become a single range ("in") literal; fall back to
+    // one per-value line each, which is still correct, just not coalesced. Every
+    // other range conclusion, views included, rides the standard machinery: the
+    // condition's proof name is the range literal, or the eq atom for width 1.
     if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
-        if (cond->op == VariableConditionOperator::NotInRange) {
-            auto needs_per_value_fallback = overloaded{
-                [&](const SimpleIntegerVariableID & v) { return ! names_and_ids_tracker().has_bit_representation(v); }, //
-                [&](const ViewOfIntegerVariableID &) { return true; },                                                  //
-                [&](const ConstantIntegerVariableID &) { return false; }                                                //
-            }
-                                                .visit(cond->var);
-            if (needs_per_value_fallback) {
+        if (cond->op == VariableConditionOperator::NotInRange)
+            if (! names_and_ids_tracker().can_represent_range_literal_for(cond->var)) {
                 for (Integer val = cond->value; val <= cond->upper_value; ++val)
                     infer(cond->var != val, why, reason);
                 return;
             }
-        }
 
     if (_imp->assertion_level > AssertionLevel::Inferences)
         return;

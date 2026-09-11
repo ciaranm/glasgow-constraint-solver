@@ -66,22 +66,23 @@ auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const Pr
                     return cond;
                 },
                 [&](const ViewOfIntegerVariableID & view) -> SimpleLiteral {
-                    // Range conditions on views take the per-value fallback at the
-                    // producing sites, so none should reach the literal layer: a
-                    // range literal over the view's proof-only variable would be
-                    // unlinked to the underlying variable's interval literals, and
-                    // unit propagation could not connect facts across the two.
-                    if (is_range_op(lit.op))
-                        throw UnimplementedException{"range conditions on views are not yet supported"};
-
                     // If the view's proof-only variable is registered, emit
                     // the literal over V's own bits with op and value
                     // preserved verbatim - V represents the visible view
-                    // value directly. Falls back to deviewing through the
-                    // underlying when the view isn't in the registry
+                    // value directly. That includes the range ops: a range
+                    // literal over V is defined against V's own two order
+                    // cuts like any other variable's, and need_invar joins it
+                    // to the underlying variable's matching literal with a
+                    // pair of link clauses, so facts do cross between the two
+                    // by unit propagation. Falls back to deviewing through
+                    // the underlying when the view isn't in the registry
                     // (proof-logging-only path).
-                    if (auto v_id = tracker.find_view(view))
-                        return ProofVariableCondition{*v_id, lit.op, lit.value};
+                    if (auto v_id = tracker.find_view(view)) {
+                        auto cond = ProofVariableCondition{*v_id, lit.op, lit.value, lit.upper_value};
+                        if (is_range_op(lit.op))
+                            return canonicalise_range(cond);
+                        return cond;
+                    }
                     switch (lit.op) {
                     case VariableConditionOperator::NotEqual:
                         return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::NotEqual,
@@ -109,8 +110,13 @@ auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const Pr
                         break;
                     case VariableConditionOperator::InRange:
                     case VariableConditionOperator::NotInRange:
-                        // unreachable: thrown above
-                        throw UnimplementedException{"range conditions on views are not yet supported"};
+                        // A negated view reverses the order, so the endpoints swap as
+                        // well as shifting. Canonicalise afterwards: the deviewed
+                        // interval has the same width, but a width-1 request only
+                        // becomes visible as an equality once it has been mapped.
+                        return canonicalise_range(VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, lit.op,
+                            view.negate_first ? view.then_add - lit.upper_value : lit.value - view.then_add,
+                            view.negate_first ? view.then_add - lit.value : lit.upper_value - view.then_add});
                     }
                     throw NonExhaustiveSwitch{};
                 },

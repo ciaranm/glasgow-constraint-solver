@@ -138,12 +138,23 @@ library. For an introduction to *using* the solver, start with the top-level
   order-chain cuts, the always-covered partition invariant, interval-tree
   containment, and the P1/P2 (line-checkability vs replay-completeness)
   distinction that governs which linking clauses are load-bearing — with the
-  W1–W5 witness suite as the regression defence against re-simplification.
+  W1–W9 witness suite as the regression defence against re-simplification.
   Read when touching range/interval reasons, branching, or `infer_not_in_range`.
 - [View proof logging](view-proof-logging.md) — how the proof layer handles
-  views (`ViewOfIntegerVariableID`): the V↔X link constraints that tie a view's
-  proof variable to its underlying variable, and how literals over views are
-  deviewed for emission. Read when touching view handling in proofs.
+  `ViewOfIntegerVariableID`: the view's own encoded variable and bit-vector, the
+  single definitional link axiom, the atom-level eq/ge biconditionals that let
+  unit propagation carry one atom across the boundary, and the three invariants
+  (representation consistency for `pol` cancellation, big-M sized to the
+  bit-vector, RUP cannot compose across constraints) that both historical
+  Abs/AllDifferent failures violated. Read before emitting explicit `pol` over
+  an operand that might be a view.
+- [Range literals on views](view-range-literals.md) — where the two documents
+  above meet, which for a long time they did not. A view's own range literals,
+  the pair of link clauses joining them to the underlying variable's, why both
+  clauses are needed and why linking has to be triggered by a literal being
+  *named* rather than requested or defined. Also the measurement that 80% of
+  small random configurations cross correctly with no link at all, which is why
+  a green `--view-wrap` sweep is not evidence and the W6–W9 witnesses are.
 - [arithmetic-proofs.md](arithmetic-proofs.md) — how Multiply/Divide/Modulus/Power propagate and justify against cake's encoding: the slot-keyed emitters, the ConditionalBound justification layer, the sign-case driver, and the hard-won RUP/pol rules.
 - [Decision-diagram proof strategies](decision-diagram-proof-strategies.md) — for
   the layered/partial-sum propagators (`Regular`, `MDD`, `Knapsack`,

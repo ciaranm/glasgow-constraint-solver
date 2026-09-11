@@ -324,6 +324,13 @@ expensive way.
   `[1,6] → [1,3] ∨ [4,6]` (one RUP line) lets the replay through. This is
   the partition invariant earning its keep: under §3, `[1,6]` is defined as a
   union of cells and gets that covering when defined.
+- **W6/W7/W8/W9 — the view crossing** (else: backtrack clauses not RUP).
+  W6 and W7 are the two directions of a fact crossing between a view's range
+  literals and its underlying variable's; W8 and W9 are the *trigger*, a literal
+  the partition machinery created as a cell rather than one any caller
+  requested. All four are described, with their ablation matrix and with the
+  reason the `--view-wrap` sweep is not by itself evidence, in
+  `dev_docs/view-range-literals.md`.
 - **W4 — containment** (else: backtrack clauses over interval-reject
   decisions not RUP). Regression net: the whole constraint suite runs under
   `reject_random_interval` by default and fails on Count/Among/Element
@@ -374,10 +381,19 @@ and which branching were active.
 
 ## 9. Inventory of known edge cases (harvested from the first implementation)
 
-1. **Views and constants** take the per-value fallback everywhere
-   (`ProofLogger::infer_not_in_range` already branches; reasons likewise).
-   Folding views in = deview the interval onto the underlying variable;
-   deferred, do not block on it.
+1. **Views and constants.** *Resolved (2026-09, issue #882); see
+   `dev_docs/view-range-literals.md`, which supersedes this entry.* A registered
+   view owns its range literals over its own bit vector, exactly as it already
+   owned its eq and order atoms, and every interval request is mirrored onto the
+   underlying variable and joined to it by a pair of rup clauses. Deviewing the
+   interval onto the underlying variable — the option this entry proposed — was
+   rejected: it would leave ranges as the one atom kind not in `V`-form, which
+   breaks the pol-cancellation invariant the view design rests on. The deview
+   arm still handles the *unregistered* view path, which has no encoded variable
+   to be consistent with. Constants fold to `TrueLiteral` / `FalseLiteral` and
+   never reach the literal layer. The remaining per-value fallback is for
+   variables with no bits encoding, which is a property of the variable and not
+   of views.
 
    *Priced (2026-09, #882):* eight sites now carry a view detour — three that
    throw and five that degrade, two of those being the same code written twice
