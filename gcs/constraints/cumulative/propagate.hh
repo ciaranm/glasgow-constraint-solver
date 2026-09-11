@@ -22,6 +22,8 @@
 
 namespace gcs::innards
 {
+    struct CheckpointRecoveryCache;
+
     /**
      * \brief Everything Cumulative's propagator reads: the task data, the
      * per-time proof flags it pins, and the per-time capacity lines it builds
@@ -85,6 +87,29 @@ namespace gcs::innards
         /// constraint's are OPB rows; a derived constraint's are derived from
         /// its donor's, in the proof.
         std::map<Integer, ProofLine> capacity_lines;
+
+        /// Where an inference gets the row for a time point from, when it is
+        /// not \ref capacity_lines: recovered from the start-checkpoint block,
+        /// in the proof, and cached. Null unless
+        /// CumulativeEncoding::BothRecovering asked for it --- and shared with
+        /// the initialiser that checks each recovery against the model row, so
+        /// that an inference cites the same line the check passed on rather
+        /// than deriving its own copy.
+        ///
+        /// Set and non-null does not mean every row comes from here: a
+        /// Cumulative the recovery cannot speak about (a variable height, an
+        /// optional task) falls back to \ref capacity_lines, which is why the
+        /// two live side by side rather than one replacing the other.
+        std::shared_ptr<CheckpointRecoveryCache> checkpoint_recovery;
+
+        /// #780: whether a variable-height task's *pair* contribution bits are
+        /// defined as conjunctions with the height's own bits (two reification
+        /// halves each) rather than linearised by three rows per pair. False
+        /// only where some height has no citable bits --- a view, or a declared
+        /// lower bound below zero --- and then the recovery declines any
+        /// constraint with a variable height, because the swap it does is
+        /// stated over those halves.
+        bool pair_contribution_bits_are_conjunctions = false;
 
         CumulativeRules rules;
         CumulativeProofMutation proof_mutation;
