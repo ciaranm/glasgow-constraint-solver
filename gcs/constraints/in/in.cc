@@ -1,5 +1,6 @@
 #include <gcs/constraints/in/hints.hh>
 #include <gcs/constraints/in/in.hh>
+#include <gcs/constraints/innards/justify_not_in_range.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/literal.hh>
@@ -161,6 +162,21 @@ auto In::install_propagators(Propagators & propagators) -> void
     for (const auto & v : _val_vals)
         val_vals_set.insert_at_end(v);
 
+    // A range can be said about any of these variables, whatever kind they are.
+    // A registered view owns its range literals over its own encoded variable,
+    // linked to the underlying one (#904), which is also the representation the
+    // model states In's rows in -- so the conclusions, the reason literals and
+    // the selector clauses below all name literals that exist, and the two bound
+    // lemmas cross on whichever encoding each operand resolves to. A variable
+    // with no bits encoding is the one thing that has no range literal, and that
+    // is the proof layer's business rather than this propagator's: the logger
+    // expands such a conclusion back to one line per value on its way out
+    // (ProofLogger::infer, infer_explicitly).
+    //
+    // A width-one run stays per-value below, but for an unrelated reason:
+    // not_in_range canonicalises to the same != literal there, so the range form
+    // would buy nothing and cost two bound lemmas per source.
+
     propagators.install(
         constraint_id(),
         [var = _var, var_vals = _var_vals, val_vals = _val_vals, val_vals_set = move(val_vals_set), selectors = _selectors, owner = constraint_id()](
@@ -191,45 +207,105 @@ auto In::install_propagators(Propagators & propagators) -> void
                     inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{hints::In{owner}}, NoReason{});
             }
             else {
-                for (auto v : state.each_value_mutable(var)) {
-                    if (binary_search(val_vals, v))
-                        continue;
+                // The same difference, against a wider set. A value of var
+                // survives if any permitted constant holds it or any source's
+                // domain does, so what has to go is dom(var) minus the union of
+                // val_vals_set and the sources' domains -- and the union is
+                // built by erasing each piece from a copy of dom(var) in turn,
+                // which costs the intervals involved and never a value (#874).
+                // The old form asked the question the other way round, walking
+                // dom(var) and testing each value for support, which took
+                // O(|D(var)|) even when every value was supported and nothing
+                // came out.
+                //
+                // Copies, and named ones, for two reasons: each_interval() hands
+                // out a generator borrowing the set, which must outlive it (see
+                // IntervalSet's class documentation), and the inferences below
+                // modify the domains as they go.
+                auto unsupported = state.copy_of_values(var);
+                for (auto [lo, hi] : val_vals_set.each_interval())
+                    unsupported.erase_range(lo, hi);
+                for (const auto & V : var_vals) {
+                    if (unsupported.empty())
+                        break;
+                    auto v_values = state.copy_of_values(V);
+                    for (auto [lo, hi] : v_values.each_interval())
+                        unsupported.erase_range(lo, hi);
+                }
 
-                    bool supported_by_var = false;
-                    for (const auto & V : var_vals) {
-                        if (state.in_domain(V, v)) {
-                            supported_by_var = true;
-                            break;
+                for (auto [run_lo, run_hi] : unsupported.each_interval()) {
+                    if (run_lo < run_hi) {
+                        Reason reason;
+                        if (inference.want_reasons()) {
+                            ReasonLiterals lits;
+                            for (const auto & V : var_vals)
+                                lits.emplace_back(not_in_range(V, run_lo, run_hi));
+                            reason = ExplicitReason{std::move(lits)};
                         }
-                    }
-                    if (supported_by_var)
+
+                        inference.infer_not_in_range(logger, var, run_lo, run_hi,
+                            JustifyExplicitly{//
+                                [logger, var, lo = run_lo, hi = run_hi, &var_vals, &selectors](const ReasonLiterals & reason) {
+                                    for (const auto & [j, V] : enumerate(var_vals)) {
+                                        // The range literal never crosses the equality;
+                                        // only single bounds do. var >= lo crosses to
+                                        // V >= lo under the selector, V's own range
+                                        // literal steps from there to V >= hi + 1 by its
+                                        // reverse reification, and that crosses back to
+                                        // var >= hi + 1 -- so the two ge-layer lemmas are
+                                        // all that is owed here.
+                                        justify_not_in_range_across_equality(*logger, reason, var, lo, hi, V, lo, hi, selectors[j]);
+                                        // Which makes this RUP, and this is what makes the
+                                        // conclusion RUP: under the reason it unit
+                                        // propagates ~sel_j, and with every selector out
+                                        // and every permitted constant outside [lo, hi],
+                                        // the at-least-one row has nothing left.
+                                        logger->emit_rup_proof_line_under_reason(reason,
+                                            WPBSum{} + 1_i * ! selectors[j] + 1_i * not_in_range(var, lo, hi) + 1_i * in_range(V, lo, hi) >= 1_i,
+                                            ProofLevel::Temporary);
+                                    }
+                                },
+                                ThenRUP::Yes, hints::InNotInRange{{owner}}},
+                            reason);
                         continue;
-
-                    Reason reason;
-                    if (inference.want_reasons()) {
-                        ReasonLiterals lits;
-                        for (const auto & V : var_vals)
-                            lits.emplace_back(V != v);
-                        reason = ExplicitReason{std::move(lits)};
                     }
 
-                    inference.infer_not_equal(logger, var, v,
-                        JustifyExplicitly{//
-                            [logger, var, v, &selectors](const ReasonLiterals & reason) {
-                                for (const auto & sel : selectors)
-                                    logger->emit_rup_proof_line_under_reason(
-                                        reason, WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i, ProofLevel::Temporary);
-                            },
-                            ThenRUP::Yes, hints::In{owner}},
-                        reason);
+                    // The remaining case is a run of one value, where the range
+                    // form buys nothing: not_in_range would canonicalise to this
+                    // same != literal, and the two bound lemmas per source would
+                    // be pure cost. No loop and no iteration counter -- the
+                    // branch above takes every run of two or more, so this is
+                    // reached once per interval and never once per value.
+                    if (state.in_domain(var, run_lo)) {
+                        Reason reason;
+                        if (inference.want_reasons()) {
+                            ReasonLiterals lits;
+                            for (const auto & V : var_vals)
+                                lits.emplace_back(V != run_lo);
+                            reason = ExplicitReason{std::move(lits)};
+                        }
+
+                        inference.infer_not_equal(logger, var, run_lo,
+                            JustifyExplicitly{//
+                                [logger, var, v = run_lo, &selectors](const ReasonLiterals & reason) {
+                                    for (const auto & sel : selectors)
+                                        logger->emit_rup_proof_line_under_reason(
+                                            reason, WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i, ProofLevel::Temporary);
+                                },
+                                ThenRUP::Yes, hints::In{owner}},
+                            reason);
+                    }
                 }
             }
 
             // Step 2: identify which V_i's still have any value in dom(var).
+            // domains_intersect walks the two interval sets in merge order and
+            // stops at the first overlap; the old any_of asked the same question
+            // by walking dom(V) a value at a time, which for a wide V was the
+            // whole domain whenever the answer was no (#874).
             optional<size_t> support_1, support_2;
             for (const auto & [i, V] : enumerate(var_vals)) {
-                bool overlaps = any_of(state.each_value_immutable(V), [&](Integer w) { return state.in_domain(var, w); });
-                if (overlaps) {
+                if (state.domains_intersect(V, var)) {
                     if (! support_1)
                         support_1 = i;
                     else {
@@ -248,46 +324,105 @@ auto In::install_propagators(Propagators & propagators) -> void
                 size_t i = *support_1;
                 const auto & V = var_vals[i];
 
-                for (auto val : state.each_value_mutable(V)) {
-                    if (state.in_domain(var, val))
-                        continue;
+                // What V loses is its domain minus dom(var), and each contiguous
+                // run of that is one conclusion. Merging the two interval sets
+                // finds those runs directly; the old form walked dom(V) a value
+                // at a time to find them, which was O(|D(V)|) however few came
+                // out (#874). Named locals: each_interval_minus() borrows both
+                // sets, and V's domain moves under us as the pruning lands.
+                auto v_values = state.copy_of_values(V);
+                auto var_values = state.copy_of_values(var);
 
-                    // var stays a declarative generic_reason (its domain walk is
-                    // deferred and skipped when no reason is read); only the cross-
-                    // product of supporting-selector literals is the explicit extra,
-                    // and the whole O(var_vals x dom(var)) build is guarded.
-                    Reason reason;
-                    if (inference.want_reasons()) {
-                        ReasonLiterals extra;
-                        for (const auto & [j, V_j] : enumerate(var_vals)) {
-                            if (j == i)
-                                continue;
-                            for (const auto & w : state.each_value_immutable(var))
-                                extra.emplace_back(V_j != w);
+                // var stays a declarative generic_reason (its domain walk is
+                // deferred and skipped when no reason is read); only the cross-
+                // product of supporting-selector literals is the explicit extra,
+                // and the whole build is guarded. It is the same reason for every
+                // run -- nothing in it mentions what is being removed -- so it is
+                // assembled once rather than per conclusion.
+                //
+                // One literal per source per *interval* of dom(var). The per-value
+                // spelling made both this and the scaffolding below
+                // O(var_vals x |D(var)|), which the guard does not see (a reason is
+                // only materialised with proofs on) and the audit lane does not run
+                // -- but the proof-scaling survey does, and it showed the
+                // single-support rule's proof growing tenfold per decade of width
+                // after the propagation had stopped doing so (#874).
+                bool want_reason = inference.want_reasons();
+                Reason reason;
+                if (want_reason) {
+                    ReasonLiterals extra;
+                    for (const auto & [j, V_j] : enumerate(var_vals)) {
+                        if (j == i)
+                            continue;
+                        for (auto [a, b] : var_values.each_interval())
+                            extra.emplace_back(not_in_range(V_j, a, b));
+                    }
+                    reason = with_extra(generic_reason(vector{var}), std::move(extra));
+                }
+
+                // Every other source is missing all of dom(var), so its selector
+                // must be false; the at-least-one row is then down to V's own
+                // selector, which is what pins V to var for the lemmas below.
+                // Value-independent, so it is emitted once per conclusion rather
+                // than once per removed value.
+                auto rule_out_other_selectors = [logger, &state, &var_vals, &selectors, &var_values, var, i](const ReasonLiterals & reason) {
+                    // When var is fixed, dom(var) is a single value and the inner-loop
+                    // scaffolding line `! sel_j + (var != w)` collapses (under the reason's
+                    // `var = w` literal) to the same constraint as the outer `! sel_j`, so
+                    // skip the inner loop entirely.
+                    bool var_fixed = state.has_single_value(var);
+                    for (const auto & [j, V_j] : enumerate(var_vals)) {
+                        if (j == i)
+                            continue;
+                        if (! var_fixed) {
+                            // `! sel_j` follows from dom(var) being emptied of
+                            // anything V_j could be, one interval at a time: the
+                            // reason's lower bound plus the first interval's
+                            // exclusion gives var past it, the hole after it is a
+                            // reason literal that steps over the gap, and so on
+                            // until the walk passes the reason's upper bound.
+                            // Which is the same walk as step 1's, and needs the
+                            // same two lemmas to cross the selector's equality
+                            // -- for the same reason, and only where the run is
+                            // wider than one value.
+                            for (auto [a, b] : var_values.each_interval()) {
+                                if (a < b)
+                                    justify_not_in_range_across_equality(*logger, reason, var, a, b, V_j, a, b, selectors[j]);
+                                logger->emit_rup_proof_line_under_reason(reason,
+                                    WPBSum{} + 1_i * ! selectors[j] + 1_i * not_in_range(var, a, b) + 1_i * in_range(V_j, a, b) >= 1_i,
+                                    ProofLevel::Temporary);
+                            }
                         }
-                        reason = with_extra(generic_reason(vector{var}), std::move(extra));
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ! selectors[j] >= 1_i, ProofLevel::Temporary);
+                    }
+                };
+
+                for (auto [run_lo, run_hi] : v_values.each_interval_minus(var_values)) {
+                    if (run_lo < run_hi) {
+                        // With the other selectors ruled out, V = var is forced,
+                        // and the two ge-layer lemmas carry the run's endpoints
+                        // across that equality -- the mirror of step 1, which
+                        // carries them the other way under a selector that is not
+                        // yet decided. The reason gains the run it is about;
+                        // with_extra copies its base, so each conclusion gets a
+                        // fresh one rather than an accumulating literal.
+                        inference.infer_not_in_range(logger, V, run_lo, run_hi,
+                            JustifyExplicitly{//
+                                [&, lo = run_lo, hi = run_hi](const ReasonLiterals & reason) {
+                                    rule_out_other_selectors(reason);
+                                    justify_not_in_range_across_equality(*logger, reason, V, lo, hi, var, lo, hi);
+                                },
+                                ThenRUP::Yes, hints::InNotInRange{{owner}}},
+                            want_reason ? with_extra(reason, ReasonLiterals{not_in_range(var, run_lo, run_hi)}) : Reason{});
+                        continue;
                     }
 
-                    inference.infer_not_equal(logger, V, val,
-                        JustifyExplicitly{//
-                            [logger, &state, &var_vals, &selectors, var, i](const ReasonLiterals & reason) {
-                                // When var is fixed, dom(var) is a single value and the inner-loop
-                                // scaffolding line `! sel_j + (var != w)` collapses (under the reason's
-                                // `var = w` literal) to the same constraint as the outer `! sel_j`, so
-                                // skip the inner loop entirely.
-                                bool var_fixed = state.has_single_value(var);
-                                for (const auto & [j, V_j] : enumerate(var_vals)) {
-                                    if (j == i)
-                                        continue;
-                                    if (! var_fixed)
-                                        for (const auto & w : state.each_value_immutable(var))
-                                            logger->emit_rup_proof_line_under_reason(
-                                                reason, WPBSum{} + 1_i * ! selectors[j] + 1_i * (var != w) >= 1_i, ProofLevel::Temporary);
-                                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ! selectors[j] >= 1_i, ProofLevel::Temporary);
-                                }
-                            },
-                            ThenRUP::Yes, hints::In{owner}},
-                        reason);
+                    // A run of one value, for the same reason as step 1's.
+                    if (state.in_domain(V, run_lo))
+                        inference.infer_not_equal(logger, V, run_lo,
+                            JustifyExplicitly{//
+                                [&](const ReasonLiterals & reason) { rule_out_other_selectors(reason); }, ThenRUP::Yes, hints::In{owner}},
+                            reason);
                 }
             }
 

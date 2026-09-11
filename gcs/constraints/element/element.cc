@@ -5,7 +5,6 @@
 #include <gcs/constraints/innards/no_overlap_walk.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
-#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -52,7 +51,6 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::adjacent_find;
-using std::ranges::all_of;
 using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -701,18 +699,15 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                 // -- and the search does not change, only how many inferences it
                 // takes to get there.
                 //
-                // Views keep the per-value path. The range justification below has
-                // to carry an order atom from result_var across the model's
-                // half-reified equality to the array entry, and a view's atoms are
-                // spelled through the view; that crossing has not been shown to
-                // bridge one. Same restriction, and the same reason, as
-                // min_max.cc's range path. (Among's range path needs no such
-                // restriction, because its lines stay within one variable.)
-                auto all_simple = holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{result_var}) &&
-                    all_of(considered_vars, [](const IntegerVariableID & v) { return holds_alternative<SimpleIntegerVariableID>(v); });
-
-                if (all_simple) {
-                    for (auto [range_lo, range_hi] : still_to_find_support_for.each_interval()) {
+                // A view operand needs nothing extra here. The bound lemmas below
+                // name no bit vector, only order conditions on result_var and the
+                // entry, so they are emitted over whichever encoded variable each
+                // one resolves to -- a registered view's own, which since #904 is
+                // where its range literals live and is also the representation the
+                // model states this equality in. What decides the form is the width
+                // of the run, not the kind of the variables (#924).
+                for (auto [range_lo, range_hi] : still_to_find_support_for.each_interval()) {
+                    if (range_lo < range_hi) {
                         Reason reason;
                         if (inference.want_reasons()) {
                             ReasonLiterals extra;
@@ -748,7 +743,14 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                                                     elem.push_back((v - index_starts.at(d)).as_index());
                                                     auto array_var = get_array_var<dimensions_>(elem, *array);
                                                     elem.pop_back();
-                                                    if (holds_alternative<SimpleIntegerVariableID>(array_var)) {
+                                                    // A constant entry needs no lemmas:
+                                                    // result = c pins every bit of
+                                                    // result under the guard, which
+                                                    // decides both halves of the range
+                                                    // disjunction outright. Anything
+                                                    // else -- bare variable or view --
+                                                    // needs the pair.
+                                                    if (! holds_alternative<ConstantIntegerVariableID>(array_var)) {
                                                         logger->emit_rup_proof_line_under_reason(reason,
                                                             guard + 1_i * (result_var < range_lo) + 1_i * (array_var >= range_lo) >= 1_i,
                                                             ProofLevel::Temporary);
@@ -777,22 +779,16 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                                 },
                                 ThenRUP::Yes, hints::Element{owner}},
                             reason);
+                        continue;
                     }
 
-                    return scope_has_aliasing ? PropagatorState::Enable : PropagatorState::EnableButIdempotent;
-                }
-
-                // A view keeps the per-value walk, and so keeps the guard: this
-                // walks an IntervalSet the propagator built for itself, which
-                // State's iterators never see, and a walk of that shape is the
-                // same #833 hazard however the values were obtained. Without it
-                // the probe's outcome is decided by how much memory the machine
-                // happens to have -- 16 GB and 81 s here, a bad_alloc somewhere
-                // smaller -- which is not a test result.
-                LargeDomainIterationCounter unsupported_guard{"the number of unsupported result values one Element propagation has walked"};
-
-                for (auto value : still_to_find_support_for.each()) {
-                    unsupported_guard.step();
+                    // A run of one value. The range form would buy nothing --
+                    // not_in_range canonicalises to this same != literal -- and
+                    // would cost two bound lemmas per feasible index tuple, so it
+                    // stays on the single-value form. No iteration counter: the
+                    // branch above takes every run of two or more values, so this
+                    // is reached once per interval and never once per value.
+                    auto value = range_lo;
                     // index_vars stay a declarative generic_reason, concatenated with
                     // the per-considered-var literals; assembled only when a reason
                     // will be read.
