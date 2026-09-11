@@ -671,14 +671,14 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-77 constraint probes, plus 20 heuristic ones in the second table. The lane
+78 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
 | **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (43) | the arithmetic family (with two rows of its own for `Abs`' interior holes), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms and with a holey entry, `AllEqual` with holes and without, `Among`, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **Clean** (44) | the arithmetic family (with two rows of its own for `Abs`' interior holes), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among`, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (15) | the graph and permutation family, and the Boolean constraints |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`
@@ -693,6 +693,20 @@ which is two range removals however wide the domain is. **A second per-value sit
 remains** in its Hall reasoning, which the original probe could not reach — one
 cover value means there is no multi-value hall — so it now has a row of its own
 rather than being covered by association.
+
+**Every probe in this lane wraps nothing, and that is an axis of its own.**
+`Element/view-result` is the first row to put a view on anything. It is the GAC
+`Element` row with the result wrapped and nothing else changed, and before #924
+it walked 10^9 values while the bare row beside it removed two ranges: the
+result-union rule answered "can I say a range about these?" with a *type* test,
+so a view anywhere sent the whole rule down a per-value walk of the remainder.
+Nothing in this file could have caught that, because nothing in this file wraps.
+
+The general question is open and is not really about `Element`. Every constraint
+whose proof reasons about intervals has the same question to answer, and #904
+changed the answer for all of them at once; a lane that only ever asks it about
+bare variables cannot tell which ones were updated. One row is a start, not a
+policy.
 
 It has a **third** site, and finding it was a lesson about the axes a row covers
 rather than about the constraint. `with_closed()` installs a propagator of its
@@ -963,7 +977,7 @@ time, and the row is now flat at 53.
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 43988 → 439988 steps) |
-| neither | 1.0x / 1.0x | everything else, 68 of 77 |
+| neither | 1.0x / 1.0x | everything else, 69 of 78 |
 
 The last row means "does not grow with the width", not "identical at both widths",
 and three entries in it are worth naming so nobody reads them as a promise.
