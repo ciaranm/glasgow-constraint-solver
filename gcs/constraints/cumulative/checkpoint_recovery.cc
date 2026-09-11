@@ -193,13 +193,6 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
         }
         return bits;
     };
-    auto bit_sum = [&](const vector<ProofFlag> & bits) {
-        WPBSum sum;
-        for (Integer k = 0_i; k.raw_value < static_cast<long long>(bits.size()); ++k)
-            sum += power2(k) * bits[k.raw_value];
-        return sum;
-    };
-    auto row = [&](const string & role) { return ProofLine{*tracker.constraint_row_label(inputs.owner, role)}; };
 
     // The most the candidates could take between them, which is all the
     // trivial-case test below needs.
