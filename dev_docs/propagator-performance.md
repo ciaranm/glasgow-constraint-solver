@@ -182,6 +182,20 @@ and only the per-item body is cheaper (a `test_literal` against a full propagato
 call). Reach for one when the propagator's whole verdict turns on a *literal*,
 not when it merely reads a few values.
 
+They are free to a model that arms *none*, though, which is most models. The round
+boundary asks once whether the watch index has anything in it at all, and a model
+that has armed nothing replays the round through a body with no firing block in
+it, instead of testing an index that will never have anything in it once for every
+inference of every round (issue #895). On the benchmarking.md set that is worth
+1.28% of `tsp`'s instructions, 0.83% of `magic_square --size=5`'s, 0.57% of
+`n_queens --size=14 --all`'s and about 0.2% of `qap` and `langford`, at identical
+search — and those are against an unmodified build, where the null-change control
+for touching `propagate()` at all is itself +0.15% to +0.52% (see
+benchmarking.md), so the change is worth more than the figures say.
+`ortho_latin --size=6 --all` is the exception and stays where it was: it is the
+one benchmark that does arm watches, since its `Equals` against a constant watches
+a literal as of #889, so it has nothing to hoist.
+
 **A `_micros` share is not necessarily wake cost.** `GCS_PROPAGATOR_STATS=time`
 brackets the propagator call, so a contradiction's `throw
 TrackedPropagationFailed` unwinds inside the sample. `lin_not_equals` on `tpp`

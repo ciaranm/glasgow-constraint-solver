@@ -121,6 +121,23 @@ is replayed exactly once and a watch not fired against it is never offered it
 again. Getting this wrong is invisible in everything but the node count; see
 issue #889, where it turned nmseq/100 from 767 nodes into 1,089,375.
 
+**Whether to look at the index at all is decided once per boundary, not once per
+inference.** A model that has armed no watch — most models — replays through
+`replay_inferences_of_watchless_model`, a separate body that wakes the coarse
+triggers and does nothing else: no firing block, and no test of an index that will
+never have anything in it. A model that has armed one replays through the body
+above, unchanged. The empty-index question is asked once, where the boundary picks
+between them (issue #895).
+
+Once per *boundary* is the load-bearing part. A propagator can arm the model's
+first watch in one round and need it fired at the next boundary of the same
+`propagate()` call, so an answer cached at entry to `propagate()` would drop that
+watch — silently, since a lost wake costs only pruning. Within a single replay the
+answer cannot go stale, because nothing can arm a watch while a replay is running:
+only a propagator arms one, and no propagator runs between the start of a replay
+and its end. The watchless path checks that rather than trusting it; see the
+invariants below.
+
 ### Trigger masks
 
 A literal can only *become* entailed on certain kinds of change, mirroring the
@@ -279,11 +296,21 @@ For anyone changing this code:
 - **Trigger masks must over-approximate.** A mask must include *every* `Inference`
   granularity that could make the literal newly entailed; too narrow a mask drops
   a fire (a missed inference). The differential catches this.
-- **Every replay path must fire watches.** A watch is a one-shot subscription and
-  each inference is replayed once, so any path that walks the round's inferences
-  and skips the watch index loses the wake permanently. `requeue` and
-  `requeue_unless_already_seen` share `fire_refined_watches` for exactly this
-  reason; a new variant must call it too.
+- **Every replay path must fire watches, unless the model has none to fire.** A
+  watch is a one-shot subscription and each inference is replayed once, so any path
+  that walks the round's inferences and skips the watch index loses the wake
+  permanently. There are two such paths and they are not interchangeable:
+  `requeue_honouring`, instantiated on `HonourClaims_`, which fires watches, and
+  `requeue_coarse_only`, which has no firing block at all and is reachable only
+  when the index is empty. A new variant must be one or the other deliberately.
+- **The watchless replay must only run against an empty index.** It was chosen
+  against the index as it stood when the boundary started, and a watch armed on a
+  variable it has already walked past would never be offered the inference that
+  entails it. The boundary re-tests `refined_watches_by_var.empty()` after the
+  watchless replay returns and throws if it is not, so an engine change that ran a
+  propagator mid-replay fails loudly instead of silently losing pruning. The test
+  is on that side of the branch only: a model with watches does not depend on the
+  answer and pays nothing for the question.
 - **Catch-up runs at root re-propagation only**, keyed off an empty fired set.
   That is where new clauses appear (after a restart unwind) and where the edits
   land in the persistent root epoch, keeping the non-backtrackable `set_up`
@@ -311,7 +338,11 @@ refined path must behave byte-for-byte like the scan oracle:
 - `gcs/innards/propagators_test.cc` — a watch must fire whether or not the round
   has an idempotence claimant. Neither vehicle above co-registers a claiming
   propagator, which is how the claim-path gap in the replay survived (#889), so
-  this one is a pair of unit cases rather than a differential.
+  this one is a pair of unit cases rather than a differential. A third case arms a
+  watch *during* a round rather than at install, which is what says the empty-index
+  question is re-asked at every boundary and not cached for the `propagate()` call
+  (#895); every other test here arms at install, where the distinction is
+  invisible.
 
 Each load-bearing piece has a **mutation test** recorded in the relevant PR:
 inject the bug, confirm a differential catches it, before trusting the check.

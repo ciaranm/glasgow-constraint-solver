@@ -364,6 +364,57 @@ TEST_CASE("A refined watch fires when the round has no idempotence claimant")
     CHECK(watcher_runs == 2);
 }
 
+// The round boundary asks once, before walking the round's inferences, whether the
+// model has armed any watch at all, and replays through a body with the firing
+// block compiled out when it has not (issue #895). That question has to be asked
+// again at every boundary: a propagator can arm the model's very first watch in
+// one round and need it fired at the next boundary of the same propagate() call,
+// so an answer cached at entry to propagate() would drop it --- silently, since a
+// lost wake costs only pruning.
+
+namespace
+{
+    // Arms its first watch on its first run rather than at install, so the watch
+    // index is empty when propagate() is entered and non-empty by the time the
+    // boundary replays. scope_only keeps x in scope while arming no coarse
+    // trigger, so any later run of it is its watch and nothing else.
+    auto install_late_arming_propagator(Propagators & propagators, SimpleIntegerVariableID x, int & runs, int & payloads_seen) -> void
+    {
+        Triggers triggers;
+        triggers.scope_only = {x};
+        propagators.install(
+            ConstraintID{NumberedConstraint{3}},
+            [&runs, &payloads_seen, x](const State &, auto &, ProofLogger * const, const RefinedWatchContext & ctx) -> PropagatorState {
+                ++runs;
+                payloads_seen += static_cast<int>(ctx.fired_payloads().size());
+                if (runs == 1)
+                    ctx.watch(x != 7_i, 42u);
+                return PropagatorState::Enable;
+            },
+            triggers);
+    }
+}
+
+TEST_CASE("A watch armed during a round fires at that propagate()'s next boundary")
+{
+    State state;
+    Stats stats;
+    Propagators propagators{stats};
+    auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
+
+    int arming_runs = 0, payloads_seen = 0, puncher_runs = 0;
+    // Registration order is first-pass order: the arming propagator runs, and arms,
+    // before the puncher makes the hole its watch is waiting for.
+    install_late_arming_propagator(propagators, x, arming_runs, payloads_seen);
+    install_hole_punching_propagator(propagators, x, PropagatorState::Enable, puncher_runs);
+
+    REQUIRE(propagators.propagate(Literals{}, state, nullptr));
+    CHECK(! state.in_domain(x, 7_i));
+
+    CHECK(arming_runs == 2);
+    CHECK(payloads_seen == 1);
+}
+
 // Propagators::shared_derived_data: the store that lets several constraints
 // over one shared input derive something from it once between them. Keyed by
 // (input address, type), created empty on the first ask, and the same object

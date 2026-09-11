@@ -853,6 +853,23 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
         }
     };
 
+    // The same wake for a model that has armed no refined watch at all: the coarse
+    // triggers and nothing else, with no firing block and no test of the watch index.
+    //
+    // A separate body rather than an `if constexpr (AnyWatches_)` inside the one
+    // above, which is what issue #895 proposed and what was tried first. Giving the
+    // shared body a second template parameter also changes what the compiler does
+    // with the watch-carrying instantiations, and on the one benchmark here that
+    // arms watches that cost more than the hoist saved. Written out separately, a
+    // model with watches goes on executing the body it executed before, instruction
+    // for instruction, and only the watchless path is new code.
+    auto requeue_coarse_only = [&]<bool HonourClaims_>(const SimpleIntegerVariableID & v, const Inference inf) {
+        if (v.index < _imp->iv_triggers.size())
+            for (auto & [p, mask] : _imp->iv_triggers[v.index].ids_and_masks)
+                if ((mask & (1 << to_underlying(inf))) && (! HonourClaims_ || ! _imp->claim_protected[p]))
+                    enqueue_if_idle(p);
+    };
+
     auto requeue = [&](const SimpleIntegerVariableID & v, const Inference inf) { requeue_honouring.template operator()<false>(v, inf); };
 
     auto requeue_unless_already_seen = [&](const SimpleIntegerVariableID & v, const Inference inf) {
@@ -966,6 +983,49 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
     auto orig_idle_end = _imp->idle_end;
     state.on_backtrack([&, orig_idle_end = orig_idle_end]() { _imp->idle_end = orig_idle_end; });
 
+    // The round boundary's replay, for a model whose watch index is empty: the
+    // coarse triggers alone, with no firing block and no test of an index with
+    // nothing in it.
+    //
+    // Written here rather than inside run(), and taking the tracker as a parameter
+    // rather than capturing it, because where this sits is worth instructions: with
+    // run() owning the closure, the code around the propagator dispatch grew enough
+    // to eat a third of what the hoist saved on tsp and all of it on qap. Whether it
+    // is then inlined is left to the compiler, which does inline it -- the call
+    // would be once per round boundary, not once per inference, so it is not worth
+    // pinning either way.
+    //
+    // The claims bookkeeping below is the same cursor walk as the one at the
+    // boundary itself, and the two have to stay in step: what differs between them
+    // is only which wake they call. Factoring the walk out and handing it the wake
+    // to use is what was tried first, and it is what costs the instructions -- the
+    // shared per-inference body then has to serve both, and the compiler's handling
+    // of the watch-carrying instantiation changes with it.
+    auto replay_inferences_of_watchless_model = [&](auto & tracker) {
+        if (_imp->idempotent_run_claims.empty()) {
+            for (const auto & [v, inf] : tracker.each_inference())
+                requeue_coarse_only.template operator()<false>(v, inf);
+        }
+        else {
+            for (const auto & c : _imp->idempotent_run_claims)
+                _imp->claim_protected[c.propagator_id] = 1;
+            auto claim = _imp->idempotent_run_claims.begin();
+            const auto claims_end = _imp->idempotent_run_claims.end();
+            std::size_t inference_index = 0;
+            for (const auto & [v, inf] : tracker.each_inference()) {
+                while (claim != claims_end && claim->end_inference_index <= inference_index) {
+                    _imp->claim_protected[claim->propagator_id] = 0;
+                    ++claim;
+                }
+                requeue_coarse_only.template operator()<true>(v, inf);
+                ++inference_index;
+            }
+            for (; claim != claims_end; ++claim)
+                _imp->claim_protected[claim->propagator_id] = 0;
+            _imp->idempotent_run_claims.clear();
+        }
+    };
+
     // The loop body is identical for either tracker (it only uses the shared base
     // interface plus the dual-overloaded propagation-function call), so run it on a
     // generic lambda. With no logger we use the lean SimpleInferenceTracker, whose
@@ -1006,9 +1066,38 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
                 // monotone, so the fixpoint is unique and the search tree identical --
                 // but inference attribution, and hence proof lines, the total and
                 // effectful propagation counts, can differ in either direction.)
+                //
+                // Which replay to walk them with is decided here, once per boundary.
+                // A model that has armed no refined watch at all -- most models, and
+                // five of the six in benchmarking.md -- takes a body with no firing
+                // block in it, rather than testing an index that will never have
+                // anything in it once for every inference of every round (#895).
+                //
+                // The question is asked at every boundary rather than once per
+                // propagate(), because a propagator can arm the model's first watch
+                // in one round and need it fired at the next boundary of the same
+                // call. Within one replay the answer cannot go stale: only a
+                // propagator arms a watch, from Triggers::refined at install or
+                // ctx.watch while propagating, and no propagator runs between the
+                // start of a replay and its end. That is a temporal fact about the
+                // hottest loop in the solver, though, and what rests on it is a
+                // watch armed on a variable the replay has already walked past: it
+                // would never be offered the inference that entails it, and a watch
+                // is a one-shot subscription replayed exactly once, so never offered
+                // it again. That costs pruning and nothing else, so it fails no test
+                // and shows up only in a node count -- which is how the wake loss in
+                // issue #889 stayed hidden. So the watchless path checks its
+                // assumption instead of asserting it in a comment. The check is on
+                // this side of the branch only: a model that does have watches is
+                // not relying on the answer, and pays nothing for the question.
                 _imp->enqueued_begin = 0;
                 _imp->enqueued_end = 0;
-                if (_imp->idempotent_run_claims.empty()) {
+                if (_imp->refined_watches_by_var.empty()) {
+                    replay_inferences_of_watchless_model(tracker);
+                    if (! _imp->refined_watches_by_var.empty()) [[unlikely]]
+                        throw UnexpectedException{"the refined watch index grew during a round boundary's inference replay"};
+                }
+                else if (_imp->idempotent_run_claims.empty()) {
                     for (const auto & [v, inf] : tracker.each_inference())
                         requeue(v, inf);
                 }
