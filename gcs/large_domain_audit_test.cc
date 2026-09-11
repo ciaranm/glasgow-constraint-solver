@@ -437,6 +437,35 @@ namespace
             auto v = wide(p, 1);
             p.post(In{v[0], vector<Integer>{1_i, 2_i, 3_i}});
         });
+        add("In/vars", Expect::Clean, [](Problem & p) {
+            // In's other two constructors take variables in the value list, and
+            // with one of those non-constant the propagator takes a different
+            // branch entirely -- the branch that was still walking dom(var) a
+            // value at a time (#874). So the row above reported Clean for a
+            // constraint one of whose three spellings tripped instantly, which
+            // is what a row naming a probe rather than a constraint is for.
+            //
+            // Singleton *variables* rather than constants: prepare() folds a
+            // ConstantIntegerVariableID into the value list, and this probe would
+            // then be the row above again. What that leaves for step 1 is
+            // everything strictly between them -- one run, and one removal.
+            auto v = wide_var(p);
+            auto bottom = p.create_integer_variable(wide_lo, wide_lo);
+            auto top = p.create_integer_variable(probe_width, probe_width);
+            p.post(In{v, vector<IntegerVariableID>{bottom, top}});
+        });
+        add("In/vars-single-support", Expect::Clean, [](Problem & p) {
+            // Step 3, which the row above cannot reach: when exactly one source
+            // still overlaps dom(var) and no constant does, that source has to
+            // equal var, so everything it holds outside dom(var) comes off. Two
+            // sources, then, one covering var and one sitting entirely above it:
+            // the second is not a supporter, and the first loses its top half --
+            // as the one range it is, where it used to go a value at a time.
+            auto v = p.create_integer_variable(wide_lo, probe_width / 2_i);
+            auto covers = wide_var(p);
+            auto above = p.create_integer_variable(probe_width / 2_i + 1_i, probe_width);
+            p.post(In{v, vector<IntegerVariableID>{covers, above}});
+        });
         add("ValuePrecede", Expect::Clean, [](Problem & p) { p.post(ValuePrecede{1_i, 2_i, wide(p, 4)}); });
         add("SeqPrecedeChain", Expect::Clean, [](Problem & p) { p.post(SeqPrecedeChain{narrow(p, 4, 0_i, 3_i)}); });
 

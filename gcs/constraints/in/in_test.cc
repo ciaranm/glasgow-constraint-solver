@@ -3,6 +3,8 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <util/enumerate.hh>
+
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -28,10 +30,12 @@ using std::mt19937;
 using std::nullopt;
 using std::pair;
 using std::set;
+using std::string;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
 using std::ranges::find;
+using std::ranges::minmax;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -122,7 +126,7 @@ auto run_in_mixed_test(bool proofs, const ViewWrapConfig & view_cfg, pair<int, i
 
 auto run_in_var_list_test(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> var_range, const vector<pair<int, int>> & vars_ranges) -> void
 {
-    auto wraps = wraps_for_positions(view_cfg, 1);
+    auto wraps = wraps_for_positions(view_cfg, 1 + static_cast<int>(vars_ranges.size()));
     print(cerr, "in var list [{}] [{},{}] {} {}", view_wrap_config_label(view_cfg), var_range.first, var_range.second, vars_ranges,
         proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -142,8 +146,8 @@ auto run_in_var_list_test(bool proofs, const ViewWrapConfig & view_cfg, pair<int
     Problem p;
     auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
     vector<IntegerVariableID> vars;
-    for (const auto & [l, u] : vars_ranges)
-        vars.push_back(p.create_integer_variable(Integer(l), Integer(u)));
+    for (const auto & [i, r] : enumerate(vars_ranges))
+        vars.push_back(create_integer_variable_or_constant_with_view(p, r, wraps.at(i + 1)));
     p.post(In{var, vars});
 
     auto proof_name = proofs ? make_optional("in_test_" + view_wrap_config_label(view_cfg)) : nullopt;
@@ -154,7 +158,7 @@ auto run_in_var_list_test(bool proofs, const ViewWrapConfig & view_cfg, pair<int
 auto run_in_var_list_mixed_test(
     bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> var_range, const vector<pair<int, int>> & vars_ranges, vector<int> int_vals) -> void
 {
-    auto wraps = wraps_for_positions(view_cfg, 1);
+    auto wraps = wraps_for_positions(view_cfg, 1 + static_cast<int>(vars_ranges.size()));
     print(cerr, "in mixed var list [{}] [{},{}] {} ints={} {}", view_wrap_config_label(view_cfg), var_range.first, var_range.second, vars_ranges,
         int_vals, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -177,14 +181,66 @@ auto run_in_var_list_mixed_test(
     Problem p;
     auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
     vector<IntegerVariableID> vars;
-    for (const auto & [l, u] : vars_ranges)
-        vars.push_back(p.create_integer_variable(Integer(l), Integer(u)));
+    for (const auto & [i, r] : enumerate(vars_ranges))
+        vars.push_back(create_integer_variable_or_constant_with_view(p, r, wraps.at(i + 1)));
     vector<Integer> vals;
     for (int v : int_vals)
         vals.push_back(Integer(v));
     p.post(In{var, vars, vals});
 
     auto proof_name = proofs ? make_optional("in_test_" + view_wrap_config_label(view_cfg)) : nullopt;
+    solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{var, CheckConsistency::GAC}, pair{vars, CheckConsistency::GAC}});
+    check_results(proof_name, expected, actual);
+}
+
+// The range prunings' bound lemmas only earn their place when what a variable is
+// missing is a *hole*: a run outside a variable's declared bounds is already
+// contradicted by the model's own domain rows, so unit propagation crosses the
+// selector's equality without help and the lemmas are dead weight there. A hole
+// is stated by a range literal and nothing else, which is the disjunction RUP
+// cannot split -- see justify_not_in_range.hh. The data table above can only
+// express contiguous ranges, and a contiguous domain has no interior hole, so
+// these rows spell their domains out value by value (#874).
+auto run_in_holes_test(bool proofs, const ViewWrapConfig & view_cfg, const string & label, const vector<int> & var_values,
+    const vector<vector<int>> & source_values) -> void
+{
+    auto wraps = wraps_for_positions(view_cfg, 1 + static_cast<int>(source_values.size()));
+    print(cerr, "in holes [{}] [{}] var={} sources={} {}", view_wrap_config_label(view_cfg), label, var_values, source_values,
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto span = [](const vector<int> & values) {
+        auto [lo, hi] = minmax(values);
+        return pair{lo, hi};
+    };
+    auto holds = [](const vector<int> & values, int v) { return find(values, v) != values.end(); };
+
+    vector<pair<int, int>> source_spans;
+    for (const auto & values : source_values)
+        source_spans.push_back(span(values));
+
+    set<tuple<int, vector<int>>> expected, actual;
+    build_expected(
+        expected,
+        [&](int v, const vector<int> & w) -> bool {
+            if (! holds(var_values, v))
+                return false;
+            for (const auto & [i, x] : enumerate(w))
+                if (! holds(source_values.at(i), x))
+                    return false;
+            return find(w, v) != w.end();
+        },
+        span(var_values), source_spans);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto var = create_integer_variable_or_constant_with_view(p, var_values, wraps.at(0));
+    vector<IntegerVariableID> vars;
+    for (const auto & [i, values] : enumerate(source_values))
+        vars.push_back(create_integer_variable_or_constant_with_view(p, values, wraps.at(i + 1)));
+    p.post(In{var, vars});
+
+    auto proof_name = proofs ? make_optional("in_test_holes_" + label + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{var, CheckConsistency::GAC}, pair{vars, CheckConsistency::GAC}});
     check_results(proof_name, expected, actual);
 }
@@ -206,6 +262,27 @@ auto run_in_self_reference_test(bool proofs, const ViewWrapConfig & view_cfg, pa
     auto proof_name = proofs ? make_optional("in_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var});
     check_results(proof_name, expected, actual);
+}
+
+auto run_all_holes_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
+{
+    auto contiguous = [](int lo, int hi) {
+        vector<int> result;
+        for (int v = lo; v <= hi; ++v)
+            result.push_back(v);
+        return result;
+    };
+
+    // Step 1, the run coming off var. One source misses [4, 6] because of a hole
+    // and the other because of its bounds, so the two lemma pairs are exercised
+    // in the one conclusion and only one of them is doing anything.
+    run_in_holes_test(proofs, view_cfg, "step1_source_hole", contiguous(0, 9), {{0, 1, 2, 3, 7, 8, 9}, {8, 9}});
+    // Both sources miss it by a hole, at different distances from the run.
+    run_in_holes_test(proofs, view_cfg, "step1_all_holes", contiguous(0, 9), {{0, 1, 2, 3, 8, 9}, {0, 4, 8, 9}});
+    // Step 3, the run coming off the single supporting source. var's hole is
+    // [3, 5], the second source misses dom(var) entirely so it is not a
+    // supporter, and the first has to lose exactly the hole.
+    run_in_holes_test(proofs, view_cfg, "step3_var_hole", {0, 1, 2, 6, 7, 8}, {contiguous(0, 8), {10, 11}});
 }
 
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
@@ -240,6 +317,18 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 
     // Single supporter case (forces filtering of V_i to dom(var))
     run_in_var_list_test(proofs, view_cfg, {2, 4}, {{1, 5}, {7, 9}}); // only V_0 overlaps; V_0 gets pruned to {2,3,4}
+
+    // Rows that reach the range prunings (#874) at all, which needs a *run* of
+    // at least two values to remove: a width-one run canonicalises to the same
+    // != literal and stays on the per-value path, and every row above happens to
+    // leave only those. Deterministic rather than left to the random sweep
+    // below, so the range path is entered at a fixed seed rather than by luck.
+    // What makes its *lemmas* load-bearing is a hole, which needs domains the
+    // table cannot spell -- see run_all_holes_tests.
+    run_in_var_list_test(proofs, view_cfg, {1, 8}, {{1, 2}, {7, 8}});       // step 1, one interior run: var loses 3..6
+    run_in_var_list_test(proofs, view_cfg, {1, 8}, {{4, 5}});               // step 1, a run at each end, one selector to rule out
+    run_in_var_list_test(proofs, view_cfg, {3, 4}, {{1, 8}, {6, 9}});       // step 3: V_1 misses var, so V_0 loses 1..2 and 5..8
+    run_in_var_list_mixed_test(proofs, view_cfg, {1, 9}, {{2, 3}}, {6, 7}); // both paths at once: runs 1..1, 4..5 and 8..9
 
     // Mixed with non-constant vars + constants
     run_in_var_list_mixed_test(proofs, view_cfg, {1, 5}, {{2, 3}}, {5}); // V_0 in {2,3}, plus 5
@@ -317,9 +406,13 @@ auto main(int argc, char * argv[]) -> int
 
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
-    // Only the primary `var` of each In variant is wrapped; the inner
-    // vars vector of run_in_var_list_test is not in the sweep.
-    constexpr int n_positions = 1;
+    // Position 0 is the primary `var` of each In variant; positions 1 upwards are
+    // the source variables, the widest of which is three entries across the data
+    // and the random sweep. A source is as much a range-literal operand as var
+    // is -- step 1 names each one in its reason and its selector clauses, and
+    // step 3 prunes one -- so leaving them bare would have left half of what
+    // #904 unlocked untested.
+    constexpr int n_positions = 4;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
         println(cerr, "in view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
@@ -331,6 +424,13 @@ auto main(int argc, char * argv[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         run_all_tests(proofs, view_cfg);
+        // Wrapped as well as bare, since #904: a hole is what makes these rows'
+        // bound lemmas load-bearing, and a view states one with a range literal
+        // of its own. Their proof basenames carry the view label for the same
+        // reason every other row's does -- the lanes share a working directory
+        // and delete their proofs once veripb has run, so a name shared across
+        // lanes races under `ctest -j`.
+        run_all_holes_tests(proofs, view_cfg);
         run_random_tests(proofs, view_cfg, rand);
     }
 
