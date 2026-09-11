@@ -20,7 +20,6 @@
 #include <sstream>
 #include <string>
 #include <utility>
-#include <variant>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -35,15 +34,12 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::erase_if;
-using std::get;
-using std::holds_alternative;
 using std::make_unique;
 using std::move;
 using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::vector;
-using std::ranges::all_of;
 using std::ranges::any_of;
 using std::ranges::binary_search;
 using std::ranges::sort;
@@ -167,27 +163,25 @@ auto In::install_propagators(Propagators & propagators) -> void
     for (const auto & v : _val_vals)
         val_vals_set.insert_at_end(v);
 
-    // Can a range be said about these variables at all? A range conclusion needs
-    // a range literal for every variable it names -- var in the conclusion, each
-    // source in the reason and in the selector clauses -- and a view has none
-    // (#882), so a view anywhere keeps this whole propagator on the per-value
-    // path. One flag for both of the rules below rather than one apiece: the
-    // single-support rule's reason mentions every other source, so the
-    // granularity at which a range is or is not sayable here is the propagator,
-    // not the conclusion. (A width-one run stays per-value too, wherever it turns
-    // up, but that is a per-run question: not_in_range canonicalises to the same
-    // != literal there, so the range form would buy nothing and cost two bound
-    // lemmas per source.)
+    // A range can be said about any of these variables, whatever kind they are.
+    // A registered view owns its range literals over its own encoded variable,
+    // linked to the underlying one (#904), which is also the representation the
+    // model states In's rows in -- so the conclusions, the reason literals and
+    // the selector clauses below all name literals that exist, and the two bound
+    // lemmas cross on whichever encoding each operand resolves to. A variable
+    // with no bits encoding is the one thing that has no range literal, and that
+    // is the proof layer's business rather than this propagator's: the logger
+    // expands such a conclusion back to one line per value on its way out
+    // (ProofLogger::infer, infer_explicitly).
     //
-    // Which variables these are is fixed at install time, so this is answered
-    // once rather than on every call.
-    auto all_simple = holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{_var}) &&
-        all_of(_var_vals, [](const IntegerVariableID & V) { return holds_alternative<SimpleIntegerVariableID>(V); });
+    // A width-one run stays per-value below, but for an unrelated reason:
+    // not_in_range canonicalises to the same != literal there, so the range form
+    // would buy nothing and cost two bound lemmas per source.
 
     propagators.install(
         constraint_id(),
-        [var = _var, var_vals = _var_vals, val_vals = _val_vals, val_vals_set = move(val_vals_set), selectors = _selectors, owner = constraint_id(),
-            all_simple](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [var = _var, var_vals = _var_vals, val_vals = _val_vals, val_vals_set = move(val_vals_set), selectors = _selectors, owner = constraint_id()](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Step 1: filter dom(var) — drop any value that no source supports.
             if (var_vals.empty()) {
                 // The initial-domain shape (create_integer_variable(vector) posts In
@@ -243,7 +237,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                 LargeDomainIterationCounter unsupported_guard{"the number of values one In unsupported-value pruning has walked"};
 
                 for (auto [run_lo, run_hi] : unsupported.each_interval()) {
-                    if (all_simple && run_lo < run_hi) {
+                    if (run_lo < run_hi) {
                         Reason reason;
                         if (inference.want_reasons()) {
                             ReasonLiterals lits;
@@ -255,7 +249,6 @@ auto In::install_propagators(Propagators & propagators) -> void
                         inference.infer_not_in_range(logger, var, run_lo, run_hi,
                             JustifyExplicitly{//
                                 [logger, var, lo = run_lo, hi = run_hi, &var_vals, &selectors](const ReasonLiterals & reason) {
-                                    auto pruned = get<SimpleIntegerVariableID>(IntegerVariableID{var});
                                     for (const auto & [j, V] : enumerate(var_vals)) {
                                         // The range literal never crosses the equality;
                                         // only single bounds do. var >= lo crosses to
@@ -264,7 +257,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                                         // reverse reification, and that crosses back to
                                         // var >= hi + 1 -- so the two ge-layer lemmas are
                                         // all that is owed here.
-                                        justify_not_in_range_across_equality(*logger, reason, pruned, lo, hi, V, lo, hi, selectors[j]);
+                                        justify_not_in_range_across_equality(*logger, reason, var, lo, hi, V, lo, hi, selectors[j]);
                                         // Which makes this RUP, and this is what makes the
                                         // conclusion RUP: under the reason it unit
                                         // propagates ~sel_j, and with every selector out
@@ -367,12 +360,8 @@ auto In::install_propagators(Propagators & propagators) -> void
                     for (const auto & [j, V_j] : enumerate(var_vals)) {
                         if (j == i)
                             continue;
-                        if (all_simple)
-                            for (auto [a, b] : var_values.each_interval())
-                                extra.emplace_back(not_in_range(V_j, a, b));
-                        else
-                            for (const auto & w : state.each_value_immutable(var))
-                                extra.emplace_back(V_j != w);
+                        for (auto [a, b] : var_values.each_interval())
+                            extra.emplace_back(not_in_range(V_j, a, b));
                     }
                     reason = with_extra(generic_reason(vector{var}), std::move(extra));
                 }
@@ -382,8 +371,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                 // selector, which is what pins V to var for the lemmas below.
                 // Value-independent, so it is emitted once per conclusion rather
                 // than once per removed value.
-                auto rule_out_other_selectors = [logger, &state, &var_vals, &selectors, &var_values, var, i, all_simple](
-                                                    const ReasonLiterals & reason) {
+                auto rule_out_other_selectors = [logger, &state, &var_vals, &selectors, &var_values, var, i](const ReasonLiterals & reason) {
                     // When var is fixed, dom(var) is a single value and the inner-loop
                     // scaffolding line `! sel_j + (var != w)` collapses (under the reason's
                     // `var = w` literal) to the same constraint as the outer `! sel_j`, so
@@ -393,30 +381,23 @@ auto In::install_propagators(Propagators & propagators) -> void
                         if (j == i)
                             continue;
                         if (! var_fixed) {
-                            if (all_simple) {
-                                // `! sel_j` follows from dom(var) being emptied of
-                                // anything V_j could be, one interval at a time: the
-                                // reason's lower bound plus the first interval's
-                                // exclusion gives var past it, the hole after it is a
-                                // reason literal that steps over the gap, and so on
-                                // until the walk passes the reason's upper bound.
-                                // Which is the same walk as step 1's, and needs the
-                                // same two lemmas to cross the selector's equality
-                                // -- for the same reason, and only where the run is
-                                // wider than one value.
-                                auto pruned = get<SimpleIntegerVariableID>(IntegerVariableID{var});
-                                for (auto [a, b] : var_values.each_interval()) {
-                                    if (a < b)
-                                        justify_not_in_range_across_equality(*logger, reason, pruned, a, b, V_j, a, b, selectors[j]);
-                                    logger->emit_rup_proof_line_under_reason(reason,
-                                        WPBSum{} + 1_i * ! selectors[j] + 1_i * not_in_range(var, a, b) + 1_i * in_range(V_j, a, b) >= 1_i,
-                                        ProofLevel::Temporary);
-                                }
+                            // `! sel_j` follows from dom(var) being emptied of
+                            // anything V_j could be, one interval at a time: the
+                            // reason's lower bound plus the first interval's
+                            // exclusion gives var past it, the hole after it is a
+                            // reason literal that steps over the gap, and so on
+                            // until the walk passes the reason's upper bound.
+                            // Which is the same walk as step 1's, and needs the
+                            // same two lemmas to cross the selector's equality
+                            // -- for the same reason, and only where the run is
+                            // wider than one value.
+                            for (auto [a, b] : var_values.each_interval()) {
+                                if (a < b)
+                                    justify_not_in_range_across_equality(*logger, reason, var, a, b, V_j, a, b, selectors[j]);
+                                logger->emit_rup_proof_line_under_reason(reason,
+                                    WPBSum{} + 1_i * ! selectors[j] + 1_i * not_in_range(var, a, b) + 1_i * in_range(V_j, a, b) >= 1_i,
+                                    ProofLevel::Temporary);
                             }
-                            else
-                                for (const auto & w : state.each_value_immutable(var))
-                                    logger->emit_rup_proof_line_under_reason(
-                                        reason, WPBSum{} + 1_i * ! selectors[j] + 1_i * (var != w) >= 1_i, ProofLevel::Temporary);
                         }
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ! selectors[j] >= 1_i, ProofLevel::Temporary);
                     }
@@ -425,7 +406,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                 LargeDomainIterationCounter support_guard{"the number of values one In single-support pruning has walked"};
 
                 for (auto [run_lo, run_hi] : v_values.each_interval_minus(var_values)) {
-                    if (all_simple && run_lo < run_hi) {
+                    if (run_lo < run_hi) {
                         // With the other selectors ruled out, V = var is forced,
                         // and the two ge-layer lemmas carry the run's endpoints
                         // across that equality -- the mirror of step 1, which
@@ -437,8 +418,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                             JustifyExplicitly{//
                                 [&, lo = run_lo, hi = run_hi](const ReasonLiterals & reason) {
                                     rule_out_other_selectors(reason);
-                                    justify_not_in_range_across_equality(
-                                        *logger, reason, get<SimpleIntegerVariableID>(IntegerVariableID{V}), lo, hi, var, lo, hi);
+                                    justify_not_in_range_across_equality(*logger, reason, V, lo, hi, var, lo, hi);
                                 },
                                 ThenRUP::Yes, hints::InNotInRange{{owner}}},
                             want_reason ? with_extra(reason, ReasonLiterals{not_in_range(var, run_lo, run_hi)}) : Reason{});
