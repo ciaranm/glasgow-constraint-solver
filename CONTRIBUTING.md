@@ -143,6 +143,36 @@ installed clang-format is what makes it a check at all. It also only sees what
 is staged, whereas CI formats the whole tree; the two agree on a clean tree, but
 run the command above by hand if you are unsure.
 
+Branches and History
+====================
+
+A pull request's MERGED status is **not** a reliable signal that its content is
+in `main`, and stacked pull requests are how that goes wrong. A PR based on
+another branch rather than on `main` is merged *into that branch*, and GitHub
+marks it MERGED at that point — whether or not the parent ever carries it the
+rest of the way. If the parent is then merged from a commit that predates the
+child, or is merged and the stack is not re-pushed, the child's content never
+reaches `main` while its PR page says it did. PR #261 is the worked example: it
+read MERGED while the example it added was absent from `main` entirely, because
+`main`'s merge of its parent stopped one commit short of it.
+
+To decide whether a branch's content has landed, ask the content rather than the
+PR status:
+
+```shell
+git merge-base --is-ancestor origin/<branch> origin/main   # exit 0: it is in
+git cherry origin/main origin/<branch>                     # no '+' lines: it is in
+```
+
+A branch that GitHub calls merged but that still has `+` lines needs its unique
+commits diffing against `main` by hand: it may have been squash-merged (fine) or
+it may be carrying commits that were dropped along the way.
+
+Before deleting a remote branch, check that no open pull request is based on it
+(`gh pr list --base <branch> --state open`). Deleting a branch that is an open
+PR's base **closes that PR**; GitHub does not retarget it, and the close is not
+reversible by recreating the branch.
+
 Developer Documentation
 =======================
 
