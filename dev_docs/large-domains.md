@@ -192,9 +192,12 @@ Which of the two lemmas carries the selector depends on which row it crosses. Fo
 This is `justify_not_in_range_across_equality()` generalised from an
 unconditional equality to one that holds only under a guard.
 
-Views keep the per-value path: a view's atoms are spelled through the view and
-the lemmas have not been shown to bridge that. Same restriction, and same reason,
-as the single-support range path in the same file.
+A view operand needs nothing extra. The lemmas name no bit vector, only order
+conditions on the two operands, so they are emitted over whichever encoded
+variable each one resolves to -- a registered view's own, which since #904 is
+where its range literals live and is also the representation the model states
+these rows in. Both of `min_max.cc`'s range paths and both of `In`'s dropped
+their view guards accordingly.
 
 `In` (#874) is the case where *both* lemmas carry the selector, because both
 halves of its link are half-reified: the model says `V_i >= var` and
@@ -224,6 +227,13 @@ three sparse-domain ones; before those, sabotaging the lemmas changed nothing th
 suite could see. (`equals` records the neighbouring observation from its own
 mutation lane: there the exceptions are interval endpoints that land on a bit
 boundary, where a bound is one literal rather than a sum.)
+
+The same three rows say it under a view, which is the check worth having on the
+crossing #904 introduced rather than on the lemmas themselves: with a view on the
+supporting source (`--view-wrap=8 --view-position=1`), dropping the lemmas is
+rejected on `in_test_holes_step1_source_hole`, so the pair really is carrying the
+run's endpoints across the view's own encoding and not merely across the bare
+variable's.
 
 ### Theorem 2.9 is what makes the two-lemma shape work, and it wants a *difference*
 
@@ -615,11 +625,12 @@ Two kinds of check, and the difference matters:
   width. **A width-proportional reason is worth trying to restate before it is
   worth guarding**, because the guard only converts a hang into an exception,
   whereas the restatement removes the width from the cost. The interval
-  vocabulary this uses is `dev_docs/range_literals_spec.md`; its one gap is
-  views, which have no range literal (#882), so a run of values a *view* cannot
-  take is still spelled out one value at a time and the counter still covers it.
-  Note the granularity: it is that run that degrades, not the rule, so a view
-  pays for its own holes rather than for the width of anything.
+  vocabulary this uses is `dev_docs/range_literals_spec.md`. Views were its one
+  gap until #904 gave them range literals of their own, and a run of values a
+  view cannot take is now one literal like anyone else's; the counter still
+  covers the walk, which is what it was ever counting. The remaining variable
+  with no range literal is a bits-less (direct-only, so zero-one) one, which has
+  no interior run to state.
 * **`GCS_CHECK_LARGE_DOMAIN`** checks a size up front, for the H3 sites that
   commit to a whole array at once.
 
@@ -660,7 +671,7 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-75 constraint probes, plus 20 heuristic ones in the second table. The lane
+77 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
@@ -668,7 +679,7 @@ snapshot for orientation.
 |---|---|
 | **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
 | **Clean** (43) | the arithmetic family (with two rows of its own for `Abs`' interior holes), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms and with a holey entry, `AllEqual` with holes and without, `Among`, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
-| **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
+| **NoWidePosition** (15) | the graph and permutation family, and the Boolean constraints |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`
 and `Element` started as `KnownTrip` and are now `Clean`, by the interval
@@ -952,7 +963,7 @@ time, and the row is now flat at 53.
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 43988 → 439988 steps) |
-| neither | 1.0x / 1.0x | everything else, 66 of 75 |
+| neither | 1.0x / 1.0x | everything else, 68 of 77 |
 
 The last row means "does not grow with the width", not "identical at both widths",
 and three entries in it are worth naming so nobody reads them as a promise.
