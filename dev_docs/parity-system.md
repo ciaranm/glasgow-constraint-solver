@@ -96,24 +96,48 @@ recovered by summing the steps (their §4.2), and only the steps need a
 translation. Writing `a`, `l`, `a'` for `a_{k-1}`, `l_k`, `a_k`, and
 introducing one fresh in-proof flag `y_k` per step:
 
-- **`red` 1, witness `y -> 1`:** `2y - a - l - a' >= 0`. The goal on the new
-  constraint is `2 - a - l - a' >= 0`, which *is* the `k_1_1` row; the goals on
-  the formula are vacuous because `y` is fresh. No subproof.
+- **`red` 1, witness `y -> 1`:** `2y - a - l - a' >= 0`. The only goal is on
+  the new constraint, `2 - a - l - a' >= 0`, and it discharges by RUP: negating
+  it fixes all three of `a`, `l`, `a'` true, and `k_1_1` then reads `-3 >= -2`.
+  The goals on the formula are vacuous because `y` is fresh, so nothing already
+  in the database mentions it. No subproof.
 - **`red` 2, witness `y -> 0`:** `a + l + a' - 2y >= 0`. The goal on the new
-  constraint is `a + l + a' >= 0`, trivially true. The goal on the formula is
-  the first red's constraint under `y = 0`, namely `-a - l - a' >= 0`, and that
-  needs a five-line `pol` subproof against the negation `2y - a - l - a' >= 1`:
+  constraint is `a + l + a' >= 0`, which normalises to degree 0 and
+  auto-discharges. The one real goal is the *first* red's constraint under
+  `y = 0`, namely `-a - l - a' >= 0`, and it needs a five-line `pol` subproof
+  against the negation `N: 2y - a - l - a' >= 1`:
 
   ```
-  S1 = negation + 2 * (literal axiom ~y)     ->  -a - l - a' >= -1
+  S1 = N + 2 * (literal axiom ~y)  ->  -a - l - a' >= -1
   S2 = S1 + k_0_0  ->  -2a' >= -1  -> /2 ->  -a' >= 0
   S3 = S1 + k_1_0  ->  -2a  >= -1  -> /2 ->  -a  >= 0
   S4 = S1 + k_0_1  ->  -2l  >= -1  -> /2 ->  -l  >= 0
-  S5 = S2 + S3 + S4                         ->  -a - l - a' >= 0
+  S5 = S2 + S3 + S4 + (negated goal, a + l + a' >= 1)  ->  0 >= 1
   ```
 
   The three divisions are where the parity argument lives: unit propagation
-  cannot do it, which is why this is not a RUP.
+  cannot do it, which is why this is not a RUP. **`S5` adds the negated goal**,
+  because a `proofgoal` block has to end in a contradiction rather than in a
+  derivation of the goal — deriving `-a - l - a' >= 0` and stopping there is
+  the shape VeriPB rejects, and it costs nothing to avoid, since the negated
+  goal is already in scope.
+
+Only steps of the *other* order carry goals over the earlier steps' rows: a
+`y_{k'}` from step `k' < k` is not in step `k`'s witness domain, so those rows
+restrict to themselves and generate nothing. That is also a canary — an
+implementation that accidentally reused one `y` across steps would not go
+quietly wrong, it would acquire goals it cannot discharge and fail at check
+time.
+
+The order of the two `red`s is not load-bearing for soundness, only for cost.
+Swapping them moves the work: `red(D2)` first is entirely goal-free, and
+`red(D1)` second then has to prove `a + l + a' >= 2`, which takes seven lines
+rather than five. Take the cheaper order.
+
+Rows of length 0 have no chain to telescope — `a_0` and `a_n` are the same flag
+— so they are excluded before any of this runs. They need nothing: an empty odd
+row is a root contradiction, which the `0ge`/`0le`/`acc` rows state on their
+own.
 
 Summing the two directions over `k = 1..n` telescopes the accumulators (every
 `a_j` for `0 < j < n` appears twice, so with coefficient 2, which is even and
@@ -134,6 +158,21 @@ definition — so they are deleted immediately afterwards. `Top` is never
 forgotten, and every line left there taxes every later unhinted RUP (#666), so
 the deletion is not tidiness. **Steady-state `Top` footprint: two lines per
 donor.**
+
+Deleting them is safe and is *unchecked*: redundance established
+equisatisfiability while the rows still stood, and every model of the chain
+rows extends to one of (A) and (B) by `y_k = (a_{k-1} + l_k + a_k) / 2`, which
+those rows make integral. The deletion goes unchecked because `D1`/`D2` are
+red-derived and so live in the derived set, and whether a deletion is checked
+follows where the target lives rather than which rule wrote it — see
+[veripb-facts.md](veripb-facts.md). Subproof lines need no deleting at all;
+their scope ends with the block.
+
+What does stay has a cost worth naming: (A) and (B) sit at `Top` mentioning
+every `l_i` and every interior `a_j`, so any later `red` whose witness touches
+one of those variables acquires proofgoals over them. Nothing in the tree does
+today — the flag-reifying `red`s all use fresh witnesses — but it is the thing
+that would make this expensive from a distance.
 
 ### 3. Elimination is one `pol`
 
@@ -161,6 +200,12 @@ Given a derived row and an assignment `ρ` over its support, with
 which is a clause falsified by `ρ`. For a propagation, run it with `ρ` extended
 by the *wrong* value for the one unassigned literal: the clause then has that
 literal as its only non-falsified term, so it propagates.
+
+The fold is not optional. (A) and (B) on their own do **not** make the XOR's
+clauses RUP: fixing the literals to the wrong parity leaves the pair feasible
+at a half-integral point — `n = 2` with both literals 0 gives
+`2(y_1 + y_2 - a_1) >= 1` and `<= 1`, slack either way, nothing propagates.
+The rounding in the `/2` is what closes it, exactly as in the subproof above.
 
 Everything above — summing donors for both directions, the literal axioms, the
 divide, the multiply — is one RPN expression, so it is **one `pol` line plus

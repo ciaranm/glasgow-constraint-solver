@@ -1305,6 +1305,19 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
                 throw ScpReadError{"parity output must be statically true (only bare odd parity is supported)"};
             post_constraint(problem, ParityOdd{move(lits)}, label);
         }
+        else if (op == "parity_system") {
+            // (label parity_system (((Z op v) ...) ...)): each inner list is one
+            // odd-parity row. Not a cake rule -- cake has `parity` for a single
+            // row and nothing for a system of them -- but a .scp is written on
+            // every proof-logged run that asks for one, so the form has to be
+            // readable as well as writable. Nogoods is the same case.
+            if (terms.size() != 3)
+                throw ScpReadError{"parity_system is (label parity_system ((literals...) ...))"};
+            vector<innards::Literals> rows;
+            for (const auto & row : children_of(terms[2], "the parity_system row list"))
+                rows.push_back(resolve_literal_list(variables, row, "a parity_system row"));
+            post_constraint(problem, ParitySystem{move(rows)}, label);
+        }
         else if (op == "plus") {
             // (label plus a b result): a + b = result.
             if (terms.size() != 5)
