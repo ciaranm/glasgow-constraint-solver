@@ -15,6 +15,8 @@
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
+#include <util/generator.hh>
+
 #include <array>
 #include <concepts>
 #include <functional>
@@ -23,13 +25,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <version>
-
-#ifdef __cpp_lib_generator
-#include <generator>
-#else
-#include <__generator.hpp>
-#endif
 
 namespace gcs
 {

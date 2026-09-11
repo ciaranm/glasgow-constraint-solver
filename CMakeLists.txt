@@ -382,25 +382,12 @@ else()
     target_link_libraries(gcs_fmt INTERFACE fmt::fmt)
 endif()
 
-try_compile(GCS_COMPILER_HAS_GENERATOR ${CMAKE_CURRENT_BINARY_DIR}/cmake_compile_tests ${CMAKE_CURRENT_SOURCE_DIR}/cmake_compile_tests/has_generator.cc)
-if(GCS_COMPILER_HAS_GENERATOR)
-    message("Using compiler's own <generator> implementation")
-else()
-    message("Using external <generator> implementation")
-    include(ExternalProject)
-    ExternalProject_Add(
-            generator
-            PREFIX ${CMAKE_CURRENT_BINARY_DIR}/generator
-            GIT_REPOSITORY https://github.com/todoubaba/generator
-            GIT_TAG a849a206f35c2447ab5e605edc5fcf44f673c628 # no release
-            INSTALL_COMMAND ""
-            BUILD_COMMAND ""
-    )
-    add_library(generator_include INTERFACE)
-    target_include_directories(generator_include INTERFACE
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generator/src/generator/include>
-            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-endif()
+# <generator> needs no CMake support: util/generator.hh picks the standard
+# library's where __cpp_lib_generator says there is one and the vendored shim in
+# util/p2168_generator.hpp where there is not. This used to be a try_compile plus
+# an ExternalProject fetching a third-party polyfill at configure time; see
+# dev_docs/building.md, "The vendored <generator> shim", for why it is not any
+# more.
 
 try_compile(GCS_COMPILER_HAS_STACKTRACE ${CMAKE_CURRENT_BINARY_DIR}/cmake_compile_tests ${CMAKE_CURRENT_SOURCE_DIR}/cmake_compile_tests/has_stacktrace.cc)
 if(GCS_COMPILER_HAS_STACKTRACE)
@@ -415,9 +402,6 @@ add_subdirectory(gcs)
 include(CMakePackageConfigHelpers)
 
 set(_gcs_install_targets glasgow_constraint_solver gcs_fmt)
-if(NOT GCS_COMPILER_HAS_GENERATOR)
-    list(APPEND _gcs_install_targets generator_include)
-endif()
 
 install(TARGETS ${_gcs_install_targets}
         EXPORT GlasgowConstraintSolverTargets
@@ -437,15 +421,12 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/gcs/
         REGEX "constraints_test_utils\\.hh$" EXCLUDE
         REGEX "cake_probe\\.hh$" EXCLUDE)
 
+# *.hpp and *.LICENSE as well as *.hh: the vendored <generator> shim keeps the
+# third-party extension it came with, to signal that it is not ours, and the
+# Boost licence it is under has to travel with it.
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/util/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/util
-        FILES_MATCHING PATTERN "*.hh")
-
-if(NOT GCS_COMPILER_HAS_GENERATOR)
-    install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/generator/src/generator/include/
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-            FILES_MATCHING PATTERN "*.hpp")
-endif()
+        FILES_MATCHING PATTERN "*.hh" PATTERN "*.hpp" PATTERN "*.LICENSE")
 
 configure_package_config_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GlasgowConstraintSolverConfig.cmake.in

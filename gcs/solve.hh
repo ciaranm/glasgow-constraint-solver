@@ -9,17 +9,12 @@
 #include <gcs/stats.hh>
 #include <gcs/variable_condition.hh>
 
+#include <util/generator.hh>
+
 #include <optional>
 
 #include <atomic>
 #include <functional>
-#include <version>
-
-#ifdef __cpp_lib_generator
-#include <generator>
-#else
-#include <__generator.hpp>
-#endif
 
 namespace gcs
 {

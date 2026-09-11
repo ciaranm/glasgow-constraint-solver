@@ -13,15 +13,9 @@
 #include <deque>
 #include <optional>
 #include <utility>
-#include <version>
 
+#include <util/generator.hh>
 #include <util/overloaded.hh>
-
-#ifdef __cpp_lib_generator
-#include <generator>
-#else
-#include <__generator.hpp>
-#endif
 
 namespace gcs::innards
 {

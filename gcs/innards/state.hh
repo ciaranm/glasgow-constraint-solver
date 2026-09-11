@@ -8,6 +8,7 @@
 #include <gcs/innards/variable_id_utils.hh>
 #include <gcs/integer.hh>
 #include <gcs/interval_set.hh>
+#include <util/generator.hh>
 #include <util/overloaded.hh>
 
 #include <any>
@@ -15,13 +16,6 @@
 #include <memory>
 #include <optional>
 #include <tuple>
-#include <version>
-
-#ifdef __cpp_lib_generator
-#include <generator>
-#else
-#include <__generator.hpp>
-#endif
 
 namespace gcs::innards
 {
