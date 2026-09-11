@@ -385,10 +385,38 @@ $[\,\min\varphi_W(\dm_0(X)),\ \max\varphi_W(\dm_0(X))\,]$ the \emph{definition
 range} of $W$ and denote it $[l_W,u_W]$.
 
 Note that $\Bnd(W)$ for a proper $W$ is implied by $\Bnd(X)$ together with
-$\ViewLink(W)$ (it is their sum, up to sign), so asserting it changes nothing.  It
-is asserted anyway, because unit propagation cannot add two constraints
-together, and several later arguments need $W$'s own bounds to be available as
-units on $W$'s own atoms.
+$\ViewLink(W)$: each of its two bounds is a single sum of one half of each, so
+asserting it changes nothing.  The arguments below do need $W$'s own bounds
+present as a constraint --- unit propagation cannot add two constraints
+together, and several of them want those bounds available as units on $W$'s own
+atoms --- but that is a reason to have the sum in $F_t$, not a reason to put it
+in the OPB, and one cutting-planes step per bound at the top of the proof would
+put it there.  The solver asserts it instead; \cref{rem:assertedbounds} says
+what that costs.
+
+\begin{remarkN}[What asserting the view bounds costs]
+\label{rem:assertedbounds}
+A proper view variable's bounds are written as two OPB rows, next to the two
+\ViewLink{} rows that imply them together with the base's own bound rows.  For
+$B\in[0,4]$ and $W=B+10$ the model contains $\BinEnc(W)\geq 10$ and
+$-\BinEnc(W)\geq -14$; the first is the sum of the view-link row
+$\BinEnc(W)-\BinEnc(B)\geq 10$ with $\BinEnc(B)\geq 0$, and the second the sum of
+the other view-link row with $-\BinEnc(B)\geq -4$.  So the OPB carries two rows
+per view variable that are a consequence of two other rows of the same OPB.
+
+Deriving them would be better, for the reason a proof-only variable introduced
+inside the proof is better than one asserted into the model: the OPB is then the
+model and nothing else, and a checker that re-derives the OPB from the CP model
+has nothing extra to reproduce.  The codebase already draws that distinction
+--- \code{create\_proof\_only\_integer\_variable\_in\_proof} exists so that a
+bit-sum's meaning is a conservative extension rather than a model axiom --- and
+view variables do not use it.  Two things would have to be got right.  The
+derivation has to precede every boundary pin on $W$, since a pin is a RUP line
+and would otherwise have nothing to propagate from.  And the pin has to stay
+RUP-derivable, which it is once $\Bnd(W)$ is a line over $W$'s own bit vector,
+but would not be if it had to cross $\ViewLink(W)$ instead --- that
+configuration is the one discussed after \cref{eq:inlink}, and it is not RUP.
+\end{remarkN}
 
 Clearly, if we construct a CSP with variables $\mathcal W$, constraints
 $\mathcal C \cup \Bnd(\mathcal W)\cup\ViewLink(\mathcal W\setminus\mathcal V)$, and unrestricted

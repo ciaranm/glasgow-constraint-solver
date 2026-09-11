@@ -60,8 +60,9 @@ Writing `F_V` for `[V in a..b]` and `F_X` for its image, the two clauses emitted
 are `~F_V | F_X` and `~F_X | F_V`. **Both are needed, each for its
 contrapositive rather than its implication** — as implications both directions
 are already derivable by unit propagation, which is what issue #882 observed, and
-is true but beside the point. *The argument is Remark 3.1 of
-[literal-encodings.tex](literal-encodings.tex).*
+is true but beside the point. *The argument is the remark "Both in-link clauses
+are needed, and neither for its implication" (3.2 as the remarks are currently
+numbered) of [literal-encodings.tex](literal-encodings.tex).*
 
 Why the negative directions come up at all is the part specific to this code:
 search branches on real variables only (`reject_random_interval` requires a
@@ -73,7 +74,8 @@ over `X`.
 ## 3. Linking is triggered by *naming*, not by requesting and not by defining
 
 This is the part that is easy to get wrong, and getting it wrong is silent.
-*Why naming is the right trigger is Remark 3.3 of
+*Why naming is the right trigger is the remark "Why naming, not requesting, is
+the trigger" (3.4 as the remarks are currently numbered) of
 [literal-encodings.tex](literal-encodings.tex);* what follows is where it lives
 in the code.
 
