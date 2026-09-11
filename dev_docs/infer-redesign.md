@@ -124,6 +124,48 @@ Still deferred (consistent with the body's "open questions"):
   hint-aware, Table is ready. (`arithmetic` / `seq_precede_chain` post no inferences
   of their own and inherit the hints of what they delegate to.)
 
+### Naming a hint, and reading one back
+
+Two rules, which look contradictory apart and are clear together.
+
+**Choosing a name.** `hints::Foo::hint_name` is the **user-facing constraint
+type** — `tree`, `path`, `reachable`, `abs`, `count` — never the internal API or
+the shared helper that happens to emit the step. The annotation is vocabulary an
+*external* justifier reads in assertion mode, so it has to say which constraint
+that justifier must reason about, not how this repository factors its
+implementation. (Naming one after the shared rule machinery, `graphrules`, is the
+mistake that established this.) The only names that do not follow it are the
+framework-level ones in `gcs/innards/proofs/hints.hh` — `initial_bound`,
+`backtrack`, … — which belong to no model constraint at all. A shared helper
+therefore owns no hint: it takes one from its caller by templating on the hint
+type. One hint per *family* is fine and is the precedent — `hints::Reachable`
+covers `Reachable` and `DReachable`, `hints::Tree` covers `Tree`/`DTree` —
+because `originator` pins down which constraint it was and the `.scp` says which
+spelling; separate structs are for genuinely separate constraints
+(`sort`/`arg_sort`, `table`/`negative_table`).
+
+**Reading one back.** An assertion in a gcs proof looks like
+`a <clause> >= 1::equals:((constraint_id _23));` — and `equals` there **does not
+mean the constraint is an `Equals`**. The hint names the derivation's shape; the
+constraint id names the owner, and the two disagree exactly when a family calls
+exported shared inference code. `Element` calls `innards::enforce_equality`,
+exported from `gcs/constraints/equals/equals.hh`, which hints
+`hints::Equals{owner}` with the `owner` argument its *caller* passed. Measured on
+`langford --size=8` at `GCS_ASSERTION_LEVEL=inferences`: 6,545 assertions carry
+the `equals` hint and **every one of them is owned by an `Element`**, against 485
+carrying `element` — and `langford` posts `AllDifferent`, `Element` and `Plus`,
+with no `Equals` anywhere in the model.
+
+That is not a bug: the derivation genuinely is that shape and the owner genuinely
+is the `Element`, so a justifier is given both of the facts it needs. What it
+must not do is resolve the id expecting the hint's family — looking up `_23` for
+`Equals`'s two equality rows finds an `Element`'s per-cell half-reified pair
+instead, and what it wants is the cell, which the reason's index literals name.
+So never build a cross-family table by counting hint names; resolve each
+constraint id against the `.opb`'s own `* constraint <family> <id>` provenance
+comments. When auditing one family, grep for calls to exported inference helpers
+(`enforce_equality` is the one that exists today) and check which hint they emit.
+
 ## The abstraction
 
 Every inference has three layers with a strict one-way dependency:
