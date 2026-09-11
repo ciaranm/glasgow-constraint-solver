@@ -2207,19 +2207,40 @@ interior run:
 \toprule
 $w$ & bare & view, no interval links & view & negated view & mixed \\
 \midrule
-$10^3$ & 40 & $36{,}012$ & \textbf{106} & 106 & 109 \\
-$10^4$ & 40 & $360{,}012$ & \textbf{106} & 106 & 109 \\
-$10^5$ & 40 & \emph{timed out} & \textbf{106} & 106 & 109 \\
-$10^6$ & 40 & \emph{timed out} & \textbf{106} & 106 & 106 \\
+$10^3$ & 68 & $71{,}017$ & \textbf{200} & 200 & 200 \\
+$10^4$ & 68 & $710{,}017$ & \textbf{200} & 200 & 200 \\
+$10^5$ & 68 & \emph{timed out} & \textbf{200} & 200 & 200 \\
+$10^6$ & 68 & \emph{timed out} & \textbf{200} & 200 & 200 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 The third column is the per-value fallback a view had before it owned interval
-literals: $2+36w$ lines, unwritable past $10^4$.  The remaining columns are flat.
-They are $106$ rather than $40$ because the view carries its own bit vector, its
+literals: $17+71w$ lines, unwritable past $10^4$.  The remaining columns are flat.
+They are $200$ rather than $68$ because the view carries its own bit vector, its
 own atoms and the link constraints --- a constant, not a function of the width.  That
-constant is the price of the design; the slope was the point.
+constant is the price of the design; the slope was the point.  The bare column is
+the same number on both sides of the change, which is what makes the two
+measurements comparable: nothing here touches a variable that no view wraps.
+
+Checking bites before writing does.  The checker takes about $0.012$ seconds on
+each flat row, $42$ seconds on the $10^3$ row of the third column, and more than
+an hour on the $10^4$ row of that column, at which point the run was stopped.  So
+by the width at which the per-value fallback stops being writable, it has already
+stopped being checkable.
+
+Two cautions for anyone who repeats this measurement.  The offsets in the mixed
+column are not free to choose: the two wraps have to put both operands over the
+same interval, because otherwise their ranges are disjoint, the instance is
+unsatisfiable at the root, and the row measures a refutation instead of the
+interior-hole prune.  An earlier version of this measurement paired $x+10^6$ with
+$-y+2\cdot 10^6$, whose ranges meet only at $w=10^6$, so three of the four mixed
+rows were the wrong shape and the fourth was the right one; the only symptom was
+a three-line step in a column that is otherwise flat.  And the absolute numbers
+here are about twice the ones first measured, because every line defining part of
+a variable's encoding now also enters the checker's core set, which costs one
+further line each.  That scales both columns and leaves flat against linear
+untouched.
 
 \appendix
 \crefalias{section}{appendix}
