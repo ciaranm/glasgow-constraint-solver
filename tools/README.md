@@ -85,6 +85,15 @@ says anything about the solver. They come back as `proof-too-big` and `timeout`,
 and are never handed to `veripb` at all. A harness that cried `REJECTED` at those
 would do it on every large instance.
 
+**And a killed checker is not a rejection either**, which is the same point made
+one process later and the half this originally missed. `subprocess` reports a
+signal death as a *negative* return code, so an OOM kill --- or, on a shared
+machine, somebody else's `pkill veripb` --- came back as `REJECTED`, the most
+alarming thing this harness can say. Those rows are `verify-killed-N` now, and
+every proving row records `verify_rc` so an existing file can be re-read rather
+than re-run. Running the checker under a name nobody else will `pkill` is worth
+it on a shared box: `--veripb ./tools/pbchk` pointing at a copy is enough.
+
 **Every proving run is capped** (`--proof-cap-mb`, default 4000). An uncapped
 `rcpsp --prove` on a real Pack instance has written 128 GB in ten minutes and
 taken a machine's disk with it.
