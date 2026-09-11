@@ -1006,9 +1006,37 @@ that accept the mutation for this reason before the third one bites.
 
    The discipline above was retro-fitted across the existing
    constraints in PRs #223–#234.
-7. Build and run under `--preset sanitize` and `--preset release`. Run
+
+   **Ask the same question of the constraint's *constant* arguments,
+   which that retro-fit did not cover.** A list of constants that the
+   propagator reads as a *set* has exactly the alias problem, and
+   nothing about it looks like an alias: `GlobalCardinality`'s cover was
+   assumed distinct by both propagators — the bounds arm sums the counts
+   over a contiguous slice of the sorted cover, the GAC arm gives each
+   entry its own value node — and a repeated value doubled the demand
+   for it, losing solutions and emitting an inference VeriPB rejected
+   (#922). It took the same three-way choice and the same answer as a
+   Bucket A alias: `InvalidProblemDefinitionException` at construction,
+   `sort` plus `adjacent_find` as `AllDifferent` does it. And while you
+   are there, check the sizes of argument lists that are indexed against
+   each other: the same constructor let `values` and `counts` differ in
+   length, which was a heap-buffer-overflow rather than a diagnosable
+   error.
+
+   **Where a front end's input language allows what the constraint
+   rejects, the transformation belongs in the front end**, not in
+   `prepare()`. The `.scp` term is written from the constraint as
+   posted, and `cake_pb_cp` rebuilds the OPB from that term, so a
+   constraint that rewrites itself leaves the two encodings describing
+   different things. `fold_repeated_cover_values()` is the shape to
+   copy: a helper next to the constraint that rewrites the arguments and
+   hands back the constraints the caller must post in their place, so
+   the `.scp` records the rewritten model as the separate constraints it
+   actually is. MiniZinc's `global_cardinality` really does allow a
+   repeated cover value, and the three front ends call it.
+8. Build and run under `--preset sanitize` and `--preset release`. Run
    the wider test suite to confirm no regressions.
-8. If the constraint should be exposed to MiniZinc, follow
+9. If the constraint should be exposed to MiniZinc, follow
    [minizinc.md](minizinc.md) — separate commit.
 
 ## See also
