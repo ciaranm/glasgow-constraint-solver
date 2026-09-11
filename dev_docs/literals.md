@@ -5,7 +5,7 @@ what clauses hold the layer together, and why unit propagation can be relied on
 to re-derive a solver fact during a backtrack-clause replay — lives in one
 document:
 
-- **[literal-encodings.tex](literal-encodings.tex)**, 34 pages when typeset.
+- **[literal-encodings.tex](literal-encodings.tex)**, 35 pages when typeset.
 
 It is a revised and extended version of §3.2 and §3.3 of Matthew McIlree's
 thesis, covering the two things the thesis does not: **range ("in") literals**,
