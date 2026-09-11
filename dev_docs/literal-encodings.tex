@@ -897,10 +897,11 @@ $t$ in the proof.
 
 \item[\invCont{}: containment.]
   For any two defined two-cut atoms $\atset{w}{E}$ and $\atset{w}{E'}$ of the
-  same view variable $W$ with $E\subsetneq E'$, there is a chain
-  $E=E_0\subsetneq E_1\subsetneq\cdots\subsetneq E_m=E'$ with every
-  $\atset{w}{E_j}$ defined, such that each clause
-  $\natset{w}{E_j}\vee\atset{w}{E_{j+1}}$ appears in $F_t$.
+  same view variable $W$ with $E\subsetneq E'$: if no defined two-cut atom
+  $\atset{w}{D}$ of $W$ has $E\subsetneq D\subsetneq E'$, then the clause
+  $\natset{w}{E}\vee\atset{w}{E'}$ appears in $F_t$.  The arguments below use
+  chains of these clauses rather than single edges; \cref{lem:contclosure}
+  supplies them.
 
 \item[\invView{}: view closure and linking.]
   For every $W,W'\in\ViewVars(X)$: if an atomic variable of $W$ is defined, then so is
@@ -1138,37 +1139,51 @@ present are negative.  This is where the asymmetry bites: normalisation cannot b
 a negative two-cut literal, and there is nothing else to do with one except
 propagate through the machinery of \invCover{} and \invCont{}.
 
-\begin{lemmaN}[Containment closure]
+\begin{lemmaN}[Containment chains]
 \label{lem:contclosure}
-Suppose that whenever a two-cut atom $\atset{w}{E}$ of $W$ is defined, the clause
-$\natset{w}{E}\vee\atset{w}{E'}$ is emitted for every \emph{minimal}
-$E'\supsetneq E$ whose atom is defined, and the clause
-$\natset{w}{E''}\vee\atset{w}{E}$ for every \emph{maximal} $E''\subsetneq E$
-whose atom is defined.  Then \invCont{} holds.
+Assume \invCont{}.  Then for any two defined two-cut atoms $\atset{w}{E}$ and
+$\atset{w}{E'}$ of $W$ with $E\subsetneq E'$, there is a chain
+$E=E_0\subsetneq E_1\subsetneq\cdots\subsetneq E_m=E'$ with every
+$\atset{w}{E_j}$ defined and every clause
+$\natset{w}{E_j}\vee\atset{w}{E_{j+1}}$ in $F_t$.
 \end{lemmaN}
 
 \begin{proof}
-By induction on the number of defined atoms.  Let $\atset{w}{E}$ and
-$\atset{w}{E'}$ both be defined with $E\subsetneq E'$, and consider the later of
-the two to be defined, say at step $n$; by the inductive hypothesis \invCont{}
-held over the atoms defined before step $n$.
+By induction on the number of defined two-cut atoms $\atset{w}{D}$ of $W$ with
+$E\subsetneq D\subsetneq E'$.  If there are none, \invCont{} puts
+$\natset{w}{E}\vee\atset{w}{E'}$ in $F_t$, and the chain is that single edge.
 
-If $\atset{w}{E'}$ is the later, then $\atset{w}{E}$ was already defined, so $E$
-is contained in some maximal $E''\subsetneq E'$ with $E\subseteq E''$ and
-$\atset{w}{E''}$ defined.  If $E=E''$ the edge
-$\natset{w}{E}\vee\atset{w}{E'}$ is emitted directly; otherwise $E\subsetneq
-E''$, so the inductive hypothesis gives a chain from $E$ to $E''$, which the
-emitted edge $\natset{w}{E''}\vee\atset{w}{E'}$ extends.  The case where
-$\atset{w}{E}$ is the later is symmetric, using a minimal container.  Emitting
-an edge never invalidates a chain, so \invCont{} continues to hold.
+Otherwise, choose $C$ minimal among the sets $D$ with $E\subsetneq D\subseteq
+E'$ whose atom is defined; this collection is non-empty, since $E'$ belongs to
+it.  Nothing defined lies strictly between $E$ and $C$: such a $D$ would satisfy
+$E\subsetneq D\subsetneq C\subseteq E'$ and contradict the minimality of $C$.
+So \invCont{} puts $\natset{w}{E}\vee\atset{w}{C}$ in $F_t$.  If $C=E'$ we are
+done.  Otherwise every defined atom strictly between $C$ and $E'$ is also
+strictly between $E$ and $E'$, and $C$ is strictly between $E$ and $E'$ but not
+strictly between $C$ and $E'$, so the induction applies to the pair $C,E'$ and
+the edge just obtained extends the chain it gives.
 \end{proof}
 
 \begin{remark}
+\invCont{} is maintained by emitting, whenever a two-cut atom $\atset{w}{E}$ is
+defined, the clause $\natset{w}{E}\vee\atset{w}{E'}$ for every \emph{minimal}
+$E'\supsetneq E$ whose atom is defined, and $\natset{w}{E''}\vee\atset{w}{E}$
+for every \emph{maximal} $E''\subsetneq E$ whose atom is defined --- which is
+exactly what \code{link\_immediate\_containment} does.  Nothing is re-emitted
+later, and nothing needs to be: defining a new atom never makes a pair of
+already-defined atoms newly required.  A pair $(E,E')$ stops being required as
+soon as something is defined between them, and since definitions are never
+withdrawn, requirements are only ever lost that way; the only newly required
+pairs are those involving the new atom, which are the edges just emitted.  As with
+\invCover{}, then, the invariant is stated over the current structure and the
+emission discipline keeps up with it, which is what lets both be state
+independent.
+
 Interval requests may overlap without nesting --- $[7,15]$ after $[5,10]$ ---
 so the containment relation is a DAG, not a tree, and a set may have several
-incomparable minimal containers.  \cref{lem:contclosure} does not care.  Note
-also that it needs \emph{minimal} and \emph{maximal} to be computed over all
-sets whose atoms are currently defined for $W$, not merely over the cells.
+incomparable minimal containers.  Neither \invCont{} nor \cref{lem:contclosure}
+cares.  Note that \emph{minimal} and \emph{maximal} are computed over all sets
+whose atoms are currently defined for $W$, not merely over the cells.
 \end{remark}
 
 \begin{lemmaN}[Cell exclusion]
@@ -1191,8 +1206,8 @@ the direction used below.
 
 \emph{Case 1: some negative two-cut literal of $U$ names a set containing $C$.}
 That is, $\natset{w}{E}\in U$ for a defined $\atset{w}{E}$ with $C\subseteq E$.
-If $E=C$ we are done.  Otherwise $C\subsetneq E$, and \invCont{} gives a chain of
-binary clauses $\natset{w}{C}\vee\atset{w}{E_1}$,
+If $E=C$ we are done.  Otherwise $C\subsetneq E$, and \cref{lem:contclosure}
+gives a chain of binary clauses $\natset{w}{C}\vee\atset{w}{E_1}$,
 $\natset{w}{E_1}\vee\atset{w}{E_2}$, \dots,
 $\natset{w}{E_{m-1}}\vee\atset{w}{E}$; reading each contrapositive in turn from
 $\natset{w}{E}$ propagates $\natset{w}{C}$.
@@ -1393,8 +1408,8 @@ two-cut literal.  If a bound literal does, then either $\atge{w}{v+1}$ or
 $\natge{w}{v}$ propagates by \cref{lem:chain}, and \cref{eq:deq1} then
 propagates $\ell$ from whichever it is.  If instead a negative two-cut
 literal $\natset{w}{E}\in U$ with $v\in E$ does, then $\{v\}\subseteq E$; if
-$E=\{v\}$ then $\ell\in U$, and otherwise \invCont{} gives a chain of binary
-clauses whose contrapositives propagate $\ell$ from $\natset{w}{E}$.  If a
+$E=\{v\}$ then $\ell\in U$, and otherwise \cref{lem:contclosure} gives a chain of
+binary clauses whose contrapositives propagate $\ell$ from $\natset{w}{E}$.  If a
 positive two-cut literal excludes $v$, cut normalisation has already replaced it
 by bound literals, so this is the first case.
 
