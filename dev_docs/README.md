@@ -52,6 +52,15 @@ library. For an introduction to *using* the solver, start with the top-level
   types, the `install_reified_dispatcher` helper, the OPB encoding pattern,
   and the conventions for writing new reified constraints. Read
   `constraints.md` first.
+- [What VeriPB checks, and what it does not](veripb-facts.md) — the checker at
+  the other end of everything we emit: the two ways a proof can exit 0 while
+  establishing less than you meant, what RUP can and cannot derive without a
+  `pol` (and the case where a `pol` is not needed at all), why a `pol` only has
+  to get close and what that does to mutation lanes, what a RUP step costs and
+  therefore what may live at `Top`, why deletion checking follows where the
+  target lives rather than which rule you wrote, and what the proof system can
+  express at all. Read when a proof verifies and you are not sure it should, or
+  when one is slow to check.
 - [MiniZinc bindings](minizinc.md) — how the `minizinc/` directory plugs into
   the MiniZinc / FlatZinc ecosystem: `fzn-glasgow`, the `mznlib/` predicate
   overrides, `.msc` solver-config files, the cross-solver test harness, and
