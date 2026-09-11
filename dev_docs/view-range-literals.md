@@ -103,7 +103,7 @@ unlinked, and nothing would notice.
 no such thing as an unnamed range literal. That is false: a literal whose
 in-bounds part is empty is defined by `define_invar_with_covering`'s
 `span_lo > span_hi` branch with no partition, no covering and no containment
-edge, and nothing names it. `Inv-Rep` survives because such a literal can only
+edge, and nothing names it. `Inv-View` survives because such a literal can only
 arise from a request, and `need_invar` mirrors unconditionally — but the
 "everything is named" form of the argument does not hold, and the invariant in
 `literal-encodings.tex` is stated over cells for exactly this reason.
@@ -138,8 +138,8 @@ coverings and the containment DAGs genuinely differ.
 ## 5. Why this is complete
 
 *Resolved and moved.* The argument — mirror closure, unit transport, per-side
-UP-completeness — is proved over a whole representation family in §3.3.1 of
-[literal-encodings.tex](literal-encodings.tex), as `Inv-Rep`, Lemma 3.E and
+UP-completeness — is proved over a whole view family in §3.3.1 of
+[literal-encodings.tex](literal-encodings.tex), as `Inv-View`, Lemma 3.E and
 Theorem 3.3. What it depends on, and so what would break it: that every non-`red`
 emission names its literals (§3); that every domain change is logged eagerly; and
 that in-bounds endpoints are partition boundaries, which is why

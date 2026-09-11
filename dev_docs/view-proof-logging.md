@@ -16,8 +16,8 @@ hard cases — are now in that set.
 
 **The encoding-side account is now
 [literal-encodings.tex](literal-encodings.tex)**, a revised version of §3.2 and
-§3.3 of Matthew's thesis. A view is a *representation* there (Definition 3.1); it
-is given its own encoded variable and its own complete family of atomic
+§3.3 of Matthew's thesis. A view gets its own *view variable* there
+(Definition 3.1); it has its own complete family of atomic
 literals, joined to the underlying variable's by the definitional link
 `V - sX = c` and by the atom-level linking clauses of eqs. (3.29) to (3.31).
 Everything about how facts cross between the two — including the fact that unit

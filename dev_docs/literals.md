@@ -9,7 +9,7 @@ document:
 
 It is a revised and extended version of §3.2 and §3.3 of Matthew McIlree's
 thesis, covering the two things the thesis does not: **range ("in") literals**,
-and **several representations of one variable** (views). It keeps the thesis's
+and **several views of one variable**. It keeps the thesis's
 numbering, so Theorem 3.3 is still "complete propagation of implied atomic
 literals" and Inv1/Inv2/Inv3 are still the invariants they were there.
 
@@ -20,8 +20,8 @@ checked in.
 
 | | |
 |---|---|
-| §3.2 | The encoding procedure, extended with *representation variables* (a registered view is an encoded variable with a definitional link `V − sX = c`) and a third kind of atomic variable (`[X ∈ a..b]`, reified against two order cuts, width-1 being the eq atom). |
-| §3.3.1 | The nine invariants of the literal layer, the definition of a *defined domain* over a whole representation family, and the reproved Theorems 3.2 and 3.3 with their family versions 3.2′ and 3.3′. |
+| §3.2 | The encoding procedure, extended with *view variables* (a registered view is an encoded variable with a definitional link `V − sX = c`) and a third kind of atomic variable (`[X ∈ a..b]`, reified against two order cuts, width-1 being the eq atom). |
+| §3.3.1 | The nine invariants of the literal layer, the definition of a *defined domain* over a whole view family, and the reproved Theorems 3.2 and 3.3 with their family versions 3.2′ and 3.3′. |
 | "How facts move" | A table of every crossing and the clause family that carries it. Start here if you only read one page. |
 | §3.3.2–4 | Backtracking, optimality and enumeration, with the preserved set pinned down (base bits only). |
 | Interlude | The P1/P2 distinction, the W1–W9 witness suite and its ablation matrix, the coincidence trap, and the cost model. |
@@ -38,7 +38,7 @@ All in `gcs/innards/proofs/names_and_ids_tracker.cc` unless noted.
 | `Inv-Part` | `init_interval_partition`, `ensure_partition_cut`, and `need_direct_encoding_for`'s singleton splits |
 | `Inv-Cover` | the three `emit_rup_proof_line` covering emissions in `ensure_partition_cut`, `init_interval_partition`, `define_invar_with_covering` |
 | `Inv-Cont` | `link_immediate_containment` |
-| `Inv-Rep` | `need_view`'s backfill; the view hooks in `need_gevar` and `need_direct_encoding_for`; `mirror_invar_across_view_link` |
+| `Inv-View` | `need_view`'s backfill; the view hooks in `need_gevar` and `need_direct_encoding_for`; `mirror_invar_across_view_link` |
 | `Inv-Name` | `need_invar` (outside the definition guard) and `xliteral_for_ensuring` |
 | `Inv-Conflict`, `Inv-Domain` | the solver: every inference is logged eagerly, every backtrack writes its clause |
 

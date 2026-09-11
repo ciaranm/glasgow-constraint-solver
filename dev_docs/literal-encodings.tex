@@ -1,5 +1,5 @@
 % Pseudo-Boolean encodings and proof logging for integer variables with
-% multiple representations.
+% several views.
 %
 % Build with: latexmk -pdf literal-encodings.tex
 %
@@ -76,7 +76,7 @@
 \newcommand{\Lin}{\fname{Lin}}
 \newcommand{\Aux}{\fname{Aux}}
 \newcommand{\Vars}{\fname{Vars}}
-\newcommand{\Rep}{\fname{Rep}}
+\newcommand{\ViewVars}{\fname{ViewVars}}
 \newcommand{\ViewLink}{\fname{ViewLink}}
 \newcommand{\Cells}{\fname{Cells}}
 \newcommand{\Bdry}{\fname{Bd}}
@@ -84,7 +84,7 @@
 \newcommand{\ImpLits}{\fname{ImpLits}}
 \newcommand{\Standardise}{\fname{Standardise}}
 \newcommand{\Linearise}{\fname{Linearise}}
-\newcommand{\NeededReps}{\fname{NeededRepresentations}}
+\newcommand{\NeededViews}{\fname{NeededViews}}
 \newcommand{\NeededAtomicVariables}{\fname{NeededAtomicVariables}}
 \newcommand{\atge}[2]{#1_{\geq #2}}
 \newcommand{\ateq}[2]{#1_{= #2}}
@@ -111,13 +111,13 @@
 \newcommand{\invPart}{\inv{Part}}
 \newcommand{\invCover}{\inv{Cover}}
 \newcommand{\invCont}{\inv{Cont}}
-\newcommand{\invRep}{\inv{Rep}}
+\newcommand{\invView}{\inv{View}}
 \newcommand{\invName}{\inv{Name}}
 \newcommand{\invConflict}{\inv{Conflict}}
 \newcommand{\invDomain}{\inv{Domain}}
 
 \title{Representing Problems for Proofs, and a Proof Logging Framework,\\
-  for Integer Variables with Several Representations}
+  for Integer Variables with Several Views}
 \author{Matthew McIlree \and Ciaran McCreesh}
 \date{}
 
@@ -149,10 +149,10 @@ neither of which the thesis covers.
     holes, at constant rather than linear cost in the width of the run.  A
     width-one interval literal \emph{is} the equality atom, not a separate
     Boolean.
-  \item \textbf{Several representations of one variable.}  A constraint may be
+  \item \textbf{Several views of one variable.}  A constraint may be
     posted over an affine \emph{view} $V = sX+c$ of a variable $X$, and one $X$
     may be wrapped by several views at once.  Each registered view is given its
-    own encoded variable, its own bit vector, and its own complete family of
+    own \emph{view variable}, its own bit vector, and its own complete family of
     atomic literals, joined to $X$'s by a definitional link and by atom-level
     linking constraints.
 \end{itemize}
@@ -160,11 +160,11 @@ neither of which the thesis covers.
 Neither addition is conservative over the thesis's propagation results.
 Inequality and equality atoms are complete under unit propagation given the
 order chain alone; interval literals are not, and need two further families of
-state-independent clause.  Facts move between two representations of the same
+state-independent clause.  Facts move between two view variables of the same
 variable only through linking constraints, and --- for interval literals --- the
 direction that a proof actually needs is the one that is \emph{not} derivable
 from the others.  The theorems below are therefore restated over a
-\emph{representation family} and over all three literal kinds, and reproved.
+\emph{view family} and over all three literal kinds, and reproved.
 
 \paragraph{Numbering.}  Results that correspond to results of the thesis keep
 the thesis's numbers, so that citations from the thesis and from our earlier
@@ -248,7 +248,7 @@ definition of equivalence is: ``the PB problem is the result of applying
 
 The one substantive change to this section from the thesis is that the encoding
 now admits two further \emph{shared} classes of introduced variable, beyond the
-atomic constraint variables: \emph{representation variables} for affine views,
+atomic constraint variables: \emph{view variables} for affine views,
 and a third kind of atomic variable for intervals.  Both are still uniquely
 determined, semantically, by an assignment to the original variables: their
 definition constraints and their links leave no freedom.  That is what keeps P1
@@ -270,9 +270,9 @@ rather than private to one, and each is uniquely determined by an assignment to
 the original variables:
 
 \begin{itemize}
-  \item \textbf{Representation variables} name affine views $sX+c$ of an
+  \item \textbf{View variables} name affine views $sX+c$ of an
     original variable.  A constraint posted over a view of $X$ is linearised
-    over the corresponding representation variable.
+    over the corresponding view variable.
   \item \textbf{Atomic constraint variables} (or simply \emph{atomic
     variables}) are $0$--$1$ variables denoting basic relationships between a
     variable and a value or an interval of values.
@@ -304,15 +304,15 @@ higher-level modelling language.
 For a CSP with variables $\mathcal V$, initial domain state (without holes)
 $\dm_0$, and constraints $\mathcal C$, we can produce a PB formula as follows.
 \begin{enumerate}[label=\arabic*:,leftmargin=2.6em,itemsep=1pt]
-  \item $\mathcal W \leftarrow \bigcup_{X\in\mathcal V}\{X\}
-        \cup \bigcup_{C\in\mathcal C}\NeededReps(C)$
-  \item $\ViewLink(\mathcal W) \leftarrow \bigcup_{W\in\mathcal W}\ViewLink(W)$
+  \item $\mathcal W \leftarrow \bigcup_{X\in\mathcal V}\ViewVars(X)$
+  \item $\ViewLink(\mathcal W\setminus\mathcal V) \leftarrow
+        \bigcup_{W\in\mathcal W\setminus\mathcal V}\ViewLink(W)$
   \item $\Bnd(\mathcal W) \leftarrow \bigcup_{W\in\mathcal W}\Bnd(W,\dm_0)$
   \item $\mathcal A \leftarrow \bigcup_{C\in\mathcal C}
         \NeededAtomicVariables(C,\dm_0)$
   \item $\Def(\mathcal A) \leftarrow \bigcup_{y\in\mathcal A}\Def(y)$
   \item $\Lin(\mathcal C) \leftarrow \bigcup_{C\in\mathcal C}\Linearise(C,\dm_0)$
-  \item $F \leftarrow \BinEnc\bigl(\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)
+  \item $F \leftarrow \BinEnc\bigl(\Bnd(\mathcal W)\cup\ViewLink(\mathcal W\setminus\mathcal V)
         \cup\Def(\mathcal A)\cup\Lin(\mathcal C)\bigr)$
   \item $F \leftarrow \Standardise(F)$
 \end{enumerate}
@@ -322,48 +322,56 @@ Steps~1 and~2 are new; step~5 now has a third case.  The remainder of this
 section gives more detail on each stage along with soundness arguments, and
 introduces notation used throughout.
 
-\paragraph{Steps 1 and 2: representations and their links.}
+\paragraph{Steps 1 and 2: views and their links.}
 
-\begin{definitionT}[Representation]
-\label{def:rep}
-A \emph{representation} of a CP variable $X$ is an integer variable $W$
-together with a sign $s_W\in\{+1,-1\}$ and an offset $c_W\in\mathbb Z$, subject
-to $W = s_W X + c_W$.  Write
+\begin{definitionT}[View and view variable]
+\label{def:view}
+A \emph{view} of a CP variable $X$ is an affine expression $sX+c$ with
+$s\in\{+1,-1\}$ and $c\in\mathbb Z$, and it is \emph{proper} when it is not $X$
+itself.  The encoding gives each view its own \emph{view variable}: an integer
+variable $W$ with a sign $s_W\in\{+1,-1\}$ and an offset $c_W\in\mathbb Z$,
+subject to $W = s_W X + c_W$.  Write
 \[
   \varphi_W(k) = s_W k + c_W, \qquad
   \psi_W(v) = \varphi_W^{-1}(v) = s_W(v - c_W),
 \]
 so that $\varphi_W$ is an order-preserving bijection $\mathbb Z\to\mathbb Z$
-when $s_W=+1$ and an order-reversing one when $s_W=-1$.  Every CP variable is a
-representation of itself, with $\varphi_X$ the identity function.  We write
-$\Rep(X)$ for the set of representations of $X$ occurring in the encoding, and
-$\mathcal W = \bigcup_{X\in\mathcal V}\Rep(X)$.  A representation $W\neq X$ is
-\emph{proper}, and $X$ is its \emph{base}; $\Rep$ is a partition of $\mathcal
-W$ by base.
+when $s_W=+1$ and an order-reversing one when $s_W=-1$.  Every CP variable is
+the view variable of the trivial view of itself, with $\varphi_X$ the identity
+function.  A view variable $W\neq X$ is \emph{proper}, and $X$ is its
+\emph{base}.
+
+Write $\NeededViews(C)$ for the views occurring in a constraint $C$, and
+$\ViewVars(X)$ --- the \emph{view family} of $X$ --- for $X$ together with the
+view variable of each proper view of $X$ in
+$\bigcup_{C\in\mathcal C}\NeededViews(C)$.  Then
+$\mathcal W = \bigcup_{X\in\mathcal V}\ViewVars(X)$, so $\ViewVars$ is a
+partition of $\mathcal W$ by base, and $\mathcal W\setminus\mathcal V$ is the
+set of proper view variables.
 \end{definitionT}
 
-For each proper $W\in\Rep(X)$, $\ViewLink(W)$ is the single linear equality
+For each proper $W\in\ViewVars(X)$, $\ViewLink(W)$ is the single linear equality
 \begin{equation}
   \ViewLink(W) \;:=\; W - s_W X = c_W ,
   \label{eq:link}
 \end{equation}
-which \Standardise{} will split into a $\geq$ and a $\leq$ row.  For a base
-variable, $\ViewLink(X)$ is empty.
+which \Standardise{} will split into a $\geq$ and a $\leq$ row.  It is stated
+only for proper view variables: a base variable has nothing to link to.
 
-Representation variables arise because constraints are posted over
-\emph{operands}, and an operand may be a view.  A modelling layer that writes
+View variables arise because constraints are posted over \emph{operands}, and an
+operand may be a view.  A modelling layer that writes
 $\globalcon{AllDifferent}(X_1, X_2+1, X_3+2)$ is naming three operands, two of
-which are proper representations of $X_2$ and $X_3$.  Two different
-constraints may name the same view, and one variable may be named through
-several different views at once, which is precisely why representation
-variables have to be shared rather than private to a linearisation.
+which are proper views of $X_2$ and $X_3$.  Two different constraints may name
+the same view, and one variable may be named through several different views at
+once, which is precisely why view variables have to be shared rather than
+private to a linearisation.
 
 A view therefore gets a variable of its own, at the cost of one linear equality.
 \Cref{sec:rationale} says why, and what the alternative --- substituting
 $sX+c$ wherever the view occurs --- would cost.
 
 \paragraph{Step 3: domain bound constraints.}
-For a representation $W$ of $X$ and domain state $\dm_0$, let $\Bnd(W,\dm_0)$
+For a view variable $W$ of $X$ and domain state $\dm_0$, let $\Bnd(W,\dm_0)$
 be the two linear constraints
 \begin{equation}
   W \geq \min \varphi_W(\dm_0(X)) \qquad\text{and}\qquad
@@ -383,10 +391,10 @@ together, and several later arguments need $W$'s own bounds to be available as
 units on $W$'s own atoms.
 
 Clearly, if we construct a CSP with variables $\mathcal W$, constraints
-$\mathcal C \cup \Bnd(\mathcal W)\cup\ViewLink(\mathcal W)$, and unrestricted
+$\mathcal C \cup \Bnd(\mathcal W)\cup\ViewLink(\mathcal W\setminus\mathcal V)$, and unrestricted
 integer domains, then its solution set has the same cardinality as our original
 CSP's, and is identical to it under projection onto $\mathcal V$: every proper
-representation is determined by its base through \cref{eq:link}, so the
+view variable is determined by its base through \cref{eq:link}, so the
 projection is a bijection and not merely a surjection.
 
 \paragraph{Steps 4 and 5: atomic constraint variables.}
@@ -398,10 +406,10 @@ definition of $\Linearise(C,\dm_0)$.
 
 Each atomic variable $y$ requires a fully reified linear definition constraint
 $\Def(y)$ of the form $y\Leftrightarrow C$.  We allow three types of atomic
-variable definition, each associated with a \emph{representation}
+variable definition, each associated with a \emph{view variable}
 $W\in\mathcal W$ --- not merely with a CP variable --- and with one or two
 integers.  For clarity we always use subscripted names suggestive of the
-definition, writing $w$ for the PB name of the representation $W$.
+definition, writing $w$ for the PB name of the view variable $W$.
 
 \begin{enumerate}[leftmargin=2.2em]
   \item A \textbf{bound variable} $\atge{w}{v}$ represents whether $W$ must be
@@ -452,7 +460,7 @@ entirely redundant: the values of the atomic variables are uniquely determined
 for any solution.  This means the solution set projected onto the original
 variables remains exactly the same, and in particular adding them cannot
 possibly change satisfiability or the objective value.  The same is true of
-representation variables, by \cref{eq:link}.
+view variables, by \cref{eq:link}.
 
 Recalling $0$--$1$ literals, we can represent $W$ being at most $v$, not equal
 to $v$, or outside $[a,b]$ by negating the corresponding variables.
@@ -464,7 +472,7 @@ literals}.
 \paragraph{Step 6: linearise constraints.}
 For each constraint $C$ we require a function $\Linearise(C,\dm_0)$ turning it
 into a set of reified linear constraints $\Lin(C)$.  This can use
-representation variables, atomic literals, and further auxiliary variables.
+view variables, atomic literals, and further auxiliary variables.
 Write $\Vars(\Lin(C))$ for the set of variables appearing in the
 linearisation, and let $\Aux(C) = \Vars(\Lin(C))\setminus(\mathcal W\cup
 \mathcal A)$ be the auxiliary variables introduced.  We require:
@@ -486,18 +494,18 @@ linearisation, and let $\Aux(C) = \Vars(\Lin(C))\setminus(\mathcal W\cup
     bounded with corresponding bound constraints $\Bnd(V_j)$, considered part of
     the linearisation.
   \item[L3.] Auxiliary variables must not be shared between linearisations:
-    $\Aux(C_1)\cap\Aux(C_2)=\emptyset$ for all $C_1\neq C_2$.  Representation
+    $\Aux(C_1)\cap\Aux(C_2)=\emptyset$ for all $C_1\neq C_2$.  View variable
     variables and atomic variables are \emph{not} auxiliary variables and may be
     shared freely.
-  \item[L4.] Most importantly, $\Lin(C)\cup\Def(\mathcal A)\cup\ViewLink(\mathcal W)$
+  \item[L4.] Most importantly, $\Lin(C)\cup\Def(\mathcal A)\cup\ViewLink(\mathcal W\setminus\mathcal V)$
     must enforce the same restriction as $C$ on the variables in $\mathcal V$.
     That is, a valid assignment $\sigma:\mathcal V\to\mathbb Z$ satisfies $C$ if
     and only if it can be extended to a valid assignment
-    $\sigma^+:\Vars(\Lin(C)\cup\Def(\mathcal A)\cup\ViewLink(\mathcal W))\to\mathbb Z$
-    satisfying $\Lin(C)\cup\Def(\mathcal A)\cup\ViewLink(\mathcal W)$.
+    $\sigma^+:\Vars(\Lin(C)\cup\Def(\mathcal A)\cup\ViewLink(\mathcal W\setminus\mathcal V))\to\mathbb Z$
+    satisfying $\Lin(C)\cup\Def(\mathcal A)\cup\ViewLink(\mathcal W\setminus\mathcal V)$.
 \end{description}
 
-L3 is where representation variables differ from the thesis's presentation:
+L3 is where view variables differ from the thesis's presentation:
 they are shared, and they are shared for the same reason atomic variables are.
 The proof of \cref{lem:composing} shows that this is safe precisely because
 \cref{eq:link}, like \cref{eq:defge,eq:defeq,eq:defin}, determines the shared
@@ -508,7 +516,7 @@ variable's value uniquely from the assignment to $\mathcal V$.
 Let $P$ be a CSP with variables $\mathcal V$ and constraints $\mathcal C$,
 where all domains are integer ranges.  After executing steps~1 to~6 of
 \cref{proc:encoding} let $P'$ be the CSP with constraints
-$\mathcal C' := \Lin(\mathcal C)\cup\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)
+$\mathcal C' := \Lin(\mathcal C)\cup\Bnd(\mathcal W)\cup\ViewLink(\mathcal W\setminus\mathcal V)
 \cup\Def(\mathcal A)$, whose variables are precisely those occurring in
 $\mathcal C'$, and whose domain for every non-$0$--$1$ variable is $\mathbb Z$.
 Then:
@@ -523,11 +531,11 @@ Then:
 \begin{proof}
 Call a variable of $P'$ \emph{determined} if its value is a function of the
 restriction of an assignment to $\mathcal V$ alone.  Every variable in
-$\mathcal W\cup\mathcal A$ is determined: a proper representation by
+$\mathcal W\cup\mathcal A$ is determined: a proper view variable by
 \cref{eq:link}, and an atomic variable by its definition constraint, which is a
 fully reified constraint over $\mathcal W$ (for $\atge{w}{v}$) or over
 previously determined atomic variables (for $\ateq{w}{v}$ and $\atin{w}{a}{b}$,
-whose definitions mention only bound variables of the same representation).
+whose definitions mention only bound variables of the same view variable).
 The determination is well founded because the dependency order is
 $\mathcal V \to \mathcal W \to \{\text{bound}\} \to
 \{\text{equality},\text{interval}\}$, with no cycles.
@@ -535,14 +543,14 @@ $\mathcal V \to \mathcal W \to \{\text{bound}\} \to
 \emph{Part 1.}  Let $\sigma$ be a solution to $P$ and $C_1,\dots,C_n$ the
 constraints of $P$.  By validity, $\sigma$ satisfies $\Bnd(\mathcal V)$, and
 extending it by the determined values satisfies $\Bnd(\mathcal
-W)\cup\ViewLink(\mathcal W)$.  By L4, $\sigma$ can be extended to a solution
-$\sigma_1$ of $\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)\cup\Def(\mathcal
+W)\cup\ViewLink(\mathcal W\setminus\mathcal V)$.  By L4, $\sigma$ can be extended to a solution
+$\sigma_1$ of $\Bnd(\mathcal W)\cup\ViewLink(\mathcal W\setminus\mathcal V)\cup\Def(\mathcal
 A)\cup\Lin(C_1)$.
 
 Now assume we have extended $\sigma$ to a solution $\sigma_{k-1}$ of
-$\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)\cup\Def(\mathcal A)\cup
+$\Bnd(\mathcal W)\cup\ViewLink(\mathcal W\setminus\mathcal V)\cup\Def(\mathcal A)\cup
 \bigcup_{i<k}\Lin(C_i)$.  By L4 again, $\sigma$ can be extended to a solution
-$\sigma'_k$ of $\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)\cup\Def(\mathcal
+$\sigma'_k$ of $\Bnd(\mathcal W)\cup\ViewLink(\mathcal W\setminus\mathcal V)\cup\Def(\mathcal
 A)\cup\Lin(C_k)$.  Define $\sigma_k$ by
 \begin{align}
   \sigma_k(V) &= \sigma(V) && \text{if } V\in\mathcal V; \\
@@ -552,7 +560,7 @@ A)\cup\Lin(C_k)$.  Define $\sigma_k$ by
   \sigma_k(V) &= \sigma'_k(V) && \text{if otherwise } V\in\Vars(\Lin(C_k)).
 \end{align}
 This is an extension of $\sigma$, and it satisfies both $\Lin(C_k)$ and
-$\Bnd(\mathcal W)\cup\ViewLink(\mathcal W)\cup\Def(\mathcal A)\cup
+$\Bnd(\mathcal W)\cup\ViewLink(\mathcal W\setminus\mathcal V)\cup\Def(\mathcal A)\cup
 \bigcup_{i<k}\Lin(C_i)$, because
 $\sigma_k(V)=\sigma_{k-1}(V)=\sigma'_k(V)$ for every $V\in\mathcal
 V\cup\mathcal W\cup\mathcal A$ --- each such $V$ being determined by $\sigma$,
@@ -564,7 +572,7 @@ both $\sigma_{k-1}$ and $\sigma'_k$.  The claim follows by induction.
 \emph{Part 2.}  Let $\sigma'$ be a solution to $P'$.  There is only one
 possible restriction of $\sigma'$ to a valid assignment to $\mathcal V$; and by
 L4, since $\sigma'$ satisfies $\Lin(C_i)\cup\Def(\mathcal A)\cup\ViewLink(\mathcal
-W)$ for each $i$, that restriction must satisfy each $C_i$ and hence $P$.
+W\setminus\mathcal V)$ for each $i$, that restriction must satisfy each $C_i$ and hence $P$.
 \end{proof}
 
 We refer to the result of steps~1 to~6 as the \emph{intermediate ILP}.  In the
@@ -592,7 +600,7 @@ occurrence of a non-Boolean variable with a binary exponential sum.  This may
 be a poor encoding from a solving perspective, but it maintains the form of the
 ILP, letting us ``pretend'' we have integer variables while working honestly
 with native PB constraints.  Every variable in $\mathcal W$ --- proper
-representations included --- is replaced, and each gets its \emph{own} bit
+view variables included --- is replaced, and each gets its \emph{own} bit
 vector: $\BinEnc(W)$ and $\BinEnc(X)$ share no PB variables, and are related
 only by the encoded form of $\ViewLink(W)$.
 
@@ -612,7 +620,7 @@ the encoding.
 
 \begin{remark}
 Two width details matter in practice and neither affects the argument.  First,
-the bit vector of a proper representation is sized from $[l_W,u_W]$, and can be
+the bit vector of a proper view variable is sized from $[l_W,u_W]$, and can be
 \emph{wider} than that of its base: a view of a variable with range $[1,8]$ has
 range $[1,8]$ too but a bit vector spanning $[0,15]$, and a view $X+10^6$ has a
 much wider one.  Any coefficient bound or big-$M$ computed for a line mentioning
@@ -653,7 +661,7 @@ of assignments to $\mathcal V$ (projected from full assignments) that satisfy
 $P'$.  Let $F^*$ be the $0$--$1$ linear CSP obtained after step~7.  Every
 solution to $P'$ corresponds to a solution of $F^*$, by assigning to each
 non-$0$--$1$ variable $W$ the unique $h$-bit vector representing its value ---
-note that this is well defined for a proper representation exactly as for a
+note that this is well defined for a proper view variable exactly as for a
 base one, since $\ViewLink(W)$ and $\Bnd(W)$ force $W$'s value into $[l_W,u_W]$,
 which its bit width covers.  Conversely, every solution to $F^*$ corresponds to
 a solution of $P'$ by decoding each bit vector.  The final formula $F$ obtained
@@ -669,7 +677,7 @@ P2 holds.
 
 \begin{remark}
 The projection in \cref{thm:p1p2} is onto the bits of the \emph{base} variables
-only.  The bits of proper representations, and all atomic variables, are
+only.  The bits of proper view variables, and all atomic variables, are
 determined but not projected onto.  This matters for enumeration; see
 \cref{sec:enumeration}.
 \end{remark}
@@ -686,8 +694,8 @@ satisfy L1 to L4 by inspection.
 
 Two remarks are needed in the extended setting.
 
-First, a constraint's operands may be representations rather than base
-variables, and its linearisation is written over the operands.  Thus
+First, a constraint's operands may be views rather than base variables, and its
+linearisation is written over their view variables.  Thus
 $\globalcon{AllDifferent}(W_1,\dots,W_n)$ linearises to
 $u_{ij}\Rightarrow W_i - W_j > 0$ and $\bar u_{ij} \Rightarrow W_j - W_i > 0$
 over exactly the operands it was given, with no reference to their bases.  This
@@ -707,8 +715,8 @@ an open decision recorded in \cref{sec:open}.
 We begin from the assumption that we have used an encoding method following
 \cref{proc:encoding}.  So before logging anything in the proof, we have a
 correct PB representation of an input CP problem in terms of binary-encoded
-representations of the CP variables, atomic literals defined for certain
-representations and values, and some other auxiliary variables.
+view variables of the CP variables, atomic literals defined for certain view
+variables and values, and some other auxiliary variables.
 
 Based on this encoding method, we formulate a proof logging framework based on
 maintaining invariants relating the solver's explored domain states to the
@@ -729,7 +737,7 @@ $F\!\restriction_R$ sets $\ell$.
 We can always freely introduce in the proof further atomic variables with
 definitions corresponding to \cref{eq:defge,eq:defeq,eq:defin}, by
 redundance-based strengthening.  After binary encoding and standardisation
-these amount, for a representation $W$ of $X$, to the PB constraints
+these amount, for a view variable $W$ of $X$, to the PB constraints
 \begin{align}
   \Def^{\Rightarrow}(\atge{w}{v}) &:= \atge{w}{v} \Rightarrow \BinEnc(W)\geq v;
     \label{eq:dge1}\\
@@ -792,7 +800,7 @@ place of the atom, and we have not done that.
 \begin{lemmaT}[Propagation of contradictory bound literals]
 \label{lem:contra-bounds}
 Suppose two bound variables $\atge{w}{v}$ and $\atge{w}{v'}$ are defined for
-some representation $W$ and values $v\geq v'$.  Then if $\atge{w}{v}$ and
+some view variable $W$ and values $v\geq v'$.  Then if $\atge{w}{v}$ and
 $\natge{w}{v'}$ propagate, further unit propagation will result in a
 conflict.
 \end{lemmaT}
@@ -803,14 +811,14 @@ two's-complement encoding, the definition constraints
 $\Def^{\Rightarrow}(\atge{w}{v})$ and $\Def^{\Leftarrow}(\atge{w}{v'})$ are in
 the required form after substituting $\atge{w}{v}\mapsto 1$,
 $\atge{w}{v'}\mapsto 0$.  Note that both constraints are over the \emph{same}
-bit vector $\BinEnc(W)$; this is why a representation is given its own bit
+bit vector $\BinEnc(W)$; this is why a view variable is given its own bit
 vector rather than being unfolded into its base's.
 \end{proof}
 
 \begin{corollaryT}[RUP properties of atomic literals]
 \label{cor:chainrup}
 For two bound variables $\atge{w}{v}$ and $\atge{w}{v'}$ defined on the same
-representation $W$ with $v\geq v'$, the constraint
+view variable $W$ with $v\geq v'$, the constraint
 \begin{equation}
   \atge{w}{v} \Rightarrow \atge{w}{v'} \geq 1
   \label{eq:chainlink}
@@ -832,7 +840,7 @@ $t$ in the proof.
 
 \item[\invChain{} (thesis Inv1): the order chain.]
   For any two bound variables $\atge{w}{v}$, $\atge{w}{v'}$ on the same
-  representation $W$ with $v<v'$, if $\Def(\atge{w}{v})$ and
+  view variable $W$ with $v<v'$, if $\Def(\atge{w}{v})$ and
   $\Def(\atge{w}{v'})$ appear in $F_t$, then either a bound variable is defined
   for some value strictly between $v$ and $v'$, or the constraint
   $\atge{w}{v'}\Rightarrow\atge{w}{v}\geq 1$ appears in $F_t$.
@@ -840,7 +848,7 @@ $t$ in the proof.
 \item[\inv{Bound}: boundary pins.]
   For every defined $\atge{w}{v}$ with $v\leq l_W$, the unit $\atge{w}{v}$
   appears in $F_t$; for every defined $\atge{w}{v}$ with $v>u_W$, the unit
-  $\natge{w}{v}$ appears in $F_t$.  A representation whose bounds are not a
+  $\natge{w}{v}$ appears in $F_t$.  A view variable whose bounds are not a
   consequence of the model --- a free bit-sum introduced inside the proof ---
   is exempt, and its owner derives the bounds explicitly instead; no interval
   literal is defined over such a variable today.
@@ -877,7 +885,7 @@ $t$ in the proof.
   \emph{(iii) The root covering.}  If $\Bdry(W)$ exists, $F_t$ contains a clause
   $\atset{w}{C_1}\vee\cdots\vee\atset{w}{C_m}\geq 1$ where every
   $\atset{w}{C_i}$ is defined, each $C_i$ is a union of adjacent cells, and
-  $\bigcup_i C_i = [l_W,u_W]$.  A representation
+  $\bigcup_i C_i = [l_W,u_W]$.  A view variable
   with no interval literal, or with only out-of-bounds ones, has no partition and
   no root covering, and this clause holds vacuously --- which is what lets
   \cref{lem:covering} and \cref{thm:complete} still say something about a plain
@@ -885,13 +893,13 @@ $t$ in the proof.
 
 \item[\invCont{}: containment.]
   For any two defined two-cut atoms $\atset{w}{E}$ and $\atset{w}{E'}$ of the
-  same representation $W$ with $E\subsetneq E'$, there is a chain
+  same view variable $W$ with $E\subsetneq E'$, there is a chain
   $E=E_0\subsetneq E_1\subsetneq\cdots\subsetneq E_m=E'$ with every
   $\atset{w}{E_j}$ defined, such that each clause
   $\natset{w}{E_j}\vee\atset{w}{E_{j+1}}$ appears in $F_t$.
 
-\item[\invRep{}: representation closure and linking.]
-  For every $W,W'\in\Rep(X)$: if an atomic variable of $W$ is defined, then so is
+\item[\invView{}: view closure and linking.]
+  For every $W,W'\in\ViewVars(X)$: if an atomic variable of $W$ is defined, then so is
   the corresponding atomic variable of $W'$ (\cref{def:image} below); and for
   every defined atomic variable of a proper $W$, the two constraints linking it to
   the corresponding atomic variable of the base $X$ appear in $F_t$.
@@ -902,18 +910,18 @@ $t$ in the proof.
 
   Deliberately about cells, not about every interval literal.  A literal whose
   in-bounds part is empty is defined with no partition, no covering and no
-  containment edge, and nothing names it; \invRep{} does not suffer, because such
+  containment edge, and nothing names it; \invView{} does not suffer, because such
   a literal can only arise from an explicit request, and the request path
-  establishes \invRep{} for itself.  \cref{rem:naming} says why the trigger is
+  establishes \invView{} for itself.  \cref{rem:naming} says why the trigger is
   naming rather than requesting, which is what this invariant is for.
 
 \end{description}
 
 \invChain{} and \inv{Bound} come from the thesis, generalised only by being
-stated per representation.  \invCut{} is implicit there; we make it explicit
+stated per view variable.  \invCut{} is implicit there; we make it explicit
 because both new literal kinds depend on it.  \invPart{}, \invCover{} and
-\invCont{} are the interval apparatus.  \invRep{} is the multi-representation
-apparatus.  \invName{} is a hygiene condition that \invRep{} needs for the
+\invCont{} are the interval apparatus.  \invView{} is the multi-view
+apparatus.  \invName{} is a hygiene condition that \invView{} needs for the
 interval literals created as cells, and only for those --- see
 \cref{rem:naming}.
 
@@ -928,11 +936,11 @@ encoding layer.  It was implemented, and rejected for complexity rather than for
 soundness.
 \end{remark}
 
-\paragraph{Correspondence between representations.}
+\paragraph{Correspondence between view variables.}
 
 \begin{definitionT}[Image of a literal]
 \label{def:image}
-Let $W,W'\in\Rep(X)$ and let $\theta = \varphi_{W'}\circ\psi_W$, an affine
+Let $W,W'\in\ViewVars(X)$ and let $\theta = \varphi_{W'}\circ\psi_W$, an affine
 bijection $\mathbb Z\to\mathbb Z$ with $\theta(v) = s v + d$ where
 $s = s_W s_{W'}$ and $d = c_{W'} - s\,c_W$.  The \emph{image} on $W'$ of a
 literal $\ell$ over an atomic variable of $W$, written $\ell^{W'}$, is the
@@ -971,7 +979,7 @@ literals alone --- an interval is order-agnostic, a half-line is not.
 
 The atom-level linking constraints are exactly the clausal form of the biconditional
 $\ell \Leftrightarrow \ell^{X}$, for each defined atom of each proper
-representation:
+view variable:
 \begin{align}
   \text{ge-link:}\quad
     &\natge{w}{v}\vee (\atge{w}{v})^{X}, \qquad
@@ -1030,7 +1038,7 @@ contrapositives,
 \]
 and neither is derivable without its clause.  A negated interval literal is a
 unit on \emph{neither} of its cuts, by the asymmetry noted after
-\cref{eq:din2}; all it can do is descend its own representation's containment
+\cref{eq:din2}; all it can do is descend its own view variable's containment
 edges, and it bottoms out at cells that are themselves unlinked interval
 literals unless they happen to have width one.  Descending to width one is
 precisely the per-value shattering that interval literals exist to avoid.  The
@@ -1044,11 +1052,11 @@ exactly the same way; the interval case is not special in needing two clauses,
 only in that the shortcut is tempting.
 \end{remarkN}
 
-\paragraph{Defined domains over a representation family.}
-Any set of atomic literals $L$ defined over representations of the same base
+\paragraph{Defined domains over a view family.}
+Any set of atomic literals $L$ defined over view variables of the same base
 $X$ represents a restriction of $X$ to some feasible set of values.  We call
 the values allowed the \emph{defined domain}, stated on the base's value scale,
-so that literals over different representations can be intersected directly:
+so that literals over different view variables can be intersected directly:
 \begin{multline}
   \dm_L(X) := \{k : \forall\,\atge{w}{v}\in L .\ \varphi_W(k)\geq v\}
       \cap \{k : \forall\,\natge{w}{v}\in L .\ \varphi_W(k)< v\} \\
@@ -1060,27 +1068,26 @@ so that literals over different representations can be intersected directly:
   \label{eq:domL}
 \end{multline}
 This set may be empty, or infinite, since $\dm_{\emptyset}(X)=\mathbb Z$.  When
-$\Rep(X)=\{X\}$ and no interval literal is defined, \cref{eq:domL} is exactly
+$\ViewVars(X)=\{X\}$ and no interval literal is defined, \cref{eq:domL} is exactly
 the thesis's definition.  We write $\dm_L(W) := \varphi_W(\dm_L(X))$ for the
 same set on $W$'s scale.
 
 Conversely, the complete (potentially infinite) set of atomic literals over
-\emph{every} representation of $X$ that should be true for a domain
+\emph{every} view variable of $X$ that should be true for a domain
 $\dm_t(X)$ is
 \begin{align}
-  \ImpLits(\dm_t(X)) := \bigcup_{W\in\Rep(X)}\Bigl(
-    &\{\ateq{w}{v} : \dm_t(W)=\{v\}\}
-    \cup \{\nateq{w}{v} : v\notin\dm_t(W)\} \notag\\
-    {}\cup{}&\{\atge{w}{v} : \forall\,v'<v .\ v'\notin\dm_t(W)\}
-    \cup \{\natge{w}{v} : \forall\,v'\geq v .\ v'\notin\dm_t(W)\}
-      \notag\\
-    {}\cup{}&\{\atin{w}{a}{b} : \dm_t(W)\subseteq[a,b]\}
-    \cup \{\natin{w}{a}{b} : \dm_t(W)\cap[a,b]=\emptyset\}\Bigr).
+  \ImpLits(\dm_t(X)) := \bigcup_{W\in\ViewVars(X)}\Bigl(
+    &\{\ateq{w}{v} : \dm_t(W)=\{v\}\} \notag\\
+    {}\cup{}&\{\nateq{w}{v} : v\notin\dm_t(W)\} \notag\\
+    {}\cup{}&\{\atge{w}{v} : \forall\,v'<v .\ v'\notin\dm_t(W)\} \notag\\
+    {}\cup{}&\{\natge{w}{v} : \forall\,v'\geq v .\ v'\notin\dm_t(W)\} \notag\\
+    {}\cup{}&\{\atin{w}{a}{b} : \dm_t(W)\subseteq[a,b]\} \notag\\
+    {}\cup{}&\{\natin{w}{a}{b} : \dm_t(W)\cap[a,b]=\emptyset\}\Bigr).
   \label{eq:implits}
 \end{align}
 
-\paragraph{Propagation results, one representation at a time.}
-We first establish everything for a single representation $W$, writing $L^W$ for
+\paragraph{Propagation results, one view variable at a time.}
+We first establish everything for a single view variable $W$, writing $L^W$ for
 the atomic literals over atomic variables of $W$ defined in $F_t$, and $[l,u]$
 for $[l_W,u_W]$.  \cref{lem:transport} then lifts the results to a family.
 
@@ -1269,7 +1276,7 @@ that happen to have been written: the induction descends through whatever
 coverings exist now, not through the order in which they were emitted.
 
 The distinction matters for one specific reason.  An equality atom created
-before its representation has any partition is not covered by any clause at
+before its view variable has any partition is not covered by any clause at
 that point; when the partition is later created it becomes a width-one cell,
 and a width-one cell can never be split, so it never needs a covering.  A
 formulation of \invCover{} in terms of ``was a cell when defined'' would have to
@@ -1280,7 +1287,7 @@ special-case it; the structural form does not.
 \label{thm:wipeout}
 Let $F_t$ be a set of PB constraints either in the encoding of a CP problem, as
 produced by \cref{proc:encoding}, or derived from it, and suppose \invChain{}
-and \invCut{} are respected.  Let $W$ be a representation, and let $U\subseteq
+and \invCut{} are respected.  Let $W$ be a view variable, and let $U\subseteq
 L^W$ be a set of literals each of which propagates under some $R$.  If
 $\dm_U(W)=\emptyset$ then $F_t\!\restriction_R$ propagates to conflict.
 \end{theoremT}
@@ -1340,7 +1347,7 @@ before in this design --- see \nsec{sec:loadbearing}.
 \label{thm:complete}
 Let $F_t$ be as in \cref{thm:wipeout}, and suppose \invChain{}, \inv{Bound},
 \invCut{}, \invPart{}, \invCover{} and \invCont{} are respected.  Let $W$ be a
-representation and $U\subseteq L^W$ a set of literals each of which propagates
+view variable and $U\subseteq L^W$ a set of literals each of which propagates
 under some $R$.  If $F_t\!\restriction_R$ does not propagate to contradiction,
 then every literal in $\ImpLits(\dm_U(X))\cap L^W$ propagates under $R$.
 \end{theoremT}
@@ -1420,11 +1427,11 @@ The reader should simply not read ``complete propagation'' as ``everything the
 solver's domain implies''.
 \end{remark}
 
-\paragraph{Lifting to a representation family.}
+\paragraph{Lifting to a view family.}
 
 \begin{lemmaN}[Unit transport]
 \label{lem:transport}
-Assume \invRep{}.  Let $W,W'\in\Rep(X)$ and let $\ell$ be a literal over an
+Assume \invView{}.  Let $W,W'\in\ViewVars(X)$ and let $\ell$ be a literal over an
 atomic variable of $W$ defined in $F_t$.  If $\ell$ propagates under $R$, then
 $\ell^{W'}$ propagates under $R$.
 \end{lemmaN}
@@ -1434,7 +1441,7 @@ It suffices to show that a literal crosses a single link pair, in either
 direction and either polarity; a general $W\to W'$ transport is then at most two
 such crossings, through the base, because images compose:
 $(\ell^{X})^{W'} = \ell^{W'}$.  So take $W$ proper and consider its link to the
-base.  By \invRep{} the atomic variable underlying $\ell^{X}$ is defined and the
+base.  By \invView{} the atomic variable underlying $\ell^{X}$ is defined and the
 two linking clauses
 \cref{eq:gelink}, \cref{eq:eqlink} or \cref{eq:inlink} appear in $F_t$.  Those
 two clauses are $\overline{p}\vee q$ and $\overline{q}\vee p$ for
@@ -1447,9 +1454,9 @@ combinations are therefore covered.
 
 \begin{remarkN}[Why naming, not requesting, is the trigger]
 \label{rem:naming}
-\cref{lem:transport} is only as good as \invRep{}, and \invRep{} is the
+\cref{lem:transport} is only as good as \invView{}, and \invView{} is the
 invariant that is easiest to break silently.  Inequality and equality atoms are
-mirrored eagerly at the moment they are defined, so for them \invRep{} is
+mirrored eagerly at the moment they are defined, so for them \invView{} is
 maintained by construction.  Interval literals are not, because they come into
 existence two ways: because some consumer asked for one --- a conclusion, a
 reason element, a branching decision --- or because the partition machinery
@@ -1475,16 +1482,16 @@ one unlinked, and nothing would notice.
 \begin{theoremP}[Empty defined domain, family version]
 \label{thm:wipeout-family}
 Let $F_t$ be as in \cref{thm:wipeout}, and suppose \invChain{}, \invCut{} and
-\invRep{} are respected.  Let $L$ be the atomic literals defined in $F_t$ for
-any representation of $X$, and let $U\subseteq L$ be a set of literals each of
+\invView{} are respected.  Let $L$ be the atomic literals defined in $F_t$ for
+any view variable of $X$, and let $U\subseteq L$ be a set of literals each of
 which propagates under $R$.  If $\dm_U(X)=\emptyset$ then
 $F_t\!\restriction_R$ propagates to conflict.
 \end{theoremP}
 
 \begin{proof}
-Fix any $W\in\Rep(X)$ and let $U^W = \{\ell^{W} : \ell\in U\}$.  By
+Fix any $W\in\ViewVars(X)$ and let $U^W = \{\ell^{W} : \ell\in U\}$.  By
 \cref{lem:transport} every literal of $U^{W}$ propagates under $R$, and
-$U^W\subseteq L^W$ by \invRep{}.  Images preserve satisfaction by base values,
+$U^W\subseteq L^W$ by \invView{}.  Images preserve satisfaction by base values,
 so $\dm_{U^W}(X)=\dm_U(X)=\emptyset$.  \cref{thm:wipeout} applied to $U^W$ gives
 the conflict.
 \end{proof}
@@ -1493,13 +1500,13 @@ the conflict.
 \label{thm:complete-family}
 Let $F_t$, $L$ and $U$ be as in \cref{thm:wipeout-family}, and suppose in
 addition that \inv{Bound}, \invPart{}, \invCover{} and \invCont{} are respected
-for every representation of $X$.  If $F_t\!\restriction_R$ does not propagate to
+for every view variable of $X$.  If $F_t\!\restriction_R$ does not propagate to
 contradiction, then every literal in $\ImpLits(\dm_U(X))\cap L$ propagates
 under $R$.
 \end{theoremP}
 
 \begin{proof}
-Let $\ell\in\ImpLits(\dm_U(X))\cap L$ be a literal over the representation $W$.
+Let $\ell\in\ImpLits(\dm_U(X))\cap L$ be a literal over the view variable $W$.
 Transport $U$ to $U^{W}$ as in the previous proof; every literal of $U^W$
 propagates and $\dm_{U^W}(X)=\dm_U(X)$.  Then \cref{thm:complete} applied on
 $W$ gives that $\ell$ propagates.
@@ -1507,13 +1514,13 @@ $W$ gives that $\ell$ propagates.
 
 The shape of this argument is worth stating explicitly, because it is what makes
 the design maintainable: \textbf{transport, then argue on one side}.  Two
-representations of one variable end up holding the same literals, by \invRep{},
+view variables of one variable end up holding the same literals, by \invView{},
 but there is no reason for them to hold those literals in the same \emph{roles},
 and in practice they do not always: we have observed proofs in which an interval
-is a partition cell on one representation and a request with its own covering on
+is a partition cell on one view variable and a request with its own covering on
 its image, and in which the two containment DAGs are not isomorphic.
 \cref{thm:complete-family} does not care, because \cref{thm:complete} is proved
-per representation from invariants that each side satisfies independently.  That
+per view variable from invariants that each side satisfies independently.  That
 is deliberate, and it is worth being explicit about why: an argument that
 appealed to the two sides having corresponding clause sets would be unsound
 reasoning \emph{even in the runs where the correspondence happens to hold},
@@ -1534,7 +1541,7 @@ deletion --- correctly or, as has happened three times, incorrectly.
 \toprule
 \textbf{Fact} & \textbf{Becomes} & \textbf{Carried by} \\
 \midrule
-\multicolumn{3}{@{}l}{\emph{Within one representation}}\\[2pt]
+\multicolumn{3}{@{}l}{\emph{Within one view variable}}\\[2pt]
 $\atge{w}{v}$ & $\atge{w}{v'}$, $v'<v$ & order chain, \invChain{}
   (\cref{lem:chain}) \\
 $\natge{w}{v}$ & $\natge{w}{v'}$, $v'>v$ & the same clauses,
@@ -1556,7 +1563,7 @@ $\atset{w}{E}$ and all but one piece excluded & the surviving piece & covering \
 every cell excluded & conflict & reverse reifications and the chain
   (\cref{thm:wipeout}); the root covering is redundant here, see
   \cref{rem:rootcovering} \\[4pt]
-\multicolumn{3}{@{}l}{\emph{Between two representations of the same variable}}\\[2pt]
+\multicolumn{3}{@{}l}{\emph{Between two view variables of the same variable}}\\[2pt]
 $\atge{w}{v}$, either polarity & its image on $X$ & ge-links,
   \cref{eq:gelink}; polarity flips when $s_W=-1$ \\
 $\ateq{w}{v}$, either polarity & its image on $X$ & eq-links, \cref{eq:eqlink} \\
@@ -1586,7 +1593,7 @@ Two limits are worth stating plainly, because misreading either of them has
 cost time.
 
 \paragraph{A lone bound does not cross a constraint.}
-The results above are entirely about one CP variable and its representations.
+The results above are entirely about one CP variable and its view variables.
 Nothing here lets unit propagation move a bound literal on $X$ to a bound
 literal on $Y$ across a constraint such as $\BinEnc(X)=\BinEnc(Y)$: doing so
 would require adding two constraints together, which unit propagation never
@@ -1666,7 +1673,7 @@ The extended vocabulary widens what may appear as a $d_i$ in two ways, and both
 are used.  A decision may be an interval literal, so that interval splitting
 (``$X\in[a,b]$'' versus ``$X\notin[a,b]$'') is a two-way branch over one atomic
 literal rather than a pair of bounds; and a decision may be stated over any
-representation, though in practice a solver branches on the variables it has
+view variable, though in practice a solver branches on the variables it has
 state for, which are the base variables.  Neither changes \cref{eq:bt}.
 
 When the solver backtracks from the root decision level, the sequence of
@@ -1688,16 +1695,16 @@ encoding or derived in the proof up to $t$.  We must have logged enough that:
   then $F_t\cup\{\neg B_t\}$ must unit propagate to contradiction.
 \item[\invDomain{} (thesis Inv3).]
   For every base variable $X$, if $L$ is the set of atomic literals defined for
-  \emph{any representation of} $X$ that would propagate during unit propagation
+  \emph{any view variable of} $X$ that would propagate during unit propagation
   of $F_t\cup\{\neg B_t\}$, then unless contradiction is reached beforehand, we
   must have $\dm_L(X)\subseteq\dm_t(X)$.
 \end{description}
 
-\invDomain{} is where the multi-representation setting shows up in the search
+\invDomain{} is where the multi-view setting shows up in the search
 invariants, and it shows up in exactly the way one would want.  The solver holds
 one domain per base variable; a view has no domain of its own, only an affine
 window onto its base's.  Correspondingly, $\dm_L(X)$ in \cref{eq:domL} is an
-intersection over the literals of \emph{all} representations, stated on the
+intersection over the literals of \emph{all} view variables, stated on the
 base's value scale.  A fact learned about a view therefore constrains the same
 object the solver's domain constrains, and the containment
 $\dm_L(X)\subseteq\dm_t(X)$ is between two subsets of the same set of integers.
@@ -1705,7 +1712,7 @@ $\dm_L(X)\subseteq\dm_t(X)$ is between two subsets of the same set of integers.
 \begin{theoremT}
 \label{thm:btrup}
 If \invConflict{} and \invDomain{} are respected, the literal-layer invariants
-\cref{thm:wipeout-family} needs hold --- \invChain{}, \invCut{} and \invRep{} ---
+\cref{thm:wipeout-family} needs hold --- \invChain{}, \invCut{} and \invView{} ---
 and a complete solver always logs backtracking justifications, then every
 backtracking justification $B_t$ follows by RUP.
 \end{theoremT}
@@ -1720,7 +1727,7 @@ implies $B_t$ is RUP.
 \emph{Case 2: a propagator has removed all remaining values from the domain of
 some base variable $X$.}  Then \invDomain{} implies that unit propagation on
 $F_t\cup\{\neg B_t\}$ either obtains a contradiction, or propagates a set of
-literals $L$ over representations of $X$ with $\dm_L(X)=\emptyset$.  In the
+literals $L$ over view variables of $X$ with $\dm_L(X)=\emptyset$.  In the
 latter case \cref{thm:wipeout-family} implies that further unit propagation must
 still result in contradiction.
 
@@ -1734,14 +1741,14 @@ level and $d_i$ is the $i$th branching decision on $X$; so each
 $\overline{d}_i$ propagates under $F_t\cup\{\neg B_t\}$.
 
 Now suppose $F_t\cup\{\neg B_t\}$ does not propagate to contradiction, and let
-$L$ be the set of atomic literals over representations of $X$ that propagate
+$L$ be the set of atomic literals over view variables of $X$ that propagate
 under unit propagation to fixpoint.  We must have $\dm_L(X)\neq\emptyset$, since
 otherwise \cref{thm:wipeout-family} gives a conflict; so pick $v\in\dm_L(X)$.
 By \invDomain{}, $v\in\dm_t(X)$, so some branch decision $d_i$ is satisfied by
 $v$, the branches being a partition of $\dm_t(X)$.  But $\overline{d}_i\in L$,
 and $v\in\dm_L(X)$ means $v$ satisfies every literal of $L$, so $v$ does not
 satisfy $d_i$ --- a contradiction.  Note that $d_i$ may be stated over any
-representation of $X$, and that $\dm_L$ is computed over all of them, so no
+view variable of $X$, and that $\dm_L$ is computed over all of them, so no
 transport step is needed here beyond the one inside
 \cref{thm:wipeout-family}.
 \end{proof}
@@ -1778,25 +1785,25 @@ Two things about \cref{eq:propjust} are new.  First, $\ell$ may be a negated
 interval literal: a propagator that removes a run of values from a domain states
 that as one conclusion $\natin{w}{a}{b}$, not as $b-a+1$ conclusions.
 Second, $\ell$ and the literals of $R$ need not be stated over the same
-representation, and routinely are not.  A propagator whose operand is a view
+view variable, and routinely are not.  A propagator whose operand is a view
 concludes over the view; a reason derived from the solver's domains is stated
-over whichever representation the propagator holds; and a branching decision was
+over whichever view variable the propagator holds; and a branching decision was
 taken on the base.  All three meet only through \cref{lem:transport}.
 
 \begin{lemmaT}
 \label{lem:reasons}
 If $R$ is a finite set of literals defined in $F_t$ with
 $R\subseteq\bigcup_i\ImpLits(\dm_t(X_i))$, and \invChain{}, \inv{Bound},
-\invCut{}, \invPart{}, \invCover{}, \invCont{}, \invRep{} and \invDomain{} are
+\invCut{}, \invPart{}, \invCover{}, \invCont{}, \invView{} and \invDomain{} are
 respected, then $F_t\cup\{\neg B_t\}$ either propagates to contradiction or
 propagates every literal in $R$.
 \end{lemmaT}
 
 \begin{proof}
-Let $\ell\in R$ be a literal over a representation $W$ of the base variable
+Let $\ell\in R$ be a literal over a view variable $W$ of the base variable
 $X_i$, so $\ell\in\ImpLits(\dm_t(X_i))$.  Suppose $F_t\cup\{\neg B_t\}$ does not
 propagate to contradiction, and let $L$ be the atomic literals over
-representations of $X_i$ that propagate, as guaranteed by \invDomain{}.  Since
+view variables of $X_i$ that propagate, as guaranteed by \invDomain{}.  Since
 we do not reach conflict, $\dm_L(X_i)\neq\emptyset$ by
 \cref{thm:wipeout-family}.  Then $\dm_L(X_i)\subseteq\dm_t(X_i)$, so
 $\ImpLits(\dm_L(X_i))\supseteq\ImpLits(\dm_t(X_i))$ by \cref{eq:implits}, and
@@ -1825,7 +1832,7 @@ $X$ with initial bounds $l$ and $u$, these are
   \label{eq:rootbounds}
 \end{equation}
 These follow by RUP by the same argument as \cref{cor:chainrup}, since the bound
-constraints $\Bnd(X)$ are present, and likewise for every representation, proper
+constraints $\Bnd(X)$ are present, and likewise for every view variable, proper
 ones included, because $\Bnd(W)$ is asserted for each.
 
 \begin{remark}[The eager introduction is load-bearing, and the solver is lazier]
@@ -1867,10 +1874,10 @@ Either way a contradiction is reached, so \invConflict{} is respected.
 Suppose instead a propagator has just made an inference that changed a domain,
 and logged $R\Rightarrow\ell\geq 1$.  The reason is valid at the point directly
 before the inference, so every literal of $R$, and hence $\ell$, propagates under
-$F_t\cup\{\neg B_t\}$.  If $\ell$ is stated over a proper representation $W$ of
+$F_t\cup\{\neg B_t\}$.  If $\ell$ is stated over a proper view variable $W$ of
 $X$, then by \cref{lem:transport} its image on $X$ propagates too; either way the
 domain restriction $\ell$ encodes is incorporated into $\dm_L(X)$ for the
-propagated set $L$, since $\dm_L$ is computed over all representations.  Hence
+propagated set $L$, since $\dm_L$ is computed over all view variables.  Hence
 \invDomain{} continues to be respected.
 
 It remains to argue that there is a starting point at which \invDomain{} holds.
@@ -1885,10 +1892,10 @@ by \cref{eq:rootbounds}.  Hence \invDomain{} is initially respected.
 \begin{enumerate}[itemsep=1pt]
   \item Encode the problem using \cref{proc:encoding}, giving every operand
     --- base variable or view --- its own bit vector, and every proper
-    representation its definitional link \cref{eq:link}.
+    view variable its definitional link \cref{eq:link}.
   \item At the start of the proof, derive by RUP $\atge{x}{l}\geq 1$ and
     $\natge{x}{u+1}\geq 1$ for the bounds $l..u$ on each variable, and
-    likewise for any out-of-range cut subsequently created on any representation.
+    likewise for any out-of-range cut subsequently created on any view variable.
   \item Any time the solver backtracks, derive by RUP a backtracking
     justification $G\Rightarrow 0\geq 1$, where $G$ is the sequence of decisions
     prior to backtracking.
@@ -1899,16 +1906,16 @@ by \cref{eq:rootbounds}.  Hence \invDomain{} is initially respected.
   \item Any atomic variables needed for the above must be defined in the proof,
     if not already in the input model, with the corresponding definition
     constraints \cref{eq:defge,eq:defeq,eq:defin}.
-  \item Every defined bound literal must be threaded into its representation's
+  \item Every defined bound literal must be threaded into its view variable's
     order chain (\invChain{}).
   \item Every defined interval literal must be maintained within its
-    representation's partition, with its covering and its containment edges
+    view variable's partition, with its covering and its containment edges
     (\invPart{}, \invCover{}, \invCont{}).
-  \item Every defined atomic literal on a proper representation, and every one
-    on a base that has proper representations, must be mirrored onto the others
+  \item Every defined atomic literal on a proper view variable, and every one
+    on a base that has proper view variables, must be mirrored onto the others
     and joined to them by the linking constraints of
     \cref{eq:gelink,eq:eqlink,eq:inlink} --- for interval literals, triggered at
-    the point the literal is \emph{named} (\invRep{}, \invName{}).
+    the point the literal is \emph{named} (\invView{}, \invName{}).
 \end{enumerate}
 
 Steps~1 to~6 are the thesis's framework; steps~7 to~9 are the literal-layer
@@ -1941,7 +1948,7 @@ constraint derived after a solution is found is simply a propagation
 justification with $R=\emptyset$, as if the objective-improving constraint had
 always been part of the model.  It has the effect of maintaining \invDomain{} by
 ensuring the bound restriction on the objective variable's domain propagates ---
-and, by \cref{lem:transport}, on every representation of it.
+and, by \cref{lem:transport}, on every view variable of it.
 
 \paragraph{A requirement for partial solution witnessing.}
 For solution witnessing to be compact and user-friendly, we would like to
@@ -1962,17 +1969,17 @@ variables already known to propagate.  Three additions have to be checked in the
 extended encoding, and each extends the same recursion by one step.
 
 \begin{enumerate}[itemsep=1pt]
-  \item \textbf{Proper representations.}  Fixing $\BinEnc(X)$ reduces
+  \item \textbf{Proper view variables.}  Fixing $\BinEnc(X)$ reduces
     $\ViewLink(W)$, that is $\BinEnc(W) - s_W\BinEnc(X) = c_W$, to a pair of
     constraints of the form $\BinEnc(W)\geq A$ and $\BinEnc(W)\leq A$ for a
     constant $A$.  By Theorem~2.8 of the thesis these unit propagate to a fixed
     consistent assignment of every bit of $\BinEnc(W)$.  So the bits of every
-    proper representation propagate as soon as the base's bits are set.
-  \item \textbf{Inequality and equality atoms} on any representation are fully
-    reified over that representation's bits, or over its inequality atoms, so
+    proper view variable propagate as soon as the base's bits are set.
+  \item \textbf{Inequality and equality atoms} on any view variable are fully
+    reified over that view variable's bits, or over its inequality atoms, so
     they propagate by the existing recursion once step~1 has fired.
   \item \textbf{Interval atoms} are fully reified, by \cref{eq:defin}, over two
-    inequality atoms of the same representation, so they propagate once those
+    inequality atoms of the same view variable, so they propagate once those
     do.
 \end{enumerate}
 
@@ -2007,8 +2014,8 @@ The required property of the encoding is then:
 
 The extended encoding makes the choice of preserved set more delicate than it
 looks, and we state it explicitly: \textbf{the preserved set is the bits of the
-base variables only}.  It does not include the bits of proper representations,
-nor any atomic variable of any representation.  This is the right choice, and
+base variables only}.  It does not include the bits of proper view variables,
+nor the atomic variables of any view variable, proper or not.  This is the right choice, and
 the only workable one, for three reasons.
 
 \begin{itemize}[itemsep=1pt]
@@ -2020,9 +2027,9 @@ the only workable one, for three reasons.
     solver happened to do.  A preserved set that grew as the proof ran would make
     the conclusion depend on the search, which is exactly what a preserved set
     exists to prevent.
-  \item It is stable under adding a representation.  Two runs of the same solver
+  \item It is stable under adding a view variable.  Two runs of the same solver
     that wrap the same variable in different views have different sets of
-    proper representations and therefore different encodings, but the same
+    proper view variables and therefore different encodings, but the same
     preserved set and the same enumeration conclusion.
 \end{itemize}
 
@@ -2030,9 +2037,9 @@ One consequence deserves care.  A solution witness \emph{is} written over atomic
 variables --- one base equality literal per variable --- even though atomic
 variables are not preserved.  That is sound only because unit propagation
 completes such a witness to the preserved bits, and onward --- through
-\cref{sec:optimality}'s step~1 --- to the bits of every proper representation.
+\cref{sec:optimality}'s step~1 --- to the bits of every proper view variable.
 The completion argument is therefore load-bearing for enumeration in a way it is
-not for optimality, and a representation whose bits did not propagate from the
+not for optimality, and a view variable whose bits did not propagate from the
 base's would break P3 rather than merely making a witness verbose.
 
 There is a second, quieter interaction.  Some of the units this framework pins
@@ -2066,7 +2073,7 @@ incorrectly three times on the strength of tests that stayed green.
 
 Everything in \cref{sec:atomprops} beyond the definitions themselves guards
 against P2.  \invChain{}, \invCut{}, \invPart{}, \invCover{}, \invCont{},
-\invRep{} and \invName{} contribute nothing to the validity of any individual
+\invView{} and \invName{} contribute nothing to the validity of any individual
 line; they exist so that \cref{thm:complete-family} holds, and
 \cref{thm:complete-family} exists so that \cref{lem:reasons} holds, and
 \cref{lem:reasons} exists so that a backtracking justification three thousand
@@ -2187,7 +2194,7 @@ generated instances that actually reach a conflict, ablating the link constraint
 makes only $37$ of them notice.  The sweep is about $96\%$ coincidence.
 
 A discriminating instance therefore needs \emph{all} of: an interval strictly
-inside both representations' definition ranges; at least one interior cell of
+inside both view variables' definition ranges; at least one interior cell of
 width at least two that no per-value machinery touches; and a replay that has to
 reach the far side's literal from the near side's negation rather than from a
 bound.  W6 to W9 are constructed against exactly this.
@@ -2201,7 +2208,7 @@ The following are not proofs, and are recorded only for calibration.
     no verifier failures, once the width-one gap of \cref{def:widthone} was
     closed.  Every failure class encountered before that was reproduced and then
     eliminated by exactly the clauses \cref{sec:atomprops} mandates.
-  \item $3{,}000$ randomly generated view proofs with zero \invRep{} violations,
+  \item $3{,}000$ randomly generated view proofs with zero \invView{} violations,
     over nine constraint families with holey domains, three-view bases, and
     intervals pushed outside the definition bounds.
   \item Over $8{,}000$ constraint tests under every view wrap and position,
@@ -2216,7 +2223,7 @@ which gates and which branching were active.
 \subsubsection*{Cost}
 \phantomsection\addcontentsline{toc}{subsubsection}{Cost}\label{sec:cost}
 
-Per distinct interval literal requested on a representation: at most two cell
+Per distinct interval literal requested on a view variable: at most two cell
 splits, hence at most four new literals of which any width-one piece is an
 equality atom, plus the requested literal; two redundance lines per literal;
 binary coverings for each split; one covering for the request, as wide as the
@@ -2226,7 +2233,7 @@ point.  The known growth mode is a wide request over a heavily fragmented
 region, whose covering is as wide as the number of prior boundaries inside it,
 bounded by the request count rather than by the domain size.
 
-Per interval literal per proper representation: the mirrored literal on the
+Per interval literal per proper view variable: the mirrored literal on the
 other side, with its own partition maintenance, plus two clauses.  This is the
 same constant factor that inequality and equality atoms already pay for a
 wrapped variable.  Measured on a constraint over a bare variable of width $w$
@@ -2431,7 +2438,7 @@ where 80\% of small random instances turn out to be one of them.
   witness suite.
 
 \item \textbf{Unregistered views.}  A view first encountered during proof
-  logging, after the model is closed, cannot be given a representation variable,
+  logging, after the model is closed, cannot be given a view variable,
   because \cref{eq:link} is a model constraint.  Such a view is instead rewritten
   onto its base: a bound becomes a bound (with the polarity flip of
   \cref{def:image}), an equality becomes an equality, and an interval becomes
@@ -2443,7 +2450,7 @@ where 80\% of small random instances turn out to be one of them.
   the Boolean constants and never reach the literal layer at all.
 
 \item \textbf{Re-entrancy.}  Mirroring an interval literal onto another
-  representation can, in the same call, cause that representation's partition to
+  view variable can, in the same call, cause that view variable's partition to
   split, which can mirror back and split this one.  The machinery is therefore
   re-entrant: a boundary is published before the two halves it creates are
   defined, so for that window the partition claims a cell that does not yet
@@ -2453,9 +2460,9 @@ where 80\% of small random instances turn out to be one of them.
   structural condition is checkable at any quiescent point.
 
 \item \textbf{Do the two sides really differ?}  We have observed proofs in which
-  an interval is a partition cell on one representation and a request with its
-  own covering on its image, and in which the containment DAGs of two
-  representations are not isomorphic.  We have not characterised when this
+  an interval is a partition cell on one view variable and a request with its
+  own covering on its image, and in which the containment DAGs of the two view
+  variables are not isomorphic.  We have not characterised when this
   happens.  It does not matter for any result here, and that is deliberate:
   \cref{thm:complete-family} is proved by transporting to one side and then
   arguing there, so it never appeals to a correspondence between the two sides'
@@ -2544,7 +2551,7 @@ becomes visible in \cref{sec:framework}: it makes the atoms appearing in the
 encoding of a constraint depend on \emph{which} wrapper the constraint happened
 to be handed, so a generic constraint-logging procedure can no longer treat every
 operand identically, and a cutting-planes step that resolves an operand against a
-constraint body has to know which representation that body is stated in.  Giving
+constraint body has to know which view variable that body is stated over.  Giving
 the view a variable of its own costs one linear equality and makes every operand
 look the same.  The narrower version of the same question --- keep the view's
 variable, but state its \emph{intervals} on the base --- is the ``deviewing''
@@ -2599,8 +2606,8 @@ than the design we have, rather than wrong, are under \cref{sec:rationale}.
 
 \item \textbf{Rewriting a view's interval conditions onto its base}
   (``deviewing''), instead of giving the view its own interval literals.  This
-  would leave intervals as the one atom kind not stated in the view's own
-  representation, so a cutting-planes step resolving an interval literal against
+  would leave intervals as the one atom kind not stated over the view's own
+  variable, so a cutting-planes step resolving an interval literal against
   a constraint body would find nothing to cancel against.  It is the right
   answer only for the unregistered-view path of \cref{sec:open}, which has no
   encoded variable to be consistent with.
