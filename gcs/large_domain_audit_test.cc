@@ -373,6 +373,25 @@ namespace
             auto v = wide(p, 3);
             p.post(Among{v, {1_i, 2_i}, p.create_integer_variable(3_i, 3_i)});
         });
+        add("Among/holey", Expect::Clean, [](Problem & p) {
+            // The row above, with each domain given two interior gaps. A different
+            // axis, not a sharper version of it: `Among` materialises a
+            // generic_reason over its whole scope on every propagation, and before
+            // #935 that reason found its runs by walking every value between a
+            // variable's bounds rather than reading them off its intervals.
+            //
+            // Wide *and* holey *and* reaching a reason is what it takes. This file
+            // had ten wide-and-holey rows already and not one of them reached a
+            // reason -- `Among`, `Table`, `Nogoods`, `MinDistance` and `In/vars` all
+            // post contiguous wide variables -- so a per-value walk sitting behind
+            // 31 constraints was invisible to it. The counter is on the run-finding,
+            // which is unbounded in its own right: a domain can have as many runs as
+            // it has values, and a reason has to name every one.
+            vector<IntegerVariableID> v;
+            for (int i = 0; i < 3; ++i)
+                v.push_back(p.create_integer_variable(vector<Integer>{wide_lo, probe_width / 2_i, probe_width}));
+            p.post(Among{v, {1_i, 2_i}, p.create_integer_variable(3_i, 3_i)});
+        });
         add("Count", Expect::KnownTrip, [](Problem & p) {
             // H1c: a genuine per-value support scan over the value variable.
             auto v = wide(p, 3);
