@@ -90,6 +90,9 @@ add_library(glasgow_constraint_solver
         constraints/n_value/n_value.cc
         constraints/nogoods/nogoods.cc
         constraints/parity/parity.cc
+        constraints/parity/gf2_system.cc
+        constraints/parity/parity_chain.cc
+        constraints/parity/parity_system.cc
         constraints/path/path.cc
         constraints/plus_minus/plus.cc
         constraints/power/power.cc
@@ -141,6 +144,7 @@ add_library(glasgow_constraint_solver
         presolvers/inferred_cumulative/inferred_cumulative.cc
         presolvers/inferred_disjunctive/inferred_disjunctive.cc
         presolvers/innards/makespan_links.cc
+        presolvers/parity_system_gathering/parity_system_gathering.cc
 )
 
 # The repo root contains both gcs/ and util/, so it must be on the include path.
@@ -249,6 +253,11 @@ if(GCS_BUILD_TESTS)
     add_test(NAME inferred_disjunctive_presolver
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_disjunctive_presolver_test>)
 
+    add_executable(parity_system_gathering_presolver_test presolvers/parity_system_gathering/parity_system_gathering_test.cc)
+    target_link_libraries(parity_system_gathering_presolver_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME parity_system_gathering_presolver
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_system_gathering_presolver_test>)
+
     add_executable(cumulative_strengthening_presolver_test presolvers/cumulative_strengthening/cumulative_strengthening_test.cc)
     target_link_libraries(cumulative_strengthening_presolver_test PRIVATE glasgow_constraint_solver)
     add_test(NAME cumulative_strengthening_presolver
@@ -347,6 +356,7 @@ if(GCS_BUILD_TESTS)
     add_executable(n_value_test constraints/n_value/n_value_test.cc)
     add_executable(nogoods_test constraints/nogoods/nogoods_test.cc)
     add_executable(parity_test constraints/parity/parity_test.cc)
+    add_executable(parity_system_test constraints/parity/parity_system_test.cc)
     add_executable(plus_minus_test constraints/plus_minus/plus_minus_test.cc)
     add_executable(power_test constraints/power/power_test.cc)
     add_executable(product_bounds_test constraints/innards/product_bounds_test.cc)
@@ -375,7 +385,7 @@ if(GCS_BUILD_TESTS)
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test bin_packing_test comparison_test
             count_test cumulative_test cumulative_overload_test cumulative_edge_finding_test cumulative_ttef_test cumulative_energetic_test cumulative_nfnl_test cumulative_published_nfnl_test cumulative_kaoc_test cumulative_optional_test derived_cumulative_test difference_test disjunctive_test disjunctive_optional_test disjunctive_overload_test disjunctive_edge_finding_test disjunctive_nfnl_test disjunctive_precedences_test disjunctive_set_precedences_test disjunctive_published_nfnl_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
-            logical_test mdd_test min_distance_test min_distance_matching_test min_max_test mini_linear_test multiply_test n_value_test nogoods_test parity_test
+            logical_test mdd_test min_distance_test min_distance_matching_test min_max_test mini_linear_test multiply_test n_value_test nogoods_test parity_test parity_system_test
             plus_minus_test power_test product_bounds_test product_justify_test reachable_test dag_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test subgraph_test tree_test path_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
@@ -663,6 +673,7 @@ if(GCS_BUILD_TESTS)
     add_view_tests(min_max_constraint min_max_test 6)
     add_view_tests(at_most_one_constraint at_most_one_test 5)
     add_view_tests(parity_constraint parity_test 4)
+    add_view_tests(parity_system_constraint parity_system_test 4)
     add_view_tests(n_value_constraint n_value_test 6)
     add_view_tests(min_distance_constraint min_distance_test 6)
     add_view_tests(seq_precede_chain_constraint seq_precede_chain_test 5)
@@ -730,6 +741,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME n_value_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:n_value_test>)
     add_test(NAME nogoods_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:nogoods_test>)
     add_test(NAME parity_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_test>)
+    add_test(NAME parity_system_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_system_test>)
     add_test(NAME plus_minus_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test>)
     add_test(NAME path_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:path_test>)
     add_test(NAME tree_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:tree_test>)

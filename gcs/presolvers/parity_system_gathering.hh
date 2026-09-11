@@ -1,0 +1,6 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_PARITY_SYSTEM_GATHERING_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_PARITY_SYSTEM_GATHERING_HH
+
+#include <gcs/presolvers/parity_system_gathering/parity_system_gathering.hh>
+
+#endif

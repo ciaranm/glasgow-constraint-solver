@@ -2,6 +2,7 @@
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/parity/hints.hh>
 #include <gcs/constraints/parity/parity.hh>
+#include <gcs/constraints/parity/parity_chain.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -10,7 +11,6 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
-#include <util/enumerate.hh>
 
 #include <optional>
 #include <sstream>
@@ -31,7 +31,6 @@ using std::nullopt;
 using std::optional;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
@@ -68,30 +67,17 @@ auto ParityOdd::clone() const -> unique_ptr<Constraint>
 
 auto ParityOdd::define_proof_model(ProofModel & model, const State &) -> void
 {
-    // cake_pb_cp's accumulator scheme, over the literals as cake reads them
-    // (each operand tuple maps to the same ge / eq atom our proof uses):
-    // x[id][0] channels the parity bit (always the constant 1 here, which cake
-    // carries as its pinned-true n[1][ge1] atom; our rows fold it), x[id][k] =
-    // x[id][k-1] XOR the k'th literal via four labelled clauses, and the acc
-    // row pins the final accumulator to 0, i.e. 1 XOR (parity of the literals)
-    // = 0.
-    PseudoBooleanTerm acc = FalseLiteral{}, not_acc = TrueLiteral{};
-    auto x0 = model.create_proof_flag(_constraint_id, vector<long long>{0}, nullopt);
-    model.add_labelled_constraint(_constraint_id, "0ge", WPBSum{} + 1_i * TrueLiteral{} + -1_i * x0 >= 0_i);
-    model.add_labelled_constraint(_constraint_id, "0le", WPBSum{} + 1_i * x0 + -1_i * TrueLiteral{} >= 0_i);
-    acc = x0;
-    not_acc = ! x0;
-    for (const auto & [k, l] : enumerate(_lits)) {
-        auto new_acc = model.create_proof_flag(_constraint_id, vector<long long>{static_cast<long long>(k) + 1}, nullopt);
-        auto stem = to_string(k + 1);
-        model.add_labelled_constraint(_constraint_id, stem + "_0_0", WPBSum{} + 1_i * acc + 1_i * l + 1_i * ! new_acc >= 1_i);
-        model.add_labelled_constraint(_constraint_id, stem + "_1_1", WPBSum{} + 1_i * not_acc + 1_i * ! l + 1_i * ! new_acc >= 1_i);
-        model.add_labelled_constraint(_constraint_id, stem + "_1_0", WPBSum{} + 1_i * not_acc + 1_i * l + 1_i * new_acc >= 1_i);
-        model.add_labelled_constraint(_constraint_id, stem + "_0_1", WPBSum{} + 1_i * acc + 1_i * ! l + 1_i * new_acc >= 1_i);
-        acc = new_acc;
-        not_acc = ! new_acc;
-    }
-    model.add_labelled_constraint(_constraint_id, "acc", WPBSum{} + -1_i * acc >= 0_i);
+    static_cast<void>(define_parity_chain(model, _constraint_id, ConstraintProofModelData<ParityOdd>::chain_naming(), _lits));
+}
+
+auto ConstraintProofModelData<ParityOdd>::primary_row_role(const ParityOdd &) -> optional<string>
+{
+    return nullopt;
+}
+
+auto ConstraintProofModelData<ParityOdd>::chain_naming() -> ParityChainNaming
+{
+    return ParityChainNaming{nullopt};
 }
 
 auto ParityOdd::install_propagators(Propagators & propagators) -> void

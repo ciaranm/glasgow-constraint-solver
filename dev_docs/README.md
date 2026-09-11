@@ -342,6 +342,26 @@ library. For an introduction to *using* the solver, start with the top-level
   punched, because it crossed a bounds-consistent `int_lin_eq`, and fixing that
   took mario from 4/15 optimal to 9/15 — the same bug is in four more
   redefinitions (#803).
+- [`ParitySystem`: GF(2) reasoning over a conjunction of XORs](parity-system.md) —
+  the design and as-built note for issue #647: why a single `ParityOdd` is
+  already GAC and all the remaining inference lives in the conjunction, the
+  Gocht-Nordstrom slack form under which a Gaussian elimination step is one
+  `pol`, and why it has to be *derived in-proof* from cake's accumulator chain
+  rather than written into the `.opb` (a presolver has no `ProofModel`, and a
+  row cake did not emit is not chain-portable). Records the per-step `red` pair
+  and the five-line subproof that bridges the two encodings — linear, where the
+  paper's CNF recovery is exponential, because our chain already *is* its
+  partial-parity split — the §4.3 fold that makes every inference one `pol` plus
+  one RUP whatever the size of the combination, and the two mutations that
+  survive because they only remove slack the wrapping RUP replaces. Also covers
+  `ParitySystemGathering`, the presolver that collects posted `ParityOdd` and
+  Boolean `Equals` / `NotEquals` constraints into per-component systems, why a
+  two-literal donor needs two RUP lines where a chain needs a `red` per step, the
+  measured node-for-node tripwire and the strength differentials that say the
+  gathering buys anything at all, and the two API extensions it forced — a
+  published naming *object* for a family of rows, and a `family` on
+  `ProofFlagKey`, without which `v[id][1]` and `x[id][1]` had the same key. Read
+  before touching `ParityOdd`'s encoding, whose rows the derivation cites.
 - [`MinDistance`: encoding and proofs](min-distance-proofs.md) — the definitional
   OPB encoding for `min_distance(D, x, z)` (site-selection flags, per-site counts,
   pair clauses, and the min-attained ladder), the justification for each of the

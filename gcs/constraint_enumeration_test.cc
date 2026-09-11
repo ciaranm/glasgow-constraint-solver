@@ -1,6 +1,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear.hh>
+#include <gcs/constraints/parity.hh>
 #include <gcs/innards/variable_id_utils.hh>
 #include <gcs/presolver.hh>
 #include <gcs/problem.hh>
@@ -49,7 +50,7 @@ namespace
 
     // A ReificationCondition is variant<MustHold, MustNotHold, If, NotIf, Iff>,
     // and its index is all these tests need to tell the forms apart.
-    constexpr size_t must_hold = 0, if_cond = 2, iff_cond = 4;
+    constexpr size_t must_hold = 0, must_not_hold = 1, if_cond = 2, iff_cond = 4;
 
     // The bits of a linear inequality a difference-logic presolver reads back,
     // flattened so that a test can compare two of them.
@@ -74,6 +75,45 @@ namespace
     };
 
     // Deliberately takes a const Problem &: enumeration must work on one.
+    // ParitySystemGathering's two donor families. ParityOdd has no hierarchy at
+    // all, and Equals / NotEquals are both stored as their ReifiedEquals base ---
+    // which is what makes asking for the base the right thing, and what would
+    // silently stop matching if either clone() ever returned something else.
+    struct SeenParity final
+    {
+        string id;
+        vector<innards::Literal> literals;
+
+        [[nodiscard]] auto operator==(const SeenParity &) const -> bool = default;
+    };
+
+    struct SeenEquals final
+    {
+        string id;
+        IntegerVariableID left, right;
+        bool equality;
+        size_t reification_kind;
+
+        [[nodiscard]] auto operator==(const SeenEquals &) const -> bool = default;
+    };
+
+    [[nodiscard]] auto collect_parities(const Problem & problem) -> vector<SeenParity>
+    {
+        vector<SeenParity> result;
+        for (const auto & c : problem.each_constraint_of_type<ParityOdd>())
+            result.push_back(SeenParity{as_string(c.constraint_id()), vector<innards::Literal>{c.literals().begin(), c.literals().end()}});
+        return result;
+    }
+
+    [[nodiscard]] auto collect_equals(const Problem & problem) -> vector<SeenEquals>
+    {
+        vector<SeenEquals> result;
+        for (const auto & c : problem.each_constraint_of_type<ReifiedEquals>())
+            result.push_back(SeenEquals{
+                as_string(c.constraint_id()), c.left_variable(), c.right_variable(), c.enforces_equality(), c.reification_condition().index()});
+        return result;
+    }
+
     [[nodiscard]] auto collect_linears(const Problem & problem) -> vector<SeenLinear>
     {
         vector<SeenLinear> result;
@@ -243,6 +283,34 @@ namespace Catch
     };
 }
 
+TEST_CASE("Typed enumeration recovers ParityOdd and the Equals family")
+{
+    // ParitySystemGathering reads both of these back to build its GF(2) rows, so
+    // if either enumeration stops matching, that presolver silently gathers
+    // nothing rather than failing. Its own stats assertions are the other half of
+    // holding this down; this is the half that says which API it relies on.
+    Problem p;
+    auto x = p.create_integer_variable(0_i, 1_i, "x"s);
+    auto y = p.create_integer_variable(0_i, 1_i, "y"s);
+    auto z = p.create_integer_variable(0_i, 1_i, "z"s);
+
+    p.post(ParityOdd{vector<IntegerVariableID>{x, y}});
+    p.post(ParityOdd{innards::Literals{x != 0_i, z == 1_i}});
+    p.post(Equals{x, y});
+    p.post(NotEquals{y, z});
+    // Not a member of either family, and must not be enumerated by either.
+    p.post(LessThan{x, z});
+
+    CHECK(collect_parities(p) == vector<SeenParity>{{"_1", {x != 0_i, y != 0_i}}, {"_2", {x != 0_i, z == 1_i}}});
+
+    // Equals is MustHold and NotEquals is MustNotHold, so the reification kinds
+    // differ while enforces_equality() is what actually says which is which.
+    auto equals = collect_equals(p);
+    REQUIRE(equals.size() == 2);
+    CHECK(equals[0] == SeenEquals{"_3", x, y, true, must_hold});
+    CHECK(equals[1] == SeenEquals{"_4", y, z, false, must_not_hold});
+}
+
 TEST_CASE("Typed enumeration finds nothing in an empty problem")
 {
     Problem p;
@@ -250,6 +318,8 @@ TEST_CASE("Typed enumeration finds nothing in an empty problem")
 
     CHECK(collect_linears(p).empty());
     CHECK(collect_comparisons(p).empty());
+    CHECK(collect_parities(p).empty());
+    CHECK(collect_equals(p).empty());
 }
 
 TEST_CASE("Typed enumeration finds a single constraint")

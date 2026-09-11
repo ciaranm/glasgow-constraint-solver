@@ -591,10 +591,17 @@ namespace gcs::innards
          *
          * The flag-side counterpart of \ref constraint_row_label, and the same
          * shape of answer: "may I cite this?", not "what does it say". A flag's
-         * name is a pure function of `(id, values, annotation)` --- the same
-         * function \ref create_proof_flag_values applies --- so this finds the
-         * flag whichever clone of the constraint created it, and stores nothing
-         * a solve depends on beyond the name index the flags already need.
+         * name is a pure function of `(id, numbers, annotation, family)` --- the
+         * same function the matching \ref create_proof_flag overload applies ---
+         * so this finds the flag whichever clone of the constraint created it,
+         * and stores nothing a solve depends on beyond the name index the flags
+         * already need.
+         *
+         * The family is part of the key because it has to be: the numbers alone
+         * do not determine a name, since `v[id][1]` and `x[id][1]` are different
+         * flags. A key that does not say defaults to Values, which is what most
+         * published keys mean; cake-indexed flags such as ParityOdd's accumulator
+         * chain have to say Indices.
          *
          * nullopt means no flag went out under that key: the constraint was
          * never installed, or proofs are off, or the key names a
@@ -611,14 +618,14 @@ namespace gcs::innards
          * `f[index][stem]` flag is anonymous by construction and has no key to
          * look up.
          */
-        [[nodiscard]] auto find_proof_flag_values(const ConstraintID & id, const ProofFlagKey & key) const -> std::optional<ProofFlag>;
+        [[nodiscard]] auto find_proof_flag(const ConstraintID & id, const ProofFlagKey & key) const -> std::optional<ProofFlag>;
 
         /**
          * \brief Record a line this constraint established *inside the proof*,
          * under a role, so that another constraint may build on it.
          *
          * The third kind of citable thing, beside a labelled OPB row
-         * (\ref constraint_row_label) and a flag (\ref find_proof_flag_values),
+         * (\ref constraint_row_label) and a flag (\ref find_proof_flag),
          * and the one neither of those can express: a line an install
          * initialiser derived, which has no OPB row to label and no reification
          * to key. Cumulative's proof-only `end >= start + length` is the
@@ -646,7 +653,7 @@ namespace gcs::innards
          * published one.
          *
          * The same "may I cite this?" answer \ref constraint_row_label and
-         * \ref find_proof_flag_values give, and nullopt means the same thing it
+         * \ref find_proof_flag give, and nullopt means the same thing it
          * means there: the constraint was never installed, or proofs are off,
          * or it had nothing to publish under that role --- and in each case
          * there is nothing to cite, so do not do the thing that would need
