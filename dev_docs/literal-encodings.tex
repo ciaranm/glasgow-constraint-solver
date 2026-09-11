@@ -1021,36 +1021,32 @@ $s = s_W s_{W'}$ and $d = c_{W'} - s\,c_W$.  The \emph{image} on $W'$ of a
 literal $\ell$ over an atomic variable of $W$, written $\ell^{W'}$, is the
 literal satisfied by exactly the same values of $X$:
 \[
-  \begin{array}{llll}
+  \begin{array}{lll}
     (\atge{w}{v})^{W'} &=
       \begin{cases}
-        \atge{w'}{\theta(v)} & s=+1\\[7pt]
+        \atge{w'}{\theta(v)} & s=+1\\[2pt]
         \natge{w'}{\theta(v)+1} & s=-1
       \end{cases}
     &\qquad
-    (\ateq{w}{v})^{W'} &= \ateq{w'}{\theta(v)}\\[2.6ex]
-    (\atin{w}{a}{b})^{W'} &=
-      \begin{cases}
-        \atin{w'}{\theta(a)}{\theta(b)} & s=+1\\[2pt]
-        \atin{w'}{\theta(b)}{\theta(a)} & s=-1
-      \end{cases}
-    &\qquad
-    (\natin{w}{a}{b})^{W'} &= \overline{(\atin{w}{a}{b})^{W'}}
+    (\atset{w}{S})^{W'} \;=\; \atset{w'}{\theta(S)}
   \end{array}
 \]
-Negation commutes with taking images --- the last entry above, and likewise for
-the other two kinds --- so the negated image of an atom may be written by barring
-the atom inside, which is what \cref{eq:gelink,eq:eqlink,eq:inlink} do.  Taking
-images is functorial: $(\ell^{W'})^{W''} = \ell^{W''}$, and $\ell^{W}=\ell$.
+writing $\theta(S) = \{\theta(k) : k\in S\}$.  Negation commutes with taking
+images, so the negated image of an atom may be written by barring the atom
+inside, which is what \cref{eq:gelink,eq:eqlink,eq:inlink} do.  Taking images is
+functorial: $(\ell^{W'})^{W''} = \ell^{W''}$, and $\ell^{W}=\ell$.
 \end{definitionT}
 
-Two facts about \cref{def:image} are worth stating because they are what make
-the design tractable.  First, $\theta$ preserves \emph{width}: an interval of
-width $k$ maps to an interval of width $k$, so the width-one identification of
-\cref{def:widthone} is stable, and the interval machinery never has to consider
-a width-one case on either side.  Second, a sign flip converts a positive bound
-literal into a negative one, but leaves the polarity of equality and interval
-literals alone --- an interval is order-agnostic, a half-line is not.
+Stating the two-cut case over the set rather than over the endpoints is what
+makes it one line instead of four, and the two facts that make the design
+tractable are then immediate rather than needing an argument.  First, $\theta$ is
+an affine bijection, so $\theta(S)$ is an interval of the same width as $S$: the
+width-one identification of \cref{def:widthone} is stable, equality and interval
+atoms have the same image rule, and the interval machinery never has to consider
+a width-one case on either side.  Second, a sign flip reverses the two endpoints
+of $\theta(S)$ but does not touch its polarity, whereas it converts a positive
+bound literal into a negative one --- an interval is order-agnostic, a half-line
+is not, which is why only the first entry above splits on $s$.
 
 The atom-level linking constraints are exactly the clausal form of the biconditional
 $\ell \Leftrightarrow \ell^{X}$, for each defined atom of each proper
@@ -1094,7 +1090,7 @@ For the eq-link, asserting one side and the negation of the other propagates bot
 cuts through \cref{eq:deq1}, carries each across by the ge-links, and closes on
 \cref{eq:deq2} of the far side.  For the in-link, the same argument with
 \cref{eq:din1,eq:din2}, noting that for $s=-1$ the two cuts exchange roles ---
-which is exactly the endpoint swap in \cref{def:image}.
+which is the endpoint reversal that $\theta(S)$ absorbs in \cref{def:image}.
 
 \begin{remarkN}[Both in-link clauses are needed, and neither for its implication]
 \label{rem:bothlinks}
