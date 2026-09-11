@@ -94,6 +94,10 @@
 \newcommand{\natge}[2]{\overline{#1}_{\geq #2}}
 \newcommand{\nateq}[2]{\overline{#1}_{= #2}}
 \newcommand{\natin}[3]{\overline{#1}_{\in[#2,#3]}}
+% The atom of a set of values, for when the set matters more than its endpoints.
+% A capital letter is always the set, never the atom over it.
+\newcommand{\atset}[2]{#1_{\in #2}}
+\newcommand{\natset}[2]{\overline{#1}_{\in #2}}
 \newcommand{\inv}[1]{\textnormal{\textsc{Inv-#1}}}
 \newcommand{\code}[1]{\texttt{#1}}
 % Unnumbered sections are referred to by title, so that the numbered ones
@@ -380,9 +384,10 @@ units on $W$'s own atoms.
 
 Clearly, if we construct a CSP with variables $\mathcal W$, constraints
 $\mathcal C \cup \Bnd(\mathcal W)\cup\ViewLink(\mathcal W)$, and unrestricted
-integer domains, then this has exactly the same solution set as our original
-CSP, projected onto $\mathcal V$: every proper representation is determined by
-its base through \cref{eq:link}.
+integer domains, then its solution set has the same cardinality as our original
+CSP's, and is identical to it under projection onto $\mathcal V$: every proper
+representation is determined by its base through \cref{eq:link}, so the
+projection is a bijection and not merely a surjection.
 
 \paragraph{Steps 4 and 5: atomic constraint variables.}
 These are fresh $0$--$1$ variables that can be shared between linearisations
@@ -748,8 +753,20 @@ proof, we mean that both directions of the reified definition for its
 underlying atomic variable have appeared in the accumulated formula and have
 not been deleted.
 
-Note the asymmetry between $\Def^{\Rightarrow}$ and $\Def^{\Leftarrow}$ for the
-two-cut atoms, \cref{eq:deq1,eq:deq2,eq:din1,eq:din2}.  The forward direction is
+Call the equality and interval atoms the \emph{two-cut} atoms, since each is
+defined by \cref{eq:defeq,eq:defin} from a pair of bound variables, and their
+literals the \emph{two-cut} literals.  From here on, when a two-cut atom is
+discussed through the set of values it names we write $\atset{w}{S}$ for the
+atom of $W$ that holds exactly when $W$ takes a value in the interval $S$, so
+that $\atset{w}{[a,b]}$ is $\atin{w}{a}{b}$ for $a<b$ and $\atset{w}{\{v\}}$ is
+$\ateq{w}{v}$ by \cref{def:widthone}.  In everything below, $E$, $C$, $G$ and
+$S$ denote sets of integers and never the atoms over them: $E\subseteq E'$,
+$E\cap[l_W,u_W]$ and $\bigcup_i C_i$ mean what they say about integers, while
+$\atset{w}{E}$ and $\natset{w}{E}$ are the two literals of the atom naming $E$.
+
+Note the asymmetry between
+$\Def^{\Rightarrow}$ and $\Def^{\Leftarrow}$ for them,
+\cref{eq:deq1,eq:deq2,eq:din1,eq:din2}.  The forward direction is
 a \emph{conjunction}: asserting $\ateq{w}{v}$ or $\atin{w}{a}{b}$ makes both
 cuts units.  The reverse direction is a \emph{disjunction}: asserting
 $\nateq{w}{v}$ or $\natin{w}{a}{b}$ makes neither cut a
@@ -838,36 +855,40 @@ $t$ in the proof.
   there is a finite set of \emph{boundaries} $\Bdry(W)\subseteq[l_W,u_W+1]$ with
   $l_W,u_W+1\in\Bdry(W)$.  The \emph{cells} $\Cells(W)$ are the intervals
   $[p,p'-1]$ for consecutive $p<p'$ in $\Bdry(W)$; they partition $[l_W,u_W]$.
-  Every cell is a defined literal --- an equality atom if it has width one, an
-  interval literal otherwise.  For every defined equality or interval literal
-  $E$ of $W$ whose in-bounds part $E\cap[l_W,u_W]$ is non-empty, both endpoints
-  of that part are boundaries; that is, $E\cap[l_W,u_W]$ is a union of adjacent
-  cells.  $\Bdry(W)$ only ever grows.
+  For every cell $C$ the atom $\atset{w}{C}$ is defined --- an equality atom if
+  $C$ has width one, an interval atom otherwise.  For every defined two-cut atom
+  $\atset{w}{E}$ of $W$ whose in-bounds part $E\cap[l_W,u_W]$ is non-empty, both
+  endpoints of that part are boundaries; that is, $E\cap[l_W,u_W]$ is a union of
+  adjacent cells.  $\Bdry(W)$ only ever grows.
 
 \item[\invCover{}: coverings.]
-  \emph{(i) Split coverings.}  For every defined literal $G\subseteq[l_W,u_W]$
-  that is a union of adjacent cells but is not itself a cell, $F_t$ contains a
-  clause $\overline{G}\vee C_1\vee\cdots\vee C_k$ with $k\geq 2$, where each
-  $C_i$ is a defined literal, each is a union of adjacent cells \emph{properly
-  contained} in $G$, and $\bigcup_i C_i = G$.
-  \emph{(ii) Overhanging coverings.}  For every defined literal $E$ whose
+  \emph{(i) Split coverings.}  For every $G\subseteq[l_W,u_W]$ with
+  $\atset{w}{G}$ defined, $G$ a union of adjacent cells but not itself a cell,
+  $F_t$ contains a clause
+  $\natset{w}{G}\vee\atset{w}{C_1}\vee\cdots\vee\atset{w}{C_k}$ with $k\geq 2$,
+  where every $\atset{w}{C_i}$ is defined, each $C_i$ is a union of adjacent
+  cells \emph{properly contained} in $G$, and $\bigcup_i C_i = G$.
+  \emph{(ii) Overhanging coverings.}  For every defined $\atset{w}{E}$ whose
   in-bounds part $S := E\cap[l_W,u_W]$ is non-empty and satisfies $E\neq S$,
-  $F_t$ contains a clause $\overline{E}\vee C_1\vee\cdots\vee C_k$ where each
-  $C_i$ is a defined literal that is a union of adjacent cells, and
+  $F_t$ contains a clause
+  $\natset{w}{E}\vee\atset{w}{C_1}\vee\cdots\vee\atset{w}{C_k}$ where every
+  $\atset{w}{C_i}$ is defined, each $C_i$ is a union of adjacent cells, and
   $\bigcup_i C_i = S$.
   \emph{(iii) The root covering.}  If $\Bdry(W)$ exists, $F_t$ contains a clause
-  $C_1\vee\cdots\vee C_m\geq 1$ where the $C_i$ are defined literals that are
-  unions of adjacent cells with $\bigcup_i C_i = [l_W,u_W]$.  A representation
+  $\atset{w}{C_1}\vee\cdots\vee\atset{w}{C_m}\geq 1$ where every
+  $\atset{w}{C_i}$ is defined, each $C_i$ is a union of adjacent cells, and
+  $\bigcup_i C_i = [l_W,u_W]$.  A representation
   with no interval literal, or with only out-of-bounds ones, has no partition and
   no root covering, and this clause holds vacuously --- which is what lets
   \cref{lem:covering} and \cref{thm:complete} still say something about a plain
   order/equality variable, the entire setting of the thesis.
 
 \item[\invCont{}: containment.]
-  For any two defined equality or interval literals $E\subsetneq E'$ of the same
-  representation $W$, there is a chain
-  $E=E_0\subsetneq E_1\subsetneq\cdots\subsetneq E_m=E'$ of defined literals
-  such that each clause $\overline{E}_j\vee E_{j+1}$ appears in $F_t$.
+  For any two defined two-cut atoms $\atset{w}{E}$ and $\atset{w}{E'}$ of the
+  same representation $W$ with $E\subsetneq E'$, there is a chain
+  $E=E_0\subsetneq E_1\subsetneq\cdots\subsetneq E_m=E'$ with every
+  $\atset{w}{E_j}$ defined, such that each clause
+  $\natset{w}{E_j}\vee\atset{w}{E_{j+1}}$ appears in $F_t$.
 
 \item[\invRep{}: representation closure and linking.]
   For every $W,W'\in\Rep(X)$: if an atomic variable of $W$ is defined, then so is
@@ -1108,60 +1129,67 @@ propagate through the machinery of \invCover{} and \invCont{}.
 
 \begin{lemmaN}[Containment closure]
 \label{lem:contclosure}
-Suppose that whenever an equality or interval literal $E$ of $W$ is defined, the
-clause $\overline{E}\vee E'$ is emitted for every \emph{minimal} defined $E'
-\supsetneq E$, and the clause $\overline{E''}\vee E$ for every \emph{maximal}
-defined $E''\subsetneq E$.  Then \invCont{} holds.
+Suppose that whenever a two-cut atom $\atset{w}{E}$ of $W$ is defined, the clause
+$\natset{w}{E}\vee\atset{w}{E'}$ is emitted for every \emph{minimal}
+$E'\supsetneq E$ whose atom is defined, and the clause
+$\natset{w}{E''}\vee\atset{w}{E}$ for every \emph{maximal} $E''\subsetneq E$
+whose atom is defined.  Then \invCont{} holds.
 \end{lemmaN}
 
 \begin{proof}
-By induction on the number of defined literals.  Let $E\subsetneq E'$ both be
-defined, and consider the later of the two to be defined, say at step $n$; by the
-inductive hypothesis \invCont{} held over the literals defined before step $n$.
+By induction on the number of defined atoms.  Let $\atset{w}{E}$ and
+$\atset{w}{E'}$ both be defined with $E\subsetneq E'$, and consider the later of
+the two to be defined, say at step $n$; by the inductive hypothesis \invCont{}
+held over the atoms defined before step $n$.
 
-If $E'$ is the later, then $E$ was already defined, so $E$ is contained in some
-maximal defined $E''\subsetneq E'$ with $E\subseteq E''$.  If $E=E''$ the edge
-$\overline{E}\vee E'$ is emitted directly; otherwise $E\subsetneq E''$, so the
-inductive hypothesis gives a chain from $E$ to $E''$, which the emitted edge
-$\overline{E''}\vee E'$ extends.  The case where $E$ is the later is symmetric,
-using a minimal defined container.  Emitting an edge never invalidates a chain,
-so \invCont{} continues to hold.
+If $\atset{w}{E'}$ is the later, then $\atset{w}{E}$ was already defined, so $E$
+is contained in some maximal $E''\subsetneq E'$ with $E\subseteq E''$ and
+$\atset{w}{E''}$ defined.  If $E=E''$ the edge
+$\natset{w}{E}\vee\atset{w}{E'}$ is emitted directly; otherwise $E\subsetneq
+E''$, so the inductive hypothesis gives a chain from $E$ to $E''$, which the
+emitted edge $\natset{w}{E''}\vee\atset{w}{E'}$ extends.  The case where
+$\atset{w}{E}$ is the later is symmetric, using a minimal container.  Emitting
+an edge never invalidates a chain, so \invCont{} continues to hold.
 \end{proof}
 
 \begin{remark}
 Interval requests may overlap without nesting --- $[7,15]$ after $[5,10]$ ---
-so the containment relation is a DAG, not a tree, and a literal may have several
+so the containment relation is a DAG, not a tree, and a set may have several
 incomparable minimal containers.  \cref{lem:contclosure} does not care.  Note
 also that it needs \emph{minimal} and \emph{maximal} to be computed over all
-currently defined literals of $W$, not merely over the cells.
+sets whose atoms are currently defined for $W$, not merely over the cells.
 \end{remark}
 
 \begin{lemmaN}[Cell exclusion]
 \label{lem:cell}
-Assume \invChain{}, \invCut{}, \invPart{} and \invCont{}.  Let
-$U\subseteq L^W$ be a cut-normalised set of literals each of which propagates
-under $R$, suppose $F_t\!\restriction_R$ does not propagate to conflict, and
+Assume \invChain{}, \invCut{}, \invPart{} and \invCont{}.  Let $R$ be a set of
+literals, let $U\subseteq L^W$ be a cut-normalised set of literals each of which
+propagates under $R$, suppose $F_t\!\restriction_R$ does not propagate to conflict, and
 write $D=\dm_U(W)$.  Let $C\in\Cells(W)$ be a cell with $D\cap C=\emptyset$.
-Then $\overline{C}$ propagates under $R$.
+Then $\natset{w}{C}$ propagates under $R$.
 \end{lemmaN}
 
 \begin{proof}
-Write $C=[p,q]$, so that $C$ is the literal $\atin{w}{p}{q}$ if $p<q$ and
-$\ateq{w}{p}$ if $p=q$; in either case \cref{eq:din1,eq:deq1} give the two
-clauses $\overline{C}\vee\atge{w}{p}$ and
-$\overline{C}\vee\natge{w}{q+1}$, and both cuts are defined by
-\invCut{}.
+Write $C=[p,q]$, so that $\atset{w}{C}$ is $\atin{w}{p}{q}$ if $p<q$ and
+$\ateq{w}{p}$ if $p=q$; in either case \cref{eq:deq1,eq:din1} give the single PB
+constraint $\atset{w}{C}\Rightarrow\atge{w}{p}+\natge{w}{q+1}\geq 2$, and both
+cuts are defined by \invCut{}.  That constraint is not a pair of clauses, but it
+propagates like one in each direction: $\atset{w}{C}$ makes both cuts units, and
+either $\natge{w}{p}$ or $\atge{w}{q+1}$ propagates $\natset{w}{C}$, which is
+the direction used below.
 
-\emph{Case 1: some negative two-cut literal of $U$ contains $C$.}  That is,
-$\overline{E}\in U$ for a defined $E$ with $C\subseteq E$.  If $E=C$ we are
-done.  Otherwise $C\subsetneq E$, and \invCont{} gives a chain of binary clauses
-$\overline{C}\vee E_1$, $\overline{E}_1\vee E_2$, \dots, $\overline{E}_{m-1}\vee
-E$; reading each contrapositive in turn from $\overline{E}$ propagates
-$\overline{C}$.
+\emph{Case 1: some negative two-cut literal of $U$ names a set containing $C$.}
+That is, $\natset{w}{E}\in U$ for a defined $\atset{w}{E}$ with $C\subseteq E$.
+If $E=C$ we are done.  Otherwise $C\subsetneq E$, and \invCont{} gives a chain of
+binary clauses $\natset{w}{C}\vee\atset{w}{E_1}$,
+$\natset{w}{E_1}\vee\atset{w}{E_2}$, \dots,
+$\natset{w}{E_{m-1}}\vee\atset{w}{E}$; reading each contrapositive in turn from
+$\natset{w}{E}$ propagates $\natset{w}{C}$.
 
-\emph{Case 2: no negative two-cut literal of $U$ contains $C$.}  We claim that
-then no negative two-cut literal of $U$ meets $C$ at all.  Let $\overline{E}\in
-U$.  If $E\cap[l,u]=\emptyset$ then $E\cap C=\emptyset$ since $C\subseteq[l,u]$.
+\emph{Case 2: no negative two-cut literal of $U$ names a set containing $C$.}
+We claim that then no negative two-cut literal of $U$ names a set meeting $C$ at
+all.  Let $\natset{w}{E}\in U$.  If $E\cap[l,u]=\emptyset$ then
+$E\cap C=\emptyset$ since $C\subseteq[l,u]$.
 Otherwise, by \invPart{}, $E\cap[l,u]$ is a union of adjacent cells, and $C$ is
 a cell, so either $C\subseteq E$ --- excluded by the case assumption --- or
 $C\cap E=\emptyset$.
@@ -1176,52 +1204,55 @@ conflict, contrary to assumption.  So $[v^{+},v^{-}-1]$ is a non-empty interval
 disjoint from the interval $C$, and $C$ lies wholly on one side of it.
 \begin{itemize}[itemsep=1pt]
   \item If $q<v^{+}$: then $q+1\leq v^{+}$, and $\atge{w}{q+1}$ is defined, so
-    \cref{lem:chain} propagates it from $\atge{w}{v^{+}}$.  The clause
-    $\overline{C}\vee\natge{w}{q+1}$ then propagates $\overline{C}$.
+    \cref{lem:chain} propagates it from $\atge{w}{v^{+}}$, and the constraint
+    above propagates $\natset{w}{C}$.
   \item If $p\geq v^{-}$: then $\atge{w}{p}$ is defined and \cref{lem:chain}
-    propagates $\natge{w}{p}$ from $\natge{w}{v^{-}}$.  The
-    clause $\overline{C}\vee\atge{w}{p}$ then propagates $\overline{C}$.
+    propagates $\natge{w}{p}$ from $\natge{w}{v^{-}}$, and the constraint
+    above propagates $\natset{w}{C}$.
     \qedhere
 \end{itemize}
 \end{proof}
 
 \begin{lemmaN}[Covering completeness]
 \label{lem:covering}
-Assume \inv{Bound}, \invCut{}, \invPart{} and \invCover{}.  Let $E$ be a defined
-equality or interval literal of $W$ and let $S=E\cap[l,u]$.
+Assume \inv{Bound}, \invCut{}, \invPart{} and \invCover{}.  Let $\atset{w}{E}$ be
+a defined two-cut atom of $W$ and let $S=E\cap[l,u]$.
 \begin{enumerate}[label=(\alph*),itemsep=1pt]
-  \item If $S=\emptyset$ then $\overline{E}$ propagates under any $R$.
-  \item If $S\neq\emptyset$, $E$ is not currently a cell, and $\overline{C}$
-    propagates for every cell $C\subseteq S$, then $\overline{E}$ propagates.
+  \item If $S=\emptyset$ then $\natset{w}{E}$ propagates under any $R$.
+  \item If $S\neq\emptyset$, $E$ is not currently a cell, and $\natset{w}{C}$
+    propagates for every cell $C\subseteq S$, then $\natset{w}{E}$ propagates.
 \end{enumerate}
 \end{lemmaN}
 
 \begin{proof}
 \emph{(a)}  Write $E=[a,b]$.  If $b<l$ then $\atge{w}{b+1}$ is defined by
 \invCut{} with $b+1\leq l$, so it is a unit by \inv{Bound}, and
-$\overline{E}\vee\natge{w}{b+1}$ propagates $\overline{E}$.  If $a>u$
-then $\atge{w}{a}$ is defined with $a>u$, so $\natge{w}{a}$ is a unit
-by \inv{Bound}, and $\overline{E}\vee\atge{w}{a}$ propagates $\overline{E}$.
+\cref{eq:deq1,eq:din1} propagate $\natset{w}{E}$.  If $a>u$ then $\atge{w}{a}$
+is defined with $a>u$, so $\natge{w}{a}$ is a unit by \inv{Bound}, and
+\cref{eq:deq1,eq:din1} propagate $\natset{w}{E}$ through the other cut.
 
 \emph{(b)}  For a set that is a union of adjacent cells, define its \emph{rank}
 to be the number of cells it contains.  We first show, by induction on rank,
-that $\overline{G}$ propagates for every defined literal $G\subseteq S$ that is
-a union of adjacent cells.
+that $\natset{w}{G}$ propagates for every $G\subseteq S$ with $\atset{w}{G}$
+defined and $G$ a union of adjacent cells.
 
 If $G$ has rank one then $G$ is a cell, since its two endpoints are boundaries
-and no boundary lies strictly inside it; as $G\subseteq S$, $\overline{G}$
+and no boundary lies strictly inside it; as $G\subseteq S$, $\natset{w}{G}$
 propagates by hypothesis.  If $G$ has rank at least two then $G$ is not a cell,
-so \invCover{}(i) puts $\overline{G}\vee C_1\vee\cdots\vee C_k$ in $F_t$ with
-each $C_i$ a defined literal, a union of adjacent cells, properly contained in
-$G$ --- hence of strictly smaller rank --- and contained in $S$.  By induction
-each $\overline{C}_i$ propagates, so the covering propagates $\overline{G}$.
+so \invCover{}(i) puts
+$\natset{w}{G}\vee\atset{w}{C_1}\vee\cdots\vee\atset{w}{C_k}$ in $F_t$ with
+every $\atset{w}{C_i}$ defined and each $C_i$ a union of adjacent cells,
+properly contained in $G$ --- hence of strictly smaller rank --- and contained
+in $S$.  By induction each $\natset{w}{C_i}$ propagates, so the covering
+propagates $\natset{w}{G}$.
 
 Now for $E$ itself.  If $E\subseteq[l,u]$ then $E=S$, which is a union of
 adjacent cells by \invPart{}, and the claim applies directly.  Otherwise
-$E\neq S$, and \invCover{}(ii) puts $\overline{E}\vee C_1\vee\cdots\vee C_k$ in
-$F_t$ with each $C_i$ a defined literal that is a union of adjacent cells and
-$\bigcup_i C_i=S$; each $C_i\subseteq S$, so $\overline{C}_i$ propagates by the
-claim, and the covering propagates $\overline{E}$.
+$E\neq S$, and \invCover{}(ii) puts
+$\natset{w}{E}\vee\atset{w}{C_1}\vee\cdots\vee\atset{w}{C_k}$ in $F_t$ with
+every $\atset{w}{C_i}$ defined, each $C_i$ a union of adjacent cells, and
+$\bigcup_i C_i=S$; each $C_i\subseteq S$, so $\natset{w}{C_i}$ propagates by the
+claim, and the covering propagates $\natset{w}{E}$.
 \end{proof}
 
 \begin{remark}
@@ -1346,11 +1377,11 @@ propagate by Cases 1 and 2, and \cref{eq:deq2} then propagates $\ell$.
 \emph{Case 4: $\ell=\nateq{w}{v}$, so $v\notin D$.}  Consider what excludes $v$;
 after cut normalisation the candidates are a bound literal and a negative
 two-cut literal.  If a bound literal does, then either $\atge{w}{v+1}$ or
-$\natge{w}{v}$ propagates by \cref{lem:chain}, and the corresponding
-clause of \cref{eq:deq1} propagates $\ell$.  If instead a negative two-cut
-literal $\overline{E}\in U$ with $v\in E$ does, then $\{v\}\subseteq E$; if
+$\natge{w}{v}$ propagates by \cref{lem:chain}, and \cref{eq:deq1} then
+propagates $\ell$ from whichever it is.  If instead a negative two-cut
+literal $\natset{w}{E}\in U$ with $v\in E$ does, then $\{v\}\subseteq E$; if
 $E=\{v\}$ then $\ell\in U$, and otherwise \invCont{} gives a chain of binary
-clauses whose contrapositives propagate $\ell$ from $\overline{E}$.  If a
+clauses whose contrapositives propagate $\ell$ from $\natset{w}{E}$.  If a
 positive two-cut literal excludes $v$, cut normalisation has already replaced it
 by bound literals, so this is the first case.
 
@@ -1364,7 +1395,7 @@ then propagates $\ell$.
 \emph{Case 6: $\ell=\natin{w}{a}{b}$, with $D\cap[a,b]=\emptyset$.}
 Write $E=[a,b]$ and $S=E\cap[l,u]$.  If $S=\emptyset$ then $\ell$ propagates by
 \cref{lem:covering}(a).  Otherwise, $S$ is a union of cells by \invPart{}, and
-every cell $C\subseteq S$ satisfies $D\cap C=\emptyset$, so $\overline{C}$
+every cell $C\subseteq S$ satisfies $D\cap C=\emptyset$, so $\natset{w}{C}$
 propagates by \cref{lem:cell}.  If $E$ is itself a current cell we are done; if
 not, \cref{lem:covering}(b) propagates $\ell$.
 \end{proof}
@@ -1374,10 +1405,10 @@ not, \cref{lem:covering}(b) propagates $\ell$.
 \cref{eq:domL} takes no account of $\Bnd(W)$, so $\dm_U(W)$ can contain values
 the variable's own bounds exclude, and \cref{thm:complete} is correspondingly
 narrower than its name suggests.  With cells $[1,3]$, $[4,6]$, $[7,10]$ on
-$[1,10]$ and $U = \{\overline{[1,3]}, \overline{[4,6]}\}$, unit propagation does
+$[1,10]$ and $U = \{\natset{w}{[1,3]}, \natset{w}{[4,6]}\}$, unit propagation does
 derive $\atge{w}{7}$ --- through the root covering and the surviving cell --- but
 $\atge{w}{7}\notin\ImpLits(\dm_U)$, so the theorem does not claim it.  With
-$U$ extended by $\overline{[7,10]}$, unit propagation reaches a conflict while
+$U$ extended by $\natset{w}{[7,10]}$, unit propagation reaches a conflict while
 $\dm_U(W)$ is still non-empty, so \cref{thm:wipeout}'s hypothesis does not hold
 either.  Neither is a counterexample to anything stated; both are consequences of
 $\dm_U$ being computed from $U$ alone.
@@ -1517,11 +1548,11 @@ one cut crossing the literal & $\nateq{w}{v}$ or
 $\nateq{w}{v}$ or $\natin{w}{a}{b}$ & a bound stepping over
   it & $\Def^{\Leftarrow}$: this is the hole jump, and the reason
   \cref{thm:wipeout} needs no covering \\
-$\overline{E'}$, $E\subsetneq E'$ & $\overline{E}$ & containment, \invCont{}
+$\natset{w}{E'}$, $E\subsetneq E'$ & $\natset{w}{E}$ & containment, \invCont{}
   (\cref{lem:contclosure}) \\
-$\overline{C}_1,\dots,\overline{C}_k$ & $\overline{E}$ & covering, \invCover{}
-  (\cref{lem:covering}) \\
-$E$ and all but one piece excluded & the surviving piece & covering \\
+$\natset{w}{C_1},\dots,\natset{w}{C_k}$ & $\natset{w}{E}$ & covering,
+  \invCover{} (\cref{lem:covering}) \\
+$\atset{w}{E}$ and all but one piece excluded & the surviving piece & covering \\
 every cell excluded & conflict & reverse reifications and the chain
   (\cref{thm:wipeout}); the root covering is redundant here, see
   \cref{rem:rootcovering} \\[4pt]
