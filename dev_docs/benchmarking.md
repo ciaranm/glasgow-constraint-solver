@@ -211,6 +211,29 @@ doing different amounts of work, and no per-unit figure can be read off them.
 `propagator-performance.md` ("Is it the propagator, the strength, or the
 search?") is the separation to do first.
 
+### The null-change control, for a change inside a hot function
+
+That reproducibility makes it tempting to read any instruction-count difference as
+a result. For a change *inside* a function the size of `Propagators::propagate`, it
+often is not: adding code to such a function changes what the compiler does with
+the code around it, and the executed count moves even where the executed path is
+identical. The extra instructions are spills and reloads around untouched calls,
+not anything the change added.
+
+Measured on issue #895: a lambda added to `propagate()` that is **never called** —
+reachable only through a `volatile bool` that is always false — cost **+0.24% of
+`tsp`'s instructions, +0.52% of `magic_square --size=5`'s and +0.15% of
+`ortho_latin --size=6 --all`'s**, at identical `recursions` and `propagations`,
+with not one added instruction executed.
+
+So when a change goes inside a hot function, **build the null change too** — the
+same code added, with the new path made unreachable — and read the real change
+against that rather than against the unmodified build. A difference smaller than
+the null change's own figure is not a result. Try more than one arrangement of the
+same change for the same reason: on #895, moving a new lambda from inside the
+enclosing one to beside it, and taking a parameter instead of capturing, was worth
+0.2% of `tsp` at identical behaviour.
+
 ### "Search is unchanged" is a claim about the corpus, not about the change
 
 When a change touches something every search reads — variable degree, trigger or
