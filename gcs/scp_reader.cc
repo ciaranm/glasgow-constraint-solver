@@ -54,6 +54,7 @@
 #include <gcs/scp_reader.hh>
 #include <gcs/variable_condition.hh>
 
+#include <algorithm>
 #include <charconv>
 #include <optional>
 #include <span>
@@ -72,6 +73,8 @@ using std::string;
 using std::string_view;
 using std::unordered_map;
 using std::vector;
+using std::ranges::adjacent_find;
+using std::ranges::sort;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -1120,6 +1123,18 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
             for (const auto & v : children_of(terms[3], "the global cardinality value list"))
                 values.push_back(as_integer(v));
             auto counts = resolve_variable_list(variables, terms[4], "the global cardinality count list");
+            // GlobalCardinality throws on these rather than diagnosing them, and
+            // an InvalidProblemDefinitionException escaping the reader says
+            // nothing about which line was bad. A written .scp can contain
+            // neither -- the writer's own constraint has been checked already,
+            // and a front end folds a repeated cover value before posting
+            // (#922) -- so both mean a hand-edited or foreign file.
+            if (values.size() != counts.size())
+                throw ScpReadError{"global cardinality needs as many counts as values"};
+            auto sorted_values = values;
+            sort(sorted_values);
+            if (adjacent_find(sorted_values) != sorted_values.end())
+                throw ScpReadError{"global cardinality cover values must be pairwise distinct"};
             bool closed = op.ends_with("closed");
             auto level = op.starts_with("gac") ? GlobalCardinalityConsistency{consistency::GAC{}} : GlobalCardinalityConsistency{consistency::BC{}};
             post_constraint(problem, GlobalCardinality{move(vars), move(values), move(counts)}.with_consistency(level).with_closed(closed), label);
