@@ -846,9 +846,13 @@ $t$ in the proof.
   $\atge{w}{v'}\Rightarrow\atge{w}{v}\geq 1$ appears in $F_t$.
 
 \item[\inv{Bound}: boundary pins.]
-  For every defined $\atge{w}{v}$ with $v\leq l_W$, the unit $\atge{w}{v}$
-  appears in $F_t$; for every defined $\atge{w}{v}$ with $v>u_W$, the unit
-  $\natge{w}{v}$ appears in $F_t$.  A view variable whose bounds are not a
+  If any $\atge{w}{v}$ with $v\leq l_W$ is defined, then for the largest such
+  $v$ the unit $\atge{w}{v}$ appears in $F_t$; if any $\atge{w}{v}$ with
+  $v>u_W$ is defined, then for the smallest such $v$ the unit $\natge{w}{v}$
+  appears in $F_t$.  One pin a side is enough: every other out-of-range cut
+  follows from it by \invChain{}, through \cref{lem:chain}, which is why the
+  arguments that use \inv{Bound} assume \invChain{} as well.  A view variable
+  whose bounds are not a
   consequence of the model --- a free bit-sum introduced inside the proof ---
   is exempt, and its owner derives the bounds explicitly instead; no interval
   literal is defined over such a variable today.
@@ -1222,8 +1226,8 @@ disjoint from the interval $C$, and $C$ lies wholly on one side of it.
 
 \begin{lemmaN}[Covering completeness]
 \label{lem:covering}
-Assume \inv{Bound}, \invCut{}, \invPart{} and \invCover{}.  Let $\atset{w}{E}$ be
-a defined two-cut atom of $W$ and let $S=E\cap[l,u]$.
+Assume \invChain{}, \inv{Bound}, \invCut{}, \invPart{} and \invCover{}.  Let
+$\atset{w}{E}$ be a defined two-cut atom of $W$ and let $S=E\cap[l,u]$.
 \begin{enumerate}[label=(\alph*),itemsep=1pt]
   \item If $S=\emptyset$ then $\natset{w}{E}$ propagates under any $R$.
   \item If $S\neq\emptyset$, $E$ is not currently a cell, and $\natset{w}{C}$
@@ -1233,9 +1237,11 @@ a defined two-cut atom of $W$ and let $S=E\cap[l,u]$.
 
 \begin{proof}
 \emph{(a)}  Write $E=[a,b]$.  If $b<l$ then $\atge{w}{b+1}$ is defined by
-\invCut{} with $b+1\leq l$, so it is a unit by \inv{Bound}, and
+\invCut{} with $b+1\leq l$, so \inv{Bound} makes $\atge{w}{v}$ a unit for some
+$b+1\leq v\leq l$, \cref{lem:chain} propagates $\atge{w}{b+1}$ from it, and
 \cref{eq:deq1,eq:din1} propagate $\natset{w}{E}$.  If $a>u$ then $\atge{w}{a}$
-is defined with $a>u$, so $\natge{w}{a}$ is a unit by \inv{Bound}, and
+is defined with $a>u$, so \inv{Bound} makes $\natge{w}{v}$ a unit for some
+$u<v\leq a$, \cref{lem:chain} propagates $\natge{w}{a}$ from it, and
 \cref{eq:deq1,eq:din1} propagate $\natset{w}{E}$ through the other cut.
 
 \emph{(b)}  For a set that is a union of adjacent cells, define its \emph{rank}
@@ -1841,15 +1847,28 @@ ones included, because $\Bnd(W)$ is asserted for each.
 $L=\emptyset$, \cref{eq:domL} gives $\dm_L(X)=\mathbb Z$, which is not contained
 in $\dm_t(X)$, so the base case of \cref{thm:maintain} fails without it.
 
-The implementation does not introduce these eagerly.  \inv{Bound} as stated ---
-a unit for each defined out-of-range cut --- is what it maintains, and atoms are
-created only when a proof line needs them, so a variable no proof line has
-mentioned has no atoms at all.  This is not known to cause trouble: a variable
-with no defined literal appears in no reason and no conclusion, so \invDomain{}
-is never appealed to for it.  But it is a real difference between the framework
-as stated here and the framework as implemented, we have not worked the lazy
+The implementation does not introduce these eagerly.  Atoms are created only
+when a proof line needs them, so a variable no proof line has mentioned has no
+atoms at all.  This is not known to cause trouble: a variable with no defined
+literal appears in no reason and no conclusion, so \invDomain{} is never
+appealed to for it.  But it is a real difference between the framework as
+stated here and the framework as implemented, we have not worked the lazy
 variant through, and the honest position is that the results below are proved
 for \cref{eq:rootbounds} as written.
+
+In the other direction the implementation is \emph{stronger} than \inv{Bound}
+asks, and this one costs measurable proof.  \code{fix\_bound} emits a pin for
+every out-of-range cut it creates, not one a side, so a variable can accumulate
+hundreds of top-of-proof units that \cref{lem:chain} would supply from one.  On
+the TSP example this is $2{,}258$ pins over $68$ distinct variable-and-side
+pairs, the worst single variable carrying $255$ --- a cost variable with lower
+bound $0$ whose cuts run from $\atge{w}{-482}$ up to $\atge{w}{0}$, each pinned
+separately.  Weakening the emission to match the invariant is not quite as
+simple as pinning the extreme cut, because the cuts are created one at a time
+and in no particular order, and the pin has to be a persistent top-of-proof line
+rather than one re-derived per use; the workable version pins the cut at the
+definition bound once, on the first out-of-range request for the variable, and
+nothing after that.
 \end{remark}
 
 \begin{theoremT}
@@ -2177,8 +2196,9 @@ at all} whenever any of four things happens:
   \item the interval is the whole definition range, so asserting its negation is
     already inconsistent under unit propagation and the check passes vacuously;
   \item the interval abuts or extends below the lower bound, so that the
-    boundary pin of \inv{Bound} makes \cref{eq:din2} a unit, the ge-link carries
-    it, and the far side's \emph{forward} reification finishes the job;
+    boundary pin of \inv{Bound} --- through the order chain, if the pin is not
+    at the cut itself --- makes \cref{eq:din2} a unit, the ge-link carries it,
+    and the far side's \emph{forward} reification finishes the job;
   \item the interval abuts or extends above the upper bound, the mirror image;
   \item every cell inside the interval is a singleton --- and one well-placed
     equality atom shatters a width-two cell on \emph{both} sides, so any
