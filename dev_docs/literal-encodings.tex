@@ -816,17 +816,17 @@ $t$ in the proof.
 \item[\invChain{} (thesis Inv1): the order chain.]
   For any two bound variables $\atge{w}{v}$, $\atge{w}{v'}$ on the same
   representation $W$ with $v<v'$, if $\Def(\atge{w}{v})$ and
-  $\Def(\atge{w}{v'})$ appear in $F_t$, then either $\atge{w}{v''}$ is defined
-  for some $v<v''<v'$, or the constraint
-  $\natge{w}{v}$ appears in $F_t$.  A representation whose bounds are not a
-  consequence of the model --- a free bit-sum introduced inside the proof ---
-  is exempt, and its owner derives the bounds explicitly instead; no interval
-  literal is defined over such a variable today.
+  $\Def(\atge{w}{v'})$ appear in $F_t$, then either a bound variable is defined
+  for some value strictly between $v$ and $v'$, or the constraint
+  $\atge{w}{v'}\Rightarrow\atge{w}{v}\geq 1$ appears in $F_t$.
 
 \item[\inv{Bound}: boundary pins.]
   For every defined $\atge{w}{v}$ with $v\leq l_W$, the unit $\atge{w}{v}$
   appears in $F_t$; for every defined $\atge{w}{v}$ with $v>u_W$, the unit
-  $\natge{w}{v}$ appears in $F_t$.
+  $\natge{w}{v}$ appears in $F_t$.  A representation whose bounds are not a
+  consequence of the model --- a free bit-sum introduced inside the proof ---
+  is exempt, and its owner derives the bounds explicitly instead; no interval
+  literal is defined over such a variable today.
 
 \item[\invCut{}: cuts exist.]
   Whenever $\ateq{w}{v}$ is defined, so are $\atge{w}{v}$ and $\atge{w}{v+1}$;
@@ -883,17 +883,18 @@ $t$ in the proof.
   in-bounds part is empty is defined with no partition, no covering and no
   containment edge, and nothing names it; \invRep{} does not suffer, because such
   a literal can only arise from an explicit request, and the request path
-  establishes \invRep{} for itself.  See the remark after \cref{lem:transport}.
+  establishes \invRep{} for itself.  \cref{rem:naming} says why the trigger is
+  naming rather than requesting, which is what this invariant is for.
 
 \end{description}
-apparatus.  \invName{} is a hygiene condition that \invRep{} needs for the
-interval literals created as cells, and only for those --- see the remark after
-\cref{lem:transport}.
+
+\invChain{} and \inv{Bound} come from the thesis, generalised only by being
 stated per representation.  \invCut{} is implicit there; we make it explicit
 because both new literal kinds depend on it.  \invPart{}, \invCover{} and
 \invCont{} are the interval apparatus.  \invRep{} is the multi-representation
-apparatus.  \invName{} is a hygiene condition that \invRep{} needs for interval
-literals, and only for them --- see the remark after \cref{lem:transport}.
+apparatus.  \invName{} is a hygiene condition that \invRep{} needs for the
+interval literals created as cells, and only for those --- see
+\cref{rem:naming}.
 
 \begin{remark}
 Nothing above depends on the search state.  Every clause named is a tautology of
