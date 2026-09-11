@@ -296,25 +296,44 @@ nothing here is proportional to a domain width.
 
 Measured on one `Equals` whose operands are a bare `0..w` and a two-value
 `{0, w}`, so root propagation prunes exactly one wide interior run; proofs on,
-root propagation only, `.pbp` lines, every row VeriPB-verified. `view` wraps both
-operands as `x + 10^6`, `negview` as `-x + 10^6`, `mixed` gives the two operands
-different wraps of opposite sign.
+root propagation only, `.pbp` lines, every `after` row VeriPB-verified with
+`--force-checked-deletion`. `view` wraps both operands as `x + 10^6`, `negview`
+as `-x + 10^6`, `mixed` as `x + 10^6` against `-y + 10^6 + w`.
 
 | width | plain | view before | view after | negview after | mixed after |
 |---|---|---|---|---|---|
-| 10^3 | 40 | 36,012 | **106** | 106 | 109 |
-| 10^4 | 40 | 360,012 | **106** | 106 | 109 |
-| 10^5 | 40 | *timed out at 300 s* | **106** | 106 | 109 |
-| 10^6 | 40 | *timed out at 300 s* | **106** | 106 | 106 |
+| 10^3 | 68 | 71,017 | **200** | 200 | 200 |
+| 10^4 | 68 | 710,017 | **200** | 200 | 200 |
+| 10^5 | 68 | *timed out at 300 s* | **200** | 200 | 200 |
+| 10^6 | 68 | *timed out at 300 s* | **200** | 200 | 200 |
 
-The `before` column is `2 + 36·w` lines and stops being writable at all between
-10^4 and 10^5. The `after` columns are flat, and 106 rather than 40 because the
+The `before` column is `17 + 71·w` lines and stops being writable at all between
+10^4 and 10^5. The `after` columns are flat, and 200 rather than 68 because the
 view carries its own bit-vector encoding, its own order and equality atoms and
 the link pairs — a constant, not a function of the width. That constant is the
-price of the design; the slope was the point of the issue.
+price of the design; the slope was the point of the issue. `plain` is the
+control that makes the two builds comparable: it is the same 68 on either side
+of the change, as it should be, since nothing here touches a bare variable.
 
-VeriPB checks every `after` row in 0.01–0.02 s, against 5.4 s for the largest
-`before` row that finishes at all.
+VeriPB checks every `after` row in about 0.012 s. The `before` row at 10^3 takes
+42 s, and the one at 10^4 — ten times the lines — was still going after an hour,
+when it was stopped. So writability is the generous half of the `before`
+column's problem: the widths that can still be written are already past the
+widths that can be checked.
+
+The `mixed` offsets are not free to choose, and getting them wrong is quiet.
+The two wraps have to put both operands over the *same* interval; otherwise they
+stop overlapping, the instance is unsatisfiable at the root, and the row measures
+a refutation rather than the hole prune. An earlier version of this probe paired
+`x + 10^6` with `-y + 2·10^6`, which overlap only at `w = 10^6` — so three of the
+four `mixed` rows were the wrong shape, and the fourth was the right one. The
+only tell was a three-line step in a column that should have been flat.
+
+These figures are against `main` at 7b582656, and are about twice the ones this
+branch first reported. #914 puts each of the tracker's definition lines into
+VeriPB's core set, which writes an extra `core id` line for each; both columns
+grow by that factor. Flat against linear is unchanged, and so is everything the
+table is used for.
 
 ## 9. The one residue
 
