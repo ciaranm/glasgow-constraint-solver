@@ -835,8 +835,6 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             .capacity = cut.rhs,
             .row_donors = row_donors,
             .recipe = [recipe](ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
-                const auto & tracker = recipe_logger.names_and_ids_tracker();
-
                 // Only the members whose window covers `t` have flags, and they
                 // are exactly the ones with a term in the rows there. The
                 // coefficients cannot move to suit them --- a Cumulative has one
