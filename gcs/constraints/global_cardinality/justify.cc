@@ -48,14 +48,8 @@ auto gcs::innards::gcc_capacity_reason(const State & state, const vector<Integer
 {
     auto hall = hall_set(values, cut_values);
     ReasonLiterals r;
-    for (const auto & var : confined) {
-        auto [v_lo, v_hi] = state.bounds(var);
-        for (Integer s = v_lo; s <= v_hi; ++s)
-            if (! hall.contains(s) && ! state.in_domain(var, s))
-                r.emplace_back(var != s);
-        r.emplace_back(var >= v_lo);
-        r.emplace_back(var <= v_hi);
-    }
+    for (const auto & var : confined)
+        append_confined_to_hall_reason(state, var, hall.begin(), hall.end(), r);
     for (auto v : cut_values)
         if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
             r.emplace_back(counts[v] <= state.bounds(counts[v]).second);
