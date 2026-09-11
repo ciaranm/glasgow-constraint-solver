@@ -174,6 +174,102 @@ dominated by `n_queens_88` (~20 minutes alone).
   external wall is much larger than `solve time`, the difference is setup
   / proof I/O / output, which is usually outside the change being measured.
 
+## Choosing the metric
+
+The list above is what to capture. Which of those numbers carries the answer
+depends on what the change did to the search, and getting that wrong has
+produced more retracted results here than measurement noise ever has.
+
+### When the search is identical, count instructions, not seconds
+
+If two builds run the same search — same `recursions`, same `propagations`, so
+that the only difference is how the same work gets executed — compare
+**instructions retired**. On one machine `langford --size=11` retires 47.587e9
+instructions with a spread of 0.002% across five runs, while wall time and
+cycles for the *same* binary move about 1% within a single interleaved batch and
+about 3% between one hour and the next. A 1% effect is invisible to wall time and
+unmissable in instructions.
+
+```shell
+perf stat -e instructions,cycles,branch-misses,L1-icache-load-misses -x, \
+    taskset -c 4 ./build/langford --size=11
+```
+
+Read cycles *alongside* instructions rather than instead of them — the pair is
+what diagnoses. On #878 the variant that retired **fewer** instructions burned
+2–3% **more** cycles, and that is what rejected it; a wall-time-only run would
+have called the whole thing noise. The first wall-time batch on that issue (five
+repeats, pinned, interleaved) reported the variant 0.8% *slower*, where the
+instruction count said +0.11% and a reversed-order batch then agreed with the
+instruction count.
+
+Instructions are load-insensitive; cycles are not. Interleave the variants within
+each repeat, and check what else is running before believing a cycles figure.
+
+If the search shape *does* change, none of this applies: the two runs are then
+doing different amounts of work, and no per-unit figure can be read off them.
+`propagator-performance.md` ("Is it the propagator, the strength, or the
+search?") is the separation to do first.
+
+### "Search is unchanged" is a claim about the corpus, not about the change
+
+When a change touches something every search reads — variable degree, trigger or
+scope accounting, wake order — "all N tests pass and the search is unchanged" is
+evidence about the shapes the corpus happens to contain.
+
+Commit `d9a8dc93` (#506) switched degree accounting from per-trigger-slot to
+per-distinct-scope-variable, justified in its own commit message with "no real
+constraint does that". `ReifiedCompareLessThanOrMaybeEqual` does exactly that
+whenever the reified expression mentions its own condition variable, because the
+dispatcher appends an `on_change` trigger to the propagator's own `on_bounds`
+one. On CPMpy's `p <-> (p <= BV113)` the root branch flipped and the model went
+from 25 to 7,085,707 nodes. All 517 tests still passed.
+
+Before claiming the search is unchanged, name the shape the change *could* alter
+and go and find one. Grepping for constructs that add triggers **implicitly**
+(reification dispatchers, umbrella installers) is the cheap version.
+Frontend-generated models are the good hunting ground, because CPMpy and MiniZinc
+flattening alias variables in ways hand-written tests never do. Note that the
+change above was kept — it is the principled accounting — so the lesson is about
+the justification, not the change.
+
+### Nothing that divides by time means anything on a capped row
+
+On a row where the run hit a timeout, both configurations ran the same wall time,
+so anything divided by time is a constant away from the node count. That kills
+two figures, and #788 published both before spotting either: "throughput falls
+10× to 30×" was the node count divided by 60 s, and — less obviously — the *node
+ratio* between two configurations was the same quantity wearing the other hat.
+"Node counts fall 34.8× at n=100" was two runs that had both hit the cap; across
+the instances where both arms actually finished, the reduction was 1.09× to
+1.38×. Those two numbers lead to completely different decisions, and the wrong
+one is the exciting-looking one.
+
+- On a capped row, only the **objective reached** and the **absolute node count**
+  mean anything. Nodes/s, node ratios, per-node cost and speed-ups all need every
+  configuration in the comparison to have finished.
+- If too few finish, shorten the instances rather than the reasoning: a cut-down
+  family that finishes beats a real one that caps.
+- Say in the table which rows are capped, and put derived columns only on the
+  uncapped ones. A footnote is not enough.
+- Declare the selection effect: the instances both arms finish are the easy ones,
+  so "1.09–1.38×" is not evidence that the reduction is small on the hard ones.
+  It is evidence that there is no *measured* support for a large one.
+- The giveaway is a "throughput ratio" or "node reduction" that equals the node
+  ratio to two significant figures on every capped row. That is not a striking
+  finding, it is arithmetic.
+
+### A per-node figure is a product of two independent things
+
+Calls per node and cost per call vary independently, so a per-node cost can move
+without either one behaving the way you read it. #788's walk looked "1.0× on
+`tpp` at n=35 but 10× on `mario` at n=30", which reads as "the cost is not a
+function of n". It is: per *call* it is 7.7 µs at n=15 and 30.7 µs at n=35 on the
+same family, and `tpp` merely wakes the propagator 676 times in a 7.5-million-node
+search. Never conclude anything about per-call cost from a per-node figure; split
+it with `GCS_PROPAGATOR_STATS` first (see
+[propagator-performance.md](propagator-performance.md)).
+
 ## Benchmarking proof-shape changes
 
 The set above is for *solver* performance. Proof-logging work — a new
@@ -379,11 +475,64 @@ from a destructor) will tell you a call-count distribution in one run —
 crude, but enough to distinguish "expensive once" from "cheap but called a
 billion times".
 
+## Reporting the numbers
+
+Every defect in this section was caught by review of a numbers-heavy document
+that was otherwise correct, and each one survived because it sat *next to* the
+evidence rather than in it.
+
+- **Quote rows that are printed.** A figure whose instance appears in no table
+  cannot be checked by anyone, and drifts out of agreement with the set as the
+  set changes underneath it. `proof-benchmarks.md` once headlined a
+  cost-per-byte range with an instance that was in no group, and took the other
+  end of the range from a different campaign's artefacts. If you state a range
+  over a selection, either print the whole selection or say what the selection
+  rule was: "every group A and B row except the four measured after the pilot" is
+  checkable, "twenty of the rows" with eight shown is not.
+- **A superlative next to a table is a claim about that table.** Read the column
+  and confirm the row is the one you named. Where only a tendency exists, say so,
+  give the coefficient, and name the concrete pair that makes it vivid.
+- **A "mean" is a division.** Compute it (`awk '{s+=$1} END {print s/NR}'`),
+  never eyeball it from a sorted listing — that samples the large end. Where a
+  per-item measurement is all you have, either keep it labelled as that one item
+  or convert it to a fraction and apply that to a measured total. Cross-check any
+  derived figure against another number in the same table before it lands
+  anywhere permanent: one such figure, multiplied back out, came to more than the
+  whole tree it was describing.
+- **An "X out of Y" must count one unit.** Write both as products and check they
+  share a factor set. `large-domains.md` once said a run over 31 instances leaves
+  "six artefacts to compare out of 124", where 124 was 31 instances × 4 extensions
+  and six was 3 basenames × 2 extensions; the real answer was twelve.
+- **Name the population, especially when an older draw is still around.** Two
+  numbers for one quantity with no populations attached read as a contradiction.
+  If the prose keeps quoting a ratio the table only implies, make it a column so
+  it is read off rather than remembered — that is how a figure from stage zero's
+  30,000-instance draw ended up quoted in a section whose own table reported a
+  20,000-instance one, in five places including two class comments.
+- **Fix the commit message too.** The same sentence usually lives in both.
+
 ## Reproducibility caveats
 
 - Pin CPU governor to `performance` if available; thermal throttling on
   longer runs (`n_queens_88`) can produce 5–10 % drift between trials.
-- Don't run other CPU-heavy work in parallel.
+- Don't run other CPU-heavy work in parallel. This is not only about core
+  contention, and `taskset` does not protect you from it: figures taken while a
+  9 GB-RSS run was in flight on another core read **2× slow** (21.3 s against
+  10.8 s idle) for a deep enumeration with allocation churn, while cache-resident
+  workloads measured alongside it reproduced within 1%. Adding a spinning burner
+  on another core changed nothing, so the variable was memory bandwidth. The
+  cheap discriminator: repeat the measurement three times on an idle machine, and
+  if it moves by 2×, load was the variable rather than the code.
+- **Put exact counts in a comment, never in an assertion.** Recursion counts and
+  per-rule counters are deterministic for a given build and *not* across
+  toolchains — different standard libraries break ties differently, so sweep order
+  and intermediate work differ even where the fixpoint does not. A ctest pinning
+  `recursions: 963` and another pinning a counter triple both failed on macOS and
+  on ubuntu-24.04 (#776); `examples/rcpsp/CMakeLists.txt` has exact counts all
+  through it and not one of them is an assertion. Assert an invariant that
+  travels instead: for a counter, "switched off reports four zeroes" plus
+  "switched on reports firings" pins each counter to the rule it is named after,
+  which is the failure worth catching, and holds everywhere.
 - Don't include proof verification (`--prove`) in performance numbers —
   proof I/O dominates and is not what the change usually targets. Keep
   proof verification for correctness checks via `ctest`.
