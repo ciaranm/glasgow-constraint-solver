@@ -1,7 +1,7 @@
 # `ParitySystem`: GF(2) reasoning over a conjunction of XORs
 
-Working-design note for issue #647. **Draft: nothing here has been built, and
-the derivation in §2 is the part to disbelieve until VeriPB has accepted it.**
+Working note for issue #647. **Status: the constraint is built and its proofs
+verify with zero assertions. `ParitySystemGathering` is not written yet.**
 
 `ParityOdd` reasons about one XOR at a time (`gcs/constraints/parity/parity.cc`,
 the `if (++how_many_unknown > 1) return` bail-out). That is GAC for a single
@@ -122,6 +122,14 @@ introducing one fresh in-proof flag `y_k` per step:
   the shape VeriPB rejects, and it costs nothing to avoid, since the negated
   goal is already in scope.
 
+  Two line references inside that block, and both have to be **absolute**.
+  `ProofLogger::get_current_proof_line()` at the top of the subproof body is
+  the negated goal, and the negation of the constraint the `red` is adding sits
+  one before it. Capture both there: a relative `-1` still says `-1` five lines
+  later, by which point it means the line just emitted rather than the one
+  intended — which is what the first attempt at this did, and what VeriPB
+  reported as a `proofgoal` not ending in a contradiction.
+
 Only steps of the *other* order carry goals over the earlier steps' rows: a
 `y_{k'}` from step `k' < k` is not in step `k`'s witness domain, so those rows
 restrict to themselves and generate nothing. That is also a canary — an
@@ -135,9 +143,14 @@ Swapping them moves the work: `red(D2)` first is entirely goal-free, and
 rather than five. Take the cheaper order.
 
 Rows of length 0 have no chain to telescope — `a_0` and `a_n` are the same flag
-— so they are excluded before any of this runs. They need nothing: an empty odd
-row is a root contradiction, which the `0ge`/`0le`/`acc` rows state on their
-own.
+— so `derive_parity_slack_rows` returns nothing for one, and `ParitySystem`
+does not build a system at all when it sees one: it installs an initial
+contradiction instead, justified by plain RUP. That is the honest answer rather
+than a special case. An empty odd row says zero is odd, its own `0ge` / `0le` /
+`acc` rows pin `a_0` to one and to zero at once, and there is nothing for
+elimination to do with a system containing it. Getting this wrong is what a
+half-built row looks like from VeriPB's side: a justification citing a slack
+row that was never derived, reported as a reference to a deleted constraint.
 
 Summing the two directions over `k = 1..n` telescopes the accumulators (every
 `a_j` for `0 < j < n` appears twice, so with coefficient 2, which is even and
@@ -378,36 +391,63 @@ reaches.
 
 ## Staging
 
-Following `constraints.md`, "Bringing up a new constraint" — the gates are what
-make each stage's failure diagnosable.
+`constraints.md`, "Bringing up a new constraint", numbered as it numbers them —
+the gates are what make each stage's failure diagnosable. All five are done for
+the constraint; the presolver has not been started.
 
-1. **Encoding.** `ParitySystem` with child `ParityOdd`s and a check-only
-   propagator (wait until assigned, check, contradict). Gate: the data-driven
-   tests verify. This says the child-installation and the row plumbing are
-   right, before any system reasoning exists.
-2. **The algorithm, no proofs.** Gauss-Jordan, tested with proofs off against
-   `solve_for_tests_checking_gac`, which is where the GAC claim gets checked
-   rather than asserted. Gate: solution sets match and GAC holds.
-3. **Slack-row derivation.** The `red`s, the subproof, the telescoping `pol`s,
-   at `Top`, with every inference still on `AssertRatherThanJustifying`. Gate:
-   VeriPB accepts the `Top` block. This is the stage the whole design is
-   uncertain about, and it is isolated here on purpose: if the derivation is
-   wrong, nothing else is being blamed for it. **Watch for `s UNDER
-   ASSERTIONS`, not `s VERIFIED`, at this stage.**
-4. **Justifications.** §4.3, one inference kind at a time — conflict first
-   (`|T|` even, no extension), then propagation. Every cheat from stage 3 comes
-   out. Gate: `s VERIFIED`, and every mutation of the derivation is rejected
-   (`constraints.md`, Mutation testing). A `pol` that verifies but is not tight
-   is the failure mode here, and mutation is the only thing that catches it.
-5. **The presolver.** Donor discovery, canonicalisation, components, retirement
-   of donors. Gate: the counts in its stats block, which is the only thing that
-   distinguishes "lifted the system" from "silently lifted nothing" — the
-   lesson `DifferenceLogicStats` is written around. Plus the node-for-node
-   tripwire: with donors *not* retired, the search tree must be identical, since
-   the system propagator subsumes every donor's single-XOR unit propagation.
+1. **The encoding, with a check-only propagator.** *Gate: the whole suite
+   verifies* — which says the encoding is definitionally correct and that RUP
+   alone certifies every consequence of a complete assignment. Passed.
+2. **State the consistency level in the tests.** Switched to
+   `solve_for_tests_checking_gac` before any pruning existed, so the tests
+   failed for the reason about to be fixed. They did, with "consistency not
+   achieved", and they still do if `ParitySystemPropagation::CheckOnly` is
+   selected — which is what keeps that mode honest as the encoding's standing
+   regression test.
+3. **Gauss-Jordan, with every inference cheated.** *Gate: the stage 2 tests
+   pass and VeriPB still accepts.* Passed, at 23 runs `s UNDER ASSERTIONS` and
+   2 `s VERIFIED` (the two with no system inference to make).
+4. **Discharge the cheats.** The slack-row derivation at `Top` first, then
+   §4.3's fold. Both landed together rather than one inference kind at a time,
+   which was a small mistake: the two failures that followed — the subproof's
+   line references, and the empty row — each had to be separated out by reading
+   the `.pbp`, and a stricter order would have pointed at them.
+5. **Zero assertions.** 25 of 25 `s VERIFIED`, no assertion warning, and
+   `grep -c '^a '` is zero on a preserved `.pbp`.
 
-Stage 3 is where a second opinion is worth buying (`CLAUDE.md`, "When to ask for
-a second opinion"): the derivation is not a shape this tree already uses.
+GAC here means *GAC on the PB relaxation of the system* — see "The propagator"
+— which coincides with GAC on the conjunction for every model that reaches this
+through a frontend.
+
+### What mutation testing says
+
+Seven mutations, five rejected by VeriPB and two not. The two are worth
+recording, because neither is a defect:
+
+| Mutation | Verdict |
+|---|---|
+| Drop the `/2` then `*2` in the §4.3 fold | rejected |
+| Flip which polarity of each support atom is pushed as an axiom | rejected |
+| Use two of the three step clauses in the `red` subproof | rejected |
+| Close the `<=` telescoping with `~a_n` rather than `a_n` | rejected |
+| Infer the opposite literal from a unit row | rejected (wrong solutions) |
+| Telescope the `>=` direction with `a_0 >= 1` rather than `a_0 <= 1` | **accepted** |
+| Telescope the `>=` direction without the `a_n <= 0` pin | **accepted** |
+
+Both survivors only *weaken* the derived row, by a term the `.opb` pins anyway
+(`a_0 = 1`, `a_n = 0`), so the row stays valid and the wrapping RUP still
+closes by propagating that pin. This is
+[veripb-facts.md](veripb-facts.md)'s "a `pol` only has to get close": the `pol`
+is not the certificate, the RUP around it is, and a mutation that removes
+slack is a corruption VeriPB is right to accept. What bites is corrupting the
+*claim* — which is what the five rejections all do.
+
+**The presolver comes after all five**, not alongside them. It has its own gate:
+the counts in its stats block, which is the only thing that distinguishes
+"gathered the system" from "silently gathered nothing" — the lesson
+`DifferenceLogicStats` is written around — plus the node-for-node tripwire that
+with donors *not* retired the search tree must be identical, since the system
+propagator subsumes every donor's single-XOR unit propagation.
 
 ## What would exercise it
 
@@ -447,6 +487,12 @@ line count are the numbers this design is making claims about.
   Out of scope here, and detecting implied literals alone is already GAC.
 - Incremental RREF maintenance under backtracking; see "From scratch, to begin
   with".
+- Deleting the per-step scaffolding. The `red`s and their subproof lines are
+  only needed until the two telescoping `pol`s have run, and everything above
+  says to delete them afterwards — but that is not implemented yet, so the
+  current `Top` footprint is the full `7n` lines per row rather than two. Do
+  this before pointing it at anything large: every line left at `Top` taxes
+  every later unhinted RUP (#666).
 - Caching derived rows. Each inference re-emits its `pol` over donor rows even
   when the same combination recurs, which it will. Emitting the root RREF once
   at `Top` and citing those rows instead is the obvious next move, and it is a

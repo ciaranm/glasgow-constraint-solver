@@ -90,6 +90,7 @@ add_library(glasgow_constraint_solver
         constraints/n_value/n_value.cc
         constraints/nogoods/nogoods.cc
         constraints/parity/parity.cc
+        constraints/parity/gf2_system.cc
         constraints/parity/parity_chain.cc
         constraints/parity/parity_system.cc
         constraints/path/path.cc
@@ -666,6 +667,7 @@ if(GCS_BUILD_TESTS)
     add_view_tests(min_max_constraint min_max_test 6)
     add_view_tests(at_most_one_constraint at_most_one_test 5)
     add_view_tests(parity_constraint parity_test 4)
+    add_view_tests(parity_system_constraint parity_system_test 4)
     add_view_tests(n_value_constraint n_value_test 6)
     add_view_tests(min_distance_constraint min_distance_test 6)
     add_view_tests(seq_precede_chain_constraint seq_precede_chain_test 5)

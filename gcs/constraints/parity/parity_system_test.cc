@@ -88,11 +88,7 @@ auto run_parity_system_test(bool proofs, const ViewWrapConfig & view_cfg, const 
     p.post(ParitySystem{posted_rows});
 
     auto proof_name = proofs ? make_optional("parity_system_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    // Stage 1 of dev_docs/parity-system.md: the propagator only checks, so
-    // there is no consistency level to state yet. Stage 2 replaces this with
-    // solve_for_tests_checking_gac, which is where the GAC claim gets checked
-    // rather than asserted.
-    solve_for_tests(p, proof_name, actual, tuple{array});
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{array});
 
     check_results(proof_name, expected, actual);
 }
