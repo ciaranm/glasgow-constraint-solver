@@ -67,7 +67,17 @@ auto ParityOdd::clone() const -> unique_ptr<Constraint>
 
 auto ParityOdd::define_proof_model(ProofModel & model, const State &) -> void
 {
-    define_parity_chain(model, _constraint_id, nullopt, _lits);
+    static_cast<void>(define_parity_chain(model, _constraint_id, ConstraintProofModelData<ParityOdd>::chain_naming(), _lits));
+}
+
+auto ConstraintProofModelData<ParityOdd>::primary_row_role(const ParityOdd &) -> optional<string>
+{
+    return nullopt;
+}
+
+auto ConstraintProofModelData<ParityOdd>::chain_naming() -> ParityChainNaming
+{
+    return ParityChainNaming{nullopt};
 }
 
 auto ParityOdd::install_propagators(Propagators & propagators) -> void

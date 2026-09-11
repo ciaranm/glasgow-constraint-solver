@@ -144,6 +144,7 @@ add_library(glasgow_constraint_solver
         presolvers/inferred_cumulative/inferred_cumulative.cc
         presolvers/inferred_disjunctive/inferred_disjunctive.cc
         presolvers/innards/makespan_links.cc
+        presolvers/parity_system_gathering/parity_system_gathering.cc
 )
 
 # The repo root contains both gcs/ and util/, so it must be on the include path.
@@ -251,6 +252,11 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(inferred_disjunctive_presolver_test PRIVATE glasgow_constraint_solver)
     add_test(NAME inferred_disjunctive_presolver
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_disjunctive_presolver_test>)
+
+    add_executable(parity_system_gathering_presolver_test presolvers/parity_system_gathering/parity_system_gathering_test.cc)
+    target_link_libraries(parity_system_gathering_presolver_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME parity_system_gathering_presolver
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_system_gathering_presolver_test>)
 
     add_executable(cumulative_strengthening_presolver_test presolvers/cumulative_strengthening/cumulative_strengthening_test.cc)
     target_link_libraries(cumulative_strengthening_presolver_test PRIVATE glasgow_constraint_solver)

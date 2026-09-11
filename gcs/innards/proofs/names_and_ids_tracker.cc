@@ -148,7 +148,7 @@ namespace
     // positions, 'v' where they are domain values. See #354.
     //
     // Shared rather than written out at each caller because
-    // find_proof_flag_values has to rebuild *exactly* the string
+    // find_proof_flag has to rebuild *exactly* the string
     // create_proof_flag_values built: that is what makes the lookup a pure
     // function of (id, values, annotation) rather than a read of per-solve
     // state. One builder is what keeps "the same string" a fact rather than an
@@ -206,7 +206,7 @@ struct NamesAndIDsTracker::Imp
     set<string> emitted_constraint_row_labels;
 
     // Every flag created under a ConstraintID-keyed name, so that a caller
-    // holding the key can find it (find_proof_flag_values). Filled by
+    // holding the key can find it (find_proof_flag). Filled by
     // make_proof_flag_named, which is the funnel for exactly those namespaces:
     // an f[index][stem] flag is anonymous and has no key. Same write-only
     // during model definition, read-only afterwards story as
@@ -1885,12 +1885,16 @@ auto NamesAndIDsTracker::constraint_row_label(const ConstraintID & id, const str
     return ProofLineLabel{label};
 }
 
-auto NamesAndIDsTracker::find_proof_flag_values(const ConstraintID & id, const ProofFlagKey & key) const -> optional<ProofFlag>
+auto NamesAndIDsTracker::find_proof_flag(const ConstraintID & id, const ProofFlagKey & key) const -> optional<ProofFlag>
 {
-    // Built by the same helper create_proof_flag_values builds with, because it
-    // has to be the same string: that is what makes this a pure function of
-    // (id, values, annotation) rather than a lookup into per-solve state.
-    auto found = _imp->constraint_keyed_flags.find(bracketed_flag_name('v', id, key.values, key.annotation));
+    // Built by the same helper the matching create_proof_flag overload builds
+    // with, because it has to be the same string: that is what makes this a pure
+    // function of (id, numbers, annotation, family) rather than a lookup into
+    // per-solve state. The family is what says which of the two that overload
+    // was --- the numbers alone do not, since v[id][1] and x[id][1] are
+    // different flags.
+    auto found =
+        _imp->constraint_keyed_flags.find(bracketed_flag_name(ProofFlagFamily::Indices == key.family ? 'x' : 'v', id, key.values, key.annotation));
     if (found == _imp->constraint_keyed_flags.end())
         return nullopt;
     return found->second;
@@ -1979,7 +1983,7 @@ auto NamesAndIDsTracker::make_proof_flag_named(const string & full_name) -> Proo
     auto flagvar = allocate_flag_xliteral(result, full_name);
     _imp->flags.emplace(result, flagvar);
     _imp->flags.emplace(! result, ! flagvar);
-    // Indexed so that find_proof_flag_values can answer for it. A repeat is a
+    // Indexed so that find_proof_flag can answer for it. A repeat is a
     // name collision in the PB file --- two flags rendering as one variable ---
     // so it is a bug in whichever namer produced it rather than something to
     // resolve here, but this is not the place to be strict about it: the

@@ -353,8 +353,15 @@ library. For an introduction to *using* the solver, start with the top-level
   paper's CNF recovery is exponential, because our chain already *is* its
   partial-parity split — the §4.3 fold that makes every inference one `pol` plus
   one RUP whatever the size of the combination, and the two mutations that
-  survive because they only remove slack the wrapping RUP replaces. Read before
-  touching `ParityOdd`'s encoding, whose rows the derivation cites.
+  survive because they only remove slack the wrapping RUP replaces. Also covers
+  `ParitySystemGathering`, the presolver that collects posted `ParityOdd` and
+  Boolean `Equals` / `NotEquals` constraints into per-component systems, why a
+  two-literal donor needs two RUP lines where a chain needs a `red` per step, the
+  measured node-for-node tripwire and the strength differentials that say the
+  gathering buys anything at all, and the two API extensions it forced — a
+  published naming *object* for a family of rows, and a `family` on
+  `ProofFlagKey`, without which `v[id][1]` and `x[id][1]` had the same key. Read
+  before touching `ParityOdd`'s encoding, whose rows the derivation cites.
 - [`MinDistance`: encoding and proofs](min-distance-proofs.md) — the definitional
   OPB encoding for `min_distance(D, x, z)` (site-selection flags, per-site counts,
   pair clauses, and the min-attained ladder), the justification for each of the

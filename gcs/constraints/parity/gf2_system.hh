@@ -1,12 +1,16 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_PARITY_GF2_SYSTEM_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_PARITY_GF2_SYSTEM_HH 1
 
+#include <gcs/constraint_id.hh>
+#include <gcs/constraints/parity/parity_chain.hh>
 #include <gcs/innards/literal.hh>
+#include <gcs/innards/propagators-fwd.hh>
 #include <gcs/variable_condition.hh>
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -149,6 +153,62 @@ namespace gcs::innards
      * \ingroup Innards
      */
     auto gauss_jordan(std::vector<GF2Row> & rows, std::size_t n_atoms) -> std::size_t;
+
+    /**
+     * \brief One row a ParitySystem propagator is to reason over, with
+     * everything its proofs will need to cite about that row.
+     *
+     * The three fields travel together because they have to: the chain is the
+     * chain *of these literals*, and getting them out of step would produce a
+     * justification citing rows about something else. Passing them as three
+     * parallel vectors is what this exists instead of.
+     *
+     * \ingroup Innards
+     */
+    struct ParitySystemRow
+    {
+        /// An odd number of these is true.
+        Literals literals;
+
+        /// How this row's slack form is to be derived: the accumulator chain in
+        /// the `.opb` for exactly these literals, or the claim that two RUP lines
+        /// will do. Nullopt when proofs are off, which is also when nothing reads
+        /// it.
+        std::optional<ParitySlackSource> slack_source;
+
+        /// Names the fresh per-step variables the slack-form derivation
+        /// introduces. Only ever cosmetic --- a flag's identity is its index,
+        /// not its name --- but a readable `.pbp` is worth the parameter.
+        std::string flag_stem;
+    };
+
+    /**
+     * \brief Install a propagator doing Gauss-Jordan over a system of
+     * odd-parity rows, and the initialiser that derives the proofs it needs.
+     *
+     * Two things are installed rather than one. The slack-form rows the
+     * justifications cite have to be derived inside the proof, at
+     * ProofLevel::Top, and an initialiser is where that can happen: it runs once
+     * before search, with a logger, which is later than a ProofModel is
+     * available and earlier than any inference needs the rows. See
+     * dev_docs/parity-system.md.
+     *
+     * Called from ParitySystem, which emitted its own chains, and from
+     * ParitySystemGathering, which found other constraints'. Neither owns the
+     * algorithm, which is why it lives here.
+     *
+     * A row over no literals says that zero is odd. It cannot be eliminated over
+     * and has no slack row, so rather than leave a caller to remember that, this
+     * installs an initial contradiction for the whole constraint instead of a
+     * propagator --- which is what such a row means anyway. `constraint_type`
+     * names the component in the note that gets reported when it does. A caller
+     * that would rather leave an empty row to whoever else is enforcing it
+     * should not pass it in.
+     *
+     * \ingroup Innards
+     */
+    auto install_parity_system_propagator(
+        Propagators & propagators, const ConstraintID & id, const std::string & constraint_type, std::vector<ParitySystemRow> rows) -> void;
 }
 
 #endif

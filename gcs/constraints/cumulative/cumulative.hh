@@ -453,7 +453,7 @@ namespace gcs
          *
          * `before` is `start[i] <= t`, `after` is `start[i] + length[i] > t`,
          * and `active` is their conjunction. Ask
-         * NamesAndIDsTracker::find_proof_flag_values for the flag: a key
+         * NamesAndIDsTracker::find_proof_flag for the flag: a key
          * outside the task's possible-active window has none, which is how a
          * citer discovers it is asking about a window the constraint did not
          * encode.
@@ -471,7 +471,7 @@ namespace gcs
          *
          * How many bits there are is a fact about the height's initial upper
          * bound, and is not published separately: ask
-         * NamesAndIDsTracker::find_proof_flag_values for bit zero, one, two and
+         * NamesAndIDsTracker::find_proof_flag for bit zero, one, two and
          * so on until it has none, which is the same "is it there?" question a
          * citer asks about every other key here. A constant-height task has
          * none at all.

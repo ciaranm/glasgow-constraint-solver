@@ -207,8 +207,8 @@ namespace
                         for (size_t i = 0; i < starts.size(); ++i) {
                             if (length_ubs[i] <= 0_i || heights[i] <= 0_i)
                                 continue;
-                            auto active = logger.names_and_ids_tracker().find_proof_flag_values(
-                                donor_id, ConstraintProofModelData<Cumulative>::active_flag_key(i, t));
+                            auto active =
+                                logger.names_and_ids_tracker().find_proof_flag(donor_id, ConstraintProofModelData<Cumulative>::active_flag_key(i, t));
                             if (active)
                                 items.push_back(SubsetSumItem{heights[i], *active});
                         }

@@ -1,7 +1,7 @@
 # `ParitySystem`: GF(2) reasoning over a conjunction of XORs
 
-Working note for issue #647. **Status: the constraint is built and its proofs
-verify with zero assertions. `ParitySystemGathering` is not written yet.**
+Working note for issue #647. **Status: built. `ParitySystem` and
+`ParitySystemGathering` both verify with zero assertions.**
 
 `ParityOdd` reasons about one XOR at a time (`gcs/constraints/parity/parity.cc`,
 the `if (++how_many_unknown > 1) return` bail-out). That is GAC for a single
@@ -284,13 +284,10 @@ component with at least two rows. A single-row component is left to its own
 
 `ParitySystemGathering`, in `gcs/presolvers/parity_system_gathering/`, built to
 the `DifferenceLogic` pattern: a shared `ComponentStats` block registered
-unconditionally at the top of `run()`, donor discovery through
-`Problem::each_constraint_of_type_with_proof_data` so the rows it cites are
-named by the donor's published role rather than by a label it built itself, and
-one bucket per reason a candidate was passed over — because a presolver that
-silently gathered nothing passes every solution-equivalence, OPB byte-diff and
-VeriPB check there is, and the counts are the only thing that tells "working"
-from "no-op".
+unconditionally at the top of `run()`, and one bucket per reason a candidate was
+passed over — because a presolver that silently gathered nothing passes every
+solution-equivalence check, OPB byte-diff and VeriPB run there is, and the counts
+are the only thing that tells "working" from "no-op".
 
 Donors come from two families.
 
@@ -300,47 +297,100 @@ Donors come from two families.
 essentially all of this presolver's `Top` output goes.
 
 **Boolean `Equals` / `NotEquals`**, when both operands' declared domains are
-within `{0, 1}` — checkable from the `State` the presolver is handed. `x = y`
-is the 2-XOR `[x != 0] XOR [y != 0] = 0`; `x != y` is the same with
-right-hand side 1. This is where a MiniZinc model's `bool_eq` and `bool_not`
-rows come from, and they are worth having because they are the edges that
-connect otherwise separate XOR components.
+within `{0, 1}`. `x != y` is `[x != 0] XOR [y != 0] = 1`; `x = y` is the same
+with one literal negated, since `!p` is `p XOR 1`. Both are `ReifiedEquals`,
+which is what `clone()` returns, so that is what the enumeration asks for, and
+`reification_condition()` is what says which; `enforces_equality()` is the
+accessor that actually distinguishes them, because `MustNotHold` on an `Equals`
+and `MustHold` on a `NotEquals` are two spellings of the same thing and only one
+is constructible.
 
-Both are `ReifiedEquals` — `Equals` is `reif::MustHold`, `NotEquals` is
-`reif::MustNotHold` — and `clone()` returns the base, so the enumeration asks
-for `ReifiedEquals` and dispatches on `reification_condition()`, exactly as
-`DifferenceLogic` does over `ReifiedLinearInequality`. `ReifiedEquals`
-currently publishes neither its operands nor a `ConstraintProofModelData`, so
-both get added, and the published data has to name **two** rows rather than one
-primary (`Cumulative` is the precedent for a specialisation with more than one
-named role).
+They are worth having less for the rows themselves than for the **atoms they
+share**: they are the edges that join what would otherwise be separate
+components. That is the measured effect, not a hope — see the differentials
+below.
 
-These are also *much* cheaper to lift than a `ParityOdd`, which is the part
-worth writing down: with only two literals, `B` needs no fresh variable, so
-neither donor needs a `red` at all.
+They are also much cheaper to derive, and the reason is worth stating. With two
+literals `B` is zero, so the slack form is just `l1 + l2 = 1`, and **both halves
+are plain RUP** against rows the donor already emitted: negating either half
+fixes both operands and walks straight into one of them. Two RUP lines at `Top`,
+no witness, no subproof, no fresh variables, nothing cited by name.
 
-- `Equals` emits `v1 - v2 == 0` as the labelled pair
-  `ge` / `le`. Writing `a` for `[x != 0]` and `b` for `[y != 0]`, those rows
-  *are* (4.4a) and (4.4b) with right-hand side 0 and `B = b`: `a + b >= 0 + 2b`
-  is `a - b >= 0`, and `a + b <= 0 + 2b` is `a - b <= 0`. Nothing to derive —
-  the donor's own two rows are the slack form, cited directly.
-- `NotEquals` emits big-M `gt` / `lt` rows half-reified on a per-constraint
-  selector flag `b[id][ne]` (cake's `nev`), the flag true selecting `gt`. Here
-  `B = 0`, so the slack form is just `a + b >= 1` and `a + b <= 1`, and both
-  are plain **RUP** against those two rows: negating `a + b >= 1` assigns
-  `a = b = 0`, which unit-propagates the selector through the `lt` row and then
-  falsifies `gt`; negating `a + b <= 1` assigns `a = b = 1`
-  and falsifies the other way round. Two RUP lines at `Top`, no witness, no
-  subproof.
+### Components
 
-The one thing to check rather than assume: for a `{0, 1}` variable, the literal
-`[x != 0]` and the variable's own OPB bit have to resolve to the same
-`XLiteral`, or the `pol` cancellation in §3 does not happen. Go through
-`NamesAndIDsTracker::need_pol_item_defining_literal`, never the surface form.
+The posted XORs usually split into connected components, and eliminating over
+the whole model when the rows do not interact is pure waste. The presolver
+canonicalises every candidate together — so that two donors mentioning the same
+fact land in the same column — unions atoms sharing a row, and installs one
+propagator per component of at least two rows. A single-row component is left to
+its own donor, which computes exactly the same thing more cheaply, and its
+propagator is not retired.
 
-Everything else is skipped and counted: a non-`MustHold` reification kind, an
-operand whose domain is not within `{0, 1}`, a donor whose row cannot be cited
-(only ever possible with proofs on), a row that cancels to nothing.
+A row whose atoms all cancel (`ParityOdd({x, x})`, which says `0 = 1`) has no
+atoms, so it shares none and is alone by construction. It is left to its donor
+too, and that is the right answer rather than a gap: its own propagator refutes
+it the moment `x` is decided.
+
+### Donors are retired by default
+
+Unlike `DifferenceLogic`'s equivalent, which ships off. The system propagator
+subsumes a single XOR's unit propagation outright — a donor row with one literal
+left is a unit row of the reduced system — so a gathered donor is pure overhead
+on every wake. `keeping_donor_propagators()` exists so the subsumption claim can
+be checked rather than assumed, and it is a strong check: disabling a propagator
+changes neither degrees nor adjacency, so the search tree must come out **node
+for node identical**. Measured, on every tripwire fixture:
+
+| fixture | kept | retired |
+|---|---|---|
+| `chain` | 2 solutions / 3 recursions / 14 propagations | 2 / 3 / **5** |
+| `camouflage` | 0 / 1 / 4 | 0 / 1 / **1** |
+| `two_components` | 4 / 7 / 24 | 4 / 7 / **14** |
+| `bool_bridge` | 2 / 3 / 14 | 2 / 3 / **5** |
+
+Identical trees, a third to a half of the propagation.
+
+### What it is measured to buy
+
+The equivalence and tripwire tests would both pass for a presolver that gathered
+the rows and then inferred nothing from them, so there is a third test that is
+the point of the whole exercise: on a system that is unsatisfiable while no
+single row of it conflicts, Gauss-Jordan refutes it without searching and unit
+propagation cannot.
+
+| fixture | no presolver | gathered |
+|---|---|---|
+| `camouflage` (three rows over a cycle summing to `0 = 1`) | 3 recursions | **1** |
+| `bool_bridge_unsat` (two rows that conflict only once an equality identifies their variables) | 3 recursions | **1** |
+
+Small numbers, but the right shape, and the second one is what says the Boolean
+family is doing work rather than merely being counted.
+
+### The API this needed
+
+Two extensions, both because the existing shapes were built for what had been
+needed so far.
+
+- **`ConstraintProofModelData<ParityOdd>` publishes a naming *object*,
+  `ParityChainNaming`, rather than loose role functions.** `Cumulative` publishes
+  several loose ones and that is fine for it; here every name in the family is
+  indexed the same way, by the same optional row index, and bundling them means a
+  citer cannot pick up one without the rest or mix an unprefixed role with a
+  prefixed flag. `define_parity_chain` and `find_parity_chain` both build every
+  name through it, so there is exactly one place the names exist.
+- **`ProofFlagKey` gained a `family`, and `find_proof_flag_values` became
+  `find_proof_flag`.** This was a latent defect rather than a missing feature: a
+  key carried numbers and an annotation but not which of cake's flag families it
+  meant, so `v[id][1]` and `x[id][1]` — different flags — had the same key. The
+  lookup hard-coded `v`, which worked only for as long as nothing needed the
+  other one. `ParityOdd`'s accumulators are cake's `x[id][k]` and cannot be
+  anything else, so they needed `Indices`. The creation side already indexed both
+  families; only the lookup was narrow. `Values` is the default, so every existing
+  published key is unchanged.
+
+Everything else the presolver needed was already there: `Presolver::run`'s
+`ProofLogger *` is enough to resolve labels and flags, because the tracker exists
+by then, and `install_initialiser` from a presolver has worked since PR #658.
 
 ## The constraint
 
@@ -367,26 +417,30 @@ reaches.
 
 ## What this touches in existing code
 
-- `ParityOdd` gains an accessor for its literals, and a
-  `ConstraintProofModelData<ParityOdd>` specialisation in `parity.hh`
-  publishing what the derivation cites: the four per-step clause roles, the
-  `0ge` / `0le` / `acc` roles, and the accumulator `ProofFlagKey`s (values
-  `{k}`, no annotation). Publishing is the point — the alternative is the
-  presolver hard-coding another constraint's naming scheme, which is what
-  `ConstraintProofModelData` exists to stop.
-- `ReifiedEquals` gains operand accessors and its own specialisation, naming
-  both rows of each reification kind it supports.
-- `gcs/constraints/parity.hh` (the umbrella) picks up `parity_system.hh`, and
-  `gcs/gcs.hh` picks up nothing new, since it already includes
-  `constraints/parity.hh` — but the new header must reach it in the same commit
-  as the constraint, not as a follow-up.
-- `gcs/constraint_enumeration_test.cc` gets `ParityOdd` and `ReifiedEquals`
-  cases: the enumeration is a `dynamic_cast` on what `clone()` returns, so it
-  finds nothing at all if `clone()` ever starts returning a type outside the
-  family, and that is a silent failure everywhere else.
-- `dev_docs/README.md` gets an entry for this document, and
-  `dev_docs/frontend-support-matrix.md` a row — neither the constraint nor the
-  presolver is reachable from any frontend at first, and the matrix is the
+- `ParityOdd` gained a `literals()` accessor and a
+  `ConstraintProofModelData<ParityOdd>` specialisation publishing
+  `chain_naming()`. `primary_row_role` is honestly nullopt: a chain is a family,
+  four clauses per literal plus three pins, and no one of them is the row a
+  citer could mean.
+- `ReifiedEquals` gained `left_variable()`, `right_variable()`,
+  `reification_condition()` and `enforces_equality()`. No
+  `ConstraintProofModelData` specialisation, deliberately: nothing cites any of
+  its rows by name, because both halves of a two-literal slack form are RUP.
+- `ProofFlagKey` gained `family`, and `NamesAndIDsTracker::find_proof_flag_values`
+  became `find_proof_flag`. See "The API this needed".
+- `gcs/constraints/parity.hh` picks up `parity_system.hh`; `gcs/gcs.hh` needed
+  nothing new, since it already includes the umbrella.
+- `gcs/scp_reader.cc` reads the `parity_system` form back, so a `.scp` this
+  writes round-trips. Cake has no such rule, and `Nogoods` is the precedent for
+  a form that is ours alone.
+- `gcs/constraint_enumeration_test.cc` gained cases for `ParityOdd` and
+  `ReifiedEquals`: the enumeration is a `dynamic_cast` on what `clone()` returns,
+  so it would find nothing at all if either started returning something else, and
+  that is a failure the presolver's own counts would report as "gathered
+  nothing".
+- `dev_docs/README.md` has an entry for this document.
+  `dev_docs/frontend-support-matrix.md` still needs a row: neither the constraint
+  nor the presolver is reachable from any frontend yet, and the matrix is the
   single source of truth for that.
 
 ## Staging
@@ -442,12 +496,11 @@ is not the certificate, the RUP around it is, and a mutation that removes
 slack is a corruption VeriPB is right to accept. What bites is corrupting the
 *claim* — which is what the five rejections all do.
 
-**The presolver comes after all five**, not alongside them. It has its own gate:
-the counts in its stats block, which is the only thing that distinguishes
-"gathered the system" from "silently gathered nothing" — the lesson
-`DifferenceLogicStats` is written around — plus the node-for-node tripwire that
-with donors *not* retired the search tree must be identical, since the system
-propagator subsumes every donor's single-XOR unit propagation.
+**The presolver came after all five**, with its own three gates rather than a
+staged bring-up, because it adds no new proof shape for the `ParityOdd` family
+and only the two-RUP shape for the Boolean one: the exact counts in its stats
+block, the node-for-node tripwire, and the strength differential. All three are
+in "The presolver" above with their measured numbers.
 
 ## What would exercise it
 
@@ -465,20 +518,18 @@ line count are the numbers this design is making claims about.
 
 ## Decisions taken
 
-1. **`ParitySystem` installs child `ParityOdd`s** rather than writing a slack
-   form into its own OPB. Writing the slack form directly would make
-   elimination free and is much less code, but it would leave two proof paths
-   to keep in step and a `ParitySystem` whose proofs are checked against
-   nothing but our own OPB. One derivation, exercised by both entry points, is
-   worth the extra work.
-2. **Rows are all odd**, as above.
+1. **`ParitySystem` shares `ParityOdd`'s encoding emitter** rather than writing a
+   slack form into its own OPB, so the posted constraint and the presolver derive
+   their slack rows the same way, through one piece of code. The means changed
+   from the original plan: installing child `ParityOdd` constraints does not work,
+   because a child takes the parent's `ConstraintID` and *k* identical children
+   would collide on every row label. Extracting `define_parity_chain` keeps the
+   substance and drops the child propagators, which were not wanted anyway.
+2. **Rows are all odd**, matching `ParityOdd`; an even row is written with one
+   literal negated, which is what the canonicalisation does internally.
 3. **Both donor families**: `ParityOdd`, and Boolean `Equals` / `NotEquals`.
-4. **Donors are retired by default.** The issue says "replaces", and the system
-   propagator subsumes every donor's single-XOR unit propagation, so a donor
-   that has been lifted is pure overhead. The hybrid stays available behind an
-   option because it is the stage-5 tripwire: with donors kept, the search tree
-   must come out node-for-node identical, and it differing means the
-   subsumption claim is wrong.
+4. **Donors are retired by default**, with `keeping_donor_propagators()` as the
+   tripwire. See "Donors are retired by default".
 
 ## Residue
 
@@ -498,3 +549,18 @@ line count are the numbers this design is making claims about.
   at `Top` and citing those rows instead is the obvious next move, and it is a
   measurement, not a guess: it trades `Top` footprint (which taxes every later
   unhinted RUP) against per-inference line count.
+- Components inside `ParitySystem` itself. The presolver splits its rows; the
+  posted constraint eliminates over everything it was given as one system. Pure
+  waste when the rows a caller passed do not interact, and the machinery is
+  already there — `install_parity_system_propagator` is per-component by
+  construction — so this is a few lines whenever someone posts a system big
+  enough to care.
+- The MiniZinc side. Nothing exposes the presolver to `fzn-glasgow` yet, so the
+  `parity-learning` and `cryptanalysis` benchmarks above cannot be run without
+  wiring a flag through. That is the next thing to do, and it is also what turns
+  every number here from a fixture measurement into a real one.
+- No benchmark numbers at all. Everything measured above is a handful of
+  three- and four-variable fixtures. The `Top` footprint, the per-inference line
+  count and the wall-clock are all claims this design makes and nothing has yet
+  checked at scale — see [proof-benchmarks.md](proof-benchmarks.md) for what to
+  measure and [benchmarking.md](benchmarking.md) for how.
