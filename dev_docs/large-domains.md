@@ -952,8 +952,8 @@ separately, because they mean different things:
 Re-measured over all 75 probes after the interval rewrites landed for
 `ArrayMinMax`, `Table`, `Among`, `Element`, `In`, `GlobalCardinality` and
 `AllEqual/holes`, and again after #878, #875, #877 and #874 — which moved nothing
-but their own rows: `Element/holey` is flat at 41 rows and 51 steps, `Abs/hole` at
-30 and 46, `Abs/hole-preimage` at 26 and 64, `GlobalCardinality/closed` at 24 and
+but their own rows: `Element/holey` is flat at 41 rows and 78 steps, `Abs/hole` at
+30 and 78, `Abs/hole-preimage` at 26 and 113, `GlobalCardinality/closed` at 24 and
 83, and none of the rewrites changes which values get removed, so no other row
 could have moved either. (Checked, for #877, by diffing a whole survey run against
 one from `main`: identical bar the new row.) The figures move, so re-run the
@@ -962,7 +962,7 @@ loop — that is how the previous version of it went stale, and how the
 `GlobalCardinality/hall` figures below came to be corrected.
 
 **#874's two rows are the case for running this survey and not just the audit
-lane.** With the propagation fixed, `In/vars` was flat at 50 steps but
+lane.** With the propagation fixed, `In/vars` was flat at 88 steps but
 `In/vars-single-support` read 7048 → **70048**: the rule's proof was still
 per-value even though its inferences were not, because the scaffolding that rules
 out the non-supporting sources' selectors emitted one line per value of
@@ -970,7 +970,7 @@ out the non-supporting sources' selectors emitted one line per value of
 The guard cannot see either — a reason is only materialised with proofs on, and
 the lane runs without them — so the survey was the only thing that showed it.
 The walk that fixes it is the same one the conclusions use, one interval at a
-time, and the row is now flat at 53.
+time, and the row is now flat at 93.
 
 | | growth (opb / steps) | constraints |
 |---|---|---|
