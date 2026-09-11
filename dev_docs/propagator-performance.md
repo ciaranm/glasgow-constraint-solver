@@ -282,6 +282,36 @@ Finally: guard every reason in a file, not just the hot ones. `comparison` was
 found by a family audit rather than by a profile, and "some of them are guarded"
 is exactly what made the file look finished.
 
+### Ask the cheapest question that settles it
+
+`State::test_literal` answers three ways — `DefinitelyTrue`, `DefinitelyFalse`,
+`Undecided` — so a caller that only wants to know whether a literal *holds* pays
+for the part of the answer it then throws away. For `x != v` entailment is settled
+by one `in_domain`, and `test_literal` goes on to call `has_single_value` purely to
+separate the two negative answers; each bounds operator reads both bounds where
+entailment needs one. `State::literal_is_entailed` is the same question with that
+tail not computed, and it is what the refined-watch firing loop, the
+two-watched-literal nogood store, `NegativeTable` and the difference graph were all
+actually asking.
+
+It is worth **5.9% of `nmseq/100`'s instructions and 2.3% of `magic_series
+--size=300`'s**, because the refined-watch scan asks it about 17 times per
+inference there and 98% of those are watches that have not fired (issue #895).
+Nothing else in benchmarking.md moves, because nothing else asks often enough.
+
+About as much again sits at the call site rather than in this function: the firing
+loop reaches `literal_is_entailed` through an out-of-line call and a `Literal`
+variant visit, and a prototype that inlined the whole test into the loop measured
+10.6% on the same instance. Collecting that means the watch carrying an
+`IntegerVariableCondition` rather than a `Literal`, which belongs with a triggers
+refactor. The lesson for the figure above: a narrower entry point recovers the
+work the wide one did, not the cost of reaching it.
+
+The general shape, which is worth looking for elsewhere: when a general-purpose
+query returns more than a hot caller uses, the surplus is not free. The fix is a
+narrower entry point *beside* the wide one, not a cheaper implementation of it —
+the callers who want all three answers still need all three.
+
 ### Don't throw from a propagator that fails in bulk
 
 `inference.contradiction(...)` signals failure by throwing

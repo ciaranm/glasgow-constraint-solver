@@ -574,6 +574,46 @@ namespace gcs::innards
         }
 
         /**
+         * Is the specified Literal definitely true? Exactly
+         * `test_literal(lit) == LiteralIs::DefinitelyTrue`, but without
+         * establishing which of the other two answers applies when it is not.
+         *
+         * That distinction is not free. `x != v` is settled as entailed by a
+         * single in_domain, and test_literal then calls has_single_value purely
+         * to tell DefinitelyFalse from Undecided; each bounds operator likewise
+         * reads both bounds where entailment needs one. A caller that only asks
+         * whether a literal holds should ask this instead: it is the same
+         * question, with the part of the answer it was going to discard not
+         * computed.
+         *
+         * \sa State::test_literal()
+         */
+        [[nodiscard]] auto literal_is_entailed(const Literal &) const -> bool;
+
+        /**
+         * Is the specified IntegerVariableCondition definitely true?
+         *
+         * \sa State::literal_is_entailed(const Literal &)
+         */
+        [[nodiscard]] auto literal_is_entailed(const IntegerVariableCondition &) const -> bool;
+
+        /**
+         * A TrueLiteral is entailed. Performance overload.
+         */
+        [[nodiscard]] inline auto literal_is_entailed(const TrueLiteral &) const -> bool
+        {
+            return true;
+        }
+
+        /**
+         * A FalseLiteral is not entailed. Performance overload.
+         */
+        [[nodiscard]] inline auto literal_is_entailed(const FalseLiteral &) const -> bool
+        {
+            return false;
+        }
+
+        /**
          * Return the single value held by this IntegerVariableID, or throw
          * VariableDoesNotHaveUniqueValue.
          *

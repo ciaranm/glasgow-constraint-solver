@@ -103,9 +103,12 @@ with the `Inference` granularity `inf` (`BoundsChanged` / `InteriorValuesChanged
 
 1. If `inf` is **not** in the watch's `trigger_mask`, skip it (see *Trigger
    masks*).
-2. Otherwise test `state.test_literal(watch.literal)`. If `DefinitelyTrue`,
-   **fire**: append the payload to the owner's inbox, wake the owner, trail the
-   removal, and swap-remove the watch (consume).
+2. Otherwise ask `state.literal_is_entailed(watch.literal)`. If it is, **fire**:
+   append the payload to the owner's inbox, wake the owner, trail the removal, and
+   swap-remove the watch (consume). (`literal_is_entailed` rather than
+   `test_literal`, because the loop does not care whether an unfired watch is false
+   or merely undecided, and finding that out is most of the cost — see
+   propagator-performance.md.)
 
 The owner processes its fired set the next time it runs in the propagation queue
 — firing and processing are *decoupled* (the owner is the schedulable unit). This
@@ -149,7 +152,7 @@ forward-looking, and this table is where a future caller would come to find out
 what they do.
 
 `refined_watch_trigger_mask(literal)` derives this from the operator at arm time.
-The firing loop tests `test_literal` only when `inf` is in the mask, so e.g. an
+The firing loop asks `literal_is_entailed` only when `inf` is in the mask, so e.g. an
 `x == v` watch is never tested on a mere bound move — `x == v` cannot have become
 true there. This is **sound by the same granularity contract the coarse triggers
 rely on** (`on_instantiated` fires iff a variable becomes single-valued, etc.),
