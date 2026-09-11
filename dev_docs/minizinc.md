@@ -291,6 +291,40 @@ silent solver disagreement that only the cross-solver test diff would
 have caught. Always think about: *what does the stdlib decomposition
 do for unequal sizes / empty inputs / special values?*
 
+### ... and the decomposition may not match the documentation either
+
+The section above says the stdlib decomposition is the de facto reference. That
+is the right default, and `dag` is where it broke down, so it is worth knowing
+the shape of the exception before assuming a disagreement is your bug.
+
+`globals.graph` documents `dag` as constraining "the subgraph \a ns and \a es
+of a given directed graph to be a DAG", and every other member of the family
+posts that subgraph condition explicitly — `fzn_dreachable` ends with
+`subgraph(N, E, from, to, ns, es)`. `fzn_dag` does not. All it has is a distance
+labelling, and that labelling only forces an edge's *head*: a selected edge may
+leave an unselected node. On a two-node graph with the single edge 0 to 1, the
+decomposition therefore admits `ns = [false, true], es = [true]`, giving six
+solutions where `Dag` gives five. Chuffed's `chuffed_dag` agrees with neither and
+gives four, enforcing `subgraph` and requiring weak connectivity as well. One
+predicate, three readings.
+
+`Dag` follows the documentation, which is also what makes it consistent with
+`Reachable` and with the tree and path family. The consequences to know:
+
+* a differential test that enumerates `dag` against MiniZinc's default solver
+  will disagree, and the disagreement is expected. `minizinc/tests/dagtest.mzn`
+  posts `subgraph` alongside `dag`, which makes both readings the documented one
+  without weakening what the lane checks — the `--fzn-pattern glasgow_dag` guard
+  still insists our builtin ran;
+* a model that wants the decomposition's exact reading can do the same thing;
+* when a *benchmark* comparison of propagator against decomposition has to agree
+  on the optimum, pin every node in. That is the shape the one corpus model with
+  this problem in it has anyway, and the divergence cannot arise there.
+
+The general lesson is the one the previous section states, plus a check it does
+not: read the `fzn_` body, not only the doc comment, and when they disagree say
+in the class documentation which one you followed and why.
+
 ### `lex_greater`, `lex_greatereq`, etc., never reach you
 
 The MiniZinc stdlib defines `lex_greater(x, y) = lex_less(y, x)` and

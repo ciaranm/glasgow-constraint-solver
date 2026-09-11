@@ -10,6 +10,20 @@ library. For an introduction to *using* the solver, start with the top-level
 
 ## Contents
 
+- [Building, build options, and toolchains](building.md) — the developer's side
+  of the build: why each build type carries the debug information it does, why
+  the per-configuration flags must stay plain `set()` calls (issue #597), the
+  full option catalogue and what each one changes about what the tests
+  *check*, which test wrapper runs which kind of binary, the supported
+  compilers and standard libraries and their known gaps, and what each CI lane
+  covers. `README.md` has the user-facing version. Read before editing
+  `CMakeLists.txt` or relying on a C++23 library feature.
+- [Code style](code-style.md) — the conventions clang-format does not enforce:
+  the ordering of the `using` block and its `std::ranges::` group, how a
+  classic algorithm is replaced with its ranges equivalent, `using enum`
+  placement, the load-bearing `//` that pins an `overloaded{...}` visitor, and
+  the `#if` guard a file using `format()` must carry. `CONTRIBUTING.md` covers
+  clang-format itself.
 - [State and variables](state-and-variables.md) — how variables and their
   state are represented inside the solver: the `IntegerVariableID` family,
   the `State` class, the `IntervalSet` domain representation, chronological
@@ -26,9 +40,13 @@ library. For an introduction to *using* the solver, start with the top-level
 - [Implementing a constraint](constraints.md) — the structural pattern every
   constraint follows: class shape, the three install phases, the propagator
   framework, triggers, the inference and justification APIs, OPB encoding
-  building blocks, and the testing pattern. Start here when adding any new
-  constraint — and for the umbrella-header directory layout, which presolvers
-  under `gcs/presolvers/` share.
+  building blocks, and the testing pattern. Also the *order* to build a new
+  constraint in ("Bringing up a new constraint"): encoding first behind a
+  check-only propagator, then the consistency level stated in the tests, then
+  propagation with every inference cheated, then the cheats discharged one at a
+  time — and why none of those cheats may ever be merged. Start here when
+  adding any new constraint — and for the umbrella-header directory layout,
+  which presolvers under `gcs/presolvers/` share.
 - [Reification](reification.md) — additional machinery for *reified* constraints:
   the `ReificationCondition` static and `EvaluatedReificationCondition` runtime
   types, the `install_reified_dispatcher` helper, the OPB encoding pattern,
@@ -120,9 +138,23 @@ library. For an introduction to *using* the solver, start with the top-level
   order-chain cuts, the always-covered partition invariant, interval-tree
   containment, and the P1/P2 (line-checkability vs replay-completeness)
   distinction that governs which linking clauses are load-bearing — with the
-  W1–W5 witness suite as the regression defence against re-simplification.
+  W1–W9 witness suite as the regression defence against re-simplification.
   Read when touching range/interval reasons, branching, or `infer_not_in_range`.
 - [View proof logging](view-proof-logging.md) — how the proof layer handles
+  `ViewOfIntegerVariableID`: the view's own encoded variable and bit-vector, the
+  single definitional link axiom, the atom-level eq/ge biconditionals that let
+  unit propagation carry one atom across the boundary, and the three invariants
+  (representation consistency for `pol` cancellation, big-M sized to the
+  bit-vector, RUP cannot compose across constraints) that both historical
+  Abs/AllDifferent failures violated. Read before emitting explicit `pol` over
+  an operand that might be a view.
+- [Range literals on views](view-range-literals.md) — where the two documents
+  above meet, which for a long time they did not. A view's own range literals,
+  the pair of link clauses joining them to the underlying variable's, why both
+  clauses are needed and why linking has to be triggered by a literal being
+  *named* rather than requested or defined. Also the measurement that 80% of
+  small random configurations cross correctly with no link at all, which is why
+  a green `--view-wrap` sweep is not evidence and the W6–W9 witnesses are.
 - [arithmetic-proofs.md](arithmetic-proofs.md) — how Multiply/Divide/Modulus/Power propagate and justify against cake's encoding: the slot-keyed emitters, the ConditionalBound justification layer, the sign-case driver, and the hard-won RUP/pol rules.
 - [Decision-diagram proof strategies](decision-diagram-proof-strategies.md) — for
   the layered/partial-sum propagators (`Regular`, `MDD`, `Knapsack`,
@@ -132,9 +164,6 @@ library. For an introduction to *using* the solver, start with the top-level
   measured verdicts and defaults, a predictive rule to apply before implementing,
   and why scaffold deletion is unsafe while hinting the propagator's own RUPs is
   the high-value lever. Read when adding or tuning a diagram-shaped constraint.
-  views (`ViewOfIntegerVariableID`): the V↔X link constraints that tie a view's
-  proof variable to its underlying variable, and how literals over views are
-  deviewed for emission. Read when touching view handling in proofs.
 - [Proof logging for `Sort` / `ArgSort`](sortedness.md) — the fully-certified
   Mehlhorn–Thiel sortedness propagator proof: the permutation/root argument and
   the Hall-band pigeonhole over ranks. A worked companion to `constraints.md`.
@@ -152,6 +181,16 @@ library. For an introduction to *using* the solver, start with the top-level
   `glasgow_scp_solver` binary and the SCP chain test harness
   (`run_scp_chain.bash`, `scp_cases/`) for verifying constraint encodings
   against an external checker.
+- [`BinPacking`: design and staging](bin-packing.md) — the working-design note
+  for the `BinPacking` propagator (#148): the two forms (variable loads,
+  constant capacities) that share one propagator, the staging plan, and the
+  context for the extraction towards the unified path-DAG framework (#200).
+- [Slack-based waking for linear inequalities](linear-slack-waking.md) — waking
+  `ReifiedLinearInequality` only when a *covering* subset of its terms moves,
+  via the refined-watch API, instead of on every bound change of every term:
+  the per-term potential, the margin that decides how many to watch, and what
+  it is measured to be worth. Companion to
+  [refined-triggers.md](refined-triggers.md).
 - [`Knapsack`](knapsack.md) — the default per-call DP `Knapsack` (chosen
   for fastest proof verification) and the opt-in upfront-DAG
   `KnapsackUpfront` (#200), the *k*-coordinate generalisation of
@@ -209,6 +248,15 @@ library. For an introduction to *using* the solver, start with the top-level
   (entailment-based 2WL), reduced-nld extraction, and the proof lifecycle
   (root-keeps-level-1, deep-first-unwind RUP for reduced clauses, `solx`-enabled
   enumeration). Read when touching restarts, nogoods, or branching heuristics.
+- [Deleting solution clauses from a proof](solution-clause-deletion.md) — why the
+  constraint VeriPB derives from a `solx` or a `soli` lands in its *core* set and
+  stays there, what a deletion check needs before one can be taken away again
+  (and why the check may only propagate over core, which is what forces every
+  variable's encoding across too), how a backtrack clause is made to pay for the
+  blocking clause below it, where the core/derived line is drawn and why it is
+  drawn structurally rather than by need, and the measured cost against a 4x
+  saving on a large enumeration. Read when touching solution logging, proof
+  levels, or `ProofLevel::TopAndCore`.
 - [Refined triggers](refined-triggers.md) — the per-literal watch mechanism that
   lets a propagator wake only when specific literals (`x = v`, `x >= k`, ...)
   become entailed, instead of on every change to a whole variable: the
@@ -238,7 +286,17 @@ library. For an introduction to *using* the solver, start with the top-level
   spanning tree, why the `start = end` corner needs a row of its own, why the
   counting rows cannot be more child constraints (a role must name everything
   that varies, so a second linear child collides on `c[id]`), and why the family
-  is deliberately not GAC.
+  is deliberately not GAC. Finally covers `Dag` (#791), which is not connectivity
+  but is this encoding with the root taken out — `lev[v][k]` is "a selected walk
+  of exactly k edges ends here", acyclicity is "no walk of as many edges as there
+  are nodes", and the level bound is exactly `|component| - 1` (measured: one
+  fewer rejects valid DAGs). Records why only the input graph's strongly connected
+  components need levels, why `Dag` is GAC for one reachability question per
+  candidate edge where `Reachable` needed cut vertices and a case split (acyclicity
+  is downward closed, so nothing is ever forced in), and the divergence between
+  what MiniZinc documents `dag` to mean and what `fzn_dag` enforces — the
+  decomposition omits `subgraph` on an edge's tail, so it has six solutions on a
+  two-node graph where `Dag` has five and Chuffed has four.
 - [SubCircuit: encoding and proofs](subcircuit-proof-logging.md) — the design
   note for `SubCircuit` (#788), behind MiniZinc's `subcircuit` and XCSP3-core's
   `<circuit>`: the position labelling, why the tour length can be a sum of

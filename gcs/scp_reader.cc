@@ -8,6 +8,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/cumulative.hh>
+#include <gcs/constraints/dag.hh>
 #include <gcs/constraints/difference/difference_constraints.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
@@ -22,6 +23,7 @@
 #include <gcs/constraints/lex.hh>
 #include <gcs/constraints/lex_smart_table.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
+#include <gcs/constraints/linear/linear_greater_than_equal.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/mdd.hh>
@@ -54,6 +56,7 @@
 #include <gcs/scp_reader.hh>
 #include <gcs/variable_condition.hh>
 
+#include <algorithm>
 #include <charconv>
 #include <optional>
 #include <span>
@@ -72,6 +75,8 @@ using std::string;
 using std::string_view;
 using std::unordered_map;
 using std::vector;
+using std::ranges::adjacent_find;
+using std::ranges::sort;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -355,7 +360,7 @@ namespace
             LexCompareGreaterThanOrMaybeEqual{vars_swapped ? second : first, vars_swapped ? first : second, cond, or_equal, vars_swapped}, label);
     }
 
-    // The linear family: (label lin_<equals|not_equals|lin_less_equal>[_if|_iff]
+    // The linear family: (label lin_<equals|not_equals|less_equal|less_than|greater_equal|greater_than>[_if|_iff]
     // [(cond)] (c1 v1 c2 v2 ...) value). The keyword selects the constraint and
     // its reification, matching the general ReifiedLinear* constructors. (The
     // .scp does not record the GAC flag, so it defaults off; that affects
@@ -366,6 +371,17 @@ namespace
         bool iff = op.ends_with("_iff");
         bool half = ! iff && op.ends_with("_if");
         bool reified = iff || half;
+
+        // The base is matched whole, not as a prefix, and an unrecognised one
+        // is an unsupported keyword rather than something to fall through on.
+        // Prefix matching sent every keyword but lin_less_equal* into the
+        // equality family, which is a silently *different* constraint: cake's
+        // lin_greater_equal, lin_less_than and lin_greater_than all landed
+        // there, and `lin_less_equal_wibble` would have been read as an
+        // unreified lin_less_equal. A near-miss keyword has to be a clean
+        // failure: that is what glasgow_scp_solver --parse-only's exit 2 and
+        // the writer/reader symmetry check both key off.
+        string base = op.substr(0, op.size() - (iff ? 4 : half ? 3 : 0));
 
         if (terms.size() != (reified ? 5u : 4u))
             throw ScpReadError{"linear constraint '" + op + "' has the wrong number of parts"};
@@ -380,18 +396,50 @@ namespace
 
         auto condition = [&] { return resolve_condition(variables, terms[2]); };
 
-        if (op.starts_with("lin_less_equal")) {
-            ReificationCondition cond = reif::MustHold{};
-            if (iff)
-                cond = reif::Iff{condition()};
-            else if (half)
-                cond = reif::If{condition()};
-            post_constraint(problem, ReifiedLinearInequality{std::move(coeff_vars), value, cond}, label);
+        // cake_pb_cp spells a linear inequality four ways and the writer
+        // produces exactly one of them, because the other three normalise away:
+        // a strict bound is an integer step from the non-strict one, and
+        // LinearGreaterThanEqual and friends negate their coefficients and
+        // right-hand side in their constructors, so a `>=` is written as the
+        // `<=` it became. All four are read, because the reader is the
+        // authority for what we accept and cake writes all four.
+        //
+        //   lin_less_equal     sum <= value    posted as it stands
+        //   lin_less_than      sum <  value    value - 1
+        //   lin_greater_equal  sum >= value    negated
+        //   lin_greater_than   sum >  value    negated, value + 1
+        if (base == "lin_less_equal" || base == "lin_less_than" || base == "lin_greater_equal" || base == "lin_greater_than") {
+            bool greater = base.starts_with("lin_greater_");
+            if (base.ends_with("_than"))
+                value = greater ? value + 1_i : value - 1_i;
+
+            if (greater) {
+                // Posting the derived classes rather than repeating their
+                // negation keeps what the spelling means in the one place that
+                // defines it.
+                if (iff)
+                    post_constraint(problem, LinearGreaterThanEqualIff{std::move(coeff_vars), value, condition()}, label);
+                else if (half)
+                    post_constraint(problem, LinearGreaterThanEqualIf{std::move(coeff_vars), value, condition()}, label);
+                else
+                    post_constraint(problem, LinearGreaterThanEqual{std::move(coeff_vars), value}, label);
+            }
+            else {
+                ReificationCondition cond = reif::MustHold{};
+                if (iff)
+                    cond = reif::Iff{condition()};
+                else if (half)
+                    cond = reif::If{condition()};
+                post_constraint(problem, ReifiedLinearInequality{std::move(coeff_vars), value, cond}, label);
+            }
             return;
         }
 
+        if (base != "lin_equals" && base != "lin_not_equals")
+            throw ScpUnsupportedConstraintError{op};
+
         // Equality family: lin_equals* and lin_not_equals*.
-        auto [cond, flipped_cond] = equality_reification(op.starts_with("lin_not_equals"), iff, half, variables, terms[2]);
+        auto [cond, flipped_cond] = equality_reification(base == "lin_not_equals", iff, half, variables, terms[2]);
         // Consistency isn't recorded in the .scp; reconstruct with the default (BC).
         post_constraint(problem, ReifiedLinearEquality{std::move(coeff_vars), value, cond, flipped_cond}, label);
     }
@@ -405,11 +453,18 @@ namespace
         bool half = ! iff && op.ends_with("_if");
         bool reified = iff || half;
 
+        // Whole base, not a prefix, for the same reason read_linear matches one:
+        // `equals_wibble` is a keyword the grammar does not have, and reading it
+        // as an unreified `equals` is a worse answer than saying so.
+        string base = op.substr(0, op.size() - (iff ? 4 : half ? 3 : 0));
+        if (base != "equals" && base != "not_equals")
+            throw ScpUnsupportedConstraintError{op};
+
         if (terms.size() != (reified ? 5u : 4u))
             throw ScpReadError{"equals constraint '" + op + "' is (label op [(cond)] v1 v2)"};
         std::size_t v1_index = reified ? 3 : 2;
 
-        auto [cond, neq] = equality_reification(op.starts_with("not_equals"), iff, half, variables, terms[2]);
+        auto [cond, neq] = equality_reification(base == "not_equals", iff, half, variables, terms[2]);
         post_constraint(
             problem, ReifiedEquals{resolve_variable(variables, terms[v1_index]), resolve_variable(variables, terms[v1_index + 1]), cond, neq}, label);
     }
@@ -721,6 +776,28 @@ namespace
             post_constraint(problem, DTree{move(edges), root, move(ns), move(es)}, label);
         else
             post_constraint(problem, Tree{move(edges), root, move(ns), move(es)}, label);
+    }
+
+    auto read_dag(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label dag (from...) (to...) (ns...) (es...)): the subgraph picked out by
+        // ns and es has both endpoints of every selected edge selected, and no
+        // directed cycle.
+        if (terms.size() != 6)
+            throw ScpReadError{"dag is (label dag (from...) (to...) (ns...) (es...))"};
+        auto from = resolve_integer_list(terms[2], "the dag edge from list");
+        auto to = resolve_integer_list(terms[3], "the dag edge to list");
+        if (from.size() != to.size())
+            throw ScpReadError{"dag needs one from and one to per edge"};
+        vector<pair<size_t, size_t>> edges;
+        for (size_t e = 0; e != from.size(); ++e) {
+            if (from[e] < 0_i || to[e] < 0_i)
+                throw ScpReadError{"dag has a negative edge endpoint"};
+            edges.emplace_back(static_cast<size_t>(from[e].raw_value), static_cast<size_t>(to[e].raw_value));
+        }
+        auto ns = resolve_variable_list(variables, terms[4], "the dag node list");
+        auto es = resolve_variable_list(variables, terms[5], "the dag edge list");
+        post_constraint(problem, Dag{move(edges), move(ns), move(es)}, label);
     }
 
     auto read_subgraph(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
@@ -1120,6 +1197,18 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
             for (const auto & v : children_of(terms[3], "the global cardinality value list"))
                 values.push_back(as_integer(v));
             auto counts = resolve_variable_list(variables, terms[4], "the global cardinality count list");
+            // GlobalCardinality throws on these rather than diagnosing them, and
+            // an InvalidProblemDefinitionException escaping the reader says
+            // nothing about which line was bad. A written .scp can contain
+            // neither -- the writer's own constraint has been checked already,
+            // and a front end folds a repeated cover value before posting
+            // (#922) -- so both mean a hand-edited or foreign file.
+            if (values.size() != counts.size())
+                throw ScpReadError{"global cardinality needs as many counts as values"};
+            auto sorted_values = values;
+            sort(sorted_values);
+            if (adjacent_find(sorted_values) != sorted_values.end())
+                throw ScpReadError{"global cardinality cover values must be pairwise distinct"};
             bool closed = op.ends_with("closed");
             auto level = op.starts_with("gac") ? GlobalCardinalityConsistency{consistency::GAC{}} : GlobalCardinalityConsistency{consistency::BC{}};
             post_constraint(problem, GlobalCardinality{move(vars), move(values), move(counts)}.with_consistency(level).with_closed(closed), label);
@@ -1375,6 +1464,9 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
         }
         else if (op == "tree" || op == "dtree") {
             read_tree(problem, variables, op, terms, label);
+        }
+        else if (op == "dag") {
+            read_dag(problem, variables, terms, label);
         }
         else if (op == "subgraph") {
             read_subgraph(problem, variables, terms, label);

@@ -37,6 +37,7 @@ add_library(glasgow_constraint_solver
         constraints/cumulative/derived_cumulative.cc
         constraints/cumulative/derived_cumulative_stats.cc
         constraints/cumulative/donor_view.cc
+        constraints/dag/dag.cc
         constraints/difference/difference_constraints.cc
         constraints/difference/difference_graph.cc
         constraints/difference/difference_incremental.cc
@@ -355,6 +356,7 @@ if(GCS_BUILD_TESTS)
     add_executable(regular_bacchus_test constraints/regular/regular_bacchus_test.cc)
     add_executable(regular_legacy_test constraints/regular/regular_legacy_test.cc)
     add_executable(seq_precede_chain_test constraints/seq_precede_chain/seq_precede_chain_test.cc)
+    add_executable(dag_test constraints/dag/dag_test.cc)
     add_executable(subgraph_test constraints/subgraph/subgraph_test.cc)
     add_executable(tree_test constraints/tree/tree_test.cc)
     add_executable(path_test constraints/path/path_test.cc)
@@ -374,7 +376,7 @@ if(GCS_BUILD_TESTS)
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test bin_packing_test comparison_test
             count_test cumulative_test cumulative_overload_test cumulative_edge_finding_test cumulative_ttef_test cumulative_energetic_test cumulative_nfnl_test cumulative_published_nfnl_test cumulative_kaoc_test cumulative_optional_test derived_cumulative_test difference_test disjunctive_test disjunctive_optional_test disjunctive_overload_test disjunctive_edge_finding_test disjunctive_nfnl_test disjunctive_precedences_test disjunctive_set_precedences_test disjunctive_published_nfnl_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
             logical_test mdd_test min_distance_test min_distance_matching_test min_max_test mini_linear_test multiply_test n_value_test nogoods_test parity_test
-            plus_minus_test power_test product_bounds_test product_justify_test reachable_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test subgraph_test tree_test path_test sort_test arg_sort_test symmetric_all_different_test
+            plus_minus_test power_test product_bounds_test product_justify_test reachable_test dag_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test subgraph_test tree_test path_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
@@ -386,7 +388,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME among_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:among_test>)
     add_test(NAME at_most_one_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:at_most_one_test>)
     add_test(NAME bin_packing_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:bin_packing_test>)
-    foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff)
+    foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff le_notif lt lt_if lt_iff lt_not)
         add_test(NAME comparison_constraint_${mode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:comparison_test> ${mode})
     endforeach()
@@ -645,7 +647,7 @@ if(GCS_BUILD_TESTS)
     add_view_tests(power_constraint power_test 2)
     add_view_tests(multiply_constraint multiply_test 3)
     add_view_tests(plus_minus_constraint plus_minus_test 3)
-    foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff)
+    foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff le_notif lt lt_if lt_iff lt_not)
         add_view_tests(comparison_constraint_${mode} comparison_test 2 ${mode})
     endforeach()
     # Ten of the nineteen wraps negate, and DifferenceConstraints rejects a
@@ -733,6 +735,22 @@ if(GCS_BUILD_TESTS)
     add_test(NAME tree_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:tree_test>)
     add_test(NAME subgraph_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subgraph_test>)
     add_test(NAME reachable_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:reachable_test>)
+    add_test(NAME dag_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:dag_test>)
+    # As Reachable: every Dag inference is a plain RUP whose whole content is its
+    # reason, so each lane drops one part of a reason and insists veripb notices.
+    # There are only two shapes of reason to break, the cycle path and the one
+    # endpoint literal, so there are only two lanes.
+    foreach(mutation path endpoint)
+        add_test(NAME dag_mutation_${mutation}
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                --basename dag_mutation_${mutation} $<TARGET_FILE:dag_test> --mutate=${mutation})
+    endforeach()
+    # The same fixture with nothing dropped, which is what makes those lanes
+    # evidence: veripb has to accept the honest proof of exactly the instance whose
+    # corrupted proofs it refuses.
+    add_test(NAME dag_mutation_none
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash
+            --basename dag_mutation_none $<TARGET_FILE:dag_test> --mutate=none)
     # Every Reachable inference is a plain RUP whose whole content is its reason,
     # so the mutation lanes drop one part of a reason each and insist veripb
     # notices. Both spellings, because the undirected and directed searches reach
@@ -856,9 +874,19 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(proof_model_tautology_test PRIVATE glasgow_constraint_solver)
     add_test(NAME proof_model_tautology_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:proof_model_tautology_test>)
 
+    add_executable(scp_writer_test innards/proofs/scp_writer_test.cc)
+    target_link_libraries(scp_writer_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME scp_writer_test COMMAND $<TARGET_FILE:scp_writer_test>)
+
     add_executable(duplicate_label_test innards/proofs/duplicate_label_test.cc)
     target_link_libraries(duplicate_label_test PRIVATE glasgow_constraint_solver)
     add_test(NAME duplicate_label_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:duplicate_label_test>)
+
+    add_executable(proof_flush_on_throw_test innards/proofs/proof_flush_on_throw_test.cc)
+    target_link_libraries(proof_flush_on_throw_test PRIVATE glasgow_constraint_solver)
+    # The proof it leaves behind is deliberately incomplete, so there is nothing
+    # for the verifier to check: it inspects and cleans up the file itself.
+    add_test(NAME proof_flush_on_throw_test COMMAND $<TARGET_FILE:proof_flush_on_throw_test>)
 
     add_executable(eqvar_polarity_test innards/proofs/eqvar_polarity_test.cc)
     target_link_libraries(eqvar_polarity_test PRIVATE glasgow_constraint_solver)
@@ -909,6 +937,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(invar_test PRIVATE glasgow_constraint_solver)
     add_test(NAME invar_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:invar_test>)
 
+    add_executable(invar_view_test innards/proofs/invar_view_test.cc)
+    target_link_libraries(invar_view_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME invar_view_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:invar_view_test>)
+
     add_executable(range_branch_test innards/proofs/range_branch_test.cc)
     target_link_libraries(range_branch_test PRIVATE glasgow_constraint_solver)
     add_test(NAME range_branch_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_branch_test>)
@@ -920,7 +952,11 @@ if(GCS_BUILD_TESTS)
     # The range-literal witness suite (dev_docs/range_literals_spec.md §8): each test
     # fails VeriPB within milliseconds if its clause family is removed or weakened.
     # W4 is range_branch_test above plus the suite-wide interval-reject branching.
-    foreach(witness w1 w2 w3 w5)
+    # W6 and W7 are the two directions of the view crossing; W8 and W9 are the trigger
+    # for it, a literal that a partition cell already brought into existence. All four
+    # are the reason the view-wrap sweep is not by itself evidence: see
+    # dev_docs/view-range-literals.md.
+    foreach(witness w1 w2 w3 w5 w6 w7 w8 w9)
         add_executable(range_witness_${witness}_test innards/proofs/range_witness_${witness}_test.cc)
         target_link_libraries(range_witness_${witness}_test PRIVATE glasgow_constraint_solver)
         add_test(NAME range_witness_${witness}_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_witness_${witness}_test>)

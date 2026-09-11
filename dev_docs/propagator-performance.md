@@ -230,6 +230,58 @@ If the reason is materialised eagerly against the current state
 it is per-call by nature and must not be hoisted. (`lex` is the in-tree example
 that is *not* hoisted for exactly this reason.)
 
+### Don't build a reason nothing is going to read
+
+`InferenceTrackerBase::want_reasons()` says whether a `Reason` handed to an
+`infer*` method will actually be consumed. It reports a `static constexpr` on
+the tracker type — `false` for the proofs-off `SimpleInferenceTracker` — so the
+branch folds away and a reason behind it costs nothing at all on the path where
+nothing reads it:
+
+```cpp
+inference.infer_less_than_or_stop(logger, v1, bound, JustifyUsingRUP{hint},
+    inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{{cond, v2 <= ub}}}} : Reason{});
+```
+
+The declarative reasons of the previous lever mostly do not need this: they
+capture a scope and defer the domain walk, so building one unmaterialised is
+already cheap. The ones that do need it are the eager kinds. `ReasonLiterals`
+is a `gch::small_vector` over a nested variant, so even a two-literal
+`ExplicitReason` is a real `memcpy` at every inference site, and a
+`ConcatReason` or a per-value walk is far worse.
+
+Two shapes have turned up in-tree, and they need different detectors:
+
+- **Wide** — the assembly is O(domain width), so it shows up as memory.
+  `equals`' no-overlap rule built one literal per value and reached
+  `std::bad_alloc` at 10^9 (#864 / #873). [large-domains.md](large-domains.md)
+  has the audit lane for this shape, and the warning that its `bad_alloc`
+  fallback is a fact about the box rather than about the code.
+- **Hot** — the reason is two literals and looks far too cheap to be worth a
+  branch, but the propagator runs tens of millions of times, so the constant
+  factor is the whole cost. This one does not show up as memory at all and a
+  large-domain audit will not find it. `comparison` had nine unguarded reasons;
+  guarding them took `difference_chain --donor=comparison -n 500` from 12.91 s
+  to 8.55 s at a byte-identical search tree, removing 30% of the instructions
+  and taking `__memmove_avx_unaligned_erms` from 4.4% of cycles to 0.1% (#907).
+
+Guarding cannot change what a proof says: `want_reasons()` is true whenever a
+reason is going to be logged, so the guard is unreachable on a proving run.
+Confirm that by diffing preserved artefacts under `GCS_PRESERVE_PROOF_FILES=all`
+rather than by argument, as #873 and #907 both did.
+
+Nor can it change the search *today*, but that is the one thing here with an
+expiry date. The query is deliberately keyed on the tracker's needs rather than
+on whether a logger exists, because conflict-directed search will want reasons
+without one, and a contradiction already hands its reason to the conflict
+observers with proofs off (`Propagators::propagate`). No observer reads it yet —
+all three weighting schemes leave the parameter unnamed — so when one starts to,
+every guarded site becomes a behaviour change and wants re-checking.
+
+Finally: guard every reason in a file, not just the hot ones. `comparison` was
+found by a family audit rather than by a profile, and "some of them are guarded"
+is exactly what made the file look finished.
+
 ### Don't throw from a propagator that fails in bulk
 
 `inference.contradiction(...)` signals failure by throwing

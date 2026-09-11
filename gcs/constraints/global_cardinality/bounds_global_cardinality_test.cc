@@ -49,7 +49,11 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-using Range = variant<int, pair<int, int>>;
+// A test variable is a constant, a lo/hi interval, or an explicit list of
+// values -- the third shape being the only one that gives a variable holes,
+// which is what the closed propagator's domain-difference needs to be run
+// against (#877).
+using Range = variant<int, pair<int, int>, vector<int>>;
 
 auto run_bgcc_test(bool proofs, const vector<Range> & vars_range, const vector<int> & values, const vector<Range> & counts_range, bool closed) -> void
 {
@@ -119,6 +123,23 @@ auto main(int argc, char * argv[]) -> int
         {{pair{1, 2}, pair{1, 2}}, {1, 2}, {pair{0, 2}, pair{0, 2}}, false},
         // Closed.
         {{pair{1, 3}, pair{1, 3}, pair{2, 3}}, {1, 2, 3}, {pair{0, 3}, pair{0, 3}, pair{0, 3}}, true},
+        // Closed over a domain with a hole in it (#877). The closed propagator
+        // removes each run of non-cover values in one go, and the runs it has to
+        // find are bounded by three different things at once here: the first
+        // ends where the domain's own hole starts (0, then 2 is missing), the
+        // second starts after a cover value inside an interval (3 covered, so
+        // 4..5 is what is left of [3,5]). Nothing else posts a variable with a
+        // hole in it under with_closed, so before this row every domain reaching
+        // that propagator was one contiguous interval, and the case where
+        // "group consecutive values" and "subtract one interval set from
+        // another" could disagree was untested. The second variable is the same
+        // instance without the hole, so the pair says the hole is what differs.
+        {{vector<int>{0, 1, 3, 4, 5}, pair{0, 5}}, {1, 3}, {pair{0, 2}, pair{0, 2}}, true},
+        // The mirror image: a *cover* value that falls inside the domain's hole
+        // (3 is covered, the first variable does not have it). The subtraction
+        // then has to step over an interval of the cover that matches nothing at
+        // all, which is a different position in the merge from the row above.
+        {{vector<int>{0, 1, 2, 4, 5, 6}, pair{0, 6}}, {0, 3, 6}, {pair{0, 2}, pair{0, 2}, pair{0, 2}}, true},
         // Cover values spanning zero, with a bit-aliased {0,1}-domain variable in
         // the Hall set (issue #557): the aliased variable's (== 0)/(== 1) atoms are
         // ~b0/b0, a complementary pair, which made the demand-aggregate at-most-one

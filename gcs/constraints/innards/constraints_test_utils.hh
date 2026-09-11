@@ -77,6 +77,25 @@ namespace gcs::test_innards
     }
 
     /**
+     * \brief Always ask VeriPB to treat a failed checked deletion as an error.
+     *
+     * Deleting a constraint from VeriPB's *core* set needs a deletion check ---
+     * a proof that the remaining core still implies what is being removed. By
+     * default VeriPB does not fail when that check fails: it logs a warning,
+     * downgrades to unchecked deletion, and stops making the equi-enumerable /
+     * equi-optimal guarantees for the rest of the proof. A `s VERIFIED` line
+     * still comes out, so a proof that quietly lost its guarantees looks exactly
+     * like one that kept them.
+     *
+     * That is the failure mode the solver's `solx` and `soli` deletions are
+     * exposed to, so every test's verification asks for the strict behaviour
+     * instead. It costs nothing when nothing core is deleted, which is the case
+     * for every proof that logs no solution. See
+     * dev_docs/solution-clause-deletion.md.
+     */
+    inline constexpr const char * veripb_checked_deletion_flag = "--force-checked-deletion";
+
+    /**
      * The file extensions a proving run can leave beside its proof. Only .opb
      * and .pbp are always written; .scp and .varmap appear for the runs that ask
      * for them. std::remove and std::rename on an absent file are harmless
@@ -319,7 +338,7 @@ namespace gcs::test_innards
      */
     [[nodiscard]] inline auto verify_proof_and_dispose(const std::string & proof_name) -> bool
     {
-        if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
+        if (! run_veripb(veripb_checked_deletion_flag, proof_name + ".opb", proof_name + ".pbp"))
             return false;
         check_scp_writer_reader_symmetry(proof_name);
         cake_probe_chain(proof_name); // PROBE: measure workflow-2 chain (no-op unless GCS_TEST_CAKE)
@@ -445,6 +464,10 @@ namespace gcs::test_innards
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        const std::vector<std::variant<int, std::pair<int, int>, std::vector<int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void;
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
         std::pair<int, int> range_arg, RestOfArgs_... rest_of_args) -> void
     {
         for (int n = range_arg.first; n <= range_arg.second; ++n)
@@ -539,6 +562,50 @@ namespace gcs::test_innards
                     }, //
                     [&](std::pair<int, int> p) {
                         for (int n = p.first; n <= p.second; ++n) {
+                            sol.push_back(n);
+                            build(pos + 1, sol);
+                            sol.pop_back();
+                        }
+                    } //
+                }
+                    .visit(range_arg_vec.at(pos));
+            }
+        };
+        std::vector<int> sol;
+        build(0, sol);
+    }
+
+    /* As above, for a list of specs that may also name an explicitly enumerated
+     * domain. A variable built from a value list has holes in it, which is a
+     * shape a lo/hi pair cannot express and which several propagators treat
+     * differently from a contiguous domain; create_integer_variable_or_constant
+     * already accepts the same three shapes, so a test widens its spec type and
+     * needs nothing else.
+     */
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        const std::vector<std::variant<int, std::pair<int, int>, std::vector<int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void
+    {
+        std::function<auto(std::size_t, std::vector<int>)->void> build = [&](std::size_t pos, std::vector<int> sol) -> void {
+            if (pos == range_arg_vec.size()) {
+                generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{sol}), rest_of_args...);
+            }
+            else {
+                overloaded{
+                    [&](int n) {
+                        sol.push_back(n);
+                        build(pos + 1, sol);
+                        sol.pop_back();
+                    }, //
+                    [&](std::pair<int, int> p) {
+                        for (int n = p.first; n <= p.second; ++n) {
+                            sol.push_back(n);
+                            build(pos + 1, sol);
+                            sol.pop_back();
+                        }
+                    }, //
+                    [&](const std::vector<int> & vs) {
+                        for (int n : vs) {
                             sol.push_back(n);
                             build(pos + 1, sol);
                             sol.pop_back();
@@ -687,30 +754,9 @@ namespace gcs::test_innards
         return branch_with(variable_order::random(p), value_order::reject_random_interval());
     }
 
-    /**
-     * Whether a proof-writing test solve should also write the .scp definition
-     * file. No for a constraint form whose s_expr() throws --- the negated
-     * reification kinds of the linear and comparison families have no
-     * cake_pb_cp spelling, so there is nothing for it to write --- and the .opb
-     * and .pbp, which are what veripb checks, are written either way.
-     */
-    enum class WriteSExprFile
-    {
-        Yes,
-        No
-    };
-
-    [[nodiscard]] inline auto proof_file_names_for_tests(const std::string & proof_name, WriteSExprFile write_s_expr_file) -> ProofFileNames
-    {
-        ProofFileNames names{proof_name};
-        if (write_s_expr_file == WriteSExprFile::No)
-            names.s_expr_file = std::nullopt;
-        return names;
-    }
-
     template <typename SolutionCallback_, typename TraceCallback_>
-    auto solve_for_tests_with_callbacks(Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f,
-        const TraceCallback_ & t, WriteSExprFile write_s_expr_file = WriteSExprFile::Yes) -> void
+    auto solve_for_tests_with_callbacks(
+        Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
     {
         // Every constraint test runs with the idempotence claim checker on:
         // each honoured PropagatorState::EnableButIdempotent claim is verified
@@ -758,7 +804,7 @@ namespace gcs::test_innards
                 .trace = capped_trace,                        //
                 .branch = random_branch_with_optional_seed(p) //
             },
-            proof_name ? std::make_optional<ProofOptions>(proof_file_names_for_tests(*proof_name, write_s_expr_file)) : std::nullopt);
+            proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}) : std::nullopt);
         last_run_recursions() = stats.recursions;
     }
 
@@ -793,8 +839,7 @@ namespace gcs::test_innards
     }
 
     template <typename ResultsSet_, typename... Args_>
-    auto solve_for_tests(Problem & p, const std::optional<std::string> & proof_name, ResultsSet_ & actual, const std::tuple<Args_...> & vars,
-        WriteSExprFile write_s_expr_file = WriteSExprFile::Yes) -> void
+    auto solve_for_tests(Problem & p, const std::optional<std::string> & proof_name, ResultsSet_ & actual, const std::tuple<Args_...> & vars) -> void
     {
         solve_for_tests_with_callbacks(
             p, proof_name,
@@ -802,7 +847,7 @@ namespace gcs::test_innards
                 std::apply([&](const auto &... args) { actual.emplace(extract_from_state(s, args)...); }, vars);
                 return true;
             },
-            [&](const CurrentState &) -> bool { return true; }, write_s_expr_file);
+            [&](const CurrentState &) -> bool { return true; });
     }
 
     enum class CheckConsistency
@@ -949,8 +994,7 @@ namespace gcs::test_innards
 
     template <typename ResultsSet_, typename... AllArgs_>
     auto solve_for_tests_checking_consistency(Problem & p, const std::optional<std::string> & proof_name, const ResultsSet_ & expected,
-        ResultsSet_ & actual, const std::tuple<std::pair<AllArgs_, CheckConsistency>...> & all_vars,
-        WriteSExprFile write_s_expr_file = WriteSExprFile::Yes) -> void
+        ResultsSet_ & actual, const std::tuple<std::pair<AllArgs_, CheckConsistency>...> & all_vars) -> void
     {
         std::vector<IntegerVariableID> all_vars_as_vector;
         [&]<std::size_t... i_>(std::index_sequence<i_...>) { (add_to_all_vars(all_vars_as_vector, std::get<i_>(all_vars).first), ...); }(
@@ -1016,8 +1060,7 @@ namespace gcs::test_innards
                     (check_support(support[i_], s, all_vars_as_vector, std::get<i_>(all_vars).first, std::get<i_>(all_vars).second), ...);
                 }(std::index_sequence_for<AllArgs_...>());
                 return true;
-            },
-            write_s_expr_file);
+            });
     }
 
     template <typename ResultsSet_, typename... AllArgs_>

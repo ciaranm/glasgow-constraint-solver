@@ -39,6 +39,13 @@ add_scp_chain_test(lin_equals_neg_coeff_sat strict)  # negative coefficient
 add_scp_chain_test(lin_equals_3var_sat      strict)  # wider sum (3 terms)
 add_scp_chain_test(lin_less_equal_unsat     strict)
 add_scp_chain_test(lin_less_equal_sat       strict)
+# lin_greater_equal is the one keyword here the writer never produces: a `>=` is
+# normalised into the `<=` of the negated sum before it is written. So this case
+# is the only thing exercising the reader's arm for it -- and, on its own, not
+# much: step 1 re-emits the .scp and cake re-derives from *that*, so a reader
+# that misread the keyword would still agree with itself all the way down the
+# chain. It did, for as long as the arm was missing (issue #908). What actually
+# checks the meaning is scp_reader_test, which counts solutions.
 add_scp_chain_test(lin_greater_equal_unsat  strict)
 add_scp_chain_test(multi_comparison_unsat   strict)  # two interacting comparisons
 add_scp_chain_test(multi_mixed_unsat        strict)  # comparison + linear together

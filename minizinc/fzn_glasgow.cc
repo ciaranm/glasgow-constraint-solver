@@ -937,6 +937,15 @@ auto main(int argc, char * argv[]) -> int
                 else
                     problem.post(Reachable{move(edges), r, ns, es});
             }
+            else if (id == "glasgow_dag") {
+                // As glasgow_subgraph, the redefinition has already shifted the
+                // endpoints to be zero-based.
+                auto from = arg_as_array_of_integer(data, args, 0);
+                auto to = arg_as_array_of_integer(data, args, 1);
+                const auto & ns = arg_as_array_of_var(data, args, 2);
+                const auto & es = arg_as_array_of_var(data, args, 3);
+                problem.post(Dag{edges_from_endpoints("dag", from, to), ns, es});
+            }
             else if (id == "glasgow_subgraph") {
                 auto from = arg_as_array_of_integer(data, args, 0);
                 auto to = arg_as_array_of_integer(data, args, 1);
@@ -1021,10 +1030,21 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (id == "glasgow_global_cardinality" || id == "glasgow_global_cardinality_closed") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
-                auto cover = arg_as_array_of_integer(data, args, 1);
-                const auto & counts = arg_as_array_of_var(data, args, 2);
+                // A *copy* of the cover, because arg_as_array_of_integer hands
+                // back a pointer into the model's constant arrays: a named array
+                // is shared with every other constraint that mentions it, and
+                // the fold below rewrites what it is given.
+                auto cover = *arg_as_array_of_integer(data, args, 1);
+                auto counts = arg_as_array_of_var(data, args, 2);
                 auto closed = (id == "glasgow_global_cardinality_closed");
-                problem.post(GlobalCardinality{vars, *cover, counts}.with_closed(closed));
+                // MiniZinc's global_cardinality says only that counts[i] is the
+                // number of occurrences of cover[i], so a repeated cover value is
+                // a legal model, meaning "these counts are the same number".
+                // GlobalCardinality needs the cover distinct, so fold the repeats
+                // out and post the equalities they stood for (#922).
+                for (const auto & [kept, dropped] : fold_repeated_cover_values(cover, counts))
+                    problem.post(Equals{kept, dropped});
+                problem.post(GlobalCardinality{vars, cover, counts}.with_closed(closed));
             }
             else if (id == "glasgow_increasing_int" || id == "glasgow_increasing_bool") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);

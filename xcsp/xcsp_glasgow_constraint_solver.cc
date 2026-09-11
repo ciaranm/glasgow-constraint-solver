@@ -840,6 +840,21 @@ namespace
             return ivals;
         }
 
+        // XCSP3 calls <values> a set, so a repeated value is most likely a
+        // malformed instance rather than a model meaning "these two occurrence
+        // counts are the same number" -- but nothing on the way here checks it,
+        // and GlobalCardinality now rejects it outright, so fold any repeats out
+        // and post the count equalities they stand for (#922). That reading is
+        // the only one that could have been intended, and it costs nothing on a
+        // well-formed instance. All three overloads below build the cover and
+        // the counts and then come through here.
+        auto post_gcc(vector<IntegerVariableID> vars, vector<Integer> values, vector<IntegerVariableID> counts, bool closed) -> void
+        {
+            for (const auto & [kept, dropped] : fold_repeated_cover_values(values, counts))
+                _problem.post(Equals{kept, dropped});
+            _problem.post(GlobalCardinality{move(vars), move(values), move(counts)}.with_closed(closed));
+        }
+
         // Cover values as constants. The occurrences may be given as constants,
         // variables, or intervals; each maps to a count variable of the native
         // GlobalCardinality constraint (a singleton domain for a constant, a
@@ -854,7 +869,7 @@ namespace
             counts.reserve(occurs.size());
             for (auto o : occurs)
                 counts.emplace_back(constant_variable(Integer{o}));
-            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts)}.with_closed(closed));
+            post_gcc(move(vars), gcc_cover(values), move(counts), closed);
         }
 
         auto buildConstraintCardinality(string, vector<XVariable *> & x_vars, vector<int> values, vector<XVariable *> & occurs, bool closed)
@@ -863,7 +878,7 @@ namespace
             if (values.size() != occurs.size())
                 report_unsupported("cardinality", "values/occurs size mismatch");
             auto vars = need_variables(x_vars);
-            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), need_variables(occurs)}.with_closed(closed));
+            post_gcc(move(vars), gcc_cover(values), need_variables(occurs), closed);
         }
 
         auto buildConstraintCardinality(string, vector<XVariable *> & x_vars, vector<int> values, vector<XInterval> & occurs, bool closed)
@@ -876,7 +891,7 @@ namespace
             counts.reserve(occurs.size());
             for (size_t i = 0; i != occurs.size(); ++i)
                 counts.emplace_back(create_aux_variable(Integer{occurs[i].min}, Integer{occurs[i].max}, "gccoccurs" + std::to_string(i)));
-            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts)}.with_closed(closed));
+            post_gcc(move(vars), gcc_cover(values), move(counts), closed);
         }
 
         // XCSP3Core::Tree, qualified: gcs has a Tree constraint of its own, and

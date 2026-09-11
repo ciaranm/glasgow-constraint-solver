@@ -453,7 +453,13 @@ auto Python::post_global_cardinality(
     int_values.reserve(values.size());
     for (auto v : values)
         int_values.emplace_back(v);
-    p.post(GlobalCardinality(get_vars(var_ids), move(int_values), get_vars(count_ids)).with_closed(closed));
+    auto counts = get_vars(count_ids);
+    // The Python caller may repeat a cover value, which GlobalCardinality does
+    // not allow; fold the repeats out and post the equalities they stood for,
+    // as the other front ends do (#922).
+    for (const auto & [kept, dropped] : fold_repeated_cover_values(int_values, counts))
+        p.post(Equals{kept, dropped});
+    p.post(GlobalCardinality(get_vars(var_ids), move(int_values), move(counts)).with_closed(closed));
 }
 
 auto Python::post_element(const string & var_id, const string & index_id, const vector<string> & var_ids) -> void

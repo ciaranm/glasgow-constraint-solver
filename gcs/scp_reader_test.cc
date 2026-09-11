@@ -8,6 +8,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/cumulative.hh>
+#include <gcs/constraints/dag.hh>
 #include <gcs/constraints/difference/difference_constraints.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
@@ -106,6 +107,55 @@ namespace
         for (auto ext : {".opb", ".pbp", ".scp", ".varmap"})
             std::remove((basename + ext).c_str());
         return scp;
+    }
+
+    // The sole entry in a one-constraint .scp's (constraints ...) section,
+    // trimmed of its indentation.
+    auto sole_constraint_of(const string & scp) -> string
+    {
+        auto section = scp.find("(constraints\n");
+        REQUIRE(section != string::npos);
+        auto begin = scp.find_first_not_of(" \n", section + sizeof("(constraints\n") - 1);
+        auto end = scp.find('\n', begin);
+        REQUIRE(end != string::npos);
+        return scp.substr(begin, end - begin);
+    }
+
+    // Post one constraint over X, Y (-2..2) and C (0..1) and check three things
+    // about the .scp it writes: that the term is `expected_term`, that reading
+    // that term back gives exactly the same solutions, and that the rebuilt
+    // problem writes the identical .scp again.
+    template <typename Post_>
+    auto check_scp_round_trip(const string & basename, const string & expected_term, const Post_ & post) -> void
+    {
+        Problem original;
+        auto x = original.create_integer_variable(-2_i, 2_i, "X");
+        auto y = original.create_integer_variable(-2_i, 2_i, "Y");
+        auto c = original.create_integer_variable(0_i, 1_i, "C");
+        post(original, x, y, c);
+
+        set<map<string, long long>> solutions;
+        solve_with(original, //
+            SolveCallbacks{  //
+                .solution = [&](const CurrentState & state) -> bool {
+                    solutions.insert(map<string, long long>{{"X", state(x).raw_value}, {"Y", state(y).raw_value}, {"C", state(c).raw_value}});
+                    return true;
+                }},
+            std::make_optional<ProofOptions>(ProofFileNames{basename}));
+
+        std::ifstream in{basename + ".scp"};
+        string scp{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+        for (auto ext : {".opb", ".pbp", ".scp", ".varmap"})
+            std::remove((basename + ext).c_str());
+
+        CHECK(sole_constraint_of(scp) == expected_term);
+        // Parsing is not the point: the mirrored spelling has to mean the same
+        // thing as the form it was written for.
+        CHECK(enumerate(scp) == solutions);
+
+        Problem rebuilt;
+        read_scp(rebuilt, scp);
+        CHECK(prove_to_scp(rebuilt, basename + "_again") == scp);
     }
 }
 
@@ -363,6 +413,48 @@ TEST_CASE("read_scp: comparisons survive write -> read -> write unchanged")
     CHECK_FALSE(scp_a.empty());
 }
 
+TEST_CASE("read_scp: the negated reification forms are written as what they enforce")
+{
+    // MustNotHold and NotIf have no keyword of their own, in either family, and
+    // used to throw from s_expr() rather than be written at all (issue #908).
+    // Each is now written as the constraint it actually enforces: a comparison
+    // mirrors --- operands the other way round and strictness flipped, which
+    // together turn `less` into `greater` over the same two terms --- and a
+    // linear inequality negates every coefficient and its bound. Both land back
+    // on ordinary keywords, so scp_reader rebuilds them without knowing they
+    // were ever negated.
+    check_scp_round_trip(
+        "scp_reader_cmp_mustnothold", "(_1 greater_equal X Y)", [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x, y, reif::MustNotHold{}, false});
+        });
+    check_scp_round_trip(
+        "scp_reader_cmp_mustnothold_oe", "(_1 greater_than X Y)", [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x, y, reif::MustNotHold{}, true});
+        });
+    check_scp_round_trip(
+        "scp_reader_cmp_notif", "(_1 greater_equal_if (C = 1) X Y)", [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID c) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x, y, reif::NotIf{c == 1_i}, false});
+        });
+    check_scp_round_trip("scp_reader_cmp_notif_oe", "(_1 greater_than_if (C = 1) X Y)",
+        [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID c) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x, y, reif::NotIf{c == 1_i}, true});
+        });
+    // The already-swapped form mirrors the other way, back to a `less`.
+    check_scp_round_trip(
+        "scp_reader_cmp_mustnothold_swapped", "(_1 less_equal Y X)", [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x, y, reif::MustNotHold{}, false, true});
+        });
+
+    check_scp_round_trip("scp_reader_lin_mustnothold", "(_1 lin_less_equal (-1 X -1 Y) -2)",
+        [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID) {
+            p.post(ReifiedLinearInequality{WeightedSum{} + 1_i * x + 1_i * y, 1_i, reif::MustNotHold{}});
+        });
+    check_scp_round_trip("scp_reader_lin_notif", "(_1 lin_less_equal_if (C = 1) (-1 X 1 Y) -2)",
+        [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID c) {
+            p.post(ReifiedLinearInequality{WeightedSum{} + 1_i * x + -1_i * y, 1_i, reif::NotIf{c == 1_i}});
+        });
+}
+
 TEST_CASE("read_scp: lex comparisons survive write -> read -> write unchanged")
 {
     Problem original;
@@ -396,6 +488,27 @@ TEST_CASE("read_scp: linear constraints enumerate correctly")
     for (const auto & s :
         enumerate("( (version 1) (variables (X 0 2) (Y 0 2)) (constraints (_1 lin_not_equals (1 X 1 Y) 2)) (prob_type enumerate) )"))
         CHECK(s.at("X") + s.at("Y") != 2);
+    // The three spellings the writer never produces, because they normalise
+    // into lin_less_equal before anything is written: cake_pb_cp writes all
+    // three, so the reader has to have them. Counting matters here --- the
+    // three used to be prefix-matched into the equality family, which is a
+    // silently different constraint that parses just as well.
+    //
+    // X + Y >= 4: six of the sixteen pairs, against three read as an equality.
+    auto ge = enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_greater_equal (1 X 1 Y) 4)) (prob_type enumerate) )");
+    CHECK(ge.size() == 6);
+    for (const auto & s : ge)
+        CHECK(s.at("X") + s.at("Y") >= 4);
+    // X + Y > 4: strictness is a step, so this is the three above it.
+    auto gt = enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_greater_than (1 X 1 Y) 4)) (prob_type enumerate) )");
+    CHECK(gt.size() == 3);
+    for (const auto & s : gt)
+        CHECK(s.at("X") + s.at("Y") > 4);
+    // X + Y < 4: the complement of the `>=`, so ten.
+    auto lt = enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_less_than (1 X 1 Y) 4)) (prob_type enumerate) )");
+    CHECK(lt.size() == 10);
+    for (const auto & s : lt)
+        CHECK(s.at("X") + s.at("Y") < 4);
 }
 
 TEST_CASE("read_scp: a reified linear constraint enumerates correctly")
@@ -404,6 +517,41 @@ TEST_CASE("read_scp: a reified linear constraint enumerates correctly")
     for (const auto & s :
         enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_equals_iff (C = 1) (1 X 1 Y) 3)) (prob_type enumerate) )"))
         CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") == 3));
+    // Each normalised-away spelling in its half- and fully-reified forms: the
+    // strict step and the negation have to survive a reification condition too,
+    // and the iff cases pin the direction the `f` half goes in.
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_greater_equal_if (C = 1) (1 X 1 Y) 4)) "
+                                    "(prob_type enumerate) )"))
+        CHECK(((s.at("C") == 0) || (s.at("X") + s.at("Y") >= 4)));
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_greater_equal_iff (C = 1) (1 X 1 Y) 4)) "
+                                    "(prob_type enumerate) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") >= 4));
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_greater_than_iff (C = 1) (1 X 1 Y) 4)) "
+                                    "(prob_type enumerate) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") > 4));
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_less_than_if (C = 1) (1 X 1 Y) 4)) "
+                                    "(prob_type enumerate) )"))
+        CHECK(((s.at("C") == 0) || (s.at("X") + s.at("Y") < 4)));
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_less_than_iff (C = 1) (1 X 1 Y) 4)) "
+                                    "(prob_type enumerate) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") < 4));
+}
+
+TEST_CASE("read_scp: a linear keyword that is a near miss is unsupported, not something else")
+{
+    // The base is matched whole. A keyword the grammar does not have must come
+    // back as ScpUnsupportedConstraintError --- which is what
+    // glasgow_scp_solver --parse-only's exit 2 and the writer/reader symmetry
+    // check key off --- rather than being read as whichever family happened to
+    // be last in the dispatch.
+    CHECK_THROWS_AS(
+        enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_less_equal_wibble (1 X 1 Y) 4)) (prob_type enumerate) )"),
+        ScpUnsupportedConstraintError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_wibble (1 X 1 Y) 4)) (prob_type enumerate) )"),
+        ScpUnsupportedConstraintError);
+    // The equals family matches its base whole for the same reason.
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 equals_wibble X Y)) (prob_type enumerate) )"),
+        ScpUnsupportedConstraintError);
 }
 
 TEST_CASE("read_scp: linear constraints survive write -> read -> write unchanged")
@@ -1019,6 +1167,42 @@ TEST_CASE("read_scp: the tree family enumerates correctly")
     auto subgraphs = enumerate("( (version 1) (variables (N0 0 1) (N1 0 1) (E0 0 1)) "
                                "(constraints (_1 subgraph (0) (1) (N0 N1) (E0))) (prob_type enumerate) )");
     CHECK(subgraphs.size() == 5);
+}
+
+TEST_CASE("read_scp: dag enumerates correctly")
+{
+    // A triangle 0 -> 1 -> 2 -> 0: one solution with no node selected, three with
+    // one (no edge has both endpoints), two each for the three pairs (the one edge
+    // between them, in or out), and with all three selected every edge subset but
+    // the whole triangle.
+    auto dags = enumerate("( (version 1) (variables (N0 0 1) (N1 0 1) (N2 0 1) (E0 0 1) (E1 0 1) (E2 0 1)) "
+                          "(constraints (_1 dag (0 1 2) (1 2 0) (N0 N1 N2) (E0 E1 E2))) (prob_type enumerate) )");
+    CHECK(dags.size() == 17);
+
+    // A self loop is a cycle of one, so its edge can never be selected, leaving
+    // the two node choices free.
+    auto loops = enumerate("( (version 1) (variables (N0 0 1) (E0 0 1)) "
+                           "(constraints (_1 dag (0) (0) (N0) (E0))) (prob_type enumerate) )");
+    CHECK(loops.size() == 2);
+}
+
+TEST_CASE("read_scp: dag survives write -> read -> write unchanged")
+{
+    Problem original;
+    std::vector<IntegerVariableID> ns, es;
+    for (int i = 0; i < 3; ++i)
+        ns.push_back(original.create_integer_variable(0_i, 1_i, "N" + std::to_string(i)));
+    for (int e = 0; e < 3; ++e)
+        es.push_back(original.create_integer_variable(0_i, 1_i, "E" + std::to_string(e)));
+    original.post(Dag{{{0, 1}, {1, 2}, {2, 0}}, ns, es});
+    auto scp_a = prove_to_scp(original, "scp_reader_dag_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_dag_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
 }
 
 TEST_CASE("read_scp: the tree family survives write -> read -> write unchanged")

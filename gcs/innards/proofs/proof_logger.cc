@@ -177,13 +177,31 @@ struct ProofLogger::Imp
     int active_proof_level = 0;
     deque<IntervalSet<long long>> proof_lines_by_level;
 
+    // The `soli` line, and the objective-improving atom line beside it, for the
+    // most recent solution of an optimisation problem. Kept so that the next,
+    // strictly better solution can delete both: see ProofLogger::solution.
+    optional<pair<ProofLine, ProofLine>> previous_soli_lines;
+
     string proof_file;
-    fstream proof;
     // A proof is many short lines; the default stream buffer makes for a
     // write syscall every few KB, which shows up at this volume. Installed
     // via pubsetbuf before open in start_proof.
+    //
+    // Declared before `proof`, and that order is load-bearing: members are
+    // destroyed in reverse, and ~fstream closes the file, which flushes
+    // whatever is still buffered. If the buffer went first, that final write
+    // would read freed memory. It only bites when the last flush is the
+    // destructor's --- end_proof() flushes explicitly, so a proof that runs to
+    // completion never notices --- but a solve that throws part-way through
+    // does, and silently lost the whole unflushed tail of the .pbp.
     vector<char> proof_stream_buffer;
+    fstream proof;
     int current_indent = 0;
+    // How many `subproof` blocks deep we are. Constraints derived inside one do
+    // not survive its `qed;`, so a line recorded at Top from in there must not
+    // be moved to core: `core id` inside a subproof addresses something the
+    // outer database has never seen.
+    int subproof_depth = 0;
     AssertionLevel assertion_level;
 
     // Scratch buffers for assembling proof lines before they are written out,
@@ -295,14 +313,44 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
     }
 
     _imp->proof << ";\n";
-    record_proof_line(advance_proof_line_number(), ProofLevel::Top);
+
+    // Both rules put the constraint they derive into VeriPB's *core* set, where
+    // it stays until something explicitly takes it away, and where it is a drag
+    // on every later unit propagation. Which is to say: both want deleting, and
+    // they want deleting in different ways.
+    //
+    // A `solx` blocking clause is only needed while the search is still
+    // somewhere that could rediscover the same solution, so it is recorded at
+    // the *current* proof level. The backtrack out of the leaf that found the
+    // solution then deletes it along with everything else at that level, and
+    // that frame's backtrack clause --- which we have moved to core for exactly
+    // this purpose --- is what passes VeriPB's deletion check for it.
+    //
+    // A `soli` objective-improving constraint has to outlive its subtree: it is
+    // the incumbent bound, and every later branch anywhere in the tree prunes
+    // against it. So it stays at Top and is deleted below instead, at the point
+    // where a strictly better one has replaced it.
+    // A `soli` constraint stays at Top and is deleted below, when a better one
+    // replaces it. So does a `solx` blocking clause in a proof that cannot
+    // delete it: above AssertionLevel::Definitions the encoding is not written
+    // down, so nothing could carry the clause's preserved-variable assignment
+    // across to the atoms a backtrack clause is written in, and the deletion
+    // check would have to fail.
+    auto solution_level =
+        (optional_minimise_variable_and_value || _imp->assertion_level > AssertionLevel::Definitions) ? ProofLevel::Top : ProofLevel::Current;
+    auto solution_line = record_proof_line(advance_proof_line_number(), solution_level);
+
+    // The objective-improving constraint's line, and the atom line beside it,
+    // both of which the next solution supersedes.
+    optional<pair<ProofLine, ProofLine>> soli_lines;
 
     if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
         // soli and no links => have to assert the objective improving constraint
         visit(
             [&](const auto & id) {
-                emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top,
+                auto atom_line = emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top,
                     AssertionAnnotation{.hint_name = hints::SoliImprove::hint_name});
+                soli_lines.emplace(solution_line, atom_line);
             },
             optional_minimise_variable_and_value->first);
     else if (optional_minimise_variable_and_value)
@@ -313,17 +361,34 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
                 emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
                 _imp->proof << ":" << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
 
-                emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
+                auto atom_line = emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
+                soli_lines.emplace(solution_line, atom_line);
             },
             optional_minimise_variable_and_value->first);
     else if (_imp->assertion_level > AssertionLevel::Definitions) {
-        // solx and no links => have to assert the blocking constraint
-        emit(AssertProofRule{}, blocking_sum >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = hints::SolxBlock::hint_name});
+        // solx and no links => have to assert the blocking constraint. At the
+        // same level as the solx itself: it is the same fact said in literals
+        // rather than in bits, so it goes when the solx goes, and stays when the
+        // solx stays.
+        emit(AssertProofRule{}, blocking_sum >= 1_i, solution_level, AssertionAnnotation{.hint_name = hints::SolxBlock::hint_name});
     }
     // nothing needs done for solx below AssertionLevel::Links
+
+    if (soli_lines) {
+        // The constraint we have just added is `objective <= value - 1` for a
+        // strictly smaller value than the one it replaces, so it implies the
+        // older constraint outright and VeriPB's deletion check for the older
+        // one is a plain RUP against what remains of the core. Likewise for the
+        // `objective < value` atom beside it, which is merely derived and so
+        // costs nothing to delete. Without this the proof carries one live
+        // objective bound per solution found rather than one in total.
+        if (_imp->previous_soli_lines)
+            delete_proof_lines({_imp->previous_soli_lines->first, _imp->previous_soli_lines->second});
+        _imp->previous_soli_lines = soli_lines;
+    }
 }
 
-auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
+auto ProofLogger::backtrack(const vector<Literal> & guesses, ClauseSet destination) -> void
 {
     _imp->proof << "% backtracking\n";
     // The backtrack clause is `at least one guess is false': exactly a
@@ -335,17 +400,39 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     for (const auto & guess : guesses)
         guesses_as_reason.emplace_back(ProofLiteral{guess});
     auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-    emit_under_reason(
+    auto line = emit_under_reason(
         assert_or_rup, WPBSum{} >= 1_i, ProofLevel::Current, guesses_as_reason, AssertionAnnotation{.hint_name = hints::Backtrack::hint_name});
+
+    // The caller asks for core when the level it is about to forget can hold a
+    // blocking clause. Whether such a clause is deletable at all turns on the
+    // assertion level, which is the logger's to know: see solution() above.
+    if (ClauseSet::Core == destination && _imp->assertion_level <= AssertionLevel::Definitions)
+        move_to_core(line);
 }
 
-auto ProofLogger::emit_learned_nogood(const vector<Literal> & decisions) -> ProofLine
+auto ProofLogger::move_to_core(const ProofLine & line) -> void
+{
+    // `core id` is unconditional --- anything the proof has derived could have
+    // been derived into the core in the first place --- and does not itself
+    // produce a constraint, so the line counter does not move.
+    write_indent();
+    _imp->proof << "core id " << relative_proof_line(line, _imp->proof_line.number) << ";\n";
+}
+
+auto ProofLogger::emit_learned_nogood(const vector<Literal> & decisions, ClauseSet destination) -> ProofLine
 {
     _imp->proof << "% learned nogood\n";
     WPBSum clause;
     for (const auto & lit : decisions)
         clause += 1_i * ! lit;
-    return emit_rup_proof_line(move(clause) >= 1_i, ProofLevel::Top);
+    auto line = emit_rup_proof_line(move(clause) >= 1_i, ProofLevel::Top);
+
+    // A nogood is something the search derived rather than part of any
+    // variable's encoding, so nothing puts it in core on its behalf.
+    if (ClauseSet::Core == destination && _imp->assertion_level <= AssertionLevel::Definitions)
+        move_to_core(line);
+
+    return line;
 }
 
 auto ProofLogger::end_proof() -> void
@@ -409,26 +496,18 @@ auto ProofLogger::conclude_none() -> void
 auto ProofLogger::infer(
     const Literal & lit, const Justification & why, const ReasonLiterals & reason, const optional<AssertionAnnotation> & annotation) -> void
 {
-    // A range conclusion on a view (folding views into the interval machinery is
-    // deferred) or on a plain variable without a bits encoding (no order cuts to
-    // reify against) cannot become a single range ("in") literal; fall back to one
-    // per-value line each, which is still correct, just not coalesced. Every other
-    // range conclusion rides the standard machinery: the condition's proof name is
-    // the range literal, or the eq atom for width 1.
+    // A range conclusion about a variable with no bits encoding has no order cuts to
+    // reify against, so it cannot become a single range ("in") literal; fall back to
+    // one per-value line each, which is still correct, just not coalesced. Every
+    // other range conclusion, views included, rides the standard machinery: the
+    // condition's proof name is the range literal, or the eq atom for width 1.
     if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
-        if (cond->op == VariableConditionOperator::NotInRange) {
-            auto needs_per_value_fallback = overloaded{
-                [&](const SimpleIntegerVariableID & v) { return ! names_and_ids_tracker().has_bit_representation(v); }, //
-                [&](const ViewOfIntegerVariableID &) { return true; },                                                  //
-                [&](const ConstantIntegerVariableID &) { return false; }                                                //
-            }
-                                                .visit(cond->var);
-            if (needs_per_value_fallback) {
+        if (cond->op == VariableConditionOperator::NotInRange)
+            if (! names_and_ids_tracker().can_represent_range_literal_for(cond->var)) {
                 for (Integer val = cond->value; val <= cond->upper_value; ++val)
                     infer(cond->var != val, why, reason);
                 return;
             }
-        }
 
     if (_imp->assertion_level > AssertionLevel::Inferences)
         return;
@@ -707,6 +786,15 @@ auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> P
 {
     switch (level) {
     case ProofLevel::Top: _imp->proof_lines_by_level.at(0).insert_at_end(line.number); break;
+    case ProofLevel::TopAndCore:
+        _imp->proof_lines_by_level.at(0).insert_at_end(line.number);
+        // Into VeriPB's core set as well: see ProofLevel::TopAndCore. Not from
+        // inside a subproof, where the constraint does not survive the `qed;`
+        // and `core id` would be addressing something the outer database has
+        // never seen.
+        if (0 == _imp->subproof_depth)
+            move_to_core(line);
+        break;
     case ProofLevel::Current: _imp->proof_lines_by_level.at(_imp->active_proof_level).insert_at_end(line.number); break;
     case ProofLevel::Temporary: _imp->proof_lines_by_level.at(_imp->active_proof_level + 1).insert_at_end(line.number); break;
     }
@@ -729,6 +817,7 @@ auto ProofLogger::emit_subproofs(const map<ProofGoal, Subproof> & subproofs)
     _imp->proof << " : subproof\n";
     advance_proof_line_number();
     _imp->current_indent += INDENT_WIDTH;
+    ++_imp->subproof_depth;
     for (const auto & [proofgoal, proof] : subproofs) {
         // A ProofLine proofgoal (naming a specific constraint, as circuit does)
         // is a reference and must be relativised like any other -- but VeriPB
@@ -755,6 +844,7 @@ auto ProofLogger::emit_subproofs(const map<ProofGoal, Subproof> & subproofs)
         write_indent();
         _imp->proof << "qed;\n";
     }
+    --_imp->subproof_depth;
     _imp->current_indent -= INDENT_WIDTH;
     write_indent();
     _imp->proof << "qed;\n";

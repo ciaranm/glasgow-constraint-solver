@@ -34,6 +34,10 @@ solver starts, each constraint is installed once, in three phases:
 After installing, the constraint object itself is gone — only the
 propagators (with their captured state) and the OPB definition remain.
 
+Those three phases are what a constraint *is*. The order in which to build them
+for a constraint that does not exist yet is a separate question, and an
+important one: see Bringing up a new constraint, below, before starting.
+
 ## File layout
 
 Every constraint lives in its own directory. For a constraint named
@@ -512,12 +516,22 @@ an external justifier rather than fully justified. In normal proofs-off mode
 the hint is inert and the output is byte-identical. See `abs/hints.hh` for
 the minimal shape.
 
-**Debug aid only:** `AssertRatherThanJustifying` exists as a "trust me"
-step that bypasses the justification. Use it temporarily during
-development to isolate whether a VeriPB failure is in the OPB
-encoding (still fails with `Assert*`) or the justification (passes
-with `Assert*`, fails with the real one). Never commit code that uses
-it.
+**Development scaffolding only --- never merge it:**
+`AssertRatherThanJustifying` is a "trust me" step that bypasses the
+justification entirely, emitting VeriPB's `a` rule, which adds the
+constraint to the proof *without checking it*. An inference justified this
+way is not verified, and a proof containing one verifies nothing about it.
+
+It has two legitimate uses, both temporary. As a bisection aid, it isolates
+whether a VeriPB failure is in the OPB encoding (still fails with `Assert*`)
+or in the justification (passes with `Assert*`, fails with the real one). And
+as stage 3 of Bringing up a new constraint, below, it lets a new propagator's
+algorithm be developed and tested before any of its proofs exist.
+
+Both are borrowed time. **Never commit code that uses it**, and be aware that
+nothing will catch you if you do: `veripb` exits successfully on an asserted
+proof, so the test suite stays green. The only signal is the `s UNDER
+ASSERTIONS` line and the accompanying warning, which you have to go and read.
 
 ### When RUP isn't enough: explicit `pol`
 
@@ -944,6 +958,206 @@ condition the search sets, say, with a fixed branching order so it is set first)
 or mutate an emitted lemma instead. `equals_mutations.hh` records two instances
 that accept the mutation for this reason before the third one bites.
 
+## Bringing up a new constraint
+
+The checklist below says what files a new constraint touches. This section says
+what order to do the work in, which matters more: it is the difference between
+one hard problem and three easy ones.
+
+A finished proof-logged constraint has three things that can be wrong — the OPB
+encoding, the propagation algorithm, and the justification of each inference —
+and a VeriPB failure looks much the same whichever it is. So bring them up one
+at a time, in that order, with a gate after each that can only be failed by the
+piece you just added.
+
+One warning up front, because it is the part of this method that can do real
+damage if it is half-remembered. Stage 3 has you cheat — deliberately, with
+`AssertRatherThanJustifying`, which puts unchecked claims into the proof — and
+stages 4 and 5 exist to take every one of those cheats back out again. **Not a
+single one of them may ever be merged**, and nothing in the test suite or CI
+will stop you, so the discipline has to come from you. If you are going to
+follow only part of this section, follow that part.
+
+### Stage 1: the encoding, with a check-only propagator
+
+Write `define_proof_model` and a propagator that does no pruning at all: it
+waits until the variables its semantics need are assigned, checks the
+requirement, and contradicts if it is violated. Every inference such a
+propagator makes is `JustifyUsingRUP{}` — no `pol`, no explicit steps, because
+a fully assigned scope is exactly the case unit propagation can close on its
+own.
+
+Then run the data-driven tests with proofs on.
+
+**The gate: the whole suite verifies.** That is a much stronger statement than
+it looks. It says the encoding is *definitionally correct* — its solutions are
+the constraint's solutions, on every instance the test generates — and that it
+is *strong enough* that RUP alone certifies every consequence reachable from a
+complete assignment. Once it passes, the encoding is settled, and every later
+failure is about propagation or justification rather than about the model. Both
+of the worked examples below record reaching this point as the thing that
+licensed building everything else without revisiting the encoding.
+
+**The catch: a check-only propagator does not prune, so the solver enumerates.**
+Search is exponential in the number of variables, and the proof grows with it.
+Keep the instances at this stage very small — small domains, few variables — and
+expect to shrink them further if a proof gets slow. This is the one stage where
+the test data is chosen for the *search* rather than for coverage of interesting
+cases; you get those back in stage 2, once there is a propagator to make them
+cheap. Turning the caps off (`-DGCS_TEST_CAP_DEFAULTS=OFF`) is what makes the
+gate mean "on every instance" rather than "on a prefix of every instance", so
+this stage wants them off and wants instances that can afford it.
+
+### Stage 2: state the consistency level in the tests
+
+Before writing any pruning, change the tests to demand it: switch
+`solve_for_tests` to `solve_for_tests_checking_gac` if the constraint is meant
+to achieve GAC, or add the directed cases that pin the bounds you intend to
+reach if it is bounds-consistent (see Testing, above).
+
+The tests now fail. That is the point — they fail for the reason you are about
+to fix, and they will keep failing until the propagator actually reaches the
+strength you claimed, rather than until it stops crashing. Writing this rung
+before the propagator is what stops "it passes" quietly becoming the definition
+of the strength, and it is the same discipline as
+[large-domains.md](large-domains.md)'s audit table: say what you promise, then
+make a test hold you to it.
+
+### Stage 3: propagate, with every inference cheated (temporarily)
+
+Now write the real propagation, and justify every inference with
+`AssertRatherThanJustifying`.
+
+**Be clear about what that is: it is cheating.** It emits VeriPB's `a` rule,
+which adds a constraint to the proof *with no check whatsoever* — the solver
+says "this follows" and the checker writes it down and believes it. Every
+inference so justified is unverified. This is temporary development
+scaffolding, borrowed against work you have not done yet, and it is repaid in
+stage 4. It is the one thing in this whole document that must never reach
+`main`.
+
+Used that way, it is genuinely valuable: the suite verifies *subject to the
+cheats*, so you can develop and debug the algorithm without paying for a single
+proof step, and a failure at this stage can only be the algorithm.
+
+**The gate: the stage 2 tests pass, and VeriPB still accepts.** Passing means
+the algorithm reaches the strength you claimed and prunes nothing it shouldn't;
+the enumeration check catches unsoundness whether or not anything is proved.
+What it deliberately does *not* tell you is whether any of it is justifiable —
+that is stage 4's job, and separating the two is the whole point, because
+"my propagator is wrong" and "my proof is wrong" want completely different
+debugging.
+
+Assert each inference's own unit consequence, not a whole node failure: one
+assertion per propagator firing keeps the search-tree refutation honest RUP from
+the start, so what you discharge later is one self-contained claim at a time.
+
+**Nothing will catch a cheat you leave behind. That is why this is dangerous.**
+`veripb` exits 0 whether or not the proof used assertions, and `run_veripb` only
+looks at the exit status, so a green `ctest` is exactly as green with cheats in
+it as without. No CI lane, no test, and no reviewer reading a test log will tell
+you. The only oracle is the `s` line, and you have to go and look at it:
+
+```
+s VERIFIED COMPLETE ENUMERATION OF 8 SOLUTIONS               <- honest
+Warning: The proof used unchecked assertions.
+s UNDER ASSERTIONS COMPLETE ENUMERATION OF 8 SOLUTIONS       <- cheats remain
+```
+
+`s UNDER ASSERTIONS` is not a verification. It is the checker telling you it was
+asked to take things on faith, and it says nothing about the inferences that were
+asserted — nor, strictly, about a proof whose later steps were derived from them.
+There is no `--force-...` flag to turn this into an error, the way
+`--force-checked-deletion` exists for the analogous deletion problem. So watch
+the `s` line whenever you run a test binary directly during stages 3 and 4, and
+count what is left with `GCS_PRESERVE_PROOF_FILES=1` and
+`grep -c '^a ' foo.pbp`.
+
+### Stage 4: discharge the cheats, one at a time
+
+Take each inference-producing site in turn and ask, in words, before writing any
+proof steps:
+
+> *Precisely what is the general nature of what is being inferred here, and why
+> is it true?*
+
+The answer has to be a general argument about the constraint — the kind of thing
+you would say to a colleague — not a restatement of what the code does. Insist
+on it being general: "because `D[a][b] < T` for every `b` still in `x_j`'s
+domain" is an argument; "because the loop found no support" is the code. When
+the answer comes out sharp, the proof usually falls straight out of it, because
+a `pol` is a formal transcription of exactly this kind of argument and RUP is
+what you use when the argument is "unit propagation can see it". When it does
+not come out sharp, you have found the real work, stated as a question you can
+go and answer — which is a far better position than staring at a rejected proof
+line.
+
+Replace one assertion, re-run, and only then move to the next. One at a time
+keeps every failure attributable, and the burn-down (`grep -c '^a '`) is a
+progress bar.
+
+If an argument turns out to need something RUP cannot do — a cross-variable
+linear combination, most often — that is When RUP isn't enough, above. If it
+needs a fact that is true but not stated anywhere in the encoding, you have
+found the one legitimate reason to reopen stage 1.
+
+### Stage 5: zero assertions, and no exceptions
+
+**`AssertRatherThanJustifying` must not appear in merged code. Ever, for any
+reason.** Not behind a flag, not "just this one inference", not with a `TODO`
+next to it, not in a mode nobody enables by default. Delete every one of them
+before the pull request.
+
+This is not tidiness, and it is not a style rule. This solver has exactly one
+claim to make — that you do not have to trust it, because everything it infers
+can be checked by something else. A merged assertion is that claim being false
+while continuing to look true: the proof still ships, VeriPB still prints a
+green-looking `s` line, and the one inference nobody has checked is the one
+someone got wrong. It is worse than having no proof at all, because a
+constraint with no proof logging is honest about it and this is not.
+
+So the finished constraint's proofs say `s VERIFIED`, with no assertion
+warning. Check it yourself, on a real run, and say so in the pull request
+description — "zero assertions", as the min-distance and global-cardinality
+work both did — because nothing in the test suite or CI will say it for you.
+
+If one inference genuinely resists after stage 4 has been honest about it, the
+answer is never to leave the cheat in. Weaken the *inference* to something you
+can justify: prune less, say so in the class comment, and record what a stronger
+propagator would need, so that someone can pick the gap up later. A constraint
+that prunes less and tells the truth is worth having; one that prunes more and
+lies is not.
+
+`NoJustificationNeeded` is not a way round this either, and it is worth
+understanding why it is nonetheless the *safe* one of the two. It puts nothing
+in the proof at all, so any later step that depends on the unjustified inference
+simply fails to verify — you get a loud, honest failure. An assertion puts a
+line in that VeriPB accepts unconditionally, so everything downstream sails
+through. That is the whole difference: one of them breaks when you are wrong.
+
+### Worked examples
+
+Two constraints have written this up from their own side, each in detail on the
+stage that was hardest for them:
+
+- [min-distance-proofs.md](min-distance-proofs.md), "Check-only first:
+  validating the encoding" — stage 1 on `MinDistance`. Shows what a check-only
+  propagator looks like (act only once a pair's endpoints are both assigned;
+  tighten `z`; pin it exactly once everything is fixed), and states the gate in
+  its strongest form.
+- [sortedness.md](sortedness.md), "Proof logging plan" — stages 3 and 4 on
+  `Sort` / `ArgSort`, where no certifying sortedness propagator existed and the
+  proofs had to be designed from scratch. Records the question above in its
+  original wording, and what it turned up: the permutation/surjectivity of the
+  stable rank, and then a single Hall pigeonhole shared by every bound and the
+  contradiction.
+
+`CheckOnly` is not a shared facility — `MinDistance` has its own
+`install_check_only_propagator` and a mode enum to select it, and that is the
+pattern to copy rather than something to call. Keeping the mode after bring-up
+is worth considering: `MinDistance` still ships it, and it is the encoding's
+standing regression test.
+
 ## Adding a new constraint: checklist
 
 1. Header file with class declaration, Doxygen comments, the phases it
@@ -1006,9 +1220,37 @@ that accept the mutation for this reason before the third one bites.
 
    The discipline above was retro-fitted across the existing
    constraints in PRs #223–#234.
-7. Build and run under `--preset sanitize` and `--preset release`. Run
+
+   **Ask the same question of the constraint's *constant* arguments,
+   which that retro-fit did not cover.** A list of constants that the
+   propagator reads as a *set* has exactly the alias problem, and
+   nothing about it looks like an alias: `GlobalCardinality`'s cover was
+   assumed distinct by both propagators — the bounds arm sums the counts
+   over a contiguous slice of the sorted cover, the GAC arm gives each
+   entry its own value node — and a repeated value doubled the demand
+   for it, losing solutions and emitting an inference VeriPB rejected
+   (#922). It took the same three-way choice and the same answer as a
+   Bucket A alias: `InvalidProblemDefinitionException` at construction,
+   `sort` plus `adjacent_find` as `AllDifferent` does it. And while you
+   are there, check the sizes of argument lists that are indexed against
+   each other: the same constructor let `values` and `counts` differ in
+   length, which was a heap-buffer-overflow rather than a diagnosable
+   error.
+
+   **Where a front end's input language allows what the constraint
+   rejects, the transformation belongs in the front end**, not in
+   `prepare()`. The `.scp` term is written from the constraint as
+   posted, and `cake_pb_cp` rebuilds the OPB from that term, so a
+   constraint that rewrites itself leaves the two encodings describing
+   different things. `fold_repeated_cover_values()` is the shape to
+   copy: a helper next to the constraint that rewrites the arguments and
+   hands back the constraints the caller must post in their place, so
+   the `.scp` records the rewritten model as the separate constraints it
+   actually is. MiniZinc's `global_cardinality` really does allow a
+   repeated cover value, and the three front ends call it.
+8. Build and run under `--preset sanitize` and `--preset release`. Run
    the wider test suite to confirm no regressions.
-8. If the constraint should be exposed to MiniZinc, follow
+9. If the constraint should be exposed to MiniZinc, follow
    [minizinc.md](minizinc.md) — separate commit.
 
 ## See also

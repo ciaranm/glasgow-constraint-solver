@@ -33,8 +33,18 @@ namespace gcs::innards
     // that case and uses pol instead (abs/justify.cc); do not reach for this
     // helper with a mirrored pairing and expect it to hold.
     //
-    // `other` must be a plain integer variable, equality-linked to `pruned` in the
-    // proof model. Pass the same reason the caller hands to infer_not_in_range.
+    // Either operand may be a view, and a wrap does not disturb that hypothesis.
+    // The lemmas name no bit vector, only order conditions on the two operands, so
+    // they are emitted over whichever encoded variable each operand resolves to --
+    // a registered view's own, matching the representation the model states the
+    // equality in (dev_docs/view-proof-logging.md invariant 1). The sign that has
+    // to match is the one on the link between the two *operands*, not the one on
+    // either view's wrap: a negated view has the matching negation in the model's
+    // own equality line, so `pruned = other` stays a difference row however either
+    // side is wrapped.
+    //
+    // `other` must be equality-linked to `pruned` in the proof model. Pass the same
+    // reason the caller hands to infer_not_in_range.
     //
     // `under` is for a link that holds only under a guard, which is what an
     // equality that is one arm of a choice looks like: In's `V_i = var` holds
@@ -44,7 +54,7 @@ namespace gcs::innards
     // negation sets the flag, and the model's half-reified rows then supply the
     // same pair of opposing bounds --- across the same difference --- that the
     // unconditional case gets outright.
-    auto justify_not_in_range_across_equality(ProofLogger & logger, const ReasonLiterals & reason, const SimpleIntegerVariableID & pruned, Integer lo,
+    auto justify_not_in_range_across_equality(ProofLogger & logger, const ReasonLiterals & reason, const IntegerVariableID & pruned, Integer lo,
         Integer hi, IntegerVariableID other, Integer other_lo, Integer other_hi, const std::optional<ProofFlag> & under = std::nullopt) -> void;
 }
 

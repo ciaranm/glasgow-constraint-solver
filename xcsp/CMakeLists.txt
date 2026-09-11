@@ -67,6 +67,12 @@ add_xcsp_test(bin_packing)
 add_xcsp_test(cardinality)
 add_xcsp_test(cardinality_occvars)
 add_xcsp_test(cardinality_intervals)
+# A <values> list that repeats a value. XCSP3 calls it a set, but nothing on the
+# way in checks it, and GlobalCardinality rejects it: the binding folds the repeat
+# out and posts the occurrence equality it stood for (#922). ACE reads the same
+# instance and agrees on all nine solutions, so the cache is a real cross-check
+# rather than a record of what we happen to do.
+add_xcsp_test(cardinality_repeated)
 add_xcsp_test(channel_self)
 add_xcsp_test(channel_two)
 add_xcsp_test(circuit)

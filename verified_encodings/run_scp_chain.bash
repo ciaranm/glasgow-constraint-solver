@@ -70,7 +70,7 @@ if ! have "$CAKE_PB_CP"; then
     # cake_pb_cp unavailable -- fall back to a workflow-1 self-verify so the case
     # still gets checked (the solver's proof is valid against its own OPB).
     echo "[fallback] cake_pb_cp not on PATH (set CAKE_PB_CP to override); workflow-1 self-verify only"
-    out=$(veripb "${base}.opb" "${base}.pbp" 2>&1)
+    out=$(veripb --force-checked-deletion "${base}.opb" "${base}.pbp" 2>&1)
     if ! verified "$out"; then echo "FAIL: self-verify"; tail -5 <<< "$out"; exit 1; fi
     check_bounds "$out"
     grep -E '^s VERIFIED' <<< "$out"
@@ -83,8 +83,14 @@ echo "[2] cake_pb_cp: re-derive OPB from ${base}.scp"
 "$CAKE_PB_CP" "${base}.scp" > "${base}.verifiedopb"
 [[ -s "${base}.verifiedopb" ]] || { echo "FAIL: cake_pb_cp produced no OPB"; exit 1; }
 
+# --force-checked-deletion: a failed core deletion check is only a warning by
+# default -- VeriPB downgrades to unchecked deletion, drops its
+# equi-enumerable / equi-optimal guarantees and still prints `s VERIFIED`.
+# The solver deletes `solx` and `soli` constraints, which are exactly the
+# deletions that check applies to, so ask for the strict behaviour.
+# See dev_docs/solution-clause-deletion.md.
 echo "[3] veripb --elaborate: solver proof against cake's OPB -> core"
-out=$(veripb "${base}.verifiedopb" "${base}.pbp" --elaborate "${base}.corepb" 2>&1)
+out=$(veripb --force-checked-deletion "${base}.verifiedopb" "${base}.pbp" --elaborate "${base}.corepb" 2>&1)
 if ! verified "$out"; then echo "FAIL: veripb did not verify"; tail -5 <<< "$out"; exit 1; fi
 
 echo "[4] cake_pb_cp: re-check the elaborated core (the verified step)"

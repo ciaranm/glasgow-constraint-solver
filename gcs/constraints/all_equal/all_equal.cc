@@ -2,7 +2,6 @@
 #include <gcs/constraints/all_equal/hints.hh>
 #include <gcs/constraints/innards/justify_not_in_range.hh>
 #include <gcs/innards/inference_tracker.hh>
-#include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -25,7 +24,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::holds_alternative;
 using std::make_unique;
 using std::move;
 using std::pair;
@@ -34,7 +32,6 @@ using std::stringstream;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
-using std::ranges::all_of;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -149,117 +146,90 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
                 // The union over j of (D_i minus D_j) is D_i minus the intersection
                 // of the others, and that is D_i minus `common`, so the removal set
                 // is exactly what it was.
-                auto all_simple = all_of(vars, [](const IntegerVariableID & v) { return holds_alternative<SimpleIntegerVariableID>(v); });
-
+                //
                 // A range asserts order atoms and never bits, so it cannot cross
                 // the model's bit-sum equality on its own; the two ge-layer bound
                 // lemmas carry the bounds over to vars[j] first, and then the
                 // reason's range literal is a clause with every literal falsified.
                 // Same helper, and same argument, as equals.cc --- the model here is
                 // a chain of consecutive-pair equalities, so for non-adjacent i and
-                // j unit propagation walks the chain between them.
+                // j unit propagation walks the chain between them. Views are no
+                // different: a view's range literals live on its own encoded
+                // variable, which is the representation the chain equalities are
+                // stated in.
                 auto prune_range = [&](size_t i, size_t j, Integer l, Integer u) {
                     inference.infer_not_in_range(logger, vars[i], l, u,
                         JustifyExplicitly{[logger, &vars, i, j, l, u](const ReasonLiterals & r) {
-                                              justify_not_in_range_across_equality(
-                                                  *logger, r, std::get<SimpleIntegerVariableID>(vars[i]), l, u, vars[j], l, u);
+                                              justify_not_in_range_across_equality(*logger, r, vars[i], l, u, vars[j], l, u);
                                           },
                             ThenRUP::Yes, hints::AllEqual{owner}},
                         ExplicitReason{ReasonLiterals{{not_in_range(vars[j], l, u)}}});
                 };
 
-                if (all_simple) {
-                    for (size_t i = 0; i < n; ++i) {
-                        for (auto [l, u] : domains[i].each_interval_minus(common)) {
-                            if (l == u) {
-                                // A width-1 range literal *is* the eq atom -- the proof
-                                // machinery never makes an interval of one -- so saying
-                                // it that way is the same inference, and finding its
-                                // witness is n in_domain checks against no set at all.
-                                // Worth the branch: over holey domains most removed
-                                // intervals are single values, and routing them through
-                                // the interval path instead cost 2%.
-                                IntegerVariableID witness = vars[0];
-                                for (size_t j = 0; j < n; ++j)
-                                    if (! state.in_domain(vars[j], l)) {
-                                        witness = vars[j];
-                                        break;
-                                    }
-                                inference.infer_not_equal(
-                                    logger, vars[i], l, JustifyUsingRUP{hints::AllEqual{owner}}, ExplicitReason{ReasonLiterals{{witness != l}}});
-                                continue;
-                            }
-
-                            // Almost always one variable's hole explains the whole
-                            // of a removed interval, and then there is nothing to
-                            // split: a scan for a single covering witness is n
-                            // merge-walks with no allocation, where building the
-                            // leftover set to subtract from costs one whatever
-                            // happens. Measured: with the splitting machinery run
-                            // unconditionally this was 2% slower on a search over
-                            // holey domains, and the fast path takes that back.
-                            IntervalSet<Integer> range{l, u};
-                            auto witness = n;
+                for (size_t i = 0; i < n; ++i) {
+                    for (auto [l, u] : domains[i].each_interval_minus(common)) {
+                        if (l == u) {
+                            // A width-1 range literal *is* the eq atom -- the proof
+                            // machinery never makes an interval of one -- so saying
+                            // it that way is the same inference, and finding its
+                            // witness is n in_domain checks against no set at all.
+                            // Worth the branch: over holey domains most removed
+                            // intervals are single values, and routing them through
+                            // the interval path instead cost 2%.
+                            IntegerVariableID witness = vars[0];
                             for (size_t j = 0; j < n; ++j)
-                                if (j != i && ! domains[j].contains_any_of(range)) {
-                                    witness = j;
+                                if (! state.in_domain(vars[j], l)) {
+                                    witness = vars[j];
                                     break;
                                 }
-
-                            if (witness != n) {
-                                prune_range(i, witness, l, u);
-                                continue;
-                            }
-
-                            // Mixed: different parts of this interval are missing
-                            // from different variables, which is the whole reason
-                            // the per-value form needed a witness lookup per value.
-                            // Take the difference against one variable at a time and
-                            // strike off what it accounts for, so each part is
-                            // removed once rather than once per variable that
-                            // witnesses it --- every emission carries two lemmas.
-                            IntervalSet<Integer> todo{l, u};
-                            for (size_t j = 0; j < n && ! todo.empty(); ++j) {
-                                if (j == i)
-                                    continue;
-
-                                // Collected before erasing: each_interval_minus()
-                                // borrows `todo`, which must not be modified while
-                                // the generator is live.
-                                vector<pair<Integer, Integer>> witnessed;
-                                for (auto [wl, wu] : todo.each_interval_minus(domains[j]))
-                                    witnessed.emplace_back(wl, wu);
-
-                                for (auto [wl, wu] : witnessed) {
-                                    todo.erase_range(wl, wu);
-                                    prune_range(i, j, wl, wu);
-                                }
-                            }
+                            inference.infer_not_equal(
+                                logger, vars[i], l, JustifyUsingRUP{hints::AllEqual{owner}}, ExplicitReason{ReasonLiterals{{witness != l}}});
+                            continue;
                         }
-                    }
-                }
-                else {
-                    // A view keeps the per-value walk, since the bound lemmas have
-                    // not been shown to bridge a view's atoms --- the same
-                    // restriction, and the same reason, as equals.cc's range path.
-                    // It keeps the guard with it: this is a plain integer loop over
-                    // an interval, which neither State's iterators nor
-                    // IntervalSet::each() covers, so without a counter the probe
-                    // takes 131 seconds and 16 GB and then *passes*.
-                    LargeDomainIterationCounter expansion_guard{"the number of values one AllEqual intersection pruning has walked"};
 
-                    for (size_t i = 0; i < n; ++i) {
-                        for (auto [l, u] : domains[i].each_interval_minus(common)) {
-                            for (Integer val = l; val <= u; ++val) {
-                                expansion_guard.step();
-                                IntegerVariableID witness = vars[0];
-                                for (size_t j = 0; j < n; ++j)
-                                    if (! state.in_domain(vars[j], val)) {
-                                        witness = vars[j];
-                                        break;
-                                    }
-                                inference.infer_not_equal(
-                                    logger, vars[i], val, JustifyUsingRUP{hints::AllEqual{owner}}, ExplicitReason{ReasonLiterals{{witness != val}}});
+                        // Almost always one variable's hole explains the whole
+                        // of a removed interval, and then there is nothing to
+                        // split: a scan for a single covering witness is n
+                        // merge-walks with no allocation, where building the
+                        // leftover set to subtract from costs one whatever
+                        // happens. Measured: with the splitting machinery run
+                        // unconditionally this was 2% slower on a search over
+                        // holey domains, and the fast path takes that back.
+                        IntervalSet<Integer> range{l, u};
+                        auto witness = n;
+                        for (size_t j = 0; j < n; ++j)
+                            if (j != i && ! domains[j].contains_any_of(range)) {
+                                witness = j;
+                                break;
+                            }
+
+                        if (witness != n) {
+                            prune_range(i, witness, l, u);
+                            continue;
+                        }
+
+                        // Mixed: different parts of this interval are missing
+                        // from different variables, which is the whole reason
+                        // the per-value form needed a witness lookup per value.
+                        // Take the difference against one variable at a time and
+                        // strike off what it accounts for, so each part is
+                        // removed once rather than once per variable that
+                        // witnesses it --- every emission carries two lemmas.
+                        IntervalSet<Integer> todo{l, u};
+                        for (size_t j = 0; j < n && ! todo.empty(); ++j) {
+                            if (j == i)
+                                continue;
+
+                            // Collected before erasing: each_interval_minus()
+                            // borrows `todo`, which must not be modified while
+                            // the generator is live.
+                            vector<pair<Integer, Integer>> witnessed;
+                            for (auto [wl, wu] : todo.each_interval_minus(domains[j]))
+                                witnessed.emplace_back(wl, wu);
+
+                            for (auto [wl, wu] : witnessed) {
+                                todo.erase_range(wl, wu);
+                                prune_range(i, j, wl, wu);
                             }
                         }
                     }

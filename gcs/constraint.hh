@@ -136,6 +136,13 @@ namespace gcs
          * Every constraint overrides this. (It used to be derivable from a legacy
          * string form, s_exprify(); that bridge has been removed now that all
          * constraints build the structured term directly.)
+         *
+         * A form with no keyword of its own is written as the constraint it
+         * enforces where there is one --- the negated reification kinds of the
+         * comparison and linear families are written as the mirrored inequality
+         * --- and may throw only where there is genuinely nothing the grammar
+         * can express. innards::write_scp renders the whole file before opening
+         * it, so a throw leaves no `.scp` behind rather than a truncated one.
          */
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr = 0;
     };

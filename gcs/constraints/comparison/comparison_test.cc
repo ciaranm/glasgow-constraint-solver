@@ -116,6 +116,46 @@ namespace
     {
         static const constexpr auto name = "greater than or equal iff";
     };
+
+    // The two negated reification kinds have no derived class: the twelve
+    // Less/Greater{Than,ThanEqual}{,If,Iff} spellings cover MustHold, If and
+    // Iff only. Spelling them here gives them the same constructor shape as the
+    // derived classes, so the generic test functions below take them unchanged,
+    // and gives the forms the sweep coverage that being unreachable through a
+    // named class had cost them --- mirroring what linear_test does for its own
+    // negated forms (issue #908, where both families' .scp writing threw).
+    //
+    // Two of the four combinations, not four: the reification kind and the
+    // strictness are independent of each other, and these two between them take
+    // every value of both. What each enforces is the *mirrored* comparison,
+    // which is also what its .scp now says, so the satisfying predicates handed
+    // to the test functions are `>=` and `>` rather than `<` and `<=`.
+    struct LessThanNot : ReifiedCompareLessThanOrMaybeEqual
+    {
+        LessThanNot(IntegerVariableID v1, IntegerVariableID v2) : ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::MustNotHold{}, false)
+        {
+        }
+    };
+
+    struct LessThanEqualNotIf : ReifiedCompareLessThanOrMaybeEqual
+    {
+        LessThanEqualNotIf(IntegerVariableID v1, IntegerVariableID v2, IntegerVariableCondition cond) :
+            ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::NotIf{cond}, true)
+        {
+        }
+    };
+
+    template <>
+    struct NameOf<LessThanNot>
+    {
+        static const constexpr auto name = "not less than";
+    };
+
+    template <>
+    struct NameOf<LessThanEqualNotIf>
+    {
+        static const constexpr auto name = "not less than or equal if";
+    };
 }
 
 template <typename Constraint_>
@@ -240,7 +280,8 @@ auto main(int argc, char * argv[]) -> int
     }
     // Keep in sync with the if-chain below and the comparison_constraint_${mode}
     // foreach in gcs/CMakeLists.txt.
-    const vector<string> all_modes = {"lt", "lt_if", "lt_iff", "le", "le_if", "le_iff", "gt", "gt_if", "gt_iff", "ge", "ge_if", "ge_iff"};
+    const vector<string> all_modes = {
+        "lt", "lt_if", "lt_iff", "lt_not", "le", "le_if", "le_iff", "le_notif", "gt", "gt_if", "gt_iff", "ge", "ge_if", "ge_iff"};
     const vector<string> modes = requested_mode.empty() ? all_modes : vector<string>{requested_mode};
 
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -296,6 +337,11 @@ auto main(int argc, char * argv[]) -> int
                 else if (mode == "lt_iff") {
                     run_reif_binary_comparison_test<LessThanIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a < b; }, true);
                 }
+                else if (mode == "lt_not") {
+                    // MustNotHold on `<`: what it enforces, and what its .scp
+                    // spells it as, is `greater_equal`.
+                    run_binary_comparison_test<LessThanNot>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a >= b; });
+                }
                 else if (mode == "le") {
                     run_binary_comparison_test<LessThanEqual>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a <= b; });
                 }
@@ -304,6 +350,10 @@ auto main(int argc, char * argv[]) -> int
                 }
                 else if (mode == "le_iff") {
                     run_reif_binary_comparison_test<LessThanEqualIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a <= b; }, true);
+                }
+                else if (mode == "le_notif") {
+                    // NotIf on `<=`: cond -> the mirrored `greater_than`.
+                    run_reif_binary_comparison_test<LessThanEqualNotIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a > b; }, false);
                 }
                 else if (mode == "gt") {
                     run_binary_comparison_test<GreaterThan>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a > b; });
@@ -356,6 +406,12 @@ auto main(int argc, char * argv[]) -> int
                         run_dup_reif_binary_comparison_test<GreaterThanIff>(proofs, mode, xr, [](int, int c) { return c == 0; });
                     else if (mode == "ge_iff")
                         run_dup_reif_binary_comparison_test<GreaterThanEqualIff>(proofs, mode, xr, [](int, int c) { return c == 1; });
+                    else if (mode == "lt_not")
+                        // LessThanNot(x, x) is not(x<x), which always holds.
+                        run_dup_binary_comparison_test<LessThanNot>(proofs, mode, xr, [](int) { return true; });
+                    else if (mode == "le_notif")
+                        // LessThanEqualNotIf(x, x, c) is c -> not(x<=x), i.e. not c.
+                        run_dup_reif_binary_comparison_test<LessThanEqualNotIf>(proofs, mode, xr, [](int, int c) { return c == 0; });
                     // else: lt, gt — Bucket A throw, no dup test
                 }
 

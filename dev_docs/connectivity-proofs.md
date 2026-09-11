@@ -1,7 +1,10 @@
 # Connectivity: encoding and proofs
 
 The design note for `Reachable` / `DReachable` (issue #637), the propagators
-behind MiniZinc's `reachable`, `dreachable`, `connected` and `dconnected`.
+behind MiniZinc's `reachable`, `dreachable`, `connected` and `dconnected`, and
+for the rest of `globals.graph` that is built on the same encoding: `Subgraph`,
+the tree and path family, and `Dag` (issue #791), which is not a connectivity
+constraint at all but wants this encoding with the root taken out.
 
 The short version: connectivity is not hard to proof-log, but which encoding it
 is logged *against* decides everything. Against a breadth-first unfolding of
@@ -435,16 +438,264 @@ As with the hitori table above, most of that gap is the distance labelling being
 bad thing to search over rather than these rules being clever: they are the
 straightforward ones.
 
+## Acyclicity: the same unfolding, without a root
+
+`Dag` is MiniZinc's `dag` (#791), and it is on this page rather than on one of
+its own because it needs no new encoding idea: it is the unfolding above with
+`reach[v][k]` replaced by
+
+```
+    lev[v][k]  --  there is a selected walk of exactly k edges ending at v
+```
+
+and the root taken out. #791 expected the ladder's answer not to transfer,
+"because acyclicity is not a reachability property and there is no root to
+unfold from". There is indeed no root — and it turns out that a root is not what
+the unfolding was for. **Acyclicity needs nothing to unfold from**, because a
+walk of as many edges as the graph has nodes visits some node twice and so
+contains a cycle. The constraint is just that no such walk exists, and the
+unfolding can start everywhere at once. What the unfolding was always for is the
+other thing: spreading a distance across a flag per level instead of packing it
+into one integer, which is what removes the induction, and that transfers
+untouched.
+
+### What the constraint says, and where it differs from the decomposition
+
+`dag(from, to, ns, es)` takes a fixed directed graph and a 0/1 variable per node
+and per edge. It holds when every selected edge has both endpoints selected
+(MiniZinc's `subgraph`) and the selected edges contain no directed cycle. An
+all-zero assignment is a solution.
+
+That first half is where `Dag` and MiniZinc's own decomposition part company, and
+it is worth knowing before reading any comparison below. `fzn_dreachable` ends
+with `subgraph(N, E, from, to, ns, es)`; **`fzn_dag` does not**, and its distance
+labelling only forces a selected edge's *head* to be selected. So on a two-node
+graph with the single edge 0 to 1 the decomposition admits
+`ns = [false, true], es = [true]` and `Dag` does not — six solutions against
+five, measured, not deduced. Chuffed's native `dag` agrees with neither and gives
+four, enforcing `subgraph` and requiring weak connectivity too. The documented
+meaning is "the subgraph `ns` and `es` ... is a DAG", so `Dag` follows the
+documentation and its siblings here. [`minizinc.md`](minizinc.md) has the
+consequences for testing; the short version is that a differential lane has to
+post `subgraph` alongside, and a benchmark comparison has to pin every node in.
+
+### Why the stdlib encoding is the expensive one, again
+
+`fzn_dag` is a distance labelling, and it fails to be RUP for the same reason
+`fzn_dreachable` does: concluding "these edges cannot all be selected" from
+distances is an induction round the cycle, and unit propagation does not do
+induction. It also carries a second cost this family did not have. To make the
+distances *fixed* rather than merely consistent, it adds
+
+```
+dist[n] = max([0] ++ [(dist[from[e]] + 1) * es[e] | e in EDGE where to[e] = n])
+```
+
+which is a variable-by-variable product per edge — an `int_times` each. Flattened
+over a 20-node, 380-edge digraph that is 380 of them, out of 1 978 constraints.
+
+The unfolding does not need them at all, and that is the point rather than a
+happy accident: the levels are proof-only, so nothing has to pin them to a
+number. Unit propagation determines them anyway, from `ns` and `es` alone and in
+the one direction, which is what `solx` needs of a proof-only variable.
+
+### The encoding
+
+For a set of nodes `S` with `levels = |S| - 1`:
+
+```
+    lev[v][0]      ⇔  ns[v] = 1                          (a walk of no edges)
+    arc[e][k]      ⇔  es[e] = 1  ∧  lev[from(e)][k]
+    lev[v][k+1]    ⇔  ⋁_{e into v} arc[e][k]
+
+    es[e] = 1      →  ¬ lev[from(e)][levels]              (no walk of |S| edges)
+    es[e] = 1      →  ns[from(e)] = 1  ∧  ns[to(e)] = 1
+```
+
+`levels = |S| - 1` is exactly right rather than generous: the longest simple path
+inside `S` has that many edges, so a DAG may reach the top level, and one more
+edge from there cannot be added without repeating a node. Taking a level away
+makes the encoding *reject valid DAGs*, which was checked by enumeration at
+`|S| = 4, 5, 6` rather than argued.
+
+### Only the strongly connected components need levels
+
+A cycle is strongly connected, so it lies inside one strongly connected component
+of the *input* graph. An edge between two components can therefore never sit on a
+cycle of any selected subgraph, and needs no level rows at all — only the two
+subgraph ones. `define_proof_model` runs Tarjan's algorithm over the input and
+unfolds each non-trivial component separately, with that component's node count
+as its level bound.
+
+This is free to do and sometimes most of the encoding. On the five
+`2016/maximum-dag` instances:
+
+| instance | nodes, edges | components | whole graph | per component |
+|---|---|--:|--:|--:|
+| `25_01` | 25, 78 | 14 | 8 372 rows | **1 024** |
+| `25_04` | 25, 76 | 11 | 8 174 rows | **1 488** |
+| `31_02` | 31, 95 | 8 | 12 677 rows | **5 719** |
+
+It also makes the constraint cost nothing on an input digraph that is already
+acyclic, which is the case where a modeller posts `dag` to say "and check", and
+it is why a single node with a self loop needs no levels: the top row and the
+subgraph row rule its edge out between them.
+
+### The inferences, and what each one costs
+
+| inference | reason | cost |
+|---|---|---|
+| a selected edge's endpoints are selected, and an edge at an unselected node is not | the one literal | 1 line |
+| **edge `e` is not selected**, because the selected edges already run from its head back to its tail | the selected edges of that path | 1 line |
+| a self loop is not selected | nothing at all — the rows say it alone | 1 line |
+| the selected edges already hold a cycle | the same as the second rule, which infers a 1 to be 0 | 1 line |
+
+Every one is a plain `rup` whose whole content is its reason, with no case split
+anywhere — unlike `Reachable`, whose cut-vertex forcing costs a line per
+candidate root while the root is open. There is no root here to be open.
+
+Unit propagation replays the second rule by walking the cycle: the reason fixes
+the path's edges, the subgraph rows select their endpoints, `lev[·][0]` follows,
+and then each round of propagation advances one level round the cycle until the
+top row is contradicted. That is `|S|` rounds, not a search.
+
+This was measured before it was implemented, against VeriPB 3.0.2 on hand-written
+encodings: the rule verifies as a single RUP on a 3-cycle, on a 4-cycle through a
+chord, on a Hamiltonian cycle at 8 nodes, on a self loop, and on a self loop
+sitting inside a larger component. Four unsound variants are refused — a reason
+missing one path edge, the conclusion flipped, an edge that closes nothing, and
+an attempt to force a node *in*. The `dag_mutation_*` ctest lanes keep the first
+two of those honest against the real propagator.
+
+### GAC, and cheaply
+
+**`Dag` is generalised-arc-consistent**, and `dag_test.cc` checks it with
+`solve_for_tests_checking_gac`. The reason it is cheap is a property `Reachable`
+does not have: acyclicity is **downward closed**, so a subset of an acyclic
+selection is acyclic.
+
+That settles the whole question. Nothing is ever forced *in* except through the
+subgraph rows. And leaving every undecided edge out is always a support, so:
+
+| literal | supported iff | rule |
+|---|---|---|
+| `es[e] = 0` | always, given the state is consistent | — |
+| `ns[v] = 1` | always | — |
+| `ns[v] = 0` | no selected edge is at `v` | the subgraph rule |
+| `es[e] = 1` | the selected edges do not run from `e`'s head to its tail | the cycle rule |
+
+So one reachability question per candidate edge is not a step towards GAC — it is
+the whole of it. No cut vertices, no dominators, no super-root. The propagator
+groups the candidate edges by head and runs one search per head, which is at most
+one per node.
+
+That claim was checked by brute force before it was coded: over 2 856 random
+graphs and random partial domains, comparing the propagator's fixpoint against
+the projection of the real solution set, there were no GAC violations and no
+missed failures.
+
+### Measured against the decomposition
+
+Maximum acyclic subgraph — every node selected, maximise selected edges — posted
+through the global, with `minizinc/mznlib` on the include path or not. Same
+binary, same model, same instance, same optimum; only the redefinition differs.
+Random digraphs, release build, VeriPB 3.0.2, one run at a time on an otherwise
+idle machine --- a loaded verify time cannot be scaled back down, only discarded.
+
+Both directions verify, at the same optimum:
+
+| maximum acyclic subgraph, with proof | 8 nodes, 20 edges | | 12 nodes, 35 edges | |
+|---|--:|--:|--:|--:|
+| | decomposition | `Dag` | decomposition | `Dag` |
+| optimum | 16 | 16 | 27 | 27 |
+| search nodes | 1 509 | **527** | 98 511 | **15 487** |
+| solve (with proof) | 0.25 s | **0.00 s** | 39.49 s | **0.56 s** |
+| `.opb` | 139 369 B | **23 063 B** | 301 748 B | **97 801 B** |
+| `.pbp` | 77 130 238 B | **2 100 139 B** | 11 598 879 850 B | **215 007 212 B** |
+| veripb | 1.45 s | **0.04 s** | 321.89 s | **4.67 s** |
+
+At twelve nodes and thirty-five edges that is **11.6 GB of decomposition proof
+against 215 MB**, 54× the bytes and 69× the checking time, for a graph small
+enough to draw. The search is only 6.4× better; almost all of the difference is
+per-node proof size, which is the labelling being a bad thing to *write about*
+rather than only a bad thing to search over.
+
+The `.opb` column is where this differs from `Reachable`, and it is worth a
+paragraph because the asymptotics point the other way. There, the unfolding is
+`O(nodes × edges)` against a labelling that is `O(edges)`, and the encoding is
+strictly the larger. Here it is smaller, because `fzn_dag`'s labelling drags in a
+bit-encoded `dist` per node and an `int_times` per edge, and each of those is
+several OPB rows of its own.
+
+The asymptotics do win in the end, and where they start to is measured rather
+than guessed. One strongly connected component, nineteen edges per node, nothing
+but the constraint in the model:
+
+| nodes, edges | `Dag` `.opb` | decomposition `.opb` |
+|---|--:|--:|
+| 20, 380 | **1.92 MB**, 18 288 rows | 3.65 MB, 22 845 rows |
+| 40, 760 | **7.59 MB**, 68 568 rows | 8.36 MB, 47 192 rows |
+| 60, 1 140 | 17.08 MB, 150 848 rows | **12.55 MB**, 70 790 rows |
+
+The row count crosses over between 20 and 40 nodes and the byte count between 40
+and 60, the unfolding's rows being individually shorter. So on a dense graph past
+about fifty nodes the encoding *is* the price again, exactly as it is for
+`Reachable` --- and the component restriction is what decides which regime a
+given input is in, which is why the sparse corpus instances above are nowhere
+near this.
+
+On the corpus instances the proofs are out of reach for either direction --- the
+propagator's would be tens of gigabytes at five million search nodes --- so these
+are with proofs off, capped at 900 s:
+
+| `2016/maximum-dag`, proofs off | `25_01` (25, 78) | | `31_02` (31, 95) | |
+|---|--:|--:|--:|--:|
+| | decomposition | `Dag` | decomposition | `Dag` |
+| `.opb` rows | 4 018 | **1 140** | 4 909 | **4 316** |
+| `.opb` | 611 126 B | **86 472 B** | 748 088 B | **379 970 B** |
+| search nodes | 12 365 704 | **4 877 311** | 9 181 248 | **1 412 837** |
+| solve | > 900 s | **46.35 s** | > 900 s | **15.84 s** |
+| best found | 71 | **71, proved optimal** | 89 | **89, proved optimal** |
+
+The decomposition finds the same value on both and cannot prove it in fifteen
+minutes. Note also the two `.opb` columns: `25_01`'s input graph has fourteen
+strongly connected components and `31_02`'s has eight, which is why the first
+gets a seven-fold saving from the restriction and the second under two.
+
+To reproduce: a model that posts `dag(tails, heads, ns, es)` with every `ns[n]`
+true and maximises `sum(es)`, flattened twice --- once with
+`-I minizinc/mznlib` and once without --- and each `.json` handed to the same
+`fzn-glasgow`. Pinning the nodes in is what makes the two directions comparable
+at all, given the divergence above.
+
+### The demand, honestly
+
+#791 is right that this is a thinner case than `SubCircuit`'s: **no model in the
+MiniZinc Challenge corpus calls `dag`**. What is there is `2016/maximum-dag`,
+five instances at 25 to 31 nodes, which is exactly this problem written out by
+hand — its core constraint is the stdlib's own `dist[n] = max(...)` line — so an
+`mznlib/` override does not reach it. It reaches `Dag` after a two-line change to
+the model, which is what the corpus rows above are.
+
+Two things about that model are worth knowing if you use it. It has no `ns` array
+at all: every node is in and only the edges vary, which is the shape the
+divergence above cannot arise in. And it exempts its root from the labelling, so
+it is only correct because no instance has an edge into node 1 — which is true of
+all five, checked.
+
 ## See also
 
 - [`constraints.md`](constraints.md) — the structural pattern, the reason and
   justification APIs, and the mutation-testing discipline the
-  `reachable_mutation_*` lanes follow.
+  `reachable_mutation_*` and `dag_mutation_*` lanes follow.
 - [`minizinc.md`](minizinc.md) — the `mznlib/` overrides sit on
   `fzn_reachable_int` / `_enum` and `fzn_dreachable_int` / `_enum`, so `connected`
   and `dconnected` reach the propagator through the stdlib's own wrappers, and on
   `fzn_subgraph`, `fzn_tree`, `fzn_dtree`, `fzn_path` and `fzn_dpath`, which
   `steiner`, `dsteiner`, `bounded_path`, `bounded_dpath` and both
-  `weighted_spanning_tree` spellings ride in turn.
+  `weighted_spanning_tree` spellings ride in turn. `fzn_dag` is overridden on its
+  own, there being no `_int` / `_enum` pair for it, and that page also carries the
+  divergence between what `dag` is documented to mean and what its decomposition
+  enforces.
 - [`proof-benchmarks.md`](proof-benchmarks.md) — `mzn_hitori` and the Group C
   decomposition-against-propagator controls.
