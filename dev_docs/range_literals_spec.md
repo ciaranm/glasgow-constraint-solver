@@ -171,9 +171,34 @@ where v2 is empty (two bound-crossing lemmas, the reified analogue of
 `justify_not_in_range_across_equality`). The witness and the reason come out of
 the *same* walk, in the same order, because the lemmas exist precisely to let
 unit propagation see that reason's literals through; writing them as two
-independent functions is how they drift. A run whose variable is a view is
-spelled per value, per §9.1 — one run, not the whole rule, and the witness does
-not notice, because stepping over a run is internal to that variable either way.
+independent functions is how they drift. A run whose variable is a view was
+spelled per value at the time, per §9.1; since #882 / #904 a registered view
+owns its own range literals, so a run is one range condition whatever kind of
+variable it is over — and the witness never noticed either way, because stepping
+over a run is internal to that variable.
+
+*Third consumer (2026-09, #900):* `Element`'s index-support rule states the same
+fact — "no value of this entry is in the result's domain" — and stated it per
+value until #929, at over a gigabyte of proof for one inference at `w = 10^6`.
+What the walk needs from a caller turned out not to be a *reification condition*
+but only something that makes the two operands equal, and an index tuple's guard
+is such a thing: those guard literals ride on both halves of the half-reified
+equality, so negating a bridge lemma sets every one of them false and leaves the
+same bare difference row and pair of opposing bounds that Theorem 2.9 wants. So
+the walk now lives in `gcs/constraints/innards/no_overlap_walk.hh`, whose doc
+comment lists what each of the six moves owes a caller; `equals.cc` and
+`element.cc` each turn those moves into their own lemmas. Measured on the same
+probe both ways, the line count went from linear in the entry's width to a flat
+71 from `w = 10^2` to `10^6`.
+
+Two differences from `equals` are worth recording, because they are what a
+fourth consumer would have to decide for itself. `Element`'s lemmas are model
+consequences rather than state-dependent ones, so they go in plainly rather than
+under the reason: a lemma that fails to line up can then only cost the
+conclusion its RUP check, never smuggle a state-dependent fact into the
+database. And nothing here reaches §9.1 even in the form it had before #904 —
+the conclusion is a single `index != v`, so there is no range literal on the
+conclusion side to degrade.
 
 ## 5. Why this is believed complete (and what still needs proving)
 

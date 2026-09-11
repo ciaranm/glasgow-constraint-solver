@@ -614,19 +614,19 @@ is the part worth reading carefully:
 | `Clean` | has a position where a wide domain is meaningful, and survives one |
 | `KnownTrip` | likewise, and does not. This is the work #833 is about |
 | `NoWidePosition` | no variable it takes can meaningfully be wide — successors index an array, Booleans are `{0,1}`. Structural immunity, not a working fallback |
-| `HazardNotReached` | the source has a per-value site, but this probe does not reach it. **Not** a clean bill of health: a gap in the probe. No row uses this today — every gap has been closed — but the outcome stays, because it is what to reach for rather than guessing when a probe cannot get at a site |
+| `HazardNotReached` | the source has a per-value site, but this probe does not reach it. **Not** a clean bill of health: a gap in the probe. No row uses this today — every *known* gap has been closed — but the outcome stays, because it is what to reach for rather than guessing when a probe cannot get at a site. "Known" is load-bearing: `Element`'s index-support rule was an unreached site for as long as the table had `Element` rows, and was never labelled this, because a gap nobody has thought of looks exactly like no gap (#900) |
 
 ### Where we stand
 
-75 constraint probes, plus 20 heuristic ones in the second table. The lane
+76 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
 | **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (41) | the arithmetic family (with two rows of its own for `Abs`' interior holes), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms and with a holey entry, `AllEqual` with holes and without, `Among`, `In`, `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
-| **NoWidePosition** (14) | the graph and permutation family, and the Boolean constraints |
+| **Clean** (42) | the arithmetic family (with two rows of its own for `Abs`' interior holes), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, on the index side, and with a holey entry, `AllEqual` with holes and without, `Among`, `In`, `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **NoWidePosition** (15) | the graph and permutation family, and the Boolean constraints |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`
 and `Element` started as `KnownTrip` and are now `Clean`, by the interval
@@ -867,14 +867,17 @@ separately, because they mean different things:
 
 ### Results at 10^3 → 10^4
 
-Re-measured over all 75 probes after the interval rewrites landed for
+Re-measured over all 76 probes after the interval rewrites landed for
 `ArrayMinMax`, `Table`, `Among`, `Element`, `In`, `GlobalCardinality` and
 `AllEqual/holes`, and again after #878, #875 and #877 — which moved nothing but
-their own rows: `Element/holey` is flat at 41 rows and 51 steps, `Abs/hole` at 30
-and 46, `Abs/hole-preimage` at 26 and 64, `GlobalCardinality/closed` at 24 and
+their own rows: `Element/holey` is flat at 41 rows and 84 steps, `Abs/hole` at 30
+and 78, `Abs/hole-preimage` at 26 and 113, `GlobalCardinality/closed` at 24 and
 83, and none of the four rewrites changes which values get removed, so no other
-row could have moved either. (Checked, for #877, by diffing a whole survey run
-against one from `main`: identical bar the new row.) The figures move, so re-run
+row could have moved either. (Checked, for #877 and again for #900, by diffing a
+whole survey run against one from `main`: identical bar the new row. The first
+three step figures here are corrected in #929 — they were the ones #877 saw were
+wrong and deliberately left, being wrong on `main` too; the diff is what shows
+they drifted before either branch rather than in one.) The figures move, so re-run
 the survey rather than quoting this table after touching any propagator's removal
 loop — that is how the previous version of it went stale, and how the
 `GlobalCardinality/hall` figures below came to be corrected.
@@ -884,7 +887,7 @@ loop — that is how the previous version of it went stale, and how the
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 43988 → 439988 steps) |
-| neither | 1.0x / 1.0x | everything else, 66 of 75 |
+| neither | 1.0x / 1.0x | everything else, 67 of 76 |
 
 The last row means "does not grow with the width", not "identical at both widths",
 and three entries in it are worth naming so nobody reads them as a promise.
@@ -941,12 +944,25 @@ work rather than evidence:
   now done, and each collapsed the same way, which is what leaves the paragraph
   below with a single row to stand on.
 
+  A **fourth** site was in the same file and went the same way, but it is worth
+  its own note because nothing in this survey could see it until #900 gave it a
+  probe. `Element`'s *index-support* rule states "no value of this entry is in
+  the result's domain" to remove an index value, and stated it per value: 13897 →
+  139897 steps, **10.1x**, at a 13-row OPB that does not move. Every `Element`
+  row here before it gave the result a wide domain, so every entry overlapped it
+  and no index value ever lost support — a growing row that the table could not
+  show because no probe reached the rule — which is what the `HazardNotReached`
+  outcome exists to say, and what no `Element` row was labelled. **Done** in
+  #929 by taking `equals`' disjointness walk (`no_overlap_walk.hh`): a flat 45 at
+  both widths — so it collapsed like the other three and leaves the paragraph
+  below its single row, rather than adding a second.
+
 So the survey currently supports **no** VeriPB feature request at all: every row
 whose steps grow at a fixed encoding is a propagator that has an interval and
 spells it out. That is a real conclusion rather than a gap in the survey, and it
 should be re-tested after stage 4 rather than assumed to stay true — a genuine
 candidate would be a growing row whose removed set provably is not an interval,
-and none of the 75 probes produces one today.
+and none of the 76 probes produces one today.
 
 Two things kept this table wrong for longer than it should have been. The probe
 sharpening of PR #849 turned exactly these three rows from `HazardNotReached` into
