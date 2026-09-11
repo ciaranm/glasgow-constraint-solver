@@ -32,13 +32,14 @@ namespace gcs::innards
     // signs being a literal and its negation, the conclusion follows by RUP.
     //
     // Four resolutions and two RUP lines per removed range, independent of its
-    // width, which is the property that matters. Both variables must be plain:
-    // a range literal on a view is not available (issue #882), and a constant
-    // has no order-encoding atoms to resolve against. Width-1 ranges are left
-    // to justify_abs_hole, which is what they canonicalise to anyway.
-    auto justify_abs_hole_range(ProofLogger & logger, const ReasonLiterals & reason, const SimpleIntegerVariableID & v1,
-        const SimpleIntegerVariableID & v2, Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le,
-        ProofLine abs_neg_ge) -> void;
+    // width, which is the property that matters. Neither variable may be a
+    // constant, which pins every bit and so has no order-encoding atom for
+    // these resolutions to name; a view is fine, because each atom is taken
+    // over whichever encoded variable its operand resolves to, and since #904
+    // a registered view has one of its own (#931). Width-1 ranges are left to
+    // justify_abs_hole, which is what they canonicalise to anyway.
+    auto justify_abs_hole_range(ProofLogger & logger, const ReasonLiterals & reason, const IntegerVariableID & v1, const IntegerVariableID & v2,
+        Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le, ProofLine abs_neg_ge) -> void;
 
     // The mirrored direction: justifies `~[v1 in lo..hi]` where the caller's
     // reason says v2 holds nothing in abs([lo, hi]). Takes no ReasonLiterals: all
@@ -51,9 +52,11 @@ namespace gcs::innards
     // active branch is needed and there is no case split left to close. Three
     // resolutions: the sign, and the two bounds it licenses.
     //
-    // Same plain-variable requirement as above.
-    auto justify_abs_preimage_range(ProofLogger & logger, const SimpleIntegerVariableID & v1, const SimpleIntegerVariableID & v2, Integer lo,
-        Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le, ProofLine abs_neg_ge) -> void;
+    // Same non-constant requirement as above, and for the same reason -- plus
+    // v1's two sign atoms, which this direction resolves against and the other
+    // does not.
+    auto justify_abs_preimage_range(ProofLogger & logger, const IntegerVariableID & v1, const IntegerVariableID & v2, Integer lo, Integer hi,
+        ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le, ProofLine abs_neg_ge) -> void;
 
     // The bound proofs below share their resolution shape between the
     // prepare-time initialiser and the run-time propagator. The initialiser

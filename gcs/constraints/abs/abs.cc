@@ -30,7 +30,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::get;
 using std::holds_alternative;
 using std::max;
 using std::min;
@@ -250,12 +249,23 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             LargeDomainIterationCounter image_guard{"the number of values one Abs image pruning has walked"};
             LargeDomainIterationCounter preimage_guard{"the number of values one Abs preimage pruning has walked"};
 
-            // A range removal needs a range literal in its reason, and a view has
-            // none (issue #882), so anything but two plain variables keeps the
-            // per-value path. A constant v2 keeps it too, which is not merely the
-            // same restriction: the range lemmas below resolve against v2's
-            // order-encoding flags, and a constant has none.
-            auto both_simple = holds_alternative<SimpleIntegerVariableID>(v1) && holds_alternative<SimpleIntegerVariableID>(v2);
+            // A view operand needs nothing extra from either range rule. The
+            // lemmas below name no bit vector, only order conditions on v1 and on
+            // v2, so each is emitted over whichever encoded variable its operand
+            // resolves to -- a registered view's own, which since #904 is where
+            // its range literals live and is also the form the model states the
+            // two half-reified halves in, so the operands' coefficients still
+            // cancel. What picks the form is the width of the run, and both arms
+            // already test for that (#931).
+            //
+            // A *constant* operand is the one case that is not like a bare
+            // variable: it pins every bit, so it has no order-encoding atom for a
+            // resolution to name at all. The two directions were checked
+            // separately rather than assumed to mirror -- the image lemmas
+            // resolve an order atom of each operand against each half, and the
+            // preimage ones additionally resolve v1's two sign atoms -- and both
+            // want both operands, so one test serves them.
+            auto neither_constant = ! holds_alternative<ConstantIntegerVariableID>(v1) && ! v2_is_constant;
 
             auto [post_v2_lb, post_v2_ub] = state.bounds(v2);
             for (auto [lo, hi] : v2_set.each_interval_minus(image_set)) {
@@ -268,18 +278,17 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 // either way -- a v2 value survives iff v1 holds it or its
                 // negation -- so the search does not change, only how many
                 // inferences it takes to get there.
-                if (both_simple && clipped_lo < clipped_hi) {
+                if (neither_constant && clipped_lo < clipped_hi) {
                     inference.infer_not_in_range(logger, v2, clipped_lo, clipped_hi,
-                        JustifyExplicitly{
-                            [logger, v1s = get<SimpleIntegerVariableID>(v1), v2s = get<SimpleIntegerVariableID>(v2), clipped_lo = clipped_lo,
-                                clipped_hi = clipped_hi, abs_nonneg_le, abs_nonneg_ge, abs_neg_le, abs_neg_ge](const ReasonLiterals & r) {
-                                // The four halves stay optional in the capture and are
-                                // dereferenced here: define_proof_model does not run at
-                                // all with proofs off, so a capture-list dereference is
-                                // reading an empty optional on every call.
-                                justify_abs_hole_range(
-                                    *logger, r, v1s, v2s, clipped_lo, clipped_hi, *abs_nonneg_le, *abs_nonneg_ge, *abs_neg_le, *abs_neg_ge);
-                            },
+                        JustifyExplicitly{[logger, v1, v2, clipped_lo = clipped_lo, clipped_hi = clipped_hi, abs_nonneg_le, abs_nonneg_ge, abs_neg_le,
+                                              abs_neg_ge](const ReasonLiterals & r) {
+                                              // The four halves stay optional in the capture and are
+                                              // dereferenced here: define_proof_model does not run at
+                                              // all with proofs off, so a capture-list dereference is
+                                              // reading an empty optional on every call.
+                                              justify_abs_hole_range(*logger, r, v1, v2, clipped_lo, clipped_hi, *abs_nonneg_le, *abs_nonneg_ge,
+                                                  *abs_neg_le, *abs_neg_ge);
+                                          },
                             ThenRUP::Yes, hints::Abs{originator}},
                         ExplicitReason{ReasonLiterals{{not_in_range(v1, clipped_lo, clipped_hi), not_in_range(v1, -clipped_hi, -clipped_lo)}}});
                     continue;
@@ -314,7 +323,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 if (clipped_lo > clipped_hi)
                     continue;
 
-                if (both_simple) {
+                if (neither_constant) {
                     // Split at zero. A run that straddles it does have a single
                     // image to name -- abs([lo, hi]) is [0, max(-lo, hi)] -- but
                     // its own negation then decides nothing about v1's sign, and
@@ -329,12 +338,11 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                             auto image_lo = piece_lo >= 0_i ? piece_lo : -piece_hi;
                             auto image_hi = piece_lo >= 0_i ? piece_hi : -piece_lo;
                             inference.infer_not_in_range(logger, v1, piece_lo, piece_hi,
-                                JustifyExplicitly{
-                                    [logger, v1s = get<SimpleIntegerVariableID>(v1), v2s = get<SimpleIntegerVariableID>(v2), piece_lo = piece_lo,
-                                        piece_hi = piece_hi, abs_nonneg_le, abs_nonneg_ge, abs_neg_le, abs_neg_ge](const ReasonLiterals &) {
-                                        justify_abs_preimage_range(
-                                            *logger, v1s, v2s, piece_lo, piece_hi, *abs_nonneg_le, *abs_nonneg_ge, *abs_neg_le, *abs_neg_ge);
-                                    },
+                                JustifyExplicitly{[logger, v1, v2, piece_lo = piece_lo, piece_hi = piece_hi, abs_nonneg_le, abs_nonneg_ge, abs_neg_le,
+                                                      abs_neg_ge](const ReasonLiterals &) {
+                                                      justify_abs_preimage_range(*logger, v1, v2, piece_lo, piece_hi, *abs_nonneg_le, *abs_nonneg_ge,
+                                                          *abs_neg_le, *abs_neg_ge);
+                                                  },
                                     ThenRUP::Yes, hints::Abs{originator}},
                                 ExplicitReason{ReasonLiterals{not_in_range(v2, image_lo, image_hi)}});
                             continue;

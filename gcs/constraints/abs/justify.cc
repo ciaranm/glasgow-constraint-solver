@@ -65,8 +65,8 @@ auto gcs::innards::justify_abs_hole(ProofLogger & logger, const ReasonLiterals &
     // rest follows by RUP
 }
 
-auto gcs::innards::justify_abs_hole_range(ProofLogger & logger, const ReasonLiterals & reason, const SimpleIntegerVariableID & v1,
-    const SimpleIntegerVariableID & v2, Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le,
+auto gcs::innards::justify_abs_hole_range(ProofLogger & logger, const ReasonLiterals & reason, const IntegerVariableID & v1,
+    const IntegerVariableID & v2, Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le,
     ProofLine abs_neg_ge) -> void
 {
     auto & ids = logger.names_and_ids_tracker();
@@ -98,8 +98,8 @@ auto gcs::innards::justify_abs_hole_range(ProofLogger & logger, const ReasonLite
     // The two signs being a literal and its negation, the rest follows by RUP.
 }
 
-auto gcs::innards::justify_abs_preimage_range(ProofLogger & logger, const SimpleIntegerVariableID & v1, const SimpleIntegerVariableID & v2,
-    Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le, ProofLine abs_neg_ge) -> void
+auto gcs::innards::justify_abs_preimage_range(ProofLogger & logger, const IntegerVariableID & v1, const IntegerVariableID & v2, Integer lo,
+    Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le, ProofLine abs_neg_ge) -> void
 {
     auto & ids = logger.names_and_ids_tracker();
 

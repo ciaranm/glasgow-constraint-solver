@@ -314,6 +314,20 @@ Two shapes come out of it, and their asymmetry is the useful part:
 
 Neither count depends on the range's width, which is the property that matters.
 
+**And neither depends on the operands being bare variables.** The resolutions
+name only order atoms of `v1` and `v2` and the two half-reified halves, so they
+are emitted over whichever encoded variable each operand resolves to — a
+registered view's own since #904. That had to be checked here rather than
+inherited from the `Element` and `In` retirements, because those rest on two
+ge-layer RUP bound lemmas "naming no bit vector", and these are `pol` steps that
+work by the operands' bit coefficients *cancelling*, which is exactly what a view
+could have broken. It does not: all five `abs_test` view lanes verify, the hole
+proofs under `--view-position=mixed` carry their runs as range literals on view
+proof variables (`p[0_neg_view_of__2_plus_13][in2_7]`), and dropping either
+direction's bound resolutions is rejected under views as well as bare (#931). The
+one operand that still keeps the per-value path is a **constant**, which has no
+order-encoding atom to resolve against at all.
+
 ### Sabotaging proof lines one at a time under-reports
 
 The same work produced a methodology result worth having, because the obvious way
@@ -515,15 +529,26 @@ The count goes from `|voi|` lines per removed *value* to `|voi|` per removed
 Measured: `Among`'s survey row falls from 32996 → 329996 steps across a 10x width
 to a flat 98.
 
-**And unlike `ArrayMinMax`, this one bridges views**, so `Among` needs no
-plain-variable restriction: 259 range removals on view variables under proofs,
-all verified. The difference is that every atom in these lines is on the *same*
-variable — its order atoms against its own eq atoms — and `need_gevar` pol-derives
-a view's chain links from the underlying variable's. `ArrayMinMax`'s lemmas have
-to carry an atom on `result` across a row to an atom on `var_i`, and it is the
-crossing, not the range, that views break. So "does this constraint's range
-justification stay within one variable" is the question to ask before restricting
-a rewrite to `SimpleIntegerVariableID`.
+**This one bridges views**, so `Among` needs no plain-variable restriction: 259
+range removals on view variables under proofs, all verified. Every atom in these
+lines is on the *same* variable — its order atoms against its own eq atoms — and
+`need_gevar` pol-derives a view's chain links from the underlying variable's.
+
+It was for a while the *only* one, and "does this constraint's range
+justification stay within one variable" was the question to ask before
+restricting a rewrite to `SimpleIntegerVariableID`: `ArrayMinMax`'s lemmas carry
+an atom on `result` across a row to an atom on `var_i`, and the crossing, not the
+range, was what views broke. **That question is retired.** #904 gave a registered
+view its own range literals over its own encoded variable, so an atom is taken
+over whichever encoding its operand resolves to, and the crossing lands in the
+same representation the model states its rows in. The guards went with it, in
+`equals`, `all_equal` and `min_max` (#904), `In` (#912), `Element` (#925) and
+`Abs` (#931), and there is no site left in the tree holding the old shape.
+
+What is left in its place is a *width* test — is this run wide enough to be worth
+stating as a range at all — and one genuine kind test, for a **constant**
+operand, which pins every bit and so has no order-encoding atom for a lemma or a
+resolution to name. Test for the constant, never for the view.
 
 **The related trap.** The *hull bound* `result <= max_i ub(var_i)`, which #815
 proposes as a small first fix, is a different problem and is still open. There the
@@ -615,6 +640,15 @@ Two kinds of check, and the difference matters:
   trips its own counter and not the other's — with two counters in one propagator,
   a row that trips *a* guard proves nothing about which loop it exercised.
 
+  Then **four**, because a third axis turned up later: both loops answered "can I
+  say a range about these?" with a *type* test, so a view on either operand sent
+  both of them down the per-value path the counters were watching. The two rows
+  above are bare on both sides and could not see it; `Abs/view-hole` and
+  `Abs/view-hole-preimage` are those rows with one operand wrapped and nothing
+  else changed, and they trip before #931 (100001 values walked) and survive
+  after it. Same finding as `Element/view-result` one family down, and the reason
+  for the standing rule below.
+
   What the counter at that site now counts is *moves of an interval walk*, not
   values (#867). A reason that says "these two domains do not overlap" one value
   at a time is width-proportional by construction, and the guard is then the only
@@ -671,14 +705,14 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-79 constraint probes, plus 20 heuristic ones in the second table. The lane
+81 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
 | **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (45) | the arithmetic family (with two rows of its own for `Abs`' interior holes), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among`, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **Clean** (47) | the arithmetic family (with four rows of its own for `Abs`' interior holes, two of them view-wrapped), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among`, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (15) | the graph and permutation family, and the Boolean constraints |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`
@@ -694,19 +728,27 @@ remains** in its Hall reasoning, which the original probe could not reach — on
 cover value means there is no multi-value hall — so it now has a row of its own
 rather than being covered by association.
 
-**Every probe in this lane wraps nothing, and that is an axis of its own.**
-`Element/view-result` is the first row to put a view on anything. It is the GAC
-`Element` row with the result wrapped and nothing else changed, and before #924
-it walked 10^9 values while the bare row beside it removed two ranges: the
-result-union rule answered "can I say a range about these?" with a *type* test,
-so a view anywhere sent the whole rule down a per-value walk of the remainder.
-Nothing in this file could have caught that, because nothing in this file wraps.
+**Whether an operand is *wrapped* is an axis of its own, and for a long time no
+probe in this lane used it.** `Element/view-result` (#924) was the first row to
+put a view on anything. It is the GAC `Element` row with the result wrapped and
+nothing else changed, and before #925 it walked 10^9 values while the bare row
+beside it removed two ranges: the result-union rule answered "can I say a range
+about these?" with a *type* test, so a view anywhere sent the whole rule down a
+per-value walk of the remainder. Nothing in this file could have caught that,
+because nothing in this file wrapped.
 
-The general question is open and is not really about `Element`. Every constraint
-whose proof reasons about intervals has the same question to answer, and #904
-changed the answer for all of them at once; a lane that only ever asks it about
-bare variables cannot tell which ones were updated. One row is a start, not a
-policy.
+`Abs/view-hole` and `Abs/view-hole-preimage` (#931) are the same finding in the
+arithmetic family, and finding them by looking rather than by accident is what
+settles the method: **put a view-wrapped row wherever a rewrite has an operand it
+could wrap.** The lane exercised widths and holes and never *kinds*, so a
+fallback that is itself width-proportional was invisible to two audits of it.
+
+The general question was never about `Element` or `Abs`. Every constraint whose
+proof reasons about intervals has the same question to answer, and #904 changed
+the answer for all of them at once; a lane that only ever asks it about bare
+variables cannot tell which ones were updated. With #931 there is no site left in
+the tree still answering it the old way, but that is a fact about today's tree
+and not a property the lane enforces — the rows are what enforce it.
 
 It has a **third** site, and finding it was a lesson about the axes a row covers
 rather than about the constraint. `with_closed()` installs a propagator of its
@@ -978,7 +1020,7 @@ time, and the row is now flat at 93.
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 43988 → 439988 steps) |
-| neither | 1.0x / 1.0x | everything else, 70 of 79 |
+| neither | 1.0x / 1.0x | everything else, 72 of 81 |
 
 The last row means "does not grow with the width", not "identical at both widths",
 and three entries in it are worth naming so nobody reads them as a promise.
