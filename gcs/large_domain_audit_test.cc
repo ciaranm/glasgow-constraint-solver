@@ -404,6 +404,28 @@ namespace
             auto v = wide(p, 2);
             p.post(GlobalCardinality{v, {1_i, 2_i}, {p.create_integer_variable(1_i, 1_i), p.create_integer_variable(1_i, 1_i)}});
         });
+        add("GlobalCardinality/closed", Expect::Clean, [](Problem & p) {
+            // The third per-value site, and the only one neither row above can
+            // reach: with_closed() installs a propagator of its own, which used
+            // to restrict every variable to the cover by walking its domain and
+            // grouping the runs the cover does not contain, and now takes that
+            // difference at interval level (#877). Nothing else in the lane
+            // calls with_closed, in either arm.
+            //
+            // The default BC level on purpose. The closed propagator is
+            // installed identically whichever level is chosen, so this row is
+            // about that propagator alone; a GAC row would trip on the GAC arm's
+            // own sites (#876) and say nothing about this one.
+            //
+            // The count is left as a range so that the closed restriction is
+            // the only thing in the probe that can remove a value. Pinning it at
+            // 2 reaches this site too -- checked, it trips before the fix and
+            // survives after, exactly as this row does -- but it also puts the
+            // bounds arm's just-met-demand branch within reach, and a row two
+            // sites can satisfy says less about either.
+            auto v = wide(p, 2);
+            p.post(GlobalCardinality{v, {1_i}, {p.create_integer_variable(0_i, 2_i)}}.with_closed(true));
+        });
         add("In", Expect::Clean, [](Problem & p) {
             // Its conclusions were always interval-level; what was per-value was
             // finding them, by walking the domain to group maximal runs. A merge

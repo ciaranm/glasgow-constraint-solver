@@ -464,6 +464,10 @@ namespace gcs::test_innards
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        const std::vector<std::variant<int, std::pair<int, int>, std::vector<int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void;
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
         std::pair<int, int> range_arg, RestOfArgs_... rest_of_args) -> void
     {
         for (int n = range_arg.first; n <= range_arg.second; ++n)
@@ -558,6 +562,50 @@ namespace gcs::test_innards
                     }, //
                     [&](std::pair<int, int> p) {
                         for (int n = p.first; n <= p.second; ++n) {
+                            sol.push_back(n);
+                            build(pos + 1, sol);
+                            sol.pop_back();
+                        }
+                    } //
+                }
+                    .visit(range_arg_vec.at(pos));
+            }
+        };
+        std::vector<int> sol;
+        build(0, sol);
+    }
+
+    /* As above, for a list of specs that may also name an explicitly enumerated
+     * domain. A variable built from a value list has holes in it, which is a
+     * shape a lo/hi pair cannot express and which several propagators treat
+     * differently from a contiguous domain; create_integer_variable_or_constant
+     * already accepts the same three shapes, so a test widens its spec type and
+     * needs nothing else.
+     */
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        const std::vector<std::variant<int, std::pair<int, int>, std::vector<int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void
+    {
+        std::function<auto(std::size_t, std::vector<int>)->void> build = [&](std::size_t pos, std::vector<int> sol) -> void {
+            if (pos == range_arg_vec.size()) {
+                generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{sol}), rest_of_args...);
+            }
+            else {
+                overloaded{
+                    [&](int n) {
+                        sol.push_back(n);
+                        build(pos + 1, sol);
+                        sol.pop_back();
+                    }, //
+                    [&](std::pair<int, int> p) {
+                        for (int n = p.first; n <= p.second; ++n) {
+                            sol.push_back(n);
+                            build(pos + 1, sol);
+                            sol.pop_back();
+                        }
+                    }, //
+                    [&](const std::vector<int> & vs) {
+                        for (int n : vs) {
                             sol.push_back(n);
                             build(pos + 1, sol);
                             sol.pop_back();
