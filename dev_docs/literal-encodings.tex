@@ -474,7 +474,9 @@ immediately, because it is the single most expensive mistake available here.
 \label{def:widthone}
 For $a=b$, the interval variable $\atin{w}{a}{b}$ \emph{is} the equality
 variable $\ateq{w}{a}$: the same PB variable, not a second one with the same
-definition.  For $a>b$, the interval condition is the constant false.
+definition.  For $a>b$ there is no variable at all: $\atin{w}{a}{b}$ is
+\emph{substituted} by the constant $0$ and $\natin{w}{a}{b}$ by the constant
+$1$, wherever either would have appeared.
 \end{definitionT}
 
 A separate width-one interval flag would be an unlinked doppelg\"anger of the
@@ -482,6 +484,46 @@ equality atom: two Booleans with identical definitions, and nothing in the
 formula connecting them, so that a fact recorded in one is invisible through
 the other.  It cannot be repaired by adding the equivalence after the fact ---
 see \nsec{sec:loadbearing} below, where this is witness~W1.
+
+\begin{remarkN}[Which degenerate intervals get a variable, and which do not]
+\label{rem:degenerate}
+Three nearby cases behave differently, and the difference is worth stating
+because only one of them is a substitution.
+
+A \emph{reversed} request, $a>b$, names no set of values, so it gets no
+variable.  Both polarities fold together and at the same place: the
+canonicalisation that performs the width-one identification of
+\cref{def:widthone} also rewrites $\atin{w}{a}{b}$ to $0$ and $\natin{w}{a}{b}$
+to $1$, so everything downstream sees only intervals of width at least two.
+There is no reified definition, no cut, nothing to name and nothing to cite.
+This is the encoding's general convention for a condition that is constant ---
+a condition on a constant variable folds the same way --- and not something
+special to intervals.
+
+An interval that is well formed but lies \emph{outside} the definition range is
+not a substitution: $\atin{w}{a}{b}$ with $a\leq b$ and $[a,b]\cap[l_W,u_W]$
+empty is a real variable with its reified definition and its two cuts, and the
+boundary pins of \inv{Bound} falsify it by unit propagation.  It has no
+partition cell, no covering and no containment edge, which is why \invName{} is
+stated over cells rather than over every interval literal.
+
+An out-of-range \emph{cut}, $\atge{w}{v}$ with $v\leq l_W$ or $v>u_W$, is also a
+real variable, pinned by \inv{Bound}.  Substituting a constant for it instead
+would be wrong: the encoding needs it under a name, because it is the cut of
+some two-cut atom through \invCut{}, and \cref{lem:covering}(a) propagates
+through exactly that.
+
+The cost of the substitution in the first case is the usual one: a caller that
+requires a \emph{named} literal --- a \code{pol} operand, a hint, a reason
+element to be cited --- gets a constant instead, and has to say so rather than
+carry on.  The solver's convention is to throw, as subset-sum strengthening
+does on a constantly false term.  The alternative, giving the empty interval a
+Boolean forced false by definition constraints, would buy a name at the price of
+putting the empty set into the containment order, where it is below everything
+and is a cell of nothing; \invPart{} and \invCont{} would both need a special
+case for an object with no values in it.
+\end{remarkN}
+
 
 Because these are fully reified constraints on fresh variables, they are
 entirely redundant: the values of the atomic variables are uniquely determined

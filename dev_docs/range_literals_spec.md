@@ -116,8 +116,8 @@ not notice, because stepping over a run is internal to that variable either way.
 and L2 are proved as Theorems 3.3 / 3.3' and Theorem 3.5 of
 [literal-encodings](literal-encodings.tex). Two of its results bear on this code
 directly: wipeout detection does **not** need the coverings (the remark "The root
-covering is not load-bearing here", 3.3 as the remarks are currently numbered —
-it is UP-redundant, and we keep it anyway), and the coverings and
+covering is not load-bearing here" — it is UP-redundant, and we keep it
+anyway), and the coverings and
 containment edges exist for reason validity (Lemma 3.4).
 
 ## 6. Cost model

@@ -61,8 +61,8 @@ are `~F_V | F_X` and `~F_X | F_V`. **Both are needed, each for its
 contrapositive rather than its implication** — as implications both directions
 are already derivable by unit propagation, which is what issue #882 observed, and
 is true but beside the point. *The argument is the remark "Both in-link clauses
-are needed, and neither for its implication" (3.2 as the remarks are currently
-numbered) of [literal-encodings.tex](literal-encodings.tex).*
+are needed, and neither for its implication" in
+[literal-encodings.tex](literal-encodings.tex).*
 
 Why the negative directions come up at all is the part specific to this code:
 search branches on real variables only (`reject_random_interval` requires a
@@ -75,9 +75,8 @@ over `X`.
 
 This is the part that is easy to get wrong, and getting it wrong is silent.
 *Why naming is the right trigger is the remark "Why naming, not requesting, is
-the trigger" (3.4 as the remarks are currently numbered) of
-[literal-encodings.tex](literal-encodings.tex);* what follows is where it lives
-in the code.
+the trigger" in [literal-encodings.tex](literal-encodings.tex);* what follows is
+where it lives in the code.
 
 A range literal comes into existence two ways. Either a caller asks for it — a
 conclusion, a reason element, a branching guess — reaching `need_invar`; or the
