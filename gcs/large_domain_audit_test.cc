@@ -485,6 +485,21 @@ namespace
             auto result = wide_var(p);
             p.post(Element{result, p.create_integer_variable(0_i, 2_i), narrow(p, 3, 1_i, 3_i)});
         });
+        add("Element/view-result", Expect::Clean, [](Problem & p) {
+            // The GAC row above with the result wrapped, and nothing else changed.
+            // It is the first probe in this file to wrap anything, and it exists
+            // because the rule used to answer the question "can I say a range about
+            // these?" with a *type* test: a view anywhere sent the whole rule down
+            // a per-value walk of the remainder, so this shape walked 10^9 values
+            // while the bare one beside it removed two ranges (#924). Nothing else
+            // here would have caught that, because nothing else here wraps.
+            //
+            // Worth generalising rather than leaving as one row: every constraint
+            // whose proof reasons about intervals has the same question to answer,
+            // and every probe in this file answers it about bare variables only.
+            auto result = wide_var(p);
+            p.post(Element{result + 1_i, p.create_integer_variable(0_i, 2_i), narrow(p, 3, 1_i, 3_i)});
+        });
         add("Element/BC", Expect::Clean, [](Problem & p) {
             // The same instance as the GAC probe above, so the pair is
             // comparable: the weaker arm is what makes it clean, not an easier
