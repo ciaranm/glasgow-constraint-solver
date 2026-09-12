@@ -608,10 +608,13 @@ if(GCS_BUILD_TESTS)
         # has mandatory part [3,4) at height 2, and that is what tips it to 14 > 12.
         # So the case cannot pass by accident on the plain overload check.
         add_checkpoint_recovery_leak_check(ttoc whole)
-        # And each again in `no-block` mode, which never emits the per-time rows at
-        # all rather than deleting them afterwards. These are what stop the
-        # `startcheckpoint` ctest arm going vacuous: they fail if the encoding falls
-        # back for these models instead of dropping the block. See the script.
+        # And each again in `no-block` mode, which solves under the shipped
+        # encoding and asserts the per-time rows were never emitted at all rather
+        # than deleting them afterwards. That is the tripwire on the encoder: if a
+        # change ever made it write both blocks again, every other lane would still
+        # pass while the model quietly paid for two encodings and diverged from
+        # what cake derives. `whole` and `prefix` force `both-recovering`
+        # themselves, so they are unaffected by what the default is. See the script.
         add_checkpoint_recovery_leak_check(overflow_only no-block)
         add_checkpoint_recovery_leak_check(leak_check no-block)
         add_checkpoint_recovery_leak_check(overload no-block)
