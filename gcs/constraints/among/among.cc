@@ -182,7 +182,12 @@ auto Among::install_propagators(Propagators & propagators) -> void
                         // emission, so they don't need (and don't have) an at-least-one line.
                         if (holds_alternative<ConstantIntegerVariableID>(m))
                             continue;
-                        b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
+                        // Only the values of interest need naming: they are what
+                        // sum_line's terms cancel against, and a must_match variable's
+                        // domain lies inside them, so vars_reason rules out the runs
+                        // the rest of its definition range goes in as.
+                        b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value_over_cover(
+                            m, values_of_interest));
                     }
                     b.emit(*logger, ProofLevel::Temporary);
                 }
@@ -247,7 +252,8 @@ auto Among::install_propagators(Propagators & propagators) -> void
                             for (const auto & m : must_match_vars) {
                                 if (holds_alternative<ConstantIntegerVariableID>(m))
                                     continue;
-                                b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
+                                b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value_over_cover(
+                                    m, values_of_interest));
                             }
                             b.emit(*logger, ProofLevel::Temporary);
                         }

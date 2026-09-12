@@ -201,6 +201,13 @@ if(GCS_BUILD_TESTS)
         add_test(NAME large_domain_audit_test COMMAND $<TARGET_FILE:large_domain_audit_test>)
     endif()
 
+    # The proof-size case in the same binary is registered unconditionally,
+    # because it needs no guard: it asserts how big a proof is, which is as
+    # meaningful with the guard off as on, and it is the only lane that can see
+    # per-value work done while writing a proof (the audit above solves without
+    # ProofOptions, so it never emits a justification at all).
+    add_test(NAME large_domain_proof_size_test COMMAND $<TARGET_FILE:large_domain_audit_test> "Large domain proof sizes")
+
     # Checks that the GCS_VERBOSE_LOGGING proof annotation resolves gcs source
     # frames, which depends on the debug info the Release build keeps (-g1 on
     # GCC/Clang, /Z7 + /DEBUG on MSVC; see the top-level CMakeLists.txt). It

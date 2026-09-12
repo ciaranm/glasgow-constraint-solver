@@ -966,6 +966,81 @@ ns/node before and 3 912 after, i.e. no difference outside noise, because a
 branching decision is a per-cent of what a node costs. The trade is a constant
 against an asymptote, which is the right way round.
 
+## The proof-size lane
+
+The audit lane above solves **without** `ProofOptions`, so nothing that happens
+only while a proof is being written is reachable from it: no justification is
+emitted and no reason is materialised. The `[.proofscaling]` survey below can see
+that work, but a survey is run by hand and pins nothing. Between them sat a class
+with no instrument at all, and #935, #936 and #939 all came out of it.
+
+`TEST_CASE("Large domain proof sizes")` in the same file is the gate for it. Each
+row is one shape — a variable **declared** over a wide range, a domain confined by
+`In` to a couple of values inside it, and an inference whose justification names
+those values — solved with proofs, and its proof both counted and checked with
+VeriPB. The bound is loose on purpose: it separates "a few hundred lines" from
+"one line per value", which is orders of magnitude, not a byte count to retune
+whenever the encoding shifts. Checking as well as counting matters, because a
+small proof that does not verify is a worse outcome than a big one that does.
+
+**This shape is why the class was invisible.** Every other probe in the file gets
+its wide definition range *by* wanting a wide domain, so a variable whose domain
+is narrow while its definition range is wide never arose — and that is exactly the
+gap between a domain (what a propagator sees) and a definition range (what the
+proof encoding names). Before #939 each of these rows wrote about 66 × width proof
+lines; the lane fails in about 39 seconds if that comes back, against 0.2 seconds
+when it has not.
+
+### At-least-one constraints span the definition range (#939)
+
+`need_constraint_saying_variable_takes_at_least_one_value` spells its at-least-one
+out one term per value over the variable's whole **definition** range, and asking
+for those eq atoms also splits the variable's interval partition into singletons,
+so every later covering is span-proportional too. Neither cost has anything to do
+with how many values the variable can still take.
+
+`..._over_cover(var, singled_out)` states the same fact over an interval cover
+instead: the caller's values of interest as their own eq atoms, the maximal runs
+between and around them as one range literal each. A pol that adds it gets the
+same `+[x = v]` for each named value, so cancellation against per-value
+at-most-ones and count lines is unchanged; what differs is the residue, one term
+per run rather than one per unnamed value. The caller's reason has to rule those
+runs out, which it does exactly when it pins the variable's bounds and excludes
+its holes — a run outside the bounds dies on the order chain, and a run inside one
+sits inside an excluded hole, so containment falsifies it. `generic_reason` and
+the Hall-set reasons all qualify.
+
+Measured on a `GlobalCardinality` whose variables are confined to two values:
+
+| width | before | after |
+|---|---|---|
+| 10^3 | 66 057 lines, 0.14 s | 255 lines, 0.001 s |
+| 10^4 | 660 057 lines, 10.9 s | 255 lines, 0.001 s |
+| 10^5 | 2 528 821+ lines, >600 s | 255 lines, 0.001 s |
+| 10^9 | — | 255 lines, 0.001 s |
+
+`AllDifferent` and `Among` in the same shape go 659 937 → 133 and 659 940 → 135 at
+10^4.
+
+**It is a threshold, not an unconditional rewrite, and that is the interesting
+part.** The per-value line is emitted once per variable and then serves every
+cover anyone asks for, because it names every value; a cover is specialised, so a
+caller whose cover changes from firing to firing — a Hall set — pays a line per
+distinct one. Over a *narrow* definition range each of those lines is about as big
+as the single per-value line it replaces, and there are many of them: going to
+covers unconditionally cost `sudoku` 16 % more proof lines and `ortho_latin` 3 %,
+for variables declared over nine values, where naming every value was never the
+problem. Caching the cover lines recovered only a fifth of that, because the Hall
+sets genuinely differ. With the width test the examples are byte-identical again
+(`ortho_latin`, `sudoku`, `crystal_maze`, `colour`, `n_fractions` all unchanged to
+the line) and the wide case is flat. **A rewrite that is asymptotically better can
+still be worse everywhere anyone actually is**, and the only way to find that out
+is to measure the narrow case as well as the wide one.
+
+`subcircuit` deliberately keeps the per-value form: its pigeonhole needs every
+value named, and a successor's definition range *is* the node set, so there is no
+width there to spend on values the counting does not use.
+
 ## Proofs
 
 **Out of scope for fixing.** Several of these have no viable fix today, and a

@@ -234,8 +234,13 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                     if (keep != optional<std::size_t>{v} && ! holds_alternative<ConstantIntegerVariableID>(counts[v]))
                         pb.add_for_literal(tracker, counts[v] <= state.bounds(counts[v]).second);
                 }
+                // The at-least-one only has to name the hall values: everything
+                // else in the definition range goes in as runs, and those are the
+                // very runs capacity_reason rules out (clipped to the variable's
+                // bounds, which the reason pins too).
+                vector<Integer> hall_values{values.begin() + static_cast<std::ptrdiff_t>(a), values.begin() + static_cast<std::ptrdiff_t>(b) + 1};
                 for (const auto & var : confined)
-                    pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(var));
+                    pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value_over_cover(var, hall_values));
                 pb.emit(*logger, ProofLevel::Temporary);
             };
 
@@ -297,8 +302,10 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                                         if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
                                             pb.add_for_literal(tracker, counts[v] <= state.bounds(counts[v]).second);
                                     }
+                                vector<Integer> hall_values{
+                                    values.begin() + static_cast<std::ptrdiff_t>(a), values.begin() + static_cast<std::ptrdiff_t>(b) + 1};
                                 for (const auto & var : confined)
-                                    pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(var));
+                                    pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value_over_cover(var, hall_values));
                                 pb.add(*count_lines[j].first);
                                 pb.emit(*logger, ProofLevel::Temporary);
                             },

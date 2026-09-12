@@ -41,9 +41,12 @@
 #include <gcs/gcs.hh>
 
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/among.hh>
 #include <gcs/constraints/at_most_one.hh>
 #include <gcs/constraints/lex_smart_table.hh>
 #include <gcs/constraints/table.hh>
+
+#include <gcs/constraints/innards/constraints_test_utils.hh>
 
 #include <gcs/constraints/all_different/all_different_except.hh>
 #include <gcs/constraints/all_different/symmetric_all_different.hh>
@@ -1021,4 +1024,98 @@ TEST_CASE("Large domain proof scaling", "[.proofscaling]")
     // that a constraint which cannot be proof-logged at all still shows up as a
     // row rather than ending the run.
     SUCCEED("proof scaling survey complete");
+}
+
+TEST_CASE("Large domain proof sizes")
+{
+    /* A gate for the per-value work that happens only while a proof is being
+     * written, which the audit above structurally cannot see: it solves without
+     * ProofOptions, so a justification is never emitted and a reason is never
+     * materialised. The survey can see this class, but a survey is run by hand
+     * and pins nothing.
+     *
+     * Every row here is the same shape: a variable declared over a wide range,
+     * a domain confined to a couple of values inside it, and an inference whose
+     * justification names those values. That is what makes at-least-one
+     * constraints expensive --- the primitive spells one out over the whole
+     * *definition* range, not the domain --- and it is a shape no other lane
+     * produces, because a probe that wants a wide domain gets a wide definition
+     * range with it.
+     *
+     * The bound is deliberately loose: the point is the difference between "a
+     * few hundred lines" and "one line per value", not a byte count that has to
+     * be retuned whenever the encoding shifts. Before #939 each of these wrote
+     * about 66 * width lines, so any width here separates them by orders of
+     * magnitude. The proofs are checked as well as counted, because a small
+     * proof that does not verify is a worse outcome than a big one that does.
+     */
+    struct SizeProbe
+    {
+        string name;
+        function<auto(Problem &)->void> build;
+    };
+
+    // Wide enough that a per-value at-least-one is unmistakable (about 660,000
+    // proof lines, against the couple of hundred these actually write), and
+    // small enough that the whole case stays well under a second.
+    const auto width = 10000_i;
+    const long long max_proof_lines = 2000;
+
+    auto confined_vars = [](Problem & p, int n) {
+        vector<IntegerVariableID> v;
+        for (int i = 0; i < n; ++i) {
+            auto x = p.create_integer_variable(wide_lo, probe_width);
+            // The domain is two values; the definition range stays wide, which
+            // is the whole point of the shape.
+            p.post(In{x, vector<Integer>{1_i, 2_i}});
+            v.push_back(x);
+        }
+        return v;
+    };
+
+    const auto probes = vector<SizeProbe>{
+        {"GlobalCardinality/confined",
+            [&](Problem & p) {
+                // Every variable is confined to the hall set, which is what puts
+                // an at-least-one per variable into the capacity pol.
+                auto v = confined_vars(p, 3);
+                p.post(GlobalCardinality{v, {1_i, 2_i}, {p.create_integer_variable(0_i, 1_i), p.create_integer_variable(0_i, 1_i)}});
+            }},
+        {"AllDifferent/confined",
+            [&](Problem & p) {
+                // Three variables, two values: a Hall violator, whose
+                // justification wants an at-least-one for each of them.
+                auto v = confined_vars(p, 3);
+                p.post(AllDifferent{v});
+            }},
+        {"Among/confined",
+            [&](Problem & p) {
+                // All three must match, so the count is at least three, which
+                // the how_many variable cannot reach.
+                auto v = confined_vars(p, 3);
+                p.post(Among{v, {1_i, 2_i}, p.create_integer_variable(0_i, 1_i)});
+            }},
+    };
+
+    auto restore = probe_width;
+    probe_width = width;
+
+    for (const auto & probe_case : probes) {
+        INFO("probe: " << probe_case.name);
+        auto basename = "large_domain_proof_size_" + probe_case.name.substr(0, probe_case.name.find('/'));
+        auto names = ProofFileNames{basename};
+
+        Problem problem;
+        probe_case.build(problem);
+        solve_with(problem, SolveCallbacks{.stats_report = silent_stats_report()}, ProofOptions{names});
+
+        // Counted before verifying, which disposes of the files on success.
+        auto lines = count_lines(names.proof_file);
+        println("{:<40} {:>10} proof lines", probe_case.name, lines);
+        CHECK(lines > 0);
+        CHECK(lines <= max_proof_lines);
+        CHECK(gcs::test_innards::verify_proof_and_dispose(basename));
+    }
+
+    probe_width = restore;
 }

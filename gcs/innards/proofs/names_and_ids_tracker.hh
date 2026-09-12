@@ -317,8 +317,66 @@ namespace gcs::innards
         /**
          * Say that we are going to need an at-least-one constraint for a
          * variable.
+         *
+         * This spells the at-least-one out one value at a time, over the whole
+         * definition range, so it costs a term (and an eq atom, which becomes a
+         * singleton cell in the variable's interval partition, making every later
+         * covering span-proportional too) per value the variable was declared over.
+         * Prefer the ..._over_cover form below wherever the caller only needs
+         * particular values named.
          */
         [[nodiscard]] auto need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) -> ProofLine;
+
+        /**
+         * The same at-least-one, but over an interval cover of the definition range
+         * rather than over its values: the values in `singled_out` are named by their
+         * own eq atoms, and the maximal runs between and around them are named by one
+         * range literal each. So for a variable declared over 0..10^9 and a
+         * `singled_out` of {3, 7} the line is
+         *
+         *     [x in 0..2] + [x = 3] + [x in 4..6] + [x = 7] + [x in 8..10^9] >= 1
+         *
+         * which is five terms rather than a billion, and leaves the variable's
+         * interval partition with five cells rather than a billion.
+         *
+         * It is RUP for the same reason the root covering is (the cells cover the
+         * definition range, and the bound axioms close it), and it is
+         * state-independent: `singled_out` selects which values get named, not which
+         * values the variable can still take.
+         *
+         * WHAT A CALLER OWES. A pol that adds this line gets `+[x = v]` for each
+         * `v` in `singled_out`, exactly as the per-value form does, so cancellation
+         * against per-value at-most-ones and count lines is unchanged --- provided
+         * `singled_out` covers every value that pol names for this variable. What
+         * differs is the residue: instead of one `+[x = w]` per unnamed value, there
+         * is one `+[x in run]` per run. The caller's reason must therefore rule the
+         * runs out, which it does exactly when it pins the variable's bounds and
+         * excludes its holes (as `generic_reason` and the Hall-set reasons do): a run
+         * outside the bounds dies on the order chain, and a run inside one sits inside
+         * an excluded hole, so containment falsifies it. A reason that named holes
+         * only value by value would still work --- the run's own covering reaches the
+         * eq atoms --- but only if every value in the run is named, which is the cost
+         * this call exists to avoid.
+         *
+         * FALLS BACK, SILENTLY AND OFTEN, to the per-value form, which is why a
+         * caller must stay correct under either: for a variable with no bits encoding
+         * (a zero-one variable, where the two spellings agree anyway), for an
+         * unregistered view, whose values would have to be mapped through the view to
+         * be named here, and --- the common one --- for any variable whose definition
+         * range is narrow enough that naming every value is not what #833 is about.
+         *
+         * That last one is a deliberate policy, not an optimisation gap. The
+         * per-value line is emitted once per variable and then serves every cover
+         * anyone asks for, because it names every value; a cover is specialised, so a
+         * caller whose cover changes from firing to firing --- a Hall set --- pays a
+         * line per distinct one. Over a narrow definition range those lines are each
+         * about as big as the one they replace and there are many of them, which
+         * measured as a 16 % proof-size regression on `sudoku`. So a cover is stated
+         * only where it is asymptotically better, and the narrow case is left
+         * byte-identical. See dev_docs/large-domains.md.
+         */
+        [[nodiscard]] auto need_constraint_saying_variable_takes_at_least_one_value_over_cover(
+            IntegerVariableID, const std::vector<Integer> & singled_out) -> ProofLine;
 
         /**
          * Give the proof line specifying the definition of this literal in terms of its bit

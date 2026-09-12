@@ -36,10 +36,14 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(ProofLogger & logg
         value_am1_constraint_numbers.emplace(val, recover_am1_from_pairs(logger, members, at_most_ones, ProofLevel::Top));
     }
 
-    // we are going to need the at least one value variables
+    // We are going to need the at least one value variables. Only the hall values
+    // need naming: they are what the at-most-ones below cancel against, and the
+    // reason (the hall variables' domains, which lie inside the hall values) rules
+    // out the runs the rest of each definition range goes in as.
     vector<ProofLine> at_least_one_constraints;
     for (const auto & var : hall_variables)
-        at_least_one_constraints.push_back(logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(var));
+        at_least_one_constraints.push_back(
+            logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value_over_cover(var, hall_values));
 
     // each variable in the violator has to take at least one value that is
     // left in its domain, and each value in the component can only be used

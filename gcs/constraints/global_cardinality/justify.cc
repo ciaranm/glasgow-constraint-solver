@@ -38,8 +38,13 @@ auto gcs::innards::emit_gcc_capacity_pol(ProofLogger & logger, const State & sta
             pb.add_for_literal(tracker, counts[v] <= state.bounds(counts[v]).second);
     }
     (void)vars;
+    // A confined variable's at-least-one only has to name the hall values --- the
+    // rest of its definition range can go in as runs, which the reason rules out
+    // (see gcc_capacity_reason, whose gaps are these very runs clipped to the
+    // variable's bounds).
+    vector<Integer> hall_values{hall.begin(), hall.end()};
     for (const auto & var : confined)
-        pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(var));
+        pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value_over_cover(var, hall_values));
     pb.emit(logger, ProofLevel::Temporary);
 }
 
