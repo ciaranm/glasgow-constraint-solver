@@ -430,6 +430,30 @@ add_scp_chain_test(cumulative_var_height_sat   none)
 add_scp_chain_test(cumulative_var_duration_sat none)
 add_scp_chain_test(cumulative_unsat            none)
 
+# ...and all five are pinned to the time-indexed encoding, which the solver no
+# longer uses by default (#780). This is a placeholder, not a policy.
+#
+# Step 3 of the chain is veripb checking our proof against *cake's* OPB, and
+# cake has no start-checkpoint encoder --- so under the default encoding our
+# pols cite `scap_` rows that cake's model does not contain and all five are
+# rejected. Measured: exactly these five of the 169 scp_chain lanes, so nothing
+# else in the chain reaches a Cumulative.
+#
+# The pin means these five now check an encoding the solver does not ship, which
+# is worth being uncomfortable about: it is cake coverage for dead weight until
+# the cake side lands, and it is the *only* thing the test-only time-indexed
+# emitter is still shipped for besides the recovery's differential arms. Losing
+# cake verification on the new encoding in the meantime was accepted knowingly
+# (2026-08-26). Remove the pin, and this comment, when cake_pb_cp can derive the
+# start-checkpoint block --- the specification it needs is in the issue.
+#
+# APPEND rather than PROPERTIES, and after registration rather than inside
+# add_scp_chain_test, so that a directory-level ENVIRONMENT block arriving later
+# cannot silently replace it the way one already does in gcs/CMakeLists.txt.
+foreach(case cumulative_sat cumulative_var_sat cumulative_var_height_sat cumulative_var_duration_sat cumulative_unsat)
+    set_property(TEST scp_chain_${case} APPEND PROPERTY ENVIRONMENT GCS_CUMULATIVE_ENCODING=time-indexed)
+endforeach()
+
 # increasing / decreasing / strictly_*: the sequence of variables is (strictly)
 # monotone. cake encodes the family as the chain of consecutive comparisons
 # vars[i] (</<=/>/>=) vars[i+1], labelled @c[id][i]; the solver's IncreasingChain
