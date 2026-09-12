@@ -169,11 +169,6 @@ if(GCS_COMPILER_HAS_STACKTRACE AND NOT MSVC)
     target_link_libraries(glasgow_constraint_solver PRIVATE stdc++exp)
 endif()
 
-if(NOT GCS_COMPILER_HAS_GENERATOR)
-    add_dependencies(glasgow_constraint_solver generator)
-    target_link_libraries(glasgow_constraint_solver PUBLIC generator_include)
-endif()
-
 target_link_libraries(glasgow_constraint_solver PUBLIC gcs_fmt)
 
 # gch::small_vector is used in the public interval_set.hh, so the include

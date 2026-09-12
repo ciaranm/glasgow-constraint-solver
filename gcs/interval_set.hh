@@ -4,18 +4,13 @@
 #include <gcs/exception.hh>
 #include <gcs/interval_set-fwd.hh>
 
+#include <util/generator.hh>
+
 #include <gch/small_vector.hpp>
 
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
-#include <version>
-
-#ifdef __cpp_lib_generator
-#include <generator>
-#else
-#include <__generator.hpp>
-#endif
 
 namespace gcs
 {

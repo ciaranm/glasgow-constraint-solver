@@ -18,19 +18,14 @@
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
+#include <util/generator.hh>
+
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
-#include <version>
-
-#ifdef __cpp_lib_generator
-#include <generator>
-#else
-#include <__generator.hpp>
-#endif
 
 namespace gcs::innards
 {
