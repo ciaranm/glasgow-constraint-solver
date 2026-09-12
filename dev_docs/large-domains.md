@@ -1041,6 +1041,47 @@ is to measure the narrow case as well as the wide one.
 value named, and a successor's definition range *is* the node set, so there is no
 width there to spend on values the counting does not use.
 
+Each caller names only the values **its variable can still take**, not its whole
+value set. The two are different whenever the value set is a Hall set, a cover or
+a union of domains and one variable's domain is a small part of it, and the
+correspondence it buys is worth more than the terms: the residue is then exactly
+the complement of the domain, which is exactly what the reason states, so the
+leftovers discharge by construction instead of by an argument about which runs
+happen to sit inside which holes. Measured, it is a **0.5–0.8 % proof-size**
+saving on a Hall violator whose hall set is four to sixty-four times any one
+domain — real, but small, because the at-least-ones are not where the volume is
+(the pairwise at-most-ones are, and they are cached at Top). It does **not**
+remove the need for the width threshold: it makes each line smaller, and the
+narrow-domain regression is about how *many* lines there are, so `sudoku` only
+improves from +16.3 % to +10.4 % with the threshold off.
+
+### AllDifferent's compressed value set was quadratic
+
+Separately from anything proof-shaped, `AllDifferent::prepare` built its
+compressed value set --- the union of the initial domains, which is the right-hand
+side of GAC's bipartite graph --- by walking every value of every domain and
+doing a **linear scan of what it had collected so far** for each one. That is
+O(values x distinct values), so it was asymptotically worse than the algorithm it
+feeds:
+
+| initial domain | before | after |
+|---|---|---|
+| `0..10^4` | 67 ms | 2 ms |
+| `0..10^5` | 6 637 ms | 38 ms |
+| `0..10^6` | did not finish in 200 s | 528 ms |
+
+Membership now goes through a set, leaving the order --- first-seen, and so the
+value indices the propagator's graph uses --- exactly as it was: 340 proof
+artefacts across the two `AllDifferent` test binaries are byte-identical at a
+pinned seed. `AllDifferentExcept` had the same loop and gets the same treatment.
+
+**This does not change the audit lane's verdict, and should not.** GAC still wants
+a graph vertex per value, so a genuinely wide domain is still the `KnownTrip` the
+lane records, and what it needs is stage 5's weaker arm rather than a faster
+setup. What the fix removes is only the part that was gratuitous: `consistency::VC`
+on the same probe was 0 ms at every width throughout, which is what made the
+attribution unambiguous.
+
 ## Proofs
 
 **Out of scope for fixing.** Several of these have no viable fix today, and a

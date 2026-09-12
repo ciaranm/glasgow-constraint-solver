@@ -345,18 +345,32 @@ namespace gcs::innards
          * values the variable can still take.
          *
          * WHAT A CALLER OWES. A pol that adds this line gets `+[x = v]` for each
-         * `v` in `singled_out`, exactly as the per-value form does, so cancellation
-         * against per-value at-most-ones and count lines is unchanged --- provided
-         * `singled_out` covers every value that pol names for this variable. What
-         * differs is the residue: instead of one `+[x = w]` per unnamed value, there
-         * is one `+[x in run]` per run. The caller's reason must therefore rule the
-         * runs out, which it does exactly when it pins the variable's bounds and
-         * excludes its holes (as `generic_reason` and the Hall-set reasons do): a run
-         * outside the bounds dies on the order chain, and a run inside one sits inside
-         * an excluded hole, so containment falsifies it. A reason that named holes
-         * only value by value would still work --- the run's own covering reaches the
-         * eq atoms --- but only if every value in the run is named, which is the cost
+         * `v` in `singled_out`, exactly as the per-value form does. What differs is
+         * the residue: instead of one `+[x = w]` per unnamed value, there is one
+         * `+[x in run]` per run. The caller's reason must therefore rule the runs
+         * out, which it does exactly when it pins the variable's bounds and excludes
+         * its holes (as `generic_reason` and the Hall-set reasons do): a run outside
+         * the bounds dies on the order chain, and a run inside one sits inside an
+         * excluded hole, so containment falsifies it. A reason that named holes only
+         * value by value would still work --- the run's own covering reaches the eq
+         * atoms --- but only if every value in the run is named, which is the cost
          * this call exists to avoid.
+         *
+         * So **pass the values the pol names for this variable that it can still
+         * take**, and no more. Two bounds meet here. A value the pol names but this
+         * call omits leaves that pol term with nothing to cancel against; that is
+         * safe when the variable cannot take the value (its term is zero under the
+         * reason anyway) and broken otherwise, which is why the filter must be the
+         * domain and not a guess. A value in `singled_out` that the variable cannot
+         * take is merely wasted --- it costs a term here and a cell in the partition
+         * --- and callers whose value set is much bigger than one variable's domain
+         * (a Hall set, a global cover, a union of domains) should filter it out with
+         * `state.in_domain`. Every current caller does.
+         *
+         * The residue is then exactly the complement of the domain, which is exactly
+         * what the reason states; that correspondence is what makes the line's
+         * leftovers discharge by construction rather than by an argument about which
+         * runs happen to lie inside which holes.
          *
          * FALLS BACK, SILENTLY AND OFTEN, to the per-value form, which is why a
          * caller must stay correct under either: for a variable with no bits encoding
