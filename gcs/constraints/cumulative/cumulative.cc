@@ -84,12 +84,10 @@ namespace
         static const auto value = [] {
             const auto * const env = std::getenv("GCS_CUMULATIVE_ENCODING");
             if (! env || ! *env)
-                return CumulativeEncoding::TimeIndexed;
+                return CumulativeEncoding::StartCheckpoint;
             string spelling{env};
             if (spelling == "time-indexed")
                 return CumulativeEncoding::TimeIndexed;
-            else if (spelling == "both")
-                return CumulativeEncoding::Both;
             else if (spelling == "both-recovering")
                 return CumulativeEncoding::BothRecovering;
             else if (spelling == "start-checkpoint")
@@ -226,7 +224,7 @@ auto Cumulative::clone() const -> unique_ptr<Constraint>
     return result;
 }
 
-auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const model) -> bool
 {
     auto n = _starts.size();
 
@@ -301,15 +299,38 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
         _capacity_val = constant_value_of(_capacity);
 
     // #780: can every height's own bits be cited? A constant needs none; a
-    // plain variable with a declared lower bound of zero or more has bit k at
-    // weight 2^k; a view has no bits of its own, and a declared bound below
-    // zero puts a sign bit in and shifts every weight. Where the answer is no,
-    // a variable height's contribution stays linearised by three rows per
-    // pair, and the per-(task, time) family stays in the model --- see
-    // define_proof_model.
+    // plain non-negative variable has bit k at weight 2^k; a view has no bits
+    // of its own. Where the answer is no, a variable height's contribution
+    // cannot be stated as a conjunction with the height's bits, which is what
+    // the start-checkpoint encoding needs --- see define_proof_model.
+    //
+    // The `_height_lb[i] >= 0` half is belt and braces rather than a live case:
+    // a declared bound below zero would put a sign bit in the encoding and
+    // shift every weight, but `_height_lb[i]` is the same
+    // `initial_state.lower_bound(h)` the non-negativity check above has already
+    // thrown on. It stays because the *reason* for it is about the bit
+    // encoding, not about the modelling error, and the two could come apart if
+    // anything ever narrowed a height before prepare ran.
     _height_bits_citable = std::ranges::all_of(std::views::iota(std::size_t{0}, _heights.size()), [&](std::size_t i) {
         return is_constant_variable(_heights[i]) || (std::holds_alternative<SimpleIntegerVariableID>(_heights[i]) && _height_lb[i] >= 0_i);
     });
+
+    // And if they cannot be cited, say so now rather than writing a model no
+    // inference over it could cite. There is exactly one OPB encoding for a
+    // Cumulative, because two would mean cake had to reproduce our choice per
+    // constraint; so a height whose bits are unavailable has no encoding at
+    // all, where it used to quietly fall back to the per-time block.
+    //
+    // Only with proof logging on: without it the height is never encoded and a
+    // view is perfectly serviceable, so rejecting it unconditionally would
+    // break working models for no reason.
+    //
+    // Unreachable from MiniZinc and XCSP, both of which hand Cumulative plain
+    // variables and constants and never views, and from every test. The general
+    // fix is a proof-only deviewed height linked to the view; until someone
+    // needs it, a diagnosable error beats an uncertifiable model.
+    if (model && ! _height_bits_citable)
+        throw UnimplementedException{"Cumulative: a view-valued height has no citable bits, so it cannot be proof-logged (#780)"};
 
     // Tasks whose length can only ever be 0, or whose height can only ever be 0,
     // or which are constantly absent, never raise the load profile.
@@ -589,21 +610,21 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
         }
     }
 
-    // #780: under CumulativeEncoding::StartCheckpoint the per-time capacity
-    // rows are not written at all, so that a rule which still reads
-    // `capacity_lines` finds nothing and its certificate fails loudly rather
-    // than quietly keeping a dependency on a block that is going away. Only
-    // where the recovery can actually supply a replacement, though --- a
-    // variable height or an optional task has no recovered row to fall back on,
-    // and dropping the model's would leave the constraint with no capacity row
-    // at all rather than merely an unconverted one.
+    // #780: the shipped encoding does not write the per-time capacity rows at
+    // all. There is one encoding, so there is no shape to fall back for: a
+    // Cumulative the recovery cannot speak about is rejected by prepare() --- no
+    // active task returns false, and a height whose bits cannot be cited throws
+    // --- and install() only reaches here when prepare() returned true. So this
+    // holds rather than being tested, and says so loudly if it ever stops.
     //
     // Note this gates the capacity *rows* only. The per-(task, time) flags
-    // above stay: every rule's activity vocabulary is still stated over them,
-    // and moving them to lazily-minted objects is its own step of #780.
+    // above stay where an encoding still wants them in the model; the shipped
+    // one mints them inside the proof instead.
     auto encoding = _encoding.value_or(default_cumulative_encoding());
-    auto shape_supports_recovery = cumulative_shape_supports_checkpoint_recovery(_active_tasks, _presence, _lengths, _heights, _capacity);
-    auto omit_per_time_capacity_rows = encoding == CumulativeEncoding::StartCheckpoint && shape_supports_recovery;
+    if (encoding == CumulativeEncoding::StartCheckpoint &&
+        ! cumulative_shape_supports_checkpoint_recovery(_active_tasks, _presence, _lengths, _heights, _capacity))
+        throw UnexpectedException{"Cumulative: prepare() admitted a shape the checkpoint recovery cannot speak about"};
+    auto omit_per_time_capacity_rows = encoding == CumulativeEncoding::StartCheckpoint;
 
     for (Integer t = global_lo; t <= global_hi && ! omit_per_time_capacity_rows; ++t) {
         WPBSum load;
@@ -636,23 +657,6 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
     }
 
     if (encoding == CumulativeEncoding::TimeIndexed)
-        return;
-
-    // #780: under CumulativeEncoding::StartCheckpoint a shape the recovery
-    // cannot speak about has just kept its per-time block, above. Writing the
-    // checkpoint block beside it as well would be pure growth: no rule can
-    // cite it, because every citer goes through a recovery that declines this
-    // shape before it looks at the model at all. So StartCheckpoint on a
-    // declined shape *is* TimeIndexed, which is what "start-checkpoint
-    // wherever the recovery reaches" has to mean once the default flips ---
-    // otherwise every variable-length, variable-height, variable-capacity or
-    // optional-task model would silently start paying for two encodings.
-    //
-    // Both and BothRecovering keep writing it for every shape. They are the
-    // differential arms, and a checkpoint row over a shape the recovery
-    // declines is still a row veripb checks against the solutions, which is
-    // how the block was soundness-checked in the first place.
-    if (encoding == CumulativeEncoding::StartCheckpoint && ! shape_supports_recovery)
         return;
 
     // Start-checkpoint encoding (issue #780), emitted *alongside* the
