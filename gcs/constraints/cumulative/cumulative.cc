@@ -84,7 +84,7 @@ namespace
         static const auto value = [] {
             const auto * const env = std::getenv("GCS_CUMULATIVE_ENCODING");
             if (! env || ! *env)
-                return CumulativeEncoding::TimeIndexed;
+                return CumulativeEncoding::StartCheckpoint;
             string spelling{env};
             if (spelling == "time-indexed")
                 return CumulativeEncoding::TimeIndexed;

@@ -240,58 +240,40 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(auto_table_presolver_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME auto_table_presolver_test COMMAND $<TARGET_FILE:auto_table_presolver_test>)
 
-    # ---- issue #780: the start-checkpoint encoding, run beside the time-indexed one
+    # ---- issue #780: the start-checkpoint encoding, which is the only one
     #
-    # Every cumulative lane registered through add_cumulative_test runs twice:
-    # once as it always did, over the time-indexed OPB block alone, and once as
-    # `<name>_checkpoint` with the start-checkpoint block (CumulativeEncoding)
-    # emitted beside it. Nothing derives anything from the second block yet, so
-    # what the twin buys is the check that its rows are *sound*: a checkpoint
-    # row that says too much is a solution veripb refuses on the `solx` line of
-    # any enumeration lane. What no lane can check yet is sufficiency, since
-    # nothing cites them.
+    # Cumulative has exactly one OPB encoding: the start-checkpoint one, which
+    # is what a bare lane runs (#780). Two would mean cake had to reproduce our
+    # per-constraint choice exactly, and a disagreement shows up as a rejected
+    # proof rather than as an error.
+    #
+    # One arm survives that. `<name>_recovering` emits the old per-time block
+    # beside the checkpoint one, derives every per-time capacity row back out of
+    # the checkpoints, and checks it against the row the model still carries
+    # (CumulativeEncoding::BothRecovering). That is the only thing in the tree
+    # that catches a recovery which is *valid but derives the wrong row*: such a
+    # recovery emits a line veripb accepts, and only the implication check
+    # against ground truth rejects it. It is also the only reason the
+    # time-indexed emitter is still compiled --- it is a test fixture, not an
+    # encoding, and no solve and no .scp can select it.
+    #
+    # Mutation lanes do not get the arm. The recovery puts more in the database
+    # for unit propagation to reach, so a corrupted proof veripb rejects against
+    # the shipped encoding need not be rejected with the recovered rows beside
+    # it. The one exception is registered by hand below
+    # (cumulative_overload_mutation_recover_wrong), and it is a mutation *of the
+    # recovery*, which is what the arm is for.
+    #
+    # Neither does a `scp_chain_cumulative*` case, for a better reason: the
+    # chain checks our proof against cake's OPB, which has no start-checkpoint
+    # rows at all.
     #
     # The encoding comes from the environment rather than an argv flag because
     # the fixtures build Cumulatives in sixty places, and threading a parameter
     # through all of them would say nothing that GCS_CUMULATIVE_ENCODING does
-    # not. The twin gets its own working directory because the two copies write
+    # not. The arm gets its own working directory because the two copies write
     # proof files under the same names (issue #562's problem, one directory up).
-    #
-    # Mutation lanes are the exception, and are twinned one at a time rather
-    # than by default. More model is more for unit propagation to reach, so a
-    # corrupted proof that veripb rejects against the time-indexed block alone
-    # need not be rejected with the checkpoint rows beside it --- and three are
-    # not, which is why they are registered bare below with a note apiece. A
-    # twin of one of those would assert something false. When a lane comes off
-    # that list it should be because its certificate stopped leaning on rows
-    # the encoding is about to lose, not because the list got tidied.
-    #
-    # A third arm, `<name>_recovering`, derives every capacity row back out of
-    # the start-checkpoint rows and checks it against the one the model still
-    # carries (CumulativeEncoding::BothRecovering). It goes only on the lanes
-    # registered through add_cumulative_test_with_recovery, which is every
-    # cumulative lane except two kinds. A mutation lane must not have one: the
-    # recovery puts yet more in the database for unit propagation to reach, and
-    # four more of them stop discriminating under it than under `both` alone. A
-    # `scp_chain_cumulative*` case must not have one either, for a better
-    # reason: the chain checks our proof against *cake's* OPB, which has no
-    # start-checkpoint rows in it at all, so a recovery has nothing to cite.
-    #
-    # A fourth arm, `<name>_startcheckpoint`, drops the per-time capacity rows
-    # from the model altogether (CumulativeEncoding::StartCheckpoint). This is
-    # the leak check, and it replaces the OPB-stripping one the script beside it
-    # does: a rule that still reads `capacity_lines` finds nothing there, its pol
-    # loses the supply it was counting on, and veripb rejects. Nobody has to
-    # enumerate where the old rows are read from --- the arm asks the question
-    # everywhere at once, and it reaches the rules CumulativeRules leaves off by
-    # default, which an .scp-driven check cannot.
-    #
-    # It goes only on lanes whose every firing rule has moved over. The list of
-    # lanes that are *not* on it, further down, is #780's progress bar: when it
-    # is empty, the time-indexed block can go.
-    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_checkpoint)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering)
-    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_startcheckpoint)
     #
     # Which arm a lane belongs to is *recorded* here and applied further down,
     # after the runtime-cap block: that block sets ENVIRONMENT on every test in
@@ -307,46 +289,39 @@ if(GCS_BUILD_TESTS)
         set_tests_properties(${name}_${arm} PROPERTIES WORKING_DIRECTORY ${directory})
         set_property(GLOBAL APPEND PROPERTY gcs_cumulative_${arm}_tests ${name}_${arm})
     endfunction()
+    # The bare lane, which now *is* the start-checkpoint encoding.
     function(add_cumulative_test name)
         add_test(NAME ${name} COMMAND ${ARGN})
-        add_cumulative_arm(${name} checkpoint ${CMAKE_CURRENT_BINARY_DIR}/cumulative_checkpoint ${ARGN})
     endfunction()
+    # ...plus the one surviving arm: both blocks in the model, every per-time row
+    # recovered from the checkpoints and checked against the row the model still
+    # carries beside it. That is the only thing in the tree that catches a
+    # recovery which is *valid but derives the wrong row* --- such a recovery
+    # emits a perfectly good line that veripb accepts, and only the implication
+    # check against ground truth rejects it. It earned its keep: the
+    # optional-task sabotage at step 12 left every start-checkpoint lane green.
+    #
+    # It is the reason the time-indexed emitter is still compiled. It is not an
+    # encoding anything ships, and no solve and no .scp can select it.
     function(add_cumulative_test_with_recovery name)
         add_test(NAME ${name} COMMAND ${ARGN})
-        add_cumulative_arm(${name} checkpoint ${CMAKE_CURRENT_BINARY_DIR}/cumulative_checkpoint ${ARGN})
         add_cumulative_arm(${name} recovering ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering ${ARGN})
-    endfunction()
-    # As add_cumulative_test (no recovering arm, for a mutation lane that stops
-    # discriminating under it), plus the arm that deletes the per-time block.
-    function(add_cumulative_test_converted_no_recovery name)
-        add_test(NAME ${name} COMMAND ${ARGN})
-        add_cumulative_arm(${name} checkpoint ${CMAKE_CURRENT_BINARY_DIR}/cumulative_checkpoint ${ARGN})
-        add_cumulative_arm(${name} startcheckpoint ${CMAKE_CURRENT_BINARY_DIR}/cumulative_startcheckpoint ${ARGN})
-    endfunction()
-    # For a lane every rule of which has moved over to the recovered rows: as
-    # add_cumulative_test_with_recovery, plus the arm that deletes the per-time
-    # block from the model entirely. See the note above about what that checks.
-    function(add_cumulative_test_converted name)
-        add_test(NAME ${name} COMMAND ${ARGN})
-        add_cumulative_arm(${name} checkpoint ${CMAKE_CURRENT_BINARY_DIR}/cumulative_checkpoint ${ARGN})
-        add_cumulative_arm(${name} recovering ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering ${ARGN})
-        add_cumulative_arm(${name} startcheckpoint ${CMAKE_CURRENT_BINARY_DIR}/cumulative_startcheckpoint ${ARGN})
     endfunction()
 
     add_executable(inferred_cumulative_presolver_test presolvers/inferred_cumulative/inferred_cumulative_test.cc)
     target_link_libraries(inferred_cumulative_presolver_test PRIVATE glasgow_constraint_solver)
-    add_cumulative_test_converted(inferred_cumulative_presolver
+    add_cumulative_test_with_recovery(inferred_cumulative_presolver
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_cumulative_presolver_test>)
 
     add_executable(inferred_disjunctive_presolver_test presolvers/inferred_disjunctive/inferred_disjunctive_test.cc)
     target_link_libraries(inferred_disjunctive_presolver_test PRIVATE glasgow_constraint_solver)
     # Twinned too: it cites a *Cumulative* donor's per-(task, time) flags.
-    add_cumulative_test_converted(inferred_disjunctive_presolver
+    add_cumulative_test_with_recovery(inferred_disjunctive_presolver
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_disjunctive_presolver_test>)
 
     add_executable(cumulative_strengthening_presolver_test presolvers/cumulative_strengthening/cumulative_strengthening_test.cc)
     target_link_libraries(cumulative_strengthening_presolver_test PRIVATE glasgow_constraint_solver)
-    add_cumulative_test_converted(cumulative_strengthening_presolver
+    add_cumulative_test_with_recovery(cumulative_strengthening_presolver
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_strengthening_presolver_test>)
 
     add_executable(constraint_enumeration_test constraint_enumeration_test.cc)
@@ -490,76 +465,53 @@ if(GCS_BUILD_TESTS)
     add_test(NAME count_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:count_test>)
     add_test(NAME bounds_global_cardinality_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:bounds_global_cardinality_test>)
     add_test(NAME gac_global_cardinality_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:gac_global_cardinality_test>)
-    add_cumulative_test_converted(cumulative_constraint ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
-    add_cumulative_test_converted(cumulative_overload ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_overload_test>)
-    add_cumulative_test_converted(cumulative_edge_finding ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_edge_finding_test>)
+    add_cumulative_test_with_recovery(cumulative_constraint ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
+    add_cumulative_test_with_recovery(cumulative_overload ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_overload_test>)
+    add_cumulative_test_with_recovery(cumulative_edge_finding ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_edge_finding_test>)
     # All five still discriminate on the startcheckpoint arm, checked one at a
     # time. `capacity` is the direct negative test for #780's step 7: it omits a
     # row from the window supply, which on that arm is a recovered row.
     foreach(mutation drop toofar capacity mirror_drop mirror_toofar)
-        add_cumulative_test_converted_no_recovery(cumulative_edge_finding_mutation_${mutation}
+        add_cumulative_test(cumulative_edge_finding_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_edge_finding_mutation_${mutation} $<TARGET_FILE:cumulative_edge_finding_test> --mutate=${mutation})
     endforeach()
-    add_cumulative_test_converted(cumulative_ttef ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_ttef_test>)
-    add_cumulative_test_converted(cumulative_nfnl ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_nfnl_test>)
-    add_cumulative_test_converted(cumulative_kaoc ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_kaoc_test>)
+    add_cumulative_test_with_recovery(cumulative_ttef ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_ttef_test>)
+    add_cumulative_test_with_recovery(cumulative_nfnl ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_nfnl_test>)
+    add_cumulative_test_with_recovery(cumulative_kaoc ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_kaoc_test>)
     # On the startcheckpoint arm as well, each checked to still discriminate
     # there. `capacity` is the one that earns it: it omits a row from the
     # per-time availability line, which under that arm is a *recovered* row, so
     # this is the negative test over the path #780's step 6 moved.
     foreach(fixture cloutier_ex2 dp_path compulsory)
         foreach(mutation claim_one_better strengthen_one_fewer capacity)
-            add_cumulative_test_converted_no_recovery(cumulative_kaoc_mutation_${fixture}_${mutation}
+            add_cumulative_test(cumulative_kaoc_mutation_${fixture}_${mutation}
                 ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                     --basename cumulative_kaoc_mutation_${fixture}_${mutation} $<TARGET_FILE:cumulative_kaoc_test>
                     --mutate=${mutation} --fixture=${fixture})
         endforeach()
     endforeach()
     foreach(mutation toofar drop roomy_toofar)
-        add_cumulative_test_converted_no_recovery(cumulative_nfnl_mutation_${mutation}
+        add_cumulative_test(cumulative_nfnl_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_nfnl_mutation_${mutation} $<TARGET_FILE:cumulative_nfnl_test> --mutate=${mutation})
     endforeach()
-    # Not on the startcheckpoint arm, for the same reason the ttef pin lanes are
-    # not: veripb accepts the corruption once the per-time block is gone.
-    add_cumulative_test(cumulative_nfnl_mutation_roomy_drop
-        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
-            --basename cumulative_nfnl_mutation_roomy_drop $<TARGET_FILE:cumulative_nfnl_test> --mutate=roomy_drop)
     # The detection as published (#746), certified by contiguity rather than by
     # the window-energy lemma. `emit_nothing` is the control and `drop_pin` the
     # lane aimed at what is new; dropping the contiguity rows themselves cannot
     # be caught, and cumulative_mutations.hh records why.
-    add_cumulative_test_converted(cumulative_published_nfnl
+    add_cumulative_test_with_recovery(cumulative_published_nfnl
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test>)
-    add_cumulative_test_converted(cumulative_published_nfnl_random
+    add_cumulative_test_with_recovery(cumulative_published_nfnl_random
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test> --random 7)
     # All five still discriminate on the startcheckpoint arm, checked one at a
     # time. `drop_pin` is the one aimed at what #746 added, and it survives.
     foreach(mutation emit_nothing drop_pin toofar roomy_toofar roomy_drop_pin)
-        add_cumulative_test_converted_no_recovery(cumulative_published_nfnl_mutation_${mutation}
+        add_cumulative_test(cumulative_published_nfnl_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_published_nfnl_mutation_${mutation} $<TARGET_FILE:cumulative_published_nfnl_test> --mutate=${mutation})
     endforeach()
-    # Not twinned (#780): `drop` removes a contiguity row, and the start-
-    # checkpoint rows put back enough for the wrapping RUP to close without it,
-    # so veripb accepts the corrupted proof under `both` --- and, for the same
-    # reason, under the startcheckpoint arm. The lane still says what it always
-    # said about the time-indexed encoding.
-    add_test(NAME cumulative_published_nfnl_mutation_drop
-        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
-            --basename cumulative_published_nfnl_mutation_drop $<TARGET_FILE:cumulative_published_nfnl_test> --mutate=drop)
     foreach(mutation pins drop toofar mirror_pins mirror_toofar)
-        add_cumulative_test_converted_no_recovery(cumulative_ttef_mutation_${mutation}
-            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
-                --basename cumulative_ttef_mutation_${mutation} $<TARGET_FILE:cumulative_ttef_test> --mutate=${mutation})
-    endforeach()
-    # Not on the startcheckpoint arm: `pin` drops a single (task, time) pin, and
-    # with the per-time block gone the checkpoint rows relate the starts
-    # directly, which is enough for the wrapping RUP to close without it. veripb
-    # accepts the corrupted proof, so the lane would stop discriminating. It
-    # still says what it always said about the other encodings.
-    foreach(mutation pin mirror_pin)
         add_cumulative_test(cumulative_ttef_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_ttef_mutation_${mutation} $<TARGET_FILE:cumulative_ttef_test> --mutate=${mutation})
@@ -569,24 +521,16 @@ if(GCS_BUILD_TESTS)
     # mandatory part. `drop_energetic` is the lane that matters: it removes the
     # row of a task the window does not contain, which is the only energy plain
     # edge-finding would not have cited.
-    add_cumulative_test_converted(cumulative_energetic
+    add_cumulative_test_with_recovery(cumulative_energetic
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test>)
-    add_cumulative_test_converted(cumulative_energetic_random
+    add_cumulative_test_with_recovery(cumulative_energetic_random
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test> --random 17)
     foreach(mutation drop_energetic drop toofar capacity mirror_toofar)
-        add_cumulative_test_converted_no_recovery(cumulative_energetic_mutation_${mutation}
+        add_cumulative_test(cumulative_energetic_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_energetic_mutation_${mutation} $<TARGET_FILE:cumulative_energetic_test> --mutate=${mutation})
     endforeach()
-    # Not on the startcheckpoint arm: same shape again --- veripb accepts the
-    # dropped row once the per-time block is gone. The forward `drop_energetic`
-    # lane, which is the one that matters for #755, does still discriminate and
-    # is on the arm above.
-    add_cumulative_test(cumulative_energetic_mutation_mirror_drop_energetic
-        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
-            --basename cumulative_energetic_mutation_mirror_drop_energetic $<TARGET_FILE:cumulative_energetic_test>
-            --mutate=mirror_drop_energetic)
-    add_cumulative_test_converted(derived_cumulative ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:derived_cumulative_test>)
+    add_cumulative_test_with_recovery(derived_cumulative ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:derived_cumulative_test>)
     # Mutation lanes: each writes a deliberately corrupted proof of the
     # sharp-margin fixture, and passes only if veripb rejects it. Distinct
     # basenames so the lanes do not race over one set of proof files.
@@ -600,7 +544,7 @@ if(GCS_BUILD_TESTS)
     # corrupts a *derived* row rather than a model one, and without the twin the
     # recovering arm would have no negative test over that path at all.
     foreach(mutation energy capacity window)
-        add_cumulative_test_converted(cumulative_overload_mutation_${mutation}
+        add_cumulative_test_with_recovery(cumulative_overload_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_overload_mutation_${mutation} $<TARGET_FILE:cumulative_overload_test> --mutate=${mutation})
     endforeach()
@@ -631,13 +575,9 @@ if(GCS_BUILD_TESTS)
     # and its (TTOC) strengthening --- is converted.
     #
     # These stay as a direct check on the recovery's own derivation --- `prefix`
-    # mode cuts the proof at the recovery's marker, which nothing else does ---
-    # but they are no longer #780's progress bar. The `startcheckpoint` arm is,
-    # and it is a better one in every way: it deletes the per-time rows at the
-    # source rather than post-processing a finished OPB, it needs no .scp
-    # vehicle, and it therefore reaches the rules CumulativeRules leaves off by
-    # default, which these four models cannot fire at all. See the list of lanes
-    # not yet on that arm, below.
+    # mode cuts the proof at the recovery's marker, which nothing else does.
+    # They are no longer #780's progress bar; there is one encoding now, so
+    # there is no leak to check for. See the note where that bar used to be.
     # Only where the standalone .scp solver is built: these lanes run it, and
     # GCS_ENABLE_EXECUTABLES=OFF (the MSVC frontends lane) leaves no such target
     # for $<TARGET_FILE:> to name.
@@ -678,50 +618,49 @@ if(GCS_BUILD_TESTS)
         add_checkpoint_recovery_leak_check(ttoc no-block)
     endif()
 
-    # #780's progress bar: the cumulative lanes that are *not* on the
-    # `startcheckpoint` arm because a rule they fire still reads the per-time
-    # block. **It is empty.**
+    # #780's progress bar is retired: there is one encoding now, so there is no
+    # arm for a lane to be missing from. What it recorded is worth keeping,
+    # because it is what made the deletion safe to make:
     #
-    # Read that precisely: every *rule* is converted, and not yet every *shape*.
-    # Nothing reads capacity_lines directly any more --- it all goes through
-    # capacity_row --- and **every shape is converted now too**. The recovery
-    # speaks about optional tasks, variable lengths, variable heights and a
-    # variable capacity, so capacity_row's fallback to the model row is
-    # unreachable for any Cumulative that has an active task at all: of the 440
-    # proofs the cumulative test binaries write under this arm, **none**
-    # contains a cap_ row, where 149 did when the arm was built. The per-time
-    # block is not merely skipped where it happens to be safe any more --- it
-    # is replaceable outright. See dev_docs for what each shape took.
+    # Every *rule* moved over, and then every *shape*. Nothing reads
+    # capacity_lines any more --- it all goes through capacity_row --- and the
+    # recovery speaks about optional tasks, variable lengths, variable heights
+    # and a variable capacity, so capacity_row's fallback to a model row was
+    # unreachable for any Cumulative with an active task before it was deleted.
+    # Of the 440 proofs the cumulative test binaries wrote under the arm, none
+    # contained a cap_ row, where 149 did when the arm was built. See dev_docs
+    # for what each shape took.
     #
-    # Lanes that are off the arm but are *not* part of the bar, all of them
-    # mutation lanes that stop discriminating once the per-time block is gone
-    # --- each drops a row or a pin that the checkpoint rows then put back by
-    # relating the starts directly, so veripb accepts the corruption:
+    # Seven mutation lanes went with the flip rather than being pinned to an
+    # encoding the solver does not ship. Each dropped a row or a pin that the
+    # checkpoint rows put back by relating the starts directly, so veripb
+    # accepts the corruption and the lane asserts nothing:
     #
     #   cumulative_optional_mutation_{wrong_task,emit_nothing}
-    #     (one_too_far was in this list and is not any more --- it rejects
-    #     under all four encodings, rechecked when optional tasks joined)
     #   cumulative_ttef_mutation_{pin,mirror_pin}
     #   cumulative_nfnl_mutation_roomy_drop
     #   cumulative_energetic_mutation_mirror_drop_energetic
     #   cumulative_published_nfnl_mutation_drop
     #
-    # They still say what they always said about the other encodings. The
-    # scp_chain_cumulative* cases are off for the older reason: they check our
-    # proof against cake's OPB, which has no start-checkpoint rows at all.
+    # Read honestly, that is each of those certificate steps telling us it is no
+    # longer load-bearing: unit propagation over the richer model closes what the
+    # step used to supply. Whether the certificates should therefore drop those
+    # steps is a separate question and is not answered here.
+    # cumulative_optional_mutation_one_too_far was in that list once and is not:
+    # it rejects under every encoding, rechecked when optional tasks joined.
     #
-    # One thing to keep in mind if this bar is ever rebuilt for another rule:
-    # the derived-cumulative lanes are the one place the arm does *not* fail
-    # loudly. derived_cumulative.cc reads its donors' rows and a donor with none
-    # makes the derivation *decline*, which is a supported outcome rather than
-    # an error --- so before step 9 those lanes failed on their own assertions
-    # about what got posted, not on veripb. A lane without such an assertion
-    # would have passed while silently losing propagation.
+    # One thing to keep in mind if a bar like this is ever built for another
+    # rule: the derived-cumulative lanes were the one place the arm did *not*
+    # fail loudly. derived_cumulative.cc reads its donors' rows and a donor with
+    # none makes the derivation *decline*, which is a supported outcome rather
+    # than an error --- so before step 9 those lanes failed on their own
+    # assertions about what got posted, not on veripb. A lane without such an
+    # assertion would have passed while silently losing propagation.
 
     # One ctest entry per mode, each writing proofs under its own basename, so a
     # parallel run does not have two entries racing over one set of files.
     foreach(mode enumerate falsify bijection objective)
-        add_cumulative_test_converted(cumulative_optional_constraint_${mode}
+        add_cumulative_test_with_recovery(cumulative_optional_constraint_${mode}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_optional_test> ${mode})
     endforeach()
     # Presence-falsification mutation lanes, the same shape as the overload
@@ -730,18 +669,8 @@ if(GCS_BUILD_TESTS)
     # at a time once the recovery learned to speak about optional tasks, and it
     # still rejects under every one of them.
     foreach(mutation one_too_far)
-        add_cumulative_test_converted(cumulative_optional_mutation_${mutation}
+        add_cumulative_test_with_recovery(cumulative_optional_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
-                --basename cumulative_optional_mutation_${mutation} $<TARGET_FILE:cumulative_optional_test> --mutate=${mutation})
-    endforeach()
-    # Not twinned (#780): both of these corrupt the presence-falsification
-    # chain, and the start-checkpoint rows relate the falsified task's start to
-    # every other task's directly, which is enough for the wrapping RUP to
-    # close without the chain. veripb accepts them under `both`. They still say
-    # what they always said about the time-indexed encoding.
-    foreach(mutation wrong_task emit_nothing)
-        add_test(NAME cumulative_optional_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_optional_mutation_${mutation} $<TARGET_FILE:cumulative_optional_test> --mutate=${mutation})
     endforeach()
     foreach(mode basic cycles views alias reified simplify incremental random random_reified)
@@ -958,14 +887,12 @@ if(GCS_BUILD_TESTS)
         add_view_tests(disjunctive_constraint_${mode} disjunctive_test 4 ${mode})
     endforeach()
     add_view_tests(cumulative_constraint cumulative_test 4)
-    # And its always-on mixed-view lane under the other encoding (#780): two
+    # And its always-on mixed-view lane on the recovering arm (#780): two
     # different views in one constraint is the shape the checkpoint rows meet
     # that the per-time ones never do, since a checkpoint row names two starts.
-    add_cumulative_arm(cumulative_constraint_view_mixed checkpoint ${CMAKE_CURRENT_BINARY_DIR}/cumulative_checkpoint
-        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test> --view-position=mixed)
+    # These are views on the *starts*; a view-valued height has no encoding at
+    # all and prepare() rejects it.
     add_cumulative_arm(cumulative_constraint_view_mixed recovering ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering
-        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test> --view-position=mixed)
-    add_cumulative_arm(cumulative_constraint_view_mixed startcheckpoint ${CMAKE_CURRENT_BINARY_DIR}/cumulative_startcheckpoint
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test> --view-position=mixed)
     add_view_tests(regular_constraint regular_test 4)
     # Every MiniZinc model hands BinPacking views: glasgow_bin_packing_capa and
@@ -1333,17 +1260,9 @@ if(GCS_BUILD_TESTS)
     # #780's encoding arms, APPENDed after the runtime caps above rather than
     # set at registration, since set_tests_properties there replaces the whole
     # ENVIRONMENT property. See add_cumulative_arm.
-    get_property(gcs_cumulative_checkpoint_tests GLOBAL PROPERTY gcs_cumulative_checkpoint_tests)
-    foreach(cumulative_arm_test IN LISTS gcs_cumulative_checkpoint_tests)
-        set_property(TEST ${cumulative_arm_test} APPEND PROPERTY ENVIRONMENT "GCS_CUMULATIVE_ENCODING=both")
-    endforeach()
     get_property(gcs_cumulative_recovering_tests GLOBAL PROPERTY gcs_cumulative_recovering_tests)
     foreach(cumulative_arm_test IN LISTS gcs_cumulative_recovering_tests)
         set_property(TEST ${cumulative_arm_test} APPEND PROPERTY ENVIRONMENT "GCS_CUMULATIVE_ENCODING=both-recovering")
-    endforeach()
-    get_property(gcs_cumulative_startcheckpoint_tests GLOBAL PROPERTY gcs_cumulative_startcheckpoint_tests)
-    foreach(cumulative_arm_test IN LISTS gcs_cumulative_startcheckpoint_tests)
-        set_property(TEST ${cumulative_arm_test} APPEND PROPERTY ENVIRONMENT "GCS_CUMULATIVE_ENCODING=start-checkpoint")
     endforeach()
     get_property(gcs_cumulative_checkpoint_recovering_tests GLOBAL PROPERTY gcs_cumulative_checkpoint_recovering_tests)
     foreach(cumulative_arm_test IN LISTS gcs_cumulative_checkpoint_recovering_tests)
