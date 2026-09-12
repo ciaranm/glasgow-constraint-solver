@@ -176,13 +176,23 @@ auto Among::install_propagators(Propagators & propagators) -> void
                 // must_match var, which is not reliable when domains have width > 1.
                 if (sum_line.first && must_match_count > 0_i) {
                     PolBuilder b;
+                    vector<Integer> still_possible;
                     b.add(*sum_line.first);
                     for (const auto & m : must_match_vars) {
                         // Constants in must_match are folded into sum_line.first's RHS at OPB
                         // emission, so they don't need (and don't have) an at-least-one line.
                         if (holds_alternative<ConstantIntegerVariableID>(m))
                             continue;
-                        b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
+                        // Only the values of interest this variable can still take
+                        // need naming: they are what sum_line's terms cancel against,
+                        // and a must_match variable's domain lies inside them, so
+                        // vars_reason rules out the runs the rest of its definition
+                        // range goes in as.
+                        still_possible.clear();
+                        for (const auto & voi : values_of_interest)
+                            if (state.in_domain(m, voi))
+                                still_possible.push_back(voi);
+                        b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value_over_cover(m, still_possible));
                     }
                     b.emit(*logger, ProofLevel::Temporary);
                 }
@@ -243,11 +253,17 @@ auto Among::install_propagators(Propagators & propagators) -> void
                         // how_many = must_match_count value.
                         if (sum_line.first && ! empty(must_match_vars)) {
                             PolBuilder b;
+                            vector<Integer> still_possible;
                             b.add(*sum_line.first);
                             for (const auto & m : must_match_vars) {
                                 if (holds_alternative<ConstantIntegerVariableID>(m))
                                     continue;
-                                b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
+                                still_possible.clear();
+                                for (const auto & voi : values_of_interest)
+                                    if (state.in_domain(m, voi))
+                                        still_possible.push_back(voi);
+                                b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value_over_cover(
+                                    m, still_possible));
                             }
                             b.emit(*logger, ProofLevel::Temporary);
                         }

@@ -71,9 +71,9 @@ using fmt::print;
 
 namespace gcs::innards::hints
 {
-    auto emit_justification(ProofLogger & logger, const AllDifferentHall & hall, const ReasonLiterals &) -> void
+    auto emit_justification(ProofLogger & logger, const State & state, const AllDifferentHall & hall, const ReasonLiterals &) -> void
     {
-        justify_all_different_hall_set_or_violator(logger, *hall.all_vars, hall.hall_vars, hall.hall_vals, *hall.value_am1_constraint_numbers);
+        justify_all_different_hall_set_or_violator(logger, state, *hall.all_vars, hall.hall_vars, hall.hall_vals, *hall.value_am1_constraint_numbers);
     }
 }
 
@@ -795,7 +795,8 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
         auto [hall, reason] =
             prove_matching_is_too_small(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, scratch);
         return tracker.infer(logger, FalseLiteral{},
-            JustifyExplicitly{[&logger, w = hall](const ReasonLiterals & r) { emit_justification(*logger, w, r); }, ThenRUP::Yes, move(hall)},
+            JustifyExplicitly{
+                [&logger, &state, w = hall](const ReasonLiterals & r) { emit_justification(*logger, state, w, r); }, ThenRUP::Yes, move(hall)},
             reason);
     }
 
@@ -924,15 +925,15 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
 
         auto [justification, reason] = prove_deletion_using_sccs(
             constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, *representatives_for_scc[scc], scratch);
-        visit(
-            overloaded{
-                [&](hints::AllDifferent & w) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyUsingRUP{w}, reason); }, //
-                [&](hints::AllDifferentHall & w) {
-                    tracker.infer_all(logger, deletions_by_scc[scc],
-                        JustifyExplicitly{[&logger, wc = w](const ReasonLiterals & r) { emit_justification(*logger, wc, r); }, ThenRUP::Yes, move(w)},
-                        reason);
-                } //
-            },
+        visit(overloaded{
+                  [&](hints::AllDifferent & w) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyUsingRUP{w}, reason); }, //
+                  [&](hints::AllDifferentHall & w) {
+                      tracker.infer_all(logger, deletions_by_scc[scc],
+                          JustifyExplicitly{[&logger, &state, wc = w](const ReasonLiterals & r) { emit_justification(*logger, state, wc, r); },
+                              ThenRUP::Yes, move(w)},
+                          reason);
+                  } //
+              },
             justification);
     }
 }

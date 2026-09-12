@@ -78,6 +78,18 @@ using fmt::print;
 
 namespace
 {
+    /**
+     * How wide a variable's definition range has to be before an at-least-one
+     * over it is stated as an interval cover rather than one term per value.
+     *
+     * See need_constraint_saying_variable_takes_at_least_one_value_over_cover for
+     * why this is a threshold rather than an unconditional rewrite. The value only
+     * has to separate "a domain someone wrote out by hand" from "a domain nobody
+     * could name" --- every case the cover exists for is orders of magnitude above
+     * it --- so it is not tuned, and no measurement here is sensitive to it.
+     */
+    const auto at_least_one_cover_threshold = 100_i;
+
     // These three tables are read on every literal rendered into every proof
     // line, so they are hashed rather than tree-ordered. Nothing iterates
     // them. The hashes just have to spread structured small integers; the
@@ -221,6 +233,8 @@ struct NamesAndIDsTracker::Imp
     map<string, ProofLine> published_derived_lines;
 
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
+    unordered_map<SimpleOrProofOnlyIntegerVariableID, map<vector<Integer>, ProofLine>, HashSimpleOrProofOnlyVariable>
+        variable_at_least_one_over_cover_constraints;
     // Indexed by variable index (variables are allocated with sequential
     // indices, so these stay dense), one per id kind.
     vector<VariableAtoms> simple_variable_atoms;
@@ -526,6 +540,106 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
                 return result->second;
             }
             return need_constraint_saying_variable_takes_at_least_one_value(var.actual_variable);
+        } //
+    }
+        .visit(var);
+}
+
+auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value_over_cover(
+    IntegerVariableID var, const vector<Integer> & singled_out) -> ProofLine
+{
+    // The cover is the singled-out values inside the definition range, each as its
+    // own cell, plus the maximal runs between and around them. need_invar returns
+    // the eq atom for a width-1 request, so both kinds of piece are asked for the
+    // same way and every piece is a literal the partition knows about --- which is
+    // what makes the line RUP: falsifying all of them falsifies the root covering.
+    auto over_cover = [&](const SimpleOrProofOnlyIntegerVariableID & id) -> ProofLine {
+        auto [lower, upper] = _imp->integer_variable_definition_bounds.at(id);
+
+        // Normalised before it is used as a cache key, so that callers asking for
+        // the same cover spelled differently --- unsorted, with repeats, or naming
+        // values outside the definition range, none of which change the line ---
+        // share one line rather than emitting a duplicate each.
+        vector<Integer> cuts;
+        for (const auto & v : singled_out)
+            if (v >= lower && v <= upper)
+                cuts.push_back(v);
+        sort(cuts);
+        auto [dups_from, dups_to] = std::ranges::unique(cuts);
+        cuts.erase(dups_from, dups_to);
+
+        // Cached and emitted at Top like the per-value form, and for the same
+        // reason: the line is a tautology of the encoding, so re-emitting it per
+        // firing would be pure proof growth. The per-value form needs only the
+        // variable as its key, since it names every value; this one is keyed by
+        // the cover too, and a caller whose cover changes from firing to firing
+        // (a Hall set, say) pays a line per distinct cover it asks for.
+        auto & for_this_var = _imp->variable_at_least_one_over_cover_constraints[id];
+        if (auto found = for_this_var.find(cuts); found != for_this_var.end())
+            return found->second;
+
+        WPBSum al1s;
+        auto run_from = lower;
+        auto add_piece = [&](Integer lo, Integer hi) {
+            if (lo <= hi)
+                al1s += 1_i * need_invar(id, lo, hi);
+        };
+
+        for (const auto & v : cuts) {
+            add_piece(run_from, v - 1_i);
+            add_piece(v, v);
+            run_from = v + 1_i;
+        }
+        add_piece(run_from, upper);
+
+        auto line = _imp->logger->emit_rup_proof_line(al1s >= 1_i, ProofLevel::Top);
+        for_this_var.emplace(move(cuts), line);
+        return line;
+    };
+
+    // Is a cover worth stating for this variable at all? The per-value form is
+    // emitted once and then serves every cover anyone asks for, because it names
+    // every value; a cover is specialised, so a caller whose cover changes --- a
+    // Hall set --- pays a line per distinct one. Over a narrow definition range
+    // those lines are each about as big as the single per-value line they replace,
+    // and there are many of them: measured on the examples, going to covers
+    // unconditionally cost sudoku 16% more proof lines and ortho_latin 3%, for
+    // variables declared over nine values, where naming every value was never the
+    // problem #833 is about.
+    //
+    // So the cover is for the case it was written for: a definition range too wide
+    // to name. Below the threshold nothing changes, which is why those examples are
+    // byte-identical; above it the per-value line grows without bound and the cover
+    // does not. This is a policy quantity, not a guard --- it wants to sit where
+    // naming every value stops being free, well below where it becomes ruinous ---
+    // so it is deliberately not large_domain_guard_limit().
+    auto worth_a_cover = [&](const SimpleOrProofOnlyIntegerVariableID & id) {
+        auto [lower, upper] = _imp->integer_variable_definition_bounds.at(id);
+        return upper - lower + 1_i > at_least_one_cover_threshold;
+    };
+
+    return overloaded{
+        [&](const ConstantIntegerVariableID &) -> ProofLine { throw UnimplementedException{}; }, //
+        [&](const SimpleIntegerVariableID & var) -> ProofLine {
+            // No bits means no range literals, so there is no cover to state. A
+            // zero-one variable is the case that reaches this, and its definition
+            // range is two values, so the per-value form is already the cover.
+            if (! has_bit_representation(var) || ! worth_a_cover(var))
+                return need_constraint_saying_variable_takes_at_least_one_value(var);
+            return over_cover(var);
+        }, //
+        [&](const ViewOfIntegerVariableID & var) -> ProofLine {
+            // As in the per-value form, a registered view states its at-least-one in
+            // V-form over its own encoded variable, so that it cancels against
+            // at-most-ones naming V-form atoms. The singled-out values are in the
+            // view's value space, which is that variable's space too.
+            //
+            // An unregistered view would need them mapped back through the view to
+            // be named at all, so it keeps the per-value form over the actual
+            // variable, where naming every value sidesteps the mapping.
+            if (auto v_id = find_view(var); v_id && has_bit_representation(*v_id) && worth_a_cover(*v_id))
+                return over_cover(*v_id);
+            return need_constraint_saying_variable_takes_at_least_one_value(var);
         } //
     }
         .visit(var);
