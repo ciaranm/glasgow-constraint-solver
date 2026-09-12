@@ -10,6 +10,7 @@
 #include <optional>
 #include <random>
 #include <set>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -435,6 +436,61 @@ namespace
         println(cerr, "{}: expected InvalidProblemDefinitionException", label);
         return false;
     }
+
+    // A view-valued height has no bits of its own, so the start-checkpoint
+    // encoding cannot state its contribution as a conjunction with them, and
+    // there is no second encoding to fall back to (#780). Proof logging on is
+    // what makes it an error: without it the height is never encoded.
+    //
+    // Run *twice*, because the two arms are the claim: with proofs it must
+    // throw, and without proofs the same model must still solve. A check that
+    // only tested the throw would pass just as well if Cumulative had started
+    // rejecting view heights outright.
+    auto expect_view_height_rejected_only_with_proofs() -> bool
+    {
+        auto build = [](Problem & p) {
+            auto s = p.create_integer_variable(0_i, 3_i, "s");
+            auto h = p.create_integer_variable(0_i, 2_i, "h");
+            // h + 1, which is a view: heights 1..3, non-negative, no bits of
+            // its own.
+            auto height = IntegerVariableID{ViewOfIntegerVariableID{h, false, 1_i}};
+            p.post(Cumulative{vector<IntegerVariableID>{s}, vector<IntegerVariableID>{ConstantIntegerVariableID{1_i}},
+                vector<IntegerVariableID>{height}, ConstantIntegerVariableID{4_i}});
+            return s;
+        };
+
+        {
+            Problem p;
+            auto s = build(p);
+            set<vector<int>> actual;
+            try {
+                solve_for_tests(p, std::optional<std::string>{"cumulative_view_height"}, actual, tuple{vector<IntegerVariableID>{s}});
+                println(cerr, "view-valued height with proofs: expected UnimplementedException");
+                return false;
+            }
+            catch (const UnimplementedException &) {
+            }
+        }
+
+        {
+            Problem p;
+            auto s = build(p);
+            set<vector<int>> actual;
+            try {
+                solve_for_tests(p, nullopt, actual, tuple{vector<IntegerVariableID>{s}});
+            }
+            catch (const UnimplementedException &) {
+                println(cerr, "view-valued height without proofs: threw, but a view height needs no encoding without proofs");
+                return false;
+            }
+            if (actual.empty()) {
+                println(cerr, "view-valued height without proofs: expected it to still solve");
+                return false;
+            }
+        }
+
+        return true;
+    }
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -449,6 +505,7 @@ auto main(int argc, char * argv[]) -> int
     negative_checks_ok &= expect_negative_size_throws("negative length", {-1, 2}, {1, 1}, {1, 1});
     negative_checks_ok &= expect_negative_size_throws("negative height", {1, 2}, {-1, 1}, {1, 1});
     negative_checks_ok &= expect_negative_size_throws("negative capacity", {1, 2}, {1, 1}, {-1, 1});
+    negative_checks_ok &= expect_view_height_rejected_only_with_proofs();
     if (! negative_checks_ok)
         return EXIT_FAILURE;
 

@@ -226,7 +226,7 @@ auto Cumulative::clone() const -> unique_ptr<Constraint>
     return result;
 }
 
-auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const model) -> bool
 {
     auto n = _starts.size();
 
@@ -301,15 +301,38 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
         _capacity_val = constant_value_of(_capacity);
 
     // #780: can every height's own bits be cited? A constant needs none; a
-    // plain variable with a declared lower bound of zero or more has bit k at
-    // weight 2^k; a view has no bits of its own, and a declared bound below
-    // zero puts a sign bit in and shifts every weight. Where the answer is no,
-    // a variable height's contribution stays linearised by three rows per
-    // pair, and the per-(task, time) family stays in the model --- see
-    // define_proof_model.
+    // plain non-negative variable has bit k at weight 2^k; a view has no bits
+    // of its own. Where the answer is no, a variable height's contribution
+    // cannot be stated as a conjunction with the height's bits, which is what
+    // the start-checkpoint encoding needs --- see define_proof_model.
+    //
+    // The `_height_lb[i] >= 0` half is belt and braces rather than a live case:
+    // a declared bound below zero would put a sign bit in the encoding and
+    // shift every weight, but `_height_lb[i]` is the same
+    // `initial_state.lower_bound(h)` the non-negativity check above has already
+    // thrown on. It stays because the *reason* for it is about the bit
+    // encoding, not about the modelling error, and the two could come apart if
+    // anything ever narrowed a height before prepare ran.
     _height_bits_citable = std::ranges::all_of(std::views::iota(std::size_t{0}, _heights.size()), [&](std::size_t i) {
         return is_constant_variable(_heights[i]) || (std::holds_alternative<SimpleIntegerVariableID>(_heights[i]) && _height_lb[i] >= 0_i);
     });
+
+    // And if they cannot be cited, say so now rather than writing a model no
+    // inference over it could cite. There is exactly one OPB encoding for a
+    // Cumulative, because two would mean cake had to reproduce our choice per
+    // constraint; so a height whose bits are unavailable has no encoding at
+    // all, where it used to quietly fall back to the per-time block.
+    //
+    // Only with proof logging on: without it the height is never encoded and a
+    // view is perfectly serviceable, so rejecting it unconditionally would
+    // break working models for no reason.
+    //
+    // Unreachable from MiniZinc and XCSP, both of which hand Cumulative plain
+    // variables and constants and never views, and from every test. The general
+    // fix is a proof-only deviewed height linked to the view; until someone
+    // needs it, a diagnosable error beats an uncertifiable model.
+    if (model && ! _height_bits_citable)
+        throw UnimplementedException{"Cumulative: a view-valued height has no citable bits, so it cannot be proof-logged (#780)"};
 
     // Tasks whose length can only ever be 0, or whose height can only ever be 0,
     // or which are constantly absent, never raise the load profile.
