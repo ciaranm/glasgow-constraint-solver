@@ -150,6 +150,15 @@ namespace gcs::innards
         // trivially derivable.
         auto ensure_boundary_pin(const SimpleOrProofOnlyIntegerVariableID & id, Integer v, bool negated) -> void;
 
+        // Queue the two `pol` steps deriving a proper view variable's bound lines,
+        // which are a consequence of the view link and the underlying's own bound
+        // rows rather than anything the OPB needs to assert, and record them as its
+        // bound rows. Called from need_view, before anything can create an atom of
+        // the view variable, because those lines are what a boundary pin on it
+        // propagates from.
+        auto derive_view_bound_lines(
+            const ViewOfIntegerVariableID & view, const ProofOnlySimpleIntegerVariableID & v_id, ProofLine link_le, ProofLine link_ge) -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.

@@ -1790,6 +1790,58 @@ auto NamesAndIDsTracker::view_bounds(const ViewOfIntegerVariableID & view) const
     return view.negate_first ? pair{-x_hi + view.then_add, -x_lo + view.then_add} : pair{x_lo + view.then_add, x_hi + view.then_add};
 }
 
+auto NamesAndIDsTracker::derive_view_bound_lines(
+    const ViewOfIntegerVariableID & view, const ProofOnlySimpleIntegerVariableID & v_id, ProofLine link_le, ProofLine link_ge) -> void
+{
+    // Bnd(W) for a proper view variable W = s.X + c, from the view link and the
+    // underlying's own bound rows. With s = +1 the link's halves are
+    //
+    //     viewge :  BinEnc(W) - BinEnc(X) >=  c,
+    //     viewle : -BinEnc(W) + BinEnc(X) >= -c,
+    //
+    // so viewge + Bnd(X).lower is BinEnc(W) >= l_X + c = l_W, and viewle +
+    // Bnd(X).upper is -BinEnc(W) >= -(u_X + c) = -u_W. Every BinEnc(X) term
+    // cancels exactly, both rows carrying X's own bit coefficients with opposite
+    // signs, so no saturation is wanted and the results are Bnd(W) on the nose.
+    // With s = -1 the view's bounds come from the underlying's the other way
+    // round (l_W = c - u_X), and so do the rows the two pols want.
+    //
+    // No bound rows means the underlying is itself a free bit-sum, registered
+    // rather than set up --- by register_state_variable_bits_in_proof, or
+    // cake-named. It cannot mean the underlying has not been encoded yet, because
+    // need_view's view_bounds call above has already thrown for a variable with no
+    // tracked bounds, and every path that tracks bounds encodes as it goes. Such a
+    // variable's own bounds are not a model consequence, so the view's are not
+    // either, and it comes under the same rule the underlying is already under: no
+    // bound lines and no boundary pins. (A DirectOnly underlying cannot reach here
+    // at all --- need_view's link constraint is written over BinEnc(X), and
+    // each_bit has thrown by now for a variable without one.) Nothing in the tree
+    // takes a view of such a variable today.
+    auto x_rows = bound_rows(view.actual_variable);
+    if (! x_rows) {
+        note_bounds_not_trivially_derivable(v_id);
+        return;
+    }
+    auto [x_lower_row, x_upper_row] = *x_rows;
+
+    auto lower = make_shared<PolBuilder>();
+    lower->add(link_ge).add(view.negate_first ? x_upper_row : x_lower_row);
+    auto upper = make_shared<PolBuilder>();
+    upper->add(link_le).add(view.negate_first ? x_lower_row : x_upper_row);
+
+    // Queued before anything creates an atom of W --- need_view's backfill is the
+    // first thing that can, and it runs after this returns --- because a boundary
+    // pin on W is a RUP line that propagates from exactly these two lines. That is
+    // the whole reason W is not simply note_bounds_not_trivially_derivable.
+    emit_proof_line_now_or_at_start([this, v_id, lower, upper](ProofLogger * const logger) {
+        auto lower_line = lower->emit(*logger, ProofLevel::TopAndCore);
+        auto upper_line = upper->emit(*logger, ProofLevel::TopAndCore);
+        // As for a proof-only variable's OPB rows, tracked by line number: a view
+        // variable is never in a cake chain, so there is no label to match.
+        track_bound_rows(v_id, lower_line, upper_line);
+    });
+}
+
 auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID
 {
     if (auto it = _imp->view_proof_only_vars.find(view); it != _imp->view_proof_only_vars.end())
@@ -1806,7 +1858,13 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     if (view.then_add != 0_i)
         name += "_plus_" + to_string(view.then_add.raw_value);
 
-    auto v_id = _imp->model->create_proof_only_integer_variable(v_lo, v_hi, name, IntegerVariableProofRepresentation::Bits);
+    // Bnd(W) is not written to the OPB: it is a consequence of two rows that are
+    // (the view link below and the underlying's own bound rows), so as a model
+    // axiom it would be an OPB row cake_pb_cp has no reason to reproduce --- the
+    // objection create_proof_only_integer_variable_in_proof's comment already
+    // makes for a bit-sum introduced inside the proof. Derived by pol at the top
+    // of the proof instead, below.
+    auto v_id = _imp->model->create_proof_only_integer_variable_in_proof(v_lo, v_hi, name, ProofModel::InProofBounds::BeforeTheFirstAtom);
 
     Integer s_coeff = view.negate_first ? -1_i : 1_i;
 
@@ -1820,6 +1878,8 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     _imp->view_proof_only_to_view.emplace(v_id, view);
     _imp->view_link_ids.emplace(v_id, pair{link_le, link_ge});
     _imp->views_of_variable[view.actual_variable].push_back(v_id);
+
+    derive_view_bound_lines(view, v_id, link_le, link_ge);
 
     if (_imp->assertion_level > AssertionLevel::Links) // No further linking needed at higher assertion levels.
         return v_id;
