@@ -744,13 +744,28 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
                     if (auto line = emit_am1(lits))
                         final_pol.add(*line);
                 }
+                vector<Integer> still_possible;
                 for (std::size_t i = 0; i < p; ++i)
-                    if (! is_constant_variable(x[i]))
+                    if (! is_constant_variable(x[i])) {
                         // A constant position contributes a fixed selection whose
                         // [x_i = c] literal folds to the constant 1 in the pol
                         // arithmetic (and to 0 in the ~[x_i = c] at-most-one terms),
                         // so it needs no at-least-one line: it cancels exactly.
-                        final_pol.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(x[i]));
+                        //
+                        // Of the active site set, only the sites this position can
+                        // still take have to be named: the at-most-ones above are
+                        // over [x_pos = site] for sites in A, and A is the *union* of
+                        // the positions' domains, so naming all of it would name
+                        // sites this position has already lost. The runs the rest of
+                        // the definition range goes in as are ruled out by
+                        // generic_reason(x). sum_c counts at-most-one members, not
+                        // at-least-one terms, so the division is unaffected.
+                        still_possible.clear();
+                        for (const auto & site : A)
+                            if (state.in_domain(x[i], site))
+                                still_possible.push_back(site);
+                        final_pol.add(tracker.need_constraint_saying_variable_takes_at_least_one_value_over_cover(x[i], still_possible));
+                    }
                 final_pol.divide_by(sum_c);
                 final_pol.emit(*logger, ProofLevel::Temporary);
             };

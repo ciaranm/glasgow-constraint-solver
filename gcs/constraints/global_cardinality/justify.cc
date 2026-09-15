@@ -38,8 +38,22 @@ auto gcs::innards::emit_gcc_capacity_pol(ProofLogger & logger, const State & sta
             pb.add_for_literal(tracker, counts[v] <= state.bounds(counts[v]).second);
     }
     (void)vars;
-    for (const auto & var : confined)
-        pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(var));
+    // A confined variable's at-least-one only has to name the hall values it can
+    // still take --- a subset of the hall set, since confinement is exactly the
+    // domain lying inside it. The rest of its definition range goes in as runs,
+    // which the reason rules out (see gcc_capacity_reason, whose gaps are these
+    // very runs clipped to the variable's bounds). Naming a hall value the variable
+    // cannot take would cost a term the count lines do cancel, but the cover can be
+    // this much smaller for free, and a cover with many values makes that the
+    // difference between a line per cover value and a line per domain value.
+    vector<Integer> still_possible;
+    for (const auto & var : confined) {
+        still_possible.clear();
+        for (const auto & val : hall)
+            if (state.in_domain(var, val))
+                still_possible.push_back(val);
+        pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value_over_cover(var, still_possible));
+    }
     pb.emit(logger, ProofLevel::Temporary);
 }
 

@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <iterator>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -103,10 +104,17 @@ auto AllDifferentExcept::prepare(Propagators &, State & initial_state, ProofMode
     // Compressed value list for the propagator: real (non-excluded) values
     // from the union of variable domains. Excluded values are not part of
     // the bipartite right side; phantoms cover them.
+    //
+    // Membership goes through a set rather than a linear scan of what has been
+    // collected so far, which leaves the order --- first-seen, and so the value
+    // indices the propagator's graph uses --- exactly as it was, without the
+    // quadratic. See AllDifferent::prepare for the measurement. The excluded list
+    // stays a linear scan: it is the model's, and is not domain-sized.
+    std::set<Integer> seen;
     for (auto & var : _sanitised_vars)
         for (const auto & val : initial_state.each_value_immutable(var))
             if (find(_sanitised_excluded.begin(), _sanitised_excluded.end(), val) == _sanitised_excluded.end())
-                if (find(_compressed_vals.begin(), _compressed_vals.end(), val) == _compressed_vals.end())
+                if (seen.insert(val).second)
                     _compressed_vals.push_back(val);
 
     return true;
