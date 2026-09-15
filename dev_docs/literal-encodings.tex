@@ -1941,19 +1941,30 @@ stated here and the framework as implemented, we have not worked the lazy
 variant through, and the honest position is that the results below are proved
 for \cref{eq:rootbounds} as written.
 
-In the other direction the implementation is \emph{stronger} than \inv{Bound}
-asks, and this one costs measurable proof.  \code{fix\_bound} emits a pin for
-every out-of-range threshold it creates, not one a side, so a variable can accumulate
-hundreds of top-of-proof units that \cref{lem:chain} would supply from one.  On
-the TSP example this is $2{,}258$ pins over $68$ distinct variable-and-side
-pairs, the worst single variable carrying $255$ --- a cost variable with lower
-bound $0$ whose thresholds run from $\atge{w}{-482}$ up to $\atge{w}{0}$, each pinned
-separately.  Weakening the emission to match the invariant is not quite as
-simple as pinning the extreme threshold, because the thresholds are created one at a time
-and in no particular order, and the pin has to be a persistent top-of-proof line
-rather than one re-derived per use; the workable version pins the threshold at the
-definition bound once, on the first out-of-range request for the variable, and
-nothing after that.
+In the other direction the implementation used to be \emph{stronger} than
+\inv{Bound} asks, and that cost measurable proof.  It emitted a pin for every
+out-of-range threshold it created, not one a side, so a variable accumulated
+hundreds of top-of-proof units that \cref{lem:chain} supplies from one.  On the
+TSP example this was $2{,}993$ pins over $68$ distinct variable-and-side pairs,
+the worst single pair carrying $315$ --- a cost variable with lower bound $0$
+whose thresholds run from $\atge{w}{-531}$ up to $\atge{w}{0}$, each pinned
+separately.
+
+\code{ensure\_boundary\_pin} now emits one a side, matching the invariant, and
+the same run writes $68$ pins.  Pinning the extreme threshold \emph{so far
+defined} would not achieve this, because thresholds are created one at a time
+and in no particular order: on the lower side the invariant wants the largest,
+and a stream arriving in increasing order needs a fresh pin at each.  The
+threshold at the definition bound is the largest value the invariant can ask
+for, which is what makes pinning there a one-off.  Two details make it work.
+The pin has to stay a persistent top-of-proof line rather than one re-derived
+per use, for the reason \cref{sec:enumeration} gives; and the threshold at the
+definition bound is one the model need never have asked for, so it is created
+\emph{inside the proof}, by redundance, on the first out-of-range request.
+Creating it while the OPB is still being written would put two rows there that
+\code{cake\_pb\_cp}, working from the same \code{.scp}, has no reason to create,
+and the solver's proof is then checked against an OPB in which that threshold's
+variable does not occur.
 \end{remark}
 
 \begin{theoremT}
