@@ -2,7 +2,10 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 
+#include <fstream>
+#include <iostream>
 #include <optional>
+#include <string>
 #include <variant>
 
 using namespace gcs;
@@ -129,5 +132,32 @@ auto main() -> int
 
     logger.conclude_none();
     tracker.finalise();
+
+    // A view variable's bound lines are derived at the top of the proof, not
+    // asserted, so the only OPB rows over its bits are its two link rows (#928).
+    // This model posts no constraints, so nothing else can legitimately mention
+    // them -- in a real model a constraint body written in V-form would, which is
+    // why this is stated here rather than as a general property. Read back rather
+    // than asked of the tracker: two rows nobody would miss is exactly the kind of
+    // regression that leaves every proof still verifying.
+    std::ifstream opb{proof_options.proof_file_names.opb_file};
+    if (! opb) {
+        std::cerr << "could not read back " << proof_options.proof_file_names.opb_file << "\n";
+        return 1;
+    }
+    int view_rows = 0, link_rows = 0;
+    for (std::string line; std::getline(opb, line);) {
+        if (line.starts_with("preserved:") || std::string::npos == line.find("view_of_"))
+            continue;
+        ++view_rows;
+        if (line.starts_with("@c[view_of_x_plus_17][view") || line.starts_with("@c[neg_view_of_y_plus_-7][view"))
+            ++link_rows;
+    }
+    if (view_rows != 4 || link_rows != 4) {
+        std::cerr << "expected the two views' bits in 4 OPB rows, all of them links, got " << view_rows << " rows of which " << link_rows
+                  << " are links\n";
+        rc = 1;
+    }
+
     return rc;
 }

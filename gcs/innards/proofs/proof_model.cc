@@ -374,7 +374,8 @@ auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper
     return id;
 }
 
-auto ProofModel::create_proof_only_integer_variable_in_proof(Integer lower, Integer upper, const string & name) -> ProofOnlySimpleIntegerVariableID
+auto ProofModel::create_proof_only_integer_variable_in_proof(Integer lower, Integer upper, const string & name, InProofBounds bounds)
+    -> ProofOnlySimpleIntegerVariableID
 {
     // A bits-encoded proof-only variable whose encoding is NOT emitted to the OPB:
     // the bits are registered (named, referenceable) but the model asserts nothing
@@ -385,12 +386,14 @@ auto ProofModel::create_proof_only_integer_variable_in_proof(Integer lower, Inte
     // direct-encoding create_literals_for_introduced_variable_value, in bits.
     ProofOnlySimpleIntegerVariableID id{_imp->proof_only_integer_variable_nr++};
     register_bits_variable_encoding(id, lower, upper, name);
-    // No OPB rows means the [lo, hi] bounds are NOT a trivial consequence of
-    // the model: a need_gevar boundary pin (a top-of-proof RUP line) would
-    // have nothing to propagate from, and would be queued before the caller's
-    // in-proof definition lines even exist. Nothing creates gevars over such
-    // a variable today, so this is a trap-removal, not a behaviour change.
-    names_and_ids_tracker().note_bounds_not_trivially_derivable(id);
+    // No OPB rows means the [lo, hi] bounds are not a trivial consequence of the
+    // model at the point a need_gevar boundary pin would want them: the pin is a
+    // top-of-proof RUP line, and unless the owner has put the bounds ahead of it
+    // there is nothing for it to propagate from. A caller that has (a view
+    // variable, whose two bound lines come off the view link and the underlying's
+    // own bound rows before any atom exists) says so and keeps its pins.
+    if (InProofBounds::WhenTheOwnerNeedsThem == bounds)
+        names_and_ids_tracker().note_bounds_not_trivially_derivable(id);
     return id;
 }
 

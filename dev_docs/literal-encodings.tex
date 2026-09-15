@@ -390,32 +390,43 @@ asserting it changes nothing.  The arguments below do need $W$'s own bounds
 present as a constraint --- unit propagation cannot add two constraints
 together, and several of them want those bounds available as units on $W$'s own
 atoms --- but that is a reason to have the sum in $F_t$, not a reason to put it
-in the OPB, and one cutting-planes step per bound at the top of the proof would
-put it there.  The solver asserts it instead; \cref{rem:assertedbounds} says
-what that costs.
+in the OPB.  The solver derives it, one cutting-planes step per bound at the top
+of the proof; \cref{rem:derivedbounds} says how.
 
-\begin{remarkN}[What asserting the view bounds costs]
-\label{rem:assertedbounds}
-A proper view variable's bounds are written as two OPB rows, next to the two
-\ViewLink{} rows that imply them together with the base's own bound rows.  For
-$B\in[0,4]$ and $W=B+10$ the model contains $\BinEnc(W)\geq 10$ and
-$-\BinEnc(W)\geq -14$; the first is the sum of the view-link row
-$\BinEnc(W)-\BinEnc(B)\geq 10$ with $\BinEnc(B)\geq 0$, and the second the sum of
-the other view-link row with $-\BinEnc(B)\geq -4$.  So the OPB carries two rows
-per view variable that are a consequence of two other rows of the same OPB.
+\begin{remarkN}[Where the view bounds come from]
+\label{rem:derivedbounds}
+For $B\in[0,4]$ and $W=B+10$, $\BinEnc(W)\geq 10$ is the sum of the view-link
+row $\BinEnc(W)-\BinEnc(B)\geq 10$ with $\BinEnc(B)\geq 0$, and
+$-\BinEnc(W)\geq -14$ the sum of the other view-link row with
+$-\BinEnc(B)\geq -4$.  Every $\BinEnc(B)$ term cancels, the two rows carrying
+$B$'s bit coefficients with opposite signs, so each sum is $\Bnd(W)$'s row
+exactly and no saturation is wanted.  With $s_W=-1$ the pairing swaps, the
+view's bounds coming from the base's the other way round.
 
-Deriving them would be better, for the reason a proof-only variable introduced
-inside the proof is better than one asserted into the model: the OPB is then the
-model and nothing else, and a checker that re-derives the OPB from the CP model
-has nothing extra to reproduce.  The codebase already draws that distinction
---- \code{create\_proof\_only\_integer\_variable\_in\_proof} exists so that a
+The solver used to write these two as OPB rows instead, next to the
+\ViewLink{} rows that imply them, so that the OPB carried two rows per view
+variable that were a consequence of two other rows of the same OPB.  Deriving
+them is better for the reason a proof-only variable introduced inside the proof
+is better than one asserted into the model: the OPB is then the model and
+nothing else, and a checker that re-derives the OPB from the CP model has
+nothing extra to reproduce.  The codebase already draws that distinction ---
+\code{create\_proof\_only\_integer\_variable\_in\_proof} exists so that a
 bit-sum's meaning is a conservative extension rather than a model axiom --- and
-view variables do not use it.  Two things would have to be got right.  The
-derivation has to precede every boundary pin on $W$, since a pin is a RUP line
-and would otherwise have nothing to propagate from.  And the pin has to stay
-RUP-derivable, which it is once $\Bnd(W)$ is a line over $W$'s own bit vector,
-but would not be if it had to cross $\ViewLink(W)$ instead --- that
-configuration is the one discussed after \cref{eq:inlink}, and it is not RUP.
+view variables now use it.
+
+Two things have to be got right.  The derivation has to precede every boundary
+pin on $W$, since a pin is a RUP line and would otherwise have nothing to
+propagate from; \code{need\_view} therefore queues it before it lets anything
+create an atom of $W$.  And the pin has to stay RUP-derivable, which it is once
+$\Bnd(W)$ is a line over $W$'s own bit vector, but would not be if it had to
+cross $\ViewLink(W)$ instead --- that configuration is the one discussed after
+\cref{eq:inlink}, and it is not RUP.
+
+An underlying variable that is itself a free bit-sum, with no bound rows of its
+own because its bounds are not a model consequence either, has nothing for these
+sums to add to.  A view of one is exempt from \inv{Bound} exactly as the
+underlying is, and gets neither bound lines nor boundary pins.  Nothing takes a
+view of such a variable today.
 \end{remarkN}
 
 Clearly, if we construct a CSP with variables $\mathcal W$, constraints
@@ -1924,7 +1935,8 @@ $X$ with initial bounds $l$ and $u$, these are
 \end{equation}
 These follow by RUP by the same argument as \cref{cor:chainrup}, since the bound
 constraints $\Bnd(X)$ are present, and likewise for every view variable, proper
-ones included, because $\Bnd(W)$ is asserted for each.
+ones included, because $\Bnd(W)$ is in $F_t$ for each --- derived at the top of
+the proof, ahead of any atom of $W$, per \cref{rem:derivedbounds}.
 
 \begin{remark}[The eager introduction is load-bearing, and the solver is lazier]
 \label{rem:lazypins}
