@@ -23,6 +23,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -130,10 +131,17 @@ namespace
         std::unordered_map<long long, AtomDefs> eq_defs;
         std::unordered_map<long long, AtomDefs> ge_defs;
         // The line pinning a boundary ge atom to the value the variable's
-        // declared bounds force, for the atoms that got one (see fix_bound in
-        // need_gevar). Filled when the pin is actually emitted, which for an
-        // atom needed during model building is at proof start rather than here.
+        // declared bounds force, for the atoms that got one (see
+        // ensure_boundary_pin). Filled when the pin is actually emitted, which
+        // for an atom needed during model building is at proof start rather
+        // than here.
         std::unordered_map<long long, ProofLine> ge_pins;
+        // The values ensure_boundary_pin has taken responsibility for, which
+        // during model building runs ahead of ge_pins by the length of the
+        // delayed-step queue. Asking twice for the same pin must not emit it
+        // twice, and the queued step is the only record that the first ask
+        // happened.
+        std::unordered_set<long long> ge_pins_arranged;
     };
 
     struct HashView
@@ -645,6 +653,55 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
         .visit(var);
 }
 
+auto NamesAndIDsTracker::ensure_boundary_pin(const SimpleOrProofOnlyIntegerVariableID & id, Integer v, bool negated) -> void
+{
+    // Asked for once per out-of-range cut need_gevar creates on this side, which
+    // is the whole point: all but the first are already covered.
+    if (! _imp->atoms_for(id).ge_pins_arranged.insert(v.raw_value).second)
+        return;
+
+    // Pin a trivial boundary order literal -- ge(lower) (always true) or
+    // ge(ub+1) (always false) -- in the PROOF, never as an OPB axiom. The fact
+    // is a consequence of the variable's bound constraints, not a definition,
+    // so it does not belong in the OPB; cake_pb_cp likewise derives it rather
+    // than pinning it, so an OPB axiom would make our OPB diverge from cake's,
+    // and -- worse -- a pin re-derived per use does not survive VeriPB's
+    // post-solx enumeration restriction. Emitting it once as a persistent
+    // top-of-proof line (RUP-derivable from the bound constraints, or asserted
+    // at AssertionLevel::Links) keeps the OPB byte-clean and the pin available
+    // throughout both enumeration and refutation. emit_proof_line_now_or_at_start
+    // queues it to proof start when the logger is not yet attached (model
+    // building) and emits it immediately otherwise.
+    emit_proof_line_now_or_at_start([this, id, v, negated](ProofLogger * const logger) {
+        if (logger->get_assertion_level() > AssertionLevel::Links)
+            return;
+
+        // The cut being pinned is the one at the declared bound, which the model
+        // need never have asked for --- the tsp cost variable has it, a [2, 5]
+        // multiply operand does not. Create it here rather than where the pin was
+        // requested, because that request can come while the OPB is still being
+        // written, and a cut created there costs two OPB rows that cake_pb_cp,
+        // working from the same .scp, has no reason to create: the solver's proof
+        // is then checked against an OPB whose i[X][ge2] does not exist. In the
+        // proof it is a conservative extension, introduced by red exactly as a
+        // cut first needed during search is. A no-op when it already exists, and
+        // it cannot recurse back to here, ge_pins_arranged being set above.
+        need_gevar(id, v);
+
+        ProofRule assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+        auto annotation = AssertionAnnotation{.hint_name = hints::InitialBound::hint_name};
+        auto line = visit(
+            [&](auto vid) {
+                return logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::TopAndCore, annotation);
+            },
+            id);
+        // Remembered so that a step wanting this fact can cite it instead of
+        // emitting the same unit again --- which is what the pin being a
+        // persistent top-of-proof line is for.
+        _imp->atoms_for(id).ge_pins.insert_or_assign(v.raw_value, line);
+    });
+}
+
 auto NamesAndIDsTracker::boundary_pin_line(const SimpleOrProofOnlyIntegerVariableID & id, Integer v) const -> optional<ProofLine>
 {
     auto atoms = _imp->find_atoms(id);
@@ -1137,52 +1194,33 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     // is it a bound?
     auto bounds = _imp->integer_variable_definition_bounds.find(id);
 
-    auto fix_bound = [&](bool negated) {
-        // Pin a trivial boundary order literal -- ge(lower) (always true) or
-        // ge(ub+1) (always false) -- in the PROOF, never as an OPB axiom. The fact
-        // is a consequence of the variable's bound constraints, not a definition,
-        // so it does not belong in the OPB; cake_pb_cp likewise derives it rather
-        // than pinning it, so an OPB axiom would make our OPB diverge from cake's,
-        // and -- worse -- a pin re-derived per use does not survive VeriPB's
-        // post-solx enumeration restriction. Emitting it once as a persistent
-        // top-of-proof line (RUP-derivable from the bound constraints, or asserted
-        // at AssertionLevel::Links) keeps the OPB byte-clean and the pin available
-        // throughout both enumeration and refutation. emit_proof_line_now_or_at_start
-        // queues it to proof start when the logger is not yet attached (model
-        // building) and emits it immediately otherwise.
-        emit_proof_line_now_or_at_start([this, id, v, negated](ProofLogger * const logger) {
-            if (logger->get_assertion_level() > AssertionLevel::Links)
-                return;
-            ProofRule assert_or_rup =
-                logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-            auto annotation = AssertionAnnotation{.hint_name = hints::InitialBound::hint_name};
-            auto line = visit(
-                [&](auto vid) {
-                    return logger->emit(
-                        assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::TopAndCore, annotation);
-                },
-                id);
-            // Remembered so that a step wanting this fact can cite it instead of
-            // emitting the same unit again --- which is what the pin being a
-            // persistent top-of-proof line is for.
-            _imp->atoms_for(id).ge_pins.insert_or_assign(v.raw_value, line);
-        });
-    };
-
     // A variable whose bounds are not a trivial OPB consequence (see
     // bounds_not_trivially_derivable) gets no boundary pin -- pinning it would emit a
     // top-of-proof RUP line that is not actually reverse-unit-propagatable; its owner
     // derives the bounds explicitly instead.
     bool trivial_boundary = ! _imp->bounds_not_trivially_derivable.contains(id);
 
-    // lower?
-    if (trivial_boundary && bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first >= v) {
-        fix_bound(false);
-    }
-
-    // upper?
-    if (trivial_boundary && bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second < v) {
-        fix_bound(true);
+    // Inv-Bound (dev_docs/literal-encodings.tex) asks for one pin a side: the unit
+    // for the largest defined order cut at or below the declared lower bound, and
+    // for the smallest above the declared upper. The cut at the declared bound
+    // itself is the extreme one on its side, so pinning that --- and nothing else
+    // --- discharges the invariant, every other out-of-range cut following from it
+    // down the order chain (Inv-Chain, via Lemma 3.3). Pinning each out-of-range
+    // cut as it appeared, which is what this used to do, is stronger than the
+    // invariant asks and costs a persistent unit apiece: 2,258 of them across 68
+    // variable-and-side pairs on the tsp example, one cost variable carrying 255.
+    //
+    // Pinning the extreme cut of whatever is defined so far would not do, because
+    // cuts are created in no useful order: on the lower side the invariant wants
+    // the largest one, and a stream of cuts arriving in increasing order would
+    // need a fresh pin each time. The declared bound is the maximum possible such
+    // value, which is what makes pinning there a one-off.
+    if (trivial_boundary && bounds != _imp->integer_variable_definition_bounds.end()) {
+        auto [declared_lower, declared_upper] = bounds->second;
+        if (declared_lower >= v)
+            ensure_boundary_pin(id, declared_lower, false);
+        if (declared_upper < v)
+            ensure_boundary_pin(id, declared_upper + 1_i, true);
     }
 
     auto & other_gevars = _imp->gevar_values[id];

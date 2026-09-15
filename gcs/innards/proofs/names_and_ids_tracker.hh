@@ -141,6 +141,15 @@ namespace gcs::innards
         // by unit propagation; see the comment on the definition.
         auto mirror_invar_across_view_link(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void;
 
+        // Write down the unit saying the out-of-range order cut `id >= v` holds
+        // (negated = false, for a `v` at or below the declared lower bound) or does
+        // not (negated = true, for a `v` above the declared upper), as a persistent
+        // top-of-proof line, and remember it in ge_pins. Idempotent per value, and
+        // it creates the cut in the proof if nothing has asked for one. Caller
+        // checks that `v` really is out of range and that the variable's bounds are
+        // trivially derivable.
+        auto ensure_boundary_pin(const SimpleOrProofOnlyIntegerVariableID & id, Integer v, bool negated) -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -398,21 +407,31 @@ namespace gcs::innards
          * The line pinning the order atom `id >= v` to the value the variable's
          * declared bounds already force, if there is one.
          *
-         * need_gevar pins the boundary atoms --- `id >= v` for a `v` at or
-         * below the declared lower bound, `!(id >= v)` for a `v` above the
-         * declared upper --- once, as a persistent top-of-proof line, precisely
-         * so that a step wanting the fact can cite it. Ask for it rather than
-         * emitting the same unit again: a `pol` that needs it needs it once per
-         * use, and re-deriving it per use is what the pin exists to avoid.
+         * The boundary atoms are `id >= v` for a `v` at or below the declared
+         * lower bound and `!(id >= v)` for a `v` above the declared upper.
+         * need_gevar pins the one at the declared bound itself, once, as a
+         * persistent top-of-proof line, precisely so that a step wanting the
+         * fact can cite it. Ask for it rather than emitting the same unit
+         * again: a `pol` that needs it needs it once per use, and re-deriving
+         * it per use is what the pin exists to avoid.
          *
-         * Nullopt when there is no such fact (a `v` strictly inside the
-         * declared bounds), when the pin was suppressed (see
-         * note_bounds_not_trivially_derivable), when assertions are on above
-         * AssertionLevel::Links, and while the pin is still queued for proof
-         * start --- so a caller during model building gets nothing and must
-         * derive the fact itself. Call this after whatever made the atom
-         * exist, since a pin for an atom nobody has asked for has not been
-         * emitted.
+         * That is the *only* pin, because it is all Inv-Bound asks for: a
+         * strictly out-of-range `v` gets nullopt, its fact following from the
+         * pin down the order chain rather than being written down (see
+         * ensure_boundary_pin). No caller asks for one today --- each passes a
+         * bound it has just read off the variable, so the only out-of-range
+         * value it can name is the declared one --- and a caller that did
+         * should cite the pin and take a chain step, rather than have this
+         * write down a second unit per value.
+         *
+         * Nullopt, then, for a `v` strictly outside the declared bounds, for a
+         * `v` strictly inside them (where there is no such fact at all), when
+         * the pin is suppressed (see note_bounds_not_trivially_derivable), when
+         * assertions are on above AssertionLevel::Links, and while the pin is
+         * still queued for proof start --- so a caller during model building
+         * gets nothing and must derive the fact itself. Call this after
+         * whatever made the atom exist, since a pin for an atom nobody has
+         * asked for has not been emitted.
          */
         [[nodiscard]] auto boundary_pin_line(const SimpleOrProofOnlyIntegerVariableID & id, Integer v) const -> std::optional<ProofLine>;
 
