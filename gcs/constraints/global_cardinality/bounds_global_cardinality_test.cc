@@ -112,7 +112,11 @@ auto main(int argc, char * argv[]) -> int
         // nothing between, so the reason states that as ~[v in 2..4]; with the
         // cover at {1, 2} every run is a single value and `not_in_range`
         // canonicalises back to the disequality the per-value spelling emitted,
-        // so no row above this one exercises the interval form at all.
+        // so the interval form is barely exercised above this row: measured over
+        // five seeds, two of them built no interval here at all, and the rest did
+        // so only incidentally. This row makes it deterministic --- every run
+        // emits `[2,4]` --- which is what a regression test for the interval
+        // spelling has to be.
         {{vector<int>{1, 5}, vector<int>{1, 5}, vector<int>{1, 5}, pair{1, 7}}, {1, 5}, {2, 1}, false},
         // Upper-capacity Hall: first three confined to {1,2} with capacity 2+1,
         // so the fourth variable is forced off value 1.

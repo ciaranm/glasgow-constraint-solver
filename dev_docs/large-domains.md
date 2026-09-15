@@ -1009,7 +1009,7 @@ its wide definition range *by* wanting a wide domain, so a variable whose domain
 is narrow while its definition range is wide never arose — and that is exactly the
 gap between a domain (what a propagator sees) and a definition range (what the
 proof encoding names). Before #939 each of these rows wrote about 66 × width proof
-lines; the lane fails in about 39 seconds if that comes back, against 0.2 seconds
+lines; the lane fails in about 40 seconds if that comes back, against 0.2 seconds
 when it has not.
 
 ### At-least-one constraints span the definition range (#939)
@@ -1031,17 +1031,36 @@ its holes — a run outside the bounds dies on the order chain, and a run inside
 sits inside an excluded hole, so containment falsifies it. `generic_reason` and
 the Hall-set reasons all qualify.
 
-Measured on a `GlobalCardinality` whose variables are confined to two values:
+Measured by the lane itself, so every figure here is one command away. The rows
+are the three in `TEST_CASE("Large domain proof sizes")`, at its own width of
+10^4; the "before" column is the same lane with `worth_a_cover` forced to return
+false, which is also its negative control:
 
-| width | before | after |
+```shell
+./build/large_domain_audit_test "Large domain proof sizes"
+```
+
+| row | before | after |
 |---|---|---|
-| 10^3 | 66 057 lines, 0.14 s | 255 lines, 0.001 s |
-| 10^4 | 660 057 lines, 10.9 s | 255 lines, 0.001 s |
-| 10^5 | 2 528 821+ lines, >600 s | 255 lines, 0.001 s |
-| 10^9 | — | 255 lines, 0.001 s |
+| `GlobalCardinality/confined` | 659 934 | **129** |
+| `AllDifferent/confined` | 659 937 | **132** |
+| `Among/confined` | 659 940 | **135** |
 
-`AllDifferent` and `Among` in the same shape go 659 937 → 133 and 659 940 → 135 at
-10^4.
+The after column is flat in the declared width, which is the claim that matters:
+`GlobalCardinality` and `Among` hold at 129 and 135 lines at 10^3, 10^4, 10^5 and
+10^9, VeriPB-verified at each. `AllDifferent` holds at 132 up to 10^5 and cannot
+be checked at 10^9 — not because of anything here, but because `AllDifferent`'s
+GAC setup still wants a graph vertex per value and does not finish, which is the
+`KnownTrip` the audit lane records for it.
+
+**Quote the lane, not a probe.** An earlier version of this table gave 255 and
+660 057 for `GlobalCardinality` and 133 for `AllDifferent`, which were a
+standalone probe's numbers: a *satisfiable* instance with counts `0..2` and six
+solutions, where the lane's row is UNSAT with counts `0..1`, and measured before
+the follow-up commit that made each caller name only the values its variable can
+still take. Two different instances sat one paragraph apart under one heading.
+The shape of the result was right and the flatness was real, but a reader
+reproducing the table would have got different numbers with no way to tell why.
 
 **It is a threshold, not an unconditional rewrite, and that is the interesting
 part.** The per-value line is emitted once per variable and then serves every
