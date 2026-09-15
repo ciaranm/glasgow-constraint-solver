@@ -1,5 +1,6 @@
 #include <gcs/constraints/global_cardinality/bounds_global_cardinality.hh>
 #include <gcs/constraints/global_cardinality/hints.hh>
+#include <gcs/constraints/global_cardinality/justify.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -240,14 +241,11 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
 
             auto capacity_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> ReasonLiterals {
                 ReasonLiterals r;
-                for (const auto & var : confined) {
-                    auto [v_lo, v_hi] = state.bounds(var);
-                    for (Integer s = v_lo; s <= v_hi; ++s)
-                        if (! hall_contains(s) && ! state.in_domain(var, s))
-                            r.emplace_back(var != s);
-                    r.emplace_back(var >= v_lo);
-                    r.emplace_back(var <= v_hi);
-                }
+                // The hall set is the slice values[a..b] of the sorted cover, so
+                // it is already in ascending order for the helper.
+                for (const auto & var : confined)
+                    append_confined_to_hall_reason(
+                        state, var, values.begin() + static_cast<std::ptrdiff_t>(a), values.begin() + static_cast<std::ptrdiff_t>(b) + 1, r);
                 for (std::size_t v = a; v <= b; ++v)
                     if (exclude != optional<std::size_t>{v} && ! holds_alternative<ConstantIntegerVariableID>(counts[v]))
                         r.emplace_back(counts[v] <= state.bounds(counts[v]).second);

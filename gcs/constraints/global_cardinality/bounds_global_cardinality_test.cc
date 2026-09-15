@@ -106,6 +106,14 @@ auto main(int argc, char * argv[]) -> int
         // fires. First three confined to {1,2} with fixed capacity 2+1 force the
         // fourth off value 1.
         {{pair{1, 2}, pair{1, 2}, pair{1, 2}, pair{1, 4}}, {1, 2}, {2, 1}, false},
+        // The same shape with the cover values spread apart, which is what makes
+        // the capacity reason's "confined to the hall set" a real *range* rather
+        // than a run of one (#936). The three confined variables take 1 or 5 and
+        // nothing between, so the reason states that as ~[v in 2..4]; with the
+        // cover at {1, 2} every run is a single value and `not_in_range`
+        // canonicalises back to the disequality the per-value spelling emitted,
+        // so no row above this one exercises the interval form at all.
+        {{vector<int>{1, 5}, vector<int>{1, 5}, vector<int>{1, 5}, pair{1, 7}}, {1, 5}, {2, 1}, false},
         // Upper-capacity Hall: first three confined to {1,2} with capacity 2+1,
         // so the fourth variable is forced off value 1.
         {{pair{1, 2}, pair{1, 2}, pair{1, 2}, pair{1, 3}}, {1, 2, 3}, {pair{0, 2}, pair{0, 1}, pair{0, 3}}, false},
