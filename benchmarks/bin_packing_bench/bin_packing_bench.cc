@@ -3,10 +3,11 @@
 // trajectories are reproducible across propagator changes.
 //
 // CLI:
-//   --instance N         Pick an instance from the curated set (1..6)
+//   --instance N         Pick an instance from the curated set (1..8)
 //   --bounds-only        Force bounds-only (skip Stage 3 DAG sweep)
 //   --upfront            Use the opt-in upfront Stage 3 proof scaffolding
 //                        (default is the per-call strategy)
+//   --cardinality        Also run the Stage 4 cross-bin cardinality pass
 //   --prove              Generate a proof
 //   --proof-files-basename PATH  (default: "bin_packing_bench")
 //   --root-only          Abort after first complete propagation (init + first prop)
@@ -91,6 +92,21 @@ namespace
         case 6:
             // Wide-size constant-cap, exercises the DAG horizontally.
             return Instance{"i6_8_2bins_widesizes_capa", {1_i, 2_i, 4_i, 7_i, 1_i, 3_i, 5_i, 6_i}, items(8, 1), vector<Integer>{15_i, 15_i}};
+        case 7: {
+            // Pigeonhole, constant-cap: nine items each over a third of a bin,
+            // four bins. Two fit in a bin and three do not, so there are eight
+            // places for nine items -- unsatisfiable, with no capacity row
+            // violated and no per-bin DAG edge lost until the search has
+            // committed two items to a bin. This is what Stage 4 is for; the
+            // per-bin passes have to enumerate their way to it.
+            return Instance{"i7_9_4bins_pigeonhole_capa", vector<Integer>(9, 4_i), items(9, 3), vector<Integer>{10_i, 10_i, 10_i, 10_i}};
+        }
+        case 8: {
+            // The same pigeonhole in the variable-load form, so that the
+            // cross-bin rows are read under a load upper bound rather than a
+            // constant.
+            return Instance{"i8_9_4bins_pigeonhole_load", vector<Integer>(9, 4_i), items(9, 3), vector<std::pair<Integer, Integer>>(4, {0_i, 10_i})};
+        }
         default: println(cerr, "unknown instance {}", n); std::exit(EXIT_FAILURE);
         }
     }
@@ -104,9 +120,10 @@ auto main(int argc, char * argv[]) -> int
     try {
         options.add_options("Program options")                                    //
             ("help", "Display help information")                                  //
-            ("instance", "Curated instance number (1..6)", cxxopts::value<int>()) //
+            ("instance", "Curated instance number (1..8)", cxxopts::value<int>()) //
             ("bounds-only", "Force bounds-only (skip Stage 3 DAG sweep)")         //
             ("upfront", "Use the opt-in upfront Stage 3 proof scaffolding")       //
+            ("cardinality", "Also run the Stage 4 cross-bin cardinality pass")    //
             ("prove", "Generate a proof")                                         //
             ("proof-files-basename", "Basename for .opb and .pbp files",          //
                 cxxopts::value<string>()->default_value("bin_packing_bench"))     //
@@ -128,6 +145,8 @@ auto main(int argc, char * argv[]) -> int
     bool upfront = vars.contains("upfront");
     auto level = bounds_only ? BinPackingConsistency{consistency::BC{}} : BinPackingConsistency{consistency::GAC{}};
     auto strategy = upfront ? BinPackingProofStrategy{proof_strategy::Upfront{}} : BinPackingProofStrategy{proof_strategy::PerCall{}};
+    auto cardinality =
+        vars.contains("cardinality") ? BinPackingCardinality{bin_packing::Shaw{}} : BinPackingCardinality{bin_packing::NoCardinality{}};
 
     Problem p;
     vector<IntegerVariableID> items;
@@ -143,13 +162,15 @@ auto main(int argc, char * argv[]) -> int
             loads.push_back(p.create_integer_variable(loads_bounds[b].first, loads_bounds[b].second, "load" + std::to_string(b)));
         p.post(BinPacking{items, inst.sizes, loads} //
                 .with_consistency(level)
-                .with_proof_strategy(strategy));
+                .with_proof_strategy(strategy)
+                .with_cardinality_reasoning(cardinality));
     }
     else {
         const auto & caps = std::get<vector<Integer>>(inst.bins);
         p.post(BinPacking{items, inst.sizes, caps} //
                 .with_consistency(level)
-                .with_proof_strategy(strategy));
+                .with_proof_strategy(strategy)
+                .with_cardinality_reasoning(cardinality));
     }
 
     bool root_only = vars.contains("root-only");
