@@ -173,6 +173,19 @@ Before deleting a remote branch, check that no open pull request is based on it
 PR's base **closes that PR**; GitHub does not retarget it, and the close is not
 reversible by recreating the branch.
 
+Link a pull request to the issue it finishes with a closing keyword in the PR
+description: `Closes #209`, or `Fixes` or `Resolves`, which GitHub treats alike.
+The keyword only works from the description or from a commit that lands on
+`main`; naming the issue in the PR *title* is a link and nothing else, so the
+issue stays open after the work is merged until somebody notices and closes it
+by hand. #633 to #636 sat open for six weeks that way, and an open issue is a
+poor signal when it may mean either "not started" or "shipped and forgotten".
+
+One keyword per issue the pull request actually finishes. A pull request that
+advances an issue without finishing it should say so in prose and leave the
+keyword out, and a stacked pull request should carry one only if merging *it* is
+what finishes the issue --- see above for why MERGED does not mean landed.
+
 Developer Documentation
 =======================
 
