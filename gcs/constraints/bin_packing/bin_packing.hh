@@ -40,6 +40,47 @@ namespace gcs
      * \ingroup ProofStrategy
      */
     using BinPackingProofStrategy = std::variant<proof_strategy::PerCall, proof_strategy::Upfront>;
+
+    namespace bin_packing
+    {
+        /**
+         * \brief Do no cross-bin reasoning: every inference comes from one bin's
+         * own capacity or load, as Stages 2 and 3 draw them.
+         *
+         * \ingroup Constraints
+         */
+        struct NoCardinality final
+        {
+        };
+
+        /**
+         * \brief Add the Stage 4 cross-bin cardinality pass: a Martello-Toth
+         * L2-style counting bound over every bin at once, in the family Shaw
+         * (CP 2004) §4 describes, plus the shaving loop that turns it into item
+         * prunes.
+         *
+         * Strictly more pruning than the per-bin passes alone --- it sees the
+         * joint infeasibilities a single bin's DAG cannot --- at the cost of one
+         * `O(thresholds x items x bins)` sweep per propagation. See
+         * `dev_docs/bin-packing.md`.
+         *
+         * \ingroup Constraints
+         */
+        struct Shaw final
+        {
+        };
+    }
+
+    /**
+     * \brief The cross-bin reasoning BinPacking supports:
+     * bin_packing::NoCardinality (the default: per-bin reasoning only) or
+     * bin_packing::Shaw (also run the Stage 4 cardinality pass). The choice
+     * selects propagation strength only, and never changes the OPB encoding.
+     *
+     * \ingroup Constraints
+     */
+    using BinPackingCardinality = std::variant<bin_packing::NoCardinality, bin_packing::Shaw>;
+
     /**
      * \brief Bin packing constraint: each item is assigned to exactly one bin
      * (via `items[i]`), and each bin's total assigned size matches its load
@@ -84,6 +125,11 @@ namespace gcs
      *   for robustness and A/B measurement. See `dev_docs/bin-packing.md`
      *   for the measured rationale.
      *
+     * All of that reasoning is per bin. `with_cardinality_reasoning()`
+     * additionally enables the Stage 4 cross-bin cardinality pass
+     * (bin_packing::Shaw), which is where the joint infeasibilities no
+     * single bin can see get caught.
+     *
      * \ingroup Constraints
      */
     class BinPacking : public Constraint
@@ -98,6 +144,7 @@ namespace gcs
         const bool _have_loads;
         bool _bounds_only = false;
         bool _upfront_proof = false;
+        bool _cardinality = false;
 
         std::shared_ptr<DagBridge> _bridge;
         std::optional<innards::ConstraintStateHandle> _dead_cache_idx;
@@ -132,6 +179,12 @@ namespace gcs
         /// changes the inferences drawn or the solutions found, and has no
         /// effect under consistency::BC or with proof logging off.
         auto with_proof_strategy(BinPackingProofStrategy strategy) -> BinPacking &;
+
+        /// Select the cross-bin reasoning: bin_packing::NoCardinality (the
+        /// default) or bin_packing::Shaw (also run the Stage 4 cardinality
+        /// pass). The choice selects propagation strength only and never
+        /// changes the OPB encoding.
+        auto with_cardinality_reasoning(BinPackingCardinality cardinality) -> BinPacking &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
