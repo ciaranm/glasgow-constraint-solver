@@ -377,7 +377,7 @@ Instances 1 to 4 are the other side of the trade and are why the default
 is off. They enumerate every solution, so extra pruning cannot shorten
 the search (1 and 2 lose a few propagation calls but not a single node),
 and the sweep is pure overhead: 17–24% of solve time, on the two large
-ones 18% and 19%. Proofs grow 0–4% where Stage 4 fires without changing
+ones 17% and 19%. Proofs grow 0–4% where Stage 4 fires without changing
 the tree, and instance 2's is byte-identical because it never fires
 there at all. On this curated set the pass is a clear loss on four
 instances, roughly neutral on two, and decisive on two; that profile is

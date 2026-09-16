@@ -1451,11 +1451,12 @@ auto BinPacking::prepare(Propagators &, State & initial_state, ProofModel * cons
         sc.citable.assign(num_bins, uint8_t{1});
         if (_have_loads)
             for (size_t b = 0; b < num_bins; ++b)
-                sc.citable[b] = overloaded{[](const SimpleIntegerVariableID &) { return uint8_t{1}; }, //
-                    [](const ConstantIntegerVariableID &) { return uint8_t{0}; },                      //
-                    [](const ViewOfIntegerVariableID &) {
-                        return uint8_t{0};
-                    }}.visit(_loads[b]);
+                sc.citable[b] = overloaded{
+                    [](const SimpleIntegerVariableID &) { return uint8_t{1}; },   //
+                    [](const ConstantIntegerVariableID &) { return uint8_t{0}; }, //
+                    [](const ViewOfIntegerVariableID &) { return uint8_t{0}; }    //
+                }
+                                    .visit(_loads[b]);
         sc.t.assign(num_bins, 0);
         sc.t_less_h.assign(num_bins, 0);
         sc.dom_size.assign(_items.size(), 0);
