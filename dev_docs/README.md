@@ -202,6 +202,15 @@ library. For an introduction to *using* the solver, start with the top-level
   for the `BinPacking` propagator (#148): the two forms (variable loads,
   constant capacities) that share one propagator, the staging plan, and the
   context for the extraction towards the unified path-DAG framework (#200).
+  Also the opt-in Stage 4 cross-bin cardinality pass (#209): why per-bin GAC
+  leaves joint infeasibilities behind, the one threshold-parameterised
+  cutting-planes derivation that spans both the energy bound (no division)
+  and pigeonhole (where the division is what unit propagation cannot do),
+  why shaving needs nothing extra in the proof, the measured two-sided
+  trade (4 485 search nodes to one and a 12× smaller proof where it bites,
+  20–26% of solve time where it does not, hence off by default), and the
+  mutation that survives because VeriPB's own unit propagation re-derives
+  the row.
 - [Slack-based waking for linear inequalities](linear-slack-waking.md) — waking
   `ReifiedLinearInequality` only when a *covering* subset of its terms moves,
   via the refined-watch API, instead of on every bound change of every term:
