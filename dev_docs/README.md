@@ -207,8 +207,8 @@ library. For an introduction to *using* the solver, start with the top-level
   cutting-planes derivation that spans both the energy bound (no division)
   and pigeonhole (where the division is what unit propagation cannot do),
   why shaving needs nothing extra in the proof, the measured two-sided
-  trade (4 485 search nodes to one and a 12× smaller proof where it bites,
-  20–26% of solve time where it does not, hence off by default), and the
+  trade (4 485 search nodes to one and an 8.7–12× smaller proof where it
+  bites, 17–24% of solve time where it does not, hence off by default), and the
   mutation that survives because VeriPB's own unit propagation re-derives
   the row.
 - [Slack-based waking for linear inequalities](linear-slack-waking.md) — waking
