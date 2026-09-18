@@ -96,15 +96,22 @@ must use coarse triggers only, since a refined watch is delivered to a
 propagator id and could not say which member armed it.
 
 That shape is measured, not decorative. Installed as two propagators, one
-permanently disabled, a pair that falls back cost `qap` 1.7% and `tsp` 0.9%
-over the fallback on its own, over identical propagation: 0.4% more
-instructions, but 11% more L1 misses. Zeroing the disabled one's trigger masks
-bought nothing measurable; a denser propagator id space is what the per-id
-arrays wanted. As one id, the same comparison is 1.2% on `qap` (1% more L1
-misses, 0.2% more instructions) and nothing measurable on `tsp`. What is left
-on `qap` looks like the unchosen member's closure still sitting between the
-live ones in memory (dTLB misses are up, from a tiny base); only allocating
-it lazily would remove that.
+permanently disabled, a pair that fell back took 11% more L1 misses than the
+fallback on its own on `qap`, over identical propagation, because every per-id
+array had a dead slot beside each live one; as one id, 1% more. Zeroing the
+disabled member's trigger masks, or removing its entries outright, bought
+nothing measurable either way.
+
+What is left is small and depends on layout more than on the mechanism. Over
+identical search, timed at eight different stack alignments, `Auto` against
+the arm it chose was 0.9% slower on `qap`, 0.4% on `tsp` and 1.3% on
+`p_dispersion --grid 12x12 -p 6`. But on the 2011 MiniZinc Challenge
+`open-stacks` instance, the same identical work was 1.9% *faster* under
+`Auto` in a single-threaded process and 4.4% slower with an idle second thread
+present (`fzn-glasgow -t`), which moves glibc's allocator off its
+single-threaded path: even the instruction counts moved by a percent either
+way. Differences of a percent or two here are heap layout, and any comparison
+of that size needs fixed work, several layouts, and counts beside the times.
 
 Declaring a pair makes two promises about the constraint as a whole, meaning
 everything installed under its `ConstraintID`:
