@@ -64,16 +64,15 @@ authoritative list of `fzn_*` builtins handled there.
 ## Constraints outside XCSP3-core
 
 XCSP3-core deliberately omits some constraints that MiniZinc and CPMpy
-expect. These get their own rows. CPMpy-specific gaps (half-reified `And`/`Or`,
-`LessThanEqualIf`, etc.) are tracked under
-[#61](https://github.com/ciaranm/glasgow-constraint-solver/issues/61) — link
-each row here to the relevant sub-bullet there as those features are
-addressed.
+expect. These get their own rows. The CPMpy wishlist for them,
+[#61](https://github.com/ciaranm/glasgow-constraint-solver/issues/61), is
+complete: the half-reified rows below are what the `gcspy` bindings'
+`post_*_reif` calls post when `fully_reify` is false.
 
 | Constraint family | gcs propagator | MiniZinc | XCSP3 | CPMpy | Notes |
 |---|---|---|---|---|---|
-| half-reified comparisons (`LessThanEqualIf`, …) | partially via `Comparison` + reif | ? | n/a | gap (#61) | |
-| half-reified `And` / `Or` | – | ? | n/a | gap (#61) | |
+| half-reified comparisons (`LessThanEqualIf`, …) | `LessThanIf`, `LessThanEqualIf`, `GreaterThanIf`, `GreaterThanEqualIf`, `EqualsIf`, `NotEqualsIf` | ? | n/a | ✓ | |
+| half-reified `And` / `Or` | `AndIf`, `OrIf` | ? | n/a | ✓ | Written to the `.scp` as `and_if` / `or_if`, which `cake_pb_cp` has no rule for yet, so neither chains ([#953](https://github.com/ciaranm/glasgow-constraint-solver/issues/953)) |
 | `Among` | `Among` | ✓ | n/a (use count) | ? | |
 | binary comparison (`x <op> y`, `x <op> y + d`) | `Comparison`, or a two-term `WeightedSum` | ✓ | ✓ | ? | Which of the two, and why it matters, in [^cmp] |
 | difference logic (`x - y <= d` as a *system*) | `DifferenceConstraints`; or the `DifferenceLogic` presolver over constraints posted individually | ✓ presolver only, opt-in `--difference-logic` | ✓ presolver only, opt-in `--difference-logic` | ? | Glasgow-specific extension ([#571](https://github.com/ciaranm/glasgow-constraint-solver/issues/571)); see [^dl] for why there is no predicate |
