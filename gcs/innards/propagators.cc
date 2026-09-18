@@ -816,6 +816,10 @@ auto Propagators::install_with_optional_interior_pruning(const ConstraintID & co
     // id's at the end of each scope variable's list.
     Imp::PairMember pruning_member{
         .triggers = {}, .hole_sensitivity = hole_sensitivity_of(pruning_triggers), .claims_ignored = positions_alias(pruning_triggers)};
+    // install() judged aliasing over the combined scope, which counts a
+    // variable both members mention twice; what matters is the live member's
+    // own positions.
+    _imp->idempotence_claims_ignored[id] = pruning_member.claims_ignored ? 1 : 0;
     for (const auto & v : _imp->propagator_scope[id])
         if (v.index < _imp->iv_triggers.size()) {
             const auto & list = _imp->iv_triggers[v.index].ids_and_masks;
