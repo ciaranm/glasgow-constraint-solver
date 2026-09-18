@@ -11,8 +11,9 @@ propagator say which variables' holes affect it, let a constraint offer a
 pruning of interior values as optional, and work out per model which optional
 prunings anything could observe.
 
-This document covers the three pieces, in `gcs/innards/propagators.hh`, and
-the argument for why switching a pruning off loses nothing that matters.
+This document covers the pieces, in `gcs/innards/propagators.hh` and
+`gcs::solve_with()`, and the argument for why switching a pruning off loses
+nothing that matters.
 
 ## What holes affect: `Triggers::holes_affect_propagation`
 
@@ -99,7 +100,11 @@ permanently disabled, a pair that falls back cost `qap` 1.7% and `tsp` 0.9%
 over the fallback on its own, over identical propagation: 0.4% more
 instructions, but 11% more L1 misses. Zeroing the disabled one's trigger masks
 bought nothing measurable; a denser propagator id space is what the per-id
-arrays wanted.
+arrays wanted. As one id, the same comparison is 1.2% on `qap` (1% more L1
+misses, 0.2% more instructions) and nothing measurable on `tsp`. What is left
+on `qap` looks like the unchosen member's closure still sitting between the
+live ones in memory (dTLB misses are up, from a tiny base); only allocating
+it lazily would remove that.
 
 Declaring a pair makes two promises about the constraint as a whole, meaning
 everything installed under its `ConstraintID`:
@@ -233,10 +238,46 @@ inferences get made changes.
 
 ## Where the choice is made
 
-Nothing chooses yet: a pair keeps its pruning on, and `consistency::Auto`
-propagates as `GAC`. The analysis can be run directly on a `Propagators`, as
-`gcs/innards/optional_interior_pruning_test.cc` does for the `qap` and `tsp`
-shapes.
+`gcs::solve_with()` calls `Propagators::choose_optional_interior_pruning()`
+once, after the last presolver and its initialisers, which is the first point
+at which what is installed is final: a presolver can install a constraint whose
+propagation is affected by holes nothing else was affected by. It makes each
+needed pair's pruning live and each unneeded one's fallback, by swapping which
+member the pair's
+propagator runs and whose trigger entries are masked, so the search that
+follows pays nothing for the choice. Anything that propagated before it ---
+`AutoTable`'s probing, say --- ran with every pruning on, which is only ever
+stronger.
+
+It reports what it decided: a summary at `StatsLevel::General` (so it appears
+in the stats a search prints at the end), and at `StatsLevel::Detailed` each
+pruning it kept, with the constraint that holes in what it prunes affect.
+
+A search driven some other way than `solve_with()`, or any `Propagators` on
+which nothing calls `choose_optional_interior_pruning()`, keeps every pruning
+on, so `consistency::Auto` there propagates as `GAC`.
+
+## Testing
+
+- `gcs/innards/optional_interior_pruning_test.cc` drives the analysis with
+  synthetic propagators (trigger kinds, overrides, views, disabled
+  propagators, promotion chains, cycles, choosing and re-choosing), and checks
+  the `qap` and `tsp` shapes, including that `Auto` there propagates exactly
+  as the arm it chose, counts and all.
+- `gcs/constraints/element/element_auto_test.cc` checks the property that
+  matters, over two thousand random constant-array element models: under a
+  brancher that reads only bounds, `Auto` explores exactly the tree `GAC` does.
+  Both arms being sound, only a comparison of trees can catch a wrong
+  switch-off, so it also checks that its models include ones where `Auto`
+  switches something off and ones where `BC` really does explore a different
+  tree (a hole-aware all-different over the results, mostly). A mutation that
+  makes every pruning unneeded fails it. Where `Auto` chose the same arm for
+  every element it also has to match that arm forced, propagation counts and
+  all, which is what a pair's one-id shape promises. It also compares the OPB
+  files of `GAC`, `BC` and `Auto` byte for byte, and verifies each proof.
+- `element_test`'s `constauto`, `const2dauto` and `varauto` lanes run `Auto`
+  through the usual solution and consistency checks, with proofs: an element
+  on its own drops to `BC` over constants, and stays `GAC` over variables.
 
 ## Known conservatism
 
