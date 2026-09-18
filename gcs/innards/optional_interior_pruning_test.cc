@@ -13,6 +13,7 @@
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear.hh>
+#include <gcs/exception.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/justification.hh>
@@ -357,9 +358,26 @@ TEST_CASE("Until something chooses, a pair propagates as its pruning propagator 
         Triggers{.on_bounds = {x}});
 
     REQUIRE(propagators.propagate(Literals{}, state, nullptr));
-    CHECK(propagators.number_of_propagators() == 2);
+    // One propagator id for the pair.
+    CHECK(propagators.number_of_propagators() == 1);
     CHECK_FALSE(state.in_domain(x, 4_i));
     CHECK(state.upper_bound(x) == 9_i);
+}
+
+TEST_CASE("A pair's propagators must use coarse triggers only")
+{
+    State state;
+    auto x = state.allocate_integer_variable_with_state(0_i, 9_i);
+    Stats stats;
+    Propagators propagators{stats};
+
+    // A refined watch is delivered to a propagator id, which the two share.
+    CHECK_THROWS_AS(propagators.install_with_optional_interior_pruning(
+                        NumberedConstraint{1}, {x}, does_nothing(), Triggers{.refined = {{x != 3_i, 0u}}}, does_nothing(), Triggers{}),
+        UnexpectedException);
+    CHECK_THROWS_AS(propagators.install_with_optional_interior_pruning(
+                        NumberedConstraint{1}, {x}, does_nothing(), Triggers{}, does_nothing(), Triggers{.refined = {{x >= 3_i, 0u}}}),
+        UnexpectedException);
 }
 
 TEST_CASE("A pair counts once towards degree, over the union of its scopes")

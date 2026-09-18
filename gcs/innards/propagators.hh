@@ -479,12 +479,8 @@ namespace gcs::innards
         auto trigger_on_instantiated(IntegerVariableID, int id) -> void;
         auto increase_degree(IntegerVariableID) -> void;
 
-        // Does the work of install(), and returns the new propagator's id. Scope
-        // variables in degree_already_counted do not raise their degree again,
-        // which is how the second of an optional-interior-pruning pair counts
-        // once with its partner.
-        auto install_returning_id(const ConstraintID &, PropagationFunction &&, const Triggers &,
-            const std::vector<SimpleIntegerVariableID> * degree_already_counted) -> int;
+        // Does the work of install(), and returns the new propagator's id.
+        auto install_returning_id(const ConstraintID &, PropagationFunction &&, const Triggers &) -> int;
 
     public:
         /**
@@ -564,9 +560,9 @@ namespace gcs::innards
          * values of `targets` (values strictly between their bounds) that
          * `fallback` leaves alone: a generalised arc consistent and a bounds
          * consistent propagator for the same constraint, say. One of the two is
-         * live at a time, and until something chooses, it is `pruning` and
-         * `fallback` is permanently disabled, so installing a pair propagates
-         * exactly as installing `pruning` alone would.
+         * live at a time, and until something chooses, it is `pruning`, so
+         * installing a pair propagates exactly as installing `pruning` alone
+         * would.
          * analyse_optional_interior_pruning() works out whether the pruning is
          * worth keeping.
          *
@@ -599,10 +595,15 @@ namespace gcs::innards
          *   reads its result, for instance) would always keep its pruning. Reads
          *   by any other constraint always count.
          *
-         * The two propagators get consecutive ids, `pruning` first. Each is
-         * woken by its own triggers and has its own interior reads (see
-         * Triggers::interior_reads). For degree the pair counts once, over the
-         * union of the two scopes.
+         * The pair is one propagator id, which runs whichever member is live;
+         * the other costs nothing, not even a wake. Each member is woken only by
+         * its own triggers, with its own interior reads (see
+         * Triggers::interior_reads) and its own verdict on whether its
+         * idempotence claims can be trusted, just as if it had been installed
+         * alone in the pair's place. For degree and adjacency the pair counts
+         * once, over the union of the two scopes. Both members must use coarse
+         * triggers only: a refined watch is delivered to a propagator id, and
+         * could not say which member armed it.
          */
         auto install_with_optional_interior_pruning(const ConstraintID & constraint_id, const std::vector<IntegerVariableID> & targets,
             PropagationFunction && pruning, const Triggers & pruning_triggers, PropagationFunction && fallback, const Triggers & fallback_triggers)
@@ -914,8 +915,8 @@ namespace gcs::innards
          * A pair's fallback always counts as live here, whichever of the two
          * currently is, which keeps the computation monotone. Permanently
          * disabled propagators (disable_propagators_for_constraints()) read
-         * nothing, and a pair both of whose propagators are disabled is left
-         * out of the answer.
+         * nothing, and a pair whose propagator is disabled is left out of the
+         * answer.
          *
          * Only propagators are consulted. The branching heuristic is not: a
          * pruning switched off can change what a heuristic sees, and so the
