@@ -18,7 +18,7 @@ namespace gcs
      *
      * \ingroup Consistency
      */
-    using MinusConsistency = std::variant<consistency::Auto, consistency::BC, consistency::GAC, consistency::Tabulated>;
+    using MinusConsistency = std::variant<consistency::Auto, consistency::BC, consistency::GAC, consistency::Dynamic, consistency::Tabulated>;
 
     /**
      * \brief Constrain that a - b = result.
@@ -35,7 +35,7 @@ namespace gcs
         std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>> _sum_line;
 
         // Decided by prepare() (it needs the initial domains), installed by
-        // install_propagators(). Empty means bounds consistency only.
+        // install_propagators(). Empty means not tabulating.
         std::optional<innards::TabulationPlan> _tabulation;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
@@ -45,8 +45,9 @@ namespace gcs
     public:
         explicit Minus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result);
 
-        /// Select the consistency level; consistency::Auto (the default) tabulates when the
-        /// domains are small. Requesting an unsupported level is a compile-time error.
+        /// Select the consistency level; consistency::Auto (the default) behaves
+        /// as it does for Plus. Requesting an unsupported level is a compile-time
+        /// error.
         auto with_consistency(MinusConsistency level) -> Minus &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

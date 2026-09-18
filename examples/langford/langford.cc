@@ -113,7 +113,7 @@ auto main(int argc, char * argv[]) -> int
         options.add_options()                                                                   //
             ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("7")) //
             ("all", "Find all solutions")                                                       //
-            ("plus", "Consistency for the Plus constraints: 'tabulated', 'gac' (the interval propagator), or 'bc'",
+            ("plus", "Consistency for the Plus constraints: 'tabulated', 'gac' (the interval propagator), 'dynamic', 'auto', or 'bc'",
                 cxxopts::value<string>()->default_value("tabulated"));
 
         options.parse_positional({"size", "all"});
@@ -138,10 +138,14 @@ auto main(int argc, char * argv[]) -> int
     PlusConsistency plus_consistency = consistency::Tabulated{};
     if (plus_mode == "gac")
         plus_consistency = consistency::GAC{};
+    else if (plus_mode == "dynamic")
+        plus_consistency = consistency::Dynamic{};
+    else if (plus_mode == "auto")
+        plus_consistency = consistency::Auto{};
     else if (plus_mode == "bc")
         plus_consistency = consistency::BC{};
     else if (plus_mode != "tabulated") {
-        println(cerr, "Error: --plus must be 'tabulated', 'gac', or 'bc'.");
+        println(cerr, "Error: --plus must be 'tabulated', 'gac', 'dynamic', 'auto', or 'bc'.");
         return EXIT_FAILURE;
     }
 
@@ -162,8 +166,9 @@ auto main(int argc, char * argv[]) -> int
         // position[i] = position[i + k] + i + 2, tabulated for GAC at every
         // size by default (this was written for the old PlusGAC, and Auto would
         // fall back to bounds consistency once the positions' domains grew too
-        // large to tabulate). --plus picks the interval GAC propagator (#192) or
-        // bounds consistency instead, so that all three stay benchmarkable.
+        // large to tabulate). --plus picks the interval GAC propagator, its
+        // Dynamic variant, Auto, or bounds consistency instead (#192), so that
+        // every arm stays benchmarkable.
         p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i]} //
                 .with_consistency(plus_consistency));
     }

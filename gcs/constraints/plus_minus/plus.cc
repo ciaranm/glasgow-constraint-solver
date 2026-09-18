@@ -175,7 +175,14 @@ auto Plus::prepare(Propagators &, State & initial_state, ProofModel * const) -> 
                                   }});
     }
 
-    if (want_tabulation(_level, enum_vars.vars(), determined, initial_state)) {
+    // consistency::Auto is consistency::Dynamic, except where two positions
+    // share a variable: there the interval propagator is sound but may fall
+    // short of GAC, while a table over the distinct variables does not, so
+    // small aliased domains still tabulate. The measurements behind choosing
+    // Dynamic over tabulation for everything else are in issue #192.
+    bool aliased = (pa ? 1u : 0u) + (pb ? 1u : 0u) + (pc ? 1u : 0u) > enum_vars.vars().size();
+    bool is_auto = holds_alternative<consistency::Auto>(_level);
+    if ((aliased || ! is_auto) && want_tabulation(_level, enum_vars.vars(), determined, initial_state)) {
         auto accept = [aa, ab, ac, pa, pb, pc](const vector<Integer> & vals) -> bool {
             auto av = pa ? aa.coeff * vals[*pa] + aa.offset : aa.offset;
             auto bv = pb ? ab.coeff * vals[*pb] + ab.offset : ab.offset;
@@ -204,9 +211,16 @@ auto Plus::define_proof_model(ProofModel & model, const State &) -> void
 
 auto Plus::install_propagators(Propagators & propagators) -> void
 {
-    // The GAC arm subsumes the bounds propagator, and never tabulates.
+    // The interval arms subsume the bounds propagator, and never tabulate.
+    // consistency::Auto takes the Dynamic arm unless prepare() chose to
+    // tabulate.
     if (holds_alternative<consistency::GAC>(_level)) {
-        install_plus_minus_gac(propagators, constraint_id(), PlusMinusRow::Plus, _a, _b, _result, _sum_line, _proof_mutation);
+        install_plus_minus_gac(propagators, constraint_id(), PlusMinusRow::Plus, _a, _b, _result, _sum_line, nullopt, _proof_mutation);
+        return;
+    }
+    if (holds_alternative<consistency::Dynamic>(_level) || (holds_alternative<consistency::Auto>(_level) && ! _tabulation)) {
+        install_plus_minus_gac(
+            propagators, constraint_id(), PlusMinusRow::Plus, _a, _b, _result, _sum_line, default_interval_pairs_threshold(), _proof_mutation);
         return;
     }
 

@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdlib>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -44,6 +45,10 @@ using std::ranges::upper_bound;
  * with a support are a Minkowski sum of the other two domains, each possibly
  * negated. The propagator removes whatever of dom(X) that sum misses, one
  * infer_not_in_range per maximal run, for result, then a, then b.
+ *
+ * The consistency::Dynamic arm is the same propagator with a limit on how
+ * many pairs of intervals one step may combine; past it the step combines
+ * each operand with the other's hull instead. See install_plus_minus_gac().
  *
  * One pass is the GAC fixpoint when the three variables are distinct. Each
  * step reads the domains as the steps before it left them, so take any value
@@ -102,7 +107,7 @@ namespace
     // propagator, as ExtensionalData holds its bitmaps, and for the same reason.
     struct Scratch
     {
-        Intervals x, o1, o2, pieces, supported;
+        Intervals x, o1, o2, o1_hull, o2_hull, pieces, supported;
     };
 
     auto fill_intervals(Intervals & out, const IntervalSet<Integer> & set) -> void
@@ -311,24 +316,25 @@ namespace
     }
 
     template <typename Hint_>
-    auto propagate_gac(const Operands & ops, bool aliased, Scratch & scratch, const State & state, auto & inference, ProofLogger * const logger,
-        const SumLines & sum_line, const ConstraintID & owner, const PlusMinusProofMutation & mutation) -> PropagatorState
+    auto propagate_gac(const Operands & ops, bool aliased, const optional<size_t> & max_interval_pairs, Scratch & scratch, const State & state,
+        auto & inference, ProofLogger * const logger, const SumLines & sum_line, const ConstraintID & owner, const PlusMinusProofMutation & mutation)
+        -> PropagatorState
     {
-        auto prune = [&](size_t x, size_t o1, size_t o2) {
-            fill_intervals(scratch.x, state.copy_of_values(ops[x].var));
-            fill_intervals(scratch.o1, state.copy_of_values(ops[o1].var));
-            fill_intervals(scratch.o2, state.copy_of_values(ops[o2].var));
-
+        // Prune X to what o1_list and o2_list can sum to, each list being
+        // either that operand's intervals or its hull. The reason and the
+        // lemmas are built from the same lists, which is all the proof needs:
+        // a hull just has no holes for a window to fall into.
+        auto prune_with = [&](size_t x, size_t o1, size_t o2, const Intervals & o1_list, const Intervals & o2_list) {
             // X = -c_X * (c_o1 * o1 + c_o2 * o2), so this is every value of X
             // with a support.
-            signed_sum(scratch.supported, scratch.pieces, scratch.o1, -ops[x].coeff * ops[o1].coeff, scratch.o2, -ops[x].coeff * ops[o2].coeff);
+            signed_sum(scratch.supported, scratch.pieces, o1_list, -ops[x].coeff * ops[o1].coeff, o2_list, -ops[x].coeff * ops[o2].coeff);
 
             // The proof walks one of the other two a whole interval at a time;
             // walk whichever has fewer.
-            bool o1_walks = scratch.o1.size() <= scratch.o2.size();
+            bool o1_walks = o1_list.size() <= o2_list.size();
             auto y = o1_walks ? o1 : o2, z = o1_walks ? o2 : o1;
-            const auto & y_int = o1_walks ? scratch.o1 : scratch.o2;
-            const auto & z_int = o1_walks ? scratch.o2 : scratch.o1;
+            const auto & y_int = o1_walks ? o1_list : o2_list;
+            const auto & z_int = o1_walks ? o2_list : o1_list;
 
             // scratch.x is a copy, so the inferences below cannot disturb the walk.
             for_each_run_minus(scratch.x, scratch.supported, [&](Integer lo, Integer hi) {
@@ -350,29 +356,64 @@ namespace
             });
         };
 
+        bool fell_back = false;
+        auto prune = [&](size_t x, size_t o1, size_t o2) {
+            fill_intervals(scratch.x, state.copy_of_values(ops[x].var));
+            fill_intervals(scratch.o1, state.copy_of_values(ops[o1].var));
+            fill_intervals(scratch.o2, state.copy_of_values(ops[o2].var));
+
+            if (! max_interval_pairs || scratch.o1.size() * scratch.o2.size() <= *max_interval_pairs) {
+                prune_with(x, o1, o2, scratch.o1, scratch.o2);
+                return;
+            }
+
+            // Too many pairs to combine exactly: combine each operand's
+            // intervals with the other's hull instead, once each way round.
+            // That costs the sum of the interval counts, and still removes
+            // whatever falls between one operand's intervals by more than
+            // the other's whole range can bridge.
+            fell_back = true;
+            scratch.o1_hull.assign({{scratch.o1.front().first, scratch.o1.back().second}});
+            scratch.o2_hull.assign({{scratch.o2.front().first, scratch.o2.back().second}});
+            prune_with(x, o1, o2, scratch.o1, scratch.o2_hull);
+            fill_intervals(scratch.x, state.copy_of_values(ops[x].var));
+            prune_with(x, o1, o2, scratch.o1_hull, scratch.o2);
+        };
+
         auto pass = [&]() {
             prune(2, 0, 1);
             prune(0, 2, 1);
             prune(1, 2, 0);
         };
 
-        if (aliased) {
-            while (true) {
-                auto before = inference.count_inferences();
-                pass();
-                if (inference.count_inferences() == before)
-                    break;
-            }
-        }
-        else
+        // One exact pass is the fixpoint for distinct variables. Anything else
+        // -- an aliased position, or a step that fell back -- repeats the pass
+        // until it changes nothing, as the bounds propagator does.
+        while (true) {
+            auto before = inference.count_inferences();
+            fell_back = false;
             pass();
+            if (inference.count_inferences() == before || ! (aliased || fell_back))
+                break;
+        }
 
         return PropagatorState::EnableButIdempotent;
     }
 }
 
+auto gcs::innards::default_interval_pairs_threshold() -> size_t
+{
+    static const size_t threshold = []() -> size_t {
+        if (const char * e = std::getenv("GCS_INTERVAL_PAIRS_THRESHOLD"))
+            return std::strtoull(e, nullptr, 10);
+        return 1024; // see the header
+    }();
+    return threshold;
+}
+
 auto gcs::innards::install_plus_minus_gac(Propagators & propagators, const ConstraintID & owner, PlusMinusRow row, IntegerVariableID a,
-    IntegerVariableID b, IntegerVariableID result, const SumLines & sum_line, PlusMinusProofMutation mutation) -> void
+    IntegerVariableID b, IntegerVariableID result, const SumLines & sum_line, optional<size_t> max_interval_pairs, PlusMinusProofMutation mutation)
+    -> void
 {
     Operands ops{Operand{a, 1_i}, Operand{b, row == PlusMinusRow::Plus ? 1_i : -1_i}, Operand{result, -1_i}};
 
@@ -387,15 +428,19 @@ auto gcs::innards::install_plus_minus_gac(Propagators & propagators, const Const
     if (row == PlusMinusRow::Plus)
         propagators.install(
             owner,
-            [ops, aliased, scratch, sum_line, owner, mutation](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                return propagate_gac<hints::PlusNotInRange>(ops, aliased, *scratch, state, inference, logger, sum_line, owner, mutation);
+            [ops, aliased, max_interval_pairs, scratch, sum_line, owner, mutation](
+                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                return propagate_gac<hints::PlusNotInRange>(
+                    ops, aliased, max_interval_pairs, *scratch, state, inference, logger, sum_line, owner, mutation);
             },
             triggers);
     else
         propagators.install(
             owner,
-            [ops, aliased, scratch, sum_line, owner, mutation](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                return propagate_gac<hints::MinusNotInRange>(ops, aliased, *scratch, state, inference, logger, sum_line, owner, mutation);
+            [ops, aliased, max_interval_pairs, scratch, sum_line, owner, mutation](
+                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                return propagate_gac<hints::MinusNotInRange>(
+                    ops, aliased, max_interval_pairs, *scratch, state, inference, logger, sum_line, owner, mutation);
             },
             triggers);
 }

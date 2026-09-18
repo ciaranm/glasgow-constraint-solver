@@ -3,6 +3,7 @@
 #include <gcs/constraints/innards/plus_minus_mutations.hh>
 #include <gcs/constraints/minus.hh>
 #include <gcs/constraints/plus.hh>
+#include <gcs/constraints/plus_minus/gac.hh>
 #include <gcs/current_state.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
@@ -36,6 +37,7 @@ using std::is_same_v;
 using std::make_optional;
 using std::mt19937;
 using std::nullopt;
+using std::optional;
 using std::pair;
 using std::set;
 using std::string;
@@ -56,6 +58,16 @@ using namespace gcs::test_innards;
 
 namespace
 {
+    // The fallback lane runs this binary with GCS_INTERVAL_PAIRS_THRESHOLD set,
+    // beside the ordinary lane; tag the proof file names with it so the two runs
+    // don't clobber each other's .opb/.pbp under parallel ctest (see #961).
+    auto threshold_proof_suffix() -> string
+    {
+        if (const char * e = std::getenv("GCS_INTERVAL_PAIRS_THRESHOLD"))
+            return string{"_p"} + e;
+        return {};
+    }
+
     template <typename Arithmetic_>
     struct NameOf;
 
@@ -72,18 +84,28 @@ namespace
     };
 }
 
-// With gac set, the constraint asks for consistency::GAC and the test checks
-// that every value left in every position has a support, at every node;
-// otherwise it takes the default consistency::Auto and checks the solutions
-// only.
+// Which consistency level a run_plus_minus_test run asks for.
+enum class Arm
+{
+    Auto,
+    GAC,
+    Dynamic
+};
+
+// Auto is checked for its solutions only. GAC is also checked to leave every
+// value in every position with a support, at every node, and so is Dynamic,
+// since no domain here has anything like the pairs of intervals it takes to
+// make it fall back -- except in the lane that forces the threshold to zero,
+// where it is checked for its solutions only.
 template <typename Constraint_, typename V1_, typename V2_, typename V3_>
-auto run_plus_minus_test(bool proofs, const ViewWrapConfig & view_cfg, bool gac, V1_ v1_range, V2_ v2_range, V3_ v3_range,
+auto run_plus_minus_test(bool proofs, const ViewWrapConfig & view_cfg, Arm arm, V1_ v1_range, V2_ v2_range, V3_ v3_range,
     const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
+    string arm_name = arm == Arm::GAC ? "gac" : arm == Arm::Dynamic ? "dynamic" : "";
     auto wraps = wraps_for_positions(view_cfg, 3);
     visit(
         [&](const auto & v1, const auto & v2, const auto & v3) {
-            print(cerr, "{}{} [{}] {} {} {} {}", NameOf<Constraint_>::name, gac ? " gac" : "", view_wrap_config_label(view_cfg), v1, v2, v3,
+            print(cerr, "{} {} [{}] {} {} {} {}", NameOf<Constraint_>::name, arm_name, view_wrap_config_label(view_cfg), v1, v2, v3,
                 proofs ? " with proofs:" : ":");
         },
         v1_range, v2_range, v3_range);
@@ -98,15 +120,76 @@ auto run_plus_minus_test(bool proofs, const ViewWrapConfig & view_cfg, bool gac,
     auto v1 = visit([&](const auto & r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(0)); }, v1_range);
     auto v2 = visit([&](const auto & r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(1)); }, v2_range);
     auto v3 = visit([&](const auto & r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(2)); }, v3_range);
-    if (gac)
-        p.post(Constraint_{v1, v2, v3}.with_consistency(consistency::GAC{}));
-    else
-        p.post(Constraint_{v1, v2, v3});
+    switch (arm) {
+    case Arm::Auto: p.post(Constraint_{v1, v2, v3}); break;
+    case Arm::GAC: p.post(Constraint_{v1, v2, v3}.with_consistency(consistency::GAC{})); break;
+    case Arm::Dynamic: p.post(Constraint_{v1, v2, v3}.with_consistency(consistency::Dynamic{})); break;
+    }
 
-    auto proof_name = proofs ? make_optional(string{"plus_minus_test_"} + (gac ? "gac_" : "") + view_wrap_config_label(view_cfg)) : nullopt;
-    auto check = gac ? CheckConsistency::GAC : CheckConsistency::None;
+    auto proof_name = proofs
+        ? make_optional("plus_minus_test_" + (arm_name.empty() ? "" : arm_name + "_") + view_wrap_config_label(view_cfg) + threshold_proof_suffix())
+        : nullopt;
+    bool gac_expected = arm == Arm::GAC || (arm == Arm::Dynamic && innards::default_interval_pairs_threshold() >= 256);
+    auto check = gac_expected ? CheckConsistency::GAC : CheckConsistency::None;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, check}, pair{v2, check}, pair{v3, check}});
 
+    check_results(proof_name, expected, actual);
+}
+
+// consistency::Dynamic past its threshold: two operands whose pairs of
+// intervals (40 x 30) exceed the default, so each step combines one operand
+// with the other's hull. y is every hundredth value up to 3900 and z the even
+// values up to 58, so x = y + z is exactly the even values in [100i, 100i + 58].
+// Combining y with z's hull [0, 58] still removes the gap [100i + 59,
+// 100i + 99] above each block, which bounds consistency would not; what it
+// cannot see is that the odd values inside a block are missing too, which GAC
+// would. The root is checked for both, then the whole thing is enumerated.
+//
+// Without proofs: checking one takes VeriPB about half a minute here, for
+// derivations the fallback lane (plus_minus_constraint_dynamic_fallback, with
+// the threshold at zero) already verifies on every other row.
+auto run_dynamic_fallback_test() -> void
+{
+    println(cerr, "plus dynamic fallback");
+
+    auto build = [](Problem & p) {
+        vector<Integer> y_values, z_values;
+        for (int v = 0; v <= 3900; v += 100)
+            y_values.push_back(Integer{v});
+        for (int v = 0; v <= 58; v += 2)
+            z_values.push_back(Integer{v});
+        auto y = p.create_integer_variable(y_values);
+        auto z = p.create_integer_variable(z_values);
+        auto x = p.create_integer_variable(0_i, 3958_i);
+        p.post(Plus{y, z, x}.with_consistency(consistency::Dynamic{}));
+        return tuple{y, z, x};
+    };
+
+    if (innards::default_interval_pairs_threshold() < 40 * 30) {
+        Problem p;
+        auto [y, z, x] = build(p);
+        auto gap_removed = false, odd_kept = false;
+        solve_with(p,
+            SolveCallbacks{.trace =
+                               [&](const CurrentState & s) {
+                                   gap_removed = ! s.in_domain(x, 180_i) && ! s.in_domain(x, 3880_i);
+                                   odd_kept = s.in_domain(x, 1_i) && s.in_domain(x, 157_i);
+                                   return false;
+                               },
+                .stats_report = silent_stats_report()});
+        if (! gap_removed || ! odd_kept)
+            throw UnexpectedException{"Dynamic past its threshold should remove the gaps between blocks and keep the odd values inside them"};
+    }
+
+    set<tuple<int, int, int>> actual;
+    Problem p;
+    auto [y, z, x] = build(p);
+    optional<string> proof_name = nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{y, z, x});
+    set<tuple<int, int, int>> expected;
+    for (int yv = 0; yv <= 3900; yv += 100)
+        for (int zv = 0; zv <= 58; zv += 2)
+            expected.emplace(yv, zv, yv + zv);
     check_results(proof_name, expected, actual);
 }
 
@@ -143,7 +226,8 @@ auto run_dup_plus_minus_test(bool proofs, AliasPattern_, const string & tag, boo
         level = consistency::GAC{};
 
     Problem p;
-    auto proof_name = proofs ? make_optional(string{NameOf<Constraint_>::name} + "_test_dup_" + (gac ? "gac_" : "") + tag) : nullopt;
+    auto proof_name =
+        proofs ? make_optional(string{NameOf<Constraint_>::name} + "_test_dup_" + (gac ? "gac_" : "") + tag + threshold_proof_suffix()) : nullopt;
 
     if constexpr (is_same_v<AliasPattern_, AliasAll>) {
         // C{a, a, a} — only `a_range` matters; `b_range` ignored.
@@ -182,8 +266,8 @@ auto run_dup_plus_minus_test(bool proofs, AliasPattern_, const string & tag, boo
 }
 
 // The consistency tag: forced Tabulated tabulates and is checked per node, as
-// is forced GAC; forced BC never tabulates; Auto tabulates exactly when the
-// domains are small.
+// are forced GAC and Dynamic; forced BC never tabulates. Auto is Dynamic here,
+// since these positions are distinct, and is checked per node too.
 template <typename Constraint_>
 auto run_tagged_test(bool proofs, const string & proof_suffix, const PlusConsistency & level, bool check_gac, pair<int, int> v1_range,
     pair<int, int> v2_range, pair<int, int> v3_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
@@ -201,7 +285,7 @@ auto run_tagged_test(bool proofs, const string & proof_suffix, const PlusConsist
     auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));
     p.post(Constraint_{v1, v2, v3}.with_consistency(level));
 
-    auto proof_name = proofs ? make_optional("plus_minus_test_tagged_" + proof_suffix) : nullopt;
+    auto proof_name = proofs ? make_optional("plus_minus_test_tagged_" + proof_suffix + threshold_proof_suffix()) : nullopt;
     if (check_gac)
         solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});
     else
@@ -431,13 +515,17 @@ auto main(int argc, char * argv[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2, r3] : data) {
-            run_plus_minus_test<Plus>(proofs, view_cfg, false, r1, r2, r3, plus_sat);
-            run_plus_minus_test<Minus>(proofs, view_cfg, false, r1, r2, r3, minus_sat);
+            run_plus_minus_test<Plus>(proofs, view_cfg, Arm::Auto, r1, r2, r3, plus_sat);
+            run_plus_minus_test<Minus>(proofs, view_cfg, Arm::Auto, r1, r2, r3, minus_sat);
         }
         for (auto & [r1, r2, r3] : gac_data) {
-            run_plus_minus_test<Plus>(proofs, view_cfg, true, r1, r2, r3, plus_sat);
-            run_plus_minus_test<Minus>(proofs, view_cfg, true, r1, r2, r3, minus_sat);
+            for (auto arm : {Arm::GAC, Arm::Dynamic}) {
+                run_plus_minus_test<Plus>(proofs, view_cfg, arm, r1, r2, r3, plus_sat);
+                run_plus_minus_test<Minus>(proofs, view_cfg, arm, r1, r2, r3, minus_sat);
+            }
         }
+        if (! proofs && view_wrap_config_is_effectively_bare(view_cfg, n_positions))
+            run_dynamic_fallback_test();
         if (view_wrap_config_is_effectively_bare(view_cfg, n_positions))
             for (bool gac : {false, true})
                 for (auto & [ar, br] : dup_data) {
@@ -451,19 +539,24 @@ auto main(int argc, char * argv[]) -> int
                     run_dup_plus_minus_test<Minus>(proofs, AliasAll{}, "all", gac, ar, br, minus_sat);
                 }
 
-        // The consistency tags (issue #444): Auto tabulates small domains
-        // (checked per node), forced Tabulated tabulates bigger ones too, forced
-        // BC is checked for soundness only, and forced GAC (issue #192) is
-        // checked per node without tabulating.
+        // The consistency tags (issues #444 and #192): Auto (checked per node) is
+        // Dynamic for distinct positions, forced Tabulated tabulates bigger
+        // domains too, forced BC is checked for soundness only, and forced GAC
+        // and Dynamic are checked per node without tabulating.
         auto suffix = view_wrap_config_label(view_cfg);
-        run_tagged_test<Plus>(proofs, suffix, consistency::Auto{}, true, {1, 3}, {1, 3}, {2, 6}, plus_sat);
-        run_tagged_test<Minus>(proofs, suffix, consistency::Auto{}, true, {1, 4}, {1, 3}, {-2, 3}, minus_sat);
+        // Dynamic, and so Auto, only promise GAC below the threshold, which the
+        // fallback lane sets to zero.
+        bool dynamic_is_gac = innards::default_interval_pairs_threshold() >= 256;
+        run_tagged_test<Plus>(proofs, suffix, consistency::Auto{}, dynamic_is_gac, {1, 3}, {1, 3}, {2, 6}, plus_sat);
+        run_tagged_test<Minus>(proofs, suffix, consistency::Auto{}, dynamic_is_gac, {1, 4}, {1, 3}, {-2, 3}, minus_sat);
         run_tagged_test<Plus>(proofs, suffix, consistency::Tabulated{}, true, {-4, 4}, {-4, 4}, {-8, 8}, plus_sat);
         run_tagged_test<Minus>(proofs, suffix, consistency::Tabulated{}, true, {-4, 4}, {-4, 4}, {-8, 8}, minus_sat);
         run_tagged_test<Plus>(proofs, suffix, consistency::BC{}, false, {1, 3}, {1, 3}, {2, 6}, plus_sat);
         run_tagged_test<Minus>(proofs, suffix, consistency::BC{}, false, {1, 3}, {1, 3}, {-2, 2}, minus_sat);
         run_tagged_test<Plus>(proofs, suffix, consistency::GAC{}, true, {-4, 4}, {-4, 4}, {-8, 8}, plus_sat);
         run_tagged_test<Minus>(proofs, suffix, consistency::GAC{}, true, {-4, 4}, {-4, 4}, {-8, 8}, minus_sat);
+        run_tagged_test<Plus>(proofs, suffix, consistency::Dynamic{}, dynamic_is_gac, {-4, 4}, {-4, 4}, {-8, 8}, plus_sat);
+        run_tagged_test<Minus>(proofs, suffix, consistency::Dynamic{}, dynamic_is_gac, {-4, 4}, {-4, 4}, {-8, 8}, minus_sat);
     }
 
     return EXIT_SUCCESS;

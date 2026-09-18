@@ -68,6 +68,23 @@ namespace gcs
         };
 
         /**
+         * \brief Request generalised arc consistency whenever the constraint's
+         * GAC algorithm is cheap on the current domains, and something weaker
+         * but cheaper whenever it is not, deciding afresh at every call.
+         *
+         * Constraints that accept it document what "cheap" means for them and
+         * what they fall back on. Unlike consistency::Auto, which is a policy
+         * that may be revised as the solver learns more about when each level
+         * pays, this is a fixed rule: requesting it explicitly keeps the same
+         * behaviour even if what consistency::Auto maps to changes.
+         *
+         * \ingroup Consistency
+         */
+        struct Dynamic final
+        {
+        };
+
+        /**
          * \brief Request generalised arc consistency achieved by tabulation:
          * every satisfying assignment of the constraint is enumerated up
          * front, and the resulting table is propagated extensionally.

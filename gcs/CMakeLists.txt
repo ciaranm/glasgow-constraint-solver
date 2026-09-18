@@ -734,6 +734,14 @@ if(GCS_BUILD_TESTS)
     add_test(NAME nogoods_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:nogoods_test>)
     add_test(NAME parity_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_test>)
     add_test(NAME plus_minus_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test>)
+    # The same test with consistency::Dynamic's threshold forced to zero, so that
+    # every step of the Dynamic arm (and so of Auto) takes the hull fallback:
+    # its prunings and their proofs are otherwise reached only by the one
+    # directed fallback case (#192).
+    # The threshold itself is set with the other pinned thresholds below, after
+    # the runtime caps, which would otherwise overwrite it.
+    add_test(NAME plus_minus_constraint_dynamic_fallback
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test>)
     # Mutation lanes for Plus's consistency::GAC arm (#192): each corrupts the
     # derivation of one range removal and passes only if veripb refuses the
     # result; the control checks that the same instance verifies uncorrupted.
@@ -1100,4 +1108,6 @@ if(GCS_BUILD_TESTS)
     endforeach()
     set_property(TEST linear_constant_constraint_incremental APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=0")
     set_property(TEST linear_constant_constraint_stateless APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=1000000")
+    # Every step of Plus/Minus's Dynamic arm takes the hull fallback (#192).
+    set_property(TEST plus_minus_constraint_dynamic_fallback APPEND PROPERTY ENVIRONMENT "GCS_INTERVAL_PAIRS_THRESHOLD=0")
 endif()

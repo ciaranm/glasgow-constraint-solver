@@ -255,6 +255,31 @@ namespace
             };
             p.post(Plus{ends(), ends(), wide_var(p)}.with_consistency(consistency::GAC{}));
         });
+        add("Plus/many-intervals", Expect::Clean, [](Problem & p) {
+            // Two operands of 400 intervals each, so the exact GAC arm would
+            // combine 160 000 pairs of them per step (the row below). Auto is
+            // consistency::Dynamic, which falls back on each operand against
+            // the other's hull past its threshold (#192), costing 800.
+            auto spread = [&]() {
+                vector<Integer> values;
+                for (int i = 0; i < 400; ++i)
+                    values.push_back(Integer{i} * (probe_width / 400_i));
+                return p.create_integer_variable(values);
+            };
+            p.post(Plus{spread(), spread(), wide_var(p)});
+        });
+        add("Plus/many-intervals-gac", Expect::KnownTrip, [](Problem & p) {
+            // As above, with consistency::GAC explicitly requested: the pairs of
+            // intervals, not the width, are what it pays for, and this is the
+            // shape consistency::Dynamic exists to cap.
+            auto spread = [&]() {
+                vector<Integer> values;
+                for (int i = 0; i < 400; ++i)
+                    values.push_back(Integer{i} * (probe_width / 400_i));
+                return p.create_integer_variable(values);
+            };
+            p.post(Plus{spread(), spread(), wide_var(p)}.with_consistency(consistency::GAC{}));
+        });
         add("Minus/holey", Expect::Clean, [](Problem & p) {
             // As Plus/holey: the differences leave most of the result's range
             // unsupported.
