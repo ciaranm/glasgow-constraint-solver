@@ -21,6 +21,8 @@
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
+#include <gcs/solve.hh>
 #include <gcs/stats.hh>
 #include <gcs/variable_id.hh>
 
@@ -28,6 +30,7 @@
 
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -462,6 +465,35 @@ TEST_CASE("qap: nothing can observe an element result's interior")
     auto probe = verdict_on(propagators.analyse_optional_interior_pruning(), xs[0]);
     REQUIRE(probe);
     CHECK(probe->needed);
+}
+
+TEST_CASE("Until something chooses, Auto propagates exactly as GAC, counts and all")
+{
+    // A pair runs its pruning member exactly as that propagator would run
+    // installed alone: the same wakes, and the same idempotence verdict, so
+    // the same number of propagations, not merely the same tree.
+    vector<vector<Integer>> distances{{0_i, 3_i, 7_i, 2_i}, {3_i, 0_i, 5_i, 9_i}, {7_i, 5_i, 0_i, 4_i}, {2_i, 9_i, 4_i, 0_i}};
+    auto run = [&](const ElementConsistency & level) {
+        Problem p;
+        auto xs = p.create_integer_variable_vector(4, 0_i, 3_i, "xs");
+        for (int i = 0; i < 4; ++i)
+            for (int j = i + 1; j < 4; ++j)
+                p.post(NotEquals{xs[i], xs[j]});
+        WeightedSum wcosts;
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j) {
+                auto d = p.create_integer_variable(0_i, 10_i);
+                p.post(Element2DConstantArray{d, xs[i], xs[j], &distances}.with_consistency(level));
+                wcosts += Integer{i + j + 1} * d;
+            }
+        auto cost = p.create_integer_variable(0_i, 100000_i, "cost");
+        p.post(std::move(wcosts) == 1_i * cost);
+        p.minimise(cost);
+        auto stats = solve_with(
+            p, SolveCallbacks{.branch = branch_with(variable_order::dom(xs), value_order::smallest_in()), .stats_report = silent_stats_report()});
+        return std::tuple{stats.recursions, stats.propagations, stats.effectful_propagations, stats.solutions};
+    };
+    CHECK(run(consistency::Auto{}) == run(consistency::GAC{}));
 }
 
 TEST_CASE("tsp: nothing can observe an element result's interior")
