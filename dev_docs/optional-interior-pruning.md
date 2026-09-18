@@ -80,9 +80,26 @@ fact have seen, which loses propagation.
 implementations of the same propagation: `pruning`, which also removes interior
 values of some `targets`, and `fallback`, which does not. Exactly one is live at
 a time; until something chooses, it is `pruning`, so a pair propagates exactly
-as `pruning` alone would. Each keeps its own triggers, so whichever runs is
-woken exactly as it would be on its own. For degree, the pair counts once, over
-the union of the two scopes.
+as `pruning` alone would.
+
+A pair is one propagator id. Its slot holds whichever member is live, and the
+other waits beside it; both members' trigger entries are registered under the
+id, the one not live with its masks zeroed, and each sits exactly where that
+member's own would have been had it been installed alone in the pair's place.
+So a member that is live is woken, and runs, exactly as it would on its own ---
+a pair that falls back propagates as its fallback installed alone would, counts
+and all --- and the one that is not costs nothing. Each member also keeps its
+own hole sensitivity and its own idempotence-aliasing verdict. For degree and
+adjacency the pair counts once, over the union of the two scopes. Both members
+must use coarse triggers only, since a refined watch is delivered to a
+propagator id and could not say which member armed it.
+
+That shape is measured, not decorative. Installed as two propagators, one
+permanently disabled, a pair that falls back cost `qap` 1.7% and `tsp` 0.9%
+over the fallback on its own, over identical propagation: 0.4% more
+instructions, but 11% more L1 misses. Zeroing the disabled one's trigger masks
+bought nothing measurable; a denser propagator id space is what the per-id
+arrays wanted.
 
 Declaring a pair makes two promises about the constraint as a whole, meaning
 everything installed under its `ConstraintID`:
@@ -153,9 +170,9 @@ is right, since neither's work ever affects anything that matters.
 
 Counting the fallback's sensitivity whichever of the pair is live keeps the
 computation monotone. Permanently disabled propagators are affected by nothing,
-and a pair whose propagators are both disabled is left out. Each verdict names
-one constraint responsible for a needed pruning (`observed_by`), which is what
-a report of the decision should show.
+and a pair whose propagator is disabled is left out. Each verdict names one
+constraint responsible for a needed pruning (`observed_by`), which is what a
+report of the decision should show.
 
 ## Why switching a pruning off loses nothing
 
