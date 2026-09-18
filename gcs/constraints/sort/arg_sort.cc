@@ -218,7 +218,8 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
         [p = _p, y = y_ids, offset = _offset, lo = _lowest_x, hi = _highest_x, n](const State &, auto &, ProofLogger * const logger) -> void {
             // Only in full-justification (Off) mode: in assertion modes the propagator's
             // y-bound inferences are asserted rather than justified, so they need no
-            // pre-derived bounds (and fix_bound is likewise skipped for these vars).
+            // pre-derived bounds (and ensure_boundary_pin is likewise skipped for
+            // these vars).
             if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                 return;
             auto scratch = logger->temporary_proof_level();
