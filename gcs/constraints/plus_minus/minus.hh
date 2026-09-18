@@ -18,10 +18,12 @@ namespace gcs
      *
      * \ingroup Consistency
      */
-    using MinusConsistency = std::variant<consistency::Auto, consistency::BC, consistency::Tabulated>;
+    using MinusConsistency = std::variant<consistency::Auto, consistency::BC, consistency::GAC, consistency::Tabulated>;
 
     /**
      * \brief Constrain that a - b = result.
+     *
+     * The consistency levels behave as they do for Plus.
      *
      * \ingroup Constraints
      */

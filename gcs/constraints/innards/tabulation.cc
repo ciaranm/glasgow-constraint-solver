@@ -265,3 +265,15 @@ auto gcs::innards::want_tabulation(const std::variant<consistency::Auto, consist
         }}
         .visit(level);
 }
+
+auto gcs::innards::want_tabulation(const std::variant<consistency::Auto, consistency::BC, consistency::GAC, consistency::Tabulated> & level,
+    const vector<IntegerVariableID> & enum_vars, const vector<DeterminedVariable> & determined_vars, const State & initial_state) -> bool
+{
+    return overloaded{                                   //
+        [&](const consistency::GAC &) { return false; }, //
+        [&](const auto & other) {
+            return want_tabulation(
+                std::variant<consistency::Auto, consistency::BC, consistency::Tabulated>{other}, enum_vars, determined_vars, initial_state);
+        }}
+        .visit(level);
+}

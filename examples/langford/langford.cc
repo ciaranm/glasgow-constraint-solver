@@ -112,7 +112,9 @@ auto main(int argc, char * argv[]) -> int
 
         options.add_options()                                                                   //
             ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("7")) //
-            ("all", "Find all solutions");
+            ("all", "Find all solutions")                                                       //
+            ("plus", "Consistency for the Plus constraints: 'tabulated', 'gac' (the interval propagator), or 'bc'",
+                cxxopts::value<string>()->default_value("tabulated"));
 
         options.parse_positional({"size", "all"});
         options_vars = options.parse(argc, argv);
@@ -132,6 +134,17 @@ auto main(int argc, char * argv[]) -> int
 
     int k = options_vars["size"].as<int>();
 
+    const string plus_mode = options_vars["plus"].as<string>();
+    PlusConsistency plus_consistency = consistency::Tabulated{};
+    if (plus_mode == "gac")
+        plus_consistency = consistency::GAC{};
+    else if (plus_mode == "bc")
+        plus_consistency = consistency::BC{};
+    else if (plus_mode != "tabulated") {
+        println(cerr, "Error: --plus must be 'tabulated', 'gac', or 'bc'.");
+        return EXIT_FAILURE;
+    }
+
     Problem p;
     vector<IntegerVariableID> position, solution;
     for (int i = 0; i < 2 * k; ++i) {
@@ -147,11 +160,12 @@ auto main(int argc, char * argv[]) -> int
         p.post(Element{i_var, position[i + k], &solution});
 
         // position[i] = position[i + k] + i + 2, tabulated for GAC at every
-        // size (this was written for the old PlusGAC, and Auto would fall back
-        // to bounds consistency once the positions' domains grew too large to
-        // tabulate)
+        // size by default (this was written for the old PlusGAC, and Auto would
+        // fall back to bounds consistency once the positions' domains grew too
+        // large to tabulate). --plus picks the interval GAC propagator (#192) or
+        // bounds consistency instead, so that all three stay benchmarkable.
         p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i]} //
-                .with_consistency(consistency::Tabulated{}));
+                .with_consistency(plus_consistency));
     }
 
     auto brancher = brancher_from_string(options_vars["branch"].as<string>(), p);

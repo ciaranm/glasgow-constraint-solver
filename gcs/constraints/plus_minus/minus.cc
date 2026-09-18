@@ -1,6 +1,7 @@
 #include <gcs/constraints/innards/arithmetic_utils.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
+#include <gcs/constraints/plus_minus/gac.hh>
 #include <gcs/constraints/plus_minus/hints.hh>
 #include <gcs/constraints/plus_minus/minus.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -206,6 +207,12 @@ auto Minus::define_proof_model(ProofModel & model, const State &) -> void
 
 auto Minus::install_propagators(Propagators & propagators) -> void
 {
+    // The GAC arm subsumes the bounds propagator, and never tabulates.
+    if (holds_alternative<consistency::GAC>(_level)) {
+        install_plus_minus_gac(propagators, constraint_id(), PlusMinusRow::Minus, _a, _b, _result, _sum_line);
+        return;
+    }
+
     Triggers triggers;
     triggers.on_bounds.insert(triggers.on_bounds.end(), {_a, _b, _result});
 

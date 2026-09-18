@@ -1,7 +1,12 @@
+#include <gcs/constraints/equals.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/innards/plus_minus_mutations.hh>
 #include <gcs/constraints/minus.hh>
 #include <gcs/constraints/plus.hh>
+#include <gcs/current_state.hh>
+#include <gcs/exception.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
@@ -9,6 +14,7 @@
 #include <iostream>
 #include <random>
 #include <set>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -66,32 +72,40 @@ namespace
     };
 }
 
+// With gac set, the constraint asks for consistency::GAC and the test checks
+// that every value left in every position has a support, at every node;
+// otherwise it takes the default consistency::Auto and checks the solutions
+// only.
 template <typename Constraint_, typename V1_, typename V2_, typename V3_>
-auto run_plus_minus_test(bool proofs, const ViewWrapConfig & view_cfg, V1_ v1_range, V2_ v2_range, V3_ v3_range,
+auto run_plus_minus_test(bool proofs, const ViewWrapConfig & view_cfg, bool gac, V1_ v1_range, V2_ v2_range, V3_ v3_range,
     const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 3);
     visit(
         [&](const auto & v1, const auto & v2, const auto & v3) {
-            print(
-                cerr, "{} [{}] {} {} {} {}", NameOf<Constraint_>::name, view_wrap_config_label(view_cfg), v1, v2, v3, proofs ? " with proofs:" : ":");
+            print(cerr, "{}{} [{}] {} {} {} {}", NameOf<Constraint_>::name, gac ? " gac" : "", view_wrap_config_label(view_cfg), v1, v2, v3,
+                proofs ? " with proofs:" : ":");
         },
         v1_range, v2_range, v3_range);
     cerr << flush;
     set<tuple<int, int, int>> expected, actual;
 
-    visit([&](const auto & v1, const auto & v2) { build_expected(expected, is_satisfying, v1, v2, v3_range); }, v1_range, v2_range);
+    visit([&](const auto & v1, const auto & v2, const auto & v3) { build_expected(expected, is_satisfying, v1, v2, v3); }, v1_range, v2_range,
+        v3_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
     auto v1 = visit([&](const auto & r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(0)); }, v1_range);
     auto v2 = visit([&](const auto & r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(1)); }, v2_range);
     auto v3 = visit([&](const auto & r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(2)); }, v3_range);
-    p.post(Constraint_{v1, v2, v3});
+    if (gac)
+        p.post(Constraint_{v1, v2, v3}.with_consistency(consistency::GAC{}));
+    else
+        p.post(Constraint_{v1, v2, v3});
 
-    auto proof_name = proofs ? make_optional("plus_minus_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    solve_for_tests_checking_consistency(
-        p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::None}, pair{v2, CheckConsistency::None}, pair{v3, CheckConsistency::None}});
+    auto proof_name = proofs ? make_optional(string{"plus_minus_test_"} + (gac ? "gac_" : "") + view_wrap_config_label(view_cfg)) : nullopt;
+    auto check = gac ? CheckConsistency::GAC : CheckConsistency::None;
+    solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, check}, pair{v2, check}, pair{v3, check}});
 
     check_results(proof_name, expected, actual);
 }
@@ -118,14 +132,18 @@ namespace
 }
 
 template <typename Constraint_, typename AliasPattern_>
-auto run_dup_plus_minus_test(bool proofs, AliasPattern_, const string & tag, pair<int, int> a_range, pair<int, int> b_range,
+auto run_dup_plus_minus_test(bool proofs, AliasPattern_, const string & tag, bool gac, pair<int, int> a_range, pair<int, int> b_range,
     const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
-    print(cerr, "{} dup {} {} {} {}", NameOf<Constraint_>::name, tag, a_range, b_range, proofs ? " with proofs:" : ":");
+    print(cerr, "{} dup {}{} {} {} {}", NameOf<Constraint_>::name, tag, gac ? " gac" : "", a_range, b_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
+    PlusConsistency level = consistency::Auto{};
+    if (gac)
+        level = consistency::GAC{};
+
     Problem p;
-    auto proof_name = proofs ? make_optional(string{NameOf<Constraint_>::name} + "_test_dup_" + tag) : nullopt;
+    auto proof_name = proofs ? make_optional(string{NameOf<Constraint_>::name} + "_test_dup_" + (gac ? "gac_" : "") + tag) : nullopt;
 
     if constexpr (is_same_v<AliasPattern_, AliasAll>) {
         // C{a, a, a} — only `a_range` matters; `b_range` ignored.
@@ -134,7 +152,7 @@ auto run_dup_plus_minus_test(bool proofs, AliasPattern_, const string & tag, pai
         println(cerr, " expecting {} solutions", expected.size());
 
         auto a = p.create_integer_variable(Integer(a_range.first), Integer(a_range.second));
-        p.post(Constraint_{a, a, a});
+        p.post(Constraint_{a, a, a}.with_consistency(level));
 
         solve_for_tests(p, proof_name, actual, tuple{a});
         check_results(proof_name, expected, actual);
@@ -152,19 +170,20 @@ auto run_dup_plus_minus_test(bool proofs, AliasPattern_, const string & tag, pai
         auto a = p.create_integer_variable(Integer(a_range.first), Integer(a_range.second));
         auto b = p.create_integer_variable(Integer(b_range.first), Integer(b_range.second));
         if constexpr (is_same_v<AliasPattern_, AliasV1V2>)
-            p.post(Constraint_{a, a, b});
+            p.post(Constraint_{a, a, b}.with_consistency(level));
         else if constexpr (is_same_v<AliasPattern_, AliasV1V3>)
-            p.post(Constraint_{a, b, a});
+            p.post(Constraint_{a, b, a}.with_consistency(level));
         else
-            p.post(Constraint_{a, b, b});
+            p.post(Constraint_{a, b, b}.with_consistency(level));
 
         solve_for_tests(p, proof_name, actual, tuple{a, b});
         check_results(proof_name, expected, actual);
     }
 }
 
-// The consistency tag: forced GAC tabulates and is checked per node; forced
-// BC never tabulates; Auto tabulates exactly when the domains are small.
+// The consistency tag: forced Tabulated tabulates and is checked per node, as
+// is forced GAC; forced BC never tabulates; Auto tabulates exactly when the
+// domains are small.
 template <typename Constraint_>
 auto run_tagged_test(bool proofs, const string & proof_suffix, const PlusConsistency & level, bool check_gac, pair<int, int> v1_range,
     pair<int, int> v2_range, pair<int, int> v3_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
@@ -190,9 +209,106 @@ auto run_tagged_test(bool proofs, const string & proof_suffix, const PlusConsist
     check_results(proof_name, expected, actual);
 }
 
+// Mutation lanes for the consistency::GAC arm (issue #192): one deliberately
+// corrupted proof, which run_test_and_expect_verify_failure.bash passes only
+// if veripb rejects. See PlusMinusProofMutation for what each corruption is.
+//
+// One instance serves every lane, and it is shaped by the reason-dropping one.
+// a's hole has to arise under a search decision, or the checker has it as a
+// fact whatever the reason says, so a starts out whole and only takes w's hole
+// through EqualsIf once the first decision sets z. The removal the hole lanes
+// corrupt is then result's run [12, 39]: every sum of a in {3..5, 40..42} and
+// b in {0..6} misses it, the walk is over b's single interval, and its window
+// [6, 39] is exactly a's hole, so the proof takes both hole lemmas and names
+// the hole in its reason. Neither endpoint is on a bit boundary, which is
+// what lets unit propagation cross an equality unaided (equals_mutations.hh).
+//
+// The lane that omits every lemma is rejected earlier than that, at the root
+// removal of result's [49, 60], whose windows lie past a's bounds and which
+// has no hole in it at all. So it shows that the bounds-shaped lemmas are
+// load-bearing too, and not only the ones for holes.
+//
+// Each lane also checks that the run made the inference it corrupts, since a
+// lane over a pruning that never happened is checking an empty proof.
+auto run_mutation_plus_test(const string & which, const string & proof_name) -> void
+{
+    using namespace gcs::innards::plus_minus_proof_mutation;
+
+    auto instance = [&](innards::PlusMinusProofMutation mutation) {
+        vector<Integer> w_values;
+        for (auto v : {3, 4, 5, 40, 41, 42})
+            w_values.push_back(Integer{v});
+
+        Problem p;
+        auto z = p.create_integer_variable(0_i, 1_i);
+        auto w = p.create_integer_variable(w_values);
+        auto a = p.create_integer_variable(3_i, 42_i);
+        auto b = p.create_integer_variable(0_i, 6_i);
+        auto result = p.create_integer_variable(0_i, 60_i);
+        p.post(EqualsIf{a, w, z == 1_i});
+        p.post(Plus{a, b, result}.with_consistency(consistency::GAC{}).with_proof_mutation(mutation));
+
+        auto fired = false, whole_at_root = false;
+        solve_with(p,
+            SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return true; },
+                .trace = [&](const CurrentState & s) -> bool {
+                    if (! s.has_single_value(z))
+                        whole_at_root = whole_at_root || s.in_domain(result, 20_i);
+                    else if (s(z) == 1_i && s.in_domain(result, 11_i) && ! s.in_domain(result, 20_i) && s.in_domain(result, 40_i))
+                        fired = true;
+                    return true;
+                },
+                .branch = branch_with(variable_order::in_order({z, a, b, result, w}), value_order::largest_first()),
+                .stats_report = silent_stats_report()},
+            make_optional<ProofOptions>(ProofFileNames{proof_name}));
+        if (! whole_at_root || ! fired)
+            throw UnexpectedException{
+                "mutation lane " + which + ": result's run [12, 39] was not removed under the decision, so its proof has nothing to corrupt"};
+    };
+
+    // The control: a lane that goes green because its instance's honest proof
+    // does not verify either is worth nothing.
+    if (which == "control") {
+        if (! can_run_veripb()) {
+            println(cerr, "no veripb, so not checking the mutation lanes' honest proof");
+            return;
+        }
+        instance(None{});
+        verify_proof_and_clean_up(proof_name);
+        println(cerr, "the mutation lanes' instance verifies when it is not corrupted");
+        return;
+    }
+
+    if (which == "lemmas")
+        instance(OmitLemmas{});
+    else if (which == "hole_lemmas")
+        instance(OmitHoleLemmas{});
+    else if (which == "window_holes")
+        instance(DropWindowHoles{});
+    else
+        throw UnexpectedException{"unknown plus mutation lane " + which};
+
+    println(cerr, "wrote a deliberately corrupted proof to {}.pbp", proof_name);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
+
+    // A mutation lane runs one instance, writes one knowingly wrong proof, and
+    // leaves the verdict to the wrapper script.
+    string mutation, proof_basename = "plus_minus_test_mutation";
+    for (int a = 1; a < argc; ++a) {
+        string arg = argv[a];
+        if (arg.starts_with("--mutate="))
+            mutation = arg.substr(arg.find('=') + 1);
+        else if (arg == "--proof-files-basename" && a + 1 < argc)
+            proof_basename = argv[++a];
+    }
+    if (! mutation.empty()) {
+        run_mutation_plus_test(mutation, proof_basename);
+        return EXIT_SUCCESS;
+    }
 
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
@@ -252,6 +368,62 @@ auto main(int argc, char * argv[]) -> int
         {{0, 0}, {0, 5}}    //
     };
 
+    // The consistency::GAC arm (issue #192) runs over every row above, then
+    // over shapes that put holes where they matter to it: the values between
+    // the bounds are its whole point, and its proof walks one operand a whole
+    // interval at a time, stepping over the other's holes, so it wants holes
+    // in every position, windows landing inside holes rather than past the
+    // bounds, and runs of one value as well as wider ones.
+    using V123 = variant<int, pair<int, int>, vector<int>>;
+    auto widen_v3 = [](V3 v) -> V123 { return visit([](auto x) -> V123 { return x; }, v); };
+    vector<tuple<V12, V12, V123>> gac_data;
+    for (auto & [r1, r2, r3] : data)
+        gac_data.emplace_back(r1, r2, widen_v3(r3));
+    vector<tuple<V12, V12, V123>> holey_data = {
+        // The issue's opening example: a gap in a leaves a gap in the result.
+        {vector{1, 2, 3, 10, 11, 12}, pair{0, 2}, pair{0, 20}},                      //
+        {vector{1, 2, 3, 4, 5, 6, 20, 21, 22, 23, 24, 25}, pair{0, 4}, pair{0, 40}}, //
+        // Four runs removed from the result, each window inside a hole of a.
+        {vector{0, 5, 10, 15}, vector{0, 1, 2}, pair{0, 20}}, //
+        // Holes everywhere, the result's own among them.
+        {vector{0, 5, 10, 15}, vector{0, 1, 2, 20, 21}, vector{3, 4, 8, 9, 13, 14, 21, 22, 40, 41}}, //
+        // Both operands several intervals wide, so a walk crosses several holes.
+        {vector{0, 1, 10, 11, 20, 21}, vector{0, 1, 5, 6}, pair{0, 30}}, //
+        {vector{-8, -7, -2, -1}, vector{-3, 3}, pair{-12, 5}},           //
+        // Pruning an operand, where the walk is over the result or the other operand.
+        {pair{-10, 15}, vector{0, 1, 5, 6}, vector{0, 1, 10, 11}}, //
+        {vector{0, 1, 10, 11}, pair{-10, 15}, vector{0, 1, 5, 6}}, //
+        // Constants among holes.
+        {vector{1, 2, 5, 6}, 3, pair{0, 12}},          //
+        {3, vector{0, 4, 8}, vector{2, 3, 7, 11, 12}}, //
+        {vector{1, 5}, vector{2, 6}, 7},               //
+        // Zero-one variables, which have no bits encoding.
+        {pair{0, 1}, pair{0, 1}, vector{0, 2}}, //
+        {pair{0, 1}, vector{0, 1}, pair{0, 1}}  //
+    };
+    gac_data.insert(gac_data.end(), holey_data.begin(), holey_data.end());
+
+    // Random holey domains: each value of a random span kept with probability
+    // two in three, so most have several holes of varying widths.
+    auto random_holey = [&](int lower_min, int lower_max, int span_min, int span_max) -> vector<int> {
+        std::uniform_int_distribution<int> lower_dist(lower_min, lower_max), span_dist(span_min, span_max), keep(0, 2);
+        auto lower = lower_dist(rand);
+        auto span = span_dist(rand);
+        vector<int> values;
+        for (int v = lower; v <= lower + span; ++v)
+            if (keep(rand) != 0)
+                values.push_back(v);
+        if (values.empty())
+            values.push_back(lower);
+        return values;
+    };
+    for (int x = 0; x < 10; ++x) {
+        auto r1 = random_holey(-10, 10, 5, 15);
+        auto r2 = random_holey(-10, 10, 5, 15);
+        auto r3 = random_holey(-15, 15, 5, 20);
+        gac_data.emplace_back(r1, r2, r3);
+    }
+
     auto plus_sat = [](int a, int b, int c) { return a + b == c; };
     auto minus_sat = [](int a, int b, int c) { return a - b == c; };
 
@@ -259,24 +431,30 @@ auto main(int argc, char * argv[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2, r3] : data) {
-            run_plus_minus_test<Plus>(proofs, view_cfg, r1, r2, r3, plus_sat);
-            run_plus_minus_test<Minus>(proofs, view_cfg, r1, r2, r3, minus_sat);
+            run_plus_minus_test<Plus>(proofs, view_cfg, false, r1, r2, r3, plus_sat);
+            run_plus_minus_test<Minus>(proofs, view_cfg, false, r1, r2, r3, minus_sat);
+        }
+        for (auto & [r1, r2, r3] : gac_data) {
+            run_plus_minus_test<Plus>(proofs, view_cfg, true, r1, r2, r3, plus_sat);
+            run_plus_minus_test<Minus>(proofs, view_cfg, true, r1, r2, r3, minus_sat);
         }
         if (view_wrap_config_is_effectively_bare(view_cfg, n_positions))
-            for (auto & [ar, br] : dup_data) {
-                run_dup_plus_minus_test<Plus>(proofs, AliasV1V2{}, "v1v2", ar, br, plus_sat);
-                run_dup_plus_minus_test<Plus>(proofs, AliasV1V3{}, "v1v3", ar, br, plus_sat);
-                run_dup_plus_minus_test<Plus>(proofs, AliasV2V3{}, "v2v3", ar, br, plus_sat);
-                run_dup_plus_minus_test<Plus>(proofs, AliasAll{}, "all", ar, br, plus_sat);
-                run_dup_plus_minus_test<Minus>(proofs, AliasV1V2{}, "v1v2", ar, br, minus_sat);
-                run_dup_plus_minus_test<Minus>(proofs, AliasV1V3{}, "v1v3", ar, br, minus_sat);
-                run_dup_plus_minus_test<Minus>(proofs, AliasV2V3{}, "v2v3", ar, br, minus_sat);
-                run_dup_plus_minus_test<Minus>(proofs, AliasAll{}, "all", ar, br, minus_sat);
-            }
+            for (bool gac : {false, true})
+                for (auto & [ar, br] : dup_data) {
+                    run_dup_plus_minus_test<Plus>(proofs, AliasV1V2{}, "v1v2", gac, ar, br, plus_sat);
+                    run_dup_plus_minus_test<Plus>(proofs, AliasV1V3{}, "v1v3", gac, ar, br, plus_sat);
+                    run_dup_plus_minus_test<Plus>(proofs, AliasV2V3{}, "v2v3", gac, ar, br, plus_sat);
+                    run_dup_plus_minus_test<Plus>(proofs, AliasAll{}, "all", gac, ar, br, plus_sat);
+                    run_dup_plus_minus_test<Minus>(proofs, AliasV1V2{}, "v1v2", gac, ar, br, minus_sat);
+                    run_dup_plus_minus_test<Minus>(proofs, AliasV1V3{}, "v1v3", gac, ar, br, minus_sat);
+                    run_dup_plus_minus_test<Minus>(proofs, AliasV2V3{}, "v2v3", gac, ar, br, minus_sat);
+                    run_dup_plus_minus_test<Minus>(proofs, AliasAll{}, "all", gac, ar, br, minus_sat);
+                }
 
         // The consistency tags (issue #444): Auto tabulates small domains
-        // (checked per node), forced GAC tabulates bigger ones too, forced BC
-        // is checked for soundness only.
+        // (checked per node), forced Tabulated tabulates bigger ones too, forced
+        // BC is checked for soundness only, and forced GAC (issue #192) is
+        // checked per node without tabulating.
         auto suffix = view_wrap_config_label(view_cfg);
         run_tagged_test<Plus>(proofs, suffix, consistency::Auto{}, true, {1, 3}, {1, 3}, {2, 6}, plus_sat);
         run_tagged_test<Minus>(proofs, suffix, consistency::Auto{}, true, {1, 4}, {1, 3}, {-2, 3}, minus_sat);
@@ -284,6 +462,8 @@ auto main(int argc, char * argv[]) -> int
         run_tagged_test<Minus>(proofs, suffix, consistency::Tabulated{}, true, {-4, 4}, {-4, 4}, {-8, 8}, minus_sat);
         run_tagged_test<Plus>(proofs, suffix, consistency::BC{}, false, {1, 3}, {1, 3}, {2, 6}, plus_sat);
         run_tagged_test<Minus>(proofs, suffix, consistency::BC{}, false, {1, 3}, {1, 3}, {-2, 2}, minus_sat);
+        run_tagged_test<Plus>(proofs, suffix, consistency::GAC{}, true, {-4, 4}, {-4, 4}, {-8, 8}, plus_sat);
+        run_tagged_test<Minus>(proofs, suffix, consistency::GAC{}, true, {-4, 4}, {-4, 4}, {-8, 8}, minus_sat);
     }
 
     return EXIT_SUCCESS;

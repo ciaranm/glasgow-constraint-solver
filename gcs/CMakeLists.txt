@@ -84,6 +84,7 @@ add_library(glasgow_constraint_solver
         constraints/mdd/mdd.cc
         constraints/min_distance/min_distance.cc
         constraints/min_max/min_max.cc
+        constraints/plus_minus/gac.cc
         constraints/plus_minus/minus.cc
         constraints/multiply/multiply.cc
         constraints/multiply/signed_multiply.cc
@@ -733,6 +734,18 @@ if(GCS_BUILD_TESTS)
     add_test(NAME nogoods_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:nogoods_test>)
     add_test(NAME parity_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_test>)
     add_test(NAME plus_minus_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test>)
+    # Mutation lanes for Plus's consistency::GAC arm (#192): each corrupts the
+    # derivation of one range removal and passes only if veripb refuses the
+    # result; the control checks that the same instance verifies uncorrupted.
+    # plus_minus_mutations.hh says what each corruption is, and the test says
+    # why its instance has to take the hole under a decision.
+    add_test(NAME plus_mutation_control
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test> --mutate=control)
+    foreach(mutation lemmas hole_lemmas window_holes)
+        add_test(NAME plus_mutation_${mutation}
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                --basename plus_mutation_${mutation} $<TARGET_FILE:plus_minus_test> --mutate=${mutation})
+    endforeach()
     add_test(NAME path_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:path_test>)
     add_test(NAME tree_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:tree_test>)
     add_test(NAME subgraph_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:subgraph_test>)
