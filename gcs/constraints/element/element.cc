@@ -84,8 +84,8 @@ namespace
 }
 
 template <typename EntryType_, unsigned dimensions_>
-NDimensionalElement<EntryType_, dimensions_>::NDimensionalElement(IntegerVariableID var, IndexVariables i, IndexStarts s, Array a, bool b) :
-    _result_var(var), _index_vars(move(i)), _index_starts(move(s)), _array(move(a)), _bounds_only(b)
+NDimensionalElement<EntryType_, dimensions_>::NDimensionalElement(IntegerVariableID var, IndexVariables i, IndexStarts s, Array a,
+    ElementConsistency c) : _result_var(var), _index_vars(move(i)), _index_starts(move(s)), _array(move(a)), _consistency(c)
 {
     check_array_dimensions(*_array, _array->size());
 }
@@ -314,8 +314,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
 
     for (unsigned fixed_dim = 0; fixed_dim != index_vars.size(); ++fixed_dim) {
         Triggers index_triggers;
-        // The index side is always GAC. bounds_only only weakens the result
-        // propagator (range vs union); the index propagator must therefore watch
+        // The index side is always GAC. The consistency level only weakens the
+        // result propagator (range vs union); the index propagator must therefore watch
         // the full domains (on_change) and test against result's whole domain, so
         // that an interior hole in result removes the now-unsupported index value.
         if (array_has_nonconstants)
@@ -513,15 +513,62 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
             index_triggers);
     }
 
-    if (_bounds_only) {
+    // The result propagator: bounds consistent (the range of the supported
+    // values), generalised arc consistent (their union), or, under Auto, both,
+    // installed as a pair for the interior-pruning analysis to choose between.
+    //
+    // A pair makes two promises (install_with_optional_interior_pruning), and
+    // only a constant array keeps both:
+    //
+    // - The two differ only in the result's interior. With constant entries,
+    //   the range is at a fixpoint only once its lower bound is the smallest
+    //   live entry in [lower, upper] --- it re-runs after a bound it infers
+    //   snaps past a hole --- and a bound is always in the domain, so that
+    //   entry is also the smallest value the union keeps; likewise the upper
+    //   bound. (If no live entry is in range at all, the index propagators
+    //   wipe out.) With variable entries this fails: the range takes an
+    //   entry's bounds and misses the holes in it that the union sees, so
+    //   result in [1, 10] against a live entry in {0, 5, 10} keeps 1 where the
+    //   union gets 5.
+    // - Nothing else this constraint installs can tell whether the values the
+    //   union removes are there. The index propagators are our only other
+    //   readers of the result's interior (there is no equality propagator
+    //   without variable entries), and each asks only whether the entry at
+    //   some live index tuple is in the result's domain, which is never a
+    //   value the union removes.
+    //
+    // Two index variables aliasing each other (qap's D[x_i][x_i]) changes
+    // neither argument: every propagator here treats the dimensions
+    // independently, so they all relax the constraint in the same way. The
+    // result doubling as an index is another matter, since then the index
+    // propagators prune the pair's own target, so that keeps the plain GAC
+    // arm rather than make the promises.
+    bool result_is_an_index = false;
+    {
+        auto underlying_of = [](const IntegerVariableID & v) -> optional<unsigned long long> {
+            return overloaded{
+                [](const SimpleIntegerVariableID & sv) -> optional<unsigned long long> { return sv.index; },                 //
+                [](const ViewOfIntegerVariableID & vv) -> optional<unsigned long long> { return vv.actual_variable.index; }, //
+                [](const ConstantIntegerVariableID &) -> optional<unsigned long long> { return std::nullopt; }               //
+            }
+                .visit(v);
+        };
+        if (auto r = underlying_of(_result_var))
+            for (const auto & v : index_vars)
+                if (underlying_of(v) == r)
+                    result_is_an_index = true;
+    }
+    auto result_pair = holds_alternative<consistency::Auto>(_consistency) && ! array_has_nonconstants && ! result_is_an_index;
+    optional<std::pair<PropagationFunction, Triggers>> bc_result, gac_result;
+
+    if (holds_alternative<consistency::BC>(_consistency) || result_pair) {
         Triggers result_triggers;
         if (array_has_nonconstants)
             result_triggers.on_bounds.insert(result_triggers.on_bounds.end(), all_array_vars.begin(), all_array_vars.end());
         result_triggers.on_change.insert(result_triggers.on_change.end(), index_vars.begin(), index_vars.end());
         result_triggers.on_bounds.emplace_back(_result_var);
 
-        propagators.install(
-            constraint_id(),
+        bc_result.emplace(
             [array = _array, index_vars = index_vars, index_starts = _index_starts, result_var = _result_var,
                 array_has_nonconstants = array_has_nonconstants,
                 owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
@@ -622,18 +669,20 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                 // inference on an immediate re-run (result {0,3,6,10} against
                 // entries {2,5,9} first infers [2,9], snapping to [3,6], and
                 // only a re-run gets >= 5 from the sole surviving entry).
+                // Auto's pair depends on that re-run too: it is what makes the
+                // range's bounds at a fixpoint the union's.
                 return PropagatorState::Enable;
             },
             result_triggers);
     }
-    else {
+
+    if (! holds_alternative<consistency::BC>(_consistency)) {
         Triggers result_triggers;
         if (array_has_nonconstants)
             result_triggers.on_change.insert(result_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
         result_triggers.on_change.insert(result_triggers.on_change.end(), index_vars.begin(), index_vars.end());
 
-        propagators.install(
-            constraint_id(),
+        gac_result.emplace(
             [array = _array, index_vars = index_vars, index_starts = _index_starts, result_var = _result_var,
                 array_has_nonconstants = array_has_nonconstants, scope_has_aliasing = scope_has_aliasing,
                 owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
@@ -840,6 +889,14 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
             result_triggers);
     }
 
+    if (bc_result && gac_result)
+        propagators.install_with_optional_interior_pruning(constraint_id(), vector<IntegerVariableID>{_result_var}, std::move(gac_result->first),
+            gac_result->second, std::move(bc_result->first), bc_result->second);
+    else if (bc_result)
+        propagators.install(constraint_id(), std::move(bc_result->first), bc_result->second);
+    else
+        propagators.install(constraint_id(), std::move(gac_result->first), gac_result->second);
+
     if (array_has_nonconstants) {
         Triggers equality_triggers;
         equality_triggers.on_change.insert(equality_triggers.on_change.end(), index_vars.begin(), index_vars.end());
@@ -890,7 +947,7 @@ template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<Constraint>
 {
     // The constructor is protected, so make_unique cannot reach it.
-    return unique_ptr<Constraint>(new NDimensionalElement(_result_var, _index_vars, _index_starts, _array, _bounds_only));
+    return unique_ptr<Constraint>(new NDimensionalElement(_result_var, _index_vars, _index_starts, _array, _consistency));
 }
 
 template <typename EntryType_, unsigned dimensions_>

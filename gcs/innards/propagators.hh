@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <type_traits>
 #include <typeindex>
@@ -399,6 +400,64 @@ namespace gcs::innards
          * wake of their own. \sa RefinedWatchContext
          */
         std::vector<IntegerVariableID> scope_only = {};
+
+        /**
+         * \brief Override which variables this propagator reads the interior
+         * values of.
+         *
+         * A propagator *reads the interior* of a variable if removing a value
+         * strictly between that variable's bounds could ever give it something
+         * new to prune: a propagator with nothing left to do must still have
+         * nothing left to do after any number of such removals, for every
+         * variable it does not read the interior of. This is what
+         * Propagators::analyse_optional_interior_pruning() uses to decide
+         * whether anything could observe an interior value that an optional
+         * pruning would remove.
+         *
+         * Left unset, it is derived from the triggers, which is right whenever
+         * the triggers follow the usual rule of registering the coarsest wake
+         * that suffices: every on_change and scope_only variable, and the
+         * variable of every \ref refined literal that is not a bound (`==`,
+         * `!=`, in or out of a range), is read; an on_bounds or on_instantiated
+         * variable is not. Set it when that is wrong: when a propagator
+         * registers scope_only but only ever watches bounds literals, for
+         * instance, it can say so with an empty list. Views are resolved to
+         * their underlying variable and constants are ignored; listing a
+         * variable here does not put it in the propagator's scope.
+         *
+         * Getting this wrong in the direction of listing too few variables
+         * never makes the solver unsound. It can only make it propagate less
+         * than it would otherwise, by switching an optional pruning off when
+         * this propagator could in fact have seen the difference.
+         *
+         * \sa Propagators::install_with_optional_interior_pruning()
+         */
+        std::optional<std::vector<IntegerVariableID>> interior_reads = std::nullopt;
+    };
+
+    /**
+     * \brief The outcome of analysing one pair installed with
+     * Propagators::install_with_optional_interior_pruning().
+     *
+     * \ingroup Innards
+     * \sa Propagators::analyse_optional_interior_pruning()
+     */
+    struct OptionalInteriorPruningVerdict
+    {
+        /// The constraint that installed the pair.
+        ConstraintID constraint_id;
+
+        /// The pair's targets, views resolved and constants dropped.
+        std::vector<SimpleIntegerVariableID> targets;
+
+        /// Whether something could observe the interior values the pruning
+        /// removes, so that the pruning is worth running.
+        bool needed;
+
+        /// When needed, a constraint whose propagators read a target's
+        /// interior, and so are the reason it is needed (one such, if there are
+        /// several). Never the pair's own constraint.
+        std::optional<ConstraintID> observed_by;
     };
 
     /**
@@ -419,6 +478,13 @@ namespace gcs::innards
         auto trigger_on_bounds(IntegerVariableID, int id) -> void;
         auto trigger_on_instantiated(IntegerVariableID, int id) -> void;
         auto increase_degree(IntegerVariableID) -> void;
+
+        // Does the work of install(), and returns the new propagator's id. Scope
+        // variables in degree_already_counted do not raise their degree again,
+        // which is how the second of an optional-interior-pruning pair counts
+        // once with its partner.
+        auto install_returning_id(const ConstraintID &, PropagationFunction &&, const Triggers &,
+            const std::vector<SimpleIntegerVariableID> * degree_already_counted) -> int;
 
     public:
         /**
@@ -487,6 +553,60 @@ namespace gcs::innards
          * state so it cannot be mis-sequenced.
          */
         auto install(const ConstraintID & constraint_id, PropagationFunction &&, const Triggers & trigger_vars) -> void;
+
+        /**
+         * \brief Install a propagator whose pruning of some variables' interior
+         * values is optional, together with a fallback that does the rest of
+         * its work without it.
+         *
+         * `pruning` and `fallback` are two implementations of the same
+         * propagation, differing only in that `pruning` also removes interior
+         * values of `targets` (values strictly between their bounds) that
+         * `fallback` leaves alone: a generalised arc consistent and a bounds
+         * consistent propagator for the same constraint, say. One of the two is
+         * live at a time, and until something chooses, it is `pruning` and
+         * `fallback` is permanently disabled, so installing a pair propagates
+         * exactly as installing `pruning` alone would.
+         * analyse_optional_interior_pruning() works out whether the pruning is
+         * worth keeping.
+         *
+         * Declaring a pair makes two promises, both about the constraint as a
+         * whole, meaning everything installed under the same ConstraintID. They
+         * are what makes switching the pruning off lose nothing but interior
+         * values nobody could see; break one and the solver stays sound, but
+         * propagates less than the pruning would have.
+         *
+         * - **The two differ only in the targets' interiors.** `pruning` is at
+         *   least as strong as `fallback`, and wherever `fallback` and the
+         *   constraint's other propagators all have nothing left to do,
+         *   `pruning` could remove nothing but interior values of the targets:
+         *   no bound, and nothing from any other variable. A bounds consistent
+         *   fallback that is only bounds consistent with respect to some other
+         *   variable's bounds breaks this --- Element over an array of variables
+         *   gets the result's bounds from the entries' bounds, where the
+         *   generalised arc consistent propagator sees the holes in them --- and
+         *   so cannot be paired.
+         * - **The constraint cannot see those values itself.** None of its
+         *   other propagators --- `fallback` included, and any other pair it
+         *   installs --- can tell whether the values `pruning` would remove are
+         *   there. A fallback usually keeps this by never reading its targets'
+         *   interiors at all; any other propagator that does read them keeps it
+         *   by being an exact support test for the constraint, because `pruning`
+         *   removes only values the constraint has no support for, and a
+         *   supporting tuple contains only supported values. This is what lets
+         *   the analysis ignore a constraint's reads of its own targets, without
+         *   which a constraint that does read them (Element's index propagator
+         *   reads its result, for instance) would always keep its pruning. Reads
+         *   by any other constraint always count.
+         *
+         * The two propagators get consecutive ids, `pruning` first. Each is
+         * woken by its own triggers and has its own interior reads (see
+         * Triggers::interior_reads). For degree the pair counts once, over the
+         * union of the two scopes.
+         */
+        auto install_with_optional_interior_pruning(const ConstraintID & constraint_id, const std::vector<IntegerVariableID> & targets,
+            PropagationFunction && pruning, const Triggers & pruning_triggers, PropagationFunction && fallback, const Triggers & fallback_triggers)
+            -> void;
 
         /**
          * Fetch, creating it empty on the first ask, the object that every
@@ -767,6 +887,46 @@ namespace gcs::innards
          * |fut|>1 filter in a weighted-degree heuristic).
          */
         [[nodiscard]] auto scope_of_constraint(int constraint_index) const -> const std::vector<SimpleIntegerVariableID> &;
+
+        ///@}
+
+        /**
+         * \name Optional interior pruning
+         */
+        ///@{
+
+        /**
+         * \brief Work out, for every pair installed by
+         * install_with_optional_interior_pruning(), whether anything could
+         * observe the interior values its pruning removes.
+         *
+         * A pair's pruning is needed when a live propagator of some other
+         * constraint reads the interior of one of its targets (see
+         * Triggers::interior_reads). A needed pruning's own interior reads then
+         * count too, which can make another pair's pruning needed, so the
+         * answer is a least fixpoint: every pruning starts off, and only what is
+         * reachable from the reads of the propagators that always run gets
+         * switched on. The difference from starting with everything on and
+         * switching off whatever nothing reads is in the cycles: two prunings
+         * that could each observe the other, and that nothing else observes,
+         * both stay off.
+         *
+         * A pair's fallback always counts as live here, whichever of the two
+         * currently is, which keeps the computation monotone. Permanently
+         * disabled propagators (disable_propagators_for_constraints()) read
+         * nothing, and a pair both of whose propagators are disabled is left
+         * out of the answer.
+         *
+         * Only propagators are consulted. The branching heuristic is not: a
+         * pruning switched off can change what a heuristic sees, and so the
+         * shape of the search, but never which solutions exist, and the search
+         * only reports a solution once every variable is fixed. Nor is the
+         * objective, which is only ever bounded, or read once fixed.
+         *
+         * This analyses and returns one verdict per pair, in installation
+         * order; it switches nothing.
+         */
+        [[nodiscard]] auto analyse_optional_interior_pruning() const -> std::vector<OptionalInteriorPruningVerdict>;
 
         ///@}
 
