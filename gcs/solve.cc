@@ -395,6 +395,16 @@ auto gcs::solve_with(
         }
     }
 
+    // Now that nothing more will be installed, decide which optional interior
+    // prunings anything could observe, and switch the rest to their fallbacks
+    // (dev_docs/optional-interior-pruning.md). Not before: a presolver can
+    // install a constraint that reads an interior nothing else did. Anything
+    // that propagated before here, a presolver's probing say, ran with every
+    // pruning on, which is only ever stronger. The encoding is unaffected
+    // either way, having been written when the constraints were installed.
+    if (presolve_success)
+        propagators.choose_optional_interior_pruning();
+
     Integer objective_lower_bound_for_proof = 0_i;
     if (optional_proof && problem.optional_minimise_variable())
         objective_lower_bound_for_proof = state.lower_bound(*problem.optional_minimise_variable());

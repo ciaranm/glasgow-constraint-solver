@@ -482,6 +482,11 @@ namespace gcs::innards
         // Does the work of install(), and returns the new propagator's id.
         auto install_returning_id(const ConstraintID &, PropagationFunction &&, const Triggers &) -> int;
 
+        // What analyse_optional_interior_pruning() returns, but with one entry
+        // per pair, nullopt for a retired one, so that a caller can find the
+        // pair a verdict is about.
+        [[nodiscard]] auto analyse_optional_interior_pruning_by_pair() const -> std::vector<std::optional<OptionalInteriorPruningVerdict>>;
+
     public:
         /**
          * \name Constructors, destructors, etc.
@@ -926,8 +931,28 @@ namespace gcs::innards
          *
          * This analyses and returns one verdict per pair, in installation
          * order; it switches nothing.
+         * choose_optional_interior_pruning() acts on it.
          */
         [[nodiscard]] auto analyse_optional_interior_pruning() const -> std::vector<OptionalInteriorPruningVerdict>;
+
+        /**
+         * \brief Analyse as analyse_optional_interior_pruning() does, and make
+         * each pair's needed or unneeded pruning live or not accordingly.
+         *
+         * A needed pair runs its pruning propagator and an unneeded one its
+         * fallback, so calling this again after more has been installed
+         * re-decides every pair rather than only switching prunings off.
+         * gcs::solve_with() calls it once, after the last presolver, which is
+         * the point at which what is installed is final. It swaps which member
+         * a pair's propagator runs, so it must not be called while propagation
+         * is under way; like disable_propagators_for_constraints(), it is
+         * meant to be called before search starts.
+         *
+         * Reports what it decided: a summary at StatsLevel::General, and, at
+         * StatsLevel::Detailed, each pruning kept and which constraint
+         * observes it. Returns the verdicts it acted on.
+         */
+        auto choose_optional_interior_pruning() -> std::vector<OptionalInteriorPruningVerdict>;
 
         ///@}
 

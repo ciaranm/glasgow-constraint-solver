@@ -1609,7 +1609,7 @@ auto Propagators::scope_of_constraint(int constraint_index) const -> const vecto
     return _imp->constraint_scope[constraint_index];
 }
 
-auto Propagators::analyse_optional_interior_pruning() const -> vector<OptionalInteriorPruningVerdict>
+auto Propagators::analyse_optional_interior_pruning_by_pair() const -> vector<optional<OptionalInteriorPruningVerdict>>
 {
     const auto & pairs = _imp->optional_interior_prunings;
 
@@ -1708,13 +1708,67 @@ auto Propagators::analyse_optional_interior_pruning() const -> vector<OptionalIn
                 consider(k);
     }
 
-    vector<OptionalInteriorPruningVerdict> result;
+    vector<optional<OptionalInteriorPruningVerdict>> result(pairs.size());
     for (const auto & [k, entry] : enumerate(pairs))
         if (live[k])
-            result.push_back(OptionalInteriorPruningVerdict{.constraint_id = _imp->constraint_ids[entry.constraint_index],
+            result[k] = OptionalInteriorPruningVerdict{.constraint_id = _imp->constraint_ids[entry.constraint_index],
                 .targets = entry.targets,
                 .needed = 0 != needed[k],
-                .observed_by = observed_by[k] >= 0 ? optional<ConstraintID>{_imp->constraint_ids[observed_by[k]]} : nullopt});
+                .observed_by = observed_by[k] >= 0 ? optional<ConstraintID>{_imp->constraint_ids[observed_by[k]]} : nullopt};
+    return result;
+}
+
+auto Propagators::analyse_optional_interior_pruning() const -> vector<OptionalInteriorPruningVerdict>
+{
+    vector<OptionalInteriorPruningVerdict> result;
+    for (auto & verdict : analyse_optional_interior_pruning_by_pair())
+        if (verdict)
+            result.push_back(move(*verdict));
+    return result;
+}
+
+auto Propagators::choose_optional_interior_pruning() -> vector<OptionalInteriorPruningVerdict>
+{
+    vector<OptionalInteriorPruningVerdict> result;
+    std::size_t kept = 0;
+    auto by_pair = analyse_optional_interior_pruning_by_pair();
+    for (std::size_t k = 0; k < by_pair.size(); ++k) {
+        auto & verdict = by_pair[k];
+        if (! verdict)
+            continue;
+
+        // Switching a pair swaps which member its slot runs, whose trigger
+        // entries are live, and whose idempotence verdict applies.
+        auto & entry = _imp->optional_interior_prunings[k];
+        if (verdict->needed != entry.pruning_live) {
+            std::swap(_imp->propagation_functions[entry.id], entry.stashed);
+            entry.pruning_live = verdict->needed;
+            const auto & live = entry.pruning_live ? entry.pruning : entry.fallback;
+            const auto & idle = entry.pruning_live ? entry.fallback : entry.pruning;
+            for (const auto & t : idle.triggers)
+                _imp->iv_triggers[t.var_index].ids_and_masks[t.position].second = 0;
+            for (const auto & t : live.triggers)
+                _imp->iv_triggers[t.var_index].ids_and_masks[t.position].second = t.mask;
+            _imp->idempotence_claims_ignored[entry.id] = live.claims_ignored ? 1 : 0;
+        }
+
+        if (verdict->needed) {
+            ++kept;
+            report(StatsNote{.level = StatsLevel::Detailed,
+                .component = "interior_pruning",
+                .constraint = verdict->constraint_id,
+                .text = "kept, because " + as_string(*verdict->observed_by) + " reads the interior of what it prunes"});
+        }
+        result.push_back(move(*verdict));
+    }
+
+    if (! result.empty())
+        report(StatsNote{.level = StatsLevel::General,
+            .component = "interior_pruning",
+            .constraint = nullopt,
+            .text = "switched " + std::to_string(result.size() - kept) + " of " + std::to_string(result.size()) +
+                " optional interior prunings off, since nothing else reads what they would remove"});
+
     return result;
 }
 
