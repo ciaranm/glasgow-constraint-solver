@@ -72,6 +72,70 @@ namespace gcs
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;
     };
+
+    /**
+     * \brief Constrain that if the condition holds, each of the literals is
+     * true (or variables are non-zero).
+     *
+     * The half-reified form of And: nothing is required of the literals when
+     * the condition is false, and the literals all holding says nothing about
+     * the condition.
+     *
+     * \ingroup Constraints
+     */
+    class AndIf : public Constraint
+    {
+    private:
+        const innards::Literals _lits;
+        const innards::Literal _cond;
+        innards::LiteralIs _cond_state = innards::LiteralIs::Undecided;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+
+    public:
+        // Equivalent to AndIf([var != 0 : var in vars], cond != 0)
+        explicit AndIf(const std::vector<IntegerVariableID> & vars, const IntegerVariableID & cond);
+
+        explicit AndIf(innards::Literals, const innards::Literal &);
+
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
+        [[nodiscard]] virtual auto constraint_type() const -> std::string override;
+    };
+
+    /**
+     * \brief Constrain that if the condition holds, at least one of the
+     * literals is true (or variables are non-zero).
+     *
+     * The half-reified form of Or, and so the clause `! cond \/ lits`: nothing
+     * is required of the literals when the condition is false, and a literal
+     * holding says nothing about the condition.
+     *
+     * \ingroup Constraints
+     */
+    class OrIf : public Constraint
+    {
+    private:
+        const innards::Literals _lits;
+        const innards::Literal _cond;
+        innards::LiteralIs _cond_state = innards::LiteralIs::Undecided;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+
+    public:
+        // Equivalent to OrIf([var != 0 : var in vars], cond != 0)
+        explicit OrIf(const std::vector<IntegerVariableID> & vars, const IntegerVariableID & cond);
+
+        explicit OrIf(innards::Literals, const innards::Literal &);
+
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
+        [[nodiscard]] virtual auto constraint_type() const -> std::string override;
+    };
 }
 
 #endif

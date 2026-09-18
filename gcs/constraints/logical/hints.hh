@@ -17,6 +17,9 @@ namespace gcs::innards::hints
      * lines, so there is no per-shape discriminator and the hint takes the
      * default `(constraint_id <originator>)` wire form.
      *
+     * AndIf posts this family too, as the comparison family's reified forms
+     * share one: the originator already says which constraint it came from.
+     *
      * \ingroup Innards
      */
     struct And
@@ -29,7 +32,7 @@ namespace gcs::innards::hints
      * \brief Or's assertion hint: just the owning constraint.
      *
      * The mirror of And (see above): same shared propagator, distinct family
-     * name, no per-shape discriminator.
+     * name, no per-shape discriminator, and shared with OrIf.
      *
      * \ingroup Innards
      */

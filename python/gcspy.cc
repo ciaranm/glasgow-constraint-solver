@@ -623,13 +623,8 @@ auto Python::post_and_reif(const vector<string> & var_ids, const string & reif_i
 #endif
     if (fully_reify)
         p.post(And{get_vars(var_ids), get_var(reif_id)});
-    else {
-        // Note: x => AND([vars]) is equivalent to x <=> AND([vars, x])
-        auto new_vars = get_vars(var_ids);
-        auto reif_var = get_var(reif_id);
-        new_vars.push_back(reif_var);
-        p.post(And{new_vars, reif_var});
-    }
+    else
+        p.post(AndIf{get_vars(var_ids), get_var(reif_id)});
 }
 
 auto Python::post_or(const vector<string> & var_ids) -> void
@@ -654,13 +649,8 @@ auto Python::post_or_reif(const vector<string> & var_ids, const string & reif_id
 #endif
     if (fully_reify)
         p.post(Or{get_vars(var_ids), get_var(reif_id)});
-    else {
-        // Note: x => OR([vars]) is equivalent to OR([vars, 1 - x])
-        auto new_vars = get_vars(var_ids);
-        auto reif_var = -get_var(reif_id) + 1_i;
-        new_vars.push_back(reif_var);
-        p.post(Or{new_vars});
-    }
+    else
+        p.post(OrIf{get_vars(var_ids), get_var(reif_id)});
 }
 
 auto Python::post_implies(const string & var_id_1, const string & var_id_2) -> void

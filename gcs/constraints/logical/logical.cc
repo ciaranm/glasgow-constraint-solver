@@ -51,21 +51,41 @@ namespace
         return result;
     }
 
+    // Which halves of full_reif <-> /\ lits the propagator enforces. And and Or
+    // want both. AndIf wants only the forward half, full_reif -> /\ lits. OrIf,
+    // which like Or is this propagator over the negated literals and condition,
+    // wants only the backward half: /\ ~lits -> ~cond is cond -> \/ lits.
+    enum class Halves
+    {
+        Both,
+        ReifImpliesConjunction,
+        ConjunctionImpliesReif
+    };
+
     template <typename Hint_>
-    auto install_propagators_logical(
-        Propagators & propagators, const ConstraintID & constraint_id, const Literals & lits, const Literal & full_reif, LiteralIs reif_state) -> void
+    auto install_propagators_logical(Propagators & propagators, const ConstraintID & constraint_id, const Literals & lits, const Literal & full_reif,
+        LiteralIs reif_state, Halves halves) -> void
     {
         using enum LiteralIs;
 
+        bool forwards = halves != Halves::ConjunctionImpliesReif;
+        bool backwards = halves != Halves::ReifImpliesConjunction;
+
         if (reif_state == DefinitelyTrue) {
-            // definitely true, just force all the literals
-            propagators.install_initialiser(
-                [full_reif = full_reif, lits = lits, owner = constraint_id](const State &, auto & inference, ProofLogger * const logger) {
-                    for (auto & l : lits)
-                        inference.infer(logger, l, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{full_reif}}});
-                });
+            // definitely true, just force all the literals. The backward half
+            // is satisfied by the reif whatever the literals do.
+            if (forwards)
+                propagators.install_initialiser(
+                    [full_reif = full_reif, lits = lits, owner = constraint_id](const State &, auto & inference, ProofLogger * const logger) {
+                        for (auto & l : lits)
+                            inference.infer(logger, l, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{full_reif}}});
+                    });
             return;
         }
+
+        // A reif that is already false makes the forward half vacuous.
+        if (reif_state == DefinitelyFalse && ! backwards)
+            return;
 
         Triggers triggers;
         bool saw_false = false;
@@ -80,27 +100,33 @@ namespace
         add_trigger_for(triggers, full_reif);
 
         if (saw_false) {
-            // we saw a false literal, the reif variable must be forced off and
-            // then we don't do anything else
-            propagators.install_initialiser(
-                [full_reif = full_reif, owner = constraint_id](const State &, auto & inference, ProofLogger * const logger) -> void {
-                    inference.infer(logger, ! full_reif, JustifyUsingRUP{Hint_{owner}}, NoReason{});
-                });
+            // we saw a false literal, so the conjunction is false: the reif
+            // variable must be forced off, and then we don't do anything else.
+            // The backward half is vacuous, so it has nothing to force.
+            if (forwards)
+                propagators.install_initialiser(
+                    [full_reif = full_reif, owner = constraint_id](const State &, auto & inference, ProofLogger * const logger) -> void {
+                        inference.infer(logger, ! full_reif, JustifyUsingRUP{Hint_{owner}}, NoReason{});
+                    });
             return;
         }
 
         propagators.install(
             constraint_id,
-            [lits = lits, full_reif = full_reif, owner = constraint_id](
+            [lits = lits, full_reif = full_reif, owner = constraint_id, forwards, backwards](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 switch (state.test_literal(full_reif)) {
                 case DefinitelyTrue: {
-                    for (auto & l : lits)
-                        inference.infer(logger, l, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{full_reif}}});
+                    if (forwards)
+                        for (auto & l : lits)
+                            inference.infer(logger, l, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{full_reif}}});
                     return PropagatorState::DisableUntilBacktrack;
                 }
 
                 case DefinitelyFalse: {
+                    if (! backwards)
+                        return PropagatorState::DisableUntilBacktrack;
+
                     bool any_false = false;
                     optional<Literal> undecided1;
 
@@ -158,11 +184,18 @@ namespace
                         case Undecided: all_true = false; break;
                         }
 
+                    // Either outcome settles the halves this propagator lacks
+                    // until backtrack: a false literal makes the backward half
+                    // vacuous, and with every literal true the forward half has
+                    // nothing left to force.
                     if (any_false) {
-                        inference.infer(logger, ! full_reif, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{! *any_false}}});
+                        if (forwards)
+                            inference.infer(logger, ! full_reif, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{! *any_false}}});
                         return PropagatorState::DisableUntilBacktrack;
                     }
                     else if (all_true) {
+                        if (! backwards)
+                            return PropagatorState::DisableUntilBacktrack;
                         auto justf = [&](const ReasonLiterals & reason) {
                             for (auto & l : lits)
                                 logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
@@ -191,7 +224,13 @@ namespace
     // just folds into the rows), so the labelled rows' content matches cake's,
     // whatever the literals. cake reads each of `lits` / `full_reif` as a
     // reification tuple and maps it to the same ge / eq atom used here.
-    auto define_cake_logical(ProofModel & model, const ConstraintID & id, const Literals & lits, const Literal & full_reif, bool is_and) -> void
+    //
+    // The half-reified forms (`and_if` / `or_if`) are the pos row alone,
+    // which is exactly the direction they state. cake_pb_cp has no rule for
+    // either keyword yet, so they do not chain; the rule to ask it for is this
+    // pos row, under the same label.
+    auto define_cake_logical(ProofModel & model, const ConstraintID & id, const Literals & lits, const Literal & full_reif, bool is_and, bool half)
+        -> void
     {
         auto n = Integer(static_cast<long long>(lits.size()));
         WPBSum pos, neg;
@@ -202,15 +241,17 @@ namespace
             neg += 1_i * PseudoBooleanTerm{! l};
         }
         model.add_labelled_constraint(id, "pos", move(pos) >= 0_i);
-        model.add_labelled_constraint(id, "neg", move(neg) >= 0_i);
+        if (! half)
+            model.add_labelled_constraint(id, "neg", move(neg) >= 0_i);
     }
 
     // The `and` / `or` scp term: cake reads `(op ((Z op v) ...) (Y op v))`,
-    // one reification tuple per operand plus one for the reification. Every
-    // literal maps directly (see reify_tuple_term); a view-conditioned operand
-    // is written faithfully as a tuple over its view, which cake's var/const
-    // parser rejects so the instance skips the chain, and read_scp round-trips
-    // the tuples either way.
+    // one reification tuple per operand plus one for the reification. The
+    // half-reified `and_if` / `or_if` take the same shape, the final tuple
+    // being the condition. Every literal maps directly (see reify_tuple_term);
+    // a view-conditioned operand is written faithfully as a tuple over its
+    // view, which cake's var/const parser rejects so the instance skips the
+    // chain, and read_scp round-trips the tuples either way.
     auto s_expr_logical(
         const NamesAndIDsTracker & tracker, const ConstraintID & id, const string & op, const Literals & lits, const Literal & full_reif) -> SExpr
     {
@@ -246,12 +287,12 @@ auto And::prepare(Propagators &, State & initial_state, ProofModel * const) -> b
 
 auto And::define_proof_model(ProofModel & model, const State &) -> void
 {
-    define_cake_logical(model, _constraint_id, _lits, _full_reif, true);
+    define_cake_logical(model, _constraint_id, _lits, _full_reif, true, false);
 }
 
 auto And::install_propagators(Propagators & propagators) -> void
 {
-    install_propagators_logical<hints::And>(propagators, constraint_id(), _lits, _full_reif, _reif_state);
+    install_propagators_logical<hints::And>(propagators, constraint_id(), _lits, _full_reif, _reif_state, Halves::Both);
 }
 
 auto And::constraint_type() const -> std::string
@@ -289,7 +330,7 @@ auto Or::prepare(Propagators &, State & initial_state, ProofModel * const) -> bo
 
 auto Or::define_proof_model(ProofModel & model, const State &) -> void
 {
-    define_cake_logical(model, _constraint_id, _lits, _full_reif, false);
+    define_cake_logical(model, _constraint_id, _lits, _full_reif, false, false);
 }
 
 auto Or::install_propagators(Propagators & propagators) -> void
@@ -298,7 +339,7 @@ auto Or::install_propagators(Propagators & propagators) -> void
     Literals lits = _lits;
     for (auto & l : lits)
         l = ! l;
-    install_propagators_logical<hints::Or>(propagators, constraint_id(), move(lits), ! _full_reif, _reif_state);
+    install_propagators_logical<hints::Or>(propagators, constraint_id(), move(lits), ! _full_reif, _reif_state, Halves::Both);
 }
 
 auto Or::constraint_type() const -> std::string
@@ -309,4 +350,87 @@ auto Or::constraint_type() const -> std::string
 auto Or::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, constraint_type(), _lits, _full_reif);
+}
+
+AndIf::AndIf(const vector<IntegerVariableID> & vars, const IntegerVariableID & cond) : AndIf(to_lits(vars), cond != 0_i)
+{
+}
+
+AndIf::AndIf(Literals l, const Literal & cond) : _lits(move(l)), _cond(cond)
+{
+}
+
+auto AndIf::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<AndIf>(_lits, _cond);
+}
+
+auto AndIf::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    _cond_state = initial_state.test_literal(_cond);
+    return true;
+}
+
+auto AndIf::define_proof_model(ProofModel & model, const State &) -> void
+{
+    define_cake_logical(model, _constraint_id, _lits, _cond, true, true);
+}
+
+auto AndIf::install_propagators(Propagators & propagators) -> void
+{
+    install_propagators_logical<hints::And>(propagators, constraint_id(), _lits, _cond, _cond_state, Halves::ReifImpliesConjunction);
+}
+
+auto AndIf::constraint_type() const -> std::string
+{
+    return "and_if";
+}
+
+auto AndIf::s_expr(const innards::ProofModel * const model) const -> SExpr
+{
+    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, constraint_type(), _lits, _cond);
+}
+
+OrIf::OrIf(const vector<IntegerVariableID> & vars, const IntegerVariableID & cond) : OrIf(to_lits(vars), cond != 0_i)
+{
+}
+
+OrIf::OrIf(Literals l, const Literal & cond) : _lits(move(l)), _cond(cond)
+{
+}
+
+auto OrIf::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<OrIf>(_lits, _cond);
+}
+
+auto OrIf::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    _cond_state = initial_state.test_literal(! _cond);
+    return true;
+}
+
+auto OrIf::define_proof_model(ProofModel & model, const State &) -> void
+{
+    define_cake_logical(model, _constraint_id, _lits, _cond, false, true);
+}
+
+auto OrIf::install_propagators(Propagators & propagators) -> void
+{
+    // As for Or, over the negated literals and condition, keeping only the
+    // half that says all the literals being false forces the condition false.
+    Literals lits = _lits;
+    for (auto & l : lits)
+        l = ! l;
+    install_propagators_logical<hints::Or>(propagators, constraint_id(), move(lits), ! _cond, _cond_state, Halves::ConjunctionImpliesReif);
+}
+
+auto OrIf::constraint_type() const -> std::string
+{
+    return "or_if";
+}
+
+auto OrIf::s_expr(const innards::ProofModel * const model) const -> SExpr
+{
+    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, constraint_type(), _lits, _cond);
 }

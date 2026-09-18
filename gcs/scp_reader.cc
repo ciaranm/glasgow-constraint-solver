@@ -1281,17 +1281,23 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
                     as_integer(a[1]), as_integer(b[1])},
                 label);
         }
-        else if (op == "and" || op == "or") {
+        else if (op == "and" || op == "or" || op == "and_if" || op == "or_if") {
             // (label and/or ((Z op v) ...) (Y op v)): the reification (the final
             // tuple) holds iff all / at least one of the operand literals hold.
+            // The _if forms are the same shape, with the final tuple a condition
+            // that only implies all / at least one of them.
             if (terms.size() != 4)
                 throw ScpReadError{op + " takes (label " + op + " (literals...) reif-literal)"};
             auto lits = resolve_literal_list(variables, terms[2], "the " + op + " literal list");
             auto reif = resolve_literal(variables, terms[3]);
             if (op == "and")
                 post_constraint(problem, And{move(lits), reif}, label);
-            else
+            else if (op == "or")
                 post_constraint(problem, Or{move(lits), reif}, label);
+            else if (op == "and_if")
+                post_constraint(problem, AndIf{move(lits), reif}, label);
+            else
+                post_constraint(problem, OrIf{move(lits), reif}, label);
         }
         else if (op == "parity") {
             // (label parity ((Z op v) ...) (Y op v)): cake encodes Y =
