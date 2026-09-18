@@ -18,15 +18,22 @@ should be able to see at a glance that AI was involved and which tool was used.
 change is correct---not merely that it compiles and passes tests. Rubber-stamping
 AI output without understanding it is not acceptable.
 
-All contributions should pass both the `release` and `sanitize` build and tests
-before submission, including the full test suite (with VeriPB installed) in
-both modes. See `README.md` for the build and test commands, and
-`dev_docs/building.md` for the build options, the supported toolchains, and
-what each CI lane covers. Note that a default build applies
-per-solve caps to the data-driven constraint tests, which check soundness and a
-partial proof but not completeness; when you have changed a propagator,
-configure with `-DGCS_TEST_CAP_DEFAULTS=OFF` so that they enumerate fully, as
-the two default-GCC Ubuntu CI lanes do.
+All contributions should pass the `release` build and its full test suite
+(with VeriPB installed) before submission. See `README.md` for the build and
+test commands, and `dev_docs/building.md` for the build options, the supported
+toolchains, and what each CI lane covers.
+
+Running the `sanitize` build and tests as well is a good idea if your change
+does something dangerous: raw pointers or indexing, object lifetimes, or
+integer arithmetic that could overflow. AddressSanitizer and UBSan catch
+mistakes there that a release run passes straight over, and a local run gets
+you the backtrace sooner than CI will. It is not mandatory, though: CI runs the
+same `ctest --preset sanitize` on every pull request regardless.
+
+Note that a default build applies per-solve caps to the data-driven constraint
+tests, which check soundness and a partial proof but not completeness; when you
+have changed a propagator, configure with `-DGCS_TEST_CAP_DEFAULTS=OFF` so that
+they enumerate fully, as the two default-GCC Ubuntu CI lanes do.
 
 What agents are currently good and bad at here
 ----------------------------------------------
