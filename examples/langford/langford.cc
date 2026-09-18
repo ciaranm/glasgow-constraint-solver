@@ -164,11 +164,9 @@ auto main(int argc, char * argv[]) -> int
         p.post(Element{i_var, position[i + k], &solution});
 
         // position[i] = position[i + k] + i + 2, tabulated for GAC at every
-        // size by default (this was written for the old PlusGAC, and Auto would
-        // fall back to bounds consistency once the positions' domains grew too
-        // large to tabulate). --plus picks the interval GAC propagator, its
-        // Dynamic variant, Auto, or bounds consistency instead (#192), so that
-        // every arm stays benchmarkable.
+        // size by default (this was written for the old PlusGAC). --plus picks
+        // the interval GAC propagator, its Dynamic variant, Auto, or bounds
+        // consistency instead (#192), so that every arm stays benchmarkable.
         p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i]} //
                 .with_consistency(plus_consistency));
     }
