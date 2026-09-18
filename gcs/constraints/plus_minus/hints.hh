@@ -15,7 +15,9 @@ namespace gcs::innards::hints
      * \brief plus's assertion hint for a bound push: the owning constraint and the
      * sum-definition line to start the cut from.
      *
-     * plus has a single inference shape, so there is no subhint. emit_justification
+     * Its bounds-consistency propagator has a single inference shape, so there
+     * is no subhint (the GAC arm's range removals carry PlusNotInRange, below,
+     * instead). emit_justification
      * starts the cut from pol_line and reads the two operand bounds positionally
      * from the reason -- a genuinely hint-driven emit -- but with no own hint_sexpr
      * the hint takes the default `(constraint_id <originator>)` wire form; pol_line
@@ -56,6 +58,42 @@ namespace gcs::innards::hints
     };
 
     auto emit_justification(ProofLogger & logger, const Minus & minus, const ReasonLiterals & reason) -> void;
+
+    /**
+     * \brief plus's "not in this interval" hint, for the consistency::GAC arm.
+     *
+     * The GAC arm removes a run of values that no pair of operand values sums
+     * to, and a range conclusion over a three-variable sum is not RUP: it takes
+     * one or two bound lemmas per interval of the operand it walks, each a `pol`
+     * over one half of the sum line (see plus_minus/gac.cc). That makes it a
+     * multi-line derivation, which the bare Plus hint -- one `pol` whose two
+     * operand bounds are read positionally from the reason -- does not describe.
+     *
+     * Nothing beyond the subhint: the emission is a lambda at the call site, and
+     * an external justifier gets the run from the asserted literal and the other
+     * two variables' domains from the reason, which states each of them exactly.
+     *
+     * \ingroup Innards
+     */
+    struct PlusNotInRange
+    {
+        ConstraintID originator;
+        static constexpr std::string_view hint_name = "plus";
+        static constexpr std::string_view subhint_name = "not_in_range";
+    };
+
+    /**
+     * \brief minus's "not in this interval" hint, for the consistency::GAC arm;
+     * the same shape as PlusNotInRange.
+     *
+     * \ingroup Innards
+     */
+    struct MinusNotInRange
+    {
+        ConstraintID originator;
+        static constexpr std::string_view hint_name = "minus";
+        static constexpr std::string_view subhint_name = "not_in_range";
+    };
 }
 
 #endif

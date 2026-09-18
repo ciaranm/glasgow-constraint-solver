@@ -139,7 +139,11 @@ the signature. The arithmetic family (`Multiply`, `Divide`, `Modulus`,
 `Power`, `Plus`, `Minus`) also accepts `consistency::Auto`, which
 tabulates the relation for GAC when the domains involved are small (see
 `gcs/constraints/innards/tabulation.hh`); the tag never changes the OPB
-encoding, since the table is derived in-proof. Families that used to
+encoding, since the table is derived in-proof. `Plus` and `Minus` take
+`consistency::GAC` as well, a propagator over intervals that never tabulates,
+and `consistency::Dynamic`, the same propagator with a cap on how many pairs of
+intervals one step may combine; their `Auto` is `Dynamic` except for small
+aliased domains, which still tabulate (#192). Families that used to
 expose several public classes behind a `using` alias — `AllDifferent`,
 `GlobalCardinality`, `Circuit` — are now a single class each, the choice
 moved onto the setter (`.with_consistency()`, or `.with_algorithm()` for

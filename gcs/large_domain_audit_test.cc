@@ -243,6 +243,51 @@ namespace
             auto v = wide(p, 3);
             p.post(Minus{v[0], v[1], v[2]});
         });
+        add("Plus/holey", Expect::Clean, [](Problem & p) {
+            // The consistency::GAC arm (#192), which is what reaches the values
+            // between the bounds: each operand is two short intervals at either
+            // end of the wide range, so their sums leave a run about as wide as
+            // the range for the result to lose, and the result's own interval
+            // tests the operands against it the other way. Nothing here may
+            // cost a step per value of that run.
+            auto ends = [&]() {
+                return p.create_integer_variable(vector<Integer>{0_i, 1_i, 2_i, probe_width - 2_i, probe_width - 1_i, probe_width});
+            };
+            p.post(Plus{ends(), ends(), wide_var(p)}.with_consistency(consistency::GAC{}));
+        });
+        add("Plus/many-intervals", Expect::Clean, [](Problem & p) {
+            // Two operands of 400 intervals each, so the exact GAC arm would
+            // combine 160 000 pairs of them per step (the row below). Auto is
+            // consistency::Dynamic, which falls back on each operand against
+            // the other's hull past its threshold (#192), costing 800.
+            auto spread = [&]() {
+                vector<Integer> values;
+                for (int i = 0; i < 400; ++i)
+                    values.push_back(Integer{i} * (probe_width / 400_i));
+                return p.create_integer_variable(values);
+            };
+            p.post(Plus{spread(), spread(), wide_var(p)});
+        });
+        add("Plus/many-intervals-gac", Expect::KnownTrip, [](Problem & p) {
+            // As above, with consistency::GAC explicitly requested: the pairs of
+            // intervals, not the width, are what it pays for, and this is the
+            // shape consistency::Dynamic exists to cap.
+            auto spread = [&]() {
+                vector<Integer> values;
+                for (int i = 0; i < 400; ++i)
+                    values.push_back(Integer{i} * (probe_width / 400_i));
+                return p.create_integer_variable(values);
+            };
+            p.post(Plus{spread(), spread(), wide_var(p)}.with_consistency(consistency::GAC{}));
+        });
+        add("Minus/holey", Expect::Clean, [](Problem & p) {
+            // As Plus/holey: the differences leave most of the result's range
+            // unsupported.
+            auto ends = [&]() {
+                return p.create_integer_variable(vector<Integer>{0_i, 1_i, 2_i, probe_width - 2_i, probe_width - 1_i, probe_width});
+            };
+            p.post(Minus{ends(), ends(), wide_var(p)}.with_consistency(consistency::GAC{}));
+        });
         add("Multiply", Expect::Clean, [](Problem & p) {
             auto v = wide(p, 3);
             p.post(Multiply{v[0], v[1], v[2]});
@@ -1113,6 +1158,17 @@ TEST_CASE("Large domain proof sizes")
                 // the how_many variable cannot reach.
                 auto v = confined_vars(p, 3);
                 p.post(Among{v, {1_i, 2_i}, p.create_integer_variable(0_i, 1_i)});
+            }},
+        {"Plus/two-intervals",
+            [&](Problem & p) {
+                // Plus's consistency::GAC arm (#192), whose range removals are
+                // justified a whole interval at a time: each operand is two
+                // values at either end of the wide range, so the root removes
+                // two runs from the result about as wide as the range, and every
+                // node of the enumeration removes more. The proof should not
+                // notice the width at all.
+                auto ends = [&]() { return p.create_integer_variable(vector<Integer>{0_i, 1_i, probe_width - 1_i, probe_width}); };
+                p.post(Plus{ends(), ends(), p.create_integer_variable(wide_lo, probe_width * 2_i)}.with_consistency(consistency::GAC{}));
             }},
     };
 

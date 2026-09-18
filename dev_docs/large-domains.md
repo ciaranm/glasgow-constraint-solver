@@ -328,6 +328,75 @@ direction's bound resolutions is rejected under views as well as bare (#931). Th
 one operand that still keeps the per-value path is a **constant**, which has no
 order-encoding atom to resolve against at all.
 
+### `Plus` and `Minus` under `consistency::GAC`: a sum of three (#192)
+
+`Plus`' row is a sum of *three* variables, so it is outside Theorem 2.9 for the
+same reason as `Abs`' negative branch, and more so: there is no difference to
+pair a lower bound against an upper one across. Its `consistency::GAC` arm
+removes whole runs that no pair of operand values sums to, and each removal is
+justified by `pol` bound lemmas in the `Abs` shape: one half of the sum line,
+plus the defining line of one bound atom per non-constant variable, chosen so
+that every variable's terms cancel, then saturated into a clause. **Every lemma
+is one of the bounds propagator's six rules, stated at an interval's endpoints
+instead of at the domain's bounds.**
+
+To remove a run from one variable, the proof walks another operand's intervals
+in order. For each interval, the values of the third operand that could
+complete the sum form a window. That window lies past the third operand's
+bounds, or inside one of its holes: a lemma takes the walk into the hole, the
+reason's range literal for the hole steps it over, and a second lemma pushes
+the walked operand past the interval, where its own hole literal takes over.
+Windows move monotonically, so the ones past the bounds form a prefix and a
+suffix and cost one lemma each. A removal is therefore at most two lines per
+interval whose window falls inside a hole, plus two, plus the closing RUP,
+whatever its width. `gcs/constraints/plus_minus/gac.cc` has the argument in
+full, including why the reason is built from the same copy of the domains as
+the lemmas.
+
+The lemmas are load-bearing, and not only for holes. `plus_mutation_lemmas`,
+`plus_mutation_hole_lemmas` and `plus_mutation_window_holes` are rejected, and
+`plus_mutation_control` verifies. Omitting every lemma is rejected at a removal
+whose windows lie entirely past the bounds, so even the bounds-shaped case is not
+RUP across the sum. The instance takes its hole under a decision, through an
+`EqualsIf`, because a root hole is a fact the checker already has, which is the
+#936 lesson again.
+
+`Minus` shares the arm and the proof. The two differ in one coefficient of the
+row, and the arm is written over the user's own three variables with signed
+coefficients. It deliberately avoids rewriting `Minus` as `Plus` over a
+synthesised `-b` view, because that view is what broke the bounds propagator's
+`pol` in `2ec1297e`.
+
+**What the arm pays for is pairs of intervals, not width, so `consistency::Dynamic`
+caps those.** One step combines every interval of one operand with every interval
+of the other, so two operands of 3000 intervals each cost 3.2 s at the root where
+bounds consistency costs 0.1 s. Under `consistency::Dynamic`, a step whose operands
+have more than `default_interval_pairs_threshold()` pairs (1024, or
+`GCS_INTERVAL_PAIRS_THRESHOLD`) combines each operand with the other's hull
+instead: linear in the intervals, stronger than bounds consistency, and justified
+by the same lemmas, since a hull is a list of one interval with no holes for a
+window to land in. `Plus/many-intervals` (Auto, so `Dynamic`) is `Clean` in the
+audit lane, and `Plus/many-intervals-gac` is the `KnownTrip` it avoids.
+`plus_minus_constraint_dynamic_fallback` runs the whole `plus_minus_test` with the
+threshold at zero, so that every step falls back and every fallback proof is
+checked.
+
+**The threshold is a cap, not a way of choosing the arm, and the measurements say
+why.** On eight models built for #192, the per-step pair counts where GAC paid
+(all-interval, two Golomb rulers, a holey sum chain, a magic square with its line
+sums decomposed into `Plus` chains, `langford`) never exceeded 289. The two
+models where bounds consistency won did not have larger pair counts. They lost
+because nothing read the interior values the arm computed: in a calendar
+schedule, the end times feed only `LessThanEqual`. That is #902's axis
+(observability), not this one (cost). So the threshold sits well above the
+first group, where it never fires, and caps the cost of a step on pathological
+domains at about a tenth of a millisecond.
+
+`Auto` is `Dynamic`, which on those models beat tabulation (by 6 to 37%) and
+bounds consistency (by up to 2.1x) in every case where GAC paid. The exception
+is small domains where two positions share a variable. There tabulation reaches
+GAC and the interval arm does not, so `Auto` still tabulates.
+
 ### Sabotaging proof lines one at a time under-reports
 
 The same work produced a methodology result worth having, because the obvious way
@@ -717,14 +786,14 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-82 constraint probes, plus 20 heuristic ones in the second table. The lane
+86 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
-| **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (48) | the arithmetic family (with four rows of its own for `Abs`' interior holes, two of them view-wrapped), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among` contiguous and holey, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **KnownTrip** (20) | `Plus/many-intervals-gac` (the exact interval arm over two operands of 400 intervals, which `Dynamic` exists to cap), `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
+| **Clean** (51) | the arithmetic family (with four rows of its own for `Abs`' interior holes, two of them view-wrapped, one each for `Plus`' and `Minus`' `consistency::GAC` arm over holey operands, and `Plus/many-intervals` under `Auto`), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among` contiguous and holey, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (15) | the graph and permutation family, and the Boolean constraints |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`
