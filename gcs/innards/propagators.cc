@@ -52,9 +52,22 @@ using std::chrono::steady_clock;
 using std::ranges::adjacent_find;
 using std::ranges::contains;
 using std::ranges::sort;
+using std::ranges::unique;
 
 namespace
 {
+    // The simple variable whose domain a variable ID is a window onto: itself,
+    // or a view's underlying variable. A constant has none.
+    auto underlying_variable(const IntegerVariableID & var) -> optional<SimpleIntegerVariableID>
+    {
+        return overloaded{
+            [](const SimpleIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v; },                 //
+            [](const ViewOfIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v.actual_variable; }, //
+            [](const ConstantIntegerVariableID &) -> optional<SimpleIntegerVariableID> { return nullopt; }            //
+        }
+            .visit(var);
+    }
+
     struct TriggerIDs
     {
         vector<pair<int, int>> ids_and_masks;
@@ -330,7 +343,8 @@ struct Propagators::Imp : RefinedWatchSink
     vector<int> to_disable;
 
     // Indexed by propagator id: 1 if disable_propagators_for_constraint has
-    // retired this propagator for the whole search. This is the *permanent*
+    // retired this propagator for the whole search, or if it is the half of an
+    // optional-interior-pruning pair not currently chosen. This is the *permanent*
     // counterpart of PropagatorState::DisableUntilBacktrack, and it needs to be
     // separate from it because the "until backtrack" lifetime is scoped to a
     // propagate() call --- idle_end is saved on entry and restored by that
@@ -411,6 +425,24 @@ struct Propagators::Imp : RefinedWatchSink
     vector<vector<SimpleIntegerVariableID>> propagator_scope;
     vector<vector<int>> var_constraint_indices;
     vector<vector<SimpleIntegerVariableID>> constraint_scope;
+
+    // The variables whose holes affect each propagator (Triggers::
+    // holes_affect_propagation, derived from the triggers unless the propagator
+    // said otherwise), views resolved and duplicates removed. Indexed by
+    // propagator id. Built in install(), and read only by
+    // analyse_optional_interior_pruning().
+    vector<vector<SimpleIntegerVariableID>> propagator_hole_sensitivity;
+
+    // One entry per install_with_optional_interior_pruning() pair, in
+    // installation order.
+    struct OptionalInteriorPruningPair
+    {
+        int constraint_index;
+        vector<SimpleIntegerVariableID> targets;
+        int pruning_id;
+        int fallback_id;
+    };
+    vector<OptionalInteriorPruningPair> optional_interior_prunings;
 
     // Borrowed conflict observers, each notified when a propagator wipes out a
     // domain (see propagate). Attached at search start via add_conflict_observer;
@@ -570,6 +602,12 @@ auto Propagators::shared_derived_data_slot(const void * const key, const std::ty
 
 auto Propagators::install(const ConstraintID & constraint_id, PropagationFunction && f, const Triggers & triggers) -> void
 {
+    install_returning_id(constraint_id, move(f), triggers, nullptr);
+}
+
+auto Propagators::install_returning_id(const ConstraintID & constraint_id, PropagationFunction && f, const Triggers & triggers,
+    const vector<SimpleIntegerVariableID> * degree_already_counted) -> int
+{
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
     _imp->permanently_disabled.push_back(0);
@@ -649,6 +687,42 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
         if (auto cond = std::get_if<IntegerVariableCondition>(&refined.first))
             add_scope_var(cond->var);
 
+    // Hole sensitivity (Triggers::holes_affect_propagation): as declared, or
+    // else derived from how the propagator asked to be woken. Waking on any
+    // change, or arranging its own wakes via scope_only, or watching a literal
+    // that can change without either bound moving, all say that a hole can
+    // affect it; waking only on a bound or on instantiation says it cannot.
+    // Deduplicated by sorting afterwards rather than by a search per insertion:
+    // the learned-nogood store declares every variable in the problem.
+    auto & hole_sensitivity = _imp->propagator_hole_sensitivity.emplace_back();
+    auto add_sensitive_var = [&](const IntegerVariableID & var) {
+        if (auto u = underlying_variable(var))
+            hole_sensitivity.push_back(*u);
+    };
+    if (triggers.holes_affect_propagation) {
+        for (const auto & v : *triggers.holes_affect_propagation)
+            add_sensitive_var(v);
+    }
+    else {
+        for (const auto & v : triggers.on_change)
+            add_sensitive_var(v);
+        for (const auto & v : triggers.scope_only)
+            add_sensitive_var(v);
+        for (const auto & refined : triggers.refined)
+            if (auto cond = std::get_if<IntegerVariableCondition>(&refined.first))
+                switch (cond->op) {
+                    using enum VariableConditionOperator;
+                case Equal:
+                case NotEqual:
+                case InRange:
+                case NotInRange: add_sensitive_var(cond->var); break;
+                case Less:
+                case GreaterEqual: break;
+                }
+    }
+    sort(holes_affect_propagation);
+    holes_affect_propagation.erase(unique(holes_affect_propagation).begin(), holes_affect_propagation.end());
+
     // Adjacency: each scope variable participates in this constraint.
     for (const auto & v : scope) {
         if (_imp->var_constraint_indices.size() <= v.index)
@@ -670,9 +744,11 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
 
     // Degree: once per distinct scope variable. A variable the propagator
     // constrains raises its degree by one, no matter how many trigger slots or
-    // watches mention it.
+    // watches mention it --- unless the caller has already counted it, which is
+    // what the second of an optional-interior-pruning pair asks for.
     for (const auto & v : scope)
-        increase_degree(v);
+        if (! degree_already_counted || ! contains(*degree_already_counted, v))
+            increase_degree(v);
 
     // Aliasing: if two algorithmic positions resolve to the same underlying
     // variable, ignore any EnableButIdempotent this propagator claims (a false
@@ -691,6 +767,31 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
         trigger_on_instantiated(v, id);
     for (const auto & [literal, payload] : triggers.refined)
         _imp->register_refined_watch(id, literal, payload, false);
+
+    return id;
+}
+
+auto Propagators::install_with_optional_interior_pruning(const ConstraintID & constraint_id, const vector<IntegerVariableID> & targets,
+    PropagationFunction && pruning, const Triggers & pruning_triggers, PropagationFunction && fallback, const Triggers & fallback_triggers) -> void
+{
+    auto pruning_id = install_returning_id(constraint_id, move(pruning), pruning_triggers, nullptr);
+    // A copy, not a pointer into propagator_scope: installing the fallback
+    // appends to that vector, which can reallocate it.
+    auto pruning_scope = _imp->propagator_scope[pruning_id];
+    auto fallback_id = install_returning_id(constraint_id, move(fallback), fallback_triggers, &pruning_scope);
+
+    // Until something chooses, the pruning propagator is the live one, so a
+    // pair on its own propagates exactly as the pruning propagator would.
+    _imp->permanently_disabled[fallback_id] = 1;
+    ++_imp->permanently_disabled_count;
+
+    vector<SimpleIntegerVariableID> underlying_targets;
+    for (const auto & t : targets)
+        if (auto u = underlying_variable(t); u && ! contains(underlying_targets, *u))
+            underlying_targets.push_back(*u);
+
+    _imp->optional_interior_prunings.push_back(
+        Imp::OptionalInteriorPruningPair{_imp->propagator_constraint_index[pruning_id], move(underlying_targets), pruning_id, fallback_id});
 }
 
 auto Propagators::disable_propagators_for_constraints(std::span<const ConstraintID> constraint_ids) -> std::size_t
@@ -1439,6 +1540,117 @@ auto Propagators::constraint_indices_of_variable(SimpleIntegerVariableID var) co
 auto Propagators::scope_of_constraint(int constraint_index) const -> const vector<SimpleIntegerVariableID> &
 {
     return _imp->constraint_scope[constraint_index];
+}
+
+auto Propagators::analyse_optional_interior_pruning() const -> vector<OptionalInteriorPruningVerdict>
+{
+    const auto & pairs = _imp->optional_interior_prunings;
+
+    // For each variable, up to two distinct constraints that its holes affect.
+    // Two are all that is ever needed: a pair wants an observer other than its
+    // own constraint, and of two distinct observers at most one can be that.
+    struct Observers
+    {
+        int first = -1, second = -1;
+    };
+    vector<Observers> observers;
+    auto add_observer = [&](const SimpleIntegerVariableID & var, int constraint_index) -> bool {
+        if (observers.size() <= var.index)
+            observers.resize(var.index + 1);
+        auto & r = observers[var.index];
+        if (r.first == -1) {
+            r.first = constraint_index;
+            return true;
+        }
+        if (r.first != constraint_index && r.second == -1) {
+            r.second = constraint_index;
+            return true;
+        }
+        return false;
+    };
+    auto observer_other_than = [&](const SimpleIntegerVariableID & var, int constraint_index) -> optional<int> {
+        if (observers.size() <= var.index)
+            return nullopt;
+        const auto & r = observers[var.index];
+        if (r.first != -1 && r.first != constraint_index)
+            return r.first;
+        if (r.second != -1 && r.second != constraint_index)
+            return r.second;
+        return nullopt;
+    };
+
+    // A pair is live unless something (a presolver, say) has retired both of
+    // its propagators; which one of the two is disabled otherwise says only
+    // which has been chosen, and does not affect the analysis.
+    vector<uint8_t> in_a_pair(_imp->propagation_functions.size(), 0);
+    vector<uint8_t> live(pairs.size(), 0);
+    for (const auto & [k, entry] : enumerate(pairs)) {
+        in_a_pair[entry.pruning_id] = 1;
+        in_a_pair[entry.fallback_id] = 1;
+        live[k] = ! (_imp->permanently_disabled[entry.pruning_id] && _imp->permanently_disabled[entry.fallback_id]);
+    }
+
+    // The sources: everything that always runs. That is every live propagator
+    // outside a pair, and the fallback of every live pair, whether or not it is
+    // the one currently chosen --- counting it either way is what keeps
+    // switching a pruning on from ever taking an observer away.
+    for (std::size_t p = 0; p < _imp->propagation_functions.size(); ++p)
+        if (! in_a_pair[p] && ! _imp->permanently_disabled[p])
+            for (const auto & v : _imp->propagator_hole_sensitivity[p])
+                add_observer(v, _imp->propagator_constraint_index[p]);
+    for (const auto & [k, entry] : enumerate(pairs))
+        if (live[k])
+            for (const auto & v : _imp->propagator_hole_sensitivity[entry.fallback_id])
+                add_observer(v, entry.constraint_index);
+
+    // Then the least fixpoint: a pruning is needed once a hole in a target
+    // would affect some other constraint, and from then on its own sensitivity
+    // counts, which may reach further pairs.
+    vector<vector<int>> pairs_targeting;
+    for (const auto & [k, entry] : enumerate(pairs))
+        if (live[k])
+            for (const auto & t : entry.targets) {
+                if (pairs_targeting.size() <= t.index)
+                    pairs_targeting.resize(t.index + 1);
+                pairs_targeting[t.index].push_back(k);
+            }
+
+    vector<uint8_t> needed(pairs.size(), 0);
+    vector<int> observed_by(pairs.size(), -1);
+    vector<SimpleIntegerVariableID> newly_observed;
+    auto consider = [&](std::size_t k) {
+        if (needed[k] || ! live[k])
+            return;
+        const auto & entry = pairs[k];
+        for (const auto & t : entry.targets)
+            if (auto observer = observer_other_than(t, entry.constraint_index)) {
+                needed[k] = 1;
+                observed_by[k] = *observer;
+                for (const auto & v : _imp->propagator_hole_sensitivity[entry.pruning_id])
+                    if (add_observer(v, entry.constraint_index))
+                        newly_observed.push_back(v);
+                return;
+            }
+    };
+
+    for (std::size_t k = 0; k < pairs.size(); ++k)
+        consider(k);
+    while (! newly_observed.empty()) {
+        auto v = newly_observed.back();
+        newly_observed.pop_back();
+        if (v.index < pairs_targeting.size())
+            for (auto k : pairs_targeting[v.index])
+                consider(k);
+    }
+
+    vector<OptionalInteriorPruningVerdict> result;
+    for (const auto & [k, entry] : enumerate(pairs))
+        if (live[k])
+            result.push_back(OptionalInteriorPruningVerdict{.constraint_id = _imp->constraint_ids[entry.constraint_index],
+                .targets = entry.targets,
+                .needed = 0 != needed[k],
+                .observed_by = observed_by[k] >= 0 ? optional<ConstraintID>{_imp->constraint_ids[observed_by[k]]} : nullopt});
+    return result;
 }
 
 auto Propagators::add_conflict_observer(ConflictObserver * observer) -> void
