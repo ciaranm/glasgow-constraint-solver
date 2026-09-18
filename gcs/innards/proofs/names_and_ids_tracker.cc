@@ -973,10 +973,14 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     // The compact boolean encoding defines an eq atom at a bound using only the
     // one non-trivial order literal (eq(lower) <=> ~ge(lower+1), since ge(lower)
     // is always true; eq(upper) <=> ge(upper), since ge(upper+1) is always
-    // false). With it off (the default), every eq atom -- including those at the
-    // bounds -- is the full eq(v) <=> ge(v) & ~ge(v+1), so the trivial ge(lower)
-    // and ge(upper+1) literals are materialised (need_gevar emits and fixes
-    // them), matching cake_pb_cp's eager encoding.
+    // false). With it off (the default), every eq atom defined here -- including
+    // those at the bounds -- is the full eq(v) <=> ge(v) & ~ge(v+1), so the trivial
+    // ge(lower) and ge(upper+1) literals are materialised (need_gevar emits and
+    // fixes them), matching cake_pb_cp's eager encoding. An eq atom that is a
+    // primitive literal is not defined here at all, so the option does not reach
+    // it: every value literal of a direct-only variable, including the single bit
+    // of a default {0,1} variable, has its condition stored when the variable is
+    // set up, and returned at the top of this function.
     if (_imp->use_compact_boolean_encoding && bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first == v) {
         // it's a lower bound
         if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
