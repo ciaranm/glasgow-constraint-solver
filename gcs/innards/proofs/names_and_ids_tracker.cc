@@ -343,8 +343,9 @@ struct NamesAndIDsTracker::Imp
     // Variables (e.g. ArgSort's cake-named free-bit-sum sorted values) whose [lo, hi]
     // domain is NOT a trivial consequence of the OPB -- cake emits no bound line for
     // them and the bounds are only entailed through conditional channels -- so
-    // need_gevar's fix_bound must not pin their boundary order literals; those bounds
-    // are instead established once, explicitly, by the owning constraint's proof.
+    // need_gevar must not have ensure_boundary_pin pin their boundary order
+    // literals; those bounds are instead established once, explicitly, by the
+    // owning constraint's proof.
     std::set<SimpleOrProofOnlyIntegerVariableID> bounds_not_trivially_derivable;
     // Variables whose order-encoding (ge) atom definitions carry @i[..][ge] labels that
     // a cake_pb_cp OPB does not create (it reifies each atom per value under its own

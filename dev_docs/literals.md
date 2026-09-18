@@ -33,7 +33,8 @@ All in `gcs/innards/proofs/names_and_ids_tracker.cc` unless noted.
 
 | Invariant | Maintained by |
 |---|---|
-| `Inv-Chain`, `Inv-Bound` | `need_gevar` (the chain `pol`s, and `fix_bound`) |
+| `Inv-Chain` | `need_gevar` (the chain `pol`s) |
+| `Inv-Bound` | `ensure_boundary_pin`, which `need_gevar` calls behind its `trivial_boundary` guard |
 | `Inv-Thresholds` | `define_plain_invar`'s two `need_gevar` calls; `need_all_proof_names_in` on an eq atom's reification |
 | `Inv-Part` | `init_interval_partition`, `ensure_partition_cut`, and `need_direct_encoding_for`'s singleton splits |
 | `Inv-Cover` | the three `emit_rup_proof_line` covering emissions in `ensure_partition_cut`, `init_interval_partition`, `define_invar_with_covering` |
