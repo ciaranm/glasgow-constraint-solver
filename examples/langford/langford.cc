@@ -146,9 +146,10 @@ auto main(int argc, char * argv[]) -> int
         p.post(Element{i_var, position[i], &solution});
         p.post(Element{i_var, position[i + k], &solution});
 
-        // position[i + k] = position[i] + i + 2, tabulated for GAC (this was
-        // written for the old PlusGAC, and Auto would fall back to bounds
-        // consistency once the positions range over more than ten values)
+        // position[i] = position[i + k] + i + 2, tabulated for GAC at every
+        // size (this was written for the old PlusGAC, and Auto would fall back
+        // to bounds consistency once the positions' domains grew too large to
+        // tabulate)
         p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i]} //
                 .with_consistency(consistency::Tabulated{}));
     }
