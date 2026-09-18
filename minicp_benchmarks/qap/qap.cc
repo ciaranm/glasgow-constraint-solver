@@ -48,6 +48,9 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<unsigned long long>()->implicit_value("100"));
 
         options.add_options()("size", "Size of the problem to solve (max 12)", cxxopts::value<int>()->default_value("12"));
+        options.add_options()("element",
+            "Consistency for the Element constraints: 'bc' (the default, and the MiniCP tree), 'gac', or 'auto' (see issue #902)",
+            cxxopts::value<std::string>()->default_value("bc"));
 
         options.parse_positional({"size"});
 
@@ -71,6 +74,17 @@ auto main(int argc, char * argv[]) -> int
     cout << "\"MiniCP: a lightweight solver for constraint programming.\"" << endl;
     cout << "Math. Program. Comput. 13(1): 133-184 (2021)." << endl;
     cout << endl;
+
+    ElementConsistency element_consistency = consistency::BC{};
+    auto element_mode = options_vars["element"].as<std::string>();
+    if (element_mode == "gac")
+        element_consistency = consistency::GAC{};
+    else if (element_mode == "auto")
+        element_consistency = consistency::Auto{};
+    else if (element_mode != "bc") {
+        cerr << "Error: --element must be 'bc', 'gac', or 'auto'." << endl;
+        return EXIT_FAILURE;
+    }
 
     Problem p;
 
@@ -141,7 +155,7 @@ auto main(int argc, char * argv[]) -> int
     for (int i = 0; i < size; ++i) {
         for (int j = 0; j < size; ++j) {
             auto d_xsi_xsj = p.create_integer_variable(0_i, Integer{max_distance} + 1_i, "dxs" + to_string(i) + "xs" + to_string(j));
-            p.post(Element2DConstantArray{d_xsi_xsj, xs[i], xs[j], &distances_consts_integers});
+            p.post(Element2DConstantArray{d_xsi_xsj, xs[i], xs[j], &distances_consts_integers}.with_consistency(element_consistency));
             wcosts += Integer{weight_consts[i][j]} * d_xsi_xsj;
         }
     }
