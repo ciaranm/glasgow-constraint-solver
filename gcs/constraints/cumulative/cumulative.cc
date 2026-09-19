@@ -114,8 +114,8 @@ namespace
 
     // after_{i,t} <-> task i not yet finished at t <-> s_i + l_i >= t + 1.
     // Constant length: single-variable s_i >= t-l+1. Variable length: reify on
-    // s_i + l_i directly (any constant operand folds in), which matches
-    // cake_pb_cp's after <-> s + l >= t+1. The proof-only end (when both vary)
+    // s_i + l_i directly (any constant operand folds in), as cake_pb_cp's
+    // time-indexed encoder did. The proof-only end (when both vary)
     // is NOT used here; it is only the single-variable handle the propagator
     // pins through, bridged to this flag by the lemma the initialiser emits.
     auto per_time_after_says(const IntegerVariableID & start, const IntegerVariableID & length, Integer t) -> WPBSumLE
@@ -547,14 +547,13 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
                 model.create_proof_only_integer_variable_in_proof(min(0_i, _per_task_t_lo[i] + _length_lb[i]), _per_task_t_hi[i] + 1_i, "cumend");
 
         for (Integer t = t_lo; t <= t_hi; ++t) {
-            // Name the flags to match cake_pb_cp's verified cumulative encoder
-            // (its value-indexed v[id][i_t][cb] / [ca] / [cact], keyed by task i
-            // and integer time t), so the proof's references to them resolve
-            // against cake's re-derived OPB in the verified-encoding chain (the
-            // solver's per-task window is a subset of cake's global one, so every
-            // flag we cite is one cake also defines). cake's structurally-matching
-            // definitions (before ⇔ s≤t, after ⇔ s+l≥t+1, active ⇔ before∧after)
-            // make this a naming conform with no propagator change.
+            // The flags carry the names cake_pb_cp's time-indexed encoder gave
+            // them (its value-indexed v[id][i_t][cb] / [ca] / [cact], keyed by
+            // task i and integer time t), from when that encoder was what the
+            // verified-encoding chain checked our proofs against. cake has since
+            // replaced it with a start-checkpoint encoder (2026-09-19), so no OPB
+            // of cake's carries these any more; they are kept because everything
+            // here that cites a per-time flag finds it by these keys.
             std::vector<long long> it{static_cast<long long>(i), t.raw_value};
             // Named either way; *defined* here only where the definition is an
             // OPB row. Under _per_time_flags_in_proof the two halves are
@@ -574,28 +573,29 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
             _active_flags[i].push_back(active);
 
             // For a variable height, the task's load contribution at t is the
-            // product height·active, which is nonlinear. Linearise it over cake's
-            // per-bit contribution flags cc_k (weight 2^k), so contrib = Σ 2^k·cc_k
-            // (same encoding cake_pb_cp emits, so the load reasoning chain-verifies):
+            // product height·active, which is nonlinear. Linearise it over per-bit
+            // contribution flags cc_k (weight 2^k), so contrib = Σ 2^k·cc_k (the
+            // encoding cake_pb_cp's time-indexed encoder used, before cake replaced
+            // it with the start-checkpoint one):
             //   active   ⇒ contrib = h   (contrib − h ≥ 0 and ≤ 0)
             //   ¬active  ⇒ contrib = 0   (contrib ≤ 0; cc_k ≥ 0 inherently)
             // The bit count matches the proof-only bits encoding of [0, ub(h)], and
             // the flags carry no domain bound of their own (cle/cz constrain them,
-            // exactly as cake does).
+            // exactly as cake's did).
             if (! is_constant_variable(_heights[i])) {
                 auto highest_bit_shift = std::get<0>(get_bits_encoding_coeffs(0_i, _height_ub[i]));
                 std::vector<ProofFlag> cc;
                 for (Integer k = 0_i; k <= highest_bit_shift; ++k)
                     cc.push_back(model.names_and_ids_tracker().create_proof_flag_values(
                         _constraint_id, std::vector<long long>{static_cast<long long>(i), t.raw_value, k.raw_value}, "cc"));
-                // Labelled, with cake's own names for them: it emits all three
-                // under @c[id][i_t_cge] / [_cle] / [_cz], with the coefficients
-                // we do, so these are the labels a citer of ours resolves
-                // against cake's OPB as well as our own. The `cge` half is what
-                // converts a variable height into a constant one for a derived
-                // constraint (recover_constant_argument_row); the other two are
-                // labelled to keep the family whole rather than because
-                // anything cites them yet.
+                // Labelled, with the names cake's time-indexed encoder gave all
+                // three (@c[id][i_t_cge] / [_cle] / [_cz], with the coefficients
+                // we use), from when a citer of ours resolved them against
+                // cake's OPB as well as our own; cake no longer writes them. The
+                // `cge` half is what converts a variable height into a constant
+                // one for a derived constraint (recover_constant_argument_row);
+                // the other two are labelled to keep the family whole rather
+                // than because anything cites them yet.
                 if (! _per_time_flags_in_proof) {
                     auto contrib = contrib_sum_of(cc);
                     model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t),
@@ -645,10 +645,10 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
             // variable, move it to the left as a (−1)·capacity term so the
             // constraint stays a single linear inequality with RHS 0.
             //
-            // cake_pb_cp labels its per-time load constraint @c[id][cap_<t>], and
-            // its per-task time windowing matches ours, so our load line for time t
-            // is cake's cap line for time t. Emit the same label so the verified
-            // chain references it by name rather than position.
+            // Labelled @c[id][cap_<t>], the name cake_pb_cp's time-indexed
+            // encoder gave its per-time load constraint, from when the verified
+            // chain referenced it by name rather than position. cake no longer
+            // writes one; the label stays because citers here find the row by it.
             auto role = "cap_" + std::to_string(t.raw_value);
             auto line = is_constant_variable(_capacity) ? model.add_labelled_constraint(_constraint_id, role, load <= _capacity_val)
                                                         : model.add_labelled_constraint(_constraint_id, role, move(load) + -1_i * _capacity <= 0_i);
@@ -3137,8 +3137,8 @@ auto ConstraintProofModelData<Cumulative>::contribution_flag_key(size_t task, In
 
 auto ConstraintProofModelData<Cumulative>::contribution_ge_row_role(size_t task, Integer t) -> string
 {
-    // cake_pb_cp's own name for this row. Must stay the string
-    // define_proof_model labels it with, and must stay cake's.
+    // Must stay the string define_proof_model labels it with. It was also
+    // cake_pb_cp's name for this row, while cake had a time-indexed encoder.
     return std::to_string(task) + "_" + std::to_string(t.raw_value) + "_cge";
 }
 

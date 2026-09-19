@@ -34,13 +34,13 @@ namespace gcs
         /// capacity row per time point. `O(n x horizon)`, and what every
         /// inference used to cite.
         ///
-        /// **Not shipped.** It is kept for two test-only jobs and is not
-        /// selectable by anything a user runs: the five `scp_chain_cumulative*`
-        /// cases, which check our proof against cake's OPB and so need the
-        /// encoding cake can derive, and \ref BothRecovering, which needs the
-        /// per-time rows as ground truth. When cake can derive the
-        /// start-checkpoint block, the first job goes; the second is why the
-        /// emitter stays regardless.
+        /// **Not shipped.** It is kept for one test-only job and is not
+        /// selectable by anything a user runs: \ref BothRecovering needs the
+        /// per-time rows as ground truth. Nothing outside this tree derives it
+        /// any more --- `cake_pb_cp` replaced its time-indexed encoder with a
+        /// start-checkpoint one (CakePB-dev a402078, 2026-09-19) --- so the
+        /// `scp_chain_cumulative*` cases that used to be pinned to it now check
+        /// the shipped encoding against cake's.
         TimeIndexed,
 
         /// Both families in the model, and then derive every per-time capacity
@@ -525,8 +525,10 @@ namespace gcs
      * Public API, in the sense #603 established: a derived Cumulative
      * (install_derived_cumulative) builds `pol`s on the capacity rows and pins
      * the flags, so changing what these name is a breaking change. cake_pb_cp
-     * re-derives the same names, so it is a cross-tool break rather than merely
-     * an internal one.
+     * re-derived the per-time names while it had a time-indexed encoder; it
+     * derives the start-checkpoint names further down instead now, so it is
+     * renaming one of *those* that is a cross-tool break rather than merely an
+     * internal one.
      *
      * Unlike a comparison or a linear inequality, there is no single primary
      * row to publish --- the capacity rows are a family, one per time point ---
@@ -611,11 +613,10 @@ namespace gcs
          * published because they are the same family, in the way `before` and
          * `after` are published beside `active`.
          *
-         * These are `cake_pb_cp`'s own names for the rows, as
-         * \ref capacity_row_role is: cake emits all three under the same
-         * labels, over the same terms, so a proof citing one resolves against
-         * its re-derived OPB as well as against ours. Renaming them is
-         * therefore a cross-tool break rather than an internal one.
+         * These were `cake_pb_cp`'s own names for the rows, as
+         * \ref capacity_row_role was, while cake had a time-indexed encoder
+         * that emitted all three. It has not since 2026-09-19, so they are
+         * internal names now.
          *
          * A constant-height task has none. Ask
          * NamesAndIDsTracker::constraint_row_label, which is how a citer
@@ -652,23 +653,23 @@ namespace gcs
         /**
          * \name The start-checkpoint encoding (issue #780).
          *
-         * A second, `O(n^2)` and horizon-free statement of the same
-         * constraint, emitted alongside the per-time family above: rather than
-         * checking the capacity at every time point, check it at every time
-         * point that is the start of a task which could occupy the resource.
-         * The load profile is a step function that only rises at such a start,
-         * so a time point over capacity is dominated by the last one at or
-         * before it, and checking every start checks every peak.
+         * The `O(n^2)` and horizon-free statement of the constraint that
+         * Cumulative ships: rather than checking the capacity at every time
+         * point, check it at every time point that is the start of a task
+         * which could occupy the resource. The load profile is a step function
+         * that only rises at such a start, so a time point over capacity is
+         * dominated by the last one at or before it, and checking every start
+         * checks every peak.
          *
-         * Nothing cites these yet --- they are here to be checked against the
-         * family that is load-bearing before anything is derived from them.
-         * Deriving the per-time rows from these, and deleting the per-time
-         * block, is the rest of #780.
+         * Every rule still cites a per-time capacity row, but one recovered in
+         * the proof from these (innards::recover_cumulative_capacity_row)
+         * rather than read from the model.
          *
-         * These are not `cake_pb_cp`'s names, as
-         * \ref capacity_row_role and the contribution roles are: cake has no
-         * start-checkpoint encoder to conform to. When one is asked for, these
-         * are the names to offer it.
+         * These are `cake_pb_cp`'s names too: its start-checkpoint encoder
+         * (CakePB-dev a402078) writes the same flags and rows under exactly
+         * these labels, and the verified-encoding chain resolves our proof's
+         * citations against its OPB by label. Renaming any of them is
+         * therefore a cross-tool break rather than an internal one.
          */
         ///@{
 

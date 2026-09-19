@@ -1896,10 +1896,11 @@ mutation lane still discriminates under both arms.
 The general form of the hazard is worth stating plainly: while both
 encodings stand, an honest certificate developed under `Both` has been
 checked more weakly than one developed under `TimeIndexed`. The five
-`scp_chain_cumulative*` cases are a partial hedge, since they verify
-the solver's proof against *cake's* OPB, which has no checkpoint rows
-in it at all --- but that also means they give the new encoding no
-coverage of its own.
+`scp_chain_cumulative*` cases were a partial hedge, since they verified
+the solver's proof against *cake's* OPB, which then had no checkpoint
+rows in it at all --- but that also meant they gave the new encoding no
+coverage of its own, until cake learned it (see "The flip, and what it
+cost").
 
 ### Recovering `C_t` from the checkpoints
 
@@ -2852,12 +2853,34 @@ the wrong row*: such a recovery emits a line veripb accepts, and only the
 implication check against the model's own row rejects it. The optional-task
 sabotage at step 12 left every start-checkpoint lane green and was caught here.
 
-**Still open: cake.** Five of the 169 `scp_chain` lanes check a Cumulative, and
-all five are pinned to `TimeIndexed` until `cake_pb_cp` can derive the
-start-checkpoint block --- so they currently check an encoding the solver does not
-ship. Losing cake verification on the new encoding in the meantime was accepted
-knowingly. The names are ours to give away, cake having no encoder to conform to:
-`sb` / `sa` / `sact` / `scc` for the flags and `scap_<i>` for the rows.
+**cake derives it (2026-09-19).** `cake_pb_cp` replaced its time-indexed
+`cumulative` encoder with a start-checkpoint one (CakePB-dev `a402078`), under our
+names: `sb` / `sa` / `sact` / `scc` for the flags and `scap_<i>` for the rows. The
+`scp_chain_cumulative*` cases, pinned to `TimeIndexed` from the flip until then,
+check the shipped encoding against cake's again, and a sixth
+(`cumulative_mixed_sat`) covers a variable capacity, a negative start and both
+kinds of inactive task, which none of the five reached. Renaming any of those flags
+or rows is now a cross-tool break, and `TimeIndexed`'s names (`cb` / `ca` /
+`cact` / `cc`, `cap_<t>`) are internal to this tree.
+
+It was checked beyond the six lanes when cake landed, by a one-off randomised
+differential over small instances mixing constant and variable lengths, heights
+and capacity, negative starts, and zero-length and zero-height tasks: each had to
+pass the full chain, verify a solution count equal to a brute-force count of the
+semantics, and give a Cumulative block matching cake's label for label, with larger
+instances checked on the rows alone. Nothing failed that was cake's. Two
+differences remain, neither specific to this encoding:
+
+- **A reification half the domains already imply gets a 0 coefficient on its flag
+  from cake and a 1 from us.** Both rows are tautologies, and `reification_shape`
+  clamps the same way for every reified row we write; cake's `less_equal_iff`
+  writes a 0 there too.
+- **cake writes `@c[id][cap_ge0]` and `@c[id][h_<i>_ge0]`, which we do not.** We
+  reject a negative capacity or height when the constraint is posted instead, so
+  over every model we accept they are tautologies.
+
+cake still has no `cumulative_optional` encoder, so the optional form stays outside
+the chain (see the follow-ups).
 
 **The one cost the encoding still carries** is the recovery's `~2m^3` lines per
 cited time point, which shows as 1.36x at `n = 5`, 2.36 at `n = 10` and 1.87 at
