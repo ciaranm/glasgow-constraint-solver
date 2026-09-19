@@ -1781,6 +1781,1063 @@ this keeps a flat array plus the incremental bitset (their Algorithm 3 shift-or)
 per time point. Same trade as #742 for edge-finding's scan, and the same answer
 --- what is missing is propagation performance, not proof content.
 
+## The start-checkpoint encoding, beside the time-indexed one (#780)
+
+The OPB above is `O(n x horizon)` and is paid unconditionally, before
+search, whether or not anything cites it. There is another encoding of
+the same constraint that is `O(n^2)` and free of the horizon: check the
+capacity only at the time points that are the *start of some task*.
+
+```
+before_{i,j} <-> s_i <= s_j
+after_{i,j}  <-> s_i + l_i >= s_j + 1
+active_{i,j} <-> before_{i,j} /\ after_{i,j}   [ /\ present_i ]
+
+C^start_j :  Sum_i h_i * active_{i,j}  <=  capacity
+```
+
+It says the same thing, because the load profile is a step function
+that only rises at the start of a task which could occupy the resource:
+a time point over capacity is dominated by the last such start at or
+before it, so checking every start checks every peak. Lengths, heights
+and the capacity are all non-negative already, so a checkpoint with
+nothing active is *satisfied* rather than merely vacuous.
+
+`CumulativeEncoding` selects which of the two is written.
+`TimeIndexed` is the per-time family alone and is the default;
+`Both` writes the checkpoints beside it, and changed no inference and no
+certificate when it was the only other arm. `BothRecovering` adds the
+eager differential. `StartCheckpoint` writes the checkpoints *instead*
+--- it arrived once the recovery did, since before that an unconverted
+inference would have had no per-time row left to cite, and it is now how
+a converted rule is held to having really been converted. See "Just
+turning the old encoding off", below.
+
+### Two details that are easy to get wrong
+
+**The diagonal.** `before_{j,j}` is a tautology and `after_{j,j}`
+reduces to `l_j >= 1`, so what is left of `active_{j,j}` is that
+conjunct and the presence. Both have to stay conjuncts: a bare `h_j` on
+the row charges a task for a resource it never takes when its length
+turns out to be zero or it turns out to be absent. Where *neither* says
+anything --- a constant length, which is at least 1 for a task that can
+raise the profile, and no presence --- the term genuinely is
+unconditional and goes on the row as itself, with no flag minted. That
+is what a nullopt from `pair_active_flag_key` means on a diagonal, and
+it is a different thing from what it means off one.
+
+**Which tasks get a checkpoint.** Sufficiency needs one at every task
+that can have positive height *and* positive duration, which is exactly
+`_active_tasks`. A checkpoint at an absent or zero-length task is
+harmless --- its start is still *some* time point, and the capacity
+holds at every time point --- it simply does not count towards
+sufficiency.
+
+### What running both arms checks, and what it cannot
+
+Every cumulative test lane is registered twice, the twin under
+`GCS_CUMULATIVE_ENCODING=both` in its own working directory (see
+`add_cumulative_test` in `gcs/CMakeLists.txt`), and most of them a third time
+under `both-recovering`.
+
+One trap, since it cost a round of vacuous lanes here: the encoding **cannot**
+be set with `set_tests_properties(... PROPERTIES ENVIRONMENT ...)` at
+registration. The runtime-cap block further down `gcs/CMakeLists.txt` sets
+`ENVIRONMENT` on every test in the directory, and that *replaces* the property
+rather than adding to it, so anything set earlier is dropped and the twin
+silently runs the arm it was meant to be twinning against. Record the lane and
+`set_property(TEST ... APPEND PROPERTY ENVIRONMENT ...)` after that block,
+which is what the linear and disjunctive lanes already do. Nothing caught this
+except a mutation lane that must fail starting to pass. The twin's value is
+*soundness*: veripb's `solx` rule propagates the logged assignment and
+then requires every constraint in the database to be satisfied, so a
+checkpoint row that says too much is a solution veripb refuses, on any
+enumeration lane. It also checks that every new flag is UP-derivable
+from a full assignment, which the same rule demands.
+
+It cannot check *sufficiency* --- that the checkpoints imply the
+per-time rows --- because nothing derives from them. (Under
+`BothRecovering`, where something does, see the whole-proof lane below.) That
+gap is not theoretical, and the asymmetry is sharp. Four deliberate corruptions of
+the encoding, run against `cumulative_constraint`,
+`cumulative_optional_constraint_enumerate`, `cumulative_overload` and
+`derived_cumulative`:
+
+| corruption | direction | caught |
+|---|---|---|
+| diagonal as a bare constant | row too strong | 4 of 4 |
+| off-diagonal `active` without the presence conjunct | row too strong | 2 of 4 |
+| `after_{i,j}` off by one, task counted one tick long | row too strong | 4 of 4 |
+| `after_{i,j}` off by one, task counted one tick short | row too **weak** | **0 of 4** |
+
+Anything that makes a checkpoint row weaker is invisible until an
+inference tries to derive something from it. Sufficiency gets its first
+real test when the time-table overflow contradiction moves over.
+
+### What having both arms costs
+
+More model is more for unit propagation to reach, so a certificate step
+that was load-bearing against the per-time family alone need not be
+against the two together. Three mutation lanes ---
+`cumulative_published_nfnl_mutation_drop`,
+`cumulative_optional_mutation_wrong_task` and
+`cumulative_optional_mutation_emit_nothing` --- write corrupted proofs
+that veripb rejects under `TimeIndexed` and *accepts* under `Both`. In
+the published not-first / not-last case the checkpoints put back enough
+for the wrapping RUP to close without the dropped contiguity row; in
+the presence-falsification cases they relate the falsified task's start
+to every other task's directly, which is enough to close without the
+chain. Those three are registered bare rather than twinned. Every other
+mutation lane still discriminates under both arms.
+
+The general form of the hazard is worth stating plainly: while both
+encodings stand, an honest certificate developed under `Both` has been
+checked more weakly than one developed under `TimeIndexed`. The five
+`scp_chain_cumulative*` cases are a partial hedge, since they verify
+the solver's proof against *cake's* OPB, which has no checkpoint rows
+in it at all --- but that also means they give the new encoding no
+coverage of its own.
+
+### Recovering `C_t` from the checkpoints
+
+The derivation below has been run against real OPBs, with **every `cap_t` row
+deleted from the model**, for `n = 3` to `6` and at every time point the
+encoding writes a row for. That deletion is the point: nothing in it can lean
+on a row the encoding is meant to lose. `tmp/issue780-recovery/` outside the
+repo holds the generator that produced those first proofs, and was the
+executable spec for the C++ below.
+
+Fix a time point `t` and let the *candidates* be the tasks with flags at `t`
+(their possible-active windows differ, so this is not every task; a task with
+no flag at `t` is not in `C_t` and takes no part). Write `cb_i`, `ca_i`,
+`cact_i` for the per-time flags and `sb`, `sa`, `sact` for the pairwise ones.
+
+**The argument.** Let `j` be the candidate with the largest start among those
+that have started by `t`. Every candidate `i` active at `t` has `s_i <= t <=
+s_j`, so `sb_{i,j}`; and `s_i + l_i >= t + 1 >= s_j + 1`, so `sa_{i,j}`; so
+`sact_{i,j}`. `C^start_j` then caps exactly the load at `t`. Note `j` need not
+itself be *active* at `t` --- only started --- which is what keeps the case
+split over "started by `t`" rather than over the active set, and it is why the
+walk below never has to know which tasks are running.
+
+**The steps.** Reason-free, at `Top`, all of them:
+
+| step | shape | count | cacheable on |
+|---|---|---|---|
+| totality `sb_{i,j} \/ sb_{j,i}` | one `pol`: the two `[f]` halves, starts cancelling, divide by 2, saturate | `m(m-1)/2` | nothing, time-free |
+| transitivity | one `pol`: two `[r]` halves and one `[f]`, all three starts cancelling | `m(m-1)(m-2)` | nothing, time-free |
+| `ca_{i,t} /\ cb_{j,t} -> sa_{i,j}` | one `pol`: `ca[r] + cb[r] + sa[f]`, saturate at degree 1 | `m(m-1)` | `t` |
+| `e_{i,j} <-> (~cb_{i,t} \/ sb_{i,j})` | two `red` | `m(m-1)` | `t` |
+| `e_{i,j} /\ sb_{j,k} -> e_{i,k}` | one `rup`, on transitivity | `m(m-1)(m-2)` | `t` |
+| `N_k`, `W_{j,k}` | two `red` each | `O(m^2)` | `t` |
+| the scan `A_k` | `rup` per step, resolved by `pol` | `O(m^2)` | `t` |
+| `W_j -> C_t` | `rup` per pair, then one `pol` on `C^start_j` | `O(m^2)` | `t` |
+
+`W_{j,k}` says "`j` has started by `t` and is the latest to have done so among
+the first `k+1` candidates"; `N_k` says none of the first `k+1` has started.
+`A_k : \/_{j<=k} W_{j,k} \/ N_k` is carried up the scan one candidate at a
+time, each step one `rup` per live `W` plus one for `N`, resolved together by a
+single `pol`. `A_{m-1}` is then resolved against the per-case clauses, and the
+target row comes out from behind the fully reified `F_t` the cases were routed
+through --- the issue's guard-relativized rendering of a case split whose
+target is a row rather than a clause.
+
+**In the solver.** `recover_cumulative_capacity_row`
+(`gcs/constraints/cumulative/checkpoint_recovery.cc`) is this derivation,
+keyed on `t` alone and reason-free at `Top`, with the order facts cached
+across time points and the recovered rows cached across citers. Two things
+it does that the hand-written version did not have to:
+
+- **A lone task's case comes out unguarded.** With one candidate there is no
+  pairwise term to pin, so the case's `pol` produces the target row with no
+  `~W_j` on it, and the scan then has nothing to cancel against. The guard
+  goes on as a literal axiom, which costs nothing where the arithmetic already
+  produced it --- saturation flattens the coefficient either way.
+- **The clause has to be a `pol` and not a `rup`.** The guarded row and the
+  target's reverse half conflict by *arithmetic*, not by unit propagation:
+  `sum ~cact_i >= 2` and `sum cact_i >= 3` over four literals each have slack,
+  so nothing propagates and a `rup` stalls. Adding them is what finds it.
+
+**Measured**, lines per time point, at every non-trivial `t`:
+
+| `m` | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|
+| lines | 74 | 153 | 280 | 467 |
+
+That is `~2m^3`, against #780's estimate of `4-5 m^2`. Half of it --- the
+transitivity pool --- is time-free and shared by every point; the other half,
+the `e`-lifting rups, is per point because `e` mentions `cb_{i,t}`. Emitting
+only the triples the scan actually resolves against would take a constant
+factor off it. Even unoptimised the cost argument holds with room to spare: at
+`n = 6` over the 60 points a complete refutation cites, this is under 30k lines
+against a 6.7M-line proof.
+
+**Two things hold the solver's version to what the hand-written one showed.**
+`cumulative_overload_mutation_recover_wrong` recovers a row from the
+neighbouring task's checkpoint and requires veripb to reject it, which only the
+implication check does. And `cumulative_checkpoint_recovery_leak_check` cuts
+the proof at the marker the recovery emits and rechecks the prefix against an
+OPB with every per-time capacity row stripped out --- the only thing that says
+the recovery is not quietly closing one of its rups against the very row it
+claims to be deriving. Both fail loudly if the recovery stops running at all,
+rather than passing vacuously.
+
+### Citing the recovered row: the time-table overflow contradiction
+
+`propagate_cumulative` has one accessor, `capacity_row(t)`, for the row saying
+the load at `t` is within the capacity. It returns the recovered row where the
+recovery is on and can speak about the constraint, and the model's own row
+otherwise. The fallback is unreachable now that the recovery speaks about every
+shape, but the two still live side by side: the model row is what the differential
+arm checks each recovery against, and it is what a `TimeIndexed` or `Both` run
+cites.
+
+The whole time-table family goes through it: the overflow contradiction and
+both bound pushes. On two tasks that must overlap and do not fit, the
+refutation cites a per-time capacity row **once** under `Both` and **not at
+all** under `BothRecovering` --- and the whole proof then verifies against an
+OPB with every `cap_t` row deleted.
+
+That is the `whole` mode of the leak-check lanes, and it is the first thing in
+this project to check *sufficiency* rather than soundness. Everything before it
+asked whether the checkpoint rows say too much, which solution checking
+answers; nothing asked whether they say enough, because nothing derived
+anything from them.
+
+The mode is deliberately narrow: it refuses any model whose proof still cites a
+per-time row, so a model can only go in it once every rule it fires has moved
+over. Two went in with the time-table family --- the minimal two-task overflow,
+and four tasks with four different durations, which fires both bound pushes and
+exercises the weakening path where the candidate set changes from one time point
+to the next --- and the third, three tasks whose mandatory parts are all empty so
+that the overload check is what refutes them, joined them when that check moved
+across (below).
+
+**Transitivity is load-bearing**, which #780 predicted and this confirms:
+dropping the transitivity pols makes the `e`-lifting rups fail, and with them
+the whole scan. The cyclic tournament is real, and no amount of pairwise
+reasoning gets past it.
+
+**The differential.** The last line of the derivation is a syntactic
+implication check (`ia`) of the model's own `cap_t` row against the recovered
+line. It is what catches a recovery that derived the *wrong* row rather than an
+invalid one: citing `C^start_{j+1}` where the case wanted `C^start_j` still
+produces a valid line, and the implication check is what rejects it. Both that
+corruption and a recovered row claimed one tighter than `cap_t` are caught
+there; only dropping transitivity fails earlier, as an invalid rup.
+
+### Citing the recovered row: the overload check's window
+
+The overload check's `(OC)`/`(TTOC)` certificate opens by summing a capacity row
+at *every time point of the window* before the contained tasks' energy cancels
+against it. Moving it over is the same one-line change as the time-table
+family's --- it reads `capacity_row(t)` instead of `capacity_lines` --- but it is
+the first citer that wants a row at more than one point, and so the first place
+the recovery is asked for many rows at once.
+
+Two things make that cheaper than the per-point cost suggests. The rows are
+keyed on `t` alone and cached for the constraint, so overlapping windows share
+them: three firings on `cumulative_overload_enum_f1_twin` over `[2,7)`, `[1,6)`
+and `[1,5)` are fourteen row citations across six distinct time points, and only
+the first citation of each point pays anything. And the rows live at
+`ProofLevel::Top`, so backtracking does not lose them and a window re-derived at
+another node pays nothing either.
+
+The cancellation is unaffected by which of the two produced the row, because a
+recovered row is the *same inequality* as the model's: the encoding writes
+`Sum_i h_i * cact_{i,t} <= capacity` over the tasks with a flag at `t`, and the
+recovery's target is built over exactly that candidate set, from exactly those
+flags. Where the model writes no row at all --- no task can be active at `t` ---
+the recovery returns nullopt on the same condition, so the two agree on the
+empty case too.
+
+`checkpoint_recovery_overload.scp` is `whole` from here, and a fourth case,
+`checkpoint_recovery_ttoc.scp`, goes in beside it for the other arm. That one is
+built so that `(OC)` alone cannot refute it: capacity 3 over `[0,4)`, contained
+tasks carrying `6 + 6 = 12` against a supply of `12`, and a task the window does
+not contain whose mandatory part `[3,4)` at height 2 is what tips it to `14 >
+12`. So it fires `(TTOC)` and nothing weaker, and it passes `whole` --- the
+profile-strengthened certificate, too, stands with every `cap_t` row deleted.
+
+All four registered cases are now `whole`, which says something narrower than it
+looks: the *default* rule set --- time-tabling, the overload check, and its
+`(TTOC)` strengthening --- is fully converted, and a default-rules model's whole
+refutation now stands with every `cap_t` row deleted. It does not say the
+time-indexed block can go.
+
+The three overload mutation lanes (`energy`, `capacity`, `window`) are twinned
+onto the recovering arm at the same time, having been checked one at a time to
+still fail there. `capacity` is the one that matters for this step: it omits a
+row from the window supply, which is now a *recovered* row rather than a model
+one, so without the twin the recovering arm would have no negative test over the
+path this moved.
+
+### Just turning the old encoding off
+
+The `whole` mode above reconstructs the end state: solve with both blocks in the
+model, then delete the `cap_t` rows from the finished OPB and re-check. It ran
+out of road as soon as the default rule set was converted, because its vehicle is
+an `.scp` model through `glasgow_scp_solver`, which builds a plain `Cumulative`
+--- and every citer that remains is behind a `CumulativeRules` field that is off
+by default. No `.scp` model can fire those rules, so none could be registered to
+mark them outstanding.
+
+`CumulativeEncoding::StartCheckpoint` replaces it by doing the obvious thing
+instead: **never emit the per-time block at all**. A rule that still reads
+`capacity_lines` finds nothing there, its pol loses the supply it was counting
+on, and veripb rejects. Nobody has to enumerate where the old rows are read from
+--- the arm asks the question everywhere at once, which is the check a careful
+reader would do by hand over every access to the old constraint IDs, done
+mechanically and without the reader having to be exhaustive.
+
+It is better than the strip-and-recheck on every axis that matters. It is the end
+state itself rather than a reconstruction of it. It needs no post-processing and
+no `.scp` vehicle, so it is available to every C++ test lane --- and therefore to
+every rule, including the off-by-default ones. And it fails loudly.
+
+**The per-time block used to appear where the recovery could not reach**: a
+variable height, a variable length, an optional task, a variable capacity. There
+would otherwise be no capacity row at all for such a constraint, and every rule
+over it would be *uncertifiable* rather than merely unconverted. The recovery
+reaches all four now, so the fallback is unreachable for any Cumulative with an
+active task; `cumulative_shape_supports_checkpoint_recovery` is still the one
+statement of where the recovery can speak, shared with the recovery's own guard
+so the two cannot drift, and it now declines only the empty constraint.
+
+That fallback is also the arm's one way to go quietly vacuous --- a lane all of
+whose fixtures fall back would pass while checking nothing new. So the four
+leak-check models are registered a second time in `no-block` mode, which asserts
+that the OPB contains *no* `cap_` row and does contain `scap_` ones. A model that
+falls back fails it by name.
+
+Run against the bare cumulative lanes, the arm reports the remaining work
+exactly. It began at 11 genuine failures; `cumulative_kaoc` came off when the
+availability lines moved, and `cumulative_edge_finding`, `cumulative_ttef`,
+`cumulative_energetic{,_random}` and `cumulative_nfnl` came off together when
+edge-finding's window rows did. `cumulative_published_nfnl` and its random twin followed,
+and `derived_cumulative` with the presolver lanes that reach it went last.
+**The list is empty** --- every rule is converted, and every lane that exercises
+one runs green with the per-time block deleted from the model.
+
+That was once only half the story --- every *rule*, not every *shape* --- and it
+is not any more. When the arm was built, `capacity_row` still fell back to the
+model row for a Cumulative the recovery could not speak about (a variable
+length, height or capacity, or an optional task), and **149 of the 440 proofs**
+the cumulative test binaries write under this arm carried `cap_` rows because of
+it, concentrated in `cumulative_overload_test` (83 of 115) and
+`cumulative_optional_test` (18 of 35).
+
+Every one of those shapes has since been brought in, and the count went
+**149 -> 121 -> 95 -> 10 -> 0**. See "Every shape, and what each one took" below.
+`capacity_row`'s fallback is now unreachable for any Cumulative with an active
+task, and the block is not merely skipped where it is safe to skip --- it is
+replaceable outright.
+
+The other prerequisite for the default flip was that the checkpoint block was
+**not** shape-gated on emission, so a non-qualifying constraint got *both*
+blocks; it is gated now. What still blocks the flip is neither of these: it is
+the per-`(i, t)` flag family, which is where the `O(n x horizon)` lines actually
+live and which no part of this touches. See "What `StartCheckpoint` saves today"
+below for the measurement.
+
+Those lanes fail by *aborting*, not by a quiet mismatch: they verify inline, so
+the harness throws `UnexpectedException{"veripb verification failed"}` the moment
+a pol comes up short of supply. Loud, and with the offending proof line named.
+
+Two lanes are off the arm for a different reason and are not part of the bar:
+`cumulative_optional_mutation_wrong_task` and
+`cumulative_optional_mutation_emit_nothing` stop discriminating under it, as they
+already do under `Both` and for the same reason --- more model is more for unit
+propagation to reach. They are not unconverted; the arm just cannot hold them.
+
+The arm is not vacuous on the lanes that are on it: under it, 59 of
+`cumulative_test`'s 77 proofs and 37 of `cumulative_overload_test`'s 115 contain
+no `cap_` row at all.
+
+### Citing the recovered row: the elastic and knapsack availability lines
+
+`(TTHE-OC)` and `(KAOC)` cap what a window supplies one time point at a time,
+which is why their certificate sums a *line per time point* rather than one bulk
+supply term. Each of those lines is built from the capacity row at `t`, with
+every compulsory contribution pinned off it and every term that is not a
+contained task's optional one weakened away, and then --- where the conflict
+needs it --- put through the subset-sum strengthening.
+
+So unlike the overload check, which sums rows straight into one pol, this uses
+the row as the *base of a per-point sub-derivation*. That turns out not to
+matter: a recovered row is the same inequality as the model's, over the same
+candidates at `t` and the same activity flags, so the pins land on the same terms
+and the weakenings remove the same ones. The change is the same one-line swap.
+
+Two things about the loop are worth writing down, because both are easy to get
+wrong in the direction of "tidier but different".
+
+**The row lookup is also the "does the encoding say anything about `t`" test**,
+and it has to stay above the horizontally elastic branch even though that branch
+does not use the row. Moving it below --- which is tempting, since under the
+recovery *asking is what derives the row*, and a point that takes the elastic
+branch has then paid for a row it never cites --- would let a time point with no
+row take that branch, where today it is skipped outright. That changes what
+`pol_supply` accumulates. The cost of leaving it where it is is bounded: rows are
+cached per time point for the whole constraint. It was not worth changing
+behaviour on a branch no fixture currently reaches.
+
+**`pol_supply` is cross-checked against what the detection computed**, and
+throws a `ProofError` if they disagree. That is the backstop that makes the
+paragraph above a matter of tidiness rather than of soundness --- but it is a
+backstop, not a reason to lean on it.
+
+All nine `cumulative_kaoc_mutation_*` lanes still discriminate under the
+start-checkpoint arm and are registered there. `capacity` is the one that earns
+it: it omits a row from a per-time availability line, which on that arm is a
+recovered row, so it is the negative test over exactly the path this moved.
+
+**A coverage gap this turned up, which predates it.** `(TTHE-OC)` --- the
+elastic cap with *no* time point strengthened --- is never fired by any lane in
+the suite, under any encoding: sweeping every cumulative test binary for the
+rule label finds `oc`, `ttoc` and `kaoc` and never `ttheoc`. The certificate
+code is shared, and the non-strengthened per-point branch is exercised whenever a
+`kaoc` firing leaves some points unstrengthened, so this is a gap in *detection*
+coverage rather than in the certificate's. The `elastic` rule set in
+`cumulative_kaoc_test.cc` is used for decline-checks, which is why the fixtures
+there all go on to fire `kaoc` instead. Worth a fixture; nobody has written one.
+
+### Citing the recovered row: edge-finding's window rows
+
+The smallest change of the lot, and the one that bought the most. Edge-finding's
+certificate opens exactly as the overload check's does --- a capacity row summed
+at every time point of the window, against which the contained tasks' guarded
+energy cancels --- so it is the same one-line swap, and it moved five lanes at
+once: `cumulative_edge_finding`, `cumulative_ttef`, `cumulative_energetic` and
+its random twin, and `cumulative_nfnl`. The last of those is not an accident:
+our not-first / not-last is certified by edge-finding's certificate unchanged,
+so converting one converted both. (The *published* detection is not, and is
+still outstanding --- it has its own citer.)
+
+Worth recording, because the handoff for this step said otherwise:
+`window_energy::WindowRows` has nothing to do with it. That structure's
+`std::function<Integer -> ProofLine>` hands back a *task's activity* rows, for a
+caller minting its own, and Disjunctive is its only user. Edge-finding's capacity
+supply is a plain loop over `capacity_lines` like every other citer, and wants
+the same treatment as the rest.
+
+**Four mutation lanes stop discriminating and stay off the arm**, checked one at
+a time: `cumulative_ttef_mutation_{pin,mirror_pin}`,
+`cumulative_nfnl_mutation_roomy_drop` and
+`cumulative_energetic_mutation_mirror_drop_energetic`. All four drop a single row
+or pin, and with the per-time block gone the checkpoint rows relate the starts
+directly --- enough for the wrapping RUP to close without what was dropped, so
+veripb accepts the corrupted proof. They still say what they always said about
+the other encodings, and they are not part of the progress bar. The forward
+`drop_energetic` lane, which is the one #755 cares about, does still
+discriminate and is on the arm.
+
+That is the same hazard the `Both` arm has, arriving now in a place worth
+noticing: the arm that best checks *sufficiency* is also the arm that most
+weakens the mutation lanes, because both effects come from having more in the
+database for unit propagation to reach. Neither arm dominates the other, which is
+why every lane is registered on the arms it still discriminates under, one at a
+time, on evidence.
+
+### Citing the recovered row: published not-first / not-last
+
+The last of the propagator's citers, and the only one that scales the row: its
+`capacity_at` helper adds the capacity line at `t` with a coefficient, and
+converts the contained set's and the pushed task's variable-height contributions
+back into activity so that contiguity has something to cancel against. Scaling
+a recovered row is the same as scaling the model's, so again the swap is one
+line. `cumulative_published_nfnl` and its random twin come off the bar, and all
+eight of its fixtures run checkpoint-only.
+
+Five of its six mutation lanes still discriminate on the arm and are registered
+there, `drop_pin` --- the one aimed at what #746 added --- among them.
+`cumulative_published_nfnl_mutation_drop` does not, which is not news: it was
+already off the `Both` arm for exactly this reason, since dropping a contiguity
+row is something the checkpoint rows put back.
+
+### The one place the arm does not fail loudly
+
+Worth knowing before relying on it, and it took a confusing failure to notice.
+
+`inferred_cumulative_presolver` under the start-checkpoint arm does not fail
+veripb --- its proof verifies. It fails its own assertion, with *"posted 0 cuts
+with a coefficient above one, not the one the fixture is about"*. The cause is
+`derived_cumulative.cc`, which looks its donors' per-time rows up by label; under
+this arm a donor wrote none, so the derivation **declines**. Declining is a
+supported outcome there and not rare --- "a cut spanning several donors reaches
+time points one of them wrote no row for" --- so the constraint is simply not
+installed, and propagation quietly weakens.
+
+So for step 9's citers the arm's blunt-and-total property does not hold: the leak
+is soft. What notices is a lane asserting what got posted, and a lane without
+such an assertion would pass while silently losing propagation strength. Two
+consequences. First, `derived_cumulative`, `inferred_cumulative_presolver` and
+`cumulative_strengthening_presolver` passing must not be read as evidence until
+step 9 moves that lookup onto the recovery like every other citer. Second, this
+is a good argument for those lanes keeping assertions about what they infer, and
+not only about whether the proof checks.
+
+### Citing the recovered row: derived Cumulatives, and how a constraint asks another
+
+The last citer, and the only one outside `cumulative.cc`. A derived Cumulative
+adds nothing to the OPB; it establishes its own per-time rows inside the proof,
+from its donors', by a recipe. It found those donors' rows by *label* --- and
+under the start-checkpoint encoding a donor has none, so the recipe declined and
+the whole derived constraint was never installed.
+
+**Why this one needed a mechanism and the others did not.** Every citer so far
+was inside the donor's own propagator, where `capacity_row(t)` closes over the
+constraint's `CumulativeInputs` and recovery cache. A derived Cumulative is set
+up by a presolver, which reaches its donors as `ConstraintID`s and a
+`CumulativeDonorView`, and has no route to either. So the donor has to be able
+to *publish* the ability to derive a row, and the consumer to ask for one by
+constraint identity.
+
+`NamesAndIDsTracker::publish_derived_line_family` /
+`find_or_derive_line_in_family` are that: a constraint registers a deriver for an
+integer-indexed family of lines, a consumer asks for member `t`, and the tracker
+memoises. Cumulative publishes one from an install initialiser --- the earliest
+point with a logger, and before presolvers run (#658) --- over a copy of its
+inputs sharing the same `CheckpointRecoveryCache`, so a row derived through the
+family and one derived by the propagator are the same row, paid for once.
+`derived_cumulative.cc` tries the label first, since where it exists it costs
+nothing and a derivation is `O(n^3)` lines.
+
+**What kind of state this is, since it was worth getting right.** Not
+"constraint data preserved across `clone()`", which is for posted arguments;
+not backtrackable state either. It is the constraint's own mutable,
+non-backtrackable, **per-install** state, made reachable from outside the
+propagator by constraint identity. Per-install is load-bearing rather than
+incidental: everything in it is a position in *one particular proof file*, so
+hanging it off the `Cumulative` object and carrying it across `clone()` --- the
+first design tried here --- would have promoted it to per-*Problem*, and under
+parallel search two threads would then share one memo and cite one proof's line
+numbers in another's. Install runs once per `create_propagators`, so per-install
+is per-solve is per-proof, and both parallel search and an LNS restart with a
+fresh proof get fresh state by construction.
+
+The publication carries one invariant nothing checks: **whatever the deriver
+emits must live at `ProofLevel::Top`.** The memo hands the same line number out
+for the rest of the proof, and a line emitted lower is deleted on backtracking,
+after which the memo is a dangling reference.
+
+**A known wart, recorded rather than fixed.** This is the third variation on "a
+per-solve, constraint-keyed memo of proof lines" in the tracker, beside
+`publish_derived_line` and `boundary_pin_line`, and each arrived for one caller.
+The tracker is meant to provide general facilities rather than a drawer of
+specific ones. #780's step 10 wants a fourth --- the same thing for *flags*
+rather than lines --- and the deliberate decision is to let that one arrive
+before generalising, on the grounds that three examples are what tells you what
+the fourth needs.
+
+**What it costs, which is the real trade.** A derived Cumulative resolves a row
+for every time point in its window up front, so that it can decline cleanly
+rather than install a propagator whose inferences it cannot justify. Each
+recovery is `~2m^3` lines against the per-time block's `O(n)` rows per point, so
+on a wide horizon the derivations can cost more lines than the block they
+replace. Two things bound it: the donor's cache is shared with its own
+propagation, so points it cites anyway are paid once, and the window is the
+derived constraint's rather than the donor's horizon. A third used to: a donor
+with a variable height or an optional task did not qualify for the recovery,
+kept its block and was found by label as before. That escape is gone now the
+recovery speaks about every shape, so a derived Cumulative pays the derivation
+wherever its donors do. (Derived Cumulatives take constant heights only in any
+case, so what changed for them in practice is optional and variable-length
+donors.) Making the resolution lazy would avoid paying for points never cited,
+but would cost the clean decline, which is deliberate.
+
+### What it costs in lines
+
+The checkpoint block is `6n(n-1) + n` lines --- six per ordered pair
+(three flags at two reification halves each) and one row per task ---
+and is flat in the horizon. Measured through `fzn-glasgow --prove`:
+
+| | time-indexed | with checkpoints | delta |
+|---|---|---|---|
+| `n = 6`, `H = 50` | 2,086 lines | 2,272 | +186 |
+| `n = 6`, `H = 800` | 33,314 lines | 33,500 | +186 |
+| `n = 3`, `S = 9`, `D = 100` | 2,079 lines / 261 KB | 2,118 | +39 |
+| `n = 3`, `S = 9`, `D = 10000` | 190,179 lines / **25 MB** | 190,218 | +39 |
+
+The last row is the case for the whole exercise: 25 MB of per-time
+block, emitted unconditionally, next to 39 lines that say the same
+thing.
+
+One correction to how that reads, from the long-task measurements below: the
+25 MB is *not* the per-time capacity rows. It is the per-`(i, t)` flag family,
+which those 39 lines do not replace and which `StartCheckpoint` does not touch.
+The capacity rows are about 9% of such a file. The exercise is still the right
+one; the line it deletes is not the line that makes the file big.
+
+### Every shape, and what each one took
+
+The recovery was written for constant lengths, heights and capacity and no
+optional tasks, and the other four shapes were listed as "known extensions,
+none of them done". Doing them moved the fallback fraction from 149 of 440
+proofs to none. What they actually cost is worth recording, because the
+ordering of easy and hard was not the one the list implied.
+
+**Optional tasks, and variable lengths: the same one change, on the diagonal.**
+The scheduling argument never needed a task to be mandatory or its length
+fixed. `cact_{i,t}` carries the presence conjunct and so does `sact_{i,j}`, so
+"every candidate active at `t` has `sb` and `sa`, hence `sact`" holds as
+written, and the pins that say so stay RUP because the presence is the same atom
+on both sides. `sa_{i,j}` already reified on `s_i + l_i` directly when the
+length varied.
+
+What differs is the **diagonal**. With a constant length and no presence the
+encoder mints no `sact_{j,j}` --- before is a tautology, after reduces to
+`length >= 1` --- and folds `j`'s height into the checkpoint row's right hand
+side, which is why the recovery puts it back with a literal axiom rather than
+cancelling it. Give `j` a presence or a variable length and the flag exists,
+the height is on the row like everyone else's, and it has to be cancelled like
+everyone else's. So: pin the diagonal where the flag is there, axiomatise it
+where it is not. That one change is both shapes.
+
+*A pol that looked necessary is not.* The obvious next move is a diagonal
+counterpart to the `ca /\ cb -> sa` pol, with `sact_{j,j}` standing in for the
+`sa_{j,j}` the encoder never mints, on the grounds that getting `l_j >= 1` out
+of `s_j <= t` and `s_j + l_j >= t+1` is arithmetic and a rup asked to do
+arithmetic stalls. Written and measured, it changes nothing: the pin closes on
+its own, because unlike the off-diagonal fact this one is about a *single*
+task's variables, so `l_j <= 0` pushes `s_j` past `t` and propagation has its
+contradiction. The off-diagonal pol really is load-bearing --- deleting it fails
+five lanes --- which is what makes the difference between them a fact rather
+than a guess.
+
+**A variable height: the one that needed an argument.** A constant height is a
+coefficient on an activity flag, and the pin cancels it off the checkpoint row
+and leaves the same coefficient on `~cact` --- which *is* the load term the
+target's reverse half then cancels against, so the conversion and the arithmetic
+are one act. A variable height is a coefficient on neither flag: the checkpoint
+row carries the pair's bit-linearised contribution `scc_{i,j,k}` and the target
+carries the per-time one `cc_{i,t,k}`. The conversion is between two bit sums,
+`~cact` stops being the load, and it becomes a guard residue --- and a residue
+left on a case clause is a literal the scan cannot resolve away, which comes out
+as a recovered row weaker than the one asked for. That is how the first attempt
+failed, and the differential arm said so precisely.
+
+So the swap needs
+
+    Sum_k 2^k cc_{i,t,k}  <=  Sum_k 2^k scc_{i,j,k}
+
+with **no** `cact` guard, and that holds either side of `cact` for two different
+reasons: active at `t`, and both sides are `h_i`; not active, and the left is
+zero while the right is a sum of non-negative terms. Two reasons is a case
+split, and a case split whose target is a row rather than a clause gets
+relativized on a flag of its own --- the same technique, and the same reason for
+it, as the target row itself. The active case is the per-time `cle` row and the
+pair's `scge` row with `h_i` cancelling between them, the pair row's guard
+discharged by the pin; the inactive case is the `czero` row plus literal axioms
+for the right hand side; resolving the two leaves the goal holding under `w`
+alone, and it comes out from behind its flag exactly as the target does. The
+flagless diagonal is the same shape with `h_j` itself on the right and the
+height's non-negativity for the inactive case.
+
+**A variable capacity: nearly free, and this document said otherwise.** An
+earlier note here held that `degree = total - capacity` was "the degree the
+derivation saturates at" and that the guard coefficients were computed against
+it, so a capacity carried as a bit sum would have no single constant degree.
+Neither half is true. `degree` was only ever the test for the trivial case, and
+the capacity needs no handling of its own, because it **cancels between the
+checkpoint row and the target's own reverse half** exactly as the load does ---
+one carrying `+capacity`, the other `-capacity`. All it took was carrying the
+row in the encoder's own two forms, and giving up the trivial-case shortcut,
+which asks "does the most the candidates can take fit in what the resource
+supplies" and has no single number to ask that of. Skipping the shortcut costs a
+longer derivation on a row that happens to be slack, and nothing else.
+
+The wrong note is worth keeping in mind rather than just deleting: the argument
+was about *scheduling* and never mentioned the capacity's constancy, and
+guessing that PB arithmetic would be the obstacle --- without following the
+constant through the code to see what it actually reached --- produced a
+confident note pointing at the wrong thing.
+
+**How each was checked.** Not by the suite going green, which it did after every
+one of them, but by breaking the new step and counting what noticed:
+
+| change | sabotage | lanes that failed |
+|---|---|---|
+| optional tasks | diagonal falls back to the axiom always | 3, all `_recovering` |
+| variable lengths | the same, with lengths now in | 14, `_recovering` and `_startcheckpoint` |
+| variable heights | cite the pair `zero` row, not the per-time one | 7 |
+| variable capacity | off-by-one in the variable form of the row | 5 |
+
+The `_recovering` arm is what catches these. A recovery that is *invalid* fails
+where it is emitted; one that is valid but derives the *wrong row* emits a
+perfectly good line, and only the implication check against the row the model
+still carries beside it notices. The optional-task sabotage is the sharpest
+illustration: the `_startcheckpoint` lanes stayed green right through it.
+
+### What `StartCheckpoint` saves today, and why the default cannot flip yet
+
+That table is the cost of *adding* the checkpoint block. The question the
+default flip asks is a different one --- what does `StartCheckpoint` save,
+against `TimeIndexed`, on the same model.
+
+> **All of the model measurements below were taken while the per-`(i, t)` flags
+> were still OPB rows, and step 10 has since moved them into the proof. They are
+> kept because the reasoning is what led to step 10 and the failure mode is worth
+> recognising --- but for what the encoding costs *now*, skip to "After step 10:
+> no crossover left". The proof measurements still stand.**
+
+**Read the next three subsections together, and note which regime each is in.**
+The first two sweep instances whose tasks are short, and find no saving until
+the horizon reaches about `6n^2`. That is a real result about that family, and
+it is *not* the family this encoding exists for --- which is a handful of tasks
+of very long duration, exactly the instances nobody could write an OPB for, and
+so exactly the instances no test or example covered. The third measures that
+regime, and the answer there differs in direction and, far more importantly, in
+what it implicates.
+
+#### Short tasks: no saving until `H ~= 6n^2` (superseded)
+
+Measured, the answer in this family is **nothing, until the horizon reaches
+about `6n^2`**.
+
+Swept with `examples/cumulative --variant`, one generated instance per row,
+counting OPB lines:
+
+| | `H = n` | `H = 2n` | `H = 4n` | `H = 8n` |
+|---|---|---|---|---|
+| `n = 5` | 268 / 384 (1.43x) | 423 / 534 (1.26x) | 733 / 834 (1.14x) | 1,353 / 1,434 (1.06x) |
+| `n = 10` | 809 / 1,345 (1.66x) | 1,419 / 1,945 (1.37x) | 2,639 / 3,145 (1.19x) | 5,079 / 5,545 (1.09x) |
+| `n = 20` | 2,803 / 5,079 (1.81x) | 5,223 / 7,479 (1.43x) | 10,063 / 12,279 (1.22x) | 19,743 / 21,879 (1.11x) |
+| `n = 40` | 10,415 / 19,771 (1.90x) | 20,055 / 29,371 (1.46x) | 39,335 / 48,571 (1.23x) | 77,895 / 86,971 (1.12x) |
+
+(time-indexed / start-checkpoint, and the ratio.) Every entry is above one,
+and the ratio falls towards one as the horizon grows rather than crossing it.
+Pushing the horizon far past anything a real instance would carry finds the
+crossing exactly where the arithmetic says it is:
+
+| | `H` | time-indexed | start-checkpoint | delta | `6n^2` |
+|---|---|---|---|---|---|
+| `n = 10` | 400 | 24,599 | 24,745 | +146 | 600 |
+| `n = 10` | 600 | 36,799 | 36,745 | **-54** | 600 |
+| `n = 20` | 2,400 | 290,783 | 290,679 | **-104** | 2,400 |
+
+**The reason is that the arm does not remove the `O(n x horizon)` part.**
+Decomposing one model by row kind (`n = 20`, `H = 40`) says it plainly:
+
+| | time-indexed | start-checkpoint |
+|---|---|---|
+| `cb` / `ca` / `cact` rows (per `(i, t)`) | 3,396 / 3,396 / 1,742 | 3,396 / 3,396 / 1,698 |
+| `cap_<t>` rows | 44 | **0** |
+| `sb` / `sa` / `sact` rows (per `(i, j)`) | 0 | 1,520 / 1,520 / 780 |
+| `scap_<j>` rows | 0 | 20 |
+
+The per-`(i, t)` flag family is untouched, and it is where essentially all of
+the `O(n x horizon)` lines live: three fully reified flags per task and time
+point, at two reification halves each, is `6nH` rows against the block's `H`
+capacity rows. `StartCheckpoint` drops those `H` rows and adds `6n(n-1) + n`,
+so
+
+    lines(StartCheckpoint) - lines(TimeIndexed)  ~=  6n^2 - H
+
+which is why the delta above is flat in `H` at a fixed `n`, and why the
+crossing sits at `H ~= 6n^2` --- for `n = 40`, a horizon of about 9,600. No
+scheduling instance looks like that: `H` is normally a small multiple of `n`,
+which is the left-hand column of the first table, where the arm is *worst*.
+
+So **flipping the default would make every model in this family larger**, by up
+to 1.9x at `H = n`. The flip is not blocked on anything about the capacity rows
+--- those are converted, and the progress bar is empty --- it is blocked on the
+per-`(i, t)` flags still being model objects. Minting them lazily, under the
+same keys and labels, is the step that removes the `6nH` term and makes the
+encoding horizon-free in fact rather than only in its capacity rows.
+
+Every instance in that sweep has task lengths drawn from `1 .. 4`, which is the
+bias to hold on to: short tasks are what was solvable under the time-indexed
+encoding, and so the only thing anything in this repository measured, and they
+are not what #780 was opened for. `--max-length` and `--max-start` exist on
+`examples/cumulative` so that the other family can be reached at all.
+
+#### The proof, in that same family
+
+The OPB is the smaller half of the question, and the answer on the other half
+is worse. The encoding is proof-only --- at every point in the sweep below the
+two arms report *identical* recursions, failures and propagations, as they
+must --- so the whole difference in proof size is proof-logging cost:
+
+| | `H = n` | `H = 2n` | `H = 4n` |
+|---|---|---|---|
+| `n = 5` | 3,827 / 5,275 (1.38x) | 6,947 / 9,109 (1.31x) | 7,627 / 9,789 (1.28x) |
+| `n = 10` | 14,335 / 29,280 (2.04x) | 15,749 / 35,853 (2.28x) | 17,989 / 38,093 (2.12x) |
+| `n = 20` | 3,265 / 206,019 (**63x**) | 367,991 / 683,552 (1.86x) | 377,151 / 692,712 (1.84x) |
+
+(time-indexed / start-checkpoint `.pbp` lines.) This is the `~2m^3` per time
+point from the table above, showing up at the scale of a whole solve for the
+first time. The cache is per *install* --- one `CheckpointRecoveryCache` made
+in `install_propagators` and shared by every citer for the rest of the solve
+--- so a point is recovered once, not once per firing, and this is already the
+amortised figure. What it amortises over is the number of *distinct time
+points cited*, which grows with `H`, so the recovery bill grows about as
+`H * n^3` while the model saving grows as `H - 6n^2`.
+
+The `n = 20`, `H = n` cell is the shape of the problem in one instance rather
+than a freak. That instance is infeasible and refuted at the root in a single
+propagation: time-indexed cites one model capacity row and writes 3,265 lines;
+start-checkpoint has to *derive* that row first, and writes 206,019. Nothing is
+wrong there --- it is `2m^3` at `m = 20`, plus the time-free transitivity pool,
+for a proof that needed one row. It is a reminder that the recovery's cost is
+paid per cited point regardless of how much proof the search itself generates,
+so the ratio is worst exactly where the solver does best.
+
+The doc's original cost argument --- "at `n = 6` over the 60 points a complete
+refutation cites, this is under 30k lines against a 6.7M-line proof" --- holds
+at `n = 6` and does not survive `n = 10`. `2m^3` is not negligible against a
+real proof once `m` is into double figures.
+
+#### The same thing on real instances
+
+Both tables above are generated instances from `examples/cumulative`, so the
+conclusion is worth a second opinion from a model nobody wrote for this
+measurement. `GCS_CUMULATIVE_ENCODING` applies to any binary, so `examples/rcpsp`
+needs no changes:
+
+| `--size` / `--seed` / `--horizon` | OPB | `.pbp` |
+|---|---|---|
+| 8 / 0 / auto | 1,026 -> 1,597 (1.56x) | 2,044 -> 6,383 (3.12x) |
+| 10 / 0 / auto | 1,462 -> 2,304 (1.58x) | 1,610 -> 5,020 (3.12x) |
+| 12 / 3 / auto | 932 -> 1,528 (1.64x) | 3,549 -> 9,951 (2.80x) |
+| 14 / 0 / auto | 2,660 -> 4,113 (1.55x) | 226,985 -> 282,243 (1.24x) |
+| 10 / 0 / 60 | 5,862 -> 6,624 (1.13x) | 6,322 -> 18,709 (2.96x) |
+| 10 / 0 / 120 | 12,462 -> 13,104 (1.05x) | 12,622 -> 25,009 (1.98x) |
+
+Worse than the generated instances on both counts, and for a reason the
+generated ones cannot show: an RCPSP has *one Cumulative per resource*, so the
+`6n^2` is paid per constraint while the horizon they would each save is shared.
+Several small Cumulatives over a long horizon is the case the checkpoint
+encoding handles least well, and it is also the common one. Even at `H = 12n`
+the model is still 1.05x larger and the proof twice the size.
+
+#### Long tasks: the regime this encoding exists for
+
+The instances above are short-tasked because those are the ones that were
+solvable under the time-indexed encoding, which is a selection every measurement
+in this repository inherited. #780 was opened for the opposite case: a few tasks
+of very long duration, where the per-time block is linear in the duration and
+nobody could write the OPB at all, let alone compare anything.
+
+`--max-length` draws the lengths from a wider range and `--max-start` keeps the
+start domain small, which is what separates "expensive to encode" from
+"expensive to solve": a task of duration `D` has a possible-active window of
+about `D` however few start times it can take, so the per-time block is linear
+in `D` while the search stays trivial. Three tasks, nine possible starts,
+`--seed 7`:
+
+| `D` | time-indexed | start-checkpoint | ratio |
+|---|---|---|---|
+| 100 | 1,027 | 980 | 0.954 |
+| 1,000 | 8,725 | 7,976 | 0.914 |
+| 10,000 | 85,663 (8.3 MB) | 77,894 (7.8 MB) | 0.909 |
+| 100,000 | 854,945 (86 MB) | 776,984 (81 MB) | 0.909 |
+| 1,000,000 | 8,547,916 (**881 MB**) | 7,768,028 (**831 MB**) | 0.909 |
+
+**So the encoding is directionally right here and the sweep above does not
+generalise to it** --- `H` is enormous against `6n^2 = 54`, and start-checkpoint
+wins. And it wins by 9%. An 881 MB file becomes an 831 MB file. Whatever made
+the first unwritable makes the second unwritable.
+
+The row-kind decomposition says why, at `D = 10,000`:
+
+| | time-indexed | start-checkpoint |
+|---|---|---|
+| `cb` / `ca` / `cact`, per `(i, t)` | 51,892 / 51,892 / 33,754 | 51,892 / 51,892 / 25,946 |
+| `cap_<t>` | 7,808 | **0** |
+| the entire checkpoint block (`sb`, `sa`, `sact`, `scap_`) | 0 | **66** |
+
+Counting *defining lines* rather than mentions: of the 77,894 lines
+`StartCheckpoint` writes, **77,838 are per-`(i, t)` flag definitions and 56 are
+everything else** --- the whole checkpoint block, the makespan bounds, the lot.
+The flags are **99.9% of the file**.
+
+That is the number to carry. The per-time capacity rows that `StartCheckpoint`
+removes are the 9%; the per-`(i, t)` flags it leaves behind are the 99.9%. In
+general the saving is
+
+    (H - 6n^2) / (6nH + H)  ~=  1/(6n)   for large H
+
+so it is bounded by about `1/(6n)` however long the tasks get, and it *shrinks*
+as tasks are added. The horizon-freedom the encoding was designed for is real
+and is entirely in the 56 lines; none of it has been collected yet, because the
+`6nH` term was never in the capacity rows.
+
+**What step 10 is worth, then, is not a marginal flip.** Minting the per-`(i, t)`
+flags lazily takes the 77,838 out of the model and leaves them to be created in
+the proof only for the `(i, t)` pairs something actually reasons about --- a
+number bounded by search effort rather than by the horizon. Projected on the
+table above, the 831 MB OPB becomes a few kilobytes. That is the whole of #780's
+motivating case, and it is one step away.
+
+(The proof, in this regime, is not the constraint: at `D = 10,000` these solves
+write 42 lines under `TimeIndexed` and 115 under `StartCheckpoint`. The `~2m^3`
+recovery cost is paid per *cited* time point, and an easy instance cites almost
+none. The 2x proof ratios in the short-task family come from search-heavy
+instances, and neither figure generalises to the other regime.)
+
+### Step 10: the flags move into the proof
+
+`define_proof_model` names the per-`(i, t)` flags and stops; the install
+initialiser emits their two reification halves as `red` steps and registers the
+lines, and citers reach them through `reification_half`, which hides which kind
+of definition it got (`ProofLine` is already the variant of a line number and a
+label, so nothing at a call site changes type). What each flag *says* is stated
+once, in three functions both paths call --- a drifting second copy would make a
+flag mean one thing to the encoder and another to everything citing it.
+
+Same instances as the long-task table above:
+
+| `D` | time-indexed | start-checkpoint |
+|---|---|---|
+| 1,000 | 8,725 lines (832K) | **56 lines** (8.0K) |
+| 10,000 | 85,663 lines (8.3M) | **56 lines** (8.0K) |
+| 100,000 | 854,945 lines (86M) | **56 lines** (12K) |
+| 1,000,000 | 8,547,916 lines (**881 MB**) | **56 lines** (12K) |
+
+Fifty-six lines, flat in the duration. The OPB is horizon-free in fact now, and
+not only in its capacity rows.
+
+**What it does not yet do is remove the cost --- only move it.** The definitions
+go out eagerly, one per `(i, t)` over each task's window, so at `D = 100,000` the
+proof goes from 42 lines to 777,043 (86 MB): the same 86 MB, moved out of a file
+that has to be held and parsed whole and into one that is streamed and checked
+incrementally. Better, and not the point.
+
+The point is emitting a definition only for the `(i, t)` pairs something
+actually reasons about, which is bounded by search effort rather than by the
+horizon. Two things stand in the way, in this order:
+
+1. **The bridge-lemma loop**, in the same install initialiser. It emits
+   `end >= t+1 -> after` per `(i, t)` and cites every `after` flag, so it forces
+   every one of them into existence however lazy everything else becomes.
+2. ~~A variable height's contribution rows~~ --- **done**, see below.
+
+Misses are loud rather than silent, which is worth knowing before doing (1): a
+flag whose definition never went out is a free variable, so a `pol` citing a
+half finds no such line and a `rup` over it stalls. Neither can pass quietly.
+
+#### A variable height, once the flags are out of the model
+
+The three rows per `(i, t)` and three per pair that linearise `contrib = h *
+active` are what forced the gate above: they are OPB rows *half-reified on the
+activity flag*, so that flag had to be a model object for them to exist. Out of
+the model they are not needed at all, because bit by bit the product **is** a
+conjunction:
+
+| | |
+|---|---|
+| `cc_{i,t,k}` | `<-> cact_{i,t} /\ bit_k(h_i)` --- in the proof |
+| `scc_{i,j,k}` | `<-> sact_{i,j} /\ bit_k(h_i)` --- in the model |
+
+If the task is active its contribution is its height, so bit for bit; if it is
+not, every bit is zero. Each is then a two-way reification of a fresh flag over
+literals that already exist --- the same primitive the activity flag uses --- at
+two rows per bit where the linearisation took three per pair.
+
+**That deletes the case split.** The swap the recovery does for a variable
+height needs `Sum cc <= Sum scc` with no `cact` guard on it, and under the
+three-row form that took a case split relativized on its own flag, because
+`cle`'s guard left a residue the scan could not resolve away. Over conjunctions
+it is one `rup` per bit,
+
+    ~w \/ ~cc_{i,t,k} \/ scc_{i,j,k}
+
+which closes by unit propagation alone: `cc` gives `cact` and the height bit,
+the pin turns `cact` into `sact` under `w`, and `sact` with that same bit is
+`scc`. Summed at `2^k` those come to `Sum scc - Sum cc + S.~w >= 0` --- guarded
+by `w` and nothing else, which is exactly where a constant height's pin leaves
+`~cact`. On a flagless diagonal there is no pair bit and `~cc_{j,t,k} \/
+bit_k(h_j)` does the same job, unguarded.
+
+`cge` is still what the energy rules and `donor_view` ask for, so it is derived
+from those definitions rather than asserted: `~cact \/ ~bit_b(h) \/ cc_b` per
+bit, summed at `2^b`, is that row with `S` as its guard coefficient.
+`NamesAndIDsTracker::constraint_row` is the row-side counterpart of
+`reification_half` --- "how do I cite this", label or derived line alike.
+
+**No proof in the cumulative binaries carries per-`(i, t)` flags in its OPB any
+more**: 0 of 266, where gating variable heights out left 82. The long-task table
+above holds with variable heights included.
+
+The one shape left out is a height whose *bits* cannot be cited --- a view,
+which has no bits of its own, or a declared lower bound below zero, which puts a
+sign bit in and shifts every weight. That keeps the three-row form and makes the
+recovery decline; `prepare()` decides it once for the whole constraint, a
+mixture not being available.
+
+#### After step 10: no crossover left
+
+With the per-`(i, t)` flags out of the model the whole picture changes, and the
+two subsections above are superseded on the model side. Re-taken on the same
+instances, OPB lines, time-indexed against start-checkpoint:
+
+| | `H = n` | `H = 2n` | `H = 4n` | `H = 8n` |
+|---|---|---|---|---|
+| `n = 5` | 268 / 150 (0.56) | 423 / 150 (0.35) | 733 / 150 (0.20) | 1,353 / 150 (0.11) |
+| `n = 10` | 809 / 595 (0.74) | 1,419 / 595 (0.42) | 2,639 / 595 (0.23) | 5,079 / 595 (0.12) |
+| `n = 20` | 2,803 / 2,385 (0.85) | 5,223 / 2,385 (0.46) | 10,063 / 2,385 (0.24) | 19,743 / 2,385 (0.12) |
+| `n = 40` | 10,415 / 9,565 (0.92) | 20,055 / 9,565 (0.48) | 39,335 / 9,565 (0.24) | 77,895 / 9,565 (0.12) |
+
+**Smaller at every point, and the start-checkpoint column is constant in `H`**,
+which is what an `O(n^2)` encoding is supposed to look like and what it never
+looked like while the flags were still model objects. The `6n^2 - H` arithmetic
+above was correct about the encoding as it then stood, and it was measuring a
+term that belonged to neither encoding's capacity rows.
+
+On the long-task instances both halves are now flat:
+
+| `D` | time-indexed opb / pbp | start-checkpoint opb / pbp |
+|---|---|---|
+| 1,000 | 8,725 / 42 | 56 / 133 |
+| 10,000 | 85,663 / 42 | 56 / 133 |
+| 100,000 | 854,945 / 42 | 56 / 133 |
+| 1,000,000 | 8,547,916 (881 MB) / 42 | **56 / 133** |
+
+**What has not changed is the proof on search-heavy instances.** Where rules
+fire at nearly every time point the ratio is what it was --- 1.36 at `n = 5`,
+2.36 at `n = 10`, 1.87 at `n = 20` --- because those proofs are dominated by
+the recovery's `~2m^3` per cited point and never were dominated by flag
+definitions. That is the one cost the encoding still carries, and the one open
+question for the flip.
+
+### What the flip actually needs
+
+**One thing above all others.** The per-`(i, t)` flags have to stop being model
+objects. They are 99.9% of the OPB in the regime the encoding exists for, and
+until they move, `StartCheckpoint` collects about `1/(6n)` of a win that is
+otherwise nearly total. Every other question below is secondary to it, and two
+of the three are questions only about the short-task family.
+
+1. ~~The per-`(i, t)` flags out of the model~~ --- **done**, definitions and
+   all. 881 MB of OPB to 56 lines, and the proof flat too: see "After step 10"
+   above. There is no crossover left on the model side.
+2. A rule for *when* to use it, rather than a global default --- **if one is
+   still wanted**. Re-taken after (1), the model answer is "always": smaller at
+   every point measured, and constant in the horizon. What is left to weigh is
+   the proof, which is 1.3-2.4x on search-heavy short-task instances and flat on
+   long ones. If that is judged acceptable the flip is unconditional; if not,
+   the rule has to be per *constraint* rather than per problem, an RCPSP paying
+   the `6n^2` once per resource over one shared horizon.
+3. A cheaper recovery, if the `~2m^3` per cited point turns out to bite. **This
+   is now the only cost the encoding still carries**, step 10 having removed the
+   other. It bites in the short-task family (2.4x proofs at `n = 10`) and not in
+   the long-task one (42 lines against 133), because the bill is per *cited*
+   time point and an easy instance cites almost none. Emitting only the triples
+   the scan resolves against would take a constant factor off; the `m^3` is
+   structural.
+
+None of this reopens what `StartCheckpoint` is for --- it sharpens it. The 25 MB
+case is real, a horizon-free encoding is the only answer to it, and the work so
+far has correctly moved every *rule* and every *shape* off the per-time capacity
+rows. What it has not yet done is make a single unwritable OPB writable, because
+the capacity rows were never where the size was.
+
+`examples/cumulative --variant` is how to re-take any of it. `--tasks` and
+`--horizon` move `n` and `H`; `--max-length` and `--max-start` reach the
+long-task family and keep it solvable while doing so. The search is identical
+across arms, so any difference is the encoding's.
+
 ## Open follow-ups
 - **Cloutier & Quimper's Profile.** The doubly linked list over time points,
   which collapses the runs where the profile is constant and takes the sweep

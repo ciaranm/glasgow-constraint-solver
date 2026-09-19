@@ -1,0 +1,1 @@
+( (version 1) (variables (S0 2 3) (S1 0 0) (S2 1 2)) (constraints (_1 cumulative (S0 S1 S2) (2 2 2) (2 3 3) 3)) (prob_type enumerate) )
