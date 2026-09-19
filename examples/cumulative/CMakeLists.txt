@@ -7,15 +7,12 @@ target_link_libraries(cumulative PRIVATE cxxopts)
 add_test(NAME cumulative COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:cumulative>)
 
 # The encoding switch (#780). Distinct basenames so a parallel ctest does not
-# race these over one set of proof files (#562), and names that avoid the
-# `_startcheckpoint` suffix: that one belongs to the encoding *arms* registered
-# in gcs/CMakeLists.txt, and `ctest -N -R startcheckpoint` counting exactly
-# those is a sanity check worth keeping meaningful.
+# race these over one set of proof files (#562).
 #
-# The built-in five-task instance has constant lengths, heights and capacity
-# and no optional task, so it is a shape the recovery reaches: this entry gets
-# the strict encoding, with no per-time capacity row to fall back on, through a
-# real example binary rather than a test fixture.
+# --variant start-checkpoint now names the default, so what this entry checks is
+# the flag's parsing and the encoding through a real example binary rather than a
+# test fixture. It is spelled out rather than left implicit so that a future
+# default change does not silently retarget the lane.
 add_test(NAME cumulative_encoding_start_checkpoint COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash
     --basename cumulative_encoding_start_checkpoint $<TARGET_FILE:cumulative> --variant start-checkpoint)
 

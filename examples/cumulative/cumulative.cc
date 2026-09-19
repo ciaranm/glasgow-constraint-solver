@@ -55,8 +55,6 @@ namespace
     {
         if (spec == "time-indexed")
             return CumulativeEncoding::TimeIndexed;
-        if (spec == "both")
-            return CumulativeEncoding::Both;
         if (spec == "both-recovering")
             return CumulativeEncoding::BothRecovering;
         if (spec == "start-checkpoint")
@@ -66,7 +64,7 @@ namespace
 
     auto encoding_names() -> string
     {
-        return "time-indexed, both, both-recovering, start-checkpoint";
+        return "start-checkpoint (the default), both-recovering, time-indexed";
     }
 }
 

@@ -33,14 +33,13 @@
 #
 #   - It is the end state itself rather than a reconstruction of it. `whole`
 #     deletes rows from a finished OPB and rechecks; this never emits them.
-#   - It guards the `startcheckpoint` ctest arm (gcs/CMakeLists.txt) against
-#     going vacuous. That arm is only worth anything if the encoding really does
-#     drop the block for the fixtures it runs --- and the encoding falls back to
-#     the per-time rows for any Cumulative the recovery cannot speak about, so
-#     "no cap_ rows were emitted" is a real thing to assert and not a tautology.
-#     If a change to cumulative_shape_supports_checkpoint_recovery ever made
-#     everything fall back, every lane on that arm would still pass while
-#     checking nothing new. This fails instead.
+#   - It is the tripwire on the shipped encoder. start-checkpoint is the only
+#     encoding Cumulative ships, and the per-time block is written by nothing but
+#     the test-only arms --- so if a change ever made the encoder emit it again,
+#     every other lane would still pass, quietly paying for two encodings and
+#     quietly diverging from what cake derives. This fails instead. The `scap_`
+#     half matters as much: an encoder that emitted nothing at all would
+#     otherwise satisfy the first assertion.
 #
 # Exits 77 (ctest SKIP_RETURN_CODE) when veripb is missing.
 
@@ -71,9 +70,8 @@ if [[ $mode == no-block ]] ; then
     # The whole claim: the block was never written.
     caps=$(grep -c '\[cap_' "${base}.opb")
     if [[ $caps -gt 0 ]] ; then
-        echo "FAIL: ${caps} per-time capacity rows in the OPB under start-checkpoint;"
-        echo "      this model must have fallen back (a variable height, an optional task, ...),"
-        echo "      so the startcheckpoint arm checks nothing on it"
+        echo "FAIL: ${caps} per-time capacity rows in the OPB under the shipped encoding;"
+        echo "      Cumulative is meant to have exactly one OPB encoding, and this model has two"
         exit 1
     fi
 

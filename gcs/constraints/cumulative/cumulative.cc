@@ -84,12 +84,10 @@ namespace
         static const auto value = [] {
             const auto * const env = std::getenv("GCS_CUMULATIVE_ENCODING");
             if (! env || ! *env)
-                return CumulativeEncoding::TimeIndexed;
+                return CumulativeEncoding::StartCheckpoint;
             string spelling{env};
             if (spelling == "time-indexed")
                 return CumulativeEncoding::TimeIndexed;
-            else if (spelling == "both")
-                return CumulativeEncoding::Both;
             else if (spelling == "both-recovering")
                 return CumulativeEncoding::BothRecovering;
             else if (spelling == "start-checkpoint")
@@ -116,8 +114,8 @@ namespace
 
     // after_{i,t} <-> task i not yet finished at t <-> s_i + l_i >= t + 1.
     // Constant length: single-variable s_i >= t-l+1. Variable length: reify on
-    // s_i + l_i directly (any constant operand folds in), which matches
-    // cake_pb_cp's after <-> s + l >= t+1. The proof-only end (when both vary)
+    // s_i + l_i directly (any constant operand folds in), as cake_pb_cp's
+    // time-indexed encoder did. The proof-only end (when both vary)
     // is NOT used here; it is only the single-variable handle the propagator
     // pins through, bridged to this flag by the lemma the initialiser emits.
     auto per_time_after_says(const IntegerVariableID & start, const IntegerVariableID & length, Integer t) -> WPBSumLE
@@ -226,7 +224,7 @@ auto Cumulative::clone() const -> unique_ptr<Constraint>
     return result;
 }
 
-auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const model) -> bool
 {
     auto n = _starts.size();
 
@@ -301,15 +299,38 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
         _capacity_val = constant_value_of(_capacity);
 
     // #780: can every height's own bits be cited? A constant needs none; a
-    // plain variable with a declared lower bound of zero or more has bit k at
-    // weight 2^k; a view has no bits of its own, and a declared bound below
-    // zero puts a sign bit in and shifts every weight. Where the answer is no,
-    // a variable height's contribution stays linearised by three rows per
-    // pair, and the per-(task, time) family stays in the model --- see
-    // define_proof_model.
+    // plain non-negative variable has bit k at weight 2^k; a view has no bits
+    // of its own. Where the answer is no, a variable height's contribution
+    // cannot be stated as a conjunction with the height's bits, which is what
+    // the start-checkpoint encoding needs --- see define_proof_model.
+    //
+    // The `_height_lb[i] >= 0` half is belt and braces rather than a live case:
+    // a declared bound below zero would put a sign bit in the encoding and
+    // shift every weight, but `_height_lb[i]` is the same
+    // `initial_state.lower_bound(h)` the non-negativity check above has already
+    // thrown on. It stays because the *reason* for it is about the bit
+    // encoding, not about the modelling error, and the two could come apart if
+    // anything ever narrowed a height before prepare ran.
     _height_bits_citable = std::ranges::all_of(std::views::iota(std::size_t{0}, _heights.size()), [&](std::size_t i) {
         return is_constant_variable(_heights[i]) || (std::holds_alternative<SimpleIntegerVariableID>(_heights[i]) && _height_lb[i] >= 0_i);
     });
+
+    // And if they cannot be cited, say so now rather than writing a model no
+    // inference over it could cite. There is exactly one OPB encoding for a
+    // Cumulative, because two would mean cake had to reproduce our choice per
+    // constraint; so a height whose bits are unavailable has no encoding at
+    // all, where it used to quietly fall back to the per-time block.
+    //
+    // Only with proof logging on: without it the height is never encoded and a
+    // view is perfectly serviceable, so rejecting it unconditionally would
+    // break working models for no reason.
+    //
+    // Unreachable from MiniZinc and XCSP, both of which hand Cumulative plain
+    // variables and constants and never views, and from every test. The general
+    // fix is a proof-only deviewed height linked to the view; until someone
+    // needs it, a diagnosable error beats an uncertifiable model.
+    if (model && ! _height_bits_citable)
+        throw UnimplementedException{"Cumulative: a view-valued height has no citable bits, so it cannot be proof-logged (#780)"};
 
     // Tasks whose length can only ever be 0, or whose height can only ever be 0,
     // or which are constantly absent, never raise the load profile.
@@ -526,14 +547,13 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
                 model.create_proof_only_integer_variable_in_proof(min(0_i, _per_task_t_lo[i] + _length_lb[i]), _per_task_t_hi[i] + 1_i, "cumend");
 
         for (Integer t = t_lo; t <= t_hi; ++t) {
-            // Name the flags to match cake_pb_cp's verified cumulative encoder
-            // (its value-indexed v[id][i_t][cb] / [ca] / [cact], keyed by task i
-            // and integer time t), so the proof's references to them resolve
-            // against cake's re-derived OPB in the verified-encoding chain (the
-            // solver's per-task window is a subset of cake's global one, so every
-            // flag we cite is one cake also defines). cake's structurally-matching
-            // definitions (before ⇔ s≤t, after ⇔ s+l≥t+1, active ⇔ before∧after)
-            // make this a naming conform with no propagator change.
+            // The flags carry the names cake_pb_cp's time-indexed encoder gave
+            // them (its value-indexed v[id][i_t][cb] / [ca] / [cact], keyed by
+            // task i and integer time t), from when that encoder was what the
+            // verified-encoding chain checked our proofs against. cake has since
+            // replaced it with a start-checkpoint encoder (2026-09-19), so no OPB
+            // of cake's carries these any more; they are kept because everything
+            // here that cites a per-time flag finds it by these keys.
             std::vector<long long> it{static_cast<long long>(i), t.raw_value};
             // Named either way; *defined* here only where the definition is an
             // OPB row. Under _per_time_flags_in_proof the two halves are
@@ -553,28 +573,29 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
             _active_flags[i].push_back(active);
 
             // For a variable height, the task's load contribution at t is the
-            // product height·active, which is nonlinear. Linearise it over cake's
-            // per-bit contribution flags cc_k (weight 2^k), so contrib = Σ 2^k·cc_k
-            // (same encoding cake_pb_cp emits, so the load reasoning chain-verifies):
+            // product height·active, which is nonlinear. Linearise it over per-bit
+            // contribution flags cc_k (weight 2^k), so contrib = Σ 2^k·cc_k (the
+            // encoding cake_pb_cp's time-indexed encoder used, before cake replaced
+            // it with the start-checkpoint one):
             //   active   ⇒ contrib = h   (contrib − h ≥ 0 and ≤ 0)
             //   ¬active  ⇒ contrib = 0   (contrib ≤ 0; cc_k ≥ 0 inherently)
             // The bit count matches the proof-only bits encoding of [0, ub(h)], and
             // the flags carry no domain bound of their own (cle/cz constrain them,
-            // exactly as cake does).
+            // exactly as cake's did).
             if (! is_constant_variable(_heights[i])) {
                 auto highest_bit_shift = std::get<0>(get_bits_encoding_coeffs(0_i, _height_ub[i]));
                 std::vector<ProofFlag> cc;
                 for (Integer k = 0_i; k <= highest_bit_shift; ++k)
                     cc.push_back(model.names_and_ids_tracker().create_proof_flag_values(
                         _constraint_id, std::vector<long long>{static_cast<long long>(i), t.raw_value, k.raw_value}, "cc"));
-                // Labelled, with cake's own names for them: it emits all three
-                // under @c[id][i_t_cge] / [_cle] / [_cz], with the coefficients
-                // we do, so these are the labels a citer of ours resolves
-                // against cake's OPB as well as our own. The `cge` half is what
-                // converts a variable height into a constant one for a derived
-                // constraint (recover_constant_argument_row); the other two are
-                // labelled to keep the family whole rather than because
-                // anything cites them yet.
+                // Labelled, with the names cake's time-indexed encoder gave all
+                // three (@c[id][i_t_cge] / [_cle] / [_cz], with the coefficients
+                // we use), from when a citer of ours resolved them against
+                // cake's OPB as well as our own; cake no longer writes them. The
+                // `cge` half is what converts a variable height into a constant
+                // one for a derived constraint (recover_constant_argument_row);
+                // the other two are labelled to keep the family whole rather
+                // than because anything cites them yet.
                 if (! _per_time_flags_in_proof) {
                     auto contrib = contrib_sum_of(cc);
                     model.add_labelled_constraint(_constraint_id, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t),
@@ -589,21 +610,21 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
         }
     }
 
-    // #780: under CumulativeEncoding::StartCheckpoint the per-time capacity
-    // rows are not written at all, so that a rule which still reads
-    // `capacity_lines` finds nothing and its certificate fails loudly rather
-    // than quietly keeping a dependency on a block that is going away. Only
-    // where the recovery can actually supply a replacement, though --- a
-    // variable height or an optional task has no recovered row to fall back on,
-    // and dropping the model's would leave the constraint with no capacity row
-    // at all rather than merely an unconverted one.
+    // #780: the shipped encoding does not write the per-time capacity rows at
+    // all. There is one encoding, so there is no shape to fall back for: a
+    // Cumulative the recovery cannot speak about is rejected by prepare() --- no
+    // active task returns false, and a height whose bits cannot be cited throws
+    // --- and install() only reaches here when prepare() returned true. So this
+    // holds rather than being tested, and says so loudly if it ever stops.
     //
     // Note this gates the capacity *rows* only. The per-(task, time) flags
-    // above stay: every rule's activity vocabulary is still stated over them,
-    // and moving them to lazily-minted objects is its own step of #780.
+    // above stay where an encoding still wants them in the model; the shipped
+    // one mints them inside the proof instead.
     auto encoding = _encoding.value_or(default_cumulative_encoding());
-    auto shape_supports_recovery = cumulative_shape_supports_checkpoint_recovery(_active_tasks, _presence, _lengths, _heights, _capacity);
-    auto omit_per_time_capacity_rows = encoding == CumulativeEncoding::StartCheckpoint && shape_supports_recovery;
+    if (encoding == CumulativeEncoding::StartCheckpoint &&
+        ! cumulative_shape_supports_checkpoint_recovery(_active_tasks, _presence, _lengths, _heights, _capacity))
+        throw UnexpectedException{"Cumulative: prepare() admitted a shape the checkpoint recovery cannot speak about"};
+    auto omit_per_time_capacity_rows = encoding == CumulativeEncoding::StartCheckpoint;
 
     for (Integer t = global_lo; t <= global_hi && ! omit_per_time_capacity_rows; ++t) {
         WPBSum load;
@@ -624,10 +645,10 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
             // variable, move it to the left as a (−1)·capacity term so the
             // constraint stays a single linear inequality with RHS 0.
             //
-            // cake_pb_cp labels its per-time load constraint @c[id][cap_<t>], and
-            // its per-task time windowing matches ours, so our load line for time t
-            // is cake's cap line for time t. Emit the same label so the verified
-            // chain references it by name rather than position.
+            // Labelled @c[id][cap_<t>], the name cake_pb_cp's time-indexed
+            // encoder gave its per-time load constraint, from when the verified
+            // chain referenced it by name rather than position. cake no longer
+            // writes one; the label stays because citers here find the row by it.
             auto role = "cap_" + std::to_string(t.raw_value);
             auto line = is_constant_variable(_capacity) ? model.add_labelled_constraint(_constraint_id, role, load <= _capacity_val)
                                                         : model.add_labelled_constraint(_constraint_id, role, move(load) + -1_i * _capacity <= 0_i);
@@ -636,23 +657,6 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
     }
 
     if (encoding == CumulativeEncoding::TimeIndexed)
-        return;
-
-    // #780: under CumulativeEncoding::StartCheckpoint a shape the recovery
-    // cannot speak about has just kept its per-time block, above. Writing the
-    // checkpoint block beside it as well would be pure growth: no rule can
-    // cite it, because every citer goes through a recovery that declines this
-    // shape before it looks at the model at all. So StartCheckpoint on a
-    // declined shape *is* TimeIndexed, which is what "start-checkpoint
-    // wherever the recovery reaches" has to mean once the default flips ---
-    // otherwise every variable-length, variable-height, variable-capacity or
-    // optional-task model would silently start paying for two encodings.
-    //
-    // Both and BothRecovering keep writing it for every shape. They are the
-    // differential arms, and a checkpoint row over a shape the recovery
-    // declines is still a row veripb checks against the solutions, which is
-    // how the block was soundness-checked in the first place.
-    if (encoding == CumulativeEncoding::StartCheckpoint && ! shape_supports_recovery)
         return;
 
     // Start-checkpoint encoding (issue #780), emitted *alongside* the
@@ -3133,8 +3137,8 @@ auto ConstraintProofModelData<Cumulative>::contribution_flag_key(size_t task, In
 
 auto ConstraintProofModelData<Cumulative>::contribution_ge_row_role(size_t task, Integer t) -> string
 {
-    // cake_pb_cp's own name for this row. Must stay the string
-    // define_proof_model labels it with, and must stay cake's.
+    // Must stay the string define_proof_model labels it with. It was also
+    // cake_pb_cp's name for this row, while cake had a time-indexed encoder.
     return std::to_string(task) + "_" + std::to_string(t.raw_value) + "_cge";
 }
 
