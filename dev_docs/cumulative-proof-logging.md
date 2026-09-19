@@ -419,6 +419,43 @@ The `pin_contributor` / `pin_pushed` helpers in
 and both push inferences share one shape across all constant/variable
 combinations.
 
+### Where a variable length or height can actually be measured
+
+All of the above is certified and fixture-tested, and until #633's
+multi-mode reader landed **none of it had ever run on a benchmark
+instance**. Nothing in the RCPSP collections to hand has a variable
+anything: `examples/rcpsp` builds `std::vector<Integer>` durations and
+demands from every one of them, so the constant path is the only path a
+sweep ever took, and #748 and #749 shipped backed by fixtures alone.
+
+Multi-mode RCPSP is where the case is native rather than contrived. An
+activity chooses a mode; the mode fixes both how long it runs and what it
+takes while it does; a shorter mode generally costs more of something.
+So a duration and a demand are decisions, and they are *linked* decisions
+--- which is the shape the guaranteed-energy accounting was written for.
+`examples/rcpsp --mm` reads the PSPLIB `.mm` sets (`j10` through `j30`),
+posting a mode variable per activity, an element constraint tying each
+duration and demand to it, and one linear inequality per non-renewable
+resource.
+
+Two things to know before taking numbers from it.
+
+**The non-renewable budgets are not decoration.** They are the only
+reason the mode choice does not decompose into "give every activity its
+shortest mode", and they are what make the instances hard. On
+`examples/rcpsp/sample.mm`, raising the budget from 15 to 22 drops the
+optimum from 10 to 6.
+
+**The temporal network is no longer a difference network**, or not all of
+it. A precedence is weighted by the predecessor's duration, so where that
+duration is a decision the constraint is a three-term
+`s_j - s_i - d_i >= 0` and not a difference constraint at all. `--variant`
+still selects how the rest is posted --- the dummy source and sink, and
+any activity whose modes agree on a duration, stay difference-shaped ---
+but a multi-mode instance is not the clean `--variant` comparison a
+single-mode one is.
+
+
 ## Inference 4 — the overload check, and the window-energy lemma
 
 Time-tabling only ever looks at one time point at a time. The overload
