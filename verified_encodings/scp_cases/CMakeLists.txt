@@ -424,11 +424,17 @@ add_scp_chain_test(disjunctive2d_strict_sat none)
 # sact_{i,i} is minted, since a task whose length can vary is not trivially running
 # at its own start. The solver's proof-only end = s + l, which cake has no
 # counterpart for, is introduced inside the proof as a conservative extension, so
-# there is nothing in the OPB to match.
+# there is nothing in the OPB to match. cumulative_mixed_sat covers what the others
+# do not: a variable capacity, a start that can be negative (so sb and sa carry a
+# sign bit), constant lengths above one (so sa's right-hand side shifts), and one
+# task inactive for each reason, zero length and zero height, which neither side
+# gives a flag or a row. Its 264 solutions are 0, 72 and 192 at capacities 1, 2
+# and 3.
 add_scp_chain_test(cumulative_sat              none)
 add_scp_chain_test(cumulative_var_sat          none)
 add_scp_chain_test(cumulative_var_height_sat   none)
 add_scp_chain_test(cumulative_var_duration_sat none)
+add_scp_chain_test(cumulative_mixed_sat        none)
 add_scp_chain_test(cumulative_unsat            none)
 
 # increasing / decreasing / strictly_*: the sequence of variables is (strictly)
