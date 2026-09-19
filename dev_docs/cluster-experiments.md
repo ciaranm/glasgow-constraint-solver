@@ -49,7 +49,7 @@ Test *failures* are.
 
 ### If the work is still on branches
 
-At the time of writing four branches carry this, and `main` may or may not have
+At the time of writing five branches carry this, and `main` may or may not have
 them yet. Check first:
 
 ```shell
@@ -67,11 +67,13 @@ git merge jobshop-reader          # --jss
 git merge multi-mode-reader       # --mm
 git merge scheduling-rule-counters   # conflict in examples/rcpsp/CMakeLists.txt: keep both blocks
 git merge scheduling-sweep-harness   # tools/scheduling_sweep.py
+git merge sweep-certifiable-families # this runbook's corrections, and the -dd arms
 ```
 
-756 tests pass with all four applied. If a flag is missing the sweep harness
-says so and skips what depends on it rather than failing obscurely, so a partial
-combination still runs --- it just measures less.
+873 tests pass with all five applied to `main` at `58fad258`. If a flag is
+missing the sweep harness says so and skips what depends on it rather than
+failing obscurely, so a partial combination still runs --- it just measures
+less.
 
 ## 2. Fetch the instances
 
@@ -119,20 +121,50 @@ Each writes one JSONL row per (instance, arm). `--resume` skips rows already
 present, so a killed job is restarted by re-running the same command. Rough
 costs assume ~16 cores; scale accordingly.
 
+The figures quoted from here on come from one complete run of this runbook, on
+a 96-core machine at a 600 s timeout, in August 2026 --- before `Cumulative`
+changed OPB encoding in #943 and before proofs started deleting from VeriPB's
+core in #914. They are here to say what to expect and which comparisons are
+worth making, not to be reproduced to the digit.
+
+**Every arm runs the solver's default branching**, `in-order` / `smallest`, and
+`--list-arms` also shows a `-dd` copy of each with `--branch dom-then-deg
+--value-order split`. A table saying what a rule is *worth*, rather than what it
+saves the solver as configured, wants both, because the rules do not survive the
+change intact. On `data_bl`, `energetic` against `off` is 0.260 summed under the
+default and 0.563 under `-dd` --- and where under the default no arm is worse
+than the baseline on any instance, under `-dd` every arm but the two that barely
+fire (`elastic`, `kaoc`) is worse on five or six. That "never worse" is
+substantially an artefact of a weak branching leaving enough redundant search
+around that almost any pruning helps.
+
 ### 5a. Cumulative, search shape (~2-4 hours)
 
 ```shell
 tools/scheduling_sweep.py --binary build/rcpsp --out cumulative-shape.jsonl \
-    --dzn-dir scheduling-instances/rcpsp --collections data_bl,data_pack,data_pack_d \
+    --dzn-dir scheduling-instances/rcpsp --collections data_bl,data_ksd15_d,data_pack \
     --arms off,ef,ttef,energetic,nfnl,nfnlpub,ttef+nfnl,ttef+nfnlpub,elastic,kaoc \
     --timeout 60 --jobs 16 --resume
 ```
 
+Read the collections by how many instances *every* arm closes, because a ratio
+over the closed set is only as good as that set. At 600 s it is 37 of 40 on
+`data_bl`, 416 of 480 on `data_ksd15_d` and 2 of 55 on `data_pack`. `data_pack`
+is here for its closed counts rather than its ratios: it is where `kaoc` is
+decisive, closing 9 instances no other arm does. Two collections are left out on
+purpose. `data_pack_d` closes 5 of 55, and on those five every arm is identical
+to the digit --- its durations run to 1138, so the search enumerates start times
+rather than reasoning about the resource. `data_la_x` closes none of its 80, so
+only its incumbents can be compared, and there most strengthenings return a
+*worse* schedule than `off` (`kaoc` is worse on 32 instances and better on
+none): the wall-clock price of a rule that does not prune, which is worth
+knowing but is not a ratio.
+
 ### 5b. Disjunctive on job shops (~2-4 hours)
 
-The family that makes these rules measurable at all. Expect a low closed count:
-job shop is hard and the branching here is basic, so compare on the instances
-every arm closes.
+The family that makes these rules measurable at all --- and the one where a
+ratio over the instances every arm closes does not work. At 600 s exactly one of
+the 82 closes on every arm (`ft06`), so that comparison set has one member.
 
 ```shell
 tools/scheduling_sweep.py --binary build/rcpsp --out disjunctive-shape.jsonl \
@@ -141,13 +173,34 @@ tools/scheduling_sweep.py --binary build/rcpsp --out disjunctive-shape.jsonl \
     --timeout 60 --jobs 16 --resume
 ```
 
-### 5c. Multi-mode, variable durations and demands (~1-2 hours)
+Compare what the arms *found* instead. Every timed-out run under the default
+branching still returns an incumbent, so a makespan ratio against `dj-off` over
+all 82 instances is available, and at this timeout it is the only thing the
+family measures. It is weaker evidence than a recursion ratio and load-dependent
+in a way that one is not --- an incumbent is wherever the search had got to when
+the clock stopped --- so quote it with `parallel` beside it.
+
+The `-dd` arms do not rescue the family. Under `--value-order split` 969 of the
+984 runs found no schedule at all: extraordinary on the two instances it closes,
+nothing usable on the other 80.
+
+### 5c. Multi-mode, variable durations and demands (~1-2 hours for j10)
 
 ```shell
 tools/scheduling_sweep.py --binary build/rcpsp --out multimode-shape.jsonl \
-    --mm-dir scheduling-instances/multimode/j10 \
+    --mm-dir scheduling-instances/multimode \
     --arms off,ef,ttef,energetic,nfnl --timeout 60 --jobs 16 --resume
 ```
+
+That is j10 and j20 both. j10 is the family that works best of all: 536 of 536
+close on every arm, and these two sets have a published optimum for every
+instance. j20 closes 484 of 554 on every arm and costs roughly ten times what
+j10 does. On both the median ratio is exactly 1.000 for every arm --- the whole
+effect lives in a minority of instances, so quote the summed ratio beside the
+median. j20 is also where the rule that removes the most search per node,
+`energetic`, closes *fewer* instances than `off`: paying for its sweep in wall
+clock, which is what `calls` against `firings` prices and a recursion ratio
+cannot show.
 
 ### 5d. Proof size and verification time (hours to days)
 
@@ -161,9 +214,22 @@ tools/scheduling_sweep.py --binary build/rcpsp --out proofs-generated.jsonl \
     --arms off,ef,ttef,energetic,nfnl --timeout 60 --proof-cap-mb 4000 --jobs 8 --resume
 ```
 
-Then the same over `--dzn-dir ... --collections data_bl` and over `--jss-dir`.
-Watch the disk: `--jobs 8` at a 4 GB cap can want 32 GB at once, and rows come
-back as `proof-too-big` rather than as failures when they hit it.
+Then the same over `--dzn-dir ... --collections data_bl`. Not over `--jss-dir`:
+at the default branching 5 of 984 job-shop proofs completed, all of them `ft06`,
+and under `-dd` 971 of 984 still hit the cap, so a job-shop proof sweep measures
+the cap and nothing else. Watch the disk: `--jobs 8` at a 4 GB cap can want
+32 GB at once, and rows come back as `proof-too-big` rather than as failures
+when they hit it.
+
+**The cap is not only a disk guard: it chooses the sample, and it chooses it by
+the quantity being measured.** It admits the instances whose proofs are small,
+which are the ones where a strong rule saved least, so a capped sweep
+under-reports how much a strong rule shrinks the proof. On `data_bl`, raising
+the cap from 4 GB to 16 GB let 76 more runs verify and moved `energetic`'s proof
+size against `off` from 0.645 summed (21 instances) to 0.480 (29). Say which cap
+a proof-size table was taken at, and raise it where the disk allows --- over the
+346 `data_bl` runs that verified at 16 GB the median proof was 0.38 GB and the
+largest 15.9 GB.
 
 **Then these two, which this step used to leave to whoever had time.** Both
 certify at a usable rate, and between them they are this programme's only
@@ -182,13 +248,22 @@ tools/scheduling_sweep.py --binary build/rcpsp --out proofs-multimode-j20.jsonl 
 Why they are named rather than left to time. Read the collections by their
 longest task: `data_bl`'s is **6** time units and j10's is **10**, while
 `data_ksd15_d`'s is **250** and `data_pack_d`'s is **1138**. The families a
-"start small and grow" reading reaches first are the two *coarsest* on disk, and
-that is not a coincidence --- the time-indexed OPB is `O(n x horizon)`, so the
-cheapest instances to certify are the ones with the shortest durations. Picking
-by cost picks by duration, and a step that stops when the time runs out reports
-on short tasks only.
+"start small and grow" reading reaches first were the two *coarsest* on disk,
+and that was not a coincidence --- the time-indexed OPB `Cumulative` wrote when
+this was measured was `O(n x horizon)`, so the cheapest instances to certify
+were the ones with the shortest durations. Picking by cost picked by duration,
+and a step that stopped when the time ran out reported on short tasks only.
 
-Measured over the whole of both collections, eleven arms, 4 GB cap, 600 s:
+Since #943 the OPB is the horizon-free start-checkpoint encoding, which on
+`data_ksd15_d` is 0.06x the size. The per-(task, time) flags a proof cites are
+still defined, but inside the proof and only where cited, and the proofs came
+out 1.56x bigger on that family in exchange. So the model no longer ties cost to
+duration; whether the proof still does, closely enough to bias a "start small"
+reading, has not been re-measured. On a 150-run sample of each collection, the
+runs that certify did not change between the two encodings.
+
+Measured over the whole of both collections, on the time-indexed encoding,
+eleven arms, 4 GB cap, 600 s:
 
 | collection | verified | capped | verify-timeout | rejected |
 |---|---|---|---|---|
@@ -225,6 +300,44 @@ tools/scheduling_sweep.py --binary build/rcpsp --out closed-serial.jsonl \
     --dzn-dir scheduling-instances/rcpsp --collections data_bl \
     --arms off,ef,ttef,energetic --timeout 60 --serial --resume
 ```
+
+What matters is concurrency against *physical cores*, not against `nproc`. On a
+96-core, 192-thread machine, running one CPU-bound solve 96 ways at once moved
+its wall time by under 1%, and 144 ways by 44% once SMT contention set in. This
+step run strictly serially, against the same four arms from an 88-way sweep,
+changed the closed status of 0 of 160 cells, and the recursion count of none of
+the 154 that closed both ways. So `--jobs` up to the physical core count is
+serial in all but name there, and `--serial` turned a 20-minute sweep into a
+two-hour one for nothing. On a machine nobody has calibrated, make that
+comparison once rather than assuming either way.
+
+### 5f. The same certificate written two ways (minutes)
+
+`dj-overload-ti` and `dj-overload-sn` pin the disjunctive overload check to its
+time-indexed or its sorting-network certificate. `dj-overload` takes the
+default, `cheaper`, which picks per firing from the window's shape: the sorting
+network once a window's span passes 300 times its task count, a crossover whose
+measurement is written up beside `overload_crossover` in
+`gcs/constraints/disjunctive/disjunctive.hh`. The inference is held fixed and
+only the proof changes, so this is the cleanest comparison the harness offers,
+and one closed instance prices it:
+
+```shell
+mkdir -p ft06-only && ln -sf "$PWD/scheduling-instances/jobshop/ft06.jss" ft06-only/
+tools/scheduling_sweep.py --binary build/rcpsp --out overload-certificates.jsonl \
+    --mode prove --jss-dir ft06-only \
+    --arms dj-overload-dd,dj-overload-ti-dd,dj-overload-sn-dd --timeout 600 --jobs 3
+```
+
+All three should take the same number of recursions; if they do not, the
+certificate is changing the search and that is a bug. On `main` at `58fad258`
+with the five branches above they take 123 each. `cheaper` never crosses over on
+`ft06`, so its proof is byte-identical to `time-indexed`'s, at 865,336 bytes,
+against 2,957,000 for the sorting network: 3.4x the proof for an identical
+inference, and it takes longer to check. That is one instance with narrow
+windows, where the crossover says the network should lose; the same step over a
+family whose windows are wide enough to cross is the measurement #730 still
+lacks.
 
 ## 6. What to bring back
 
@@ -274,11 +387,41 @@ stray `pkill` catches.
 **Filter on `result` and `status`, not on the presence of a makespan.** A row can
 be a clean run of an instance that timed out.
 
+**Compare search shape, and sum counters, over closed runs only.** A timed-out
+row records `recursions` and the rule counters exactly as a finished one does,
+but they measure how far the search got before the clock stopped. Two arms
+compared across timed-out rows will "differ" on every one of them --- the
+overload-certificate arms, which cannot differ at all, came out different on 81
+of 82 job shops that way. And a counter summed over a family is dominated by the
+runs that never finished: on `data_bl` under `nfnl` the two runs of forty that
+timed out carry 55% of `not_first`'s skipped-candidate total, and on `data_pack`
+the unclosed share is 97-99%. A sum over closed runs is a property of finished
+searches; a sum over everything is a statement about the timeout.
+`dev_docs/rule-counters.md` says the same beside its portability warning.
+
+**`parallel` covers the checking too.** It is the size of the worker pool, and
+each worker solves and then checks, so it is the load `verify_s` was measured
+under as well as `solve_wall_s`. Verification time is load-dependent in the same
+way; quote it with `parallel` beside it.
+
 ## One thing worth knowing before you start
 
 On `ft06` --- a 6x6 job shop, the smallest real instance in the set --- the
 solver closes the instance in **55 recursions** with `--disjunctive-edge-finding`
-and has not closed it after **29.6 million** without. That is the same rule that
-looks marginal on generated instances, and it is the reason the job-shop family
-was added. Expect the disjunctive arms to separate much more sharply here than
-any earlier measurement suggested.
+and needs **35,142,089** without, under `--branch dom-then-deg --value-order
+split` (`dj-ef-dd` against `dj-off-dd`). Under the default branching every other
+arm takes, the same pair is **1,588** against **5,465,061**. Both are real: a
+factor of 640,000 against one of 3,400, which is why a figure like this has to
+name its branching and why the `-dd` arms exist. Either way it is the same rule
+that looks marginal on generated instances, and it is the reason the job-shop
+family was added. Keep 5b's caveat beside it: the branching behind the 55 finds
+no schedule at all on almost every other job shop.
+
+All four are exact on `main` at `58fad258` with the five branches above, and
+match the August campaign to the digit:
+
+```shell
+mkdir -p ft06-only && ln -sf "$PWD/scheduling-instances/jobshop/ft06.jss" ft06-only/
+tools/scheduling_sweep.py --binary build/rcpsp --out ft06.jsonl --jss-dir ft06-only \
+    --arms dj-off,dj-ef,dj-off-dd,dj-ef-dd --timeout 1800 --jobs 4
+```
