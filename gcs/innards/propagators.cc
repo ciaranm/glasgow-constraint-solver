@@ -52,9 +52,82 @@ using std::chrono::steady_clock;
 using std::ranges::adjacent_find;
 using std::ranges::contains;
 using std::ranges::sort;
+using std::ranges::unique;
 
 namespace
 {
+    // The simple variable whose domain a variable ID is a window onto: itself,
+    // or a view's underlying variable. A constant has none.
+    auto underlying_variable(const IntegerVariableID & var) -> optional<SimpleIntegerVariableID>
+    {
+        return overloaded{
+            [](const SimpleIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v; },                 //
+            [](const ViewOfIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v.actual_variable; }, //
+            [](const ConstantIntegerVariableID &) -> optional<SimpleIntegerVariableID> { return nullopt; }            //
+        }
+            .visit(var);
+    }
+
+    // Triggers::interior_reads as declared, or else derived from how the
+    // propagator asked to be woken. Waking on any change, or arranging its own
+    // wakes via scope_only, or watching a literal that can change without
+    // either bound moving, all say that an interior removal can matter to it;
+    // waking only on a bound or on instantiation says it cannot. Deduplicated
+    // by sorting afterwards rather than by a search per insertion: the
+    // learned-nogood store declares every variable in the problem.
+    auto interior_reads_of(const Triggers & triggers) -> vector<SimpleIntegerVariableID>
+    {
+        vector<SimpleIntegerVariableID> result;
+        auto add = [&](const IntegerVariableID & var) {
+            if (auto u = underlying_variable(var))
+                result.push_back(*u);
+        };
+        if (triggers.interior_reads) {
+            for (const auto & v : *triggers.interior_reads)
+                add(v);
+        }
+        else {
+            for (const auto & v : triggers.on_change)
+                add(v);
+            for (const auto & v : triggers.scope_only)
+                add(v);
+            for (const auto & refined : triggers.refined)
+                if (auto cond = std::get_if<IntegerVariableCondition>(&refined.first))
+                    switch (cond->op) {
+                        using enum VariableConditionOperator;
+                    case Equal:
+                    case NotEqual:
+                    case InRange:
+                    case NotInRange: add(cond->var); break;
+                    case Less:
+                    case GreaterEqual: break;
+                    }
+        }
+        sort(result);
+        result.erase(unique(result).begin(), result.end());
+        return result;
+    }
+
+    // Whether two of the triggers' algorithmic positions --- the coarse
+    // triggers and scope_only, with multiplicity --- resolve to the same
+    // underlying variable. Two positions aliasing one variable break most
+    // propagators' idempotence, and views hide the repeat from the author (x
+    // and -x + 3 alias; a lone +-x + c view is harmless, being a bijection on
+    // Z -- if a non-bijective view kind is ever added, a multiplier say, any
+    // occurrence must flag the scope as risky, not just a repeat). Refined
+    // watches are a wake mechanism that may legitimately arm many watches on
+    // one variable, so they are not algorithmic positions.
+    auto positions_alias(const Triggers & triggers) -> bool
+    {
+        vector<unsigned long long> underlying;
+        for (const auto * vars : {&triggers.on_change, &triggers.on_bounds, &triggers.on_instantiated, &triggers.scope_only})
+            for (const auto & v : *vars)
+                if (auto u = underlying_variable(v))
+                    underlying.push_back(u->index);
+        sort(underlying);
+        return adjacent_find(underlying) != underlying.end();
+    }
+
     struct TriggerIDs
     {
         vector<pair<int, int>> ids_and_masks;
@@ -412,6 +485,46 @@ struct Propagators::Imp : RefinedWatchSink
     vector<vector<int>> var_constraint_indices;
     vector<vector<SimpleIntegerVariableID>> constraint_scope;
 
+    // The variables each propagator reads the interior of (Triggers::
+    // interior_reads, derived from the triggers unless the propagator said
+    // otherwise), views resolved and duplicates removed. Indexed by propagator
+    // id. Built in install(), and read only by
+    // analyse_optional_interior_pruning().
+    vector<vector<SimpleIntegerVariableID>> propagator_interior_reads;
+
+    // One entry per install_with_optional_interior_pruning() pair, in
+    // installation order. A pair is one propagator id, whose slot in
+    // propagation_functions holds whichever member is live; the other member's
+    // function waits in `stashed`. Each member keeps what install() would have
+    // recorded for it had it been installed on its own: where its coarse
+    // trigger entries are (the id's, in each variable's list, which are only
+    // ever appended to, so a position stays put) with their masks, its
+    // interior reads, and its own idempotence-aliasing verdict.
+    struct PairMemberTrigger
+    {
+        unsigned long long var_index;
+        std::size_t position;
+        int mask;
+    };
+
+    struct PairMember
+    {
+        vector<PairMemberTrigger> triggers;
+        vector<SimpleIntegerVariableID> interior_reads;
+        bool claims_ignored;
+    };
+
+    struct OptionalInteriorPruningPair
+    {
+        int id;
+        int constraint_index;
+        vector<SimpleIntegerVariableID> targets;
+        PairMember pruning, fallback;
+        PropagationFunction stashed;
+        bool pruning_live;
+    };
+    vector<OptionalInteriorPruningPair> optional_interior_prunings;
+
     // Borrowed conflict observers, each notified when a propagator wipes out a
     // domain (see propagate). Attached at search start via add_conflict_observer;
     // the caller owns them. There can be several: a seq_search may chain several
@@ -570,6 +683,11 @@ auto Propagators::shared_derived_data_slot(const void * const key, const std::ty
 
 auto Propagators::install(const ConstraintID & constraint_id, PropagationFunction && f, const Triggers & triggers) -> void
 {
+    install_returning_id(constraint_id, move(f), triggers);
+}
+
+auto Propagators::install_returning_id(const ConstraintID & constraint_id, PropagationFunction && f, const Triggers & triggers) -> int
+{
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
     _imp->permanently_disabled.push_back(0);
@@ -597,16 +715,9 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
     // by refined watches declares its scope via triggers.scope_only, arming no
     // wake. So derive scope once here, then the wake wiring afterwards.
     //
-    // The algorithmic positions -- the coarse triggers and scope_only -- carry
-    // multiplicity, which the aliasing check needs: two positions aliasing the
-    // same underlying variable break most propagators' idempotence, and views
-    // hide the repeat from the author (x and -x + 3 alias; a lone +-x + c view is
-    // harmless, being a bijection on Z -- if a non-bijective view kind is ever
-    // added, a multiplier say, any occurrence must flag the scope as risky, not
-    // just a repeat). Refined-watch literals also put their variable in scope (so
-    // it counts for degree and adjacency), but a watch is a wake mechanism that
-    // may legitimately arm many watches on one variable, so it is not an
-    // algorithmic position and does not feed the aliasing multiset.
+    // Refined-watch literals also put their variable in scope (so it counts
+    // for degree and adjacency), though they are not algorithmic positions for
+    // the aliasing check (positions_alias).
     auto & scope = _imp->propagator_scope.emplace_back();
     scope.reserve(triggers.on_change.size() + triggers.on_bounds.size() + triggers.on_instantiated.size() + triggers.scope_only.size());
 
@@ -624,30 +735,19 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
             .visit(var);
     };
 
-    // The underlying-variable indices of the algorithmic positions, WITH
-    // multiplicity, for the aliasing check.
-    vector<unsigned long long> position_underlying;
-    auto add_position = [&](const IntegerVariableID & var) {
-        add_scope_var(var);
-        overloaded{
-            [&](const SimpleIntegerVariableID & sv) { position_underlying.push_back(sv.index); },                 //
-            [&](const ViewOfIntegerVariableID & vv) { position_underlying.push_back(vv.actual_variable.index); }, //
-            [&](const ConstantIntegerVariableID &) {}                                                             //
-        }
-            .visit(var);
-    };
-
     for (const auto & v : triggers.on_change)
-        add_position(v);
+        add_scope_var(v);
     for (const auto & v : triggers.on_bounds)
-        add_position(v);
+        add_scope_var(v);
     for (const auto & v : triggers.on_instantiated)
-        add_position(v);
+        add_scope_var(v);
     for (const auto & v : triggers.scope_only)
-        add_position(v);
+        add_scope_var(v);
     for (const auto & refined : triggers.refined)
         if (auto cond = std::get_if<IntegerVariableCondition>(&refined.first))
             add_scope_var(cond->var);
+
+    _imp->propagator_interior_reads.push_back(interior_reads_of(triggers));
 
     // Adjacency: each scope variable participates in this constraint.
     for (const auto & v : scope) {
@@ -677,8 +777,7 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
     // Aliasing: if two algorithmic positions resolve to the same underlying
     // variable, ignore any EnableButIdempotent this propagator claims (a false
     // positive merely restores the always-requeue behaviour).
-    sort(position_underlying);
-    _imp->idempotence_claims_ignored.push_back(adjacent_find(position_underlying) != position_underlying.end() ? 1 : 0);
+    _imp->idempotence_claims_ignored.push_back(positions_alias(triggers) ? 1 : 0);
 
     // Wake wiring, separate from scope: coarse triggers enqueue the propagator on
     // the matching event; refined watches are armed in the index. scope_only
@@ -691,6 +790,75 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
         trigger_on_instantiated(v, id);
     for (const auto & [literal, payload] : triggers.refined)
         _imp->register_refined_watch(id, literal, payload, false);
+
+    return id;
+}
+
+auto Propagators::install_with_optional_interior_pruning(const ConstraintID & constraint_id, const vector<IntegerVariableID> & targets,
+    PropagationFunction && pruning, const Triggers & pruning_triggers, PropagationFunction && fallback, const Triggers & fallback_triggers) -> void
+{
+    // A refined watch hands its payload to a propagator id, and the two
+    // members share one, so neither could tell whose watch had fired.
+    if (! pruning_triggers.refined.empty() || ! fallback_triggers.refined.empty())
+        throw UnexpectedException{"install_with_optional_interior_pruning: a pair's propagators must use coarse triggers only"};
+
+    // One id for the pair, installed with the pruning's triggers and the
+    // fallback's variables added to its scope, so that degree and adjacency
+    // see the pair once, over the union of the two scopes.
+    Triggers combined = pruning_triggers;
+    for (const auto * vars :
+        {&fallback_triggers.on_change, &fallback_triggers.on_bounds, &fallback_triggers.on_instantiated, &fallback_triggers.scope_only})
+        combined.scope_only.insert(combined.scope_only.end(), vars->begin(), vars->end());
+    combined.interior_reads = vector<IntegerVariableID>{};
+    auto id = install_returning_id(constraint_id, move(pruning), combined);
+
+    // install() has just wired the pruning's triggers, so its entries are the
+    // id's at the end of each scope variable's list.
+    Imp::PairMember pruning_member{
+        .triggers = {}, .interior_reads = interior_reads_of(pruning_triggers), .claims_ignored = positions_alias(pruning_triggers)};
+    // install() judged aliasing over the combined scope, which counts a
+    // variable both members mention twice; what matters is the live member's
+    // own positions.
+    _imp->idempotence_claims_ignored[id] = pruning_member.claims_ignored ? 1 : 0;
+    for (const auto & v : _imp->propagator_scope[id])
+        if (v.index < _imp->iv_triggers.size()) {
+            const auto & list = _imp->iv_triggers[v.index].ids_and_masks;
+            for (auto i = list.size(); i > 0 && list[i - 1].first == id; --i)
+                pruning_member.triggers.push_back(Imp::PairMemberTrigger{v.index, i - 1, list[i - 1].second});
+        }
+
+    // The fallback's are wired now, straight after, so that each sits just where
+    // the fallback's own would have, had it been installed alone in the
+    // pruning's place; and masked off, since the pruning is the live member
+    // until something chooses. So a pair on its own propagates exactly as its
+    // pruning propagator would.
+    Imp::PairMember fallback_member{
+        .triggers = {}, .interior_reads = interior_reads_of(fallback_triggers), .claims_ignored = positions_alias(fallback_triggers)};
+    auto wire = [&](const vector<IntegerVariableID> & vars, auto trigger_on) {
+        for (const auto & v : vars)
+            if (auto u = underlying_variable(v)) {
+                (this->*trigger_on)(v, id);
+                auto & list = _imp->iv_triggers[u->index].ids_and_masks;
+                fallback_member.triggers.push_back(Imp::PairMemberTrigger{u->index, list.size() - 1, list.back().second});
+                list.back().second = 0;
+            }
+    };
+    wire(fallback_triggers.on_change, &Propagators::trigger_on_change);
+    wire(fallback_triggers.on_bounds, &Propagators::trigger_on_bounds);
+    wire(fallback_triggers.on_instantiated, &Propagators::trigger_on_instantiated);
+
+    vector<SimpleIntegerVariableID> underlying_targets;
+    for (const auto & t : targets)
+        if (auto u = underlying_variable(t); u && ! contains(underlying_targets, *u))
+            underlying_targets.push_back(*u);
+
+    _imp->optional_interior_prunings.push_back(Imp::OptionalInteriorPruningPair{.id = id,
+        .constraint_index = _imp->propagator_constraint_index[id],
+        .targets = move(underlying_targets),
+        .pruning = move(pruning_member),
+        .fallback = move(fallback_member),
+        .stashed = move(fallback),
+        .pruning_live = true});
 }
 
 auto Propagators::disable_propagators_for_constraints(std::span<const ConstraintID> constraint_ids) -> std::size_t
@@ -1439,6 +1607,115 @@ auto Propagators::constraint_indices_of_variable(SimpleIntegerVariableID var) co
 auto Propagators::scope_of_constraint(int constraint_index) const -> const vector<SimpleIntegerVariableID> &
 {
     return _imp->constraint_scope[constraint_index];
+}
+
+auto Propagators::analyse_optional_interior_pruning() const -> vector<OptionalInteriorPruningVerdict>
+{
+    const auto & pairs = _imp->optional_interior_prunings;
+
+    // For each variable, up to two distinct constraints that read its interior.
+    // Two are all that is ever needed: a pair wants a reader other than its own
+    // constraint, and of two distinct readers at most one can be that.
+    struct Readers
+    {
+        int first = -1, second = -1;
+    };
+    vector<Readers> readers;
+    auto add_reader = [&](const SimpleIntegerVariableID & var, int constraint_index) -> bool {
+        if (readers.size() <= var.index)
+            readers.resize(var.index + 1);
+        auto & r = readers[var.index];
+        if (r.first == -1) {
+            r.first = constraint_index;
+            return true;
+        }
+        if (r.first != constraint_index && r.second == -1) {
+            r.second = constraint_index;
+            return true;
+        }
+        return false;
+    };
+    auto reader_other_than = [&](const SimpleIntegerVariableID & var, int constraint_index) -> optional<int> {
+        if (readers.size() <= var.index)
+            return nullopt;
+        const auto & r = readers[var.index];
+        if (r.first != -1 && r.first != constraint_index)
+            return r.first;
+        if (r.second != -1 && r.second != constraint_index)
+            return r.second;
+        return nullopt;
+    };
+
+    // A pair is live unless something (a presolver, say) has retired its
+    // propagator.
+    vector<uint8_t> in_a_pair(_imp->propagation_functions.size(), 0);
+    vector<uint8_t> live(pairs.size(), 0);
+    for (const auto & [k, entry] : enumerate(pairs)) {
+        in_a_pair[entry.id] = 1;
+        live[k] = ! _imp->permanently_disabled[entry.id];
+    }
+
+    // The sources: everything that always runs. That is every live propagator
+    // outside a pair, and the fallback of every live pair, whether or not it is
+    // the one currently chosen --- counting it either way is what keeps
+    // switching a pruning on from ever taking a reader away.
+    for (std::size_t p = 0; p < _imp->propagation_functions.size(); ++p)
+        if (! in_a_pair[p] && ! _imp->permanently_disabled[p])
+            for (const auto & v : _imp->propagator_interior_reads[p])
+                add_reader(v, _imp->propagator_constraint_index[p]);
+    for (const auto & [k, entry] : enumerate(pairs))
+        if (live[k])
+            for (const auto & v : entry.fallback.interior_reads)
+                add_reader(v, entry.constraint_index);
+
+    // Then the least fixpoint: a pruning is needed once some other constraint
+    // reads a target's interior, and from then on its own reads count, which
+    // may reach further pairs.
+    vector<vector<int>> pairs_targeting;
+    for (const auto & [k, entry] : enumerate(pairs))
+        if (live[k])
+            for (const auto & t : entry.targets) {
+                if (pairs_targeting.size() <= t.index)
+                    pairs_targeting.resize(t.index + 1);
+                pairs_targeting[t.index].push_back(k);
+            }
+
+    vector<uint8_t> needed(pairs.size(), 0);
+    vector<int> observed_by(pairs.size(), -1);
+    vector<SimpleIntegerVariableID> newly_read;
+    auto consider = [&](std::size_t k) {
+        if (needed[k] || ! live[k])
+            return;
+        const auto & entry = pairs[k];
+        for (const auto & t : entry.targets)
+            if (auto reader = reader_other_than(t, entry.constraint_index)) {
+                needed[k] = 1;
+                observed_by[k] = *reader;
+                for (const auto & v : entry.pruning.interior_reads)
+                    if (add_reader(v, entry.constraint_index))
+                        newly_read.push_back(v);
+                return;
+            }
+    };
+
+    for (std::size_t k = 0; k < pairs.size(); ++k)
+        consider(k);
+    while (! newly_read.empty()) {
+        auto v = newly_read.back();
+        newly_read.pop_back();
+        if (v.index < pairs_targeting.size())
+            for (auto k : pairs_targeting[v.index])
+                consider(k);
+    }
+
+    vector<OptionalInteriorPruningVerdict> result;
+    for (const auto & [k, entry] : enumerate(pairs))
+        if (live[k])
+            result.push_back(OptionalInteriorPruningVerdict{.constraint_id = _imp->constraint_ids[entry.constraint_index],
+                .targets = entry.targets,
+                .needed = 0 != needed[k],
+                .observed_by = observed_by[k] >= 0 ? optional<ConstraintID>{_imp->constraint_ids[observed_by[k]]} : nullopt});
+    return result;
 }
 
 auto Propagators::add_conflict_observer(ConflictObserver * observer) -> void

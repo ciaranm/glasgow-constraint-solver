@@ -1237,6 +1237,11 @@ auto SubCircuit::install_propagators(Propagators & propagators) -> void
     // the SCC arm needs the wider trigger.
     if (scc_anchor)
         triggers.on_change = {_succ.begin(), _succ.end()};
+    // Either way, the lookahead's evidence-node test asks whether a node's own
+    // index is still in its successor's domain, which is usually an interior
+    // value, so this reads every successor's interior even when it is only
+    // woken by instantiation.
+    triggers.interior_reads = vector<IntegerVariableID>{_succ.begin(), _succ.end()};
     propagators.install(
         constraint_id(),
         [succ = _succ, owner = constraint_id(), pos_data = std::move(_pos_data), unassigned_handle = _state_handles.unassigned, prevent, scc_anchor,

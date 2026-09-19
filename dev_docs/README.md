@@ -47,6 +47,15 @@ library. For an introduction to *using* the solver, start with the top-level
   time — and why none of those cheats may ever be merged. Start here when
   adding any new constraint — and for the umbrella-header directory layout,
   which presolvers under `gcs/presolvers/` share.
+- [Optional interior pruning](optional-interior-pruning.md) — which variables'
+  interior values each propagator reads (derived from its triggers, or
+  `Triggers::interior_reads`), how a constraint offers a pruning of interior
+  values as optional (a pair of propagators, and the two promises it makes),
+  and the least-fixpoint analysis that works out per model which of those
+  prunings anything could observe, with the argument for why switching the
+  others off changes no bound anywhere. `Element`'s `consistency::Auto` is the
+  first client (issue #902). Read before choosing triggers that under-report
+  what a propagator reads.
 - [Reification](reification.md) — additional machinery for *reified* constraints:
   the `ReificationCondition` static and `EvaluatedReificationCondition` runtime
   types, the `install_reified_dispatcher` helper, the OPB encoding pattern,

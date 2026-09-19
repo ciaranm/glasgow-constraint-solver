@@ -376,6 +376,15 @@ Pick the *coarsest* trigger that suffices — `on_bounds` is cheaper to
 fire than `on_change`. If the propagator only inspects bounds, use
 `on_bounds`. If it iterates the full domain, use `on_change`.
 
+The choice is also a declaration. A variable registered only through
+`on_bounds` or `on_instantiated` is taken to be one whose interior values the
+propagator never reads, and the solver uses that to decide whether another
+constraint's pruning of that variable's interior is worth doing at all (see
+[Optional interior pruning](optional-interior-pruning.md)). If the propagator
+does read interior values of a variable it only watches for bounds --- an
+`in_domain` test on a value that is not a bound, say --- set
+`Triggers::interior_reads` to say so.
+
 ```cpp
 Triggers triggers;
 for (const auto & v : _vars)
