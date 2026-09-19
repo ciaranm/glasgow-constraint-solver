@@ -289,6 +289,8 @@ auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+    // Matches add_view_tests(bin_packing_constraint bin_packing_test 4).
+    constexpr int n_positions = 4;
 
     // Each capa case: { item_ranges, sizes, capacities }.
     vector<tuple<vector<pair<int, int>>, vector<int>, vector<int>>> capa_data = {
@@ -410,9 +412,14 @@ auto main(int argc, char * argv[]) -> int
         }
 
         // The cross-bin prune of the worked example, with bin 1's load arriving
-        // as a view and (second case) bin 0's as a constant.
-        run_stage4_degenerate_load_test(proofs, {{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 3}, {0, 2}}, 1, nullopt, 0);
-        run_stage4_degenerate_load_test(proofs, {{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 3}, {0, 2}}, 1, make_optional<size_t>(0), 3);
+        // as a view and (second case) bin 0's as a constant. These build their
+        // own view and never read view_cfg, so every view lane would repeat
+        // the same work under the same proof name, racing the others under a
+        // parallel ctest (issue #961). Run them in the bare lane only.
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+            run_stage4_degenerate_load_test(proofs, {{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 3}, {0, 2}}, 1, nullopt, 0);
+            run_stage4_degenerate_load_test(proofs, {{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 3}, {0, 2}}, 1, make_optional<size_t>(0), 3);
+        }
     }
 
     return EXIT_SUCCESS;
