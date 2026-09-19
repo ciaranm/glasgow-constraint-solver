@@ -70,6 +70,11 @@ no inference and no proof byte --- so this replaces the `STATS=0` / `STATS=1`
 two-pass split the older harnesses needed, and a timing column and a counter
 column can be read from the same row.
 
+**Every arm has a `-dd` twin** carrying `--branch dom-then-deg --value-order
+split`, because a rule's measured worth moves with the branching more than with
+almost anything else, and `arm` is the only provenance a row carries. The
+default arms run the solver's own `in-order` / `smallest`.
+
 ### Things it does that are easy to get wrong by hand
 
 **An arm the binary cannot run is skipped and said to be skipped.** Point it at

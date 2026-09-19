@@ -108,6 +108,22 @@ ARMS: dict[str, list[str]] = {
                   "--disjunctive-detectable-precedences-set"],
 }
 
+# A "-dd" copy of every arm, carrying --branch dom-then-deg --value-order split.
+#
+# Every arm above takes the solver's default branching, in-order/smallest, and
+# a rule's measured worth depends on the branching more than on almost anything
+# else here. The job-shop figure that motivates that whole family --- ft06 in
+# 55 recursions with --disjunctive-edge-finding --- is a dom-then-deg/split
+# figure, and is not reachable from the default arms at all, so this is what
+# reproduces it. dev_docs/cluster-experiments.md has both configurations side
+# by side, and tools/check_scheduling_readers.py already sets exactly these two
+# flags, because a pre-flight wants the configuration that finishes.
+#
+# Named rather than passed as a free-text --extra-flags, so that a row still
+# says what produced it: `arm` is the only provenance a JSONL row carries.
+for _name, _flags in list(ARMS.items()):
+    ARMS[f"{_name}-dd"] = _flags + ["--branch", "dom-then-deg", "--value-order", "split"]
+
 COUNTER_LINE = re.compile(r"^(cumulative|disjunctive)_([a-z_]+): "
                           r"calls=(\d+) firings=(\d+) already_true=(\d+) contradictions=(\d+)\s*$")
 STAT_LINE = re.compile(r"^([a-z_ ]+): (.*)$")

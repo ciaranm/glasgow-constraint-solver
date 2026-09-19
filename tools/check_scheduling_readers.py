@@ -55,7 +55,7 @@ def check_jobshop(binary: str, root: Path, timeout: float) -> tuple[int, int, in
             print(f"  {name}: no instance file, skipped")
             continue
         # Edge-finding is off by default and a job shop is where that shows:
-        # ft06 is 55 recursions with it and had not closed after 29.6 million
+        # under this branching ft06 is 55 recursions with it and 35,142,089
         # without. A pre-flight wants the configuration that finishes.
         status, got = solve(binary, ["--jss", str(found[0]), "--unary", "disjunctive",
                                      "--disjunctive-edge-finding",
