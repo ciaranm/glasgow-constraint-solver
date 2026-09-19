@@ -5,6 +5,7 @@
 
 #include <util/enumerate.hh>
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -28,15 +29,18 @@
 using std::cerr;
 using std::cmp_less;
 using std::flush;
+using std::holds_alternative;
 using std::make_optional;
 using std::mt19937;
 using std::nullopt;
+using std::optional;
 using std::pair;
 using std::set;
 using std::string;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
+using std::ranges::any_of;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -50,7 +54,7 @@ using namespace gcs;
 using namespace gcs::test_innards;
 
 auto run_element_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> var_range, pair<int, int> idx_range,
-    const vector<pair<int, int>> & array_range) -> void
+    const vector<pair<int, int>> & array_range, ElementConsistency level = consistency::GAC{}) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 2 + static_cast<int>(array_range.size()));
     print(cerr, "element [{}] {} {} {} {}", view_wrap_config_label(view_cfg), var_range, idx_range, array_range, proofs ? " with proofs:" : ":");
@@ -70,8 +74,11 @@ auto run_element_test(bool proofs, const string & mode, const ViewWrapConfig & v
     for (const auto & r : array_range)
         array.push_back(create_integer_variable_or_constant_with_view(p, r, wraps.at(array.size() + 2)));
     // GAC is Element's default; setting it explicitly drives the with_consistency
-    // setter end-to-end while keeping the checking_gac assertion valid.
-    p.post(Element{var, idx, &array}.with_consistency(consistency::GAC{}));
+    // setter end-to-end while keeping the checking_gac assertion valid. Over an
+    // array with any variable entry, Auto must be GAC too, which the varauto
+    // lane holds it to; with every entry a constant it is free to drop to BC,
+    // which the GAC check would then reject, so those cases are skipped there.
+    p.post(Element{var, idx, &array}.with_consistency(level));
 
     auto proof_name = proofs ? make_optional("element_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var, idx, array});
@@ -150,15 +157,19 @@ auto run_all_no_overlap_tests(bool proofs, const ViewWrapConfig & view_cfg) -> v
     run_element_no_overlap_test(proofs, view_cfg, "singleton_both", {4}, {{4}, {9}});
 }
 
-// `gac` selects the arm rather than a different instance, so the pair of modes
-// is comparable. ElementConstantArray is bounds-only by default, which left the
+// `level` selects the arm rather than a different instance, so the modes are
+// comparable. ElementConstantArray is bounds-only by default, which left the
 // GAC propagator's constant-array instantiation reachable through
 // with_consistency but never actually run by anything: the sweep over result
 // values the array does not support is a different code path from the
 // bounds-only one above it, and it is the path the interval removals live in.
+// Under Auto, with nothing else in the model to read the result, the solver
+// switches the element to its bounds-only arm after installing both, so the
+// constauto lane runs the pair machinery and is checked as BC.
 auto run_element_constant_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> var_range, pair<int, int> idx_range,
-    const vector<int> & array, bool gac = false) -> void
+    const vector<int> & array, optional<ElementConsistency> level = nullopt) -> void
 {
+    auto gac = level && holds_alternative<consistency::GAC>(*level);
     auto wraps = wraps_for_positions(view_cfg, 2);
     print(cerr, "element constant{} [{}] {} {} {} {}", gac ? " gac" : "", view_wrap_config_label(view_cfg), var_range, idx_range, array,
         proofs ? " with proofs:" : ":");
@@ -175,8 +186,8 @@ auto run_element_constant_test(bool proofs, const string & mode, const ViewWrapC
     vector<Integer> a;
     for (const auto & v : array)
         a.push_back(Integer(v));
-    if (gac)
-        p.post(ElementConstantArray{var, idx, &a}.with_consistency(consistency::GAC{}));
+    if (level)
+        p.post(ElementConstantArray{var, idx, &a}.with_consistency(*level));
     else
         p.post(ElementConstantArray{var, idx, &a});
 
@@ -228,7 +239,7 @@ auto run_element2d_test(bool proofs, const string & mode, const ViewWrapConfig &
 }
 
 auto run_element2d_constant_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> var_range,
-    pair<int, int> idx1_range, pair<int, int> idx2_range, const vector<vector<int>> & array) -> void
+    pair<int, int> idx1_range, pair<int, int> idx2_range, const vector<vector<int>> & array, optional<ElementConsistency> level = nullopt) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 3);
     print(cerr, "element 2d constant [{}] {} {} {} {} {}", view_wrap_config_label(view_cfg), var_range, idx1_range, idx2_range, array,
@@ -255,7 +266,10 @@ auto run_element2d_constant_test(bool proofs, const string & mode, const ViewWra
         for (const auto & vv : v)
             a.back().push_back(Integer(vv));
     }
-    p.post(Element2DConstantArray{var, idx1, idx2, &a});
+    if (level)
+        p.post(Element2DConstantArray{var, idx1, idx2, &a}.with_consistency(*level));
+    else
+        p.post(Element2DConstantArray{var, idx1, idx2, &a});
 
     auto proof_name = proofs ? make_optional("element_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
@@ -412,7 +426,10 @@ auto main(int argc, char * argv[]) -> int
         // Position layout per mode: var, then the index variable(s), then the
         // array entries (only when the array is itself made of variables). The
         // skip bound matches the registered n_positions for each mode.
-        int n_positions = (mode == "const") ? 2 : (mode == "const2d") ? 3 : (mode == "var2d") ? 5 : 6;
+        int n_positions = (mode == "const" || mode == "constgac" || mode == "constauto") ? 2
+            : (mode == "const2d" || mode == "const2dauto")                               ? 3
+            : (mode == "var2d")                                                          ? 5
+                                                                                         : 6;
         if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
             println(cerr, "element view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
             continue;
@@ -441,17 +458,31 @@ auto main(int argc, char * argv[]) -> int
                     run_dup_element_test(proofs, "xy_resx", {{1, 3}, {1, 3}}, {0, 1}, {0, 1}, 0);
                 }
             }
+            else if (mode == "varauto") {
+                // Only the cases with a variable entry: see run_element_test.
+                for (auto & [r1, r2, r3] : var_data)
+                    if (any_of(r3, [](const pair<int, int> & r) { return r.first != r.second; }))
+                        run_element_test(proofs, mode, view_cfg, r1, r2, r3, consistency::Auto{});
+            }
             else if (mode == "const") {
                 for (auto & [r1, r2, r3] : const_data)
                     run_element_constant_test(proofs, mode, view_cfg, r1, r2, r3);
             }
             else if (mode == "constgac") {
                 for (auto & [r1, r2, r3] : const_data)
-                    run_element_constant_test(proofs, mode, view_cfg, r1, r2, r3, true);
+                    run_element_constant_test(proofs, mode, view_cfg, r1, r2, r3, consistency::GAC{});
+            }
+            else if (mode == "constauto") {
+                for (auto & [r1, r2, r3] : const_data)
+                    run_element_constant_test(proofs, mode, view_cfg, r1, r2, r3, consistency::Auto{});
             }
             else if (mode == "const2d") {
                 for (auto & [r1, r2, r3, r4] : const2d_data)
                     run_element2d_constant_test(proofs, mode, view_cfg, r1, r2, r3, r4);
+            }
+            else if (mode == "const2dauto") {
+                for (auto & [r1, r2, r3, r4] : const2d_data)
+                    run_element2d_constant_test(proofs, mode, view_cfg, r1, r2, r3, r4, consistency::Auto{});
             }
             else if (mode == "var2d") {
                 for (auto & [r1, r2, r3, r4] : var2d_data)

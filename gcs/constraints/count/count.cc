@@ -88,6 +88,11 @@ auto Count::install_propagators(Propagators & propagators) -> void
     all_vars.push_back(_value_of_interest);
     all_vars.push_back(_how_many);
 
+    // how_many is only watched for its bounds, but the value-of-interest
+    // support test below asks whether each achievable count is still in
+    // how_many's domain, so a hole in it can matter.
+    triggers.interior_reads = all_vars;
+
     // The reason ranges over the whole (fixed) variable scope, so build it once
     // here and reuse it at every inference site rather than reconstructing it —
     // and re-copying the scope into a fresh shared_ptr — on each inference. See
