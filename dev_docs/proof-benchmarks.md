@@ -379,8 +379,9 @@ Found the hard way, all of them producing an immediate parse error:
 - The `minicp_benchmarks` binaries (`n_queens`, `magic_square`, `qap`, `tsp`,
   `magic_series`) and `bin_packing_bench` have **no `--stats`** — they print
   statistics unconditionally and reject the flag.
-- `ortho_latin` and `magic_square` spell the encoding choice
-  `--all-different gac|vc|not-equals`, not `--gac` or `--vc`.
+- `ortho_latin`, `magic_square` and `sudoku` spell the encoding choice
+  `--all-different gac|bc|vc|not-equals`, not `--gac` or `--vc`; `langford`
+  takes `--all-different gac|bc`.
 - `skeleton_puzzle` refuses any non-default shape unless `--seed` is given.
 - `frequency_square` takes its size positionally, and the size must be divisible
   by `--lambda`.

@@ -786,14 +786,14 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-86 constraint probes, plus 20 heuristic ones in the second table. The lane
+87 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
 | **KnownTrip** (20) | `Plus/many-intervals-gac` (the exact interval arm over two operands of 400 intervals, which `Dynamic` exists to cap), `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (51) | the arithmetic family (with four rows of its own for `Abs`' interior holes, two of them view-wrapped, one each for `Plus`' and `Minus`' `consistency::GAC` arm over holey operands, and `Plus/many-intervals` under `Auto`), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among` contiguous and holey, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **Clean** (52) | the arithmetic family (with four rows of its own for `Abs`' interior holes, two of them view-wrapped, one each for `Plus`' and `Minus`' `consistency::GAC` arm over holey operands, and `Plus/many-intervals` under `Auto`), comparison, equality, linear, `AllDifferent` under `VC` and under `BC`, `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among` contiguous and holey, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (15) | the graph and permutation family, and the Boolean constraints |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`

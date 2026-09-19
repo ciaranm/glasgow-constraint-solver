@@ -1,11 +1,16 @@
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <examples/benchmark_cli.hh>
+
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <vector>
 
 #include <cxxopts.hpp>
@@ -24,6 +29,9 @@ using namespace gcs;
 
 using std::cerr;
 using std::cout;
+using std::getline;
+using std::ifstream;
+using std::istringstream;
 using std::make_optional;
 using std::nullopt;
 using std::string;
@@ -47,17 +55,24 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                               //
-            ("help", "Display help information")                             //
-            ("prove", "Create a proof")                                      //
-            ("proof-files-basename", "Basename for the .opb and .pbp files", //
-                cxxopts::value<string>()->default_value("sudoku"))           //
-            ("stats", "Print solve statistics")                              //
-            ("trace", "Trace progress")                                      //
-            ;
+        options.add_options("Program Options")                                                                             //
+            ("help", "Display help information")                                                                           //
+            ("prove", "Create a proof")                                                                                    //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",                                               //
+                cxxopts::value<string>()->default_value("sudoku"))                                                         //
+            ("stats", "Print solve statistics")                                                                            //
+            ("trace", "Trace progress")                                                                                    //
+            ("timeout", "Abort the solve after this many seconds (0 = no limit)",                                          //
+                cxxopts::value<double>()->default_value("0"))                                                              //
+            ("all-different", "All-different encoding to use: 'gac', 'bc', 'vc', or 'not-equals' (the not-equals clique)", //
+                cxxopts::value<string>()->default_value("gac"));
 
         options.add_options("Extended Options")   //
             ("xv", "Solve the xv puzzle instead") //
+            ("puzzle",
+                "Solve the puzzle in this file instead: n rows of n whitespace-separated "
+                "values, for n = 4, 9, 16, 25, ..., with 0 or . for a blank",
+                cxxopts::value<string>()) //
             ("all", "Find all solutions");
 
         options_vars = options.parse(argc, argv);
@@ -73,6 +88,17 @@ auto main(int argc, char * argv[]) -> int
         println("");
         cout << options.help() << std::endl;
         return EXIT_SUCCESS;
+    }
+
+    const string all_different_mode = options_vars["all-different"].as<string>();
+    if (all_different_mode != "gac" && all_different_mode != "bc" && all_different_mode != "vc" && all_different_mode != "not-equals") {
+        println(cerr, "Error: --all-different must be 'gac', 'bc', 'vc', or 'not-equals'.");
+        return EXIT_FAILURE;
+    }
+
+    if (options_vars.contains("xv") && options_vars.contains("puzzle")) {
+        println(cerr, "Error: --xv and --puzzle are alternatives.");
+        return EXIT_FAILURE;
     }
 
     Problem p;
@@ -129,6 +155,37 @@ auto main(int argc, char * argv[]) -> int
             {O, O, O, O, O, O, O, O}  //
         };
     }
+    else if (options_vars.contains("puzzle")) {
+        ifstream file{options_vars["puzzle"].as<string>()};
+        if (! file) {
+            println(cerr, "Error: cannot read {}", options_vars["puzzle"].as<string>());
+            return EXIT_FAILURE;
+        }
+
+        string line;
+        while (getline(file, line)) {
+            istringstream tokens{line};
+            vector<int> row;
+            string token;
+            while (tokens >> token)
+                row.push_back(token == "." ? 0 : std::stoi(token));
+            if (! row.empty())
+                predef.push_back(move(row));
+        }
+
+        n = static_cast<int>(predef.size());
+        size = 1;
+        while (size * size < n)
+            ++size;
+        bool ok = n > 0 && size * size == n;
+        for (const auto & row : predef)
+            for (auto value : row)
+                ok = ok && static_cast<int>(row.size()) == n && value >= 0 && value <= n;
+        if (! ok) {
+            println(cerr, "Error: {} is not an n by n grid of values between 0 and n, for n a square", options_vars["puzzle"].as<string>());
+            return EXIT_FAILURE;
+        }
+    }
     else {
         // https://abcnews.go.com/blogs/headlines/2012/06/can-you-solve-the-hardest-ever-sudoku
         predef = {
@@ -149,14 +206,29 @@ auto main(int argc, char * argv[]) -> int
     for (int r = 0; r < n; ++r)
         grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, format("grid[{}]", r)));
 
+    auto post_all_different = [&](const vector<IntegerVariableID> & vars) {
+        if (all_different_mode == "gac")
+            p.post(AllDifferent{vars});
+        else if (all_different_mode == "bc")
+            p.post(AllDifferent{vars} //
+                    .with_consistency(consistency::BC{}));
+        else if (all_different_mode == "vc")
+            p.post(AllDifferent{vars} //
+                    .with_consistency(consistency::VC{}));
+        else
+            for (unsigned i = 0; i < vars.size(); ++i)
+                for (unsigned j = i + 1; j < vars.size(); ++j)
+                    p.post(NotEquals{vars[i], vars[j]});
+    };
+
     for (int r = 0; r < n; ++r)
-        p.post(AllDifferent{grid[r]});
+        post_all_different(grid[r]);
 
     for (int c = 0; c < n; ++c) {
         vector<IntegerVariableID> column;
         for (int r = 0; r < n; ++r)
             column.push_back(grid[r][c]);
-        p.post(AllDifferent{column});
+        post_all_different(column);
     }
 
     for (int r = 0; r < size; ++r)
@@ -165,7 +237,7 @@ auto main(int argc, char * argv[]) -> int
             for (int rr = 0; rr < size; ++rr)
                 for (int cc = 0; cc < size; ++cc)
                     box.push_back(grid[r * size + rr][c * size + cc]);
-            p.post(AllDifferent{box});
+            post_all_different(box);
         }
 
     for (int r = 0; r < n; ++r)
@@ -217,7 +289,7 @@ auto main(int argc, char * argv[]) -> int
                 }
     }
 
-    auto stats = solve_with(p,
+    auto stats = bench::solve_with_timeout(options_vars["timeout"].as<double>(), p,
         SolveCallbacks{//
             .solution = [&](const CurrentState & s) -> bool {
                 for (const auto & row : grid) {
