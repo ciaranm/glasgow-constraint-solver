@@ -45,7 +45,7 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_all_different_test(bool proofs, const ViewWrapConfig & view_cfg, variant<int, pair<int, int>> v1_range,
+auto run_all_different_test(bool proofs, bool bc, const ViewWrapConfig & view_cfg, variant<int, pair<int, int>> v1_range,
     variant<int, pair<int, int>> v2_range, variant<int, pair<int, int>> v3_range, variant<int, pair<int, int>> v4_range,
     variant<int, pair<int, int>> v5_range, variant<int, pair<int, int>> v6_range) -> void
 {
@@ -53,7 +53,7 @@ auto run_all_different_test(bool proofs, const ViewWrapConfig & view_cfg, varian
     // if this crashes your compiler, implement print for variant instead...
     visit(
         [&](auto v1, auto v2, auto v3, auto v4, auto v5, auto v6) {
-            print(cerr, "all_different [{}] {} {} {} {} {} {} {}", view_wrap_config_label(view_cfg), v1, v2, v3, v4, v5, v6,
+            print(cerr, "all_different{} [{}] {} {} {} {} {} {} {}", bc ? " bc" : "", view_wrap_config_label(view_cfg), v1, v2, v3, v4, v5, v6,
                 proofs ? " with proofs:" : ":");
         },
         v1_range, v2_range, v3_range, v4_range, v5_range, v6_range);
@@ -75,10 +75,20 @@ auto run_all_different_test(bool proofs, const ViewWrapConfig & view_cfg, varian
     auto v4 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(3)); }, v4_range);
     auto v5 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(4)); }, v5_range);
     auto v6 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(5)); }, v6_range);
-    p.post(AllDifferent{vector<IntegerVariableID>{v1, v2, v3, v4, v5, v6}});
-
-    auto proof_name = proofs ? make_optional("all_different_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3, v4, v5, v6});
+    auto proof_name = proofs ? make_optional(string{"all_different_test_"} + (bc ? "bc_" : "") + view_wrap_config_label(view_cfg)) : nullopt;
+    if (bc) {
+        // Bounds(Z): each bound has a support among the other variables'
+        // bounds, holes ignored, which is what the Hall interval algorithm
+        // promises and all it promises.
+        p.post(AllDifferent{vector<IntegerVariableID>{v1, v2, v3, v4, v5, v6}}.with_consistency(consistency::BC{}));
+        solve_for_tests_checking_consistency(p, proof_name, expected, actual,
+            tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::BC},
+                pair{v5, CheckConsistency::BC}, pair{v6, CheckConsistency::BC}});
+    }
+    else {
+        p.post(AllDifferent{vector<IntegerVariableID>{v1, v2, v3, v4, v5, v6}});
+        solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3, v4, v5, v6});
+    }
 
     check_results(proof_name, expected, actual);
 }
@@ -152,6 +162,22 @@ auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
 
+    // The consistency level is the first non-flag argument, "gac" (the default)
+    // or "bc"; --view-* flags may follow.
+    bool bc = false;
+    for (int i = 1; i < argc; ++i) {
+        string a = argv[i];
+        if (! a.starts_with("--")) {
+            if (a == "bc")
+                bc = true;
+            else if (a != "gac") {
+                println(cerr, "all_different_test: unknown level {}", a);
+                return EXIT_FAILURE;
+            }
+            break;
+        }
+    }
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     constexpr int n_positions = 6;
@@ -160,7 +186,10 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+    // The duplicate and degenerate cases already cover every level, and write
+    // fixed proof basenames, so only the default lane runs them: two lanes
+    // writing one basename at once corrupt each other's proofs (issue #961).
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions) && ! bc;
 
     vector<tuple<variant<int, pair<int, int>>, variant<int, pair<int, int>>, variant<int, pair<int, int>>, variant<int, pair<int, int>>,
         variant<int, pair<int, int>>, variant<int, pair<int, int>>>>
@@ -197,7 +226,7 @@ auto main(int argc, char * argv[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2, r3, r4, r5, r6] : data)
-            run_all_different_test(proofs, view_cfg, r1, r2, r3, r4, r5, r6);
+            run_all_different_test(proofs, bc, view_cfg, r1, r2, r3, r4, r5, r6);
 
         // Duplicate-variable cases for both flavours: smallest non-trivial
         // pair, a duplicate among more variables, and two duplicate runs.
@@ -206,6 +235,7 @@ auto main(int argc, char * argv[]) -> int
                      {{{0, 3}, {0, 3}}, {0, 0, 1}},                                                                      //
                      {{{0, 3}, {0, 3}}, {0, 0, 1, 1}}}) {
                 run_alldiff_dup_test(proofs, unique_domains, positions, "gac", consistency::GAC{});
+                run_alldiff_dup_test(proofs, unique_domains, positions, "bc", consistency::BC{});
                 run_alldiff_dup_test(proofs, unique_domains, positions, "vc", consistency::VC{});
             }
 

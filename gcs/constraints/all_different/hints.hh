@@ -57,6 +57,26 @@ namespace gcs::innards::hints
     auto emit_justification(ProofLogger & logger, const AllDifferentHall & hall, const ReasonLiterals & reason) -> void;
 
     /**
+     * \brief all_different's bounds consistent "Hall interval or violator"
+     * hint.
+     *
+     * The bounds form of AllDifferentHall: at least as many variables have
+     * their bounds inside `[lo, hi]` as there are values in it, so nothing else
+     * takes a value there (or, if there are more, nothing can). The
+     * justification is emitted straight from the propagator, which has the
+     * variables to hand, so this carries only the interval; with no own
+     * hint_sexpr it takes the default identity-plus-subhint wire form
+     * (`(constraint_id <originator>)(subhint hall_interval)`).
+     *
+     * \ingroup Innards
+     */
+    struct AllDifferentHallInterval : AllDifferent
+    {
+        static constexpr std::string_view subhint_name = "hall_interval";
+        Integer lo, hi;
+    };
+
+    /**
      * \brief all_different_except's assertion hint: just the owning constraint.
      *
      * AllDifferentExcept is a distinct constraint (not a shape of AllDifferent), so
