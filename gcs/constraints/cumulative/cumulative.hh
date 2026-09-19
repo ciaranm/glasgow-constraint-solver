@@ -32,36 +32,20 @@ namespace gcs
         /// The per-time family alone: three fully reified flags per (task,
         /// time point) over each task's possible-active window, and one
         /// capacity row per time point. `O(n x horizon)`, and what every
-        /// inference cites today.
+        /// inference used to cite.
+        ///
+        /// **Not shipped.** It is kept for one test-only job and is not
+        /// selectable by anything a user runs: \ref BothRecovering needs the
+        /// per-time rows as ground truth. Nothing outside this tree derives it
+        /// any more --- `cake_pb_cp` replaced its time-indexed encoder with a
+        /// start-checkpoint one (CakePB-dev a402078, 2026-09-19) --- so the
+        /// `scp_chain_cumulative*` cases that used to be pinned to it now check
+        /// the shipped encoding against cake's.
         TimeIndexed,
 
-        /// The per-time family, and the start-checkpoint family beside it:
-        /// per ordered pair of tasks, flags saying whether one is running when
-        /// the other starts, and one capacity row per task. `O(n^2)` and free
-        /// of the horizon, which is the point of issue #780.
-        ///
-        /// Emitting both is how the second is checked before anything is
-        /// derived from it --- a checkpoint row that says too much is a
-        /// solution veripb refuses --- and it is not a state to stay in.
-        /// Deriving the per-time rows from the checkpoints, and then dropping
-        /// the per-time family, is the rest of #780; a `StartCheckpoint` arm
-        /// arrives with that recovery, and cannot work before it, since an
-        /// unconverted inference would have no per-time row left to cite.
-        ///
-        /// **What it costs to have both.** More model is more for unit
-        /// propagation to reach, so a certificate step that was load-bearing
-        /// against the per-time family alone need not be against the two
-        /// together. That is not hypothetical: three of Cumulative's mutation
-        /// fixtures write corrupted proofs that veripb rejects under
-        /// \ref TimeIndexed and accepts under this. So a mutation lane is
-        /// registered here only where it still discriminates, and an honest
-        /// certificate developed under this arm has been checked more weakly
-        /// than one developed under \ref TimeIndexed.
-        Both,
-
-        /// As \ref Both, and then derive every per-time capacity row from the
-        /// start-checkpoint rows and check it against the row the model still
-        /// carries beside it.
+        /// Both families in the model, and then derive every per-time capacity
+        /// row from the start-checkpoint rows and check it against the row the
+        /// model still carries beside it.
         ///
         /// The development arm for the middle of #780, and the answer to "did
         /// the recovery derive the right thing". A recovery that is *invalid*
@@ -79,41 +63,23 @@ namespace gcs
         /// innards::cumulative_checkpoint_recovery_applies.
         BothRecovering,
 
-        /// The start-checkpoint family alone, with the per-time block *not*
-        /// written at all --- the end state #780 is walking towards, and today
-        /// the way a converted rule is held to having really been converted.
+        /// The start-checkpoint family alone, with the per-time block not
+        /// written at all: per ordered pair of active tasks, flags saying
+        /// whether one is running when the other starts, and one capacity row
+        /// per task. `6n(n-1) + n` rows and **no dependence on the horizon**.
         ///
-        /// The check it performs is blunt and total, which is the point: a rule
-        /// that still reads `capacity_lines` finds nothing there, its pol loses
-        /// the supply it was counting on, and veripb rejects the proof. So
-        /// running a fixture under this arm asks "does anything in this still
-        /// touch the old rows" without anyone having to enumerate where the old
-        /// rows are read from. That is what the leak-check script was
-        /// approximating by deleting `cap_t` rows from a finished OPB, and this
-        /// does it at the source instead --- no post-processing, no `.scp`-only
-        /// vehicle, and so available to every C++ test lane and every rule,
-        /// including the ones CumulativeRules leaves off by default.
+        /// **This is the encoding Cumulative ships, and the only one.** Two
+        /// would mean cake had to reproduce our per-constraint choice exactly,
+        /// and a disagreement between the two models shows up as a rejected
+        /// proof rather than as an error.
         ///
-        /// **A Cumulative the recovery cannot speak about gets the per-time
-        /// block instead, and no checkpoint block at all** --- that is a
-        /// variable height, a variable length, an optional task or a variable
-        /// capacity. It keeps the per-time rows because there would otherwise
-        /// be no capacity row for it and every rule over it would be
-        /// uncertifiable rather than merely unconverted; it is denied the
-        /// checkpoint rows because nothing could cite them, every citer going
-        /// through a recovery that declines the shape before it looks at the
-        /// model. So on a declined shape this *is* \ref TimeIndexed, and the
-        /// mode as a whole is "start-checkpoint wherever the recovery reaches",
-        /// which is what a default has to mean: see
-        /// innards::cumulative_shape_supports_checkpoint_recovery for exactly
-        /// where that is. A lane that wants the strict form should use a
-        /// fixture whose shape qualifies, and can confirm it did by the absence
-        /// of `cap_` labels in the OPB.
-        ///
-        /// \ref Both and \ref BothRecovering write the checkpoint block for
-        /// every shape, declined ones included: they are the differential arms,
-        /// and a checkpoint row over a declined shape is still one veripb
-        /// checks against the solutions.
+        /// Every rule cites a per-time capacity row *recovered in the proof*
+        /// rather than read from the model; see
+        /// innards::recover_cumulative_capacity_row. There is no shape to fall
+        /// back for, because a Cumulative the recovery cannot speak about never
+        /// reaches the encoder: no active task makes `prepare()` return false,
+        /// and a height whose bits cannot be cited --- a view --- makes it
+        /// throw.
         StartCheckpoint
     };
 
@@ -559,8 +525,10 @@ namespace gcs
      * Public API, in the sense #603 established: a derived Cumulative
      * (install_derived_cumulative) builds `pol`s on the capacity rows and pins
      * the flags, so changing what these name is a breaking change. cake_pb_cp
-     * re-derives the same names, so it is a cross-tool break rather than merely
-     * an internal one.
+     * re-derived the per-time names while it had a time-indexed encoder; it
+     * derives the start-checkpoint names further down instead now, so it is
+     * renaming one of *those* that is a cross-tool break rather than merely an
+     * internal one.
      *
      * Unlike a comparison or a linear inequality, there is no single primary
      * row to publish --- the capacity rows are a family, one per time point ---
@@ -645,11 +613,10 @@ namespace gcs
          * published because they are the same family, in the way `before` and
          * `after` are published beside `active`.
          *
-         * These are `cake_pb_cp`'s own names for the rows, as
-         * \ref capacity_row_role is: cake emits all three under the same
-         * labels, over the same terms, so a proof citing one resolves against
-         * its re-derived OPB as well as against ours. Renaming them is
-         * therefore a cross-tool break rather than an internal one.
+         * These were `cake_pb_cp`'s own names for the rows, as
+         * \ref capacity_row_role was, while cake had a time-indexed encoder
+         * that emitted all three. It has not since 2026-09-19, so they are
+         * internal names now.
          *
          * A constant-height task has none. Ask
          * NamesAndIDsTracker::constraint_row_label, which is how a citer
@@ -686,23 +653,23 @@ namespace gcs
         /**
          * \name The start-checkpoint encoding (issue #780).
          *
-         * A second, `O(n^2)` and horizon-free statement of the same
-         * constraint, emitted alongside the per-time family above: rather than
-         * checking the capacity at every time point, check it at every time
-         * point that is the start of a task which could occupy the resource.
-         * The load profile is a step function that only rises at such a start,
-         * so a time point over capacity is dominated by the last one at or
-         * before it, and checking every start checks every peak.
+         * The `O(n^2)` and horizon-free statement of the constraint that
+         * Cumulative ships: rather than checking the capacity at every time
+         * point, check it at every time point that is the start of a task
+         * which could occupy the resource. The load profile is a step function
+         * that only rises at such a start, so a time point over capacity is
+         * dominated by the last one at or before it, and checking every start
+         * checks every peak.
          *
-         * Nothing cites these yet --- they are here to be checked against the
-         * family that is load-bearing before anything is derived from them.
-         * Deriving the per-time rows from these, and deleting the per-time
-         * block, is the rest of #780.
+         * Every rule still cites a per-time capacity row, but one recovered in
+         * the proof from these (innards::recover_cumulative_capacity_row)
+         * rather than read from the model.
          *
-         * These are not `cake_pb_cp`'s names, as
-         * \ref capacity_row_role and the contribution roles are: cake has no
-         * start-checkpoint encoder to conform to. When one is asked for, these
-         * are the names to offer it.
+         * These are `cake_pb_cp`'s names too: its start-checkpoint encoder
+         * (CakePB-dev a402078) writes the same flags and rows under exactly
+         * these labels, and the verified-encoding chain resolves our proof's
+         * citations against its OPB by label. Renaming any of them is
+         * therefore a cross-tool break rather than an internal one.
          */
         ///@{
 
