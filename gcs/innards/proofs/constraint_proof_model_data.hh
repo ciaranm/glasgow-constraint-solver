@@ -42,7 +42,7 @@ namespace gcs::innards
      * Three kinds of thing get published this way, and they differ only in
      * which half of the tracker answers. A **row** is named by a role and found
      * by NamesAndIDsTracker::constraint_row_label. A **flag** is named by a
-     * ProofFlagKey and found by NamesAndIDsTracker::find_proof_flag_values. And
+     * ProofFlagKey and found by NamesAndIDsTracker::find_proof_flag. And
      * a **line the constraint derived inside the proof** --- an install
      * initialiser's work, which has no OPB row to label and no reification to
      * key --- is named by a role and found by
@@ -52,7 +52,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      * \sa NamesAndIDsTracker::constraint_row_label
-     * \sa NamesAndIDsTracker::find_proof_flag_values
+     * \sa NamesAndIDsTracker::find_proof_flag
      * \sa NamesAndIDsTracker::find_derived_line
      * \sa Problem::each_constraint_of_type_with_proof_data
      */
@@ -60,9 +60,27 @@ namespace gcs::innards
     struct ConstraintProofModelData;
 
     /**
+     * \brief Which of cake_pb_cp's flag-naming families a ProofFlagKey names.
+     *
+     * The numbers in a key mean different things in the two, and the two render
+     * differently, so a key that did not say which family it meant would not
+     * determine a name: `v[id][1]` and `x[id][1]` are different flags with the
+     * same numbers. That ambiguity was latent for as long as only one family
+     * was ever looked up.
+     *
+     * \ingroup Innards
+     */
+    enum class ProofFlagFamily
+    {
+        Values, ///< `v[id][...]`, from NamesAndIDsTracker::create_proof_flag_values: the numbers are domain values.
+        Indices ///< `x[id][...]`, from NamesAndIDsTracker::create_proof_flag: the numbers are array positions.
+    };
+
+    /**
      * \brief The key a constraint created one of its proof flags under: the
-     * value list and optional annotation it passed to
-     * NamesAndIDsTracker::create_proof_flag_values.
+     * number list, optional annotation, and family it passed to
+     * NamesAndIDsTracker::create_proof_flag_values or
+     * NamesAndIDsTracker::create_proof_flag.
      *
      * The flag-side counterpart of a published row role, and published the same
      * way and for the same reason. A flag's name is a pure function of
@@ -77,12 +95,16 @@ namespace gcs::innards
      * constraint_row_label deliberately does not cover them.
      *
      * \ingroup Innards
-     * \sa NamesAndIDsTracker::find_proof_flag_values
+     * \sa NamesAndIDsTracker::find_proof_flag
      */
     struct ProofFlagKey
     {
         std::vector<long long> values;
         std::optional<std::string> annotation;
+
+        /// Defaulted, because most published keys are Values keys and a key
+        /// naming a cake-indexed flag is the one that has to say so.
+        ProofFlagFamily family = ProofFlagFamily::Values;
     };
 
     /**

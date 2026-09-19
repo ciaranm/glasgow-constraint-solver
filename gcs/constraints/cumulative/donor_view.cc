@@ -104,7 +104,7 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
             // posted zero height is not a donor being used in part, and the
             // counters that say so would stop meaning anything.
             if (logger &&
-                logger->names_and_ids_tracker().find_proof_flag_values(
+                logger->names_and_ids_tracker().find_proof_flag(
                     donor.constraint_id(), ConstraintProofModelData<Cumulative>::active_flag_key(i, state.lower_bound(donor.starts()[i]))))
                 view.set_aside.push_back(i);
             continue;
@@ -180,7 +180,7 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
     // whether there is anything here to weaken.
     vector<ProofFlag> weaken_out;
     for (auto i : view.set_aside) {
-        if (auto active = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(i, t))) {
+        if (auto active = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::active_flag_key(i, t))) {
             // A constant height puts `height x active` in the row, so the one
             // flag is the whole term. A variable one puts the bits of a
             // linearised contribution there instead, and every one of them has
@@ -188,7 +188,7 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
             // zero, one, two and so on until it has no more.
             auto bits = 0;
             for (;; ++bits) {
-                auto cc = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::contribution_flag_key(i, t, Integer{bits}));
+                auto cc = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::contribution_flag_key(i, t, Integer{bits}));
                 if (! cc)
                     break;
                 weaken_out.push_back(*cc);
@@ -217,7 +217,7 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
             continue;
         vector<ProofFlag> cc;
         for (auto bit = 0;; ++bit) {
-            auto flag = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::contribution_flag_key(i, t, Integer{bit}));
+            auto flag = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::contribution_flag_key(i, t, Integer{bit}));
             if (! flag)
                 break;
             cc.push_back(*flag);
@@ -258,7 +258,7 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
     // file, and so is written down rather than tested.
     for (const auto & [i, cc] : convert) {
         auto height = std::get<SimpleIntegerVariableID>(*view.height_bounded_by[i]);
-        auto active = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(i, t));
+        auto active = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::active_flag_key(i, t));
         auto contribution_row = tracker.constraint_row_label(donor, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t));
         // The flags exist, so the donor gave this task a window here and both
         // of these went out with them. Missing means the donor is not the
