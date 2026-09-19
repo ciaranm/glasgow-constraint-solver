@@ -1329,7 +1329,9 @@ verifies the corrupted proof. `cumulative_ttef_test --search` generates random
 instances and keeps the ones satisfying both, `--describe` prints what one does,
 and `--instance=` runs a mutation against a candidate; the two `sharp` fixtures
 came out of that, and the two `profile_push` ones are hand-built to *explain*
-the rule rather than to test it. Seven mutation lanes, all rejected.
+the rule rather than to test it. Five mutation lanes, all rejected; two more
+went with the flip (#943), having stopped discriminating once the checkpoint
+rows could close what they corrupted.
 
 `OmitCapacityLine` is not among them: it is accepted on every TTEF fixture
 searched, for the same reason dropping the pins usually is.
@@ -1803,15 +1805,18 @@ before it, so checking every start checks every peak. Lengths, heights
 and the capacity are all non-negative already, so a checkpoint with
 nothing active is *satisfied* rather than merely vacuous.
 
-`CumulativeEncoding` selects which of the two is written.
-`TimeIndexed` is the per-time family alone and is the default;
-`Both` writes the checkpoints beside it, and changed no inference and no
-certificate when it was the only other arm. `BothRecovering` adds the
-eager differential. `StartCheckpoint` writes the checkpoints *instead*
---- it arrived once the recovery did, since before that an unconverted
-inference would have had no per-time row left to cite, and it is now how
-a converted rule is held to having really been converted. See "Just
-turning the old encoding off", below.
+`CumulativeEncoding` selects which is written, and since #943 only one
+of them ships. `StartCheckpoint` writes the checkpoints *instead* of the
+per-time family, and is the default --- it arrived once the recovery
+did, since before that an unconverted inference would have had no
+per-time row left to cite, and it is now how a converted rule is held to
+having really been converted. `TimeIndexed` is the per-time family
+alone; it is not shipped and is kept for one test-only job, since
+`BothRecovering` --- which writes the checkpoints beside it and adds the
+eager differential --- needs those rows as ground truth. `Both`, which
+wrote both blocks without the differential and changed no inference and
+no certificate, was retired with the flip. See "How the old encoding was
+turned off", below.
 
 ### Two details that are easy to get wrong
 

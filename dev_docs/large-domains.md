@@ -1433,13 +1433,13 @@ eq/ge atoms for `Regular` and `NValue`, reified flag halves for `Cumulative` —
 not one.
 
 **`Cumulative` already has its fix, and it is the useful counterexample.** The
-figures above are the `TimeIndexed` encoding, which is still the default: three
-fully-reified flags and a load line per (task, time point). PR #781 (for #780)
-replaces it with a horizon-free start-checkpoint encoding, and on the same
-instance that is 1945 → **46** rows at `0..100` and 190045 → **46** at
-`0..10000`, flat in the horizon. It is opt-in behind
-`GCS_CUMULATIVE_ENCODING=start-checkpoint`; #781 says the default is deliberate
-pending a measurement over #777.
+figures above are the `TimeIndexed` encoding: three fully-reified flags and a
+load line per (task, time point). PR #781 (for #780) replaced it with a
+horizon-free start-checkpoint encoding, and on the same instance that is
+1945 → **46** rows at `0..100` and 190045 → **46** at `0..10000`, flat in the
+horizon. It was opt-in behind `GCS_CUMULATIVE_ENCODING=start-checkpoint` when
+#781 landed; since #943 it is the only encoding `Cumulative` ships, and the
+figures above are therefore history rather than the current cost.
 
 This is worth remembering when arguing that a shape needs checker support. Before
 #781, `Cumulative` looked like the case with no way out — time-indexing was "what
