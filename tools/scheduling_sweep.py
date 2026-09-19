@@ -293,8 +293,14 @@ def run_one(args, source: str, label: str, instance_flags: list[str], arm: str) 
                 row["pbp_lines"] = sum(1 for _ in fh)
             started = time.monotonic()
             try:
-                check = subprocess.run([args.veripb, str(opb), str(pbp)], capture_output=True,
-                                       text=True, timeout=args.verify_timeout)
+                # --force-checked-deletion, as every other harness in the tree
+                # passes it: deleting from VeriPB's core set runs a check, and
+                # without the flag a failed check is only a warning and a
+                # downgrade to unchecked deletion, caught --- if at all --- by
+                # the conclusion's count much later. With it, the check fails
+                # at the line that deleted. See dev_docs/solution-clause-deletion.md.
+                check = subprocess.run([args.veripb, "--force-checked-deletion", str(opb), str(pbp)],
+                                       capture_output=True, text=True, timeout=args.verify_timeout)
                 row["verify_s"] = round(time.monotonic() - started, 3)
                 # A checker that *died* did not reject anything, and this is the
                 # same distinction the solver side makes a few lines up --- which

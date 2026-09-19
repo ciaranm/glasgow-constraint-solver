@@ -99,6 +99,11 @@ every proving row records `verify_rc` so an existing file can be re-read rather
 than re-run. Running the checker under a name nobody else will `pkill` is worth
 it on a shared box: `--veripb ./tools/pbchk` pointing at a copy is enough.
 
+**Deletions are checked**, with `--force-checked-deletion` as every other
+verifying harness in the tree passes it. Without it a failed deletion check is
+only a warning and a downgrade to unchecked deletion; with it, the proof is
+rejected at the line that deleted.
+
 **Every proving run is capped** (`--proof-cap-mb`, default 4000). An uncapped
 `rcpsp --prove` on a real Pack instance has written 128 GB in ten minutes and
 taken a machine's disk with it.
