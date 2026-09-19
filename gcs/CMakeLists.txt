@@ -268,8 +268,9 @@ if(GCS_BUILD_TESTS)
     # recovery*, which is what the arm is for.
     #
     # Neither does a `scp_chain_cumulative*` case, for a better reason: the
-    # chain checks our proof against cake's OPB, which has no start-checkpoint
-    # rows at all.
+    # chain checks our proof against cake's OPB, which carries the
+    # start-checkpoint block alone, so the per-time rows the arm checks its
+    # recovery against are not in it.
     #
     # The encoding comes from the environment rather than an argv flag because
     # the fixtures build Cumulatives in sixty places, and threading a parameter
