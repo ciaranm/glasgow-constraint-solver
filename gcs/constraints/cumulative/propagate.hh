@@ -111,6 +111,21 @@ namespace gcs::innards
         /// stated over those halves.
         bool pair_contribution_bits_are_conjunctions = false;
 
+        /// #780: the same question about the *per-time* contribution bits, and
+        /// the recovery's swap needs both to be true --- it trades a pair bit
+        /// for a per-time one, so a conjunction on one side and a three-row
+        /// linearisation on the other closes nothing.
+        ///
+        /// The two do not move together. The pair bits are conjunctions in the
+        /// model under every encoding, because there are only O(n^2) of them;
+        /// the per-time family is O(n x horizon), where conjunctions cost two
+        /// rows a bit against three rows a (task, time), so the model keeps the
+        /// linearisation and only the in-proof minting under
+        /// CumulativeEncoding::StartCheckpoint states them as conjunctions ---
+        /// where it is free, being lazy. So this is false under every other
+        /// encoding, and a variable height is declined there.
+        bool per_time_contribution_bits_are_conjunctions = false;
+
         CumulativeRules rules;
         CumulativeProofMutation proof_mutation;
         CumulativePresenceMutation presence_mutation;
