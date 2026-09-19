@@ -48,14 +48,14 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                                       //
-            ("help", "Display help information")                                                                     //
-            ("prove", "Create a proof")                                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                                         //
-                cxxopts::value<string>()->default_value("ortho_latin"))                                              //
-            ("stats", "Print solve statistics")                                                                      //
-            ("all-different", "All-different encoding to use: 'gac', 'vc', or 'not-equals' (the not-equals clique)", //
-                cxxopts::value<string>()->default_value("not-equals"))                                               //
+        options.add_options("Program Options")                                                                             //
+            ("help", "Display help information")                                                                           //
+            ("prove", "Create a proof")                                                                                    //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",                                               //
+                cxxopts::value<string>()->default_value("ortho_latin"))                                                    //
+            ("stats", "Print solve statistics")                                                                            //
+            ("all-different", "All-different encoding to use: 'gac', 'bc', 'vc', or 'not-equals' (the not-equals clique)", //
+                cxxopts::value<string>()->default_value("not-equals"))                                                     //
             ("branch",
                 "Branching heuristic: default, or dom-wdeg[:VARIANT] "               //
                 "(VARIANT = classic/ia/ca/id/cd/ca.cd/chs; bare = chs)",             //
@@ -88,8 +88,8 @@ auto main(int argc, char * argv[]) -> int
     }
 
     const string all_different_mode = options_vars["all-different"].as<string>();
-    if (all_different_mode != "gac" && all_different_mode != "vc" && all_different_mode != "not-equals") {
-        println(cerr, "Error: --all-different must be 'gac', 'vc', or 'not-equals'.");
+    if (all_different_mode != "gac" && all_different_mode != "bc" && all_different_mode != "vc" && all_different_mode != "not-equals") {
+        println(cerr, "Error: --all-different must be 'gac', 'bc', 'vc', or 'not-equals'.");
         return EXIT_FAILURE;
     }
 
@@ -101,6 +101,9 @@ auto main(int argc, char * argv[]) -> int
     auto post_all_different = [&](const vector<IntegerVariableID> & vars) {
         if (all_different_mode == "gac")
             p.post(AllDifferent{vars});
+        else if (all_different_mode == "bc")
+            p.post(AllDifferent{vars} //
+                    .with_consistency(consistency::BC{}));
         else if (all_different_mode == "vc")
             p.post(AllDifferent{vars} //
                     .with_consistency(consistency::VC{}));
