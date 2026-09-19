@@ -18,6 +18,106 @@
 namespace gcs
 {
     /**
+     * \brief Which OPB encoding a Cumulative writes.
+     *
+     * Unlike \ref CumulativeRules, this *does* change what goes into the OPB.
+     * It changes nothing else: the solutions found, the inferences made and
+     * the certificates emitted are the same whichever is chosen, because
+     * nothing yet derives anything from what the second arm adds.
+     *
+     * \ingroup Constraints
+     */
+    enum class CumulativeEncoding
+    {
+        /// The per-time family alone: three fully reified flags per (task,
+        /// time point) over each task's possible-active window, and one
+        /// capacity row per time point. `O(n x horizon)`, and what every
+        /// inference cites today.
+        TimeIndexed,
+
+        /// The per-time family, and the start-checkpoint family beside it:
+        /// per ordered pair of tasks, flags saying whether one is running when
+        /// the other starts, and one capacity row per task. `O(n^2)` and free
+        /// of the horizon, which is the point of issue #780.
+        ///
+        /// Emitting both is how the second is checked before anything is
+        /// derived from it --- a checkpoint row that says too much is a
+        /// solution veripb refuses --- and it is not a state to stay in.
+        /// Deriving the per-time rows from the checkpoints, and then dropping
+        /// the per-time family, is the rest of #780; a `StartCheckpoint` arm
+        /// arrives with that recovery, and cannot work before it, since an
+        /// unconverted inference would have no per-time row left to cite.
+        ///
+        /// **What it costs to have both.** More model is more for unit
+        /// propagation to reach, so a certificate step that was load-bearing
+        /// against the per-time family alone need not be against the two
+        /// together. That is not hypothetical: three of Cumulative's mutation
+        /// fixtures write corrupted proofs that veripb rejects under
+        /// \ref TimeIndexed and accepts under this. So a mutation lane is
+        /// registered here only where it still discriminates, and an honest
+        /// certificate developed under this arm has been checked more weakly
+        /// than one developed under \ref TimeIndexed.
+        Both,
+
+        /// As \ref Both, and then derive every per-time capacity row from the
+        /// start-checkpoint rows and check it against the row the model still
+        /// carries beside it.
+        ///
+        /// The development arm for the middle of #780, and the answer to "did
+        /// the recovery derive the right thing". A recovery that is *invalid*
+        /// fails where it is emitted; a recovery that is valid but derives the
+        /// *wrong* row --- citing the neighbouring checkpoint, say --- emits a
+        /// perfectly good line, and only the implication check against the
+        /// model's own row rejects it. So the two encodings standing side by
+        /// side buy something here that neither buys alone.
+        ///
+        /// Deliberately eager, which the recovery itself is not meant to be:
+        /// this recovers every row rather than the ones a search cites, so it
+        /// is `O(horizon)` work in the proof and belongs in a test lane rather
+        /// than in a solve. It does nothing for a Cumulative the recovery
+        /// cannot yet speak about --- see
+        /// innards::cumulative_checkpoint_recovery_applies.
+        BothRecovering,
+
+        /// The start-checkpoint family alone, with the per-time block *not*
+        /// written at all --- the end state #780 is walking towards, and today
+        /// the way a converted rule is held to having really been converted.
+        ///
+        /// The check it performs is blunt and total, which is the point: a rule
+        /// that still reads `capacity_lines` finds nothing there, its pol loses
+        /// the supply it was counting on, and veripb rejects the proof. So
+        /// running a fixture under this arm asks "does anything in this still
+        /// touch the old rows" without anyone having to enumerate where the old
+        /// rows are read from. That is what the leak-check script was
+        /// approximating by deleting `cap_t` rows from a finished OPB, and this
+        /// does it at the source instead --- no post-processing, no `.scp`-only
+        /// vehicle, and so available to every C++ test lane and every rule,
+        /// including the ones CumulativeRules leaves off by default.
+        ///
+        /// **A Cumulative the recovery cannot speak about gets the per-time
+        /// block instead, and no checkpoint block at all** --- that is a
+        /// variable height, a variable length, an optional task or a variable
+        /// capacity. It keeps the per-time rows because there would otherwise
+        /// be no capacity row for it and every rule over it would be
+        /// uncertifiable rather than merely unconverted; it is denied the
+        /// checkpoint rows because nothing could cite them, every citer going
+        /// through a recovery that declines the shape before it looks at the
+        /// model. So on a declined shape this *is* \ref TimeIndexed, and the
+        /// mode as a whole is "start-checkpoint wherever the recovery reaches",
+        /// which is what a default has to mean: see
+        /// innards::cumulative_shape_supports_checkpoint_recovery for exactly
+        /// where that is. A lane that wants the strict form should use a
+        /// fixture whose shape qualifies, and can confirm it did by the absence
+        /// of `cap_` labels in the OPB.
+        ///
+        /// \ref Both and \ref BothRecovering write the checkpoint block for
+        /// every shape, declined ones included: they are the differential arms,
+        /// and a checkpoint row over a declined shape is still one veripb
+        /// checks against the solutions.
+        StartCheckpoint
+    };
+
+    /**
      * \brief Which of Cumulative's propagation rules are enabled.
      *
      * All three are on by default. Turning one off weakens propagation but
@@ -286,6 +386,7 @@ namespace gcs
         std::vector<Integer> _length_lb;
         std::vector<Integer> _length_ub;
         std::vector<Integer> _height_vals;
+        std::vector<Integer> _height_lb;
         std::vector<Integer> _height_ub;
         Integer _capacity_val;
         // Resolved in prepare(). nullopt for a task that is unconditionally
@@ -305,6 +406,29 @@ namespace gcs
         std::vector<Integer> _per_task_t_lo;
         std::vector<Integer> _per_task_t_hi;
         CumulativeRules _rules;
+        // nullopt until with_encoding() is called, which is how "take the
+        // default" is told apart from "asked for the default": the default is
+        // the environment's, and resolving it here in the constructor would
+        // read it before a test had a chance to set it.
+        std::optional<CumulativeEncoding> _encoding;
+
+        /// #780: whether every active task's height has bits this encoding can
+        /// cite --- constant, or a plain variable (not a view) whose declared
+        /// lower bound is at least zero, so that bit `k` has weight `2^k` and no
+        /// sign bit shifts the weights. A view has no bits of its own at all.
+        ///
+        /// Decided in prepare(), where the declared bounds are read. It gates
+        /// two things that must agree: whether the pair contribution bits are
+        /// defined as conjunctions with those bits, and whether the per-(task,
+        /// time) family moves into the proof.
+        bool _height_bits_citable = false;
+
+        /// #780 step 10: whether the per-(task, time) flags are defined inside
+        /// the proof rather than by OPB rows. Decided once, in
+        /// define_proof_model, and read again by install_propagators so that
+        /// the initialiser which emits those definitions and the encoder which
+        /// declines to cannot disagree.
+        bool _per_time_flags_in_proof = false;
         innards::CumulativeProofMutation _proof_mutation = innards::cumulative_proof_mutation::None{};
         // Overload checking, resolved in prepare(). _overload_tasks lists the
         // tasks the window-energy lemma can speak about (constant length and
@@ -380,6 +504,19 @@ namespace gcs
         /// encoding are the same whatever is selected.
         auto with_rules(CumulativeRules rules) -> Cumulative &;
 
+        /**
+         * \brief Select which OPB encoding is written (see
+         * CumulativeEncoding). Proof model only: the solutions found and the
+         * inferences made are the same either way.
+         *
+         * Takes precedence over the `GCS_CUMULATIVE_ENCODING` environment
+         * variable, which is what selects the encoding for a constraint that
+         * does not call this --- and so is how a whole fixture set is run
+         * under the other arm without touching the places it builds its
+         * Cumulatives.
+         */
+        auto with_encoding(CumulativeEncoding encoding) -> Cumulative &;
+
         /// Corrupt one step of the overload check's derivation. For tests
         /// only, which assert that VeriPB rejects the result; see
         /// innards::CumulativeProofMutation.
@@ -447,6 +584,24 @@ namespace gcs
          * NamesAndIDsTracker::constraint_row_label whether this one did.
          */
         [[nodiscard]] static auto capacity_row_role(Integer t) -> std::string;
+
+        /**
+         * \brief The family name under which a Cumulative publishes a deriver
+         * for its per-time capacity rows, indexed by time point.
+         *
+         * Under CumulativeEncoding::StartCheckpoint there is no `cap_<t>` row
+         * to find a label for, and a citer outside the propagator --- a derived
+         * Cumulative building on a donor's rows --- has to be able to ask for
+         * one to be derived instead. Pair with
+         * NamesAndIDsTracker::find_or_derive_line_in_family, and try
+         * \ref capacity_row_role first: a donor that still writes the block
+         * has a label, which costs nothing to cite.
+         *
+         * Published only where innards::cumulative_checkpoint_recovery_applies
+         * would say yes, so a nullopt from the family means the same thing a
+         * missing label does.
+         */
+        [[nodiscard]] static auto capacity_row_family() -> std::string;
 
         /**
          * \name The keys of the per-(task, time) flags.
@@ -527,6 +682,83 @@ namespace gcs
          * definition along with everything else it asserts.
          */
         [[nodiscard]] static auto end_lower_bound_role(std::size_t task) -> std::string;
+
+        /**
+         * \name The start-checkpoint encoding (issue #780).
+         *
+         * A second, `O(n^2)` and horizon-free statement of the same
+         * constraint, emitted alongside the per-time family above: rather than
+         * checking the capacity at every time point, check it at every time
+         * point that is the start of a task which could occupy the resource.
+         * The load profile is a step function that only rises at such a start,
+         * so a time point over capacity is dominated by the last one at or
+         * before it, and checking every start checks every peak.
+         *
+         * Nothing cites these yet --- they are here to be checked against the
+         * family that is load-bearing before anything is derived from them.
+         * Deriving the per-time rows from these, and deleting the per-time
+         * block, is the rest of #780.
+         *
+         * These are not `cake_pb_cp`'s names, as
+         * \ref capacity_row_role and the contribution roles are: cake has no
+         * start-checkpoint encoder to conform to. When one is asked for, these
+         * are the names to offer it.
+         */
+        ///@{
+
+        /**
+         * \brief The role of the row saying the load at the time task `j`
+         * starts is within the capacity:
+         * `Sum_i heights[i] . active[i,j] <= capacity`.
+         *
+         * A row exists for each task that could raise the load profile at all;
+         * ask NamesAndIDsTracker::constraint_row_label whether this one did.
+         */
+        [[nodiscard]] static auto checkpoint_row_role(std::size_t task) -> std::string;
+
+        /**
+         * \name The keys of the per-(task, task) flags.
+         *
+         * `before[i,j]` is `start[i] <= start[j]`, `after[i,j]` is
+         * `start[i] + length[i] > start[j]`, and `active[i,j]` is their
+         * conjunction (with the presence of `i`, where it has one): task `i`
+         * is running at the moment task `j` starts.
+         *
+         * The diagonal is the exception. `before[j,j]` is a tautology and
+         * `after[j,j]` is `length[j] >= 1`, so neither is minted, and
+         * `active[j,j]` is minted only when it says something --- when `j` has
+         * a variable length, or a presence. Where it says nothing, task `j` is
+         * on its own row unconditionally and there is no flag to ask for. So
+         * nullopt from here carries its usual meaning for `i != j` (the
+         * constraint did not encode that pair) and means "the term is there
+         * without a flag" on the diagonal.
+         */
+        ///@{
+        [[nodiscard]] static auto pair_before_flag_key(std::size_t i, std::size_t j) -> innards::ProofFlagKey;
+        [[nodiscard]] static auto pair_after_flag_key(std::size_t i, std::size_t j) -> innards::ProofFlagKey;
+        [[nodiscard]] static auto pair_active_flag_key(std::size_t i, std::size_t j) -> innards::ProofFlagKey;
+        ///@}
+
+        /**
+         * \brief The key of one bit of a variable-height task's linearised
+         * load contribution at the moment task `j` starts, and the roles of
+         * the three rows defining it.
+         *
+         * The per-time family's counterparts, said over a pair of tasks rather
+         * than over a task and a time; see \ref contribution_flag_key and
+         * \ref contribution_ge_row_role for what they mean. A constant-height
+         * task has none, and neither does a variable-height task on a diagonal
+         * whose activity flag was not minted: its contribution is its height,
+         * unconditionally, and the row carries the height itself.
+         */
+        ///@{
+        [[nodiscard]] static auto pair_contribution_flag_key(std::size_t i, std::size_t j, Integer bit) -> innards::ProofFlagKey;
+        [[nodiscard]] static auto pair_contribution_ge_row_role(std::size_t i, std::size_t j) -> std::string;
+        [[nodiscard]] static auto pair_contribution_le_row_role(std::size_t i, std::size_t j) -> std::string;
+        [[nodiscard]] static auto pair_contribution_zero_row_role(std::size_t i, std::size_t j) -> std::string;
+        ///@}
+
+        ///@}
     };
 }
 
