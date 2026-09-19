@@ -35,6 +35,41 @@ interesting part.
 For the constraint itself — semantics, propagator, the strict / non-strict
 flag — read `gcs/constraints/disjunctive/disjunctive.{hh,cc}`.
 
+## Where these rules can actually be measured
+
+Every one of the energetic rules is off by default and justified by a
+measurement, and until #633's job-shop reader landed there was nowhere
+to take one from a real instance. **No RCPSP collection in circulation
+has a capacity-one resource at all**: the smallest capacity across
+`data_bl`, `data_pack`, `data_pack_d` and `data_ksd15_d` is three, the
+MiniZinc Challenge `rcpsp*` instances run 5 to 22, and `la_x` is the
+Lawrence job-shop set with its capacities deliberately *raised* to two
+or three. So `--unary disjunctive` posts no `Disjunctive` whatever on
+any of them, and neither `--dzn` nor `--file` can express the machine
+the generator makes — `Instance::machine_tasks` is only ever filled in
+by `generate()`. Every disjunctive figure quoted in this document was
+therefore taken on **generated** instances.
+
+`examples/rcpsp --jss` reads a job shop in the standard OR-Library
+layout, which is that family: all unary machines, and what the unary
+scheduling literature reports on. No modelling is involved — a machine
+*is* a renewable resource of capacity one, an operation demands one unit
+of the machine it runs on and none of any other, and a job is a chain of
+precedences — so the reader is the whole of the support and the model
+file has no job-shop case in it. `--unary disjunctive` then posts one
+`Disjunctive` per machine, and the default `--unary cumulative` posts
+the capacity-one `Cumulative` saying the same thing, which is the
+control arm.
+
+Two cautions for anyone taking numbers from it. The two globals do
+**not** search alike at their defaults — `Cumulative` has the overload
+check on and `Disjunctive` does not, while `Disjunctive` has detectable
+precedences and `Cumulative` has no such rule — so a
+`Disjunctive`-against-`Cumulative` row has to say which rules were on.
+And the greedy horizon is loose on a job shop (about 1.6× the optimum on
+`la01`), which inflates every start variable's domain and so every
+proof; `--horizon` overrides it where a tighter one is known.
+
 ## The declarative OPB encoding
 
 `define_proof_model` emits exactly one shape: for every unordered pair

@@ -101,6 +101,32 @@ add_test(NAME rcpsp_all COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_ver
 add_test(NAME rcpsp_unary COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_unary
     $<TARGET_FILE:rcpsp> --size 10 --seed 4 --resources 1 --capacity 1 --max-demand 1 --unary disjunctive)
 
+# The job-shop reader, where *every* resource has capacity one. This is the only
+# instance format here that posts a Disjunctive per resource, because no RCPSP
+# collection in circulation has a unary resource at all --- which is why the
+# unary rules had no file-read instance to be exercised on before it.
+#
+# This lane takes the default --unary=cumulative, so it covers the reader and
+# the capacity-one Cumulative saying the same thing. It reaches the same optimum
+# of 23 as the lane below but in 153 recursions against 164: the two globals do
+# *not* search alike at their defaults, because Cumulative's overload check is
+# on by default and Disjunctive's is not, while Disjunctive has detectable
+# precedences and Cumulative has no such rule.
+add_test(NAME rcpsp_jss COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_jss
+    $<TARGET_FILE:rcpsp> --jss ${CMAKE_CURRENT_SOURCE_DIR}/sample.jss)
+
+# The same instance with every unary rule on, which is the end-to-end proof
+# check for all four of those certificates over a model read from a file rather
+# than over a propagator fixture. sample.jss is chosen so that each rule
+# actually changes the search --- 164 recursions with none of them, 125 with
+# edge-finding, 144 with not-first/not-last, 132 with the overload check and 125
+# with set-based detectable precedences --- so a rule that stopped inferring
+# would not quietly keep passing here.
+add_test(NAME rcpsp_jss_disjunctive COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_jss_disjunctive
+    $<TARGET_FILE:rcpsp> --jss ${CMAKE_CURRENT_SOURCE_DIR}/sample.jss --unary disjunctive
+    --disjunctive-edge-finding --disjunctive-not-first-not-last --disjunctive-overload
+    --disjunctive-detectable-precedences-set)
+
 # The temporal network through the global propagator, and through the presolver
 # that lifts it back out of the decomposition, on the same maximum-lag instance
 # rcpsp_max_lags posts decomposed. All three reach makespan 14 in 61 recursions
