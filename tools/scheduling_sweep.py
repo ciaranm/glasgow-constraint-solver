@@ -108,6 +108,22 @@ ARMS: dict[str, list[str]] = {
                   "--disjunctive-detectable-precedences-set"],
 }
 
+# A "-dd" copy of every arm, carrying --branch dom-then-deg --value-order split.
+#
+# Every arm above takes the solver's default branching, in-order/smallest, and
+# a rule's measured worth depends on the branching more than on almost anything
+# else here. The job-shop figure that motivates that whole family --- ft06 in
+# 55 recursions with --disjunctive-edge-finding --- is a dom-then-deg/split
+# figure, and is not reachable from the default arms at all, so this is what
+# reproduces it. dev_docs/cluster-experiments.md has both configurations side
+# by side, and tools/check_scheduling_readers.py already sets exactly these two
+# flags, because a pre-flight wants the configuration that finishes.
+#
+# Named rather than passed as a free-text --extra-flags, so that a row still
+# says what produced it: `arm` is the only provenance a JSONL row carries.
+for _name, _flags in list(ARMS.items()):
+    ARMS[f"{_name}-dd"] = _flags + ["--branch", "dom-then-deg", "--value-order", "split"]
+
 COUNTER_LINE = re.compile(r"^(cumulative|disjunctive)_([a-z_]+): "
                           r"calls=(\d+) firings=(\d+) already_true=(\d+) contradictions=(\d+)\s*$")
 STAT_LINE = re.compile(r"^([a-z_ ]+): (.*)$")
@@ -277,10 +293,35 @@ def run_one(args, source: str, label: str, instance_flags: list[str], arm: str) 
                 row["pbp_lines"] = sum(1 for _ in fh)
             started = time.monotonic()
             try:
-                check = subprocess.run([args.veripb, str(opb), str(pbp)], capture_output=True,
-                                       text=True, timeout=args.verify_timeout)
+                # --force-checked-deletion, as every other harness in the tree
+                # passes it: deleting from VeriPB's core set runs a check, and
+                # without the flag a failed check is only a warning and a
+                # downgrade to unchecked deletion, caught --- if at all --- by
+                # the conclusion's count much later. With it, the check fails
+                # at the line that deleted. See dev_docs/solution-clause-deletion.md.
+                check = subprocess.run([args.veripb, "--force-checked-deletion", str(opb), str(pbp)],
+                                       capture_output=True, text=True, timeout=args.verify_timeout)
                 row["verify_s"] = round(time.monotonic() - started, 3)
-                row["result"] = "verified" if check.returncode == 0 else "REJECTED"
+                # A checker that *died* did not reject anything, and this is the
+                # same distinction the solver side makes a few lines up --- which
+                # this half was missing. subprocess reports a signal death as a
+                # negative return code, so an OOM kill, or someone else's
+                # `pkill veripb` on a shared machine, used to land in the JSONL
+                # as REJECTED: indistinguishable from an unsound proof, and the
+                # most alarming thing this harness can say. Both happened.
+                #
+                # The tell is that a real rejection prints a multi-line
+                # `Error: Checking error at ...`, where a killed one has said
+                # nothing but its banner --- but that is a heuristic over the
+                # captured text, and the return code is not. Record it either
+                # way, so a row can be re-read later rather than re-run.
+                row["verify_rc"] = check.returncode
+                if check.returncode < 0:
+                    row["result"] = f"verify-killed-{-check.returncode}"
+                elif check.returncode == 0:
+                    row["result"] = "verified"
+                else:
+                    row["result"] = "REJECTED"
                 if check.returncode != 0:
                     row["verify_says"] = (check.stdout + check.stderr).strip()[-400:]
             except subprocess.TimeoutExpired:

@@ -83,6 +83,16 @@ which build produced it.
 So a counter run and a timing run are the same run, and the numbers can be read
 off the same sweep that produces the recursion counts.
 
+**Nor are they portable across timeouts, and that bites on one machine.** A run
+that times out goes on counting for as long as it is allowed to, so a sum over a
+family is dominated by the runs that never finished. Over `data_bl` under
+`--cumulative-not-first-not-last`, the two runs of forty that timed out at 600 s
+carry 55% of `not_first`'s `already_true` total; over `data_pack`, where almost
+nothing closes, the unclosed share is 97-99%. A closed run's counters are a
+property of a finished search --- `Bl2001` reports the same counters at a
+60 s and a 600 s timeout --- so sum over closed runs, and say how much was left
+out.
+
 ## What they are for
 
 Two questions a recursion count cannot answer.
