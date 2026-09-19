@@ -1588,6 +1588,32 @@ Not-last is the same sentence backwards: Ω's activity is monotone *down* from
 `LST(Ω)`, the suffix rather than the prefix is capped, and it is the pushed
 task's own upper bound rather than its lower one that puts it beside them.
 
+**Backwards, one half of the row comes from the other end (#778).** Forwards,
+both halves of `active_{k,v}` come from the reason: `before_{k,v}` from
+`s_k ≤ u ≤ v`, and `after_{k,v}` from `s_k + l_k ≥ ect_k > v`, which is what the
+`materialise_after_sum` pin and the initialiser's `end ≥ t+1 → after` bridge
+lemma are for. Backwards there is no such reason: `v ≥ LST(Ω) ≥ lst_k` supplies
+`before_{k,v}` and nothing supplies `after_{k,v}` except `after_{k,u}` itself,
+`u ≥ v` and the task still running at the later time. Whether unit propagation
+sees that depends on what `after` is reified on. A constant length puts it on
+`s_k` alone --- `s_k ≥ u − p_k + 1` against `s_k ≤ v − p_k` is a bound conflict
+the bits close --- but a **mode fixes a duration**, and then it is reified on the
+sum `s_k + l_k`, where `≥ u + 1` and `≤ v` are each satisfiable term by term,
+neither propagates anything, and the row's RUP has nothing to close on. So the
+rung says it instead, with `recover_flag_bridge` on the two `after` flags: one
+`pol` adding `after_{k,u}`'s `[r]` half to `after_{k,v}`'s `[f]` half, in which
+the whole sum cancels and saturation leaves the two-literal clause. It goes out
+only when both the start and the length vary, which is exactly when the
+reification is two-variable --- the same condition `materialise_after_sum`
+guards on, and the one under which the `end` proxy exists at all.
+
+This is why the rule verified everywhere it had been run and rejected on
+multi-mode instances: every fixture and every lane gave `Cumulative` constant
+lengths, and the certificate is *a different derivation* over a variable one
+rather than a wider one. `cumulative_published_nfnl_test`'s `variable_length`
+fixture and its `--random-var` lane are what a variable duration is now run
+against.
+
 Everything is stated in **activity** space rather than in the bit-linearised
 contribution space the capacity rows use, because contiguity is a statement
 about activity. A variable-height task's capacity term is converted back with
