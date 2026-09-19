@@ -389,6 +389,13 @@ auto main(int argc, char * argv[]) -> int
                 "rcpsp.mzn (the Pack, Pack_d, PSPLib, la_x, ksd15_d and bl sets), instead of "           //
                 "generating one",                                                                        //
                 cxxopts::value<string>())                                                                //
+            ("jss",                                                                                      //
+                "Read a job-shop instance from PATH, in the standard OR-Library layout (the ft, la, "    //
+                "abz, orb, swv and ta sets): a jobs-and-machines line, then one line per job of "        //
+                "machine/duration pairs in processing order. Every machine is a resource of capacity "   //
+                "one, so this is the instance family --unary=disjunctive actually posts a Disjunctive "  //
+                "for; no RCPSP collection has a unary resource at all",                                  //
+                cxxopts::value<string>())                                                                //
             ("max-lag-density",
                 "Probability that a pair joined by a precedence path also gets a maximum time " //
                 "lag, which is what turns this into an RCPSP/max instance. Zero, the default, " //
@@ -546,12 +553,15 @@ auto main(int argc, char * argv[]) -> int
 
     rcpsp::Instance instance;
     try {
-        if (options_vars.contains("file") && options_vars.contains("dzn"))
-            throw std::runtime_error{"--file and --dzn both name an instance; give only one"};
+        auto named = (options_vars.contains("file") ? 1 : 0) + (options_vars.contains("dzn") ? 1 : 0) + (options_vars.contains("jss") ? 1 : 0);
+        if (named > 1)
+            throw std::runtime_error{"--file, --dzn and --jss each name an instance; give only one"};
         if (options_vars.contains("file"))
             instance = rcpsp::read_file(options_vars["file"].as<string>());
         else if (options_vars.contains("dzn"))
             instance = rcpsp::read_dzn_file(options_vars["dzn"].as<string>());
+        else if (options_vars.contains("jss"))
+            instance = rcpsp::read_jss_file(options_vars["jss"].as<string>());
         else {
             rcpsp::GeneratorOptions gen_opts;
             gen_opts.n_tasks = options_vars["size"].as<int>();
