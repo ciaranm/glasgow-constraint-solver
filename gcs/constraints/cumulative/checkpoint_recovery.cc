@@ -174,7 +174,7 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     auto cb = [&](size_t i) -> const ProofFlag & { return flag_at(inputs.before_flags, i); };
     auto ca = [&](size_t i) -> const ProofFlag & { return flag_at(inputs.after_flags, i); };
     auto cact = [&](size_t i) -> const ProofFlag & { return flag_at(inputs.active_flags, i); };
-    auto pair_flag = [&](const ProofFlagKey & key) { return *tracker.find_proof_flag_values(inputs.owner, key); };
+    auto pair_flag = [&](const ProofFlagKey & key) { return *tracker.find_proof_flag(inputs.owner, key); };
     auto sb = [&](size_t i, size_t j) { return pair_flag(Data::pair_before_flag_key(i, j)); };
     auto sa = [&](size_t i, size_t j) { return pair_flag(Data::pair_after_flag_key(i, j)); };
     auto sact = [&](size_t i, size_t j) { return pair_flag(Data::pair_active_flag_key(i, j)); };
@@ -184,7 +184,7 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     // side rather than minting a flag to carry it. Where the flag *is* there,
     // `j`'s term is on the row like anyone else's and has to be cancelled like
     // anyone else's. See Data::pair_active_flag_key.
-    auto sact_diagonal = [&](size_t j) { return tracker.find_proof_flag_values(inputs.owner, Data::pair_active_flag_key(j, j)); };
+    auto sact_diagonal = [&](size_t j) { return tracker.find_proof_flag(inputs.owner, Data::pair_active_flag_key(j, j)); };
 
     // A variable height is not a coefficient on an activity flag: what is on
     // every capacity row is the bit-linearised contribution, `cc` per (task,
@@ -197,7 +197,7 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     auto scc_bits = [&](size_t i, size_t j) {
         vector<ProofFlag> bits;
         for (Integer k = 0_i;; ++k) {
-            auto flag = tracker.find_proof_flag_values(inputs.owner, Data::pair_contribution_flag_key(i, j, k));
+            auto flag = tracker.find_proof_flag(inputs.owner, Data::pair_contribution_flag_key(i, j, k));
             if (! flag)
                 break;
             bits.push_back(*flag);

@@ -693,7 +693,7 @@ tracker says whether it is there:
 |---|---|---|
 | `Σ h_i·active_{
     i, t} ≤ C` for a time `t` | `ConstraintProofModelData<Cumulative>::capacity_row_role(t)` | `NamesAndIDsTracker::constraint_row_label` |
-| the `before` / `after` / `active` flags for `(i, t)` | `...::before_flag_key(i, t)` and friends | `NamesAndIDsTracker::find_proof_flag_values` |
+| the `before` / `after` / `active` flags for `(i, t)` | `...::before_flag_key(i, t)` and friends | `NamesAndIDsTracker::find_proof_flag` |
 
 The flag half is new. A flag's name is a pure function of
 `(ConstraintID, values, annotation)` — the same function
@@ -1019,13 +1019,13 @@ reachable by a citer:
 - **The bridge lemmas need no publishing.** They go out at `ProofLevel::Top` for
   every `(i, t)` in the donor's window, unit propagation finds them, and a
   derived constraint's flag lookups have already established that its window is
-  inside the donor's — `find_proof_flag_values` declines otherwise.
+  inside the donor's — `find_proof_flag` declines otherwise.
 - **`materialise_after_sum` reads one line**, `end ≥ s + l`, plus two order
   literals any citer makes for itself. So the whole publication requirement is
   **one `ProofLine` per task**.
 
 That line is a **third kind of citable thing**. A labelled OPB row is found by
-`NamesAndIDsTracker::constraint_row_label` and a flag by `find_proof_flag_values`;
+`NamesAndIDsTracker::constraint_row_label` and a flag by `find_proof_flag`;
 a line an install initialiser *derived* has no row to label and no reification to
 key. `publish_derived_line` / `find_derived_line` is the pair for it, under a
 role `ConstraintProofModelData<Cumulative>::end_lower_bound_role` publishes like

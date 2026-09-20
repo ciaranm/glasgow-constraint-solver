@@ -160,9 +160,9 @@ auto gcs::innards::install_derived_cumulative(
             }
 
             for (Integer t = inputs->per_task_t_lo[i]; t <= per_task_t_hi[i]; ++t) {
-                auto before = tracker.find_proof_flag_values(task.donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
-                auto after = tracker.find_proof_flag_values(task.donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
-                auto active = tracker.find_proof_flag_values(task.donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
+                auto before = tracker.find_proof_flag(task.donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
+                auto after = tracker.find_proof_flag(task.donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
+                auto active = tracker.find_proof_flag(task.donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
                 // Missing means that donor never encoded this (task, time): it
                 // was not installed, or it windowed the task differently. Either
                 // way there is nothing to pin, so decline rather than guess.

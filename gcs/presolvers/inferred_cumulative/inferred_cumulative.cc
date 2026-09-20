@@ -137,7 +137,7 @@ namespace
     [[nodiscard]] auto active_flag_for(ProofLogger & logger, const ConstraintID & donor, size_t position, Integer t) -> optional<ProofFlag>
     {
         ensure_donor_flags(logger, donor, position, t);
-        return logger.names_and_ids_tracker().find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
+        return logger.names_and_ids_tracker().find_proof_flag(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
     }
 
     /// The `before` and `after` flags an `active` flag is the conjunction of,
@@ -147,8 +147,8 @@ namespace
     {
         ensure_donor_flags(logger, donor, position, t);
         auto & tracker = logger.names_and_ids_tracker();
-        auto before = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
-        auto after = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
+        auto before = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
+        auto after = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
         if (! before || ! after)
             return std::nullopt;
         return vector<ProofFlag>{*before, *after};

@@ -112,9 +112,9 @@ namespace
     [[nodiscard]] auto flags_for(const NamesAndIDsTracker & tracker, const ConstraintID & donor, size_t position, Integer t)
         -> optional<std::tuple<ProofFlag, ProofFlag, ProofFlag>>
     {
-        auto before = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
-        auto after = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
-        auto active = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
+        auto before = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
+        auto after = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
+        auto active = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
         if (! before || ! after || ! active)
             return std::nullopt;
         return std::tuple{*before, *after, *active};
