@@ -109,7 +109,7 @@ namespace
             for (size_t p = 0; p < nogood.size(); ++p) {
                 if (p == skip)
                     continue;
-                if (state.test_literal(nogood[p]) != LiteralIs::DefinitelyTrue)
+                if (! state.literal_is_entailed(nogood[p]))
                     return p;
             }
             return nullopt;
@@ -158,13 +158,13 @@ namespace
                 for (size_t ni = watches->size(); ni < nogoods->size(); ++ni)
                     init_watches_for(ni, *nogoods, *nogood_vars, *watches, state, inference, logger);
 
-                auto is_broken = [&](const Nogood & nogood, size_t p) -> bool { return state.test_literal(nogood[p]) == LiteralIs::DefinitelyTrue; };
+                auto is_broken = [&](const Nogood & nogood, size_t p) -> bool { return state.literal_is_entailed(nogood[p]); };
 
                 auto find_unbroken = [&](const Nogood & nogood, size_t skip1, size_t skip2) -> optional<size_t> {
                     for (size_t p = 0; p < nogood.size(); ++p) {
                         if (p == skip1 || p == skip2)
                             continue;
-                        if (state.test_literal(nogood[p]) != LiteralIs::DefinitelyTrue)
+                        if (! state.literal_is_entailed(nogood[p]))
                             return p;
                     }
                     return nullopt;
@@ -261,7 +261,7 @@ namespace
                     for (size_t p = 0; p < nogood.size(); ++p) {
                         if (p == skip1 || p == skip2)
                             continue;
-                        if (state.test_literal(nogood[p]) != LiteralIs::DefinitelyTrue)
+                        if (! state.literal_is_entailed(nogood[p]))
                             return p;
                     }
                     return nullopt;
@@ -307,7 +307,7 @@ namespace
                 sort(fired);
                 fired.erase(unique(fired.begin(), fired.end()), fired.end());
 
-                auto is_broken = [&](const Nogood & nogood, size_t p) { return state.test_literal(nogood[p]) == LiteralIs::DefinitelyTrue; };
+                auto is_broken = [&](const Nogood & nogood, size_t p) { return state.literal_is_entailed(nogood[p]); };
 
                 for (size_t ni : fired) {
                     const auto & nogood = (*nogoods)[ni];

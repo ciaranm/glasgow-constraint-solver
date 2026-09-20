@@ -18,19 +18,15 @@
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
+#include <util/generator.hh>
+
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
-#include <version>
-
-#ifdef __cpp_lib_generator
-#include <generator>
-#else
-#include <__generator.hpp>
-#endif
 
 namespace gcs::innards
 {
@@ -145,6 +141,24 @@ namespace gcs::innards
         // links, so without this a *negated* interval fact could not cross between them
         // by unit propagation; see the comment on the definition.
         auto mirror_invar_across_view_link(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void;
+
+        // Write down the unit saying the out-of-range order cut `id >= v` holds
+        // (negated = false, for a `v` at or below the declared lower bound) or does
+        // not (negated = true, for a `v` above the declared upper), as a persistent
+        // top-of-proof line, and remember it in ge_pins. Idempotent per value, and
+        // it creates the cut in the proof if nothing has asked for one. Caller
+        // checks that `v` really is out of range and that the variable's bounds are
+        // trivially derivable.
+        auto ensure_boundary_pin(const SimpleOrProofOnlyIntegerVariableID & id, Integer v, bool negated) -> void;
+
+        // Queue the two `pol` steps deriving a proper view variable's bound lines,
+        // which are a consequence of the view link and the underlying's own bound
+        // rows rather than anything the OPB needs to assert, and record them as its
+        // bound rows. Called from need_view, before anything can create an atom of
+        // the view variable, because those lines are what a boundary pin on it
+        // propagates from.
+        auto derive_view_bound_lines(
+            const ViewOfIntegerVariableID & view, const ProofOnlySimpleIntegerVariableID & v_id, ProofLine link_le, ProofLine link_ge) -> void;
 
     public:
         /**
@@ -317,8 +331,80 @@ namespace gcs::innards
         /**
          * Say that we are going to need an at-least-one constraint for a
          * variable.
+         *
+         * This spells the at-least-one out one value at a time, over the whole
+         * definition range, so it costs a term (and an eq atom, which becomes a
+         * singleton cell in the variable's interval partition, making every later
+         * covering span-proportional too) per value the variable was declared over.
+         * Prefer the ..._over_cover form below wherever the caller only needs
+         * particular values named.
          */
         [[nodiscard]] auto need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) -> ProofLine;
+
+        /**
+         * The same at-least-one, but over an interval cover of the definition range
+         * rather than over its values: the values in `singled_out` are named by their
+         * own eq atoms, and the maximal runs between and around them are named by one
+         * range literal each. So for a variable declared over 0..10^9 and a
+         * `singled_out` of {3, 7} the line is
+         *
+         *     [x in 0..2] + [x = 3] + [x in 4..6] + [x = 7] + [x in 8..10^9] >= 1
+         *
+         * which is five terms rather than a billion, and leaves the variable's
+         * interval partition with five cells rather than a billion.
+         *
+         * It is RUP for the same reason the root covering is (the cells cover the
+         * definition range, and the bound axioms close it), and it is
+         * state-independent: `singled_out` selects which values get named, not which
+         * values the variable can still take.
+         *
+         * WHAT A CALLER OWES. A pol that adds this line gets `+[x = v]` for each
+         * `v` in `singled_out`, exactly as the per-value form does. What differs is
+         * the residue: instead of one `+[x = w]` per unnamed value, there is one
+         * `+[x in run]` per run. The caller's reason must therefore rule the runs
+         * out, which it does exactly when it pins the variable's bounds and excludes
+         * its holes (as `generic_reason` and the Hall-set reasons do): a run outside
+         * the bounds dies on the order chain, and a run inside one sits inside an
+         * excluded hole, so containment falsifies it. A reason that named holes only
+         * value by value would still work --- the run's own covering reaches the eq
+         * atoms --- but only if every value in the run is named, which is the cost
+         * this call exists to avoid.
+         *
+         * So **pass the values the pol names for this variable that it can still
+         * take**, and no more. Two bounds meet here. A value the pol names but this
+         * call omits leaves that pol term with nothing to cancel against; that is
+         * safe when the variable cannot take the value (its term is zero under the
+         * reason anyway) and broken otherwise, which is why the filter must be the
+         * domain and not a guess. A value in `singled_out` that the variable cannot
+         * take is merely wasted --- it costs a term here and a cell in the partition
+         * --- and callers whose value set is much bigger than one variable's domain
+         * (a Hall set, a global cover, a union of domains) should filter it out with
+         * `state.in_domain`. Every current caller does.
+         *
+         * The residue is then exactly the complement of the domain, which is exactly
+         * what the reason states; that correspondence is what makes the line's
+         * leftovers discharge by construction rather than by an argument about which
+         * runs happen to lie inside which holes.
+         *
+         * FALLS BACK, SILENTLY AND OFTEN, to the per-value form, which is why a
+         * caller must stay correct under either: for a variable with no bits encoding
+         * (a zero-one variable, where the two spellings agree anyway), for an
+         * unregistered view, whose values would have to be mapped through the view to
+         * be named here, and --- the common one --- for any variable whose definition
+         * range is narrow enough that naming every value is not what #833 is about.
+         *
+         * That last one is a deliberate policy, not an optimisation gap. The
+         * per-value line is emitted once per variable and then serves every cover
+         * anyone asks for, because it names every value; a cover is specialised, so a
+         * caller whose cover changes from firing to firing --- a Hall set --- pays a
+         * line per distinct one. Over a narrow definition range those lines are each
+         * about as big as the one they replace and there are many of them, which
+         * measured as a 16 % proof-size regression on `sudoku`. So a cover is stated
+         * only where it is asymptotically better, and the narrow case is left
+         * byte-identical. See dev_docs/large-domains.md.
+         */
+        [[nodiscard]] auto need_constraint_saying_variable_takes_at_least_one_value_over_cover(
+            IntegerVariableID, const std::vector<Integer> & singled_out) -> ProofLine;
 
         /**
          * Give the proof line specifying the definition of this literal in terms of its bit
@@ -331,21 +417,31 @@ namespace gcs::innards
          * The line pinning the order atom `id >= v` to the value the variable's
          * declared bounds already force, if there is one.
          *
-         * need_gevar pins the boundary atoms --- `id >= v` for a `v` at or
-         * below the declared lower bound, `!(id >= v)` for a `v` above the
-         * declared upper --- once, as a persistent top-of-proof line, precisely
-         * so that a step wanting the fact can cite it. Ask for it rather than
-         * emitting the same unit again: a `pol` that needs it needs it once per
-         * use, and re-deriving it per use is what the pin exists to avoid.
+         * The boundary atoms are `id >= v` for a `v` at or below the declared
+         * lower bound and `!(id >= v)` for a `v` above the declared upper.
+         * need_gevar pins the one at the declared bound itself, once, as a
+         * persistent top-of-proof line, precisely so that a step wanting the
+         * fact can cite it. Ask for it rather than emitting the same unit
+         * again: a `pol` that needs it needs it once per use, and re-deriving
+         * it per use is what the pin exists to avoid.
          *
-         * Nullopt when there is no such fact (a `v` strictly inside the
-         * declared bounds), when the pin was suppressed (see
-         * note_bounds_not_trivially_derivable), when assertions are on above
-         * AssertionLevel::Links, and while the pin is still queued for proof
-         * start --- so a caller during model building gets nothing and must
-         * derive the fact itself. Call this after whatever made the atom
-         * exist, since a pin for an atom nobody has asked for has not been
-         * emitted.
+         * That is the *only* pin, because it is all Inv-Bound asks for: a
+         * strictly out-of-range `v` gets nullopt, its fact following from the
+         * pin down the order chain rather than being written down (see
+         * ensure_boundary_pin). No caller asks for one today --- each passes a
+         * bound it has just read off the variable, so the only out-of-range
+         * value it can name is the declared one --- and a caller that did
+         * should cite the pin and take a chain step, rather than have this
+         * write down a second unit per value.
+         *
+         * Nullopt, then, for a `v` strictly outside the declared bounds, for a
+         * `v` strictly inside them (where there is no such fact at all), when
+         * the pin is suppressed (see note_bounds_not_trivially_derivable), when
+         * assertions are on above AssertionLevel::Links, and while the pin is
+         * still queued for proof start --- so a caller during model building
+         * gets nothing and must derive the fact itself. Call this after
+         * whatever made the atom exist, since a pin for an atom nobody has
+         * asked for has not been emitted.
          */
         [[nodiscard]] auto boundary_pin_line(const SimpleOrProofOnlyIntegerVariableID & id, Integer v) const -> std::optional<ProofLine>;
 
@@ -649,6 +745,81 @@ namespace gcs::innards
         auto publish_derived_line(const ConstraintID & id, const std::string & role, ProofLine line) -> void;
 
         /**
+         * \brief Record that a flag's reification was emitted *inside the
+         * proof*, and under which two lines.
+         *
+         * A flag defined by ProofModel carries `[r]` and `[f]` labels on its
+         * two halves, and every citer references them by name. A flag defined
+         * by ProofLogger::emit_red_proof_lines_reifying has no labels at all,
+         * only line numbers, so a citer has to be told them --- which is what
+         * this is for, and what \ref reification_half then hides.
+         *
+         * The halves are in the order the labels read: `implies` is the `[r]`
+         * half, `flag -> ineq`, and `implied_by` is `[f]`, `ineq -> flag`.
+         *
+         * Per-solve state, like \ref publish_derived_line and for the same
+         * reason: a proof line number is meaningless outside the proof file it
+         * indexes. Registered per install, so it never outlives that.
+         *
+         * \throws ProofError if this flag has already been registered, which
+         * means its definition went out twice.
+         */
+        auto register_in_proof_reification(const ProofFlag & flag, ProofLine implies, ProofLine implied_by) -> void;
+
+        /**
+         * \brief A constraint's promise that it can define, on demand, any flag
+         * in a keyed family --- rather than defining them all up front.
+         *
+         * The flag-side counterpart of \ref publish_derived_line_family, and
+         * the fourth of the "per-solve, constraint-keyed memo" facilities the
+         * \todo there predicted. Cumulative's per-(task, time) flags are the
+         * first consumer: their *names* are cheap and go out with the model,
+         * but their definitions are two `red` steps each and a horizon's worth
+         * of them is the whole cost #780 exists to remove.
+         *
+         * The definer is called at most once per `(id, key)` and is expected to
+         * emit whatever that flag needs --- its reification halves, and
+         * anything else keyed the same way --- and to register the halves with
+         * \ref register_in_proof_reification. A key it declines to define is
+         * simply not defined; that is not an error, and a citer of an undefined
+         * flag fails loudly at its own proof step rather than silently.
+         *
+         * \warning **Whatever the definer emits must live at ProofLevel::Top**,
+         * for the same reason \ref publish_derived_line_family says so: the
+         * memo hands out the same lines for the rest of the proof, and a line
+         * emitted lower is deleted on backtracking.
+         *
+         * Registered per install, so it never outlives the proof it writes to.
+         */
+        auto publish_flag_definer(const ConstraintID & id, std::function<auto(ProofLogger &, const ProofFlagKey & key)->void> definer) -> void;
+
+        /**
+         * \brief Make sure a flag from a published family has been defined,
+         * defining it if this is the first ask.
+         *
+         * Does nothing where no definer was published for `id` --- which is the
+         * ordinary case, the flag's definition being OPB rows --- and nothing
+         * on a second ask for the same key.
+         *
+         * Call it before citing a flag from a constraint that might have
+         * published one, which is to say before citing anyone else's flags at
+         * all: it is cheap, and the alternative is a proof step that references
+         * a free variable.
+         */
+        auto ensure_flag_defined(const ConstraintID & id, const ProofFlagKey & key, ProofLogger & logger) -> void;
+
+        /**
+         * \brief The two halves of a flag reified inside the proof, if it was
+         * reified inside the proof.
+         *
+         * nullopt means it was not, which for a fully reified flag means its
+         * halves are OPB rows and carry labels. Prefer \ref reification_half,
+         * which answers "how do I cite this half" without the caller having to
+         * know which of the two it is.
+         */
+        [[nodiscard]] auto in_proof_reification(const ProofFlag & flag) const -> std::optional<std::pair<ProofLine, ProofLine>>;
+
+        /**
          * \brief The line a constraint published under this role, if it
          * published one.
          *
@@ -668,6 +839,77 @@ namespace gcs::innards
          * constraint publishes which role names the line a citer wants.
          */
         [[nodiscard]] auto find_derived_line(const ConstraintID & id, const std::string & role) const -> std::optional<ProofLine>;
+
+        /**
+         * \brief How to cite the row a constraint published under this role,
+         * however it was written.
+         *
+         * The row-side counterpart of \ref reification_half, and the same
+         * answer for the same reason: an OPB row gives its label, a row an
+         * install initialiser derived inside the proof gives its line, and
+         * ProofLine is already the variant of the two, so a citer needs to know
+         * neither. #780 moves Cumulative's per-(task, time) contribution rows
+         * from the first kind to the second under one encoding and not the
+         * others.
+         *
+         * nullopt means the same thing it means in both halves of that: there
+         * is nothing to cite, so do not do the thing that would need citing.
+         */
+        [[nodiscard]] auto constraint_row(const ConstraintID & id, const std::string & role) const -> std::optional<ProofLine>;
+
+        /**
+         * \brief A constraint's promise that it can derive, on demand, any line
+         * in an integer-indexed family --- rather than publishing them all up
+         * front.
+         *
+         * \ref publish_derived_line is for a fact a constraint decides to
+         * establish once, whatever anyone does with it. This is for a family
+         * whose members are too numerous to derive speculatively and whose
+         * consumers are known only later: Cumulative's per-time capacity rows
+         * under the start-checkpoint encoding (#780) are the first, where each
+         * member costs `O(n^3)` proof lines and a horizon's worth of them would
+         * dwarf the OPB block the encoding exists to delete.
+         *
+         * The deriver is called at most once per `(id, family, index)` and the
+         * result memoised, so a second consumer of the same member pays
+         * nothing. It may return nullopt, meaning this constraint cannot speak
+         * about that member --- read exactly as nullopt from
+         * \ref find_derived_line: there is nothing to cite, so do not do the
+         * thing that would need citing.
+         *
+         * \warning **Whatever the deriver emits must live at ProofLevel::Top.**
+         * The memo hands the same line number out for the rest of the proof,
+         * and a line emitted at any lower level is deleted on backtracking ---
+         * after which the memo is a dangling reference and nothing here can
+         * tell. This is a promise the publisher makes and that nothing checks.
+         *
+         * Registered per install, like everything else that holds proof line
+         * numbers, so it never outlives the proof whose lines it hands out.
+         *
+         * \todo This, \ref publish_derived_line and \ref boundary_pin_line are
+         * three variations on "a per-solve, constraint-keyed memo of proof
+         * lines", and each arrived for one caller. The tracker is meant to
+         * provide general facilities rather than a drawer of specific ones, and
+         * this is the third; #780's step 10 wants a fourth, the same thing for
+         * *flags* rather than lines. Once that one exists there should be
+         * enough examples to see the general requirement, and these should
+         * collapse into it. Deliberately not generalised before then, on the
+         * grounds that three examples are what tells you what the fourth needs.
+         */
+        auto publish_derived_line_family(const ConstraintID & id, const std::string & family,
+            std::function<auto(ProofLogger &, Integer index)->std::optional<ProofLine>> deriver) -> void;
+
+        /**
+         * \brief The line for one member of a family published by
+         * \ref publish_derived_line_family, deriving it if this is the first
+         * ask.
+         *
+         * Nullopt when no deriver was published for `(id, family)` --- the
+         * constraint was not installed, or proofs are off, or it does not have
+         * this family --- or when the deriver itself declines.
+         */
+        [[nodiscard]] auto find_or_derive_line_in_family(const ConstraintID & id, const std::string & family, Integer index, ProofLogger & logger)
+            -> std::optional<ProofLine>;
 
         /**
          * Create a proof flag with a new identifier, named `f[index][stem]`.

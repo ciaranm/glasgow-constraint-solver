@@ -177,7 +177,7 @@ namespace
                 for (size_t p = 0; p < vars.size(); ++p) {
                     if (p == skip)
                         continue;
-                    if (state.test_literal(vars[p] == t[p]) != LiteralIs::DefinitelyTrue)
+                    if (! state.literal_is_entailed(vars[p] == t[p]))
                         return p;
                 }
                 return nullopt;
@@ -219,7 +219,7 @@ namespace
             for (size_t p = 0; p < vars.size(); ++p) {
                 if (p == skip1 || p == skip2)
                     continue;
-                if (state.test_literal(vars[p] == t[p]) != LiteralIs::DefinitelyTrue)
+                if (! state.literal_is_entailed(vars[p] == t[p]))
                     return p;
             }
             return nullopt;
@@ -259,7 +259,7 @@ namespace
         sort(fired);
         fired.erase(unique(fired.begin(), fired.end()), fired.end());
 
-        auto is_broken = [&](const auto & t, size_t p) { return state.test_literal(vars[p] == t[p]) == LiteralIs::DefinitelyTrue; };
+        auto is_broken = [&](const auto & t, size_t p) { return state.literal_is_entailed(vars[p] == t[p]); };
 
         for (size_t ti : fired) {
             const auto & t = tuple_data[ti];

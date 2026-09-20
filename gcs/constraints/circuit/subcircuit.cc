@@ -543,6 +543,9 @@ namespace
 
         PolBuilder pigeonhole;
         for (const auto & i : consts.variable_nodes)
+            // Per value, not over a cover: the counting above needs every value
+            // named, and a successor's definition range is the node set, so there
+            // is no width here to be spent on values the pigeonhole does not use.
             pigeonhole.add(logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(succ[i]));
         for (size_t w = 0; w < succ.size(); ++w) {
             if (cmp_equal(w, v))

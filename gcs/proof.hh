@@ -86,10 +86,18 @@ namespace gcs
         /// Use the compact boolean encoding: define an eq atom at the variable's
         /// lower (resp. upper) bound as eq <=> ~ge(v+1) (resp. eq <=> ge(v)),
         /// dropping the trivially-true ge(lower) and trivially-false ge(ub+1)
-        /// literals. With this off (the default) every eq atom, including those
-        /// at the bounds, is defined as eq <=> ge(v) & ~ge(v+1), so those
-        /// constant boundary literals are materialised -- matching cake_pb_cp's
-        /// eager encoding.
+        /// literals. With this off (the default) every eq atom that needs a
+        /// definition, including those at the bounds, is defined as
+        /// eq <=> ge(v) & ~ge(v+1), so those constant boundary literals are
+        /// materialised -- matching cake_pb_cp's eager encoding.
+        ///
+        /// An eq atom that is already a primitive literal needs no definition,
+        /// so it is the same whichever way this is set. In particular, a {0,1}
+        /// variable is by default encoded as a single bit b, and its [X = 1] is
+        /// b and its [X = 0] is ~b under either setting (as is every value
+        /// literal of a DirectOnly proof variable). Its order atom ge(1) is
+        /// not an alias of b, though: since issue #554 it is reified over b,
+        /// like any other order atom.
         ProofOptions & set_compact_boolean_encoding(bool c = true)
         {
             use_compact_boolean_encoding = c;

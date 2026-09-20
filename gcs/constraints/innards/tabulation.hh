@@ -257,6 +257,18 @@ namespace gcs::innards
         -> bool;
 
     /**
+     * \brief As above, for a constraint that also offers consistency::GAC and
+     * consistency::Dynamic, which name genuine propagation algorithms and so are
+     * never tabulated.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto want_tabulation(
+        const std::variant<consistency::Auto, consistency::BC, consistency::GAC, consistency::Dynamic, consistency::Tabulated> & level,
+        const std::vector<IntegerVariableID> & enum_vars, const std::vector<DeterminedVariable> & determined_vars, const State & initial_state)
+        -> bool;
+
+    /**
      * \brief A tabulation that has been decided on: the enumeration scope, the
      * determined-variable claims, and the acceptance test.
      *

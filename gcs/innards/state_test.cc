@@ -1,3 +1,4 @@
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/state.hh>
 
 #include <catch2/catch_test_macros.hpp>
@@ -337,6 +338,82 @@ TEST_CASE("copy_of_values / domains_intersect on multi-interval negated views")
         CHECK(state.domains_intersect(-a, d));
         CHECK(state.domains_intersect(d, -a)); // symmetry
     }
+}
+
+// literal_is_entailed is defined as exactly the DefinitelyTrue answer of
+// test_literal, arrived at without working out which of the other two applies. So
+// the property to test is the identity, over every operator and over domains that
+// have been pushed into every shape that matters: full, holed, bound-narrowed and
+// instantiated, on plain variables, on views and on constants. Testing the arms
+// against hand-written expectations instead would let both functions be wrong in
+// the same way; testing them against each other cannot.
+
+namespace
+{
+    auto check_entailment_matches_test_literal(State & state, const std::vector<IntegerVariableID> & vars) -> void
+    {
+        for (const auto & var : vars)
+            for (auto value = -8_i; value <= 12_i; ++value)
+                for (const auto & lit : std::vector<Literal>{var == value, var != value, var < value, var >= value, in_range(var, value, value + 3_i),
+                         not_in_range(var, value, value + 3_i)})
+                    CHECK(state.literal_is_entailed(lit) == (state.test_literal(lit) == LiteralIs::DefinitelyTrue));
+    }
+}
+
+TEST_CASE("literal_is_entailed agrees with test_literal on every operator and domain shape")
+{
+    State state;
+    auto x = state.allocate_integer_variable_with_state(1_i, 8_i);
+    auto y = state.allocate_integer_variable_with_state(0_i, 4_i);
+
+    std::vector<IntegerVariableID> vars{x, y, -x, x + 3_i, -x + 6_i, constant_variable(5_i)};
+
+    SECTION("untouched domains")
+    {
+        check_entailment_matches_test_literal(state, vars);
+    }
+
+    SECTION("a hole punched in the middle")
+    {
+        SimpleInferenceTracker inference{state};
+        inference.infer(nullptr, x != 4_i, NoJustificationNeeded{}, NoReason{});
+        inference.infer(nullptr, x != 5_i, NoJustificationNeeded{}, NoReason{});
+        check_entailment_matches_test_literal(state, vars);
+    }
+
+    SECTION("bounds narrowed to a range")
+    {
+        SimpleInferenceTracker inference{state};
+        inference.infer(nullptr, x >= 3_i, NoJustificationNeeded{}, NoReason{});
+        inference.infer(nullptr, x < 7_i, NoJustificationNeeded{}, NoReason{});
+        check_entailment_matches_test_literal(state, vars);
+    }
+
+    SECTION("narrowed to a single value")
+    {
+        SimpleInferenceTracker inference{state};
+        inference.infer(nullptr, x == 6_i, NoJustificationNeeded{}, NoReason{});
+        inference.infer(nullptr, y == 0_i, NoJustificationNeeded{}, NoReason{});
+        check_entailment_matches_test_literal(state, vars);
+    }
+
+    SECTION("holed and then narrowed, so the domain is neither contiguous nor single")
+    {
+        SimpleInferenceTracker inference{state};
+        inference.infer(nullptr, x != 3_i, NoJustificationNeeded{}, NoReason{});
+        inference.infer(nullptr, x != 6_i, NoJustificationNeeded{}, NoReason{});
+        inference.infer(nullptr, x >= 2_i, NoJustificationNeeded{}, NoReason{});
+        check_entailment_matches_test_literal(state, vars);
+    }
+}
+
+TEST_CASE("literal_is_entailed on constant literals")
+{
+    State state;
+    CHECK(state.literal_is_entailed(Literal{TrueLiteral{}}));
+    CHECK_FALSE(state.literal_is_entailed(Literal{FalseLiteral{}}));
+    CHECK(state.literal_is_entailed(TrueLiteral{}));
+    CHECK_FALSE(state.literal_is_entailed(FalseLiteral{}));
 }
 
 TEST_CASE("Every way of iterating a domain hands values out in ascending order")

@@ -212,7 +212,7 @@ namespace
     // identity used to find and undo the watch on backtrack. `trigger_mask` is the
     // set of Inference granularities that could make `literal` newly entailed (see
     // refined_watch_trigger_mask); a change outside it cannot fire this watch, so
-    // the firing loop skips the test_literal for it.
+    // the firing loop skips the entailment test for it.
     struct RefinedWatch
     {
         Literal literal;
@@ -263,7 +263,7 @@ namespace
     // over Inference -- mirroring the coarse iv_triggers masks. `x == v` can only
     // become true when x is instantiated; `x >= k` / `x < k` only when a bound
     // moves (an interior removal never changes a bound); `x != v` on any value
-    // removal. So the firing loop can skip the (expensive) test_literal for a watch
+    // removal. So the firing loop can skip the entailment test for a watch
     // whose literal cannot have flipped under the current inference. The mask is
     // derived from the literal alone -- the engine knows each operator's entailment
     // semantics -- so every client benefits without passing anything extra.
@@ -821,8 +821,8 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
     //
     // A watch is only tested when the current inference granularity is in its
     // trigger_mask -- e.g. an `x==v` watch is skipped on a mere bound move, since
-    // x==v can only become true when x is instantiated. This gates the expensive
-    // test_literal; the firing of a watch outside its mask would be a no-op
+    // x==v can only become true when x is instantiated. This gates the entailment
+    // test; the firing of a watch outside its mask would be a no-op
     // anyway (the literal cannot have changed status), so this is
     // semantics-preserving.
     auto requeue_honouring = [&]<bool HonourClaims_>(const SimpleIntegerVariableID & v, const Inference inf) {
@@ -837,7 +837,7 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
             const auto inf_bit = 1u << to_underlying(inf);
             auto & watches = _imp->refined_watches_by_var[v.index];
             for (std::size_t i = 0; i < watches.size();) {
-                if ((watches[i].trigger_mask & inf_bit) && state.test_literal(watches[i].literal) == LiteralIs::DefinitelyTrue) {
+                if ((watches[i].trigger_mask & inf_bit) && state.literal_is_entailed(watches[i].literal)) {
                     const auto fired = watches[i];
                     if (_imp->inbox_by_propagator[fired.owner].empty())
                         _imp->pending_inbox_owners.push_back(fired.owner);

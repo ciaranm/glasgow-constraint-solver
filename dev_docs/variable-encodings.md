@@ -22,6 +22,7 @@ document is about the *proof-encoding* side and how it composes with state.
 | `ProofModel::create_proof_only_integer_variable` (`Bits`/`DirectOnly`) | No | No | Yes (unlabelled) | Yes |
 | `ProofModel::create_proof_only_integer_variable` + `CakeBitNaming` | No | No | No | Yes |
 | `ProofModel::create_proof_only_integer_variable_in_proof` + `ProofLogger::introduce_bits_of` | No | No | No | Yes² |
+| `NamesAndIDsTracker::need_view` (a view variable) | No | No | link only⁴ | Yes |
 | `ProofModel::create_proof_flag` / `_reifying` / `_fully_reifying` | No | No | reification only³ | Yes |
 
 ¹ A state variable with no proof encoding is fine only if it is *never referenced
@@ -34,6 +35,12 @@ once its `introduce_bits_of` (or lazy-atom channel) runs — see "Ordering" belo
 ³ A bare `create_proof_flag` asserts nothing. `create_proof_flag_reifying` emits
 its reification at a `ProofLevel` (in the PBP); the position/value-indexed
 `create_proof_flag_fully_reifying` emits labelled reification lines to the OPB.
+
+⁴ A view variable goes through `create_proof_only_integer_variable_in_proof`, so
+the OPB gets its `V − sX = c` link pair (`@c[view_of_…][viewle/viewge]`) and
+nothing else. Its bound lines are one `pol` apiece over that pair and the
+underlying's bound rows, derived at the top of the proof rather than asserted,
+which is why it is this row and not the `create_proof_only_integer_variable` one.
 
 ## The two axes, and the one primitive underneath
 

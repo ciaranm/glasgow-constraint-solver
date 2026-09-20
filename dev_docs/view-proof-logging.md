@@ -144,7 +144,12 @@ actually exercised:
 1. **View bit-vector + definitional link** — `NamesAndIDsTracker::need_view`
    creates `V`'s proof-only variable and emits the `V − sX = c` pair
    (`s` from `negate_first`, `c` from `then_add`), storing the line IDs in
-   `view_link_ids`.
+   `view_link_ids`. `V`'s own bound lines are *not* OPB rows: each is one `pol`
+   over a half of that pair and a bound row of `X`, so as model axioms they
+   would be rows `cake_pb_cp` has no reason to reproduce.
+   `derive_view_bound_lines` queues the two steps for the top of the proof,
+   ahead of anything that can create an atom of `V` — a boundary pin on `V` is
+   a RUP line that propagates from them.
 2. **Eq-links `[V=v] ⇔ [X=k]`** — `need_direct_encoding_for` emits the
    matching `X=k` reification and the two linking RUP clauses, in whichever
    order the atoms first appear.

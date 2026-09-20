@@ -18,6 +18,72 @@
 namespace gcs
 {
     /**
+     * \brief Which OPB encoding a Cumulative writes.
+     *
+     * Unlike \ref CumulativeRules, this *does* change what goes into the OPB.
+     * It changes nothing else: the solutions found, the inferences made and
+     * the certificates emitted are the same whichever is chosen, because
+     * nothing yet derives anything from what the second arm adds.
+     *
+     * \ingroup Constraints
+     */
+    enum class CumulativeEncoding
+    {
+        /// The per-time family alone: three fully reified flags per (task,
+        /// time point) over each task's possible-active window, and one
+        /// capacity row per time point. `O(n x horizon)`, and what every
+        /// inference used to cite.
+        ///
+        /// **Not shipped.** It is kept for one test-only job and is not
+        /// selectable by anything a user runs: \ref BothRecovering needs the
+        /// per-time rows as ground truth. Nothing outside this tree derives it
+        /// any more --- `cake_pb_cp` replaced its time-indexed encoder with a
+        /// start-checkpoint one (CakePB-dev a402078, 2026-09-19) --- so the
+        /// `scp_chain_cumulative*` cases that used to be pinned to it now check
+        /// the shipped encoding against cake's.
+        TimeIndexed,
+
+        /// Both families in the model, and then derive every per-time capacity
+        /// row from the start-checkpoint rows and check it against the row the
+        /// model still carries beside it.
+        ///
+        /// The development arm for the middle of #780, and the answer to "did
+        /// the recovery derive the right thing". A recovery that is *invalid*
+        /// fails where it is emitted; a recovery that is valid but derives the
+        /// *wrong* row --- citing the neighbouring checkpoint, say --- emits a
+        /// perfectly good line, and only the implication check against the
+        /// model's own row rejects it. So the two encodings standing side by
+        /// side buy something here that neither buys alone.
+        ///
+        /// Deliberately eager, which the recovery itself is not meant to be:
+        /// this recovers every row rather than the ones a search cites, so it
+        /// is `O(horizon)` work in the proof and belongs in a test lane rather
+        /// than in a solve. It does nothing for a Cumulative the recovery
+        /// cannot yet speak about --- see
+        /// innards::cumulative_checkpoint_recovery_applies.
+        BothRecovering,
+
+        /// The start-checkpoint family alone, with the per-time block not
+        /// written at all: per ordered pair of active tasks, flags saying
+        /// whether one is running when the other starts, and one capacity row
+        /// per task. `6n(n-1) + n` rows and **no dependence on the horizon**.
+        ///
+        /// **This is the encoding Cumulative ships, and the only one.** Two
+        /// would mean cake had to reproduce our per-constraint choice exactly,
+        /// and a disagreement between the two models shows up as a rejected
+        /// proof rather than as an error.
+        ///
+        /// Every rule cites a per-time capacity row *recovered in the proof*
+        /// rather than read from the model; see
+        /// innards::recover_cumulative_capacity_row. There is no shape to fall
+        /// back for, because a Cumulative the recovery cannot speak about never
+        /// reaches the encoder: no active task makes `prepare()` return false,
+        /// and a height whose bits cannot be cited --- a view --- makes it
+        /// throw.
+        StartCheckpoint
+    };
+
+    /**
      * \brief Which of Cumulative's propagation rules are enabled.
      *
      * All three are on by default. Turning one off weakens propagation but
@@ -286,6 +352,7 @@ namespace gcs
         std::vector<Integer> _length_lb;
         std::vector<Integer> _length_ub;
         std::vector<Integer> _height_vals;
+        std::vector<Integer> _height_lb;
         std::vector<Integer> _height_ub;
         Integer _capacity_val;
         // Resolved in prepare(). nullopt for a task that is unconditionally
@@ -305,6 +372,29 @@ namespace gcs
         std::vector<Integer> _per_task_t_lo;
         std::vector<Integer> _per_task_t_hi;
         CumulativeRules _rules;
+        // nullopt until with_encoding() is called, which is how "take the
+        // default" is told apart from "asked for the default": the default is
+        // the environment's, and resolving it here in the constructor would
+        // read it before a test had a chance to set it.
+        std::optional<CumulativeEncoding> _encoding;
+
+        /// #780: whether every active task's height has bits this encoding can
+        /// cite --- constant, or a plain variable (not a view) whose declared
+        /// lower bound is at least zero, so that bit `k` has weight `2^k` and no
+        /// sign bit shifts the weights. A view has no bits of its own at all.
+        ///
+        /// Decided in prepare(), where the declared bounds are read. It gates
+        /// two things that must agree: whether the pair contribution bits are
+        /// defined as conjunctions with those bits, and whether the per-(task,
+        /// time) family moves into the proof.
+        bool _height_bits_citable = false;
+
+        /// #780 step 10: whether the per-(task, time) flags are defined inside
+        /// the proof rather than by OPB rows. Decided once, in
+        /// define_proof_model, and read again by install_propagators so that
+        /// the initialiser which emits those definitions and the encoder which
+        /// declines to cannot disagree.
+        bool _per_time_flags_in_proof = false;
         innards::CumulativeProofMutation _proof_mutation = innards::cumulative_proof_mutation::None{};
         // Overload checking, resolved in prepare(). _overload_tasks lists the
         // tasks the window-energy lemma can speak about (constant length and
@@ -380,6 +470,19 @@ namespace gcs
         /// encoding are the same whatever is selected.
         auto with_rules(CumulativeRules rules) -> Cumulative &;
 
+        /**
+         * \brief Select which OPB encoding is written (see
+         * CumulativeEncoding). Proof model only: the solutions found and the
+         * inferences made are the same either way.
+         *
+         * Takes precedence over the `GCS_CUMULATIVE_ENCODING` environment
+         * variable, which is what selects the encoding for a constraint that
+         * does not call this --- and so is how a whole fixture set is run
+         * under the other arm without touching the places it builds its
+         * Cumulatives.
+         */
+        auto with_encoding(CumulativeEncoding encoding) -> Cumulative &;
+
         /// Corrupt one step of the overload check's derivation. For tests
         /// only, which assert that VeriPB rejects the result; see
         /// innards::CumulativeProofMutation.
@@ -422,8 +525,10 @@ namespace gcs
      * Public API, in the sense #603 established: a derived Cumulative
      * (install_derived_cumulative) builds `pol`s on the capacity rows and pins
      * the flags, so changing what these name is a breaking change. cake_pb_cp
-     * re-derives the same names, so it is a cross-tool break rather than merely
-     * an internal one.
+     * re-derived the per-time names while it had a time-indexed encoder; it
+     * derives the start-checkpoint names further down instead now, so it is
+     * renaming one of *those* that is a cross-tool break rather than merely an
+     * internal one.
      *
      * Unlike a comparison or a linear inequality, there is no single primary
      * row to publish --- the capacity rows are a family, one per time point ---
@@ -447,6 +552,24 @@ namespace gcs
          * NamesAndIDsTracker::constraint_row_label whether this one did.
          */
         [[nodiscard]] static auto capacity_row_role(Integer t) -> std::string;
+
+        /**
+         * \brief The family name under which a Cumulative publishes a deriver
+         * for its per-time capacity rows, indexed by time point.
+         *
+         * Under CumulativeEncoding::StartCheckpoint there is no `cap_<t>` row
+         * to find a label for, and a citer outside the propagator --- a derived
+         * Cumulative building on a donor's rows --- has to be able to ask for
+         * one to be derived instead. Pair with
+         * NamesAndIDsTracker::find_or_derive_line_in_family, and try
+         * \ref capacity_row_role first: a donor that still writes the block
+         * has a label, which costs nothing to cite.
+         *
+         * Published only where innards::cumulative_checkpoint_recovery_applies
+         * would say yes, so a nullopt from the family means the same thing a
+         * missing label does.
+         */
+        [[nodiscard]] static auto capacity_row_family() -> std::string;
 
         /**
          * \name The keys of the per-(task, time) flags.
@@ -490,11 +613,10 @@ namespace gcs
          * published because they are the same family, in the way `before` and
          * `after` are published beside `active`.
          *
-         * These are `cake_pb_cp`'s own names for the rows, as
-         * \ref capacity_row_role is: cake emits all three under the same
-         * labels, over the same terms, so a proof citing one resolves against
-         * its re-derived OPB as well as against ours. Renaming them is
-         * therefore a cross-tool break rather than an internal one.
+         * These were `cake_pb_cp`'s own names for the rows, as
+         * \ref capacity_row_role was, while cake had a time-indexed encoder
+         * that emitted all three. It has not since 2026-09-19, so they are
+         * internal names now.
          *
          * A constant-height task has none. Ask
          * NamesAndIDsTracker::constraint_row_label, which is how a citer
@@ -527,6 +649,83 @@ namespace gcs
          * definition along with everything else it asserts.
          */
         [[nodiscard]] static auto end_lower_bound_role(std::size_t task) -> std::string;
+
+        /**
+         * \name The start-checkpoint encoding (issue #780).
+         *
+         * The `O(n^2)` and horizon-free statement of the constraint that
+         * Cumulative ships: rather than checking the capacity at every time
+         * point, check it at every time point that is the start of a task
+         * which could occupy the resource. The load profile is a step function
+         * that only rises at such a start, so a time point over capacity is
+         * dominated by the last one at or before it, and checking every start
+         * checks every peak.
+         *
+         * Every rule still cites a per-time capacity row, but one recovered in
+         * the proof from these (innards::recover_cumulative_capacity_row)
+         * rather than read from the model.
+         *
+         * These are `cake_pb_cp`'s names too: its start-checkpoint encoder
+         * (CakePB-dev a402078) writes the same flags and rows under exactly
+         * these labels, and the verified-encoding chain resolves our proof's
+         * citations against its OPB by label. Renaming any of them is
+         * therefore a cross-tool break rather than an internal one.
+         */
+        ///@{
+
+        /**
+         * \brief The role of the row saying the load at the time task `j`
+         * starts is within the capacity:
+         * `Sum_i heights[i] . active[i,j] <= capacity`.
+         *
+         * A row exists for each task that could raise the load profile at all;
+         * ask NamesAndIDsTracker::constraint_row_label whether this one did.
+         */
+        [[nodiscard]] static auto checkpoint_row_role(std::size_t task) -> std::string;
+
+        /**
+         * \name The keys of the per-(task, task) flags.
+         *
+         * `before[i,j]` is `start[i] <= start[j]`, `after[i,j]` is
+         * `start[i] + length[i] > start[j]`, and `active[i,j]` is their
+         * conjunction (with the presence of `i`, where it has one): task `i`
+         * is running at the moment task `j` starts.
+         *
+         * The diagonal is the exception. `before[j,j]` is a tautology and
+         * `after[j,j]` is `length[j] >= 1`, so neither is minted, and
+         * `active[j,j]` is minted only when it says something --- when `j` has
+         * a variable length, or a presence. Where it says nothing, task `j` is
+         * on its own row unconditionally and there is no flag to ask for. So
+         * nullopt from here carries its usual meaning for `i != j` (the
+         * constraint did not encode that pair) and means "the term is there
+         * without a flag" on the diagonal.
+         */
+        ///@{
+        [[nodiscard]] static auto pair_before_flag_key(std::size_t i, std::size_t j) -> innards::ProofFlagKey;
+        [[nodiscard]] static auto pair_after_flag_key(std::size_t i, std::size_t j) -> innards::ProofFlagKey;
+        [[nodiscard]] static auto pair_active_flag_key(std::size_t i, std::size_t j) -> innards::ProofFlagKey;
+        ///@}
+
+        /**
+         * \brief The key of one bit of a variable-height task's linearised
+         * load contribution at the moment task `j` starts, and the roles of
+         * the three rows defining it.
+         *
+         * The per-time family's counterparts, said over a pair of tasks rather
+         * than over a task and a time; see \ref contribution_flag_key and
+         * \ref contribution_ge_row_role for what they mean. A constant-height
+         * task has none, and neither does a variable-height task on a diagonal
+         * whose activity flag was not minted: its contribution is its height,
+         * unconditionally, and the row carries the height itself.
+         */
+        ///@{
+        [[nodiscard]] static auto pair_contribution_flag_key(std::size_t i, std::size_t j, Integer bit) -> innards::ProofFlagKey;
+        [[nodiscard]] static auto pair_contribution_ge_row_role(std::size_t i, std::size_t j) -> std::string;
+        [[nodiscard]] static auto pair_contribution_le_row_role(std::size_t i, std::size_t j) -> std::string;
+        [[nodiscard]] static auto pair_contribution_zero_row_role(std::size_t i, std::size_t j) -> std::string;
+        ///@}
+
+        ///@}
     };
 }
 

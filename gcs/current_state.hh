@@ -8,15 +8,11 @@
 #include <gcs/lifetime.hh>
 #include <gcs/variable_id.hh>
 
+#include <util/generator.hh>
+
 #include <functional>
 #include <memory>
 #include <version>
-
-#ifdef __cpp_lib_generator
-#include <generator>
-#else
-#include <__generator.hpp>
-#endif
 
 namespace gcs
 {

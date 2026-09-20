@@ -69,6 +69,19 @@ library. For an introduction to *using* the solver, start with the top-level
   instances: the `XCSPCallbacks` class, the intension tree walker, the
   cache-based test harness with ACE cross-checking, and the recipe for
   adding a new constraint binding.
+- [Running the scheduling experiments elsewhere](cluster-experiments.md) —
+  the runbook for producing the certified-scheduling measurements on a
+  machine that has only this repository and a network connection: build,
+  fetch the three instance families from their upstreams, check the build
+  against published optima before spending anything, then the sweeps.
+  Start here rather than at the sweep harness.
+- [Per-rule firing counters](rule-counters.md) — what
+  `GCS_SCHEDULING_RULE_STATS` prints for each `Cumulative` and
+  `Disjunctive` propagation rule, what the four numbers mean, and the one
+  way they are easy to misquote: `already_true` is a candidate count on
+  most rows and a detection count on two, and neither is the same
+  quantity a standalone simulation of a rule reports. Use when deciding
+  whether a rule earns its sweep.
 - [Benchmarking](benchmarking.md) — the curated set of benchmarks for
   measuring the wall-time impact of a performance-sensitive change, the
   rationale for each pick, the harness pattern for comparing two builds,
@@ -202,6 +215,15 @@ library. For an introduction to *using* the solver, start with the top-level
   for the `BinPacking` propagator (#148): the two forms (variable loads,
   constant capacities) that share one propagator, the staging plan, and the
   context for the extraction towards the unified path-DAG framework (#200).
+  Also the opt-in Stage 4 cross-bin cardinality pass (#209): why per-bin GAC
+  leaves joint infeasibilities behind, the one threshold-parameterised
+  cutting-planes derivation that spans both the energy bound (no division)
+  and pigeonhole (where the division is what unit propagation cannot do),
+  why shaving needs nothing extra in the proof, the measured two-sided
+  trade (4 485 search nodes to one and an 8.7–12× smaller proof where it
+  bites, 17–24% of solve time where it does not, hence off by default), and the
+  mutation that survives because VeriPB's own unit propagation re-derives
+  the row.
 - [Slack-based waking for linear inequalities](linear-slack-waking.md) — waking
   `ReifiedLinearInequality` only when a *covering* subset of its terms moves,
   via the refined-watch API, instead of on every bound change of every term:

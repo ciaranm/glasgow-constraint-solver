@@ -1027,6 +1027,323 @@ namespace
             }
         }
     }
+
+    // --- Stage 4: cross-bin cardinality (Shaw 2004 s4, issue #209) ---------
+    //
+    // Everything above reasons about one bin at a time, so a joint
+    // infeasibility that no single bin can see survives. The canonical example
+    // is items=[(0,1),(0,1),(0,1)] sizes=[1,2,2] caps=[3,2]: with items[0] = 1
+    // bin 1 has one unit left and neither size-2 item fits, so both land in bin
+    // 0 and overflow it -- but bin 0's DAG alone is happy to let item 0 leave,
+    // and bin 1's alone is happy to take it.
+    //
+    // The bound that catches this is one *cutting-planes* derivation,
+    // parameterised by a threshold `alpha`. For each bin b take its capacity
+    // row, weaken away the items we are not counting, and divide by alpha:
+    //
+    //     sum_{i in S, b in D_i} sizes[i] ~x_{i,b} >= T_b - cap_b
+    //       --- alpha d --->
+    //     sum_{i in S, b in D_i} c_i ~x_{i,b} >= R_b
+    //
+    // writing x_{i,b} for [items[i] == b], D_i for items[i]'s current domain,
+    // c_i = ceil(sizes[i] / alpha), T_b for the counted size that can still go
+    // in b, and R_b = ceil((T_b - cap_b) / alpha). Sum those over every bin and
+    // add c_i times each counted item's at-least-one row. Every `~x + x` pair
+    // collapses to a constant, leaving
+    //
+    //     sum_{i in S} c_i (terms for the bins D_i has lost) >= DELTA,
+    //     DELTA = sum_b max(0, R_b) - sum_{i in S} c_i (|D_i| - 1),
+    //
+    // whose surviving terms are exactly what the reason rules out. So DELTA >=
+    // 1 is a contradiction, and this one family spans both classical bounds:
+    // alpha = 1 gives c_i = sizes[i] and DELTA >= 1 reduces to "the items need
+    // more room than the bins have" (the energy bound), while a large alpha
+    // gives "more big items than big-item slots" (pigeonhole, which unit
+    // propagation cannot do at all). The rounding in between is what Martello
+    // and Toth's L2 is made of, and Shaw s4 is where bin packing gets it.
+    //
+    // Shaving is the same computation with one item's domain overridden to a
+    // single bin: if DELTA >= 1 under `items[h] = b`, then items[h] != b. The
+    // hypothesis costs the proof nothing -- h's at-least-one row is stated over
+    // its *real* domain, so the bins it is not being shaved into survive as
+    // positive terms, and the closing RUP's negated goal is what kills them.
+    //
+    // max(0, R_b) and not R_b: a bin with room to spare has a negative R_b that
+    // would drag the sum down, so it supplies the trivially true
+    // `sum c_i ~x_{i,b} >= 0` instead of its capacity row. Its terms are still
+    // needed either way, because they are what the at-least-one rows cancel
+    // against.
+
+    // ceil(a / b) for b > 0 and a of either sign (C++ integer division
+    // truncates towards zero, which is floor only for a >= 0).
+    auto ceil_div(long long a, long long b) -> long long
+    {
+        return a >= 0 ? (a + b - 1) / b : -((-a) / b);
+    }
+
+    // Per-call working space, sized once in prepare().
+    struct Stage4Scratch
+    {
+        vector<long long> caps;     // per bin: the ceiling its row is read under
+        vector<uint8_t> citable;    // per bin: can a pol cite that ceiling? (see below)
+        vector<long long> t;        // per bin: counted size that can still land there
+        vector<long long> t_less_h; // per bin: the same with the shaved item taken out
+        vector<long long> dom_size; // per item: |D_i|
+        vector<uint8_t> can;        // per (item, bin), item-major: still in the domain?
+        vector<long long> weight;   // per item: c_i = ceil(sizes[i] / alpha)
+        vector<uint8_t> counted;    // per item: in S(alpha)?
+        vector<long long> alphas;   // the thresholds to try, largest first
+        vector<size_t> by_size;     // item indices, largest size first
+        vector<Integer> domain_of;  // one item's domain, for the at-least-one cover
+    };
+
+    // What bin `b` contributes to DELTA under threshold `alpha`, given the
+    // counted size `t` that can still land there.
+    //
+    // A bin contributes nothing when its ceiling is not one a `pol` can cite.
+    // In the constant-capacity form the ceiling is a constant in the bin's own
+    // OPB row and always can be; in the variable-load form it is a bound
+    // literal on loads[b], which `add_bound_p_term` states only for a plain
+    // variable (a view would need explicit pol arithmetic over a view operand
+    // --- see dev_docs/view-proof-logging.md --- and a constant has no bound
+    // literal at all). Deciding that from the operand's *kind* and not from
+    // whether proofs are being written is what keeps the inferences the same
+    // either way.
+    auto bin_contribution(const Stage4Scratch & sc, size_t b, long long t, long long alpha) -> long long
+    {
+        return sc.citable[b] ? std::max(0LL, ceil_div(t - sc.caps[b], alpha)) : 0;
+    }
+
+    // Write the proof for one Stage 4 inference: each bin's row, then the pol
+    // that sums them against the at-least-one rows. `shave` names the item and
+    // the bin being hypothesised, if any; the closing RUP is ThenRUP::Yes's
+    // job. Everything is read out of `sc` as the deciding sweep left it, so
+    // that the arithmetic here is the arithmetic that decided to infer.
+    auto emit_stage4_proof(ProofLogger * const logger, const State & state, const vector<IntegerVariableID> & items, const vector<Integer> & sizes,
+        const vector<IntegerVariableID> & loads, bool have_loads, const vector<pair<optional<ProofLine>, optional<ProofLine>>> & opb_lines,
+        Stage4Scratch & sc, long long alpha, optional<pair<size_t, size_t>> shave) -> void
+    {
+        auto num_bins = sc.caps.size();
+        auto & tracker = logger->names_and_ids_tracker();
+
+        // Which items a bin's row keeps: the counted ones that can still go
+        // there, plus the shaved item in the one bin it is being shaved into.
+        auto kept_in = [&](size_t i, size_t b) {
+            if (shave && i == shave->first)
+                return b == shave->second;
+            return sc.counted[i] != 0 && sc.can[i * num_bins + b] != 0;
+        };
+
+        vector<ProofLine> bin_lines;
+        bin_lines.reserve(num_bins);
+        for (size_t b = 0; b < num_bins; ++b) {
+            auto bin_idx = Integer(static_cast<long long>(b));
+            long long t_b = 0;
+            for (const auto & [i, item] : enumerate(items))
+                if (kept_in(i, b))
+                    t_b += sizes[i].raw_value;
+
+            if (bin_contribution(sc, b, t_b, alpha) > 0) {
+                // The capacity row, weakened down to the kept items and then
+                // divided. The weakening goes in as one trivially true line
+                // rather than as raw literal axioms, so an item variable that
+                // is really a view is spelled the way the OPB spelled it and
+                // the terms cancel.
+                WPBSum dropped;
+                for (const auto & [i, item] : enumerate(items))
+                    if (! kept_in(i, b) && sizes[i] > 0_i)
+                        dropped += sizes[i] * (item == bin_idx);
+
+                PolBuilder pb;
+                pb.add(*opb_lines[b].first);
+                if (have_loads)
+                    add_bound_p_term(pb, state, logger, loads[b], true);
+                if (! dropped.terms.empty())
+                    pb.add(logger->emit_rup_proof_line(move(dropped) >= 0_i, ProofLevel::Temporary));
+                if (alpha > 1)
+                    pb.divide_by(Integer{alpha});
+                bin_lines.push_back(pb.emit(*logger, ProofLevel::Temporary));
+            }
+            else {
+                // A bin with room to spare, or one whose ceiling cannot be
+                // cited, contributes its terms and no bound.
+                // With no kept item it contributes nothing at all, and an empty
+                // line is not worth writing to say so.
+                WPBSum slack;
+                for (const auto & [i, item] : enumerate(items))
+                    if (kept_in(i, b))
+                        slack += Integer{sc.weight[i]} * (item != bin_idx);
+                if (! slack.terms.empty())
+                    bin_lines.push_back(logger->emit_rup_proof_line(move(slack) >= 0_i, ProofLevel::Temporary));
+            }
+        }
+
+        PolBuilder final_pol;
+        for (const auto & line : bin_lines)
+            final_pol.add(line);
+        for (const auto & [i, item] : enumerate(items)) {
+            if (! sc.counted[i] && ! (shave && i == shave->first))
+                continue;
+            // Name exactly the bins the item can still take: the runs the rest
+            // of its definition range goes in as are what the reason rules out.
+            // For the shaved item that is still its *real* domain, because the
+            // hypothesis is discharged by the closing RUP and not asserted here.
+            sc.domain_of.clear();
+            for (size_t b = 0; b < num_bins; ++b)
+                if (sc.can[i * num_bins + b])
+                    sc.domain_of.push_back(Integer(static_cast<long long>(b)));
+            final_pol.add(tracker.need_constraint_saying_variable_takes_at_least_one_value_over_cover(item, sc.domain_of), Integer{sc.weight[i]});
+        }
+        final_pol.emit(*logger, ProofLevel::Temporary);
+    }
+
+    auto run_stage4(const State & state, auto & inference, ProofLogger * const logger, const vector<IntegerVariableID> & items,
+        const vector<Integer> & sizes, const vector<IntegerVariableID> & loads, const vector<Integer> & capacities, bool have_loads,
+        const vector<pair<optional<ProofLine>, optional<ProofLine>>> & opb_lines, Stage4Scratch & sc, const Reason & reason,
+        const ConstraintID & owner) -> void
+    {
+        auto num_bins = have_loads ? loads.size() : capacities.size();
+        auto n = items.size();
+
+        // The ceiling each bin's row is read under, snapshotted for the whole
+        // sweep. Nothing here infers a load bound (Stage 2 owns those) and an
+        // item prune cannot move one, so this is still the live value when a
+        // justification cites it via add_bound_p_term further down, and when the
+        // reason names it.
+        for (size_t b = 0; b < num_bins; ++b)
+            sc.caps[b] = have_loads ? state.upper_bound(loads[b]).raw_value : capacities[b].raw_value;
+
+        for (size_t i = 0; i < n; ++i) {
+            long long d = 0;
+            for (size_t b = 0; b < num_bins; ++b) {
+                auto in = state.in_domain(items[i], Integer(static_cast<long long>(b))) ? uint8_t{1} : uint8_t{0};
+                sc.can[i * num_bins + b] = in;
+                d += in;
+            }
+            sc.dom_size[i] = d;
+        }
+
+        // S(alpha) starts as the items already pinned to a bin --- they cost
+        // nothing whatever the threshold --- and grows by the items the falling
+        // threshold admits. Because it only ever grows, each item folds into the
+        // per-bin totals once for the whole sweep rather than once per threshold.
+        std::ranges::fill(sc.counted, uint8_t{0});
+        std::ranges::fill(sc.t, 0LL);
+        for (size_t i = 0; i < n; ++i)
+            if (sizes[i] > 0_i && sc.dom_size[i] == 1) {
+                sc.counted[i] = 1;
+                for (size_t b = 0; b < num_bins; ++b)
+                    if (sc.can[i * num_bins + b])
+                        sc.t[b] += sizes[i].raw_value;
+            }
+        size_t admitted = 0;
+
+        // The load upper bounds the rows are read under have to be in the
+        // reason; the item facts are already there, via the shared generic one.
+        // Naming every bin's bound rather than only the bins whose rows were
+        // used costs a literal apiece and keeps this independent of alpha.
+        auto reason_with_loads = [&]() -> Reason {
+            if (! have_loads)
+                return reason;
+            ReasonLiterals extra;
+            for (size_t b = 0; b < num_bins; ++b)
+                extra.emplace_back(loads[b] < Integer{sc.caps[b]} + 1_i);
+            return with_extra(reason, move(extra));
+        };
+
+        auto max_cap = *std::ranges::max_element(sc.caps);
+
+        for (auto alpha : sc.alphas) {
+            // A threshold above every capacity leaves no bin holding a counted
+            // item, which says nothing the per-bin passes have not already said
+            // (an item that fits nowhere is Stage 2's floor check). Skipping it
+            // here rather than when the list was built keeps the list static,
+            // and the admissions below catch up at the next threshold either way.
+            if (alpha > max_cap)
+                continue;
+
+            // An item smaller than the threshold buys less than a whole unit of
+            // a bin's divided capacity while costing c_i (|D_i| - 1), so it only
+            // pays its way once it is pinned to a bin -- which is exactly where
+            // that cost is zero, and so where it was admitted above.
+            for (; admitted < n && sizes[sc.by_size[admitted]].raw_value >= alpha; ++admitted) {
+                auto i = sc.by_size[admitted];
+                if (sizes[i] <= 0_i || sc.counted[i])
+                    continue;
+                sc.counted[i] = 1;
+                for (size_t b = 0; b < num_bins; ++b)
+                    if (sc.can[i * num_bins + b])
+                        sc.t[b] += sizes[i].raw_value;
+            }
+
+            long long penalty = 0;
+            for (size_t i = 0; i < n; ++i) {
+                sc.weight[i] = ceil_div(sizes[i].raw_value, alpha);
+                if (sc.counted[i])
+                    penalty += sc.weight[i] * (sc.dom_size[i] - 1);
+            }
+
+            long long base = 0;
+            for (size_t b = 0; b < num_bins; ++b)
+                base += bin_contribution(sc, b, sc.t[b], alpha);
+
+            if (base - penalty >= 1) {
+                inference.contradiction(logger,
+                    JustifyExplicitly{[&, alpha](const ReasonLiterals &) -> void {
+                                          emit_stage4_proof(logger, state, items, sizes, loads, have_loads, opb_lines, sc, alpha, nullopt);
+                                      },
+                        ThenRUP::Yes, hints::BinPacking{owner}},
+                    reason_with_loads());
+                return;
+            }
+
+            // Shaving. Taking the item out of S refunds its share of the
+            // penalty and whatever it was contributing to the bins it can
+            // reach; putting it back into one bin alone is then pure gain there.
+            for (size_t h = 0; h < n; ++h) {
+                if (sc.dom_size[h] < 2 || sizes[h] <= 0_i)
+                    continue;
+
+                // Cheap necessary condition, so that the O(bins) work below is
+                // only done for items that could possibly give a prune. Taking h
+                // out of S refunds at most c_h (|D_h| - 1) of the penalty and
+                // can only lower `base`, and putting it back into one bin raises
+                // that bin's term by at most c_h. So DELTA <= base - penalty +
+                // c_h |D_h|, and there is nothing here when that is below 1.
+                if (base - penalty + sc.weight[h] * sc.dom_size[h] < 1)
+                    continue;
+
+                auto h_counted = sc.counted[h] != 0;
+                auto penalty_less_h = h_counted ? penalty - sc.weight[h] * (sc.dom_size[h] - 1) : penalty;
+                long long base_less_h = 0;
+                for (size_t b = 0; b < num_bins; ++b) {
+                    sc.t_less_h[b] = sc.t[b] - (h_counted && sc.can[h * num_bins + b] ? sizes[h].raw_value : 0);
+                    base_less_h += bin_contribution(sc, b, sc.t_less_h[b], alpha);
+                }
+
+                for (size_t b = 0; b < num_bins; ++b) {
+                    if (! sc.can[h * num_bins + b])
+                        continue;
+                    auto without = bin_contribution(sc, b, sc.t_less_h[b], alpha);
+                    auto with_h = bin_contribution(sc, b, sc.t_less_h[b] + sizes[h].raw_value, alpha);
+                    if (base_less_h - without + with_h - penalty_less_h < 1)
+                        continue;
+                    // An earlier inference in this sweep may already have taken
+                    // the value; `sc` deliberately keeps the domains the sweep
+                    // started with, so that every proof written here matches the
+                    // arithmetic that asked for it.
+                    if (! state.in_domain(items[h], Integer(static_cast<long long>(b))))
+                        continue;
+                    inference.infer_not_equal(logger, items[h], Integer(static_cast<long long>(b)),
+                        JustifyExplicitly{[&, alpha, h, b](const ReasonLiterals &) -> void {
+                                              emit_stage4_proof(logger, state, items, sizes, loads, have_loads, opb_lines, sc, alpha, pair{h, b});
+                                          },
+                            ThenRUP::Yes, hints::BinPacking{owner}},
+                        reason_with_loads());
+                }
+            }
+        }
+    }
 }
 
 struct BinPacking::DagBridge
@@ -1041,6 +1358,9 @@ struct BinPacking::DagBridge
     // to match each bin's DAG so the hot path never allocates. The bridge is
     // per-constraint-clone, so a search owns its scratch exclusively.
     vector<Stage3Scratch> stage3_scratch;
+    // The same, for the Stage 4 cross-bin sweep: item-by-bin sized, and needed
+    // whether or not the Stage 3 DAGs were built.
+    Stage4Scratch stage4_scratch;
 };
 
 BinPacking::BinPacking(vector<IntegerVariableID> items, vector<Integer> sizes, vector<IntegerVariableID> loads) :
@@ -1065,12 +1385,20 @@ auto BinPacking::with_proof_strategy(BinPackingProofStrategy strategy) -> BinPac
     return *this;
 }
 
+auto BinPacking::with_cardinality_reasoning(BinPackingCardinality cardinality) -> BinPacking &
+{
+    _cardinality = holds_alternative<bin_packing::Shaw>(cardinality);
+    return *this;
+}
+
 auto BinPacking::clone() const -> unique_ptr<Constraint>
 {
     auto cloned = _have_loads ? make_unique<BinPacking>(_items, _sizes, _loads) : make_unique<BinPacking>(_items, _sizes, _capacities);
     cloned->with_consistency(_bounds_only ? BinPackingConsistency{consistency::BC{}} : BinPackingConsistency{consistency::GAC{}});
     cloned->with_proof_strategy(
         _upfront_proof ? BinPackingProofStrategy{proof_strategy::Upfront{}} : BinPackingProofStrategy{proof_strategy::PerCall{}});
+    cloned->with_cardinality_reasoning(
+        _cardinality ? BinPackingCardinality{bin_packing::Shaw{}} : BinPackingCardinality{bin_packing::NoCardinality{}});
     return cloned;
 }
 
@@ -1105,16 +1433,61 @@ auto BinPacking::prepare(Propagators &, State & initial_state, ProofModel * cons
                 throw InvalidProblemDefinitionException{"BinPacking: capacities must be non-negative"};
     }
 
-    if (! _bounds_only) {
-        // Build the per-bin static (forward-only) DAGs and compute phantoms.
-        // Flag handles are populated by the initialiser (once the logger is
-        // available); opb_lines is filled by define_proof_model when proof
-        // logging is on. Both are sized here so propagator code can index by
-        // bin without checking populated-ness even when proofs are off.
+    // The bridge carries the per-bin OPB line numbers, which Stage 4 cites even
+    // when there is no Stage 3 DAG to build, so it is allocated whenever either
+    // pass wants it. Flag handles are populated by the initialiser (once the
+    // logger is available); opb_lines is filled by define_proof_model when proof
+    // logging is on. Both are sized here so propagator code can index by bin
+    // without checking populated-ness even when proofs are off.
+    if (! _bounds_only || _cardinality) {
         _bridge = make_shared<DagBridge>();
-        _bridge->dags.reserve(num_bins);
         _bridge->flags.assign(num_bins, {});
         _bridge->opb_lines.assign(num_bins, {nullopt, nullopt});
+    }
+
+    if (_cardinality) {
+        auto & sc = _bridge->stage4_scratch;
+        sc.caps.assign(num_bins, 0);
+        sc.citable.assign(num_bins, uint8_t{1});
+        if (_have_loads)
+            for (size_t b = 0; b < num_bins; ++b)
+                sc.citable[b] = overloaded{
+                    [](const SimpleIntegerVariableID &) { return uint8_t{1}; },   //
+                    [](const ConstantIntegerVariableID &) { return uint8_t{0}; }, //
+                    [](const ViewOfIntegerVariableID &) { return uint8_t{0}; }    //
+                }
+                                    .visit(_loads[b]);
+        sc.t.assign(num_bins, 0);
+        sc.t_less_h.assign(num_bins, 0);
+        sc.dom_size.assign(_items.size(), 0);
+        sc.can.assign(_items.size() * num_bins, uint8_t{0});
+        sc.weight.assign(_items.size(), 0);
+        sc.counted.assign(_items.size(), uint8_t{0});
+        sc.domain_of.reserve(num_bins);
+
+        // DELTA is piecewise constant in the threshold with breakpoints at the
+        // item sizes, so the distinct sizes plus 1 (the energy end of the
+        // family) are the whole list, and neither it nor the size order depends
+        // on the state. Largest first, because S(alpha) only grows as alpha
+        // falls: that is what lets the sweep fold each item into the per-bin
+        // totals once for the whole list rather than once per threshold.
+        sc.alphas.clear();
+        sc.alphas.push_back(1);
+        for (const auto & sz : _sizes)
+            if (sz > 1_i)
+                sc.alphas.push_back(sz.raw_value);
+        std::ranges::sort(sc.alphas, std::ranges::greater{});
+        sc.alphas.erase(std::ranges::unique(sc.alphas).begin(), sc.alphas.end());
+
+        sc.by_size.resize(_items.size());
+        for (size_t i = 0; i < _items.size(); ++i)
+            sc.by_size[i] = i;
+        std::ranges::sort(sc.by_size, [&](size_t a, size_t b) { return _sizes[a] > _sizes[b]; });
+    }
+
+    if (! _bounds_only) {
+        // Build the per-bin static (forward-only) DAGs and compute phantoms.
+        _bridge->dags.reserve(num_bins);
         _bridge->stage3_scratch.assign(num_bins, {});
         for (size_t b = 0; b < num_bins; ++b) {
             auto cap = per_bin_cap(initial_state, _sizes, _have_loads, _loads, _capacities, b);
@@ -1237,9 +1610,16 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
     propagators.install(
         constraint_id(),
         [items = _items, sizes = _sizes, loads = _loads, capacities = _capacities, have_loads = _have_loads, bounds_only = _bounds_only,
-            bridge = _bridge, dead_cache_handle = _dead_cache_idx, upfront = _upfront_proof, reason = move(stage3_reason),
+            cardinality = _cardinality, bridge = _bridge, dead_cache_handle = _dead_cache_idx, upfront = _upfront_proof, reason = move(stage3_reason),
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             run_stage2(state, inference, logger, items, sizes, loads, capacities, have_loads, owner);
+
+            // Stage 4 before Stage 3: it is the cheaper of the two (one sweep
+            // over thresholds x items x bins, no DAG walk), and the prunes it
+            // draws shrink the domains Stage 3 then reads.
+            if (cardinality && bridge)
+                run_stage4(
+                    state, inference, logger, items, sizes, loads, capacities, have_loads, bridge->opb_lines, bridge->stage4_scratch, reason, owner);
 
             if (! bounds_only && bridge) {
                 auto num_bins = have_loads ? loads.size() : capacities.size();

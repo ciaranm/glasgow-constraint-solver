@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -27,6 +28,7 @@ using std::make_shared;
 using std::make_unique;
 using std::map;
 using std::move;
+using std::set;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::adjacent_find;
@@ -108,10 +110,21 @@ auto AllDifferent::prepare(Propagators &, State & initial_state, ProofModel * co
 
     // GAC wants the compressed value set. It has to be built before the
     // staging decision below, which depends on its size.
+    //
+    // Membership goes through a set rather than a linear scan of what has been
+    // collected so far. The order is unchanged --- first-seen, which is what the
+    // value indices in the propagator's graph are --- so this is the same vector,
+    // built without the quadratic. It used to be O(values * distinct values): three
+    // variables over 0..10^5 spent 6.6 s here, and 0..10^6 did not finish, for a
+    // constraint whose domains were two values each by the time anything propagated.
+    // That is still O(values) and GAC still wants a graph vertex per value, so a
+    // genuinely wide domain remains the `KnownTrip` the audit lane records --- this
+    // only stops the setup being asymptotically worse than the algorithm it feeds.
     if (holds_alternative<consistency::GAC>(_level)) {
+        set<Integer> seen;
         for (auto & var : _sanitised_vars)
             for (const auto & val : initial_state.each_value_immutable(var))
-                if (_compressed_vals.end() == find(_compressed_vals, val))
+                if (seen.insert(val).second)
                     _compressed_vals.push_back(val);
         _gac_staged = _sanitised_vars.size() * _compressed_vals.size() >= min_var_val_pairs_for_staged_gac;
     }

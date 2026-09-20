@@ -13,15 +13,9 @@
 #include <deque>
 #include <optional>
 #include <utility>
-#include <version>
 
+#include <util/generator.hh>
 #include <util/overloaded.hh>
-
-#ifdef __cpp_lib_generator
-#include <generator>
-#else
-#include <__generator.hpp>
-#endif
 
 namespace gcs::innards
 {
@@ -694,7 +688,7 @@ namespace gcs::innards
                 if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                     auto any_will_fire = false;
                     for (const auto & lit : lits)
-                        if (_state.test_literal(lit) != LiteralIs::DefinitelyTrue) {
+                        if (! _state.literal_is_entailed(lit)) {
                             any_will_fire = true;
                             break;
                         }

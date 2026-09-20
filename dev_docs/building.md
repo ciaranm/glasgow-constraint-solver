@@ -192,6 +192,9 @@ clang 21, so re-confirm on CI before relying on a change here):
 
 - `std::views::enumerate` — use `util/enumerate.hh` instead. Do not remove that
   file; 46 files include it.
+- `std::generator` — include `util/generator.hh`, which picks the standard
+  library's where there is one and a vendored shim where there is not. See
+  "The vendored `<generator>` shim" below.
 
 Unavailable in libstdc++ on the GitHub Actions Ubuntu 24.04 runner (GCC 13),
 which we still support:
@@ -208,14 +211,84 @@ than a hand-rolled `if` or ternary:
 - `std::optional` monadic operations: `.transform()`, `.and_then()`,
   `.or_else()`, `.value_or()`
 
-Three features are probed at configure time rather than assumed, and a fallback
-is fetched or disabled when absent: `<format>`/`<print>` (libfmt is fetched
-instead), `<generator>` (a polyfill is fetched), and `<stacktrace>` (without it,
-`GCS_VERBOSE_LOGGING` is unavailable). See [code-style.md](code-style.md) for
-the `#if` pattern a file using `format()` must follow.
+Two features are probed at configure time rather than assumed, and a fallback is
+fetched or disabled when absent: `<format>`/`<print>` (libfmt is fetched instead)
+and `<stacktrace>` (without it, `GCS_VERBOSE_LOGGING` is unavailable). See
+[code-style.md](code-style.md) for the `#if` pattern a file using `format()` must
+follow. `<generator>` used to be a third of that list and is now handled in the
+preprocessor instead — see below.
 
 When adding a new C++23 feature, build with GCC and clang before committing, and
 check MSVC availability — CI is the backstop there.
+
+### The vendored `<generator>` shim
+
+`std::generator` is what the coroutine-based enumeration APIs are built on
+(`Problem::each_constraint`, `NamesAndIDsTracker::each_bit`,
+`IntervalSet`'s iteration, and friends). libstdc++ has had it since GCC 14 and
+MSVC since VS 2022. **libc++ has never shipped it**, as of LLVM 22.
+
+So `util/generator.hh` dispatches on `__cpp_lib_generator`: the standard
+library's `<generator>` where that says there is one, and
+`util/p2168_generator.hpp` — Lewis Baker and Corentin Jabot's reference
+implementation of P2168, vendored, under the Boost Software License 1.0 — where
+there is not. **Include `util/generator.hh`**, never either of those two
+directly; the choice belongs in one place.
+
+#### Why vendored, and not fetched
+
+It used to be an `ExternalProject_Add` pulling
+`github.com/todoubaba/generator` at configure time, behind a `try_compile`
+probe. That went wrong in three ways at once, and the third is what forced the
+change.
+
+- The pinned repository was a **fork with no releases and no other users**, last
+  pushed December 2023, of `github.com/lewissbaker/generator`. The fork exists
+  for three small commits (a missing `<atomic>`, some warning fixes). A build
+  that needs the network at configure time should not need *that* to still be
+  there.
+- Nothing could be fixed in it. Upstream's last commit is January 2025, with five
+  open issues untouched.
+- **It stopped compiling.** libc++ has added `std::ranges::elements_of` —
+  `libcxx/include/__ranges/elements_of.h` is absent in `llvmorg-19/20/21.1.0` and
+  present in `main`; locally, `_LIBCPP_VERSION` is `220106` — and exposes it from
+  `<ranges>`, while still not providing `<generator>`. The polyfill includes
+  `<ranges>` itself and then defines its own `std::ranges::elements_of`, so
+  `#include <__generator.hpp>` alone now fails with `type constraint differs in
+  template redeclaration`. Reported upstream as
+  [lewissbaker/generator#17](https://github.com/lewissbaker/generator/issues/17).
+
+The macOS CI lanes were still green when this was done, because their runners
+predate LLVM 22; this was a local Xcode getting there first, and it will reach
+them.
+
+#### The one change made to the vendored copy
+
+`std::ranges::elements_of` and the three `yield_value` overloads that consume it
+are **removed**. So `co_yield std::ranges::elements_of(...)` — yielding a nested
+generator or range — does not compile against the shim. Nothing in this tree does
+that; there are no references to `elements_of` anywhere.
+
+It would be reasonable to expect the fix to be "guard the definition and use
+libc++'s". It is not, because the two types are not interchangeable:
+
+- libc++'s is an aggregate with public `range` / `allocator` members; the shim's
+  has `get()` / `get_allocator()`.
+- libc++'s default allocator is `std::allocator<std::byte>`; the shim's is
+  `use_allocator_arg` — and that default is exactly how
+  `yield_value(elements_of<_Rng>&&)` was distinguished from
+  `yield_value(elements_of<_Rng, _Allocator>&&)`. libc++'s default collapses the
+  distinction.
+
+Adapting would therefore mean reworking that allocator dispatch, on a facility
+this tree never uses and could not test here. A shim that quietly carries subtly
+wrong template code is worse than one that is honestly missing a feature: this
+way, anyone who needs it gets a compile error and the comment at the top of the
+file, rather than a puzzle. `use_allocator_arg` itself stays — `generator`'s own
+default allocator is still spelled with it.
+
+Nothing else was touched: the diff against the pinned upstream source is 66 lines
+removed and 31 added, and every one of the 31 is a comment.
 
 ## CI
 

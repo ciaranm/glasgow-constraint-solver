@@ -298,6 +298,31 @@ TEST_CASE("read_scp: logical and / or reification-tuple forms enumerate correctl
         CHECK((s.at("D") == 1) == (s.at("A") == 0 || s.at("B") == 0));
 }
 
+TEST_CASE("read_scp: half-reified and_if / or_if forms enumerate correctly")
+{
+    // Y >= 1  ->  (B1 >= 1) and (B2 >= 1): all four operand assignments with
+    // Y = 0, and only both-true with Y = 1.
+    auto and_if = enumerate(
+        "( (version 1) (variables (B1 0 1) (B2 0 1) (Y 0 1)) (constraints (_1 and_if ((B1 >= 1) (B2 >= 1)) (Y >= 1))) (prob_type enumerate) )");
+    CHECK(and_if.size() == 5);
+    for (const auto & s : and_if)
+        CHECK((s.at("Y") == 0 || (s.at("B1") == 1 && s.at("B2") == 1)));
+    // Y >= 1  ->  (B1 >= 1) or (B2 >= 1): all four with Y = 0, three with Y = 1.
+    auto or_if = enumerate(
+        "( (version 1) (variables (B1 0 1) (B2 0 1) (Y 0 1)) (constraints (_1 or_if ((B1 >= 1) (B2 >= 1)) (Y >= 1))) (prob_type enumerate) )");
+    CHECK(or_if.size() == 7);
+    for (const auto & s : or_if)
+        CHECK((s.at("Y") == 0 || s.at("B1") == 1 || s.at("B2") == 1));
+}
+
+TEST_CASE("read_scp: and_if and or_if survive write -> read -> write unchanged")
+{
+    check_scp_round_trip("scp_reader_and_if", "(_1 and_if ((X >= 1) (Y != 0)) (C = 1))",
+        [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID c) { p.post(AndIf{{x >= 1_i, y != 0_i}, c == 1_i}); });
+    check_scp_round_trip("scp_reader_or_if", "(_1 or_if ((X < 0) (Y = 2)) (C = 1))",
+        [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID c) { p.post(OrIf{{x < 0_i, y == 2_i}, c == 1_i}); });
+}
+
 TEST_CASE("read_scp: parity reification-tuple form enumerates correctly")
 {
     // An odd number of (A >= 1), (B >= 1), (C >= 1) hold; the output tuple

@@ -23,6 +23,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -78,6 +79,18 @@ using fmt::print;
 
 namespace
 {
+    /**
+     * How wide a variable's definition range has to be before an at-least-one
+     * over it is stated as an interval cover rather than one term per value.
+     *
+     * See need_constraint_saying_variable_takes_at_least_one_value_over_cover for
+     * why this is a threshold rather than an unconditional rewrite. The value only
+     * has to separate "a domain someone wrote out by hand" from "a domain nobody
+     * could name" --- every case the cover exists for is orders of magnitude above
+     * it --- so it is not tuned, and no measurement here is sensitive to it.
+     */
+    const auto at_least_one_cover_threshold = 100_i;
+
     // These three tables are read on every literal rendered into every proof
     // line, so they are hashed rather than tree-ordered. Nothing iterates
     // them. The hashes just have to spread structured small integers; the
@@ -118,10 +131,17 @@ namespace
         std::unordered_map<long long, AtomDefs> eq_defs;
         std::unordered_map<long long, AtomDefs> ge_defs;
         // The line pinning a boundary ge atom to the value the variable's
-        // declared bounds force, for the atoms that got one (see fix_bound in
-        // need_gevar). Filled when the pin is actually emitted, which for an
-        // atom needed during model building is at proof start rather than here.
+        // declared bounds force, for the atoms that got one (see
+        // ensure_boundary_pin). Filled when the pin is actually emitted, which
+        // for an atom needed during model building is at proof start rather
+        // than here.
         std::unordered_map<long long, ProofLine> ge_pins;
+        // The values ensure_boundary_pin has taken responsibility for, which
+        // during model building runs ahead of ge_pins by the length of the
+        // delayed-step queue. Asking twice for the same pin must not emit it
+        // twice, and the queued step is the only record that the first ask
+        // happened.
+        std::unordered_set<long long> ge_pins_arranged;
     };
 
     struct HashView
@@ -220,7 +240,41 @@ struct NamesAndIDsTracker::Imp
     // written at the same point in the solve, before the search starts.
     map<string, ProofLine> published_derived_lines;
 
+    // #780: derivers for integer-indexed families of lines, and the memo of
+    // what each has produced. Same per-solve story as published_derived_lines
+    // above --- these hold proof line numbers --- but populated lazily, on the
+    // first ask for a member, rather than up front. See
+    // publish_derived_line_family.
+    map<string, function<auto(ProofLogger &, Integer)->optional<ProofLine>>> derived_line_families;
+    map<string, ProofLine> derived_family_lines;
+
+    // #780 step 10: the two halves of a flag whose reification was emitted
+    // *inside the proof* rather than as OPB rows, keyed by the flag's own PB
+    // name. A model-side flag's halves carry `[r]` and `[f]` labels and are
+    // cited by name; a `red`-minted one has line numbers and nothing else, so
+    // a citer has to be told them. Per-solve state, like the two above and for
+    // the same reason: a line number means nothing outside its own proof file.
+    map<string, pair<ProofLine, ProofLine>> in_proof_reifications;
+    // As any_flag_definers below: reification_half runs on every citation of
+    // any flag's half, and where nothing was reified in the proof it should
+    // cost a bool rather than a map lookup.
+    bool any_in_proof_reifications = false;
+
+    // #780 step 10: definers for keyed families of flags, and the set of keys
+    // each has already been asked for. Same per-solve story as the two above.
+    // See publish_flag_definer.
+    map<string, function<auto(ProofLogger &, const ProofFlagKey &)->void>> flag_definers;
+    std::set<string> defined_flag_keys;
+    // Whether *any* constraint has published a definer, so that
+    // ensure_flag_defined --- which every citation of anyone's flags now goes
+    // through --- can decline in one bool test rather than formatting a
+    // constraint name and looking it up. No encoding but StartCheckpoint
+    // publishes one, and the time-indexed arm is the benchmark baseline.
+    bool any_flag_definers = false;
+
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
+    unordered_map<SimpleOrProofOnlyIntegerVariableID, map<vector<Integer>, ProofLine>, HashSimpleOrProofOnlyVariable>
+        variable_at_least_one_over_cover_constraints;
     // Indexed by variable index (variables are allocated with sequential
     // indices, so these stay dense), one per id kind.
     vector<VariableAtoms> simple_variable_atoms;
@@ -321,8 +375,9 @@ struct NamesAndIDsTracker::Imp
     // Variables (e.g. ArgSort's cake-named free-bit-sum sorted values) whose [lo, hi]
     // domain is NOT a trivial consequence of the OPB -- cake emits no bound line for
     // them and the bounds are only entailed through conditional channels -- so
-    // need_gevar's fix_bound must not pin their boundary order literals; those bounds
-    // are instead established once, explicitly, by the owning constraint's proof.
+    // need_gevar must not have ensure_boundary_pin pin their boundary order
+    // literals; those bounds are instead established once, explicitly, by the
+    // owning constraint's proof.
     std::set<SimpleOrProofOnlyIntegerVariableID> bounds_not_trivially_derivable;
     // Variables whose order-encoding (ge) atom definitions carry @i[..][ge] labels that
     // a cake_pb_cp OPB does not create (it reifies each atom per value under its own
@@ -529,6 +584,155 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
         } //
     }
         .visit(var);
+}
+
+auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value_over_cover(
+    IntegerVariableID var, const vector<Integer> & singled_out) -> ProofLine
+{
+    // The cover is the singled-out values inside the definition range, each as its
+    // own cell, plus the maximal runs between and around them. need_invar returns
+    // the eq atom for a width-1 request, so both kinds of piece are asked for the
+    // same way and every piece is a literal the partition knows about --- which is
+    // what makes the line RUP: falsifying all of them falsifies the root covering.
+    auto over_cover = [&](const SimpleOrProofOnlyIntegerVariableID & id) -> ProofLine {
+        auto [lower, upper] = _imp->integer_variable_definition_bounds.at(id);
+
+        // Normalised before it is used as a cache key, so that callers asking for
+        // the same cover spelled differently --- unsorted, with repeats, or naming
+        // values outside the definition range, none of which change the line ---
+        // share one line rather than emitting a duplicate each.
+        vector<Integer> cuts;
+        for (const auto & v : singled_out)
+            if (v >= lower && v <= upper)
+                cuts.push_back(v);
+        sort(cuts);
+        auto [dups_from, dups_to] = std::ranges::unique(cuts);
+        cuts.erase(dups_from, dups_to);
+
+        // Cached and emitted at Top like the per-value form, and for the same
+        // reason: the line is a tautology of the encoding, so re-emitting it per
+        // firing would be pure proof growth. The per-value form needs only the
+        // variable as its key, since it names every value; this one is keyed by
+        // the cover too, and a caller whose cover changes from firing to firing
+        // (a Hall set, say) pays a line per distinct cover it asks for.
+        auto & for_this_var = _imp->variable_at_least_one_over_cover_constraints[id];
+        if (auto found = for_this_var.find(cuts); found != for_this_var.end())
+            return found->second;
+
+        WPBSum al1s;
+        auto run_from = lower;
+        auto add_piece = [&](Integer lo, Integer hi) {
+            if (lo <= hi)
+                al1s += 1_i * need_invar(id, lo, hi);
+        };
+
+        for (const auto & v : cuts) {
+            add_piece(run_from, v - 1_i);
+            add_piece(v, v);
+            run_from = v + 1_i;
+        }
+        add_piece(run_from, upper);
+
+        auto line = _imp->logger->emit_rup_proof_line(al1s >= 1_i, ProofLevel::Top);
+        for_this_var.emplace(move(cuts), line);
+        return line;
+    };
+
+    // Is a cover worth stating for this variable at all? The per-value form is
+    // emitted once and then serves every cover anyone asks for, because it names
+    // every value; a cover is specialised, so a caller whose cover changes --- a
+    // Hall set --- pays a line per distinct one. Over a narrow definition range
+    // those lines are each about as big as the single per-value line they replace,
+    // and there are many of them: measured on the examples, going to covers
+    // unconditionally cost sudoku 16% more proof lines and ortho_latin 3%, for
+    // variables declared over nine values, where naming every value was never the
+    // problem #833 is about.
+    //
+    // So the cover is for the case it was written for: a definition range too wide
+    // to name. Below the threshold nothing changes, which is why those examples are
+    // byte-identical; above it the per-value line grows without bound and the cover
+    // does not. This is a policy quantity, not a guard --- it wants to sit where
+    // naming every value stops being free, well below where it becomes ruinous ---
+    // so it is deliberately not large_domain_guard_limit().
+    auto worth_a_cover = [&](const SimpleOrProofOnlyIntegerVariableID & id) {
+        auto [lower, upper] = _imp->integer_variable_definition_bounds.at(id);
+        return upper - lower + 1_i > at_least_one_cover_threshold;
+    };
+
+    return overloaded{
+        [&](const ConstantIntegerVariableID &) -> ProofLine { throw UnimplementedException{}; }, //
+        [&](const SimpleIntegerVariableID & var) -> ProofLine {
+            // No bits means no range literals, so there is no cover to state. A
+            // zero-one variable is the case that reaches this, and its definition
+            // range is two values, so the per-value form is already the cover.
+            if (! has_bit_representation(var) || ! worth_a_cover(var))
+                return need_constraint_saying_variable_takes_at_least_one_value(var);
+            return over_cover(var);
+        }, //
+        [&](const ViewOfIntegerVariableID & var) -> ProofLine {
+            // As in the per-value form, a registered view states its at-least-one in
+            // V-form over its own encoded variable, so that it cancels against
+            // at-most-ones naming V-form atoms. The singled-out values are in the
+            // view's value space, which is that variable's space too.
+            //
+            // An unregistered view would need them mapped back through the view to
+            // be named at all, so it keeps the per-value form over the actual
+            // variable, where naming every value sidesteps the mapping.
+            if (auto v_id = find_view(var); v_id && has_bit_representation(*v_id) && worth_a_cover(*v_id))
+                return over_cover(*v_id);
+            return need_constraint_saying_variable_takes_at_least_one_value(var);
+        } //
+    }
+        .visit(var);
+}
+
+auto NamesAndIDsTracker::ensure_boundary_pin(const SimpleOrProofOnlyIntegerVariableID & id, Integer v, bool negated) -> void
+{
+    // Asked for once per out-of-range cut need_gevar creates on this side, which
+    // is the whole point: all but the first are already covered.
+    if (! _imp->atoms_for(id).ge_pins_arranged.insert(v.raw_value).second)
+        return;
+
+    // Pin a trivial boundary order literal -- ge(lower) (always true) or
+    // ge(ub+1) (always false) -- in the PROOF, never as an OPB axiom. The fact
+    // is a consequence of the variable's bound constraints, not a definition,
+    // so it does not belong in the OPB; cake_pb_cp likewise derives it rather
+    // than pinning it, so an OPB axiom would make our OPB diverge from cake's,
+    // and -- worse -- a pin re-derived per use does not survive VeriPB's
+    // post-solx enumeration restriction. Emitting it once as a persistent
+    // top-of-proof line (RUP-derivable from the bound constraints, or asserted
+    // at AssertionLevel::Links) keeps the OPB byte-clean and the pin available
+    // throughout both enumeration and refutation. emit_proof_line_now_or_at_start
+    // queues it to proof start when the logger is not yet attached (model
+    // building) and emits it immediately otherwise.
+    emit_proof_line_now_or_at_start([this, id, v, negated](ProofLogger * const logger) {
+        if (logger->get_assertion_level() > AssertionLevel::Links)
+            return;
+
+        // The cut being pinned is the one at the declared bound, which the model
+        // need never have asked for --- the tsp cost variable has it, a [2, 5]
+        // multiply operand does not. Create it here rather than where the pin was
+        // requested, because that request can come while the OPB is still being
+        // written, and a cut created there costs two OPB rows that cake_pb_cp,
+        // working from the same .scp, has no reason to create: the solver's proof
+        // is then checked against an OPB whose i[X][ge2] does not exist. In the
+        // proof it is a conservative extension, introduced by red exactly as a
+        // cut first needed during search is. A no-op when it already exists, and
+        // it cannot recurse back to here, ge_pins_arranged being set above.
+        need_gevar(id, v);
+
+        ProofRule assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+        auto annotation = AssertionAnnotation{.hint_name = hints::InitialBound::hint_name};
+        auto line = visit(
+            [&](auto vid) {
+                return logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::TopAndCore, annotation);
+            },
+            id);
+        // Remembered so that a step wanting this fact can cite it instead of
+        // emitting the same unit again --- which is what the pin being a
+        // persistent top-of-proof line is for.
+        _imp->atoms_for(id).ge_pins.insert_or_assign(v.raw_value, line);
+    });
 }
 
 auto NamesAndIDsTracker::boundary_pin_line(const SimpleOrProofOnlyIntegerVariableID & id, Integer v) const -> optional<ProofLine>
@@ -802,10 +1006,14 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     // The compact boolean encoding defines an eq atom at a bound using only the
     // one non-trivial order literal (eq(lower) <=> ~ge(lower+1), since ge(lower)
     // is always true; eq(upper) <=> ge(upper), since ge(upper+1) is always
-    // false). With it off (the default), every eq atom -- including those at the
-    // bounds -- is the full eq(v) <=> ge(v) & ~ge(v+1), so the trivial ge(lower)
-    // and ge(upper+1) literals are materialised (need_gevar emits and fixes
-    // them), matching cake_pb_cp's eager encoding.
+    // false). With it off (the default), every eq atom defined here -- including
+    // those at the bounds -- is the full eq(v) <=> ge(v) & ~ge(v+1), so the trivial
+    // ge(lower) and ge(upper+1) literals are materialised (need_gevar emits and
+    // fixes them), matching cake_pb_cp's eager encoding. An eq atom that is a
+    // primitive literal is not defined here at all, so the option does not reach
+    // it: every value literal of a direct-only variable, including the single bit
+    // of a default {0,1} variable, has its condition stored when the variable is
+    // set up, and returned at the top of this function.
     if (_imp->use_compact_boolean_encoding && bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first == v) {
         // it's a lower bound
         if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
@@ -1023,52 +1231,33 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     // is it a bound?
     auto bounds = _imp->integer_variable_definition_bounds.find(id);
 
-    auto fix_bound = [&](bool negated) {
-        // Pin a trivial boundary order literal -- ge(lower) (always true) or
-        // ge(ub+1) (always false) -- in the PROOF, never as an OPB axiom. The fact
-        // is a consequence of the variable's bound constraints, not a definition,
-        // so it does not belong in the OPB; cake_pb_cp likewise derives it rather
-        // than pinning it, so an OPB axiom would make our OPB diverge from cake's,
-        // and -- worse -- a pin re-derived per use does not survive VeriPB's
-        // post-solx enumeration restriction. Emitting it once as a persistent
-        // top-of-proof line (RUP-derivable from the bound constraints, or asserted
-        // at AssertionLevel::Links) keeps the OPB byte-clean and the pin available
-        // throughout both enumeration and refutation. emit_proof_line_now_or_at_start
-        // queues it to proof start when the logger is not yet attached (model
-        // building) and emits it immediately otherwise.
-        emit_proof_line_now_or_at_start([this, id, v, negated](ProofLogger * const logger) {
-            if (logger->get_assertion_level() > AssertionLevel::Links)
-                return;
-            ProofRule assert_or_rup =
-                logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-            auto annotation = AssertionAnnotation{.hint_name = hints::InitialBound::hint_name};
-            auto line = visit(
-                [&](auto vid) {
-                    return logger->emit(
-                        assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::TopAndCore, annotation);
-                },
-                id);
-            // Remembered so that a step wanting this fact can cite it instead of
-            // emitting the same unit again --- which is what the pin being a
-            // persistent top-of-proof line is for.
-            _imp->atoms_for(id).ge_pins.insert_or_assign(v.raw_value, line);
-        });
-    };
-
     // A variable whose bounds are not a trivial OPB consequence (see
     // bounds_not_trivially_derivable) gets no boundary pin -- pinning it would emit a
     // top-of-proof RUP line that is not actually reverse-unit-propagatable; its owner
     // derives the bounds explicitly instead.
     bool trivial_boundary = ! _imp->bounds_not_trivially_derivable.contains(id);
 
-    // lower?
-    if (trivial_boundary && bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first >= v) {
-        fix_bound(false);
-    }
-
-    // upper?
-    if (trivial_boundary && bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second < v) {
-        fix_bound(true);
+    // Inv-Bound (dev_docs/literal-encodings.tex) asks for one pin a side: the unit
+    // for the largest defined order cut at or below the declared lower bound, and
+    // for the smallest above the declared upper. The cut at the declared bound
+    // itself is the extreme one on its side, so pinning that --- and nothing else
+    // --- discharges the invariant, every other out-of-range cut following from it
+    // down the order chain (Inv-Chain, via Lemma 3.3). Pinning each out-of-range
+    // cut as it appeared, which is what this used to do, is stronger than the
+    // invariant asks and costs a persistent unit apiece: 2,258 of them across 68
+    // variable-and-side pairs on the tsp example, one cost variable carrying 255.
+    //
+    // Pinning the extreme cut of whatever is defined so far would not do, because
+    // cuts are created in no useful order: on the lower side the invariant wants
+    // the largest one, and a stream of cuts arriving in increasing order would
+    // need a fresh pin each time. The declared bound is the maximum possible such
+    // value, which is what makes pinning there a one-off.
+    if (trivial_boundary && bounds != _imp->integer_variable_definition_bounds.end()) {
+        auto [declared_lower, declared_upper] = bounds->second;
+        if (declared_lower >= v)
+            ensure_boundary_pin(id, declared_lower, false);
+        if (declared_upper < v)
+            ensure_boundary_pin(id, declared_upper + 1_i, true);
     }
 
     auto & other_gevars = _imp->gevar_values[id];
@@ -1638,6 +1827,58 @@ auto NamesAndIDsTracker::view_bounds(const ViewOfIntegerVariableID & view) const
     return view.negate_first ? pair{-x_hi + view.then_add, -x_lo + view.then_add} : pair{x_lo + view.then_add, x_hi + view.then_add};
 }
 
+auto NamesAndIDsTracker::derive_view_bound_lines(
+    const ViewOfIntegerVariableID & view, const ProofOnlySimpleIntegerVariableID & v_id, ProofLine link_le, ProofLine link_ge) -> void
+{
+    // Bnd(W) for a proper view variable W = s.X + c, from the view link and the
+    // underlying's own bound rows. With s = +1 the link's halves are
+    //
+    //     viewge :  BinEnc(W) - BinEnc(X) >=  c,
+    //     viewle : -BinEnc(W) + BinEnc(X) >= -c,
+    //
+    // so viewge + Bnd(X).lower is BinEnc(W) >= l_X + c = l_W, and viewle +
+    // Bnd(X).upper is -BinEnc(W) >= -(u_X + c) = -u_W. Every BinEnc(X) term
+    // cancels exactly, both rows carrying X's own bit coefficients with opposite
+    // signs, so no saturation is wanted and the results are Bnd(W) on the nose.
+    // With s = -1 the view's bounds come from the underlying's the other way
+    // round (l_W = c - u_X), and so do the rows the two pols want.
+    //
+    // No bound rows means the underlying is itself a free bit-sum, registered
+    // rather than set up --- by register_state_variable_bits_in_proof, or
+    // cake-named. It cannot mean the underlying has not been encoded yet, because
+    // need_view's view_bounds call above has already thrown for a variable with no
+    // tracked bounds, and every path that tracks bounds encodes as it goes. Such a
+    // variable's own bounds are not a model consequence, so the view's are not
+    // either, and it comes under the same rule the underlying is already under: no
+    // bound lines and no boundary pins. (A DirectOnly underlying cannot reach here
+    // at all --- need_view's link constraint is written over BinEnc(X), and
+    // each_bit has thrown by now for a variable without one.) Nothing in the tree
+    // takes a view of such a variable today.
+    auto x_rows = bound_rows(view.actual_variable);
+    if (! x_rows) {
+        note_bounds_not_trivially_derivable(v_id);
+        return;
+    }
+    auto [x_lower_row, x_upper_row] = *x_rows;
+
+    auto lower = make_shared<PolBuilder>();
+    lower->add(link_ge).add(view.negate_first ? x_upper_row : x_lower_row);
+    auto upper = make_shared<PolBuilder>();
+    upper->add(link_le).add(view.negate_first ? x_lower_row : x_upper_row);
+
+    // Queued before anything creates an atom of W --- need_view's backfill is the
+    // first thing that can, and it runs after this returns --- because a boundary
+    // pin on W is a RUP line that propagates from exactly these two lines. That is
+    // the whole reason W is not simply note_bounds_not_trivially_derivable.
+    emit_proof_line_now_or_at_start([this, v_id, lower, upper](ProofLogger * const logger) {
+        auto lower_line = lower->emit(*logger, ProofLevel::TopAndCore);
+        auto upper_line = upper->emit(*logger, ProofLevel::TopAndCore);
+        // As for a proof-only variable's OPB rows, tracked by line number: a view
+        // variable is never in a cake chain, so there is no label to match.
+        track_bound_rows(v_id, lower_line, upper_line);
+    });
+}
+
 auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID
 {
     if (auto it = _imp->view_proof_only_vars.find(view); it != _imp->view_proof_only_vars.end())
@@ -1654,7 +1895,13 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     if (view.then_add != 0_i)
         name += "_plus_" + to_string(view.then_add.raw_value);
 
-    auto v_id = _imp->model->create_proof_only_integer_variable(v_lo, v_hi, name, IntegerVariableProofRepresentation::Bits);
+    // Bnd(W) is not written to the OPB: it is a consequence of two rows that are
+    // (the view link below and the underlying's own bound rows), so as a model
+    // axiom it would be an OPB row cake_pb_cp has no reason to reproduce --- the
+    // objection create_proof_only_integer_variable_in_proof's comment already
+    // makes for a bit-sum introduced inside the proof. Derived by pol at the top
+    // of the proof instead, below.
+    auto v_id = _imp->model->create_proof_only_integer_variable_in_proof(v_lo, v_hi, name, ProofModel::InProofBounds::BeforeTheFirstAtom);
 
     Integer s_coeff = view.negate_first ? -1_i : 1_i;
 
@@ -1668,6 +1915,8 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     _imp->view_proof_only_to_view.emplace(v_id, view);
     _imp->view_link_ids.emplace(v_id, pair{link_le, link_ge});
     _imp->views_of_variable[view.actual_variable].push_back(v_id);
+
+    derive_view_bound_lines(view, v_id, link_le, link_ge);
 
     if (_imp->assertion_level > AssertionLevel::Links) // No further linking needed at higher assertion levels.
         return v_id;
@@ -1906,6 +2155,87 @@ namespace
     {
         return as_string(id) + "[" + role + "]";
     }
+}
+
+auto NamesAndIDsTracker::publish_derived_line_family(
+    const ConstraintID & id, const string & family, function<auto(ProofLogger &, Integer)->optional<ProofLine>> deriver) -> void
+{
+    if (! _imp->derived_line_families.emplace(derived_line_key(id, family), std::move(deriver)).second)
+        throw ProofError{"two derivers published for the line family '" + derived_line_key(id, family) +
+            "': a family name must say which family it is, so that a member can be derived unambiguously"};
+}
+
+auto NamesAndIDsTracker::find_or_derive_line_in_family(const ConstraintID & id, const string & family, Integer index, ProofLogger & logger)
+    -> optional<ProofLine>
+{
+    auto member = derived_line_key(id, family) + "[" + to_string(index.raw_value) + "]";
+    if (auto already = _imp->derived_family_lines.find(member); already != _imp->derived_family_lines.end())
+        return already->second;
+
+    auto deriver = _imp->derived_line_families.find(derived_line_key(id, family));
+    if (deriver == _imp->derived_line_families.end())
+        return nullopt;
+
+    auto derived = deriver->second(logger, index);
+    if (! derived)
+        return nullopt;
+
+    // Memoised only on success: a deriver that declined once may well be asked
+    // again for a different reason, and caching the decline would turn "not
+    // this time" into "never".
+    _imp->derived_family_lines.emplace(member, *derived);
+    return derived;
+}
+
+auto NamesAndIDsTracker::publish_flag_definer(const ConstraintID & id, function<auto(ProofLogger &, const ProofFlagKey &)->void> definer) -> void
+{
+    if (! _imp->flag_definers.emplace(as_string(id), std::move(definer)).second)
+        throw ProofError{"constraint published a flag definer twice"};
+    _imp->any_flag_definers = true;
+}
+
+auto NamesAndIDsTracker::ensure_flag_defined(const ConstraintID & id, const ProofFlagKey & key, ProofLogger & logger) -> void
+{
+    if (! _imp->any_flag_definers)
+        return;
+    auto definer = _imp->flag_definers.find(as_string(id));
+    if (definer == _imp->flag_definers.end())
+        return;
+
+    // Keyed on the same string the flag's own name is built from, so a second
+    // ask --- from this constraint or from anyone citing it --- is free.
+    auto memo = bracketed_flag_name('v', id, key.values, key.annotation);
+    if (! _imp->defined_flag_keys.emplace(memo).second)
+        return;
+    definer->second(logger, key);
+}
+
+auto NamesAndIDsTracker::constraint_row(const ConstraintID & id, const string & role) const -> optional<ProofLine>
+{
+    if (auto label = constraint_row_label(id, role))
+        return ProofLine{*label};
+    return find_derived_line(id, role);
+}
+
+auto NamesAndIDsTracker::register_in_proof_reification(const ProofFlag & flag, ProofLine implies, ProofLine implied_by) -> void
+{
+    // Keyed on the flag's PB rendering, which is what a citer has in hand and
+    // what the model-side labels are built from, so the two ways of defining a
+    // flag are asked about identically.
+    auto [_, inserted] = _imp->in_proof_reifications.emplace(pb_file_string_for(flag), pair{implies, implied_by});
+    if (! inserted)
+        throw ProofError{"flag " + pb_file_string_for(flag) + " had its reification emitted in the proof twice"};
+    _imp->any_in_proof_reifications = true;
+}
+
+auto NamesAndIDsTracker::in_proof_reification(const ProofFlag & flag) const -> optional<pair<ProofLine, ProofLine>>
+{
+    if (! _imp->any_in_proof_reifications)
+        return nullopt;
+    auto found = _imp->in_proof_reifications.find(pb_file_string_for(flag));
+    if (found == _imp->in_proof_reifications.end())
+        return nullopt;
+    return found->second;
 }
 
 auto NamesAndIDsTracker::publish_derived_line(const ConstraintID & id, const string & role, ProofLine line) -> void

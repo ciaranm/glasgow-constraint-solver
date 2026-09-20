@@ -328,6 +328,75 @@ direction's bound resolutions is rejected under views as well as bare (#931). Th
 one operand that still keeps the per-value path is a **constant**, which has no
 order-encoding atom to resolve against at all.
 
+### `Plus` and `Minus` under `consistency::GAC`: a sum of three (#192)
+
+`Plus`' row is a sum of *three* variables, so it is outside Theorem 2.9 for the
+same reason as `Abs`' negative branch, and more so: there is no difference to
+pair a lower bound against an upper one across. Its `consistency::GAC` arm
+removes whole runs that no pair of operand values sums to, and each removal is
+justified by `pol` bound lemmas in the `Abs` shape: one half of the sum line,
+plus the defining line of one bound atom per non-constant variable, chosen so
+that every variable's terms cancel, then saturated into a clause. **Every lemma
+is one of the bounds propagator's six rules, stated at an interval's endpoints
+instead of at the domain's bounds.**
+
+To remove a run from one variable, the proof walks another operand's intervals
+in order. For each interval, the values of the third operand that could
+complete the sum form a window. That window lies past the third operand's
+bounds, or inside one of its holes: a lemma takes the walk into the hole, the
+reason's range literal for the hole steps it over, and a second lemma pushes
+the walked operand past the interval, where its own hole literal takes over.
+Windows move monotonically, so the ones past the bounds form a prefix and a
+suffix and cost one lemma each. A removal is therefore at most two lines per
+interval whose window falls inside a hole, plus two, plus the closing RUP,
+whatever its width. `gcs/constraints/plus_minus/gac.cc` has the argument in
+full, including why the reason is built from the same copy of the domains as
+the lemmas.
+
+The lemmas are load-bearing, and not only for holes. `plus_mutation_lemmas`,
+`plus_mutation_hole_lemmas` and `plus_mutation_window_holes` are rejected, and
+`plus_mutation_control` verifies. Omitting every lemma is rejected at a removal
+whose windows lie entirely past the bounds, so even the bounds-shaped case is not
+RUP across the sum. The instance takes its hole under a decision, through an
+`EqualsIf`, because a root hole is a fact the checker already has, which is the
+#936 lesson again.
+
+`Minus` shares the arm and the proof. The two differ in one coefficient of the
+row, and the arm is written over the user's own three variables with signed
+coefficients. It deliberately avoids rewriting `Minus` as `Plus` over a
+synthesised `-b` view, because that view is what broke the bounds propagator's
+`pol` in `2ec1297e`.
+
+**What the arm pays for is pairs of intervals, not width, so `consistency::Dynamic`
+caps those.** One step combines every interval of one operand with every interval
+of the other, so two operands of 3000 intervals each cost 3.2 s at the root where
+bounds consistency costs 0.1 s. Under `consistency::Dynamic`, a step whose operands
+have more than `default_interval_pairs_threshold()` pairs (1024, or
+`GCS_INTERVAL_PAIRS_THRESHOLD`) combines each operand with the other's hull
+instead: linear in the intervals, stronger than bounds consistency, and justified
+by the same lemmas, since a hull is a list of one interval with no holes for a
+window to land in. `Plus/many-intervals` (Auto, so `Dynamic`) is `Clean` in the
+audit lane, and `Plus/many-intervals-gac` is the `KnownTrip` it avoids.
+`plus_minus_constraint_dynamic_fallback` runs the whole `plus_minus_test` with the
+threshold at zero, so that every step falls back and every fallback proof is
+checked.
+
+**The threshold is a cap, not a way of choosing the arm, and the measurements say
+why.** On eight models built for #192, the per-step pair counts where GAC paid
+(all-interval, two Golomb rulers, a holey sum chain, a magic square with its line
+sums decomposed into `Plus` chains, `langford`) never exceeded 289. The two
+models where bounds consistency won did not have larger pair counts. They lost
+because nothing read the interior values the arm computed: in a calendar
+schedule, the end times feed only `LessThanEqual`. That is #902's axis
+(observability), not this one (cost). So the threshold sits well above the
+first group, where it never fires, and caps the cost of a step on pathological
+domains at about a tenth of a millisecond.
+
+`Auto` is `Dynamic`, which on those models beat tabulation (by 6 to 37%) and
+bounds consistency (by up to 2.1x) in every case where GAC paid. The exception
+is small domains where two positions share a variable. There tabulation reaches
+GAC and the interval arm does not, so `Auto` still tabulates.
+
 ### Sabotaging proof lines one at a time under-reports
 
 The same work produced a methodology result worth having, because the obvious way
@@ -665,6 +734,18 @@ Two kinds of check, and the difference matters:
   covers the walk, which is what it was ever counting. The remaining variable
   with no range literal is a bits-less (direct-only, so zero-one) one, which has
   no interior run to state.
+
+  **The restatement and the walk that finds it are two different costs, and #935
+  is the one where only the second was wrong.** `materialise_generic()` in
+  `reason.cc` already stated a holey domain as one `not_in_range` per run — the
+  right output — but found those runs by testing every value between the bounds
+  for membership. A domain is an `IntervalSet`; its runs are the gaps between
+  consecutive intervals, so they can be read off rather than searched for. Three
+  variables of three values each, spread over `0..10^9`, cost 16.8 s of run-finding
+  under `Among` and now cost nothing measurable. **So the question to ask of an
+  interval rewrite is not only "is the output one literal per run" but "is the
+  work one step per run" — a site can pass the first and fail the second, and the
+  proof-scaling survey cannot tell, because the proof was already the right size.**
 * **`GCS_CHECK_LARGE_DOMAIN`** checks a size up front, for the H3 sites that
   commit to a whole array at once.
 
@@ -705,14 +786,14 @@ is the part worth reading carefully:
 
 ### Where we stand
 
-81 constraint probes, plus 20 heuristic ones in the second table. The lane
+86 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
-| **KnownTrip** (19) | `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (47) | the arithmetic family (with four rows of its own for `Abs`' interior holes, two of them view-wrapped), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among`, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
+| **KnownTrip** (20) | `Plus/many-intervals-gac` (the exact interval arm over two operands of 400 intervals, which `Dynamic` exists to cap), `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
+| **Clean** (51) | the arithmetic family (with four rows of its own for `Abs`' interior holes, two of them view-wrapped, one each for `Plus`' and `Minus`' `consistency::GAC` arm over holey operands, and `Plus/many-intervals` under `Auto`), comparison, equality, linear, `AllDifferent` under `VC`, `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among` contiguous and holey, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
 | **NoWidePosition** (15) | the graph and permutation family, and the Boolean constraints |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`
@@ -749,6 +830,15 @@ the answer for all of them at once; a lane that only ever asks it about bare
 variables cannot tell which ones were updated. With #931 there is no site left in
 the tree still answering it the old way, but that is a fact about today's tree
 and not a property the lane enforces — the rows are what enforce it.
+
+**`Among/holey` is the same lesson on a second axis: wide, holey, and reaching a
+*reason*.** The lane had ten wide-and-holey rows before it and not one of them
+reached a reason — `Among`, `Table`, `Nogoods`, `MinDistance` and `In/vars` all
+post contiguous wide variables — so `materialise_generic()`'s per-value
+run-finding, which sits behind the 31 constraints that call `generic_reason()`,
+was invisible here (#935). The axes a row can vary are the width, the holes, the
+variable's *kind*, and whether the probe gets as far as materialising a reason;
+most rows vary only the first.
 
 It has a **third** site, and finding it was a lesson about the axes a row covers
 rather than about the constraint. `with_closed()` installs a propagator of its
@@ -966,6 +1056,141 @@ ns/node before and 3 912 after, i.e. no difference outside noise, because a
 branching decision is a per-cent of what a node costs. The trade is a constant
 against an asymptote, which is the right way round.
 
+## The proof-size lane
+
+The audit lane above solves **without** `ProofOptions`, so nothing that happens
+only while a proof is being written is reachable from it: no justification is
+emitted and no reason is materialised. The `[.proofscaling]` survey below can see
+that work, but a survey is run by hand and pins nothing. Between them sat a class
+with no instrument at all, and #935, #936 and #939 all came out of it.
+
+`TEST_CASE("Large domain proof sizes")` in the same file is the gate for it. Each
+row is one shape — a variable **declared** over a wide range, a domain confined by
+`In` to a couple of values inside it, and an inference whose justification names
+those values — solved with proofs, and its proof both counted and checked with
+VeriPB. The bound is loose on purpose: it separates "a few hundred lines" from
+"one line per value", which is orders of magnitude, not a byte count to retune
+whenever the encoding shifts. Checking as well as counting matters, because a
+small proof that does not verify is a worse outcome than a big one that does.
+
+**This shape is why the class was invisible.** Every other probe in the file gets
+its wide definition range *by* wanting a wide domain, so a variable whose domain
+is narrow while its definition range is wide never arose — and that is exactly the
+gap between a domain (what a propagator sees) and a definition range (what the
+proof encoding names). Before #939 each of these rows wrote about 66 × width proof
+lines; the lane fails in about 40 seconds if that comes back, against 0.2 seconds
+when it has not.
+
+### At-least-one constraints span the definition range (#939)
+
+`need_constraint_saying_variable_takes_at_least_one_value` spells its at-least-one
+out one term per value over the variable's whole **definition** range, and asking
+for those eq atoms also splits the variable's interval partition into singletons,
+so every later covering is span-proportional too. Neither cost has anything to do
+with how many values the variable can still take.
+
+`..._over_cover(var, singled_out)` states the same fact over an interval cover
+instead: the caller's values of interest as their own eq atoms, the maximal runs
+between and around them as one range literal each. A pol that adds it gets the
+same `+[x = v]` for each named value, so cancellation against per-value
+at-most-ones and count lines is unchanged; what differs is the residue, one term
+per run rather than one per unnamed value. The caller's reason has to rule those
+runs out, which it does exactly when it pins the variable's bounds and excludes
+its holes — a run outside the bounds dies on the order chain, and a run inside one
+sits inside an excluded hole, so containment falsifies it. `generic_reason` and
+the Hall-set reasons all qualify.
+
+Measured by the lane itself, so every figure here is one command away. The rows
+are the three in `TEST_CASE("Large domain proof sizes")`, at its own width of
+10^4; the "before" column is the same lane with `worth_a_cover` forced to return
+false, which is also its negative control:
+
+```shell
+./build/large_domain_audit_test "Large domain proof sizes"
+```
+
+| row | before | after |
+|---|---|---|
+| `GlobalCardinality/confined` | 659 934 | **129** |
+| `AllDifferent/confined` | 659 937 | **132** |
+| `Among/confined` | 659 940 | **135** |
+
+The after column is flat in the declared width, which is the claim that matters:
+`GlobalCardinality` and `Among` hold at 129 and 135 lines at 10^3, 10^4, 10^5 and
+10^9, VeriPB-verified at each. `AllDifferent` holds at 132 up to 10^5 and cannot
+be checked at 10^9 — not because of anything here, but because `AllDifferent`'s
+GAC setup still wants a graph vertex per value and does not finish, which is the
+`KnownTrip` the audit lane records for it.
+
+**Quote the lane, not a probe.** An earlier version of this table gave 255 and
+660 057 for `GlobalCardinality` and 133 for `AllDifferent`, which were a
+standalone probe's numbers: a *satisfiable* instance with counts `0..2` and six
+solutions, where the lane's row is UNSAT with counts `0..1`, and measured before
+the follow-up commit that made each caller name only the values its variable can
+still take. Two different instances sat one paragraph apart under one heading.
+The shape of the result was right and the flatness was real, but a reader
+reproducing the table would have got different numbers with no way to tell why.
+
+**It is a threshold, not an unconditional rewrite, and that is the interesting
+part.** The per-value line is emitted once per variable and then serves every
+cover anyone asks for, because it names every value; a cover is specialised, so a
+caller whose cover changes from firing to firing — a Hall set — pays a line per
+distinct one. Over a *narrow* definition range each of those lines is about as big
+as the single per-value line it replaces, and there are many of them: going to
+covers unconditionally cost `sudoku` 16 % more proof lines and `ortho_latin` 3 %,
+for variables declared over nine values, where naming every value was never the
+problem. Caching the cover lines recovered only a fifth of that, because the Hall
+sets genuinely differ. With the width test the examples are byte-identical again
+(`ortho_latin`, `sudoku`, `crystal_maze`, `colour`, `n_fractions` all unchanged to
+the line) and the wide case is flat. **A rewrite that is asymptotically better can
+still be worse everywhere anyone actually is**, and the only way to find that out
+is to measure the narrow case as well as the wide one.
+
+`subcircuit` deliberately keeps the per-value form: its pigeonhole needs every
+value named, and a successor's definition range *is* the node set, so there is no
+width there to spend on values the counting does not use.
+
+Each caller names only the values **its variable can still take**, not its whole
+value set. The two are different whenever the value set is a Hall set, a cover or
+a union of domains and one variable's domain is a small part of it, and the
+correspondence it buys is worth more than the terms: the residue is then exactly
+the complement of the domain, which is exactly what the reason states, so the
+leftovers discharge by construction instead of by an argument about which runs
+happen to sit inside which holes. Measured, it is a **0.5–0.8 % proof-size**
+saving on a Hall violator whose hall set is four to sixty-four times any one
+domain — real, but small, because the at-least-ones are not where the volume is
+(the pairwise at-most-ones are, and they are cached at Top). It does **not**
+remove the need for the width threshold: it makes each line smaller, and the
+narrow-domain regression is about how *many* lines there are, so `sudoku` only
+improves from +16.3 % to +10.4 % with the threshold off.
+
+### AllDifferent's compressed value set was quadratic
+
+Separately from anything proof-shaped, `AllDifferent::prepare` built its
+compressed value set --- the union of the initial domains, which is the right-hand
+side of GAC's bipartite graph --- by walking every value of every domain and
+doing a **linear scan of what it had collected so far** for each one. That is
+O(values x distinct values), so it was asymptotically worse than the algorithm it
+feeds:
+
+| initial domain | before | after |
+|---|---|---|
+| `0..10^4` | 67 ms | 2 ms |
+| `0..10^5` | 6 637 ms | 38 ms |
+| `0..10^6` | did not finish in 200 s | 528 ms |
+
+Membership now goes through a set, leaving the order --- first-seen, and so the
+value indices the propagator's graph uses --- exactly as it was: 340 proof
+artefacts across the two `AllDifferent` test binaries are byte-identical at a
+pinned seed. `AllDifferentExcept` had the same loop and gets the same treatment.
+
+**This does not change the audit lane's verdict, and should not.** GAC still wants
+a graph vertex per value, so a genuinely wide domain is still the `KnownTrip` the
+lane records, and what it needs is stage 5's weaker arm rather than a faster
+setup. What the fix removes is only the part that was gratuitous: `consistency::VC`
+on the same probe was 0 ms at every width throughout, which is what made the
+attribution unambiguous.
+
 ## Proofs
 
 **Out of scope for fixing.** Several of these have no viable fix today, and a
@@ -1020,7 +1245,7 @@ time, and the row is now flat at 93.
 | **Both** grow | 10x / 10x | `Power`, `PowerTable`, `NValue`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD` |
 | **OPB only** | 10x / 1.0x | `Cumulative` (19046 → 190046 rows; one capacity line per time point, so it is H3 on the encoding side) |
 | **Steps only** | 1.0x / 10x | `GlobalCardinality/hall` (34-row OPB fixed, 43988 → 439988 steps) |
-| neither | 1.0x / 1.0x | everything else, 72 of 81 |
+| neither | 1.0x / 1.0x | everything else, 73 of 82 |
 
 The last row means "does not grow with the width", not "identical at both widths",
 and three entries in it are worth naming so nobody reads them as a promise.
@@ -1208,13 +1433,13 @@ eq/ge atoms for `Regular` and `NValue`, reified flag halves for `Cumulative` —
 not one.
 
 **`Cumulative` already has its fix, and it is the useful counterexample.** The
-figures above are the `TimeIndexed` encoding, which is still the default: three
-fully-reified flags and a load line per (task, time point). PR #781 (for #780)
-replaces it with a horizon-free start-checkpoint encoding, and on the same
-instance that is 1945 → **46** rows at `0..100` and 190045 → **46** at
-`0..10000`, flat in the horizon. It is opt-in behind
-`GCS_CUMULATIVE_ENCODING=start-checkpoint`; #781 says the default is deliberate
-pending a measurement over #777.
+figures above are the `TimeIndexed` encoding: three fully-reified flags and a
+load line per (task, time point). PR #781 (for #780) replaced it with a
+horizon-free start-checkpoint encoding, and on the same instance that is
+1945 → **46** rows at `0..100` and 190045 → **46** at `0..10000`, flat in the
+horizon. It was opt-in behind `GCS_CUMULATIVE_ENCODING=start-checkpoint` when
+#781 landed; since #943 it is the only encoding `Cumulative` ships, and the
+figures above are therefore history rather than the current cost.
 
 This is worth remembering when arguing that a shape needs checker support. Before
 #781, `Cumulative` looked like the case with no way out — time-indexing was "what

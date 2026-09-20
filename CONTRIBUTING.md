@@ -18,15 +18,22 @@ should be able to see at a glance that AI was involved and which tool was used.
 change is correct---not merely that it compiles and passes tests. Rubber-stamping
 AI output without understanding it is not acceptable.
 
-All contributions should pass both the `release` and `sanitize` build and tests
-before submission, including the full test suite (with VeriPB installed) in
-both modes. See `README.md` for the build and test commands, and
-`dev_docs/building.md` for the build options, the supported toolchains, and
-what each CI lane covers. Note that a default build applies
-per-solve caps to the data-driven constraint tests, which check soundness and a
-partial proof but not completeness; when you have changed a propagator,
-configure with `-DGCS_TEST_CAP_DEFAULTS=OFF` so that they enumerate fully, as
-the two default-GCC Ubuntu CI lanes do.
+All contributions should pass the `release` build and its full test suite
+(with VeriPB installed) before submission. See `README.md` for the build and
+test commands, and `dev_docs/building.md` for the build options, the supported
+toolchains, and what each CI lane covers.
+
+Running the `sanitize` build and tests as well is a good idea if your change
+does something dangerous: raw pointers or indexing, object lifetimes, or
+integer arithmetic that could overflow. AddressSanitizer and UBSan catch
+mistakes there that a release run passes straight over, and a local run gets
+you the backtrace sooner than CI will. It is not mandatory, though: CI runs the
+same `ctest --preset sanitize` on every pull request regardless.
+
+Note that a default build applies per-solve caps to the data-driven constraint
+tests, which check soundness and a partial proof but not completeness; when you
+have changed a propagator, configure with `-DGCS_TEST_CAP_DEFAULTS=OFF` so that
+they enumerate fully, as the two default-GCC Ubuntu CI lanes do.
 
 What agents are currently good and bad at here
 ----------------------------------------------
@@ -172,6 +179,19 @@ Before deleting a remote branch, check that no open pull request is based on it
 (`gh pr list --base <branch> --state open`). Deleting a branch that is an open
 PR's base **closes that PR**; GitHub does not retarget it, and the close is not
 reversible by recreating the branch.
+
+Link a pull request to the issue it finishes with a closing keyword in the PR
+description: `Closes #209`, or `Fixes` or `Resolves`, which GitHub treats alike.
+The keyword only works from the description or from a commit that lands on
+`main`; naming the issue in the PR *title* is a link and nothing else, so the
+issue stays open after the work is merged until somebody notices and closes it
+by hand. #633 to #636 sat open for six weeks that way, and an open issue is a
+poor signal when it may mean either "not started" or "shipped and forgotten".
+
+One keyword per issue the pull request actually finishes. A pull request that
+advances an issue without finishing it should say so in prose and leave the
+keyword out, and a stacked pull request should carry one only if merging *it* is
+what finishes the issue --- see above for why MERGED does not mean landed.
 
 Developer Documentation
 =======================

@@ -11,6 +11,49 @@
 
 namespace gcs::innards
 {
+    class NamesAndIDsTracker;
+
+    /**
+     * \brief Which half of a fully reified flag's definition to cite.
+     *
+     * The names read backwards from the labels, which is ProofModel's doing:
+     * `Implies` is `flag -> ineq` and is labelled `[r]`; `ImpliedBy` is
+     * `ineq -> flag` and is labelled `[f]`.
+     *
+     * \ingroup Innards
+     */
+    enum class ReificationHalf
+    {
+        Implies,
+        ImpliedBy
+    };
+
+    /**
+     * \brief How to cite one half of a fully reified flag's definition,
+     * whichever way that definition was emitted.
+     *
+     * A flag reified by ProofModel has its halves as labelled OPB rows, and
+     * this gives the label. One reified inside the proof
+     * (ProofLogger::emit_red_proof_lines_reifying, recorded with
+     * NamesAndIDsTracker::register_in_proof_reification) has line numbers and
+     * no labels, and this gives the line. ProofLine is already the variant of
+     * the two, so a caller adding the result to a PolBuilder needs to know
+     * neither which it got nor which it was going to get --- which is the
+     * point, because #780 moves Cumulative's per-(task, time) flags from the
+     * first kind to the second under one encoding and not the others.
+     *
+     * The label is built from the flag's full PB rendering rather than from
+     * `name_of`, whose plain-flag form is the bare stem and would name the
+     * wrong row or none. For a ConstraintID-keyed flag --- `v[id][..]`,
+     * `x[id][..]`, which is every flag #780 cares about --- the two coincide.
+     *
+     * \throws ProofError if asked about a negated flag, whose halves are
+     * labelled and recorded under the positive one.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto reification_half(const NamesAndIDsTracker &, const ProofFlag &, ReificationHalf) -> ProofLine;
+
     /**
      * \brief Derive `from -> to`, as the line `~from + to >= 1`, for two flags
      * fully reified on inequalities over the same terms.

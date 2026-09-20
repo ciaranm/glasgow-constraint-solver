@@ -274,13 +274,36 @@ namespace gcs::innards
             const std::optional<CakeBitNaming> & = std::nullopt) -> ProofOnlySimpleIntegerVariableID;
 
         /**
+         * When, in a proof, a create_proof_only_integer_variable_in_proof variable's
+         * bound lines appear.
+         */
+        enum class InProofBounds
+        {
+            /**
+             * Later, wherever the owner needs them. The variable's bounds are
+             * therefore not available to a need_gevar boundary pin, which would be
+             * a top-of-proof RUP line with nothing to propagate from, so
+             * note_bounds_not_trivially_derivable suppresses the pins.
+             */
+            WhenTheOwnerNeedsThem,
+            /**
+             * At the top of the proof, ahead of every atom of the variable --- the
+             * caller derives them, by `pol` over rows the OPB does have, before it
+             * lets anything create an atom. A boundary pin then propagates from
+             * them exactly as it would from OPB bound rows, so the pins stay.
+             */
+            BeforeTheFirstAtom
+        };
+
+        /**
          * Create a bits-encoded proof-only variable whose encoding is NOT emitted
          * to the OPB. The bits are registered (named, usable in proof expressions)
          * but the model asserts nothing about them; the caller introduces the
          * variable's meaning inside the proof (see ProofLogger::introduce_bits_of).
          * The bits analogue of NamesAndIDsTracker::create_literals_for_introduced_variable_value.
          */
-        [[nodiscard]] auto create_proof_only_integer_variable_in_proof(Integer, Integer, const std::string &) -> ProofOnlySimpleIntegerVariableID;
+        [[nodiscard]] auto create_proof_only_integer_variable_in_proof(
+            Integer, Integer, const std::string &, InProofBounds = InProofBounds::WhenTheOwnerNeedsThem) -> ProofOnlySimpleIntegerVariableID;
 
         /**
          * Register a bits encoding for an already-state-allocated integer variable

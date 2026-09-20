@@ -120,6 +120,9 @@ git ls-files '*.cc' '*.hh' | grep -v '^XCSP3-CPP-Parser/' | xargs clang-format -
 j=$(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 
 cmake --preset release  && cmake --build --preset release  && ctest --preset release  -j $j
+
+# optional: CI runs this on every pull request, but it is worth running first
+# when the change is a dangerous one (CONTRIBUTING.md says which)
 cmake --preset sanitize && cmake --build --preset sanitize && ctest --preset sanitize -j $j
 ```
 
