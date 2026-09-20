@@ -122,7 +122,7 @@ namespace
         built.before_rows.resize(axes);
         built.guard_coefficients.resize(axes);
 
-        long long var_nr = 0;
+        unsigned long long var_nr = 0;
         for (size_t i = 0; i < n; ++i) {
             vector<SimpleIntegerVariableID> row;
             for (size_t d = 0; d < axes; ++d) {
