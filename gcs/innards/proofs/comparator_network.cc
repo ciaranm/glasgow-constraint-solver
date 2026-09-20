@@ -138,6 +138,12 @@ auto ComparatorNetwork::assume(const WPBSum & guard) -> void
     _guard = guard;
 }
 
+auto ComparatorNetwork::assume_with_guarded_separations(const WPBSum & guard) -> void
+{
+    _guard = guard;
+    _clauses_guarded = true;
+}
+
 auto ComparatorNetwork::set_bounds(const ProofWire & start) -> void
 {
     auto guarded = [&](WPBSum sum) {
@@ -419,6 +425,11 @@ auto ComparatorNetwork::derive_gap(const Comparator & c) -> ProofLine
     add_terms(goal, c.hi, 1_i);
     add_terms(goal, c.lo, -1_i);
     add_terms(goal, c.d_lo, -1_i);
+    // A guarded clause enters `running` at one and is multiplied by `big`
+    // below, so the half carries the guard at `big` and the goal must too.
+    if (_clauses_guarded)
+        for (const auto & term : _guard.terms)
+            goal += term;
 
     if (holds_alternative<comparator_network_mutation::RupGap>(_mutation))
         return _logger.emit_rup_proof_line(move(goal) >= 0_i, _level);
@@ -561,9 +572,18 @@ auto ComparatorNetwork::transfer(const ProofWire & out, const ProofWire & other,
     WPBSum goal;
     goal += 1_i * flags.x_first;
     goal += 1_i * flags.y_first;
+    // This is a clause, and a transfer is clause-to-clause, so the guard rides
+    // it at ONE. Putting `_guard`'s own `big` here instead is what makes the
+    // next level's gap split see `big * big` against a goal offering `big`.
+    if (_clauses_guarded)
+        for (const auto & term : _guard.terms)
+            goal += 1_i * term.variable;
 
     map<ProofGoal, Subproof> subproofs;
     subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
+        // The negated goal, as case_split takes it: the last line in when the
+        // subproof opens. Needed to discharge the guard at the end.
+        auto negation = sub_logger.get_current_proof_line();
         // Under the negated goal neither flag holds, so both reverse halves
         // fire: the output is not before the other wire, and the other wire is
         // not before the output.
@@ -606,6 +626,13 @@ auto ComparatorNetwork::transfer(const ProofWire & out, const ProofWire & other,
 
         PolBuilder both;
         both.add(kills[0]).add(kills[1]);
+        // Unguarded this is already `0 >= 1`. Guarded it is `2 * guard >= 1`,
+        // which the negated goal refutes by propagation --- but a subproof has
+        // to END on a syntactic contradiction, so saturate to `guard >= 1` and
+        // add the negation: the guard's two polarities fold into the degree and
+        // what is left is `~x_first + ~y_first >= 3`.
+        if (_clauses_guarded)
+            both.saturate().add(negation);
         both.emit(sub_logger, ProofLevel::Temporary);
     }});
 
@@ -680,6 +707,11 @@ auto ComparatorNetwork::sort(const vector<ProofWire> & tasks) -> SortedTasks
                 add_terms(goal, *previous_maximum, 1_i);
                 add_terms(goal, c.hi, -1_i);
                 add_terms(goal, c.d_hi, -1_i);
+                // Built from gap rows, which carry the guard at `big` once the
+                // clauses are guarded, so this goal carries it too.
+                if (_clauses_guarded)
+                    for (const auto & term : _guard.terms)
+                        goal += term;
                 carried = case_split(move(goal) >= 0_i, {selected.emit(_logger, _level), not_selected.emit(_logger, _level)});
             }
 
