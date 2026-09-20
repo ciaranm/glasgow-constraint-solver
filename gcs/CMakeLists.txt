@@ -410,6 +410,7 @@ if(GCS_BUILD_TESTS)
     add_executable(disjunctive_published_nfnl_test constraints/disjunctive/disjunctive_published_nfnl_test.cc)
     add_executable(disjunctive_2d_test constraints/disjunctive_2d/disjunctive_2d_test.cc)
     add_executable(disjunctive_2d_optional_test constraints/disjunctive_2d/disjunctive_2d_optional_test.cc)
+    add_executable(disjunctive_2d_relaxation_test constraints/disjunctive_2d/disjunctive_2d_relaxation_test.cc)
     add_executable(divide_modulus_test constraints/divide_modulus/divide_modulus_test.cc)
     add_executable(element_test constraints/element/element_test.cc)
     add_executable(equals_test constraints/equals/equals_test.cc)
@@ -461,7 +462,7 @@ if(GCS_BUILD_TESTS)
 
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test bin_packing_test comparison_test
-            count_test cumulative_test cumulative_overload_test cumulative_edge_finding_test cumulative_ttef_test cumulative_energetic_test cumulative_nfnl_test cumulative_published_nfnl_test cumulative_kaoc_test cumulative_optional_test derived_cumulative_test difference_test disjunctive_test disjunctive_optional_test disjunctive_overload_test disjunctive_edge_finding_test disjunctive_nfnl_test disjunctive_precedences_test disjunctive_set_precedences_test disjunctive_published_nfnl_test disjunctive_2d_test disjunctive_2d_optional_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
+            count_test cumulative_test cumulative_overload_test cumulative_edge_finding_test cumulative_ttef_test cumulative_energetic_test cumulative_nfnl_test cumulative_published_nfnl_test cumulative_kaoc_test cumulative_optional_test derived_cumulative_test difference_test disjunctive_test disjunctive_optional_test disjunctive_overload_test disjunctive_edge_finding_test disjunctive_nfnl_test disjunctive_precedences_test disjunctive_set_precedences_test disjunctive_published_nfnl_test disjunctive_2d_test disjunctive_2d_optional_test disjunctive_2d_relaxation_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
             logical_test mdd_test min_distance_test min_distance_matching_test min_max_test mini_linear_test multiply_test n_value_test nogoods_test parity_test parity_system_test
             plus_minus_test power_test product_bounds_test product_justify_test reachable_test dag_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test subgraph_test tree_test path_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
@@ -799,6 +800,23 @@ if(GCS_BUILD_TESTS)
     foreach(mode strict nonstrict)
         add_test(NAME disjunctive_2d_constraint_${mode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_test> ${mode})
+    endforeach()
+    # The cumulative relaxation writes several proofs under names of its own and
+    # checks each with veripb in-process, as the 1D overload test does, so the
+    # harness only has to run it. The --search lane is separate because it
+    # enumerates and verifies a proof per generated instance and takes
+    # correspondingly longer --- and it is the one that matters, hand-built
+    # fixtures being symmetric enough to verify straight through a bug.
+    add_test(NAME disjunctive_2d_relaxation
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_relaxation_test>)
+    add_test(NAME disjunctive_2d_relaxation_search
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_relaxation_test> --search 24)
+    foreach(mutation emit_nothing skip_refutation skip_guard_weakening skip_escape_pins)
+        add_test(NAME disjunctive_2d_relaxation_mutation_${mutation}
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                --basename disjunctive_2d_relaxation_mutation_${mutation} $<TARGET_FILE:disjunctive_2d_relaxation_test> --mutate=${mutation})
+    endforeach()
+    foreach(mode const constgac const2d var var2d)
     endforeach()
     foreach(mode strict nonstrict falsify)
         add_test(NAME disjunctive_2d_optional_constraint_${mode}
@@ -1367,6 +1385,18 @@ if(GCS_BUILD_TESTS)
     foreach(mode bijection cumulative)
         set_property(TEST disjunctive_optional_constraint_${mode} APPEND PROPERTY ENVIRONMENT
             "GCS_TEST_MAX_SOLUTIONS=;GCS_TEST_MAX_RECURSIONS=")
+    endforeach()
+
+    # And for the 2D cumulative relaxation, for the same reason one step on:
+    # what those lanes check is that a *stronger* rule loses no solution, and a
+    # cap that fires leaves a prefix with nothing to say about that. They do
+    # write proofs, so the caps would otherwise be doing their job --- but the
+    # instances are two to four rectangles over four positions each, so the
+    # enumeration is bounded by construction, and both lanes together run in
+    # under two seconds with VeriPB checking every proof. The test fails loudly
+    # if a cap ever does fire, rather than quietly comparing prefixes.
+    foreach(lane disjunctive_2d_relaxation disjunctive_2d_relaxation_search)
+        set_property(TEST ${lane} APPEND PROPERTY ENVIRONMENT "GCS_TEST_MAX_SOLUTIONS=;GCS_TEST_MAX_RECURSIONS=")
     endforeach()
 
     # Pin the linear incremental threshold per test variant: 0 = always incremental,

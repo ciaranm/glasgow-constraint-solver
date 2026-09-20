@@ -1310,6 +1310,116 @@ shape-independent derivation, not one that happens to hold small.
 verified-encoding chain rather than silently mismatched against the
 plain encoder — the same reason 1D's optional form is named apart.
 
+### The cumulative relaxation (#972)
+
+Off by default, behind `Disjunctive2DRules::cumulative_relaxation`.
+Project the rectangles onto one axis and they become a `Cumulative`:
+rectangle `i` is a task with start `pos_i` and duration `size_i` on
+that *time* axis, of height its size on the other — the *resource* —
+axis, on a resource whose capacity is the extent the set is confined
+to there. The rule time-tables that Cumulative, on each axis in turn:
+the overflow contradiction, and both bound pushes.
+
+It sees conflicts the pairwise rule cannot. Three rectangles whose
+mandatory time-axis parts share a time, no two of whose mandatory
+*boxes* overlap, can still be too tall between them to fit in the
+window — and with no mandatory part on the resource axis there is
+nothing for the pairwise rule to overlap or to push away from.
+
+**Nothing reaches the OPB**, and nothing can: one encoding per
+constraint is the #922/#780 rule, and a capacity row is not something
+`cake_pb_cp` could re-derive from the `.scp`. So the row is *derived*
+per firing, which is route B of #972's two:
+
+1. Two rectangles that both occupy `t` can satisfy neither time-axis
+   disjunct of their 4-way separation clause. Each is refuted by
+   `emit_before_pol`'s shape — the flag's `[r]` row plus the two
+   operands' order-literal definitions — and what is left of the clause
+   is the pair's separation **on the resource axis**.
+2. The set occupying `t` is then pairwise separated, and
+   `ComparatorNetwork` sorts it and telescopes to "the window is at
+   least as tall as what is in it", which the firing says it is not.
+
+The set's members are the ones whose *mandatory* parts cover `t`, so
+their occupancy follows from their bounds and **no activity flag is
+minted anywhere**: no time index, no `Top`-level vocabulary, nothing
+that outlives the firing.
+
+Four things are worth carrying away:
+
+- **The separation clauses are derived, not model rows**, so unlike
+  1D's they carry the reason. That is what
+  `ComparatorNetwork::assume_with_guarded_separations` is for (#982):
+  the guard rides a **clause at coefficient one** and a **row at
+  `big()`**, and a clause must carry the *whole* guard, since every
+  goal the network derives offers the whole of it. Each pair's
+  refutations bring in only that pair's literals, so the rest are
+  weakened in with literal axioms, which add a term without moving the
+  degree.
+- **State both time-axis bounds tightly**, at `t − size + 1` and `t`,
+  rather than at the rectangle's own bounds. Not only is that a better
+  nogood: it is what makes each refutation cancel to degree exactly
+  one, so that adding it to the 4-way clause leaves a *clause* rather
+  than something of a higher degree that the next `pol` cannot use. The
+  reason is then those literals, which is why it is spelled out as an
+  `ExplicitReason` rather than taken from `generic_reason`.
+- **A push's one synthetic fact is the negated conclusion**, and
+  otherwise a push and a contradiction build the same certificate. The
+  lb push takes the largest blocked time within the rectangle's own
+  length of its lower bound and concludes `pos ≥ t + 1`; the ub push
+  mirrors it. Neither can empty a domain: a rectangle whose own
+  mandatory part already covers `t` is tested against the set the
+  contradiction pass has just found not to overflow, so the conclusion
+  literal is always strictly inside the domain.
+- **A non-strict zero-size escape needs *both* the guard and a pin**,
+  and this is the one thing here that cost a rejected proof. The
+  escape arrives in each pair's clause from the model's own 4-way row,
+  so the guard has to carry it or the network's arithmetic does not
+  cancel. But the closing RUP then has to get from `size ≥ 1` to
+  `~escape`, and its only route is bit arithmetic: the network's final
+  row can force **one** unassigned escape flag and no more, because
+  the overflow it carries does not reach twice the guard coefficient.
+  So a firing with two escapes was rejected — and a fixture with one,
+  or with a size whose lower bound happens to force an encoding bit,
+  passes and says nothing. Pin each escape false under the reason as
+  well, exactly as the pairwise rule's `pin_escapes` does, and every
+  one of them then follows by unit propagation.
+- **Who may take part is settled in `prepare()`, from the model
+  alone** — a positive constant size on the resource axis, plain
+  variables for both positions, a non-negative and not-too-wide
+  resource domain. Those are the conditions `wire_over` imposes, and
+  deciding them once and without the logger is what keeps the rule
+  drawing the same inferences whether or not proofs are on.
+
+What it costs in proof size, beyond the network itself: the tight
+time-axis literals are at `t − len + 1` and `t`, which are values the
+encoding usually has no atom for, so each new `(variable, time)` pair
+mints one with two `red` rows, a boundary pin and a chain link, at
+`TopAndCore` and never deleted. That is growth per distinct firing
+position rather than per firing, and it is the price of the degree-one
+cancellation above.
+
+**It does not yet know about optional rectangles.** Membership is
+decided from bounds alone, so a rectangle whose *presence* is still
+undecided would be counted into the load and its height summed, which
+the overflow conclusion is not entitled to. Nothing would catch it: the
+certificate would carry the same wrong set and verify against it. When
+the 2-D optional form (#974) lands, such a rectangle has to be kept out
+of the relaxation's membership or have its presence literal added to
+every fact list.
+
+**What it does not reach.** The endgame lands on a statement about the
+*mandatory* set with no activity flags in it, which is exactly enough
+for time-tabling and no more. Every energetic rung — overload,
+edge-finding, TTEF — sums a capacity row across a window over tasks
+that are only *possibly* active at each time, so it needs the flagged
+row `Σ h_i·active_{i,t} ≤ H`. That is route A of #972, and it needs a
+construction muxing the position as well as the duration (an inactive
+rectangle becomes a zero-duration dummy parked at `window_hi`), which
+in turn needs `ComparatorNetwork`'s pinned-positive duration lifted.
+See the comment on #972 for the construction and for three invalid
+variants of it.
+
 ## Reusable ideas
 
 [`cumulative-proof-logging.md`](cumulative-proof-logging.md) ends with

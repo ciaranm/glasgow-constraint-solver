@@ -3,8 +3,10 @@
 #include <gcs/constraints/innards/task_presence.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/comparator_network.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
+#include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -13,8 +15,10 @@
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
+#include <bit>
 #include <map>
 #include <memory>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -36,6 +40,14 @@ using std::pair;
 using std::size_t;
 using std::unique_ptr;
 using std::vector;
+
+namespace
+{
+    /// The widest wire the cumulative relaxation's comparator network will
+    /// build, as 1D's sorting certificate uses it: the guard coefficients are
+    /// 2^width sized, so this is where an unbounded variable is turned away.
+    constexpr int relaxation_max_width = 40;
+}
 
 Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariableID> ys, vector<IntegerVariableID> widths,
     vector<IntegerVariableID> heights) : _xs(move(xs)), _ys(move(ys)), _widths(move(widths)), _heights(move(heights))
@@ -81,11 +93,25 @@ auto Disjunctive2D::with_strict(std::optional<bool> strict) -> Disjunctive2D &
     return *this;
 }
 
+auto Disjunctive2D::with_rules(Disjunctive2DRules rules) -> Disjunctive2D &
+{
+    _rules = rules;
+    return *this;
+}
+
+auto Disjunctive2D::with_proof_mutation(Disjunctive2DProofMutation mutation) -> Disjunctive2D &
+{
+    _mutation = mutation;
+    return *this;
+}
+
 auto Disjunctive2D::clone() const -> unique_ptr<Constraint>
 {
     auto cloned = _presences.empty() ? make_unique<Disjunctive2D>(_xs, _ys, _widths, _heights)
                                      : make_unique<Disjunctive2D>(_xs, _ys, _widths, _heights, _presences);
     cloned->with_strict(_strict);
+    cloned->with_rules(_rules);
+    cloned->with_proof_mutation(_mutation);
     return cloned;
 }
 
@@ -183,6 +209,80 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     if (_active_rects.size() < 2)
         return false;
 
+    // Which rectangles the cumulative relaxation can speak about, on each axis
+    // in turn. Everything asked here is a property of the model rather than of
+    // the search state, so the answer is the same whether or not proofs are
+    // on, and the rule draws the same inferences either way --- which is what
+    // keeps a proofs-off run from taking a different search path.
+    //
+    // An optional rectangle takes no part. Membership below is decided from
+    // *bounds alone*, and a rectangle whose mandatory part covers a time is
+    // taken to occupy it --- which an undecided presence does not, so counting
+    // its height into the load would make the overflow conclusion unsound, and
+    // a solve would lose the placements that need the rectangle absent. A
+    // constant-present one is fine and is kept: its disjunct folds out of the
+    // separation clause, which is why such a model's OPB is byte-identical to
+    // the non-optional form's.
+    //
+    // Carrying an undecided one properly means putting its presence literal in
+    // every fact list the certificate builds, so that the guard covers the
+    // disjunct the clause brings in. That is a larger change than this decline
+    // and nothing asks for it yet.
+    //
+    // A position variable two rectangles share is a bar to both of them. The
+    // certificate states one fact per member per bound and guards every row by
+    // the whole list at one uniform coefficient, and two members whose facts
+    // are the same literal would put it there twice. Rectangles sharing a
+    // handle are an edge case of `diffn` rather than a shape worth the
+    // bookkeeping, so they take no part in this rule --- on either axis, since
+    // a shared handle on one axis still appears in the other's reason.
+    for (auto & members : _relaxation_members)
+        members.clear();
+    std::map<IntegerVariableID, size_t> position_uses;
+    for (auto i : _active_rects) {
+        ++position_uses[_xs[i]];
+        ++position_uses[_ys[i]];
+    }
+
+    for (auto time_axis : {0, 1}) {
+        const auto & time_pos = time_axis == 0 ? _xs : _ys;
+        const auto & time_size = time_axis == 0 ? _widths : _heights;
+        const auto & res_pos = time_axis == 0 ? _ys : _xs;
+        const auto & res_size = time_axis == 0 ? _heights : _widths;
+        for (auto i : _active_rects) {
+            if (_presence[i] && ! (is_constant_variable(*_presence[i]) && constant_value_of(*_presence[i]) == 1_i))
+                continue;
+            if (position_uses[_xs[i]] > 1 || position_uses[_ys[i]] > 1)
+                continue;
+            // The sorted axis's size is the comparator network's duration,
+            // which it pins to a constant and needs positive.
+            if (! is_constant_variable(res_size[i]) || constant_value_of(res_size[i]) < 1_i)
+                continue;
+            // A wire reads a variable's own bit encoding, so the position has
+            // to be a plain variable reading as an unsigned magnitude.
+            if (! std::holds_alternative<SimpleIntegerVariableID>(res_pos[i]))
+                continue;
+            // The certificate weakens each pair's derived clause up to the
+            // whole guard by naming the literals it is short of, so every
+            // literal in the guard has to be one that can be named --- which
+            // rules out a view, whose conditions reach the proof through their
+            // defining rows instead.
+            if (! std::holds_alternative<SimpleIntegerVariableID>(time_pos[i]))
+                continue;
+            if (! is_constant_variable(time_size[i]) && ! std::holds_alternative<SimpleIntegerVariableID>(time_size[i]))
+                continue;
+            if (initial_state.lower_bound(res_pos[i]) < 0_i)
+                continue;
+            // The network's guard coefficients are sized from its width, so a
+            // variable declared over half the Integer range --- what an
+            // unbounded FlatZinc int gets --- would overflow them long before
+            // the proof got expensive enough to care.
+            if (initial_state.upper_bound(res_pos[i]) + constant_value_of(res_size[i]) >= Integer{1ll << relaxation_max_width})
+                continue;
+            _relaxation_members[time_axis].push_back(i);
+        }
+    }
+
     return true;
 }
 
@@ -212,8 +312,13 @@ auto Disjunctive2D::define_proof_model(ProofModel & model, const State &) -> voi
             model.create_proof_flag(_constraint_id, vector<long long>{static_cast<long long>(idx_i), static_cast<long long>(idx_j)}, axis_stem);
         auto ineq = is_constant_variable(size_i) ? (WPBSum{} + 1_i * pos_i + -1_i * pos_j <= -size_val_i)
                                                  : (WPBSum{} + 1_i * pos_i + 1_i * size_i + -1_i * pos_j <= 0_i);
+        // Ask what big-M the reifier is about to choose, rather than assuming:
+        // the cumulative relaxation raises this row to the comparator
+        // network's own guard coefficient, and the two directions of a pair
+        // get different constants whenever their sizes or widths differ.
+        auto guard = -model.names_and_ids_tracker().reification_shape(ineq, HalfReifyOnConjunctionOf{{flag}}).reif_coefficient;
         auto [fwd, rev] = model.add_two_way_reified_constraint(ineq, flag);
-        return BeforeFlagData{flag, fwd, rev};
+        return BeforeFlagData{flag, fwd, rev, guard};
     };
 
     // Non-strict mode: a zero-size escape flag per size that can be 0.
@@ -294,8 +399,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
         constraint_id(),
         [xs = move(_xs), ys = move(_ys), width_var = move(_widths), height_var = move(_heights), active_rects = move(_active_rects),
             before_x = move(_before_x), before_y = move(_before_y), clause_lines = move(_clause_lines), zero_w = move(_zero_w),
-            zero_h = move(_zero_h), presence = move(_presence), strict = _strict,
-            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            zero_h = move(_zero_h), presence = move(_presence), strict = _strict, rules = _rules, relaxation_members = move(_relaxation_members),
+            mutation = _mutation, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Pairwise 2D time-table. The mandatory box of rectangle i is
             //   [ub(x_i), lb(x_i)+lb(w_i)) x [ub(y_i), lb(y_i)+lb(h_i))
             // -- the cells it must occupy regardless of where it is placed (a
@@ -601,6 +706,398 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     if (y_overlap) {
                         push_axis(true, i, j); // free axis = x
                         push_axis(true, j, i);
+                    }
+                }
+            }
+
+            // --- the cumulative relaxation (#972) ---------------------------
+            //
+            // Project onto one axis and the rectangles become a Cumulative:
+            // task i has start pos_i and duration size_i on the time axis, and
+            // height its size on the resource axis, on a resource whose
+            // capacity is the extent the set is confined to there. That relaxation
+            // sees conflicts the pairwise rule cannot --- three rectangles
+            // sharing a time, no two of whose mandatory boxes overlap, can
+            // still be too tall between them to fit.
+            //
+            // The proof side is what makes it interesting, because the
+            // capacity row is not in the OPB and never will be (one encoding
+            // per constraint). It is derived per firing instead: two
+            // rectangles both occupying `t` can satisfy neither time-axis
+            // disjunct of their 4-way separation clause, so what is left of
+            // that clause separates them on the resource axis, and
+            // ComparatorNetwork sorts the set's positions and telescopes to
+            // "the window is at least as tall as the work in it" --- which the
+            // firing says it is not. The set's members are the ones whose
+            // *mandatory* parts cover `t`, so their occupancy is forced by
+            // their bounds and no activity flag is minted anywhere.
+            //
+            // The separation clauses are therefore derived rather than model
+            // rows, and so carry the reason; assume_with_guarded_separations is
+            // what lets the network consume that.
+            if (rules.cumulative_relaxation) {
+                for (auto time_axis : {0, 1}) {
+                    const auto & members = relaxation_members[time_axis];
+                    if (members.size() < 2)
+                        continue;
+
+                    const auto & tpos = 0 == time_axis ? xs : ys;
+                    const auto & tsize = 0 == time_axis ? width_var : height_var;
+                    const auto & rpos = 0 == time_axis ? ys : xs;
+                    const auto & rsize = 0 == time_axis ? height_var : width_var;
+                    const auto & tbefore = 0 == time_axis ? before_x : before_y;
+                    const auto & rbefore = 0 == time_axis ? before_y : before_x;
+                    const auto & tzero = 0 == time_axis ? zero_w : zero_h;
+
+                    // prepare() has already established, for every member, that
+                    // the resource size is a positive constant and the resource
+                    // position a plain variable a wire can read.
+                    auto len = [&](size_t i) { return state.lower_bound(tsize[i]); };
+                    auto tsize_is_var = [&](size_t i) { return ! is_constant_variable(tsize[i]); };
+                    auto height = [&](size_t i) { return constant_value_of(rsize[i]); };
+                    auto lst = [&](size_t i) { return state.upper_bound(tpos[i]); };
+                    auto eet = [&](size_t i) { return state.lower_bound(tpos[i]) + len(i); };
+                    auto covers = [&](size_t i, Integer t) { return lst(i) < eet(i) && t >= lst(i) && t < eet(i); };
+
+                    // The set occupying `t`, and the window it needs: the
+                    // smallest resource position any of them may take, and the
+                    // largest position-plus-size. `extra` is the rectangle a
+                    // push is asking about, which is added whether or not its
+                    // own mandatory part reaches `t`.
+                    struct Member
+                    {
+                        size_t rect;
+                        /// This rectangle's resource-axis bounds and its
+                        /// guaranteed time-axis length, snapshotted here rather
+                        /// than re-read when the certificate runs: by then the
+                        /// inference has landed, and a justification that read
+                        /// the state again could cite a bound its own reason
+                        /// does not carry.
+                        Integer res_lo, res_hi, length;
+                    };
+                    struct Load
+                    {
+                        vector<Member> set;
+                        Integer total{0}, lo{0}, hi{0};
+                    };
+                    auto load_at = [&](Integer t, optional<size_t> extra) -> Load {
+                        Load result;
+                        auto include = [&](size_t i) {
+                            auto lo = state.lower_bound(rpos[i]), hi = state.upper_bound(rpos[i]);
+                            result.lo = result.set.empty() ? lo : min(result.lo, lo);
+                            result.hi = result.set.empty() ? hi + height(i) : max(result.hi, hi + height(i));
+                            result.set.push_back(Member{i, lo, hi, len(i)});
+                            result.total += height(i);
+                        };
+                        for (auto i : members)
+                            if ((! extra || *extra != i) && covers(i, t))
+                                include(i);
+                        if (extra)
+                            include(*extra);
+                        return result;
+                    };
+                    auto overflows = [&](const Load & load) { return load.set.size() >= 2 && load.total > load.hi - load.lo; };
+
+                    // The load profile only changes where a mandatory part
+                    // starts or ends, so the set is constant between
+                    // consecutive event points and testing each one tests every
+                    // distinct set.
+                    auto event_points = [&]() -> vector<Integer> {
+                        vector<Integer> events;
+                        for (auto i : members)
+                            if (lst(i) < eet(i)) {
+                                events.push_back(lst(i));
+                                events.push_back(eet(i));
+                            }
+                        std::sort(events.begin(), events.end());
+                        events.erase(std::unique(events.begin(), events.end()), events.end());
+                        return events;
+                    };
+
+                    // The certificate. Every member of `set` occupies `t`,
+                    // which for all but the pushed rectangle is a fact the
+                    // reason states; for the pushed one, one of the two bounds
+                    // is the negation of the conclusion instead, so the row the
+                    // network lands on carries that literal and the framework's
+                    // closing RUP reads the inference straight off it.
+                    //
+                    // Both time-axis bounds are stated *tightly* --- at
+                    // `t - len + 1` and `t` rather than at the rectangle's own
+                    // bounds --- which is not just a better nogood: it is what
+                    // makes each pair's refutation cancel to degree exactly
+                    // one, so that adding it to the 4-way clause leaves a
+                    // clause rather than something of a higher degree.
+                    auto emit_certificate = [&](Integer t, const Load & load, const ReasonLiterals & reason) -> void {
+                        if (std::holds_alternative<disjunctive_2d_proof_mutation::EmitNothing>(mutation))
+                            return;
+                        auto & tracker = logger->names_and_ids_tracker();
+
+                        // What each member contributes to the guard. `t_lo` and
+                        // `t_hi` say it occupies `t`; `r_lo` and `r_hi` put it
+                        // inside the window; `t_size` is what a variable
+                        // time-axis size cancels against, and `escape` the
+                        // non-strict zero-size disjunct its clause then carries.
+                        // prepare() has already established that every one of
+                        // these is over a plain variable, so each condition can
+                        // be named as a literal as well as cancelled against.
+                        using SimpleCondition = VariableConditionFrom<SimpleIntegerVariableID>;
+                        struct MemberFacts
+                        {
+                            size_t rect;
+                            SimpleIntegerVariableID r_var;
+                            SimpleCondition t_lo, t_hi, r_lo, r_hi;
+                            optional<SimpleCondition> t_size;
+                            optional<ProofFlag> escape;
+                        };
+                        vector<MemberFacts> facts;
+                        for (const auto & m : load.set) {
+                            auto tv = get<SimpleIntegerVariableID>(tpos[m.rect]), rv = get<SimpleIntegerVariableID>(rpos[m.rect]);
+                            facts.push_back(MemberFacts{m.rect, rv, tv >= t - m.length + 1_i, tv < t + 1_i, rv >= m.res_lo, rv < m.res_hi + 1_i,
+                                tsize_is_var(m.rect) ? optional<SimpleCondition>{get<SimpleIntegerVariableID>(tsize[m.rect]) >= m.length} : nullopt,
+                                tzero[m.rect]});
+                        }
+
+                        // Pin each zero-size escape false under the reason,
+                        // exactly as the pairwise rule does, *as well as*
+                        // carrying it in the guard below. The guard is what
+                        // lets the network's arithmetic cancel the term the
+                        // model's clause brings in; the pin is what lets the
+                        // closing RUP discharge it. Without the pin that RUP
+                        // has to get from `size >= 1` to `~escape` by bit
+                        // arithmetic, which reaches one escape and no more ---
+                        // the network's final row can force a single
+                        // unassigned flag and not two --- so a firing with two
+                        // of them was rejected.
+                        if (! std::holds_alternative<disjunctive_2d_proof_mutation::SkipEscapePins>(mutation))
+                            for (const auto & f : facts)
+                                if (f.escape)
+                                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * *f.escape <= 0_i, ProofLevel::Temporary);
+
+                        auto width = static_cast<int>(std::bit_width(static_cast<unsigned long long>(load.hi.raw_value)));
+                        for (const auto & f : facts) {
+                            // A wire reads the variable's own bit encoding as
+                            // an unsigned magnitude. prepare() keeps a negative
+                            // domain out, which is what decides this; assert it
+                            // here too, because a two's-complement sign bit
+                            // sits at index zero and every guarded row built
+                            // over it would be unsound rather than rejected.
+                            if (tracker.num_bits(f.r_var) > 0_i && tracker.get_bit(f.r_var, 0_i).first != 1_i)
+                                throw ProofError{"disjunctive2d cumulative relaxation wants an unsigned resource position"};
+                            width = max(width, static_cast<int>(tracker.num_bits(f.r_var).raw_value));
+                        }
+
+                        ComparatorNetwork network(*logger, width, load.lo, load.hi, ProofLevel::Temporary);
+
+                        // Every fact rides at the network's own coefficient, and
+                        // uniformly: two rows guarded by the same reason at
+                        // different coefficients cancel no better than two rows
+                        // guarded by different reasons.
+                        WPBSum guard;
+                        auto guard_fact = [&](const SimpleCondition & cond) {
+                            IntegerVariableCondition as_general = cond;
+                            add_term_to(guard, network.big(), ! as_general);
+                        };
+                        for (const auto & f : facts) {
+                            guard_fact(f.t_lo);
+                            guard_fact(f.t_hi);
+                            guard_fact(f.r_lo);
+                            guard_fact(f.r_hi);
+                            if (f.t_size)
+                                guard_fact(*f.t_size);
+                            // The fact is that the rectangle is not zero-sized,
+                            // so it is the flag itself that goes in the guard.
+                            if (f.escape)
+                                guard += network.big() * *f.escape;
+                        }
+                        network.assume_with_guarded_separations(guard);
+
+                        vector<ProofWire> wires;
+                        for (const auto & f : facts) {
+                            vector<ProofLiteralOrFlag> bits;
+                            for (Integer b = 0_i; b < tracker.num_bits(f.r_var); ++b)
+                                bits.push_back(ProofBitVariable{f.r_var, b, true});
+                            wires.push_back(network.wire_over(bits));
+                        }
+                        for (size_t k = 0; k < facts.size(); ++k) {
+                            network.add_task(wires[k], height(facts[k].rect));
+                            network.set_bounds(wires[k]);
+                        }
+
+                        for (size_t a = 0; a < facts.size(); ++a)
+                            for (size_t b = a + 1; b < facts.size(); ++b) {
+                                auto i = facts[a].rect, j = facts[b].rect;
+
+                                // One time-axis disjunct refuted: the before
+                                // flag's [r] row says `pos_p + size_p <= pos_q`,
+                                // and p occupying `t` at or after `t - size_p +
+                                // 1` while q occupies it at or before `t` says
+                                // otherwise. Exactly emit_before_pol's shape,
+                                // against the certificate's own literals.
+                                auto refute = [&](const MemberFacts & p, const MemberFacts & q) -> ProofLine {
+                                    PolBuilder pol;
+                                    pol.add(tbefore.at(make_pair(p.rect, q.rect)).forward_line);
+                                    pol.add_for_literal(tracker, p.t_lo);
+                                    if (p.t_size)
+                                        pol.add_for_literal(tracker, *p.t_size);
+                                    pol.add_for_literal(tracker, q.t_hi);
+                                    return pol.saturate().emit(*logger, ProofLevel::Temporary);
+                                };
+
+                                // What is left of the 4-way clause once both
+                                // time-axis disjuncts are gone: the pair is
+                                // separated on the resource axis, under this
+                                // pair's share of the guard. The network's goals
+                                // offer the *whole* guard, so weaken up to it
+                                // with literal axioms, which add a term without
+                                // moving the degree.
+                                PolBuilder clause;
+                                clause.add(clause_lines.at(make_pair(min(i, j), max(i, j))));
+                                clause.add(refute(facts[a], facts[b]));
+                                if (! std::holds_alternative<disjunctive_2d_proof_mutation::SkipOneRefutation>(mutation))
+                                    clause.add(refute(facts[b], facts[a]));
+                                for (size_t k = 0;
+                                    k < facts.size() && ! std::holds_alternative<disjunctive_2d_proof_mutation::SkipGuardWeakening>(mutation); ++k) {
+                                    const auto & f = facts[k];
+                                    if (k != a && k != b) {
+                                        clause.add(! tracker.xliteral_for_ensuring(f.t_lo), 1_i, tracker);
+                                        clause.add(! tracker.xliteral_for_ensuring(f.t_hi), 1_i, tracker);
+                                        if (f.t_size)
+                                            clause.add(! tracker.xliteral_for_ensuring(*f.t_size), 1_i, tracker);
+                                        if (f.escape)
+                                            clause.add(*f.escape, 1_i, tracker);
+                                    }
+                                    // No refutation mentions a resource-axis
+                                    // bound, so every member's pair of them has
+                                    // to be weakened in.
+                                    clause.add(! tracker.xliteral_for_ensuring(f.r_lo), 1_i, tracker);
+                                    clause.add(! tracker.xliteral_for_ensuring(f.r_hi), 1_i, tracker);
+                                }
+                                auto separated = clause.emit(*logger, ProofLevel::Temporary);
+
+                                auto direction = [&](size_t p, size_t q) -> ModelSeparation {
+                                    const auto & data = rbefore.at(make_pair(p, q));
+                                    return ModelSeparation{data.flag, data.forward_line, data.forward_guard_coefficient};
+                                };
+                                network.add_separation(wires[a], direction(i, j), wires[b], direction(j, i), separated);
+                            }
+
+                        // The row this lands on says the window is at least as
+                        // tall as the work in it, which the firing says it is
+                        // not, so what survives is the clause over the guard's
+                        // literals --- and the framework's closing RUP under the
+                        // reason has only the conclusion left to read off it.
+                        (void)network.sum_up(network.sort(wires));
+                    };
+
+                    // The reason: every fact the certificate assumes, except
+                    // the one a push gets from negating its own conclusion.
+                    auto reason_for = [&](Integer t, const Load & load, optional<size_t> pushed, bool synthetic_is_upper) -> Reason {
+                        ReasonLiterals literals;
+                        for (const auto & m : load.set) {
+                            auto is_pushed = pushed && *pushed == m.rect;
+                            if (! (is_pushed && ! synthetic_is_upper))
+                                literals.push_back(ProofLiteral{tpos[m.rect] >= t - m.length + 1_i});
+                            if (! (is_pushed && synthetic_is_upper))
+                                literals.push_back(ProofLiteral{tpos[m.rect] < t + 1_i});
+                            literals.push_back(ProofLiteral{rpos[m.rect] >= m.res_lo});
+                            literals.push_back(ProofLiteral{rpos[m.rect] < m.res_hi + 1_i});
+                            if (tsize_is_var(m.rect))
+                                literals.push_back(ProofLiteral{tsize[m.rect] >= m.length});
+                        }
+                        return ExplicitReason{move(literals)};
+                    };
+
+                    // The overflow contradiction.
+                    for (auto t : event_points()) {
+                        auto load = load_at(t, nullopt);
+                        if (! overflows(load))
+                            continue;
+                        auto justify = [&, t, load](const ReasonLiterals & reason) -> void {
+                            if (! logger)
+                                return;
+                            logger->emit_proof_comment("disjunctive2d cumulative relaxation overflow axis=" + std::to_string(time_axis) +
+                                " t=" + std::to_string(t.raw_value) + " w=" + std::to_string(load.set.size()));
+                            emit_certificate(t, load, reason);
+                        };
+                        inference.contradiction(
+                            logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, reason_for(t, load, nullopt, false));
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
+
+                    // The bound pushes: a rectangle that cannot occupy a time
+                    // without overflowing it is moved clear of that time. A
+                    // rectangle whose own mandatory part already covers `t` is
+                    // never selected, because the set it would be tested
+                    // against is the one the contradiction pass has just found
+                    // not to overflow --- which is also what stops a push from
+                    // emptying a domain, since the conclusion's literal is then
+                    // strictly inside it.
+                    //
+                    // A time gives the same verdict as every other time in the
+                    // segment between two event points, so only the range's own
+                    // ends and each segment's edge need testing.
+                    auto blocked_in = [&](size_t j, Integer lo_t, Integer hi_t, bool want_largest) -> optional<Integer> {
+                        if (lo_t > hi_t)
+                            return nullopt;
+                        // A time this rectangle's own mandatory part already
+                        // covers is not a push: the set there is the one the
+                        // overflow pass looks at, and if it overflows that is a
+                        // contradiction rather than a bound to move. It can
+                        // arise, because an earlier push this pass may have
+                        // grown a mandatory part since that pass ran, and
+                        // leaving it to the next round keeps the conclusion
+                        // literal strictly inside the domain.
+                        vector<Integer> candidates{want_largest ? hi_t : lo_t};
+                        for (auto e : event_points())
+                            if (e > lo_t && e <= hi_t)
+                                candidates.push_back(want_largest ? e - 1_i : e);
+                        std::sort(candidates.begin(), candidates.end());
+                        candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+                        if (want_largest)
+                            std::reverse(candidates.begin(), candidates.end());
+                        for (auto t : candidates)
+                            if (! covers(j, t) && overflows(load_at(t, j)))
+                                return t;
+                        return nullopt;
+                    };
+
+                    auto push = [&](size_t j, Integer t, bool lower) {
+                        auto load = load_at(t, j);
+                        auto justify = [&, t, load, lower](const ReasonLiterals & reason) -> void {
+                            if (! logger)
+                                return;
+                            logger->emit_proof_comment("disjunctive2d cumulative relaxation " + std::string{lower ? "lb" : "ub"} +
+                                " axis=" + std::to_string(time_axis) + " t=" + std::to_string(t.raw_value) + " w=" + std::to_string(load.set.size()));
+                            emit_certificate(t, load, reason);
+                        };
+                        auto justification = JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}};
+                        if (lower)
+                            inference.infer_greater_than_or_equal(logger, tpos[j], t + 1_i, justification, reason_for(t, load, j, true));
+                        else
+                            inference.infer_less_than(logger, tpos[j], t - len(j) + 1_i, justification, reason_for(t, load, j, false));
+                    };
+
+                    for (auto j : members) {
+                        auto len_j = len(j);
+                        if (len_j < 1_i)
+                            continue;
+
+                        // lb-push: with the origin at or after `cur_lo`, a
+                        // blocked time within the rectangle's own length of it
+                        // is one the rectangle would have to occupy, so the
+                        // origin clears it.
+                        auto [cur_lo, cur_hi] = state.bounds(tpos[j]);
+                        if (cur_lo == cur_hi)
+                            continue;
+                        if (auto t = blocked_in(j, cur_lo, min(cur_hi, cur_lo + len_j - 1_i), true)) {
+                            push(j, *t, true);
+                            continue;
+                        }
+
+                        // ub-push: the mirror, with the origin at or before
+                        // `cur_hi` and the smallest blocked time at or after it.
+                        if (auto t = blocked_in(j, cur_hi, cur_hi + len_j - 1_i, false))
+                            push(j, *t, false);
                     }
                 }
             }
