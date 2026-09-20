@@ -167,21 +167,25 @@ which is (4.4a) and (4.4b) with `b = 1`. **Two `pol` lines per donor.**
 Cost: `2n` `red` lines and `5n` subproof lines per donor of length `n`, all at
 `Top`, plus two `pol`s. The `red`s and the per-step rows are scaffolding — only
 the two summed rows are ever cited again, and nothing downstream needs `y`'s
-definition — so they are deleted immediately afterwards. `Top` is never
+definition — so they *should* be deleted immediately afterwards. `Top` is never
 forgotten, and every line left there taxes every later unhinted RUP (#666), so
-the deletion is not tidiness. **Steady-state `Top` footprint: two lines per
-donor.**
+the deletion is not tidiness. **Steady-state `Top` footprint would then be two
+lines per donor — but the deletion is not implemented, so what the code
+actually leaves at `Top` today is the full `7n` lines per row.** See "Residue";
+the rest of this section is why the deletion is sound when someone writes it,
+not a description of what runs.
 
-Deleting them is safe and is *unchecked*: redundance established
+Deleting them would be safe and would be *unchecked*: redundance established
 equisatisfiability while the rows still stood, and every model of the chain
 rows extends to one of (A) and (B) by `y_k = (a_{k-1} + l_k + a_k) / 2`, which
-those rows make integral. The deletion goes unchecked because `D1`/`D2` are
+those rows make integral. It would go unchecked because `D1`/`D2` are
 red-derived and so live in the derived set, and whether a deletion is checked
 follows where the target lives rather than which rule wrote it — see
 [veripb-facts.md](veripb-facts.md). Subproof lines need no deleting at all;
 their scope ends with the block.
 
-What does stay has a cost worth naming: (A) and (B) sit at `Top` mentioning
+What stays permanently — (A) and (B), whether or not the scaffolding around
+them is ever deleted — has a cost worth naming: they sit at `Top` mentioning
 every `l_i` and every interior `a_j`, so any later `red` whose witness touches
 one of those variables acquires proofgoals over them. Nothing in the tree does
 today — the flag-reifying `red`s all use fresh witnesses — but it is the thing
@@ -400,20 +404,26 @@ spelling, so an even row is written with one literal negated. That is what the
 GF(2) canonicalisation does internally anyway, and it keeps one convention
 across the two constraints rather than two.
 
-Its OPB encoding is `ParityOdd`'s, once per row: `prepare()` installs one child
-`ParityOdd` per row (the `path.cc` / `tree.cc` pattern), which gives the rows
-their accumulator chains, and `install_propagators` adds the system propagator
-on top. The point is that **there is then one proof path, not two**: the posted
-constraint and the presolver both derive their slack rows from accumulator
-chains, so `define_proof_model`, the derivation, and the justifications are the
-same code, exercised by both entry points.
+Its OPB encoding is `ParityOdd`'s, once per row: `define_proof_model` calls
+`define_parity_chain` once per row, threading the row index through the flag
+values and the role names so that the chains stay apart, and
+`install_propagators` adds the system propagator over them. There are no child
+constraints — see "Decisions taken" for why the `path.cc` / `tree.cc` pattern
+does not work here. The point is that **there is one proof path, not two**: the
+posted constraint and the presolver both derive their slack rows from
+accumulator chains, so `define_proof_model`, the derivation, and the
+justifications are the same code, exercised by both entry points.
 
-`s_expr()` throws: the `.scp` grammar has `parity` for one row and nothing for a
-system, and `write_scp` renders the whole file before opening it, so a throw
-leaves no `.scp` behind. The SCP chain lane does not cover `ParitySystem`. It
-does still cover the presolver's donors, which are ordinary `ParityOdd`s — and
-that is the configuration that matters, because it is the one a real model
-reaches.
+`s_expr()` writes `(id parity_system ((lits...) ...))`, one inner list per row,
+and `gcs/scp_reader.cc` reads that form back, so a `.scp` this writes
+round-trips. It is not a cake rule: cake has `parity` for a single row and
+nothing for a system of them, so the SCP *chain* lane — which is what compares
+our OPB against cake's — does not cover `ParitySystem`, and there is no
+`verified_encodings/scp_cases` fixture for it. `Nogoods` is the precedent for a
+form that is ours alone; `gcs/scp_reader_test.cc` is what checks the reader, by
+counting solutions. The chain lane does still cover the presolver's donors,
+which are ordinary `ParityOdd`s — and that is the configuration that matters,
+because it is the one a real model reaches.
 
 ## What this touches in existing code
 
@@ -432,22 +442,33 @@ reaches.
   nothing new, since it already includes the umbrella.
 - `gcs/scp_reader.cc` reads the `parity_system` form back, so a `.scp` this
   writes round-trips. Cake has no such rule, and `Nogoods` is the precedent for
-  a form that is ours alone.
+  a form that is ours alone. Two cases in `gcs/scp_reader_test.cc` are what
+  check it: one counting solutions over a two-row system, a one-row system, an
+  empty system and an even row of constants, plus the arity and row-walk
+  errors; one round-tripping a posted `ParitySystem` through write → read →
+  write. Counting solutions is the only thing that can check a reader here —
+  `verified_encodings/scp_cases/CMakeLists.txt` spells out why, over
+  `lin_greater_equal`: the chain re-emits the `.scp` and cake re-derives from
+  *that*, so a misreading would agree with itself all the way down.
 - `gcs/constraint_enumeration_test.cc` gained cases for `ParityOdd` and
   `ReifiedEquals`: the enumeration is a `dynamic_cast` on what `clone()` returns,
   so it would find nothing at all if either started returning something else, and
   that is a failure the presolver's own counts would report as "gathered
   nothing".
-- `dev_docs/README.md` has an entry for this document.
-  `dev_docs/frontend-support-matrix.md` still needs a row: neither the constraint
-  nor the presolver is reachable from any frontend yet, and the matrix is the
-  single source of truth for that.
+- `dev_docs/README.md` has an entry for this document, and
+  `dev_docs/frontend-support-matrix.md` a row: `ParityOdd` itself is reachable
+  from both frontends (MiniZinc `array_bool_xor`, XCSP3 `intension` `xor`), and
+  neither the system nor the presolver is reachable from either. The matrix is
+  the single source of truth for that, so the gap is recorded there rather than
+  only here.
 
 ## Staging
 
 `constraints.md`, "Bringing up a new constraint", numbered as it numbers them —
 the gates are what make each stage's failure diagnosable. All five are done for
-the constraint; the presolver has not been started.
+the constraint; the presolver came afterwards and is done too, under its own
+three gates rather than a staged bring-up — see "The presolver" above, and the
+note at the end of this section for why it is not staged the same way.
 
 1. **The encoding, with a check-only propagator.** *Gate: the whole suite
    verifies* — which says the encoding is definitionally correct and that RUP
@@ -539,11 +560,12 @@ line count are the numbers this design is making claims about.
 - Incremental RREF maintenance under backtracking; see "From scratch, to begin
   with".
 - Deleting the per-step scaffolding. The `red`s and their subproof lines are
-  only needed until the two telescoping `pol`s have run, and everything above
-  says to delete them afterwards — but that is not implemented yet, so the
-  current `Top` footprint is the full `7n` lines per row rather than two. Do
-  this before pointing it at anything large: every line left at `Top` taxes
-  every later unhinted RUP (#666).
+  only needed until the two telescoping `pol`s have run, and "2. Deriving the
+  slack row from the accumulator chain" sets out why deleting them afterwards
+  is sound — but it is not implemented, so the current `Top` footprint is the
+  full `7n` lines per row rather than two. Do this before pointing it at
+  anything large: every line left at `Top` taxes every later unhinted RUP
+  (#666).
 - Caching derived rows. Each inference re-emits its `pol` over donor rows even
   when the same combination recurs, which it will. Emitting the root RREF once
   at `Top` and citing those rows instead is the obvious next move, and it is a
