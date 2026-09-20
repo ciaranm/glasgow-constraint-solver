@@ -195,6 +195,17 @@ namespace
         return name;
     }
 
+    // The name a ProofFlagKey denotes. Everything that keys on a flag key goes
+    // through here rather than picking the kind character itself: the family is
+    // what says which of create_proof_flag / create_proof_flag_values made the
+    // flag, and x[id][1] and v[id][1] are different flags with the same
+    // numbers, so a caller that hard-codes one of them silently conflates the
+    // two.
+    [[nodiscard]] auto flag_name_for_key(const ConstraintID & id, const ProofFlagKey & key) -> string
+    {
+        return bracketed_flag_name(ProofFlagFamily::Indices == key.family ? 'x' : 'v', id, key.values, key.annotation);
+    }
+
     // A registered view V = s*X + c (s = -1 when negate_first, c = then_add) owns its
     // own encoded variable, so an interval stated on V's value scale has a counterpart
     // on X's. For s = +1 the interval just shifts; for s = -1 the order reverses, so
@@ -2142,8 +2153,7 @@ auto NamesAndIDsTracker::find_proof_flag(const ConstraintID & id, const ProofFla
     // per-solve state. The family is what says which of the two that overload
     // was --- the numbers alone do not, since v[id][1] and x[id][1] are
     // different flags.
-    auto found =
-        _imp->constraint_keyed_flags.find(bracketed_flag_name(ProofFlagFamily::Indices == key.family ? 'x' : 'v', id, key.values, key.annotation));
+    auto found = _imp->constraint_keyed_flags.find(flag_name_for_key(id, key));
     if (found == _imp->constraint_keyed_flags.end())
         return nullopt;
     return found->second;
@@ -2203,8 +2213,9 @@ auto NamesAndIDsTracker::ensure_flag_defined(const ConstraintID & id, const Proo
         return;
 
     // Keyed on the same string the flag's own name is built from, so a second
-    // ask --- from this constraint or from anyone citing it --- is free.
-    auto memo = bracketed_flag_name('v', id, key.values, key.annotation);
+    // ask --- from this constraint or from anyone citing it --- is free, and so
+    // that asking about x[id][k] does not count as having asked about v[id][k].
+    auto memo = flag_name_for_key(id, key);
     if (! _imp->defined_flag_keys.emplace(memo).second)
         return;
     definer->second(logger, key);
