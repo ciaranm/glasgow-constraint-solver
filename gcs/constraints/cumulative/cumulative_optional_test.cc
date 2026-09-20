@@ -69,12 +69,21 @@ namespace
     // One task of an optional-Cumulative instance. A presence spec of {0, 1} is
     // a genuine decision variable; {1, 1} and {0, 0} are the constants, which
     // exercise the two ways prepare() resolves a presence away.
+    //
+    // A length is a constant unless `length_as_var` says to post it as a
+    // decision variable fixed to that same value. Cumulative gives a task a
+    // proof-only end proxy when its start and length are both non-constant
+    // *IDs*, not when they vary, so a constant length is the case issue #969
+    // cannot happen in. The variable is not branched on and does not join the
+    // solution vectors: its domain is a singleton, so it is assigned from the
+    // start and the enumeration is unchanged.
     struct TaskSpec
     {
         pair<int, int> start_range;
         int length;
         int height;
         pair<int, int> presence;
+        bool length_as_var = false;
     };
 
     [[nodiscard]] auto presence_is_var(const TaskSpec & t) -> bool
@@ -144,7 +153,8 @@ namespace
         }
         vector<IntegerVariableID> lengths, heights;
         for (const auto & t : tasks) {
-            lengths.push_back(constant_variable(Integer{t.length}));
+            lengths.push_back(
+                t.length_as_var ? p.create_integer_variable(Integer{t.length}, Integer{t.length}) : constant_variable(Integer{t.length}));
             heights.push_back(constant_variable(Integer{t.height}));
         }
         p.post(Cumulative{starts, lengths, heights, presences, constant_variable(Integer{capacity})}.with_presence_mutation(mutation));
@@ -690,6 +700,14 @@ auto main(int argc, char * argv[]) -> int
             {"ttoc_undecided_outside", {{{{0, 1}, 10, 10, {1, 1}}, {{2, 6}, 4, 1, {1, 1}}, {{2, 2}, 4, 1, {0, 1}}}, 10}},
             // Mixed constants: one always present, one always absent, one free.
             {"mixed_consts", {{{{0, 2}, 2, 2, {1, 1}}, {{0, 2}, 2, 2, {0, 0}}, {{0, 2}, 2, 1, {0, 1}}}, 3}},
+            // Issue #969, optional form: a task whose start and length are both
+            // variables fixed to values summing to zero gives its end proxy the
+            // range [0, 0], which has no bits at all. Once with the degenerate
+            // task's presence undecided, once with it certainly present beside a
+            // healthy optional task --- the shape that showed a single
+            // degenerate task poisoning the whole constraint.
+            {"zero_width_end_optional", {{{{-1, -1}, 1, 1, {0, 1}, true}}, 1}},
+            {"zero_width_end_present", {{{{-1, -1}, 1, 1, {1, 1}, true}, {{0, 2}, 2, 1, {0, 1}}}, 1}},
         };
 
         mt19937 rand(*get_seed());

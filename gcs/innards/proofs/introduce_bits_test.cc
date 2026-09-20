@@ -1,9 +1,15 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 
+#include <cstdlib>
+#include <iostream>
+
 using namespace gcs;
 using namespace gcs::innards;
+
+using std::cerr;
 
 // ProofLogger::introduce_bits_of introduces a proof-only `end` that has no OPB
 // encoding (create_proof_only_integer_variable_in_proof) as the bit-decomposition
@@ -76,6 +82,26 @@ auto main() -> int
     auto x10b = model.create_proof_only_integer_variable(0_i, 8_i, "x10b", IntegerVariableProofRepresentation::Bits);
     auto x10c = model.create_proof_only_integer_variable(0_i, 8_i, "x10c", IntegerVariableProofRepresentation::Bits);
     auto end10 = model.create_proof_only_integer_variable_in_proof(0_i, 24_i, "end10");
+    // A zero-width target (issue #969): s11 + l11 is identically 0, so end11
+    // spans [0, 0] and has no bits at all --- BinEnc(end11) is the empty sum,
+    // and the pair to return is the form's own two bound lines rather than the
+    // construction's reds. Cumulative reaches this whenever a task's start and
+    // length are both variables fixed to values summing to zero.
+    auto s11 = model.create_proof_only_integer_variable(-1_i, -1_i, "s11", IntegerVariableProofRepresentation::Bits);
+    auto l11 = model.create_proof_only_integer_variable(1_i, 1_i, "l11", IntegerVariableProofRepresentation::Bits);
+    auto end11 = model.create_proof_only_integer_variable_in_proof(0_i, 0_i, "end11");
+    // The same, with one more operand and a negative coefficient, so that the
+    // degenerate branch's bound arithmetic is exercised on a coefficient it
+    // has to flip: 2*s12 - l12 + c12 is identically 0 over fixed operands.
+    auto s12 = model.create_proof_only_integer_variable(3_i, 3_i, "s12", IntegerVariableProofRepresentation::Bits);
+    auto l12 = model.create_proof_only_integer_variable(4_i, 4_i, "l12", IntegerVariableProofRepresentation::Bits);
+    auto end12 = model.create_proof_only_integer_variable_in_proof(0_i, 0_i, "end12");
+    // A caller that gets it wrong: end13 is [0, 0] but s13 + l13 spans [0, 6].
+    // The degenerate branch returns pol lines, which VeriPB checks nothing
+    // about, so this has to be refused here rather than at check time.
+    auto s13 = model.create_proof_only_integer_variable(0_i, 3_i, "s13", IntegerVariableProofRepresentation::Bits);
+    auto l13 = model.create_proof_only_integer_variable(0_i, 3_i, "l13", IntegerVariableProofRepresentation::Bits);
+    auto end13 = model.create_proof_only_integer_variable_in_proof(0_i, 0_i, "end13");
 
     model.finalise();
 
@@ -96,6 +122,28 @@ auto main() -> int
     [[maybe_unused]] auto [ge8, le8] = logger.introduce_bits_of(WPBSum{} + (-1_i) * x8a + (-1_i) * x8b + (-1_i) * x8c, end8, ProofLevel::Top);
     [[maybe_unused]] auto [ge9, le9] = logger.introduce_bits_of(WPBSum{} + 1_i * s9 + 1_i * x9a + 1_i * x9b + 1_i * x9c, end9, ProofLevel::Top);
     [[maybe_unused]] auto [ge10, le10] = logger.introduce_bits_of(WPBSum{} + 1_i * x10a + 1_i * x10b + 1_i * x10c, end10, ProofLevel::Top);
+    // The zero-bit targets. Here the returned pair is `form <= 0` / `form >= 0`
+    // by pol over the operands' bound rows, not a red the checker verifies, so
+    // a clean veripb run says only that those two lines follow --- which is all
+    // there is to say, since a [0, 0] target forces every operand with a
+    // non-zero coefficient to be fixed and both lines are then true.
+    [[maybe_unused]] auto [ge11, le11] = logger.introduce_bits_of(WPBSum{} + 1_i * s11 + 1_i * l11, end11, ProofLevel::Top);
+    [[maybe_unused]] auto [ge12, le12] =
+        logger.introduce_bits_of(WPBSum{} + 2_i * s12 + (-1_i) * l12 + 1_i * constant_variable(-2_i), end12, ProofLevel::Top);
+
+    // The mismatched caller is rejected. Its two bound lines go out before the
+    // check fires, and they are true of the form, so the proof stays verifiable.
+    bool refused = false;
+    try {
+        [[maybe_unused]] auto refused_lines = logger.introduce_bits_of(WPBSum{} + 1_i * s13 + 1_i * l13, end13, ProofLevel::Top);
+    }
+    catch (const ProofError &) {
+        refused = true;
+    }
+    if (! refused) {
+        cerr << "introduce_bits_of accepted a [0, 0] target for a form spanning [0, 6]\n";
+        return EXIT_FAILURE;
+    }
 
     logger.conclude_none();
     tracker.finalise();
