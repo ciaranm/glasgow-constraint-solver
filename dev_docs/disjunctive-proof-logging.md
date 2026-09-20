@@ -1270,6 +1270,46 @@ zero-area escapes (`zw`/`zh`) are pinned false under reason before
 the clause is used, and strict-mode zero-area conflicts are caught by
 an all-fixed pure-RUP leaf check.
 
+**Optional rectangles** (#974) lift 1D's treatment (#735) the same way
+the rest of this section does: a `{0, 1}` presence per rectangle,
+carried as one more disjunct on each separation clause it takes part
+in and nowhere else, so the 4-way clause becomes **6-way** and a
+constant-1 presence gives a byte-identical OPB. The before flags stay
+reified *unconditionally* on the arithmetic, which is what keeps every
+justification above a pol over the same rows as before.
+
+The one new inference is the mirror of the contradiction. An undecided
+rectangle blocks nothing and is pushed nowhere — there is no
+conditional-bounds store, and an unconditional prune would be wrong if
+it turns out absent, exactly as in 1D — but if its mandatory box would
+overlap that of a rectangle known to be *present*, then it cannot be
+present:
+
+- **Presence falsification**: the same four pols as the contradiction
+  refute all four separating directions, the present partner's
+  presence literal is in the reason, and the 6-way clause is left with
+  the undecided rectangle's own "absent" disjunct, which the closing
+  RUP concludes. The contradiction and the falsification differ only
+  in which literal the clause is left with. With both presences
+  undecided nothing follows about either one alone, so the pair is
+  left to whichever presence is decided first.
+
+Worth knowing before trusting a fixture here: on every shape in
+`disjunctive_2d_optional_test`, **the falsification's four pols are not
+load-bearing** — delete them and the proofs still verify, because with
+the pair's bounds in the reason unit propagation refutes the four flags
+straight off their reification rows. What *is* pinned is the same
+derivation in its contradiction and push roles, where disabling the
+pols fails `disjunctive_2d_test`'s `d1` lane and the optional test's
+own `mixed_consts`. The falsification emits them because it inherits a
+shape-independent derivation, not one that happens to hold small.
+
+`cake_pb_cp` has no encoder for the optional form, so
+`constraint_type()` is `disjunctive2d_optional` /
+`disjunctive2d_strict_optional`, keeping it out of the
+verified-encoding chain rather than silently mismatched against the
+plain encoder — the same reason 1D's optional form is named apart.
+
 ## Reusable ideas
 
 [`cumulative-proof-logging.md`](cumulative-proof-logging.md) ends with
@@ -1325,15 +1365,20 @@ would take from *this* encoding:
   cost more than it does on `Cumulative`, since the negation range
   straddles the hump. What the published unary rule detects instead, and
   whether the pairwise encoding can certify *that*, is #757.
-- **Optional tasks for `Disjunctive2D`.** The 1D form has them
-  (#735, above); the 2D 4-way separation clause would take the same
-  two disjuncts per pair, but nothing asks for it yet.
-- **A `cake_pb_cp` encoder for the optional form.** The pairwise
-  encoding matches cake's for the non-optional constraint, which is
-  why disjunctive proofs chain-verify, and the optional form differs
-  from it by two literals per separation clause. Until cake has that,
-  `disjunctive_optional` / `disjunctive_strict_optional` are outside
-  the chain, which is what those names are for.
+- **A frontend route to optional rectangles.** The constraint takes
+  them (#974, above) and `.scp` names them, but neither MiniZinc nor
+  XCSP3 reaches the optional 2D form: there is no `fzn_diffn_opt` to
+  bind, and XCSP3 still raises an unsupported error. Nothing asks for
+  it yet, and the API and `.scp` routes are what the proof-logging
+  claim rests on.
+- **A `cake_pb_cp` encoder for the optional forms.** The pairwise
+  encoding matches cake's for the non-optional constraints, which is
+  why disjunctive proofs chain-verify, and the optional forms differ
+  from it by two literals per separation clause in 1D and in 2D alike.
+  Until cake has that, `disjunctive_optional` /
+  `disjunctive_strict_optional` and `disjunctive2d_optional` /
+  `disjunctive2d_strict_optional` are outside the chain, which is what
+  those names are for.
 - **Conditional pruning for an undecided task.** Its own bounds are
   never pruned, because there is no conditional-bounds store and an
   unconditional prune would be unsound if the task turns out absent.
