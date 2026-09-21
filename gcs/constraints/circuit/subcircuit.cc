@@ -1237,11 +1237,17 @@ auto SubCircuit::install_propagators(Propagators & propagators) -> void
     // the SCC arm needs the wider trigger.
     if (scc_anchor)
         triggers.on_change = {_succ.begin(), _succ.end()};
-    // Either way, the lookahead's evidence-node test asks whether a node's own
-    // index is still in its successor's domain, which is usually an interior
-    // value, so a hole in any successor can change what this infers, even when
-    // it is only woken by instantiation.
-    triggers.holes_affect_propagation = vector<IntegerVariableID>{_succ.begin(), _succ.end()};
+    // Otherwise instantiation covers everything but the lookahead, which also needs an
+    // evidence node outside the chain: a node whose own index has left its successor's
+    // domain. That is usually an interior value, so the hole that makes a node evidence
+    // would wake nothing (issue #966). Watch exactly that literal rather than widening to
+    // on_change: both are complete, but on the 2017 mario challenge instance on_change
+    // cost 72% more calls here where the watch cost 29%, and nearly all of either found
+    // nothing to infer. The payload is not read; the watch is only a wake. Check has no
+    // lookahead, and reads nothing but fixed successors.
+    else if (prevent)
+        for (const auto & [idx, s] : enumerate(_succ))
+            triggers.refined.emplace_back(s != Integer(static_cast<long long>(idx)), static_cast<std::uint32_t>(idx));
     propagators.install(
         constraint_id(),
         [succ = _succ, owner = constraint_id(), pos_data = std::move(_pos_data), unassigned_handle = _state_handles.unassigned, prevent, scc_anchor,
