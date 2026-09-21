@@ -577,10 +577,14 @@ line count are the numbers this design is making claims about.
   already there — `install_parity_system_propagator` is per-component by
   construction — so this is a few lines whenever someone posts a system big
   enough to care.
-- The MiniZinc side. Nothing exposes the presolver to `fzn-glasgow` yet, so the
-  `parity-learning` and `cryptanalysis` benchmarks above cannot be run without
-  wiring a flag through. That is the next thing to do, and it is also what turns
-  every number here from a fixture measurement into a real one.
+- The MiniZinc side; issue #983 tracks it. Nothing exposes the presolver to
+  `fzn-glasgow` yet, so the `parity-learning` and `cryptanalysis` benchmarks
+  above cannot be run without wiring a flag through. That is the next thing to
+  do, and it is also what turns every number here from a fixture measurement
+  into a real one. #983 asks the general question too — only `DifferenceLogic`
+  reaches a frontend today, and two of the six presolvers are reachable from
+  nothing but their own unit tests — because a one-off `--parity-system` flag
+  would make that inconsistency worse rather than better.
 - No benchmark numbers at all. Everything measured above is a handful of
   three- and four-variable fixtures. The `Top` footprint, the per-inference line
   count and the wall-clock are all claims this design makes and nothing has yet
