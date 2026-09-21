@@ -84,7 +84,9 @@ entirely.
 | Initialisation and global data | mandatory |
 | Propagator inventory | mandatory |
 | Mutable state and incrementality | mandatory |
+| Interior values and optional pruning | mandatory |
 | Robustness and limits | mandatory |
+| Interval efficiency | mandatory |
 | Inference catalogue | mandatory, one entry per rule |
 | Tests | mandatory |
 | Benchmarks and examples | mandatory |
@@ -207,6 +209,31 @@ the propagation and proof strategy? A knob should pick a strategy, not a model;
 an option that changes the model needs a reason. Note any legacy tunables kept
 as no-op dummies so that one binary can benchmark every variant.*
 
+***`with_consistency()` gets its own paragraph*** *when the family has one: the
+exact `std::variant` of `gcs::consistency` tags it accepts, the default per
+posted class (they often differ — `Element`'s variable-array forms default to
+`GAC` and its constant-array forms to `BC`), and, for each tag, which
+propagators that selection installs. Requesting a level the family does not
+list is a compile-time error, so the variant's alternatives are the closed
+list; give them as such rather than describing them.*
+
+*Two of the tags are **policies rather than levels**, and a family that accepts
+either owes a sentence saying which mechanism it means, because they resolve at
+different times and a reader will otherwise assume the wrong one:*
+
+- `consistency::Auto` *resolves* **once, before search**, *from the rest of the
+  model. For a family that implements it with an optional-interior-pruning pair
+  this is the mechanism described under [Interior values and optional
+  pruning](#interior-values-and-optional-pruning), and that section is where
+  the detail goes; other families may implement it some other way (tabulating
+  when the domains are small, say), and then say so here. Either way, say what
+  it falls back to when nothing makes the choice — a `Propagators` on which
+  nothing calls `choose_optional_interior_pruning()` keeps every pruning on.*
+- `consistency::Dynamic` *decides* **afresh at every call**, *on the current
+  domains. Say what "cheap" means for this family and what it drops to. It is a
+  fixed rule rather than a policy, which is the point of it being a separate
+  tag: requesting it explicitly survives a change to what `Auto` maps to.*
+
 ### Variable kinds and views
 
 *Which variable kinds the constraint accepts: plain `IntegerVariableID`,
@@ -294,13 +321,30 @@ say which shape.*
 needs to see them side by side. `Rule` names the entry in the inference
 catalogue.*
 
-| Propagator | Triggers | Priority | Rule(s) | Enabled by | Idempotent? | Self-disables? |
-|---|---|---|---|---|---|---|
-| | | | | always | | |
+| Propagator | Triggers | Holes affect | Priority | Rule(s) | Enabled by | Idempotent? | Self-disables? |
+|---|---|---|---|---|---|---|---|
+| | | derived | | | always | | |
 
 *Then a sentence per propagator on when it disables itself
 (`DisableUntilBacktrack`, or permanently), and on the idempotence claim —
 `Inference::NoChange` has to mean no change.*
+
+***Holes affect*** *is which variables' holes affect that propagator's
+propagation, in the sense of
+[optional-interior-pruning.md](../optional-interior-pruning.md): from any
+domains, could removing values from strictly inside a variable's bounds ever
+give this propagator an inference it could not already have made? Say `derived`
+when the declaration comes from the triggers under the usual mapping
+(`on_change` and `scope_only` yes, `on_bounds` and `on_instantiated` no, a
+`refined` watch yes unless it is on a bound literal), and otherwise name the
+variables the propagator declares through `Triggers::holes_affect_propagation`
+**and why the triggers do not tell the truth**. Every family fills this column
+in, including the families that install no optional pruning of their own,
+because this is the half that other families' `consistency::Auto` reads: a
+family that under-reports here silently weakens somebody else's constraint, and
+nothing in the suite will say so. Getting it wrong in this direction is never
+unsound — it only loses propagation — which is exactly why it needs writing
+down rather than testing for.*
 
 ### Mutable state and incrementality
 
@@ -309,17 +353,118 @@ catalogue.*
 recomputed per call that could in principle be maintained, and what that would
 buy.*
 
+### Interior values and optional pruning
+
+*Two questions, and every family answers both, because they are the two ends of
+one mechanism: [optional-interior-pruning.md](../optional-interior-pruning.md).*
+
+***What this family offers.** Whether it installs an optional-interior-pruning
+pair (`Propagators::install_with_optional_interior_pruning()`), and under which
+option — normally `consistency::Auto`. If it does, give:*
+
+- *the **targets**, the **pruning** propagator and the **fallback**, by their
+  names in the [Propagator inventory](#propagator-inventory), and which rules in
+  the catalogue stop firing when the fallback is live;*
+- *the argument that the pair keeps **both promises**, stated for this family,
+  not cited: that the two members differ only in the targets' interiors, and
+  that no other propagator of this constraint can tell whether the values the
+  pruning would remove are there. The second is the load-bearing one — it is
+  what lets the analysis ignore the constraint's own sensitivity to its own
+  targets — and it is checked by nothing, so writing it out is the check;*
+- *the **shapes that do not qualify**, and why. This is usually the more
+  informative half: `Element` makes the promises only over an array of
+  constants, and only when the result is not also one of its indices. A family
+  that offers a pair on some shapes and not others says where the line is and
+  what goes wrong on the far side of it.*
+
+***What this family observes.** Whether anything here is affected by holes in
+somebody else's variables, which is what keeps another constraint's pruning
+alive. The [Propagator inventory](#propagator-inventory)'s* Holes affect
+*column carries it per propagator; this is where to say anything that column
+cannot, particularly a propagator whose triggers overstate or understate its
+real sensitivity, and what was done about it. A family whose whole vocabulary
+is bounds should say so outright and in those words — it is the case that makes
+the mechanism pay, and it is worth being able to find by grep.*
+
+*`None.` on the first question is an ordinary answer and most families will
+give it. The second is never `None.`: a family with no propagators at all would
+not have this document.*
+
+*Do not restate the analysis here. Cite it, and keep to what is true of this
+family.*
+
 ### Robustness and limits
 
 *Mandatory, and answer every part explicitly:*
 
-- *behaviour at **large domains** — what happens at a domain of width 1e9, and
-  whether the answer is "fine", "slow", or "hangs";*
 - *behaviour at **unbounded domains**;*
 - *negative values, and zero;*
-- ***overflow** — where the arithmetic could overflow, and what guards it;*
-- *whether any cost, in the propagator or in the encoding, is proportional to
-  the **number of values** rather than the number of intervals or bits.*
+- *the **degenerate shapes** — an empty array, a single variable, an aliased
+  pair, a constant operand — where the frontends and the tests tend to
+  disagree;*
+- ***overflow** — where the arithmetic could overflow, and what guards it.*
+
+*Everything about **width** — what happens at a domain of width 1e9, and what
+any cost is proportional to — goes in [Interval
+efficiency](#interval-efficiency) instead, which is a section of its own
+because it now has more to say than a bullet.*
+
+### Interval efficiency
+
+*A domain is an `IntervalSet<Integer>`, and the policy in
+[large-domains.md](../large-domains.md) is that **every bounds-consistency path
+must be independent of domain width**. This section is that document's per-family
+row: what this family's work is proportional to, and where it still is not
+proportional to the right thing.*
+
+*Answer four things, and keep them apart, because a family can pass any one of
+them and fail the next:*
+
+1. ***The propagation side.*** *Every site that walks values —
+   `State::each_value_*`, `State::for_each_value_*`, an `IntervalSet` the
+   propagator builds and walks itself, a plain `for (v = lo; v <= hi; ++v)` —
+   with one line each saying why it is acceptable: it exits early after a bounded
+   number of steps, it is bounded by something other than the domain (a value
+   set, an array, a task count), or it is a genuine per-value support scan with
+   no interval structure to exploit and a weaker arm behind it. Name the interval
+   primitive used where one is used instead: `domain_intersects_with()`,
+   `domain_is_subset_of()`, `domains_intersect()`,
+   `IntervalSet::each_interval_minus()`, `InferenceTracker::infer_not_in_range()`.
+   "Reaches for `State`'s per-value iterators nowhere at all" is a property that
+   can be checked by reading, which is worth more than a benchmark; say it when
+   it is true.*
+2. ***The reason side.*** *Whether a reason this family builds is one literal per
+   value or one per run, and — separately — whether the **work of finding** the
+   runs is one step per run or one per value. A site can get the first right and
+   the second wrong, and neither the audit lane nor a proof-size survey can see
+   it, because the proof was already the right size (#935). Say whether reason
+   assembly is guarded on `InferenceTrackerBase::want_reasons()`: an unguarded
+   width-proportional reason is a hazard on the propagation path even with proofs
+   off.*
+3. ***The proof side.*** *Whether any emitted line is per value, and whether the
+   form is chosen by a **width gate** rather than unconditionally. The ban on
+   per-value iteration does not carry over to what a proof emits: over a narrow
+   definition range the interval form is about as big per line and there are more
+   of them, so going to covers unconditionally cost `sudoku` 16% more proof lines
+   (#939). A family that picks its form by a width test says where the threshold
+   is; a family that picks by the **kind** of a variable rather than by width has
+   a bug of the shape #924 and #931 fixed, and should say so here.*
+4. ***Where the family stands in the audit lane.*** *Its rows in
+   `gcs/large_domain_audit_test.cc` and their pinned outcomes (`Clean`,
+   `KnownTrip`, `NoWidePosition`, `HazardNotReached`), plus its rows in that
+   file's `"Large domain proof sizes"` case if it has any. Then the part the
+   table cannot say: **which axes those rows do not vary**. A row varies width,
+   holes, the variable's kind, whether a reason is materialised, which
+   constructor was used and which arm the option selects — most rows vary only
+   the first, and every gap this arc has found was a row that reached the
+   constraint without reaching the site. A family with no row says that, and
+   [Next steps](#next-steps) gets an item.*
+
+*`Fine at any width` is a legitimate and common answer to all four, and a family
+whose encoding is logarithmic in width should say so plainly. What is not
+legitimate is answering only the first: three of the four sites this arc found
+were on the reason and proof sides, where a search for pruning loops does not
+reach.*
 
 ## Inference catalogue
 
@@ -342,9 +487,15 @@ between rules stays in the entries, even when most of them agree.*
 - **Infers** — *what is inferred: a bound push, a value removal, a
   contradiction, a flag.*
 - **Fires when** — *the trigger, and which propagator from the inventory runs
-  it.*
+  it. If the rule belongs to one arm of a selectable consistency level, or to
+  one member of an optional-interior-pruning pair, say which — a rule that does
+  not run under the family's default is still a rule, and the question a reader
+  has is when it runs at all.*
 - **Strength** — *from [Appendix B](#appendix-b-consistency-level-vocabulary);
-  what this rule alone achieves on its scope.*
+  what this rule alone achieves on its scope. A **policy tag is never an answer
+  here**: `consistency::Auto` and `consistency::Dynamic` name how a level gets
+  chosen, not a level, so a rule under one of them states the level its own arm
+  achieves and leaves the choosing to [Options](#options).*
 - **Algorithm** — *what it does, its complexity, and the literature reference.
   Be explicit about what the complexity is in: genuinely the **number of
   values**, or the number of **intervals**, or **bits**, or tasks. This is the
@@ -368,17 +519,27 @@ between rules stays in the entries, even when most of them agree.*
   are what tells a later reader whether the citation survives a change.*
 - **Reason** — *which literals go into the reason, and whether that set is
   minimal. The reason is what the external tool sees; a non-minimal one costs
-  it trimming work. A justification reads the reason, never `state`.*
+  it trimming work. A justification reads the reason, never `state`. Say
+  whether the literal count is **per value or per run** of the domains it
+  names, and whether assembling it is guarded on `want_reasons()`; see
+  [Interval efficiency](#interval-efficiency) for why the two are separate
+  questions.*
 - **Assertion** — *the PB inequality actually emitted, as a shape in terms of
-  the rule's data. This is what an `a` line would contain in hints-only mode.*
+  the rule's data. This is what an `a` line would contain in hints-only mode.
+  Where the rule has **two forms** — a range assertion and a per-value one —
+  give both and say what picks between them, which should be a width test and
+  not a test on the kind of a variable.*
 - **Hint** — *the `gcs::innards::hints` type, and one line per field giving its
   type and meaning. If the hint does not exist yet, say so — that is a work
   item, and it belongs in [Next steps](#next-steps).*
 - **Offline reconstructibility** — *one of the three verdicts in [Appendix
   C](#appendix-c-reconstructibility-verdicts). If `solver-side`, name the
   information that is not recoverable.*
-- **Proof size** — *per firing, asymptotically; plus a measured figure with
-  provenance if there is one.*
+- **Proof size** — *per firing, asymptotically, and **in what**: values, runs,
+  bits, or tasks. The distinction is the whole point of the field for a family
+  whose domains can be wide, and "linear" without it is the line this arc has
+  most often had to go back and correct. Plus a measured figure with provenance
+  if there is one.*
 - **Gaps** — *whether this rule is logged at all, and whether the propagator is
   weakened when proofs are enabled. `None.` is the expected answer.*
 - **Tightness** — *whether a mutation of **this rule's** derivation has been
@@ -546,6 +707,12 @@ saying what licenses it is how the table stopped being useful the first time.
 
 ## Appendix B: consistency level vocabulary
 
+Two lists, and they are not interchangeable. The first is what a rule or a
+propagator **achieves**, and is what the **Strength** field takes. The second
+is what a model may **request**, and is what [Options](#options) takes.
+
+### Levels achieved
+
 | Name | Meaning |
 |---|---|
 | `GAC` | generalised arc consistency on the whole constraint |
@@ -558,6 +725,33 @@ saying what licenses it is how the table stopped being useful the first time.
 
 GAC on two constraints separately is not GAC on their conjunction; a family
 implemented by decomposition says `decomposition`, not `GAC`.
+
+### Levels requestable
+
+The tags in `gcs/consistency.hh`, which a family exposes as a `std::variant`
+through `with_consistency()`. Name the tag, `consistency::`-qualified, so that
+the two lists cannot be confused in a table.
+
+| Tag | What it selects |
+|---|---|
+| `consistency::GAC` | a genuine algorithm reaching GAC, whose cost is under that algorithm's control |
+| `consistency::Tabulated` | GAC reached by enumerating every satisfying assignment — a different tag precisely because the set-up and the proof grow with the product of the domain sizes |
+| `consistency::BC` | bounds consistency |
+| `consistency::VC` | value consistency: a fixed variable's immediate consequences and nothing more |
+| `consistency::Auto` | **a policy, not a level** — the solver chooses, once and before search |
+| `consistency::Dynamic` | **a fixed rule, not a level** — GAC where the GAC algorithm is cheap on the current domains, re-decided at every call |
+
+The bottom two never appear as a **Strength**. They say how a level is chosen,
+and the answer can differ per model (`Auto`) or per call (`Dynamic`), so the
+rule under one of them states what its own arm achieves and
+[Options](#options) explains the choosing. The distinction between them is
+*when the choice is made*, and it is worth keeping because it decides what a
+reader can conclude from a benchmark: `Auto`'s answer is fixed for a whole
+search and visible on the stats channel, `Dynamic`'s is not.
+
+Requesting a level a family does not list is a compile-time error, so a
+family's variant is the closed list of what it supports — and adding an
+alternative is an API change, where adding a row to the first table is not.
 
 ## Appendix C: reconstructibility verdicts
 
@@ -599,7 +793,13 @@ template with the propagation sections deleted. A presolver does not infer; it
 rewrites the model before search. The differences:
 
 **Dropped.** Propagator inventory, mutable state and incrementality,
-idempotence, consistency level. A presolver runs once.
+idempotence, consistency level, and interior values and optional pruning. A
+presolver runs once, infers nothing, and has no propagator whose hole
+sensitivity anything could read. It does still run **before** the choice is
+made — `gcs::solve_with()` calls `choose_optional_interior_pruning()` after the
+last presolver, precisely so that a constraint a presolver installs is counted
+— so a presolver that posts constraints says here what their hole sensitivity
+is, since that is what its rewrite contributes to someone else's choice.
 
 **Replaced.** The inference catalogue becomes a **rewrite catalogue**, one
 entry per rewrite, with fields: what pattern is matched; what is posted or
@@ -627,8 +827,11 @@ in a constraint document:
   of the *wrong* line is the failure a soundness argument alone does not catch.
 
 Everything else — status line, semantics, OPB and proof-time state, robustness,
-tests, benchmarks, both performance sections, gaps, next steps, prior art —
-carries over unchanged.
+interval efficiency, tests, benchmarks, both performance sections, gaps, next
+steps, prior art — carries over unchanged. **Interval efficiency** carries over
+because a donor scan is exactly the shape that walks values without looking
+like a propagator: it runs once, over the whole model, and a scan proportional
+to a domain's width is the same hazard wherever it sits.
 
 ---
 
