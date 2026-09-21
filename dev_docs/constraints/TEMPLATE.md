@@ -328,9 +328,13 @@ say which shape.*
 needs to see them side by side. `Rule` names the entry in the inference
 catalogue.*
 
-| Propagator | Triggers | Holes affect | Priority | Rule(s) | Enabled by | Idempotent? | Self-disables? |
-|---|---|---|---|---|---|---|---|
-| | | derived | | | always | | |
+| Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
+|---|---|---|---|---|---|---|
+| | | derived | | always | | |
+
+*Propagators have no priority, so there is no column for one. An initialiser
+does (`InitialiserPriority`); give an initialiser a row too, and say its
+priority in* Enabled by *when it is not the default.*
 
 *Then a sentence per propagator on when it disables itself
 (`DisableUntilBacktrack`, or permanently), and on the idempotence claim —
