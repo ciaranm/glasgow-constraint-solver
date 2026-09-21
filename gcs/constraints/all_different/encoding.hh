@@ -4,13 +4,11 @@
 #include <gcs/constraint.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
-#include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
-#include <map>
 #include <string>
 #include <vector>
 
@@ -27,12 +25,11 @@ namespace gcs
 
         // Emits the AllDifferentExcept clique encoding. Where the same variable
         // appears more than once in `vars`, the resulting pair-of-half-reified
-        // constraints implies that variable must take a value in `excluded`;
-        // the returned map gives one of the per-pair selector flags for each
-        // such duplicated variable, so callers can use it as the witness flag
-        // in justifications that derive `var != v` for `v` not in `excluded`.
-        auto define_clique_not_equals_except_encoding(ProofModel & model, const std::vector<IntegerVariableID> & vars,
-            const std::vector<Integer> & excluded) -> std::map<IntegerVariableID, ProofFlag>;
+        // constraints implies that variable must take a value in `excluded`,
+        // and does so to unit propagation: a range of non-excluded values for
+        // it can be removed by RUP alone.
+        auto define_clique_not_equals_except_encoding(
+            ProofModel & model, const std::vector<IntegerVariableID> & vars, const std::vector<Integer> & excluded) -> void;
 
         // Install a SimpleDefinition-priority contradiction initialiser that
         // proves the input was unsatisfiable because of a duplicate variable

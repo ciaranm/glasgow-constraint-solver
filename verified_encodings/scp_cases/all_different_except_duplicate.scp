@@ -1,0 +1,1 @@
+( (version 1) (variables (X -4 6) (Y -4 6) (Z 0 2)) (constraints (_1 all_different_except (X X Y Z Y) (-2 3))) (prob_type enumerate) )

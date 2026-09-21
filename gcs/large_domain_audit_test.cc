@@ -383,12 +383,22 @@ namespace
         // --- All-different family.
         add("AllDifferent", Expect::KnownTrip, [](Problem & p) {
             // H2: AllDifferent::prepare builds the compressed value set under
-            // GAC, with a linear find per value.
+            // GAC, one graph vertex per value. No longer quadratic (e45b8e1a),
+            // but still a walk over every value of every variable.
             p.post(AllDifferent{wide(p, 4)});
         });
         add("AllDifferent/VC", Expect::Clean, [](Problem & p) { p.post(AllDifferent{wide(p, 4)}.with_consistency(consistency::VC{})); });
         add("AllDifferent/BC", Expect::Clean, [](Problem & p) { p.post(AllDifferent{wide(p, 4)}.with_consistency(consistency::BC{})); });
         add("AllDifferentExcept", Expect::KnownTrip, [](Problem & p) { p.post(AllDifferentExcept{wide(p, 4), {0_i}}); });
+        add("AllDifferentExcept/duplicate", Expect::Clean, [](Problem & p) {
+            // A repeated variable is forced into the excluded set, which it
+            // once was one value at a time and is now one range at a time, and
+            // it no longer contributes to the value set that trips the row
+            // above (#988). The other variable is narrow, so that this row is
+            // about the duplicate and nothing else.
+            auto x = wide_var(p);
+            p.post(AllDifferentExcept{{x, x, narrow(p, 1, 0_i, 3_i).front()}, {0_i}});
+        });
         add("SymmetricAllDifferent", Expect::NoWidePosition, [](Problem & p) { p.post(SymmetricAllDifferent{narrow(p, 4, 0_i, 3_i)}); });
         add("AllEqual", Expect::Clean, [](Problem & p) { p.post(AllEqual{wide(p, 3)}); });
         add("AllEqual/holes", Expect::Clean, [](Problem & p) {
@@ -1159,6 +1169,15 @@ TEST_CASE("Large domain proof sizes")
                 // the how_many variable cannot reach.
                 auto v = confined_vars(p, 3);
                 p.post(Among{v, {1_i, 2_i}, p.create_integer_variable(0_i, 1_i)});
+            }},
+        {"AllDifferentExcept/duplicate",
+            [&](Problem & p) {
+                // A repeated variable forced into the excluded set, {5}, which
+                // leaves two runs of the range to remove either side of it. Per
+                // value that was fourteen proof lines for every value removed
+                // (#988); per run it is RUP from the pair's own rows.
+                auto x = p.create_integer_variable(wide_lo, probe_width);
+                p.post(AllDifferentExcept{{x, x, p.create_integer_variable(0_i, 3_i)}, {5_i}});
             }},
         {"Plus/two-intervals",
             [&](Problem & p) {

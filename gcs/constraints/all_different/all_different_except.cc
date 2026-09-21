@@ -10,6 +10,7 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
+#include <gcs/interval_set.hh>
 #include <gcs/proof.hh>
 #include <version>
 
@@ -110,12 +111,20 @@ auto AllDifferentExcept::prepare(Propagators &, State & initial_state, ProofMode
     // indices the propagator's graph uses --- exactly as it was, without the
     // quadratic. See AllDifferent::prepare for the measurement. The excluded list
     // stays a linear scan: it is the model's, and is not domain-sized.
+    //
+    // A duplicated variable contributes nothing. Its initialiser forces it into
+    // the excluded set before anything propagates, so no value it could offer
+    // here survives to be matched, and walking its domain for them is the one
+    // part of this that a wide duplicated variable pays for by width (#988).
     std::set<Integer> seen;
-    for (auto & var : _sanitised_vars)
+    for (auto & var : _sanitised_vars) {
+        if (find(_duplicated_vars.begin(), _duplicated_vars.end(), var) != _duplicated_vars.end())
+            continue;
         for (const auto & val : initial_state.each_value_immutable(var))
             if (find(_sanitised_excluded.begin(), _sanitised_excluded.end(), val) == _sanitised_excluded.end())
                 if (seen.insert(val).second)
                     _compressed_vals.push_back(val);
+    }
 
     return true;
 }
@@ -127,7 +136,7 @@ auto AllDifferentExcept::define_proof_model(ProofModel & model, const State &) -
     // out-of-domain exception value still contributes its (statically-true)
     // literals to the pair rows, keeping the rows' propagation strength -- and
     // hence the proof steps they support -- identical on both sides.
-    _duplicate_selectors = define_clique_not_equals_except_encoding(model, _sanitised_vars, _excluded);
+    define_clique_not_equals_except_encoding(model, _sanitised_vars, _excluded);
 }
 
 auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
@@ -146,34 +155,34 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
     }
 
     // For each duplicated variable, install an initialiser that forces it
-    // into the excluded set: for every value v in its current domain that is
-    // not in `excluded`, infer var != v. The justification rests on the two
-    // half-reified constraints emitted for the duplicate pair: each on its
-    // own implies "selector OR var-in-excluded" or "!selector OR
-    // var-in-excluded", so under the hypothesis var = v with v not in
-    // excluded, both directions of the selector are simultaneously forced.
+    // into the excluded set. That is its domain minus a small given set, so it
+    // goes in as the runs between excluded values, however wide the domain:
+    // one inference per run, not per value (#988).
+    //
+    // Each run is RUP from the duplicate pair's two half-reified rows alone.
+    // They say "selector or var is excluded" and "not selector or var is
+    // excluded", and with var in [lo, hi] every excluded value's eq atom is
+    // false by unit propagation, down the chain of var's order atoms from the
+    // bound on whichever side of the run the value lies (a run is a stretch of
+    // the domain with no excluded value in it). So the rows force the selector
+    // both ways.
     if (_has_duplicates) {
-        propagators.install_initialiser(
-            [duplicated_vars = move(_duplicated_vars), excluded = _sanitised_excluded, duplicate_selectors = move(_duplicate_selectors),
-                owner = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> void {
-                for (const auto & x : duplicated_vars) {
-                    vector<Integer> non_excluded_values;
-                    for (const auto & v : state.each_value_immutable(x))
-                        if (find(excluded.begin(), excluded.end(), v) == excluded.end())
-                            non_excluded_values.push_back(v);
-                    for (const auto & v : non_excluded_values) {
-                        inf.infer(logger, x != v,
-                            JustifyExplicitly{//
-                                [&logger, x, v, &duplicate_selectors](const ReasonLiterals &) -> void {
-                                    const auto & selector = duplicate_selectors.at(x);
-                                    logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (x != v) + 1_i * selector >= 1_i, ProofLevel::Temporary);
-                                    logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (x != v) + 1_i * (! selector) >= 1_i, ProofLevel::Temporary);
-                                },
-                                ThenRUP::Yes, hints::AllDifferentExcept{owner}},
-                            NoReason{});
-                    }
-                }
-            });
+        vector<Integer> excluded_values = _excluded;
+        sort(excluded_values);
+        excluded_values.erase(std::unique(excluded_values.begin(), excluded_values.end()), excluded_values.end());
+        IntervalSet<Integer> excluded_set;
+        for (const auto & s : excluded_values)
+            excluded_set.insert_at_end(s);
+
+        propagators.install_initialiser([duplicated_vars = move(_duplicated_vars), excluded_set = move(excluded_set), owner = constraint_id()](
+                                            const State & state, auto & inf, ProofLogger * const logger) -> void {
+            for (const auto & x : duplicated_vars) {
+                // A named local: each_interval_minus() borrows both sets.
+                auto values = state.copy_of_values(x);
+                for (auto [lo, hi] : values.each_interval_minus(excluded_set))
+                    inf.infer_not_in_range(logger, x, lo, hi, JustifyUsingRUP{hints::AllDifferentExcept{owner}}, NoReason{});
+            }
+        });
 
         // Dedupe before the propagator runs: bipartite matching can't model
         // duplicate left-vertices correctly, but the initialiser has already
