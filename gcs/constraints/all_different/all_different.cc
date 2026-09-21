@@ -130,16 +130,19 @@ auto AllDifferent::prepare(Propagators &, State & initial_state, ProofModel * co
         _gac_staged = _sanitised_vars.size() * _compressed_vals.size() >= min_var_val_pairs_for_staged_gac;
     }
 
-    // The value-consistency pass needs the not-yet-assigned variables as
-    // backtrackable state: VC runs it as its whole propagator, GAC as the
-    // cheap first stage of its staged propagator when the constraint is big
-    // enough for staging to pay. Skipped otherwise: an unused constraint
-    // state would still be saved and restored at every search node.
+    // The value-consistency pass needs the variables whose values it has not
+    // yet pushed through the clique as backtrackable state: VC runs it as its
+    // whole propagator, GAC as the cheap first stage of its staged propagator
+    // when the constraint is big enough for staging to pay. Skipped otherwise:
+    // an unused constraint state would still be saved and restored at every
+    // search node.
+    //
+    // Every variable starts in it, including one already fixed here. A variable
+    // leaves the list only once its value has been removed from the others, so
+    // one that never entered it would never have its value removed at all: at
+    // VC, AllDifferent{x, y} with y fixed to 3 accepted x = 3.
     if (holds_alternative<consistency::VC>(_level) || _gac_staged) {
-        NonGacAllDifferentUnassigned unassigned{};
-        for (auto & var : _sanitised_vars)
-            if (! initial_state.has_single_value(var))
-                unassigned.push_back(var);
+        NonGacAllDifferentUnassigned unassigned{_sanitised_vars.begin(), _sanitised_vars.end()};
         _unassigned_handle = initial_state.add_constraint_state(unassigned);
     }
 
