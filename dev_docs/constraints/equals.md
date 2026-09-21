@@ -1,17 +1,43 @@
 # `Equals`: two operands are (or are not) the same value
 
 > **Maturity** production ·
-> **Audited** 2026-09-07 at `7d014207`; re-audited 2026-09-08 at `76bfd836` ·
-> **Open issues** #882 (views have no range literal) and #895 (the
-> refined-watch scan) reach into this family without being about it; #868 is
-> an audit-wide prerequisite, now half done. The first pass filed #864–#870
-> and six of those seven are fixed. Tracked under #871.
+> **Audited** 2026-09-07 at `7d014207`; re-audited 2026-09-08 at `76bfd836`;
+> re-audited 2026-09-21 at `6b220c79` ·
+> **Open issues** `None.` own to this family. #868, an audit-wide
+> cross-solver prerequisite, is still open and still half done. The first pass
+> filed #864–#870 and six of those seven are fixed; the two that reached in
+> from outside — #882 and #895 — have both closed since the second pass. What
+> this audit would file, it has instead put in [Next
+> steps](#next-steps): two missing audit-lane rows, neither a suspected bug.
+> Tracked under #871.
 
 Six posted classes over one implementation: an equality between two operands,
 optionally reified, optionally negated. It is the smallest interesting
 constraint in the solver and one of the busiest — 71% of all propagator calls
 on `ortho_latin --all 6`, and 44% of the assertions in its proof — so its cost
 per call and its trigger set matter more than its algorithm does.
+
+**What the third pass changed.** A narrower pass than the second: two solver
+mechanisms arrived that every family document now has to answer for, and two
+issues that reached into this family from outside closed. Neither the rule
+catalogue's arguments nor the performance tables were re-derived.
+
+| Landed | What it changed here |
+|---|---|
+| #882 → #904 | views own their range literals, so **rule 3 is deleted** — it existed only as the per-value fallback rule 2 took for a wrapped operand — and the no-overlap walk no longer spells a view's runs out value by value. Nine rules become eight |
+| #900 → #929 | the disjointness walk moved out of `equals.cc` into `innards/no_overlap_walk.hh`, so `Element` shares it. A second coupling with the same family, running the same way round |
+| #895 → #932, #934 | the refined-watch scan's two per-inference costs are gone; the scan itself is not, and its measured successor has no issue |
+| #902 → #965, #967 | nothing in this family installs an optional pruning, but every propagator now has a hole-sensitivity answer, and this family's is load-bearing for other people's constraints |
+| #833's interval arc | [Interval efficiency](#interval-efficiency) is a section rather than a bullet, and it splits four questions this family used to answer as one |
+
+The two that changed what this document *says* rather than only what it points
+at are #904 and #902. #904 deleted a rule, which is the first time this arc has
+had to do that, and the [Inference catalogue](#inference-catalogue) says so
+outright rather than quietly renumbering. #902 is new work for every family and
+lands here in two places: a **Holes affect** column in the [propagator
+inventory](#propagator-inventory), and [Interior values and optional
+pruning](#interior-values-and-optional-pruning), where the interesting finding
+is about `NotEquals` rather than about `Equals`.
 
 **What the second pass changed.** The first audit filed seven issues and this
 document was the argument for them; six are now closed. One more fix arrived
@@ -123,39 +149,54 @@ This is worth stating rather than omitting, because the neighbouring linear
 family does have `with_consistency` and `with_incremental_threshold`, and a
 reader coming from there will look for the equivalent here.
 
+**No `with_consistency()`, and no room for one.** The family has one level to
+offer: with two operands and no holes the bounds intersection *is* the domain
+intersection, and with holes the symmetric difference is GAC at the cost of a
+merge walk, so there is no cheaper arm to fall back to and nothing for
+`consistency::Auto` or `consistency::Dynamic` to choose between. That is a
+statement about this constraint rather than an omission — a family this small
+is where a consistency knob would be pure overhead — and it is also why this
+family appears in [Interior values and optional
+pruning](#interior-values-and-optional-pruning) only on the *observing* side.
+
 ### Variable kinds and views
 
 Both operands are `IntegerVariableID`, so plain variables, constants and views
 are all accepted, and the propagator is instantiated over the `visit` of both
 operand kinds.
 
-Views are where the proof and the propagator diverge:
+**Propagation** treats a view like anything else; the inferences go through the
+same `infer_*` calls and the view layer translates them.
 
-- **Propagation** treats a view like anything else; the inferences go through
-  the same `infer_*` calls and the view layer translates them.
-- **Proof.** Two rules degrade, for the same underlying reason: **a view has
-  no range literal** (#882), so nothing interval-shaped can be said about one.
+**The proof no longer diverges.** Until #904 this section was the family's
+longest, because a view had no range literal and so nothing interval-shaped
+could be said about one: rule 2 was guarded on both operands being a bare
+`SimpleIntegerVariableID` and fell back wholesale to a per-value rule when
+either was not, and the no-overlap witness spelled out those of its runs whose
+variable was a view. Both detours are deleted, not adjusted. A registered view
+owns its range literals over its own bit vector, which is also the
+representation the model states this equality in, so the bridge lemmas resolve
+against it directly and a run of values a view cannot take is one literal like
+anyone else's. Measured on one `Equals` with a wide interior hole, the view
+case went from `2 + 36w` proof lines — 360,012 at width 10⁴ and unwritable by
+10⁵ — to a flat 106 at every width up to 10⁶, against 40 for a bare variable.
+The residual 106-against-40 is the linking layer's, not this family's.
 
-  The interval-wise symmetric difference (rule 2) is guarded on both operands
-  being a bare `SimpleIntegerVariableID` (`both_simple`) and falls back
-  wholesale to a per-value rule when either is not — correct, but one
-  inference and one proof line per removed *value* rather than per removed
-  interval. The bridge lemmas that carry a range literal across the equality
-  need a plain variable on the far side.
-
-  The no-overlap witness (rule 9) degrades more narrowly, and deliberately so:
-  it spells out only the *runs whose variable is a view*, value by value,
-  leaving the rest of the walk alone. So a view there pays for its own holes
-  and not for the width of anything. That is the granularity the general fix
-  wants, and it is the difference between the eighth view detour in the solver
-  and the seventh — both are `equals.cc`, and #882 counts them separately for
-  exactly this reason.
+**What decides a form here is now width, never the kind of a variable**, which
+is the standing rule [#924 and #931 settled](../large-domains.md) after the
+same mistake turned up in `Element` and `Abs`. This family had two instances of
+it and has none; see [Interval efficiency](#interval-efficiency) for the lane
+rows that hold it that way.
 
 The view sweep in the test binary exercises both positions
-(`add_view_tests(equals_constraint equals_test 2)`), so the fallback path is
-covered, and `run_holey_no_overlap_view_equals_test` covers the one shape
-whose witness is not spelled entirely in intervals. Neither is free, and a
-model built entirely out of views pays rule 2's per-value cost.
+(`add_view_tests(equals_constraint equals_test 2)`), and
+`run_holey_no_overlap_view_equals_test` covers a witness over a wrapped
+operand. Note what a green view sweep is worth on its own, which is not much:
+the crossing #904 introduced succeeds *by accident* in 80% of small random
+configurations — whenever the range touches a bound, is the whole range, or has
+every cell inside it shattered to width 1 — so the four dedicated witnesses W6
+to W9, each validated by ablation, are the real evidence and the sweep is a
+regression net.
 
 ### Reification
 
@@ -197,10 +238,22 @@ the MiniZinc traffic arrives.
 **Posts as children.** Nothing. `ReifiedEquals::prepare` allocates nothing and
 posts nothing.
 
-**Shares code with.** `enforce_equality` is exported from `gcs::innards` and
-called by `Element` (`element.cc:699`) to tie a result variable to a selected
-array entry. Any change to its inference set or its return value is an
-`Element` change too — this is the one cross-family coupling in the file.
+**Shares code with.** Two couplings, in opposite directions, and both are with
+`Element`:
+
+- `enforce_equality` is exported from `gcs::innards` and called by `Element` to
+  tie a result variable to a selected array entry. Any change to its inference
+  set or its return value is an `Element` change too.
+- The disjointness walk behind rule 8 is no longer ours. #900 lifted it into
+  `gcs/constraints/innards/no_overlap_walk.hh` as `walk_no_overlap()` and the
+  `NoOverlapStep` vocabulary, because `Element`'s index-support rule needed the
+  same certificate: "these two domains are disjoint, stated over runs". This
+  family remains the walk's reference caller and the header documents what each
+  move owes in terms of this encoding, but a change to the invariant it carries
+  is now an `Element` change as well.
+
+Both couplings run the same way round — we export, `Element` consumes — so a
+change here is felt there and not the reverse.
 
 **Presolvers.** None rewrite or target this family. `DifferenceLogic` scans for
 `x - y ≤ d` shapes and does not recognise an `Equals`.
@@ -362,12 +415,32 @@ placement means a bad model throws at `post` rather than at solve.
 One propagator, whichever variant is posted. The trigger set is what differs,
 and it is the only tuned thing in the family.
 
-| Propagator | Triggers | Rule(s) | Enabled by | Idempotent? | Self-disables? |
-|---|---|---|---|---|---|
-| dispatcher, decided must-hold | `on_change` both operands | 1–4 | `Equals`, and `If`/`Iff` fixed true at install | never claims | yes, once an operand is fixed |
-| dispatcher, decided must-not-hold | `on_instantiated` both operands | 5 | `NotEquals`, and `NotIf`/`Iff` fixed false at install | never claims | yes, once it has acted |
-| dispatcher, undecided | `on_change` both operands **and** the condition | 1–9 | the four reified forms while `cond` is open | claims stripped | yes, on any verdict |
-| — with **one constant operand** | `on_instantiated` both **and** a refined watch on `other != c`, plus the condition | 1, 5, 7, 8 | any variant with exactly one constant operand | as above | as above |
+| Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
+|---|---|---|---|---|---|---|
+| dispatcher, decided must-hold | `on_change` both operands | derived: **both operands** | 1–3 | `Equals`, and `If`/`Iff` fixed true at install | never claims | yes, once an operand is fixed |
+| dispatcher, decided must-not-hold | `on_instantiated` both operands | derived: **nothing** | 4 | `NotEquals`, and `NotIf`/`Iff` fixed false at install | never claims | yes, once it has acted |
+| dispatcher, undecided | `on_change` both operands **and** the condition | derived: **both operands** and the condition | 1–8 | the four reified forms while `cond` is open | claims stripped | yes, on any verdict |
+| — with **one constant operand** | `on_instantiated` both **and** a refined watch on `other != c`, plus the condition | derived: **the non-constant operand**, and the condition variable | 1, 4, 6, 7 | any variant with exactly one constant operand | as above | as above |
+
+Every row is derived from the triggers; the family sets
+`Triggers::holes_affect_propagation` nowhere, and the derivation is right in
+all four cases. The two interesting rows are the last two. The **must-not-hold**
+row reads nothing but `optional_single_value`, so a hole appearing anywhere
+cannot give it an inference it did not already have — which is the same fact
+that made `on_instantiated` the correct trigger in #819, read off in the
+other direction. And the **constant-operand** row is a refined watch on
+`other != c`, an equality literal rather than a bound, so the derivation says
+holes in `other` do affect it, which is exactly right: `c` disappearing from
+`other`'s interior is the whole inference. A refined watch on a bound literal
+would have derived the opposite, and that distinction is the reason the
+mapping is stated per literal kind rather than per trigger.
+
+The condition variable appears on both reified rows because the dispatcher
+registers it through `add_trigger_for()`, which maps an `Equal` condition to
+`on_change`. For the usual `b == 1` spelling that is a `{0, 1}` variable with no
+interior, so it names nothing a pruning could remove; for a general condition
+such as `If{x == 5}` it is load-bearing, since a hole at `x = 5` is what decides
+the condition.
 
 **The trigger set is the only tuned thing in the family, and it has now been
 tuned twice in opposite directions.** Both times the lever was how often the
@@ -375,7 +448,7 @@ propagator wakes, never what it does when it does; see [CPU
 performance](#cpu-performance) for both sets of figures.
 
 *Coarser, for the unconditional disequality* (#819). `NotEquals` only ever
-runs rule 5, which reads nothing but `optional_single_value` and disables
+runs rule 4, which reads nothing but `optional_single_value` and disables
 itself until backtrack once it has acted — so `on_instantiated` cannot miss a
 wake, and the wakes it drops are the expensive ones. Fixing a vertex removes
 one value from each of its *d* neighbours, and under `on_change` every one of
@@ -425,7 +498,7 @@ soundness, so nothing failed; what showed it was the learned-nogood store,
 also a refined-watch client, exploring a different tree on the refined path
 than on the scan oracle.
 
-**Self-disabling.** Rules 1, 2 and 5 return `DisableUntilBacktrack` — once an
+**Self-disabling.** Rules 1, 2 and 4 return `DisableUntilBacktrack` — once an
 operand is fixed, an equality has nothing left to say at this node or below.
 Any verdict from the undecided pass also disables. This is a large part of why
 the per-call cost is so low.
@@ -441,26 +514,107 @@ nothing worth carrying across a call that would not cost more to keep valid
 than to recompute. The one thing a reader might expect — remembering that the
 domains were already equal — is subsumed by `DisableUntilBacktrack`.
 
+### Interior values and optional pruning
+
+**Offers.** `None.` The family installs no optional-interior-pruning pair, and
+[Options](#options) says why there is nothing for one to choose between: with
+no holes the bounds intersection is already the domain intersection, and with
+holes the merge walk is GAC for the cost of walking the intervals that are
+there. There is no arm here that is cheaper and weaker, so there is nothing to
+make optional.
+
+**Observes, and this is the half that matters for this family.** An equality is
+a hole-sensitive consumer, and a common one, so an `Equals` or a reified
+equality in a model is one of the things that keeps somebody else's pruning
+alive. Read off the [Propagator inventory](#propagator-inventory): the
+must-hold and undecided passes are affected by holes in both operands, so an
+`Equals` posted on an `Element`'s result is on its own enough for that
+element's `consistency::Auto` to keep its generalised arc consistent arm. That
+is correct rather than conservative — the symmetric-difference rule really can
+infer something from a hole in the other operand that it could not infer from
+its bounds.
+
+**The unconditional disequality is the exception, and it is the interesting
+case.** `NotEquals` installs the must-not-hold pass alone, on
+`on_instantiated`, and reads nothing but `optional_single_value`: a hole
+appearing anywhere can never give it an inference it did not already have. So
+**a not-equals clique does not keep anything's interior pruning on.** The
+clique encoding of an all-different — the source of essentially all this
+family's call volume, see [CPU performance](#cpu-performance) — is
+hole-transparent for this purpose, where a real `AllDifferent` over the same
+variables is not. A model that swaps one for the other changes what some
+*other* constraint's `Auto` decides, which is not a connection anyone would
+look for, and is worth knowing before reading a benchmark that makes that swap.
+
+The family declares `Triggers::holes_affect_propagation` nowhere: every row is
+derived from the triggers and the derivation is right. Worth noting that both
+of the family's trigger changes — #819's coarsening to `on_instantiated` and
+#889's refined watch on `other != c` — predate this mechanism and happen to
+carry exactly the right sensitivity into it, because both were reasoned about
+in the same terms: what does this pass actually read. A trigger chosen for
+speed and a hole declaration chosen for correctness are the same question asked
+twice, which is why deriving one from the other works.
+
 ### Robustness and limits
 
-**Large domains: no rule is width-sensitive any more.** The bounds rule is
-O(1) and the encoding is logarithmic; the symmetric-difference rule is
-interval-based; and since #881 so is the reified no-overlap rule, which was
-the one exception. `Equals` over two operands of width 10⁹ solves in 0 ms and
-emits two OPB rows.
+**Unbounded domains.** Not separately probed, and not expected to matter: every
+rule is per-interval or O(1). See [Interval
+efficiency](#interval-efficiency) for the width question proper.
 
-Rule 9 was the family's only large-domain failure. It walked *every integer
-between v1's bounds*, building one reason literal per value. Two changes
-closed it, and they are separate:
+**Negative values and zero.** Fine, and covered: the test data includes
+`[-10, 10]` ranges, negative constants, and the `{-2,-2}`/`{-3,-3}` fixtures.
 
-- #873 guarded the reason's assembly on `want_reasons()`, which confines the
-  cost to proving runs. That is the pattern the file's neighbouring pass had
-  already been given in `fea9508d`, and it is not the whole fix — it leaves
-  the proof's own per-value cost, which is genuine.
-- #881 replaced the certificate. Disjointness is a statement about **runs**,
-  so the witness is a walk that carries one invariant (`v1 ≥ p`) up the number
-  line, one move per maximal run `v1` cannot occupy. See [rule
-  9](#rule-reified-no-overlap) for the six moves and what each costs.
+**Degenerate shapes.** Two operands that are the same variable handle are
+rejected by `NotEquals`'s constructor with `InvalidProblemDefinitionException`,
+but two *constants* that happen to be equal are accepted — a valid if trivially
+infeasible model, and the distinction is deliberate. An `Equals` on an aliased
+handle is fine and decides immediately. Two constant operands need no special
+case anywhere: `on_change` registers no wake for a constant, and every pass
+decides outright on the one call every propagator gets when search starts.
+
+**Overflow.** Checked, not merely unlikely. `Integer` arithmetic throws
+`IntegerOverflow` rather than wrapping — `operator+` goes through
+`add_overflows`, and `operator++`/`--` guard the extremes — so the
+`bounds.second + 1_i` pattern in rule 3 would throw a diagnosable exception if
+an operand's upper bound were `Integer::max_value()`, not silently wrap.
+Verified UBSan-clean with both operands at `LLONG_MAX/2`.
+
+### Interval efficiency
+
+**Fine at any width, in all four senses, and it is the only family in this arc
+so far that can say that without a caveat.** `Equals` over two operands of
+width 10⁹ solves in 0 ms and emits two OPB rows; the encoding is a bit sum, so
+it is logarithmic in width rather than linear in it, which is what makes the
+rest of this section possible at all.
+
+**1. The propagation side.** No rule walks values. Rule 3 is four `bounds`
+reads and four `infer_*` calls, O(1). Rule 2 materialises both domains with
+`copy_of_values` and merge-walks them with `IntervalSet::each_interval_minus`,
+so it is O(intervals(v1) + intervals(v2) + |output|) in *intervals*. Rules 1, 4
+and 5–7 read `optional_single_value` and nothing else. `equals.cc` reaches for
+`State`'s per-value iterators nowhere at all, which is a property that can be
+checked by reading the file rather than by profiling it.
+
+**2. The reason side.** This is where the family's one real hazard was, and it
+is worth keeping the two halves of the fix apart because they are different
+fixes:
+
+- #873 guarded the no-overlap reason's assembly on
+  `InferenceTrackerBase::want_reasons()`, which confines the cost to proving
+  runs. Necessary and not sufficient: it leaves the proof's own per-value cost,
+  which was genuine.
+- #881 replaced the certificate. Disjointness is a statement about **runs**, so
+  the witness is a walk carrying one invariant (`v1 ≥ p`) up the number line,
+  one move per maximal run `v1` cannot occupy. See [rule
+  8](#rule-reified-no-overlap) for the six moves and what each costs.
+
+Both the output and the work of finding it are per run, which is the pair of
+questions #935 showed can come apart: `walk_no_overlap()` steps the two
+`IntervalSet`s directly and never tests a value for membership. The site still
+carries a `LargeDomainIterationCounter`, and deliberately so — what it counts
+is now *moves of an interval walk*, and a domain can have as many runs as it
+has values, so the walk is bounded by the interval count and not by anything
+smaller.
 
 *What it cost before, measured elsewhere and not to be put in a table beside
 the figures below.* At `7d014207`, this audit's first pass, proofs **off**: 29
@@ -475,7 +629,9 @@ TB node, which is why the same shape died at 2.6 GB where it was reported — a
 *Measured 2026-09-08 at `76bfd836`, Release + `GCS_WERROR=ON`, g++ 15.2.0, AMD
 Ryzen 9 9950X3D, otherwise idle, `taskset -c 4`, `ulimit -v 4000000`. One
 `EqualsIff{x, y, b == 1}` with `x ∈ [0, w/2]` and `y ∈ [w/2+1, w]`, so the
-rule fires once at the root; root propagation only.*
+rule fires once at the root; root propagation only. Not re-taken at
+`6b220c79`: this shape has bare operands on both sides, which is the one thing
+#904 did not touch.*
 
 | width | proofs off | proof lines | proof size | VeriPB |
 |---|---|---|---|---|
@@ -491,44 +647,82 @@ out, because nothing anchors on `v1`'s lower bound when `v2` starts above it,
 so the reason is `{v2 ≥ lb2, v1 ≤ ub1}`. That is also a strictly more general
 nogood than the per-value reason it replaces.
 
-The guard is still load-bearing, and `equals.cc`'s no-overlap reason still
-carries a `LargeDomainIterationCounter` (one of three such sites in the
-solver, alongside `element.cc` and `all_equal.cc`) — because what it counts is
-now *moves of an interval walk* rather than values, and a domain can have as
-many runs as it has values. See `dev_docs/large-domains.md`, which records the
-audit row and the two things that generalise: that a `Clean` row nothing
-instruments is only as strong as the box it ran on, and that a **reason** is a
-place a search for pruning loops will not reach.
+**It is a hand-built probe, not a lane row, and that is a defect in the
+evidence rather than in the code.** #939's own write-up makes the point against
+itself: a table quoted from a standalone probe and a table quoted from a pinned
+row read identically and reproduce differently. There is no equals row in
+`TEST_CASE("Large domain proof sizes")`, so nothing fails if these numbers come
+back. See [Next steps](#next-steps).
 
-**Unbounded domains.** Not separately probed, and no longer expected to
-matter: every rule is now per-interval or O(1) except rule 3, whose cost is
-the number of values actually removed rather than the domain's width.
+**3. The proof side.** One form per rule, and **what picks between rules 2 and 3
+is whether a domain has holes, which is a fact about the domains and not about
+the kinds of the variables**. That is the standing rule now, and this family had
+two violations of it until #904: rule 2 was guarded on `both_simple` and fell
+back wholesale to a per-value rule for a view or constant operand, and the
+no-overlap witness spelled out those runs whose variable was a view. Both are
+deleted — see [Variable kinds and views](#variable-kinds-and-views) for the
+measured before and after — and there is no site left in the family that
+answers "can I say a range about this?" with a type test.
 
-**Negative values and zero.** Fine, and covered: the test data includes
-`[-10, 10]` ranges, negative constants, and the `{-2,-2}`/`{-3,-3}` fixtures.
+No width gate is needed anywhere here, which is worth saying explicitly because
+it is not the general case: #939's at-least-one cover is a *threshold* rather
+than an unconditional rewrite, because over a narrow definition range the
+interval form is about as big per line and there are more of them. This family
+never emits an at-least-one and never names a cover, so the question does not
+arise. A family that does emit one should not read this section as a precedent.
 
-**Overflow.** Checked, not merely unlikely. `Integer` arithmetic throws
-`IntegerOverflow` rather than wrapping — `operator+` goes through
-`add_overflows`, and `operator++`/`--` guard the extremes — so the
-`bounds.second + 1_i` pattern in rule 4 would throw a diagnosable exception if
-an operand's upper bound were `Integer::max_value()`, not silently wrap.
-Verified UBSan-clean with both operands at `LLONG_MAX/2`.
+**4. Where the family stands in the audit lane.** Three rows in
+`gcs/large_domain_audit_test.cc`, all pinned `Clean`: `Equals` and `NotEquals`
+over two contiguous wide operands, and `ReifiedEquals` over two wide operands
+that are **disjoint** — which is the only shape in which the interesting rule
+fires, and which the row did not have until the probe-sharpening pass fixed it.
+Two operands over the same wide interval always intersect, so
+`infer_cond_when_undecided` returned `StillUndecided` and the walk the row
+exists to test was never reached. That is also why #864 went unnoticed here.
+And once the probe was fixed the row *still* reported `Clean`: 160 s and 78 GB
+on a box with 2 TB, where the same shape had died at 2.6 GB for the person who
+reported it. The two lessons generalise and are recorded in
+[large-domains.md](../large-domains.md): a `Clean` row that nothing instruments
+is only as strong as the box it ran on, and a **reason** is a place a search
+for pruning loops does not reach.
 
-**Per-value costs.** One rule is, and only because of views: rule 3, the
-view/constant fallback for the symmetric difference. Rule 9 spells out the
-runs of a *view* operand value by value for the same reason (#882) and nothing
-else. Both are proof-layer limitations, not propagation ones.
+**Which axes those three rows do not vary, and this is the live gap.** All
+three post *contiguous* operands, and all three post *bare* ones. So:
+
+- **No holey row.** Rule 2 — the merge walk, the family's only rule whose cost
+  is in intervals rather than constant — is reached by no row in the lane. Its
+  hole coverage is in `equals_test` instead, which does not run at width. A
+  wide, holey pair would be the row that pins the walk's cost in intervals.
+- **No view-wrapped row.** The lane exercised widths and holes and never
+  *kinds*, which is exactly how `Element/view-result` and the two `Abs` rows hid
+  a width-proportional fallback through two audits of them. This family's
+  equivalent fallback is gone, but nothing in the lane would notice it coming
+  back; `equals_test`'s view sweep runs at test widths.
+
+Neither gap is a `HazardNotReached`, because there is no known hazard behind
+either — but "a gap nobody has thought of looks exactly like no gap" is #900's
+lesson, learned on a rule that was unreached for as long as the table had rows
+for its family. Both are in [Next steps](#next-steps).
 
 ## Inference catalogue
 
-Nine rules. The first four are the must-hold pass (`enforce_equality`), the
-fifth is the must-not-hold pass, and the last four are the reified verdicts of
+Eight rules. The first three are the must-hold pass (`enforce_equality`), the
+fourth is the must-not-hold pass, and the last four are the reified verdicts of
 the undecided pass.
 
-Four facts hold for all nine and are not repeated in each entry.
+There were nine until #904. The ninth was `symmetric-difference-values`, a
+per-value spelling of rule 2 taken whenever an operand was a view or a
+constant, and it is gone rather than deprecated: giving views their own range
+literals removed the reason the fallback existed, so the rule it covered for is
+now the only rule. It is recorded here rather than silently dropped because a
+reader of the first two passes of this document will look for it, and because
+"a rule was deleted" and "a rule was never written down" should not read the
+same.
+
+Four facts hold for all eight and are not repeated in each entry.
 
 **What licenses the RUP.** Every rule here is an instance of a published
-justification procedure, except rule 9, which is ours. The chain is always the
+justification procedure, except rule 8, which is ours. The chain is always the
 same: our encoding gives each operand atomic bound and equality literals over a
 binary backbone, `Inv1` plus **Theorem 3.3** make unit propagation complete for
 the implied atomic literals *within* one variable, and one of
@@ -556,9 +750,9 @@ distinguishes derivations of different length:
 
 | Wire form | Hint type | Means | Rules |
 |---|---|---|---|
-| `equals:((constraint_id N))` | `hints::Equals` | one RUP against the equality rows | 1, 3, 4, 5, 6, 7, 8 |
+| `equals:((constraint_id N))` | `hints::Equals` | one RUP against the equality rows | 1, 3, 4, 5, 6, 7 |
 | `equals:((constraint_id N) (subhint not_in_range))` | `hints::EqualsNotInRange` | two bound lemmas, then the conclusion | 2 |
-| `equals:((constraint_id N) (subhint no_overlap))` | `hints::EqualsNoOverlap` | the disjointness walk, then the conclusion | 9 |
+| `equals:((constraint_id N) (subhint no_overlap))` | `hints::EqualsNoOverlap` | the disjointness walk, then the conclusion | 8 |
 
 Before #884 rule 2 wore the bare form, and the only way to tell its three-line
 derivation from a one-line pruning was to notice that the asserted literal was
@@ -569,7 +763,7 @@ subhint outside this table, so a fourth form has to be added here as well as
 there.
 
 **No rule reads `state` from inside a justification.** Since #885 this is
-uniform: rule 9's emitter re-walks the reason's own literals rather than the
+uniform: rule 8's emitter re-walks the reason's own literals rather than the
 domains, and holds no `State *`. It was the family's only exception, and it
 was on the wrong side of an invariant the rest of the solver keeps — a
 justification does not run at the moment its inference was decided, so a
@@ -610,8 +804,11 @@ reason is what the conclusion is asserted under.
 
 - **Infers** — `pruned ∉ [lo, hi]` for each contiguous interval of the
   symmetric difference of the two domains, in both directions.
-- **Fires when** — either domain has a hole, neither operand is fixed, and
-  **both** operands are bare `SimpleIntegerVariableID`.
+- **Fires when** — either domain has a hole and neither operand is fixed.
+  Whatever kind the operands are: since #904 a view owns its range literals,
+  and the `both_simple` guard that used to send a wrapped operand down a
+  per-value fallback is gone. Run by the must-hold pass and by the undecided
+  pass's must-hold verdict.
 - **Strength** — `GAC` for two distinct operands: the two domains end up equal
   to their intersection.
 - **Algorithm** — materialise both domains (`copy_of_values`), then merge-walk
@@ -650,8 +847,9 @@ reason is what the conclusion is asserted under.
 - **Proof size** — three lines per removed interval, plus the shared
   range-literal definitions and linking clauses (which belong to the
   range-literal layer, not here).
-- **Gaps** — `None.` The rule is skipped, not weakened, when an operand is not
-  simple; rule 3 covers that case at a worse cost.
+- **Gaps** — `None.`, and unconditionally so since #904. It used to be skipped
+  rather than weakened for a view or constant operand, with a per-value rule
+  covering that case at a worse proof size; there is no such fallback left.
 - **Tightness** — shown, and it is the mutation that tests a *design* claim
   rather than an arithmetic step. The `bridge_lemmas` lane emits the
   conclusion with no bound lemmas before it, so it claims to be RUP across the
@@ -686,26 +884,6 @@ about, because the neighbouring facts are easy to conflate:
 The lemmas mention no range literal, so any literal sharing those endpoints can
 reuse them. The pairing assumes a **same-sign** link; a sign-flipped link, as
 `Abs` has, needs the mirrored pairing.
-
-### Rule: symmetric-difference-values
-
-- **Infers** — `pruned ≠ val`, one value at a time.
-- **Fires when** — as rule 2, but at least one operand is a view or a constant.
-- **Strength** — `GAC`. Same fixpoint as rule 2, reached one value at a time.
-- **Algorithm** — the same merge-walk, then a per-value loop over each removed
-  interval. O(removed **values**).
-- **Why it is true** — as rule 2.
-- **Proof technique** — `RUP`, by **JP 3.12** per value, exactly as rule 1.
-- **Reason** — the base reason plus `other ≠ val`, rebuilt per value. Minimal.
-- **Assertion** — `pruned ≠ val ∨ ¬(other ≠ val) ∨ ¬cond`.
-- **Hint** — `hints::Equals{owner}`.
-- **Offline reconstructibility** — `offline`.
-- **Proof size** — one line per removed value.
-- **Gaps** — `None.`, in the sense that the inference is fully justified. It is
-  a proof-*size* regression against rule 2, not a proof-strength one.
-- **Tightness** — `Not shown.` The `fixed_operand_reason` corruption would
-  apply in principle (this reason is also the base reason plus one literal),
-  but the lane exercises rule 1's site, not this one.
 
 ### Rule: bounds-intersection
 
@@ -840,7 +1018,7 @@ alias" bug the dup tests were added for.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line.
 - **Gaps** — `None.`
-- **Tightness** — `Not shown.` As rule 7.
+- **Tightness** — `Not shown.` As rule 6.
 
 ### Rule: reified-no-overlap
 
@@ -852,7 +1030,11 @@ alias" bug the dup tests were added for.
   materialised domains. One move per interval of either domain, so
   O(intervals(v1) + intervals(v2)) — in *intervals*, since #881. It was
   O(width of v1's bounds range) in values, which was the family's only
-  super-logarithmic cost and its only large-domain failure.
+  super-logarithmic cost and its only large-domain failure. The walk itself is
+  no longer ours alone: #900 lifted it into
+  `gcs/constraints/innards/no_overlap_walk.hh`, where `Element`'s index-support
+  rule takes the same certificate. The header states the invariant and what each
+  move owes; this family stays its reference caller.
 - **Why it is true** — disjointness is a statement about **runs**, and the
   walk is what states it. It carries one invariant up the number line: at each
   point `p`, the facts stated so far — together with the reification
@@ -923,7 +1105,10 @@ alias" bug the dup tests were added for.
   literal is an anchor or a jump, a `NotInRange` (or a maximal run of
   consecutive `NotEqual`s, which is what a view's run degrades to) is a run,
   and a `Less` is the stop; whose variable it names says whether lemmas are
-  owed.
+  owed. (A maximal run of consecutive `NotEqual`s used to be a fourth spelling,
+  which is what a view's run degraded to before #904. A view names its own range
+  literal now, so a run is a run whatever kind of variable it belongs to, and
+  the emitter's reader has one case fewer.)
 - **Proof size** — per move of the walk, which is where *Why it is true*'s
   table stops and this one starts:
 
@@ -943,8 +1128,8 @@ alias" bug the dup tests were added for.
   none for a run belonging to `v1`, plus one conclusion. Emitted at
   `ProofLevel::Temporary`, so the lemmas are deleted.
 
-  *Measured 2026-09-08 at `76bfd836`, same machine and build as [Robustness
-  and limits](#robustness-and-limits). `v1` the even values of `[0, 2n)`, `v2`
+  *Measured 2026-09-08 at `76bfd836`, same machine and build as [Interval
+  efficiency](#interval-efficiency). `v1` the even values of `[0, 2n)`, `v2`
   the odd ones, so every run is one value long and every second run costs
   lemmas — the walk's worst case.*
 
@@ -959,10 +1144,11 @@ alias" bug the dup tests were added for.
   equality-literal definitions, so **five sixths of the proof is not this
   rule** even in the shape that costs it most. In the bounds-disjoint shape
   the witness is two lines at any width, out of thirteen.
-- **Gaps** — `None.` The inference is fully justified and, since #881, at a
-  cost that is independent of domain width. The one residual is that a run
-  belonging to a *view* is spelled value by value, because a view has no range
-  literal (#882) — one run, not the rule.
+- **Gaps** — `None.`, and now without the qualifier. The inference is fully
+  justified and, since #881, at a cost independent of domain width; and since
+  #904 that holds for a wrapped operand too, where a run belonging to a view
+  used to be spelled value by value for want of a range literal (#882) — one
+  run rather than the rule, but a residual all the same.
 - **Tightness** — shown, by three of the five mutation lanes, which between
   them cover the rule's whole proof surface. `no_overlap_stop` drops the
   walk's last reason literal, so the reason climbs to a position and never
@@ -1021,7 +1207,7 @@ five of the six exist for a reason that will recur in the next family:
 | `run_wide_no_overlap_equals_test` | width 10⁹, proofs off. Every other domain in the file is inside `[-10, 10]`; `range_infer_test` works inside `[0, 40]`. It pins the **answer**, not the cost — it would have passed before #873 too, slowly — and says so. |
 | `run_wide_proved_no_overlap_equals_test` | the same shape at 10⁶, **proved**, asserting the proof is under a thousand lines before handing it to veripb. This is the lane that pins the cost. The bound is deliberately loose and not a pinned figure: most of a proof this small is fixed overhead, and any threshold separates a constant from a million lines. 10⁶ rather than 10⁹ so that a regression fails rather than filling the disk. |
 | `run_holey_no_overlap_equals_test`, both orders | interleaved disjoint domains, which is the only shape reaching the two moves that carry a range literal. Both orders, because the walk climbs `v1`'s domain and so is not symmetric; between them they reach all six moves. |
-| `run_holey_no_overlap_view_equals_test` | one operand a **view**, the only shape whose witness is not spelled entirely in intervals. Checked by diffing proof bytes, not by a lane going red: leaving the run in pieces still verifies, at exactly nine more lines at every seed tried. |
+| `run_holey_no_overlap_view_equals_test` | one operand a **view**, with a deliberately non-zero offset so that it does not deview onto the underlying variable and borrow its literals. Written when this was the one shape whose witness was *not* spelled entirely in intervals; since #904 it is, and what the lane now pins is that a wrapped run costs the same as a bare one. Note that it checks solutions, not proof shape — the degradation it was written against verified perfectly well, nine lines longer, so a green lane never said anything about it either way. Its in-file comment still describes the per-value spelling and is stale. |
 | `run_value_indicator_equals_test` | the `nmseq` shape in miniature — one reified equality per (variable, value) — with a **driver** that punches a value out of the interior on its own. Every other lane posts a single constraint over its operands, so nothing removes an interior value and a trigger that sees only instantiations passes. Checked as consistency at every node, since a missed wake loses no solutions. |
 | `run_hint_inventory_equals_test` | the wire inventory, read off two real proofs at `AssertionLevel::Inferences`, failing on a subhint outside the family's closed list. |
 
@@ -1098,7 +1284,7 @@ with a two-variable `=` or `!=` reaches it via the two-term linear recovery.
 - **For proof benchmarking: `ortho_latin --all 5`.** Size 6 must be capped
   (`dev_docs/proof-benchmarks.md`); size 5 is 5.7 MB and there is nothing in
   between. Know what it does *not* cover before reading a per-inference cost
-  off it: two of the family's nine rules, and neither subhint — see [Proof
+  off it: two of the family's eight rules, and neither subhint — see [Proof
   performance](#proof-performance).
 - **For the reified arm: `magic_series 300`** (in `minicp_benchmarks/`, and
   the size is positional — it takes no `--size` and no `--stats`).
@@ -1135,7 +1321,13 @@ The search shape is identical to the first audit's, to the digit, and the time
 is 0.7% higher — 20.49 s at `7d014207`. That is not noise and it is accounted
 for: #894 put the watch-index test on the inference replay path, which its own
 `perf stat` measured at +0.69% of `ortho_latin`'s instructions. The index is
-empty for this model, so it is pure overhead here; hoisting it out is #895.
+empty for this model, so it was pure overhead here — and **#932 has since
+hoisted it out**, asking the question once per round boundary rather than once
+per inference, so a watchless model replays through a body that does not have
+the test at all. Not re-measured on this instance at `6b220c79`; #932's own
+table is instructions rather than seconds and does not have an `ortho_latin`
+row. Treat the 0.7% as a figure with a known cause that has since been
+addressed, not as the current number.
 
 **Cross-solver comparison.** Measured for this family, which it was not at the
 first audit — the harness #868 asked for now exists, in the `gcs-benchmarks`
@@ -1209,10 +1401,10 @@ Of the 30,064 assertions at `Inferences` level, **13,323 (44%) carry the
 about the benchmark rather than about the family.** Neither subhint arises
 here. Reading the asserted clauses back: every literal in all 13,323 is an
 `eq` atom, 13,309 of them a two-literal clause with both literals negated at
-the same value and 14 of them a single positive literal. That is **rule 5**
+the same value and 14 of them a single positive literal. That is **rule 4**
 (13,309, the not-equal-to-fixed-operand pruning of the clique) and **rule 1
 against a constant** (14, the puzzle's fixed cells), and nothing else.
-`ortho_latin` exercises two of the family's nine rules in its proof — no bound
+`ortho_latin` exercises two of the family's eight rules in its proof — no bound
 push, no interval bridge, no disjointness walk — so the interesting
 derivations are covered by `equals_test` and the hint-inventory lane, not by
 the family's own proof benchmark. Anyone reading a per-inference cost off this
@@ -1237,19 +1429,21 @@ difference between a proving and a non-proving run. Since #886 the derivations
 are also known to be **tight**: five corruptions of them are rejected by
 VeriPB, against a control that shows the same instances verify uncorrupted.
 
-`None.` on cost gaps, too, which was not true at the first audit. The one that
-was — rule 9 assembling a `2 + width` reason unconditionally, so that with
-proofs off it was built, never read and thrown away — is fixed twice over: #873
-guarded the assembly on `want_reasons()`, and #881 made the witness
-interval-wise so the width does not enter even when proofs are on.
+`None.` on cost gaps, too, which was not true at either of the first two
+audits, and the two that were are now both closed.
 
-The one thing left in this direction is not this family's: **a view has no
-range literal** (#882), so rule 2 falls back wholesale to per-value pruning
-when either operand is a view, and rule 9 spells a view's runs out value by
-value. Both are proof-size costs on a correct proof, and #882 prices them
-alongside the solver's other six such detours. Recording it here rather than
-working around it again is deliberate — the family already carries the
-smallest workaround available, which is degrading a run rather than a rule.
+Rule 8 assembled a `2 + width` reason unconditionally, so that with proofs off
+it was built, never read and thrown away. Fixed twice over: #873 guarded the
+assembly on `want_reasons()`, and #881 made the witness interval-wise so the
+width does not enter even when proofs are on.
+
+And **a view had no range literal** (#882), so rule 2 fell back wholesale to
+per-value pruning when either operand was a view and rule 8 spelled a view's
+runs out value by value — this family holding two of the eight such detours in
+the solver. #904 closed it for all ten at once, by giving a registered view its
+own range literals rather than by working around the gap a ninth time. The
+family now carries no view detour at all, and the fallback rule that existed
+only to cover for one is deleted.
 
 ### Known limitations
 
@@ -1257,61 +1451,83 @@ smallest workaround available, which is degrading a run rather than a rule.
 variables does not generally give GAC under aliasing, and the dup tests check
 the solution set and the proof only. Documented rather than fixed.
 
-**The view/constant fallback costs one proof line per value.** Rule 2 is
-skipped wholesale when either operand is not a bare `SimpleIntegerVariableID`,
-and rule 3 covers the case one value at a time. It is a proof-size limitation
-of the range-literal bridge, which needs a plain variable on the far side, and
-the general form of it is #882 — where this family holds two of the eight view
-detours in the solver.
+**The view/constant fallback is gone** (#904). This entry used to say that rule
+2 was skipped wholesale when either operand was not a bare
+`SimpleIntegerVariableID` and that a per-value rule covered the case, at one
+proof line per value. A registered view now owns its range literals, so the
+bridge lemmas resolve against it directly and there is nothing to fall back
+from: 360,012 proof lines at width 10⁴ become a flat 106 at every width up to
+10⁶. The remaining gap between 106 and a bare variable's 40 is the linking
+layer's, priced in [view-range-literals.md](../view-range-literals.md), and is
+flat rather than width-proportional.
 
-**A constant-operand propagator's refined watch is scanned, not indexed**
-(#895). The engine tests every watch armed on a variable against each
-inference on it, so the scan is as long as the coarse trigger list was and
-only the per-item body got cheaper — a `test_literal` instead of a full
-propagator call. That is still where the `nmseq` shape's remaining `Equals`
-cost is after #894. Indexing watches by value would need the inference replay
-to carry the value, which is an engine change rather than a constraint one.
+**A constant-operand propagator's refined watch is scanned, not indexed.** The
+engine tests every watch armed on a variable against each inference on it, so
+the scan is as long as the coarse trigger list was and only the per-item body
+is cheaper — an entailment test instead of a full propagator call. #895 is
+closed and took two of the three costs with it: #932 hoisted the empty-index
+test off the per-inference path, and #934 replaced `test_literal` with
+`State::literal_is_entailed`, the same question with the tail not computed,
+which is **-5.87%** of `nmseq/100`'s instructions. On that model the firing loop
+asks the question 99.0M times over 5.81M inferences — 17 per inference, 97.8%
+of them watches that have not fired — which is what makes this family's shape
+the one where it shows.
+
+The scan itself remains. Indexing by value, which is what the issue's title
+asked for, was not done; the measured successor is to inline the entailment
+check into the firing loop rather than calling out of line and visiting the
+`Literal` variant, worth about as much again (**-10.6%** on a prototype). That
+needs a watch to carry a condition rather than a `Literal`, which is a triggers
+refactor and has no issue of its own yet.
 
 **A model of nothing but reified equalities against constants pays a second
 `Equals` it does not need.** FlatZinc's `int_eq_reif(s[j], c, b)` plus
 `bool2int(b, x)` is two propagators where one would do, which #889 raised. It
-is a frontend question rather than a propagator one, and after #894 it is not
-where that model spends itself.
+is a frontend question rather than a propagator one, and after #894 and #934 it
+is not where that model spends itself.
 
 *Three limitations recorded at the first audit are gone rather than
 outstanding*: the `clone()` gap that dropped `_neq` (#865, fixed in #883 — and
 the sweep behind it stands, since it was the **only** `clone()` under
 `gcs/constraints/` or `gcs/presolvers/` dropping a constructor argument), the
-shared wire hint between rules 1 and 2 (#866, fixed in #884), and rule 9's
-per-value cost (#864 and #867, fixed in #873 and #881).
+shared wire hint between rules 1 and 2 (#866, fixed in #884), and rule 8's
+per-value cost (#864 and #867, fixed in #873 and #881). *A fourth, recorded at
+the second audit, is gone at the third*: the view detour (#882, fixed in #904),
+which took the rule that covered for it with it.
 
 ### Next steps
 
 Ranked. **No propagation or proof bug in this family is outstanding**: the
-seven the first audit filed are #864–#870, and only #868 is still open. All
-three items below are a shared mechanism, an engine cost and a benchmark, all
-reached through this family rather than owned by it.
+seven the first audit filed are #864–#870, and only #868 is still open. The two
+largest items on the previous pass's list — #882 and #895 — have both landed
+since, as #904 and as #932/#934, so what is left is one benchmark and two gaps
+in this family's *evidence* rather than in its code. That is a different kind
+of list from the last two, and the ranking reflects it: an unpinned figure and
+an unreached probe are exactly the failure modes this arc keeps finding, and
+both of the top two items are cheap.
 
-1. **#882 — Give views a range literal.** The largest remaining item, and this
-   family is where the price is most visible: rule 2 is skipped wholesale for
-   a view operand and rule 3 covers it one value at a time, which is a domain
-   width rather than a constant now that the interval vocabulary is the
-   ordinary one. Two candidate designs, and #881 sharpened the case for the
-   second of them — define range literals over a registered view's own bits
-   and let the two order *cuts* cross the view's defining equality, since the
-   no-overlap walk showed that a range literal never crosses an equality, only
-   its cuts do, one bound at a time. That is a hand UP analysis, so it is a
-   reason to test the design and not to adopt it.
-2. **#895 — Hoist the refined-watch empty-index test, and index watches by
-   value.** Two costs, both measured while doing #889. The first is 1.7% of
-   `tsp`'s instructions and 0.69% of `ortho_latin`'s, all of it paid by models
-   that arm no watches at all, and it is a template parameter away from
-   compiling out. The second is what is left of this family's cost in the
-   `nmseq` shape. Both are engine work, and the first is worth doing carefully
-   rather than quickly: the invariant it needs is about the hottest loop in
-   the solver, and what it would protect against getting wrong is exactly the
-   silent wake loss #894 fixed.
-3. **#868 — Measure against Choco and ACE.** Half done: the harness exists,
+1. **A wide, holey row and a view-wrapped row in the audit lane.** The family's
+   three rows all post contiguous, bare operands, so rule 2's merge walk — the
+   only rule here whose cost is in intervals rather than constant — is reached
+   by no row, and nothing in the lane would notice a kind test coming back. No
+   issue yet. Cheap: each is an existing row with one thing changed, which is
+   exactly how `Element/view-result` and the two `Abs` rows were written. What
+   it buys is not a suspected bug but the property that the two fallbacks this
+   family has now deleted cannot silently return; see [Interval
+   efficiency](#interval-efficiency).
+2. **An equals row in `TEST_CASE("Large domain proof sizes")`.** The thirteen
+   lines at every width above are a hand-built probe, and #939's own write-up is
+   the argument for not leaving it that way: a probe's table and a lane's table
+   read identically and reproduce differently. The shape is already written; it
+   needs pinning.
+3. **A stale comment in `equals_test.cc`.** `run_holey_no_overlap_view_equals_test`
+   explains its non-zero offset by saying it is needed to exercise the per-value
+   spelling, which #904 deleted. The offset is still the right choice, for a
+   different reason — a `v + 0` view deviews onto the underlying variable and
+   borrows its literals, so it would not exercise a view's *own* range literals
+   at all — so this is a comment fix and not a test change. Left out of this
+   pass deliberately, to keep the family-document branches docs-only.
+4. **#868 — Measure against Choco and ACE.** Half done: the harness exists,
    the method is written up, and Gecode is measured on both arms of this
    family (`dev_docs/cross-solver-benchmarking.md`). What is missing is the
    other two solvers. The hard part is settled and worth reusing — the model
@@ -1320,12 +1536,12 @@ reached through this family rather than owned by it.
 
 **Not to do, having been considered.** Two.
 
-*Bounding rule 9* and leaving the verdict undecided when the range is wide.
+*Bounding rule 8* and leaving the verdict undecided when the range is wide.
 That was the fallback the first audit proposed in case an interval-wise
 certificate did not exist. It does exist (#881), so a deliberate strength loss
 buys nothing.
 
-*Filling in the six `Not shown.` tightness fields.* Mutation coverage is a
+*Filling in the five `Not shown.` tightness fields.* Mutation coverage is a
 development tool, not a completeness target — it earns its keep while a rule's
 derivation is being written or changed, and mutating the other six rules for
 the sake of the tally would not. So the fields say which rules have the
@@ -1334,7 +1550,7 @@ by what is being changed, not by the count.
 
 The one worth knowing about, if a lane is ever wanted here: `with_proof_mutation`
 reaches `enforce_equality`, so `fixed_operand_reason` corrupts rule 1's reason
-but not **rule 5's** — the busiest rule in the solver, and 13,309 of the 13,323
+but not **rule 4's** — the busiest rule in the solver, and 13,309 of the 13,323
 equals-hinted assertions in the family's own proof benchmark. The corruption
 already exists; only the lambda's capture list and one lane registration are
 missing. Cheap if that rule is ever touched, and not worth doing before then.
@@ -1446,12 +1662,12 @@ wanted and could not find, which is the same test the first pass applied.
   question at the wrong altitude: a mutation lane corrupts *one rule's* step,
   so the evidence is per-rule and belongs beside that rule's proof size. Under
   the old shape this family could answer "yes, tight" for the family and stop,
-  where three of its five lanes are one rule and six of its nine rules have no
+  where three of its five lanes are one rule and five of its eight rules have no
   lane at all. The point of the field is **not** to be filled in everywhere —
   see [Next steps](#next-steps) — it is that someone changing a rule can see at
   a glance whether a lane will catch them.
 - **Say what the family's own benchmark does not exercise.** `ortho_latin`
-  reaches two of nine rules. That was true at the first audit too and went
+  reaches two of eight rules. That was true at the first audit too and went
   unsaid; it is the sort of thing a cross-family pivot over these documents
   would silently average over. Read it off the proof's assertions rather than
   guessing — it took one `awk` over the polarity of 13,323 clauses.
