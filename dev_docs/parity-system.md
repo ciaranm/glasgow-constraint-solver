@@ -296,9 +296,17 @@ are the only thing that tells "working" from "no-op".
 Donors come from two families.
 
 **`ParityOdd`.** The main one; everything a frontend produces lands here
-(`array_bool_xor` and `bool_xor` via `minizinc/fzn_glasgow.cc`, XCSP3, CPMpy,
-`.scp`). Its slack row is derived as in §2 above, and that derivation is where
-essentially all of this presolver's `Top` output goes.
+(`array_bool_xor` via `minizinc/fzn_glasgow.cc`, XCSP3's `intension` `xor`,
+`gcspy`'s `post_xor`, and `.scp`'s `parity`). Its slack row is derived as in §2
+above, and that derivation is where essentially all of this presolver's `Top`
+output goes.
+
+`bool_xor` is **not** one of them, despite the name, and the two spellings go
+different ways. Two-argument `bool_xor` posts `NotEquals`, so it arrives as a
+donor of the Boolean family below rather than as a chain — still gathered, just
+not here. The three-argument reified form posts `EqualsIff`, which is gathered
+by neither: only `MustHold` and `MustNotHold` are taken, and everything else is
+counted as `skipped_reified`.
 
 **Boolean `Equals` / `NotEquals`**, when both operands' declared domains are
 within `{0, 1}`. `x != y` is `[x != 0] XOR [y != 0] = 1`; `x = y` is the same
@@ -577,10 +585,14 @@ line count are the numbers this design is making claims about.
   already there — `install_parity_system_propagator` is per-component by
   construction — so this is a few lines whenever someone posts a system big
   enough to care.
-- The MiniZinc side. Nothing exposes the presolver to `fzn-glasgow` yet, so the
-  `parity-learning` and `cryptanalysis` benchmarks above cannot be run without
-  wiring a flag through. That is the next thing to do, and it is also what turns
-  every number here from a fixture measurement into a real one.
+- The MiniZinc side; issue #983 tracks it. Nothing exposes the presolver to
+  `fzn-glasgow` yet, so the `parity-learning` and `cryptanalysis` benchmarks
+  above cannot be run without wiring a flag through. That is the next thing to
+  do, and it is also what turns every number here from a fixture measurement
+  into a real one. #983 asks the general question too — only `DifferenceLogic`
+  reaches a frontend today, and two of the six presolvers are reachable from
+  nothing but their own unit tests — because a one-off `--parity-system` flag
+  would make that inconsistency worse rather than better.
 - No benchmark numbers at all. Everything measured above is a handful of
   three- and four-variable fixtures. The `Top` footprint, the per-inference line
   count and the wall-clock are all claims this design makes and nothing has yet
