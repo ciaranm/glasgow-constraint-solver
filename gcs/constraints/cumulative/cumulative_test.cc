@@ -327,8 +327,15 @@ namespace
     // variables appear in every solution vector in this order: starts, then
     // variable lengths (task order), then variable heights (task order), then
     // the capacity (if variable).
+    //
+    // `force_length_var` names tasks whose length must be posted as a decision
+    // variable even though its spec is a singleton. A singleton spec is a
+    // constant otherwise, and Cumulative skips a task's proof-only end proxy
+    // for a constant *ID*, not for a variable with fixed bounds --- so without
+    // this the shapes issue #969 is about cannot be expressed here at all.
     auto run_cumulative_full_test(bool proofs, const std::string & tag, const vector<pair<int, int>> & start_ranges,
-        const vector<pair<int, int>> & length_specs, const vector<pair<int, int>> & height_specs, pair<int, int> cap_spec) -> void
+        const vector<pair<int, int>> & length_specs, const vector<pair<int, int>> & height_specs, pair<int, int> cap_spec,
+        const vector<size_t> & force_length_var = {}) -> void
     {
         auto n = start_ranges.size();
         vector<bool> lvar(n), hvar(n);
@@ -336,10 +343,12 @@ namespace
             lvar[i] = length_specs[i].first != length_specs[i].second;
             hvar[i] = height_specs[i].first != height_specs[i].second;
         }
+        for (auto i : force_length_var)
+            lvar.at(i) = true;
         bool cvar = cap_spec.first != cap_spec.second;
 
-        print(cerr, "cumulative full {} starts={} lspecs={} hspecs={} cap=[{},{}]{}", tag, start_ranges, length_specs, height_specs, cap_spec.first,
-            cap_spec.second, proofs ? " with proofs:" : ":");
+        print(cerr, "cumulative full {} starts={} lspecs={} hspecs={} cap=[{},{}] forced_lvar={}{}", tag, start_ranges, length_specs, height_specs,
+            cap_spec.first, cap_spec.second, force_length_var, proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto is_satisfying = [&](const vector<int> & vals) {
@@ -677,6 +686,25 @@ auto main(int argc, char * argv[]) -> int
             // unit-propagation fixpoint without the derived form-bound
             // lines: s's encoding spans [-32, 31] against end's [-8, 7].
             run_cumulative_full_test(proofs, "neg_start_stall", {{-17, -16}}, {{9, 16}}, {{1, 1}}, {1, 1});
+
+            // Issue #969: a task whose start and length are both *variables*
+            // fixed to values summing to zero gives the end proxy the range
+            // [0, 0], which has no bits at all --- the empty sum. These are
+            // the two rows of the issue's shape table that threw while writing
+            // the proof, plus the neighbours that did not. The lengths are
+            // singletons, so each needs forcing to a variable: as a constant
+            // there is no proxy and nothing to fail on.
+            run_cumulative_full_test(proofs, "zero_width_end", {{-1, -1}}, {{1, 1}}, {{1, 1}}, {1, 1}, {0});
+            run_cumulative_full_test(proofs, "zero_width_end_deep", {{-3, -3}}, {{3, 3}}, {{1, 1}}, {1, 1}, {0});
+            // s + l = -1 and 1: one either side of the degenerate point.
+            run_cumulative_full_test(proofs, "zero_width_end_below", {{-2, -2}}, {{1, 1}}, {{1, 1}}, {1, 1}, {0});
+            run_cumulative_full_test(proofs, "zero_width_end_above", {{0, 0}}, {{1, 1}}, {{1, 1}}, {1, 1}, {0});
+            // A fixed start with a length that is not fixed: end spans [0, 1],
+            // so the construction runs as usual.
+            run_cumulative_full_test(proofs, "zero_width_end_wide_len", {{-1, -1}}, {{1, 2}}, {{1, 1}}, {1, 1});
+            // One degenerate task alongside a healthy one, which is how this
+            // was found: the degenerate task poisoned the whole constraint.
+            run_cumulative_full_test(proofs, "zero_width_end_mixed", {{-1, -1}, {0, 3}}, {{1, 1}, {1, 2}}, {{1, 1}, {1, 1}}, {1, 1}, {0});
         }
     }
 

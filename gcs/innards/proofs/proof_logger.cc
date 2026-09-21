@@ -52,6 +52,7 @@ using std::ostream;
 using std::pair;
 using std::string;
 using std::stringstream;
+using std::to_string;
 using std::tuple;
 using std::variant;
 using std::vector;
@@ -910,16 +911,6 @@ auto ProofLogger::introduce_bits_of(
     // construction shape-independent.
     auto m = names_and_ids_tracker().num_bits(target).raw_value;
 
-    // A [0, 0] target now has zero bits (the empty sum, identically zero), for
-    // which the construction below would return default-constructed lines. No
-    // caller can currently supply one (cumulative's end proxy could only span
-    // [0, 0] if both operands were constant, and then no proxy is made), and
-    // the degenerate pair it would need (`form <= 0` / `form >= 0`, exactly
-    // the two pol-derived bound lines below) should be written and tested when
-    // a real caller appears, not speculatively.
-    if (0 == m)
-        throw ProofError{"introduce_bits_of does not support a zero-width target"};
-
     // The form's own bound lines: Sigma c_i * (operand's lower row) for the
     // lower (using the upper row where c_i < 0), and symmetrically for the
     // upper. Terms without tracked bound rows (views, flags, literals ---
@@ -962,9 +953,81 @@ auto ProofLogger::introduce_bits_of(
         }
             .visit(term.variable);
     }
+    optional<ProofLine> form_lower_bound_line, form_upper_bound_line;
     if (bound_rows_derivable && have_bound_rows) {
-        form_lower_bound.emit(*this, level);
-        form_upper_bound.emit(*this, level);
+        form_lower_bound_line = form_lower_bound.emit(*this, level);
+        form_upper_bound_line = form_upper_bound.emit(*this, level);
+    }
+
+    // A [0, 0] target has no bits at all: BinEnc(target) is the empty sum,
+    // identically zero (and [0, 0] is the only range with no bits, since a
+    // negative lower bound buys a sign bit and a positive upper a magnitude
+    // one). The pair the loop below would build is then just `0 >= form` for
+    // the ge line and `0 <= form` for the le line --- which are exactly the two
+    // bound lines emitted just above, swapped: a [0, 0] target means the
+    // operands' declared bounds sum to exactly [0, 0], so form_upper_bound IS
+    // `form <= 0` and form_lower_bound IS `form >= 0`.
+    //
+    // Cumulative's end proxy reaches this whenever a task's start and length
+    // are both variables *fixed* to values summing to zero (issue #969): the
+    // proxy is skipped for constant IDs, not for variables with fixed bounds.
+    //
+    // Unlike the m > 0 path, where every returned line is a `red` whose
+    // redundancy VeriPB checks --- so a caller that lied about its target's
+    // range is caught at check time --- these two are pol lines that hold
+    // whatever the target's range is, and a caller whose target does not really
+    // equal the form would silently be handed `form <= ub` as its ge line. So
+    // check the claim here rather than assuming it.
+    if (0 == m) {
+        // No pol lines to hand back: an operand is a view, a flag or a literal,
+        // or the form is nothing but constants (which no caller has --- and
+        // cumulative in particular skips the proxy entirely when an operand is
+        // a constant ID). Refuse rather than invent a pair.
+        if (! form_lower_bound_line || ! form_upper_bound_line)
+            throw ProofError{"introduce_bits_of cannot derive a zero-width target's bounds: its form has no usable bound rows"};
+
+        Integer form_lower = 0_i, form_upper = 0_i;
+        for (const auto & term : linear_form.terms) {
+            auto accumulate_bounds_of = [&](const SimpleOrProofOnlyIntegerVariableID & id) {
+                auto [lower, upper] = names_and_ids_tracker().tracked_bounds(id);
+                if (term.coefficient >= 0_i) {
+                    form_lower += term.coefficient * lower;
+                    form_upper += term.coefficient * upper;
+                }
+                else {
+                    form_lower += term.coefficient * upper;
+                    form_upper += term.coefficient * lower;
+                }
+            };
+            // Anything without tracked bounds cleared bound_rows_derivable
+            // above, so these throws are unreachable unless that changes.
+            auto no_bounds = []() -> void {
+                throw ProofError{"introduce_bits_of needs tracked bounds for every term of a zero-width target's form"};
+            };
+            overloaded{
+                [&](const ProofLiteral &) { no_bounds(); },                                     //
+                [&](const ProofFlag &) { no_bounds(); },                                        //
+                [&](const ProofBitVariable &) { no_bounds(); },                                 //
+                [&](const ProofOnlySimpleIntegerVariableID & id) { accumulate_bounds_of(id); }, //
+                [&](const IntegerVariableID & var) {
+                    overloaded{
+                        [&](const SimpleIntegerVariableID & id) { accumulate_bounds_of(id); }, //
+                        [&](const ConstantIntegerVariableID & c) {
+                            form_lower += term.coefficient * c.const_value;
+                            form_upper += term.coefficient * c.const_value;
+                        },                                                    //
+                        [&](const ViewOfIntegerVariableID &) { no_bounds(); } //
+                    }
+                        .visit(var);
+                } //
+            }
+                .visit(term.variable);
+        }
+        if (0_i != form_lower || 0_i != form_upper)
+            throw ProofError{"introduce_bits_of was given a zero-width target for a form spanning [" + to_string(form_lower.raw_value) + ", " +
+                to_string(form_upper.raw_value) + "]"};
+
+        return {*form_upper_bound_line, *form_lower_bound_line};
     }
 
     // 2^S for a signed target (whose sign bit occupies position 0 of the bits

@@ -125,6 +125,17 @@ The two in-proof rows share a rule — the variable is meaningless until introdu
   out. A signed target is fully supported: the construction is the same one shifted
   by `2^S`, with `¬sign` as the top bit.
 
+  A target spanning exactly `[0, 0]` is the degenerate end of the same rule and is
+  also supported (issue #969). It has no bits at all — `BinEnc` is the empty sum —
+  so the pair returned is the form's own two bound lines, derived by `pol` over the
+  operands' bound rows, rather than the construction's `red`s. Note what that costs
+  in checking: on the ordinary path veripb verifies every returned line, so a caller
+  that mis-declared its target's range is caught at check time, whereas these two
+  `pol` lines hold whatever the target was. `introduce_bits_of` therefore checks the
+  claim itself, summing the operands' `tracked_bounds()` and throwing unless the form
+  really does span `[0, 0]`. (It always will when every operand with a non-zero
+  coefficient is fixed, which a `[0, 0]` form implies and nothing else does.)
+
 ## Rule of thumb
 
 - User model variable → `Problem::create_integer_variable`.

@@ -414,6 +414,26 @@ and the pol differently:
   spanning `[-32, 31]` against a proxy spanning `[-8, 7]`, say — which
   was a latent failure in the unsigned case too.
 
+  **The proxy can also be degenerate.** The test above is on the
+  operands being non-constant *IDs*, not on their bounds, so a task whose
+  start and length are both variables that happen to be fixed still gets
+  a proxy — and when they sum to zero that proxy spans `[0, 0]`, which
+  has no bits at all. `introduce_bits_of` used to refuse such a target
+  outright, which is issue #969: a `.scp` with `(S0 -1 -1)` and
+  `(L0 1 1)` threw while writing the proof, and one such task among
+  healthy ones threw for the whole constraint. It now returns the form's
+  own two bound lines instead of running the construction, which is the
+  right pair because `BinEnc(end)` is the empty sum: `end ≥ s + l` is
+  `s + l ≤ 0` and `end ≤ s + l` is `s + l ≥ 0`. Both hold, and
+  everything downstream — `materialise_after_sum`, the bridge lemma —
+  still cancels, because a `[0, 0]` target forces every operand to be
+  fixed and so unit propagation reaches the pins regardless. The lanes
+  are `cumulative_test`'s `zero_width_end*` (whose lengths need the
+  harness's `force_length_var`, since a singleton spec is otherwise
+  posted as a constant and gets no proxy) and
+  `cumulative_optional_test`'s two, plus the unit case in
+  `introduce_bits_test`.
+
 The `pin_contributor` / `pin_pushed` helpers in
 `cumulative/cumulative.cc` package the (a)/(b) emission so the overflow
 and both push inferences share one shape across all constant/variable

@@ -982,6 +982,92 @@ auto main(int argc, char * argv[]) -> int
             fail("the donor rejected as much as the derived constraint did, so the fixture proves nothing");
     }
 
+    /* The same donor, with one task whose start and length are both variables
+     * *fixed* to values summing to zero (issue #969). Its proof-only proxy then
+     * spans `[0, 0]` --- no bits at all --- so what the donor publishes for it
+     * is the form's own bound line rather than the construction's final `red`,
+     * and this is what makes a derived constraint cite one. Before #969 the
+     * donor threw while writing its proof, so this shape could not be reached
+     * from here at all.
+     *
+     * The degenerate task is not inert, which is the point: it holds the whole
+     * resource at time -1, and that is the only reason the second task cannot
+     * start there. So the pin that inference writes goes through
+     * `materialise_after_sum` and the zero-width line, rather than the line
+     * merely being looked up and never used.
+     */
+    {
+        const vector<pair<int, int>> start_ranges{{-1, -1}, {-1, 6}};
+        const vector<pair<int, int>> length_ranges{{1, 1}, {3, 5}};
+
+        auto solve_zero_width_end = [&](bool derive, const optional<string> & proof_name) {
+            Problem p;
+            vector<IntegerVariableID> starts, lengths;
+            for (size_t i = 0; i < start_ranges.size(); ++i) {
+                starts.push_back(
+                    p.create_integer_variable(Integer{start_ranges[i].first}, Integer{start_ranges[i].second}, "start" + std::to_string(i)));
+                lengths.push_back(
+                    p.create_integer_variable(Integer{length_ranges[i].first}, Integer{length_ranges[i].second}, "length" + std::to_string(i)));
+            }
+            vector<IntegerVariableID> heights(start_ranges.size(), constant_variable(1_i));
+
+            p.post(Cumulative{starts, lengths, heights, constant_variable(1_i)}.with_rules(
+                CumulativeRules{.time_table = false, .overload = false, .profile_overload = false}));
+
+            DerivedVariableLengthPresolver presolver;
+            auto installed = presolver.installed;
+            if (derive)
+                p.add_presolver(presolver);
+
+            set<vector<int>> solutions;
+            solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                vector<int> solution;
+                for (const auto & v : starts)
+                    solution.push_back(s(v).raw_value);
+                for (const auto & v : lengths)
+                    solution.push_back(s(v).raw_value);
+                solutions.insert(move(solution));
+                return true;
+            }},
+                proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+            return pair{move(solutions), installed};
+        };
+
+        auto [with_derived, installed] = solve_zero_width_end(true, proofs ? make_optional("derived_cumulative_zero_width_end") : nullopt);
+        if (proofs) {
+            if (! *installed)
+                fail("a derived constraint over a donor with a zero-width end proxy was not installed");
+            verify_proof_and_clean_up("derived_cumulative_zero_width_end");
+        }
+
+        set<vector<int>> expected;
+        vector<pair<int, int>> ranges = start_ranges;
+        ranges.insert(ranges.end(), length_ranges.begin(), length_ranges.end());
+        build_expected(
+            expected,
+            [&](const vector<int> & assignment) {
+                for (int t = -1; t <= 10; ++t) {
+                    int load = 0;
+                    for (size_t i = 0; i < 2; ++i)
+                        if (assignment[i] <= t && t < assignment[i] + assignment[i + 2])
+                            load += 1;
+                    if (load > 1)
+                        return false;
+                }
+                return true;
+            },
+            ranges);
+        if (with_derived != expected)
+            fail("a derived constraint over a zero-width end proxy does not agree with brute force");
+
+        // Not a no-op: with every donor rule off nothing else rejects the
+        // overlap at time -1, so the solutions the derived constraint removes
+        // are exactly the ones its pins had to justify.
+        auto without_derived = solve_zero_width_end(false, nullopt).first;
+        if (without_derived.size() <= with_derived.size())
+            fail("the donor rejected as much as the derived constraint did, so the fixture proves nothing");
+    }
+
     /* And the caller error the publication makes catchable: a derived task that
      * claims a variable length where its donor was posted with a constant one.
      * The donor introduced no end proxy for such a task and published no line,
