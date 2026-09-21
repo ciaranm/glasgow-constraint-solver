@@ -168,7 +168,7 @@ namespace
     // positions, 'v' where they are domain values. See #354.
     //
     // Shared rather than written out at each caller because
-    // find_proof_flag_values has to rebuild *exactly* the string
+    // find_proof_flag has to rebuild *exactly* the string
     // create_proof_flag_values built: that is what makes the lookup a pure
     // function of (id, values, annotation) rather than a read of per-solve
     // state. One builder is what keeps "the same string" a fact rather than an
@@ -193,6 +193,17 @@ namespace
         if (annotation)
             name += "[" + *annotation + "]";
         return name;
+    }
+
+    // The name a ProofFlagKey denotes. Everything that keys on a flag key goes
+    // through here rather than picking the kind character itself: the family is
+    // what says which of create_proof_flag / create_proof_flag_values made the
+    // flag, and x[id][1] and v[id][1] are different flags with the same
+    // numbers, so a caller that hard-codes one of them silently conflates the
+    // two.
+    [[nodiscard]] auto flag_name_for_key(const ConstraintID & id, const ProofFlagKey & key) -> string
+    {
+        return bracketed_flag_name(ProofFlagFamily::Indices == key.family ? 'x' : 'v', id, key.values, key.annotation);
     }
 
     // A registered view V = s*X + c (s = -1 when negate_first, c = then_add) owns its
@@ -226,7 +237,7 @@ struct NamesAndIDsTracker::Imp
     set<string> emitted_constraint_row_labels;
 
     // Every flag created under a ConstraintID-keyed name, so that a caller
-    // holding the key can find it (find_proof_flag_values). Filled by
+    // holding the key can find it (find_proof_flag). Filled by
     // make_proof_flag_named, which is the funnel for exactly those namespaces:
     // an f[index][stem] flag is anonymous and has no key. Same write-only
     // during model definition, read-only afterwards story as
@@ -239,6 +250,38 @@ struct NamesAndIDsTracker::Imp
     // from names --- the same story as the boundary pins a few fields down, and
     // written at the same point in the solve, before the search starts.
     map<string, ProofLine> published_derived_lines;
+
+    // #780: derivers for integer-indexed families of lines, and the memo of
+    // what each has produced. Same per-solve story as published_derived_lines
+    // above --- these hold proof line numbers --- but populated lazily, on the
+    // first ask for a member, rather than up front. See
+    // publish_derived_line_family.
+    map<string, function<auto(ProofLogger &, Integer)->optional<ProofLine>>> derived_line_families;
+    map<string, ProofLine> derived_family_lines;
+
+    // #780 step 10: the two halves of a flag whose reification was emitted
+    // *inside the proof* rather than as OPB rows, keyed by the flag's own PB
+    // name. A model-side flag's halves carry `[r]` and `[f]` labels and are
+    // cited by name; a `red`-minted one has line numbers and nothing else, so
+    // a citer has to be told them. Per-solve state, like the two above and for
+    // the same reason: a line number means nothing outside its own proof file.
+    map<string, pair<ProofLine, ProofLine>> in_proof_reifications;
+    // As any_flag_definers below: reification_half runs on every citation of
+    // any flag's half, and where nothing was reified in the proof it should
+    // cost a bool rather than a map lookup.
+    bool any_in_proof_reifications = false;
+
+    // #780 step 10: definers for keyed families of flags, and the set of keys
+    // each has already been asked for. Same per-solve story as the two above.
+    // See publish_flag_definer.
+    map<string, function<auto(ProofLogger &, const ProofFlagKey &)->void>> flag_definers;
+    std::set<string> defined_flag_keys;
+    // Whether *any* constraint has published a definer, so that
+    // ensure_flag_defined --- which every citation of anyone's flags now goes
+    // through --- can decline in one bool test rather than formatting a
+    // constraint name and looking it up. No encoding but StartCheckpoint
+    // publishes one, and the time-indexed arm is the benchmark baseline.
+    bool any_flag_definers = false;
 
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
     unordered_map<SimpleOrProofOnlyIntegerVariableID, map<vector<Integer>, ProofLine>, HashSimpleOrProofOnlyVariable>
@@ -2102,12 +2145,15 @@ auto NamesAndIDsTracker::constraint_row_label(const ConstraintID & id, const str
     return ProofLineLabel{label};
 }
 
-auto NamesAndIDsTracker::find_proof_flag_values(const ConstraintID & id, const ProofFlagKey & key) const -> optional<ProofFlag>
+auto NamesAndIDsTracker::find_proof_flag(const ConstraintID & id, const ProofFlagKey & key) const -> optional<ProofFlag>
 {
-    // Built by the same helper create_proof_flag_values builds with, because it
-    // has to be the same string: that is what makes this a pure function of
-    // (id, values, annotation) rather than a lookup into per-solve state.
-    auto found = _imp->constraint_keyed_flags.find(bracketed_flag_name('v', id, key.values, key.annotation));
+    // Built by the same helper the matching create_proof_flag overload builds
+    // with, because it has to be the same string: that is what makes this a pure
+    // function of (id, numbers, annotation, family) rather than a lookup into
+    // per-solve state. The family is what says which of the two that overload
+    // was --- the numbers alone do not, since v[id][1] and x[id][1] are
+    // different flags.
+    auto found = _imp->constraint_keyed_flags.find(flag_name_for_key(id, key));
     if (found == _imp->constraint_keyed_flags.end())
         return nullopt;
     return found->second;
@@ -2119,6 +2165,88 @@ namespace
     {
         return as_string(id) + "[" + role + "]";
     }
+}
+
+auto NamesAndIDsTracker::publish_derived_line_family(
+    const ConstraintID & id, const string & family, function<auto(ProofLogger &, Integer)->optional<ProofLine>> deriver) -> void
+{
+    if (! _imp->derived_line_families.emplace(derived_line_key(id, family), std::move(deriver)).second)
+        throw ProofError{"two derivers published for the line family '" + derived_line_key(id, family) +
+            "': a family name must say which family it is, so that a member can be derived unambiguously"};
+}
+
+auto NamesAndIDsTracker::find_or_derive_line_in_family(const ConstraintID & id, const string & family, Integer index, ProofLogger & logger)
+    -> optional<ProofLine>
+{
+    auto member = derived_line_key(id, family) + "[" + to_string(index.raw_value) + "]";
+    if (auto already = _imp->derived_family_lines.find(member); already != _imp->derived_family_lines.end())
+        return already->second;
+
+    auto deriver = _imp->derived_line_families.find(derived_line_key(id, family));
+    if (deriver == _imp->derived_line_families.end())
+        return nullopt;
+
+    auto derived = deriver->second(logger, index);
+    if (! derived)
+        return nullopt;
+
+    // Memoised only on success: a deriver that declined once may well be asked
+    // again for a different reason, and caching the decline would turn "not
+    // this time" into "never".
+    _imp->derived_family_lines.emplace(member, *derived);
+    return derived;
+}
+
+auto NamesAndIDsTracker::publish_flag_definer(const ConstraintID & id, function<auto(ProofLogger &, const ProofFlagKey &)->void> definer) -> void
+{
+    if (! _imp->flag_definers.emplace(as_string(id), std::move(definer)).second)
+        throw ProofError{"constraint published a flag definer twice"};
+    _imp->any_flag_definers = true;
+}
+
+auto NamesAndIDsTracker::ensure_flag_defined(const ConstraintID & id, const ProofFlagKey & key, ProofLogger & logger) -> void
+{
+    if (! _imp->any_flag_definers)
+        return;
+    auto definer = _imp->flag_definers.find(as_string(id));
+    if (definer == _imp->flag_definers.end())
+        return;
+
+    // Keyed on the same string the flag's own name is built from, so a second
+    // ask --- from this constraint or from anyone citing it --- is free, and so
+    // that asking about x[id][k] does not count as having asked about v[id][k].
+    auto memo = flag_name_for_key(id, key);
+    if (! _imp->defined_flag_keys.emplace(memo).second)
+        return;
+    definer->second(logger, key);
+}
+
+auto NamesAndIDsTracker::constraint_row(const ConstraintID & id, const string & role) const -> optional<ProofLine>
+{
+    if (auto label = constraint_row_label(id, role))
+        return ProofLine{*label};
+    return find_derived_line(id, role);
+}
+
+auto NamesAndIDsTracker::register_in_proof_reification(const ProofFlag & flag, ProofLine implies, ProofLine implied_by) -> void
+{
+    // Keyed on the flag's PB rendering, which is what a citer has in hand and
+    // what the model-side labels are built from, so the two ways of defining a
+    // flag are asked about identically.
+    auto [_, inserted] = _imp->in_proof_reifications.emplace(pb_file_string_for(flag), pair{implies, implied_by});
+    if (! inserted)
+        throw ProofError{"flag " + pb_file_string_for(flag) + " had its reification emitted in the proof twice"};
+    _imp->any_in_proof_reifications = true;
+}
+
+auto NamesAndIDsTracker::in_proof_reification(const ProofFlag & flag) const -> optional<pair<ProofLine, ProofLine>>
+{
+    if (! _imp->any_in_proof_reifications)
+        return nullopt;
+    auto found = _imp->in_proof_reifications.find(pb_file_string_for(flag));
+    if (found == _imp->in_proof_reifications.end())
+        return nullopt;
+    return found->second;
 }
 
 auto NamesAndIDsTracker::publish_derived_line(const ConstraintID & id, const string & role, ProofLine line) -> void
@@ -2196,7 +2324,7 @@ auto NamesAndIDsTracker::make_proof_flag_named(const string & full_name) -> Proo
     auto flagvar = allocate_flag_xliteral(result, full_name);
     _imp->flags.emplace(result, flagvar);
     _imp->flags.emplace(! result, ! flagvar);
-    // Indexed so that find_proof_flag_values can answer for it. A repeat is a
+    // Indexed so that find_proof_flag can answer for it. A repeat is a
     // name collision in the PB file --- two flags rendering as one variable ---
     // so it is a bug in whichever namer produced it rather than something to
     // resolve here, but this is not the place to be strict about it: the

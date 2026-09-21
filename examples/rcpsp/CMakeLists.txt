@@ -101,6 +101,83 @@ add_test(NAME rcpsp_all COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_ver
 add_test(NAME rcpsp_unary COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_unary
     $<TARGET_FILE:rcpsp> --size 10 --seed 4 --resources 1 --capacity 1 --max-demand 1 --unary disjunctive)
 
+# The per-rule firing counters (#729), as a pair: a rule that is switched off
+# must report four zeroes, and the same rule switched on must report firings.
+# Together they say the counter is wired to the rule it is named after, which is
+# the failure that matters --- an increment in the wrong branch reports a
+# plausible number for ever and nothing says so.
+#
+# Deliberately not pinned to exact figures. The obvious version of this lane
+# asserted the numbers this machine produces, and macOS and ubuntu-24.04 both
+# reported different ones: the counts are stable for a given build but not
+# across toolchains, and neither is the plain recursion count of this instance.
+# That is why the exact figures in this file live in comments and never in an
+# assertion.
+add_test(NAME rcpsp_rule_counters_off COMMAND ${CMAKE_COMMAND} -E env GCS_SCHEDULING_RULE_STATS=1
+    $<TARGET_FILE:rcpsp> --size 12 --seed 3 --machine-fraction 0.8 --machine disjunctive)
+set_tests_properties(rcpsp_rule_counters_off PROPERTIES PASS_REGULAR_EXPRESSION
+    "disjunctive_edge_finding_lb: calls=0 firings=0 already_true=0 contradictions=0")
+
+add_test(NAME rcpsp_rule_counters_on COMMAND ${CMAKE_COMMAND} -E env GCS_SCHEDULING_RULE_STATS=1
+    $<TARGET_FILE:rcpsp> --size 12 --seed 3 --machine-fraction 0.8 --machine disjunctive --disjunctive-edge-finding)
+set_tests_properties(rcpsp_rule_counters_on PROPERTIES PASS_REGULAR_EXPRESSION
+    "disjunctive_edge_finding_lb: calls=[1-9][0-9]* firings=[1-9][0-9]* already_true=[1-9][0-9]* contradictions=0")
+
+# The job-shop reader, where *every* resource has capacity one. This is the only
+# instance format here that posts a Disjunctive per resource, because no RCPSP
+# collection in circulation has a unary resource at all --- which is why the
+# unary rules had no file-read instance to be exercised on before it.
+#
+# This lane takes the default --unary=cumulative, so it covers the reader and
+# the capacity-one Cumulative saying the same thing. It reaches the same optimum
+# of 23 as the lane below but in 153 recursions against 164: the two globals do
+# *not* search alike at their defaults, because Cumulative's overload check is
+# on by default and Disjunctive's is not, while Disjunctive has detectable
+# precedences and Cumulative has no such rule.
+add_test(NAME rcpsp_jss COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_jss
+    $<TARGET_FILE:rcpsp> --jss ${CMAKE_CURRENT_SOURCE_DIR}/sample.jss)
+
+# The same instance with every unary rule on, which is the end-to-end proof
+# check for all four of those certificates over a model read from a file rather
+# than over a propagator fixture. sample.jss is chosen so that each rule
+# actually changes the search --- 164 recursions with none of them, 125 with
+# edge-finding, 144 with not-first/not-last, 132 with the overload check and 125
+# with set-based detectable precedences --- so a rule that stopped inferring
+# would not quietly keep passing here.
+add_test(NAME rcpsp_jss_disjunctive COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_jss_disjunctive
+    $<TARGET_FILE:rcpsp> --jss ${CMAKE_CURRENT_SOURCE_DIR}/sample.jss --unary disjunctive
+    --disjunctive-edge-finding --disjunctive-not-first-not-last --disjunctive-overload
+    --disjunctive-detectable-precedences-set)
+
+# The multi-mode reader, and the only lane anywhere that hands Cumulative
+# variable lengths and heights rather than constants --- which is what #748 and
+# #749 taught it to reason about, and what no single-mode instance can reach. An
+# activity picks a mode, the mode fixes both its duration and its demands, and
+# an element constraint ties them together.
+#
+# sample.mm is built so that both halves of that are load-bearing: the optimum
+# is 10 against a critical path of 5, so the resources decide it rather than the
+# chains, and raising the non-renewable budget on the file's last line from 15 to
+# 22 drops the optimum to 6, so the budget is worth four of those ten units. An
+# instance without that would let every activity take its shortest mode, and
+# would be a plain RCPSP with extra steps.
+add_test(NAME rcpsp_mm COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_mm
+    $<TARGET_FILE:rcpsp> --mm ${CMAKE_CURRENT_SOURCE_DIR}/sample.mm)
+
+# The same instance with the energetic accounting on, so this is the end-to-end
+# proof check for #755's certificate over a *variable* length and height rather
+# than over the constants every other lane gives it. 109 recursions become 107,
+# so the rule is doing something here rather than merely not crashing.
+add_test(NAME rcpsp_mm_energetic COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_mm_energetic
+    $<TARGET_FILE:rcpsp> --mm ${CMAKE_CURRENT_SOURCE_DIR}/sample.mm --cumulative-energetic-edge-finding)
+
+# A deadline one below the optimum, so this reaches UNSATISFIABLE rather than
+# BOUNDS: the refutation has to rule out every mode selection as well as every
+# schedule, which is the conclusion the mode variables and the budget row are
+# jointly responsible for.
+add_test(NAME rcpsp_mm_deadline COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_mm_deadline
+    $<TARGET_FILE:rcpsp> --mm ${CMAKE_CURRENT_SOURCE_DIR}/sample.mm --deadline 9)
+
 # The temporal network through the global propagator, and through the presolver
 # that lifts it back out of the decomposition, on the same maximum-lag instance
 # rcpsp_max_lags posts decomposed. All three reach makespan 14 in 61 recursions

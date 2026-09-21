@@ -2,5 +2,6 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_PARITY_HH
 
 #include <gcs/constraints/parity/parity.hh>
+#include <gcs/constraints/parity/parity_system.hh>
 
 #endif

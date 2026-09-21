@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/reason.hh>
+#include <gcs/lifetime.hh>
 #include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
@@ -48,6 +49,43 @@ namespace gcs
         auto with_proof_mutation(innards::EqualsProofMutation mutation) -> ReifiedEquals &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
+
+        /**
+         * \name The constraint as posted.
+         *
+         * Public so that a presolver can read a posted Equals or NotEquals back
+         * and decide whether to lift it. Over `{0, 1}` operands either is a
+         * 2-XOR, which is what ParitySystemGathering wants them for; nothing in
+         * these says anything about the proof output, which
+         * ConstraintProofModelData is for.
+         *
+         * `enforces_equality()` is false for a NotEquals: the reification
+         * condition alone does not say which, because MustNotHold on an Equals
+         * and MustHold on a NotEquals are different spellings of the same thing
+         * and only one of them is constructible.
+         * @{
+         */
+        [[nodiscard]] auto left_variable() const -> IntegerVariableID
+        {
+            return _v1;
+        }
+
+        [[nodiscard]] auto right_variable() const -> IntegerVariableID
+        {
+            return _v2;
+        }
+
+        [[nodiscard]] auto reification_condition() const GCS_LIFETIME_BOUND -> const ReificationCondition &
+        {
+            return _cond;
+        }
+
+        [[nodiscard]] auto enforces_equality() const -> bool
+        {
+            return ! _neq;
+        }
+        ///@}
+
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;
     };

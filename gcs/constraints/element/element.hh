@@ -32,12 +32,28 @@ namespace gcs
 
     /**
      * \brief The consistency levels supported by the Element family: generalised
-     * arc consistency, or bounds consistency. The variable-array forms (Element,
-     * Element2D) default to GAC; the constant-array forms default to BC.
+     * arc consistency, bounds consistency, or consistency::Auto. The
+     * variable-array forms (Element, Element2D) default to GAC; the
+     * constant-array forms default to BC.
+     *
+     * The index variables are always kept generalised arc consistent; the
+     * choice is about the result. consistency::Auto asks for generalised arc
+     * consistency on the result only where something else in the model could
+     * observe the result's interior values, and bounds consistency where
+     * nothing could: the element installs both result propagators as a pair
+     * (innards::Propagators::install_with_optional_interior_pruning), and
+     * gcs::solve_with() chooses between them once presolving is done
+     * (innards::Propagators::choose_optional_interior_pruning). Until that
+     * choice is made, or in a search that does not make it, Auto propagates
+     * exactly as GAC does.
+     * Over an array with any non-constant entries, Auto is GAC: there, bounds
+     * consistency on the result is weaker than generalised arc consistency on
+     * its bounds too, not only on its interior, so dropping to it could be
+     * observed.
      *
      * \ingroup Consistency
      */
-    using ElementConsistency = std::variant<consistency::GAC, consistency::BC>;
+    using ElementConsistency = std::variant<consistency::GAC, consistency::BC, consistency::Auto>;
 
     template <typename EntryType_, unsigned dimensions_>
     class NDimensionalElement : public Constraint
@@ -56,7 +72,7 @@ namespace gcs
         IndexVariables _index_vars;
         IndexStarts _index_starts;
         Array _array;
-        bool _bounds_only;
+        ElementConsistency _consistency;
         bool _array_has_nonconstants = false;
         bool _has_empty_dim = false;
 
@@ -74,15 +90,16 @@ namespace gcs
         auto install_propagators_impl(innards::Propagators & propagators, const IndexVec_ & index_vars) -> void;
 
     protected:
-        explicit NDimensionalElement(IntegerVariableID result_var, IndexVariables, IndexStarts, Array, bool bounds_only);
+        explicit NDimensionalElement(IntegerVariableID result_var, IndexVariables, IndexStarts, Array, ElementConsistency);
 
     public:
-        /// Select the consistency level: consistency::GAC or consistency::BC.
-        /// This selects propagation strength only and never changes the OPB
-        /// encoding. Requesting any other level is a compile-time error.
+        /// Select the consistency level: consistency::GAC, consistency::BC, or
+        /// consistency::Auto (see ElementConsistency). This selects propagation
+        /// strength only and never changes the OPB encoding. Requesting any
+        /// other level is a compile-time error.
         auto with_consistency(ElementConsistency level) -> NDimensionalElement &
         {
-            _bounds_only = std::holds_alternative<consistency::BC>(level);
+            _consistency = level;
             return *this;
         }
 
@@ -95,12 +112,12 @@ namespace gcs
     {
     public:
         explicit Element(IntegerVariableID var, IntegerVariableID zero_idx, Array array) :
-            NDimensionalElement(var, {{zero_idx}}, {{0_i}}, std::move(array), false)
+            NDimensionalElement(var, {{zero_idx}}, {{0_i}}, std::move(array), consistency::GAC{})
         {
         }
 
         explicit Element(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx, Array array) :
-            NDimensionalElement(var, {{idx.first}}, {{idx.second}}, std::move(array), false)
+            NDimensionalElement(var, {{idx.first}}, {{idx.second}}, std::move(array), consistency::GAC{})
         {
         }
     };
@@ -109,12 +126,12 @@ namespace gcs
     {
     public:
         explicit Element2D(IntegerVariableID var, IntegerVariableID zero_idx_1, IntegerVariableID zero_idx_2, Array array) :
-            NDimensionalElement(var, {{zero_idx_1, zero_idx_2}}, {{0_i, 0_i}}, std::move(array), false)
+            NDimensionalElement(var, {{zero_idx_1, zero_idx_2}}, {{0_i, 0_i}}, std::move(array), consistency::GAC{})
         {
         }
 
         explicit Element2D(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx1, std::pair<IntegerVariableID, Integer> idx2,
-            Array array) : NDimensionalElement(var, {{idx1.first, idx2.first}}, {{idx1.second, idx2.second}}, std::move(array), false)
+            Array array) : NDimensionalElement(var, {{idx1.first, idx2.first}}, {{idx1.second, idx2.second}}, std::move(array), consistency::GAC{})
         {
         }
     };
@@ -123,12 +140,12 @@ namespace gcs
     {
     public:
         explicit ElementConstantArray(IntegerVariableID var, IntegerVariableID zero_idx, Array array) :
-            NDimensionalElement(var, {{zero_idx}}, {{0_i}}, std::move(array), true)
+            NDimensionalElement(var, {{zero_idx}}, {{0_i}}, std::move(array), consistency::BC{})
         {
         }
 
         explicit ElementConstantArray(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx, Array array) :
-            NDimensionalElement(var, {{idx.first}}, {{idx.second}}, std::move(array), true)
+            NDimensionalElement(var, {{idx.first}}, {{idx.second}}, std::move(array), consistency::BC{})
         {
         }
     };
@@ -137,12 +154,12 @@ namespace gcs
     {
     public:
         explicit Element2DConstantArray(IntegerVariableID var, IntegerVariableID idx1, IntegerVariableID idx2, Array array) :
-            NDimensionalElement(var, {{idx1, idx2}}, {{0_i, 0_i}}, std::move(array), true)
+            NDimensionalElement(var, {{idx1, idx2}}, {{0_i, 0_i}}, std::move(array), consistency::BC{})
         {
         }
 
         explicit Element2DConstantArray(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx1, std::pair<IntegerVariableID, Integer> idx2,
-            Array array) : NDimensionalElement(var, {{idx1.first, idx2.first}}, {{idx1.second, idx2.second}}, std::move(array), true)
+            Array array) : NDimensionalElement(var, {{idx1.first, idx2.first}}, {{idx1.second, idx2.second}}, std::move(array), consistency::BC{})
         {
         }
     };

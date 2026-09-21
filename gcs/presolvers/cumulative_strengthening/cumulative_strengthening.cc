@@ -515,7 +515,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
 
                 auto & tracker = recipe_logger.names_and_ids_tracker();
                 auto flag_for = [&](size_t i) -> ProofFlag {
-                    auto active = tracker.find_proof_flag_values(donor_id, ConstraintProofModelData<Cumulative>::active_flag_key(i, t));
+                    auto active = tracker.find_proof_flag(donor_id, ConstraintProofModelData<Cumulative>::active_flag_key(i, t));
                     if (! active)
                         throw ProofError{"cumulative strengthening: the donor has no active flag for task " + to_string(i) + " at time " +
                             to_string(t.raw_value) + ", which install_derived_cumulative should already have declined over"};

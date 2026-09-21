@@ -336,6 +336,51 @@ TEST_CASE("read_scp: parity reification-tuple form enumerates correctly")
         ScpReadError);
 }
 
+TEST_CASE("read_scp: parity_system enumerates correctly")
+{
+    // ((A B C) (C D)): every inner list is one odd-parity row, and the rows
+    // share C, which is the whole point of the form.
+    auto solutions = enumerate("( (version 1) (variables (A 0 1) (B 0 1) (C 0 1) (D 0 1)) (constraints (_1 parity_system (((A >= 1) (B >= 1) (C >= "
+                               "1)) ((C >= 1) (D >= 1))))) (prob_type enumerate) )");
+    CHECK(solutions.size() == 4);
+    for (const auto & s : solutions) {
+        CHECK((s.at("A") + s.at("B") + s.at("C")) % 2 == 1);
+        CHECK((s.at("C") + s.at("D")) % 2 == 1);
+    }
+
+    // One row is the degenerate case, and has to mean what the single-row
+    // `parity` form means rather than being rejected for having no system.
+    for (const auto & s :
+        enumerate("( (version 1) (variables (A 0 1) (B 0 1)) (constraints (_1 parity_system (((A >= 1) (B >= 1))))) (prob_type enumerate) )"))
+        CHECK((s.at("A") + s.at("B")) % 2 == 1);
+
+    // Zero rows constrains nothing; a row of statically-true constants is
+    // already odd, so both leave the one empty solution standing.
+    CHECK(enumerate("( (version 1) (variables) (constraints (_1 parity_system ())) (prob_type enumerate) )").size() == 1);
+    CHECK(enumerate("( (version 1) (variables) (constraints (_1 parity_system (((1 >= 1))))) (prob_type enumerate) )").size() == 1);
+    // ...and an even row of them is unsatisfiable, which is what says the rows
+    // are being read rather than skipped.
+    CHECK(enumerate("( (version 1) (variables) (constraints (_1 parity_system (((1 >= 1) (1 >= 1))))) (prob_type enumerate) )").empty());
+
+    // The arity check and the row walk: a missing row list, an extra term, and
+    // a row that is an atom rather than a list.
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (A 0 1)) (constraints (_1 parity_system)) (prob_type enumerate) )"), ScpReadError);
+    CHECK_THROWS_AS(
+        enumerate("( (version 1) (variables (A 0 1)) (constraints (_1 parity_system (((A >= 1))) extra)) (prob_type enumerate) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (A 0 1)) (constraints (_1 parity_system (A))) (prob_type enumerate) )"), ScpReadError);
+}
+
+TEST_CASE("read_scp: parity_system survives write -> read -> write unchanged")
+{
+    // ParitySystem is the one constraint here with a nested literal list, so
+    // the written and the read spelling agreeing is worth pinning: an inner
+    // list dropped or flattened would still parse.
+    check_scp_round_trip("scp_reader_parity_system", "(_1 parity_system (((X >= 1) (Y != 0)) ((Y = 2) (C = 1))))",
+        [](Problem & p, IntegerVariableID x, IntegerVariableID y, IntegerVariableID c) {
+            p.post(ParitySystem{std::vector<innards::Literals>{{x >= 1_i, y != 0_i}, {y == 2_i, c == 1_i}}});
+        });
+}
+
 TEST_CASE("read_scp: lex comparisons enumerate correctly")
 {
     // (A B) >lex (C D): A > C, or A == C and B > D.

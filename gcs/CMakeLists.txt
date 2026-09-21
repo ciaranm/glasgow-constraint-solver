@@ -35,6 +35,7 @@ add_library(glasgow_constraint_solver
         constraints/comparison/comparison.cc
         constraints/count/count.cc
         constraints/cumulative/cumulative.cc
+        constraints/cumulative/checkpoint_recovery.cc
         constraints/cumulative/derived_cumulative.cc
         constraints/cumulative/derived_cumulative_stats.cc
         constraints/cumulative/donor_view.cc
@@ -59,6 +60,7 @@ add_library(glasgow_constraint_solver
         constraints/innards/graph_rules.cc
         constraints/innards/linear_stages.cc
         constraints/innards/guaranteed_contribution.cc
+        constraints/innards/rule_counters.cc
         constraints/innards/makespan_energy.cc
         constraints/innards/product_encoding.cc
         constraints/innards/product_justify.cc
@@ -92,6 +94,9 @@ add_library(glasgow_constraint_solver
         constraints/n_value/n_value.cc
         constraints/nogoods/nogoods.cc
         constraints/parity/parity.cc
+        constraints/parity/gf2_system.cc
+        constraints/parity/parity_chain.cc
+        constraints/parity/parity_system.cc
         constraints/path/path.cc
         constraints/plus_minus/plus.cc
         constraints/power/power.cc
@@ -143,6 +148,7 @@ add_library(glasgow_constraint_solver
         presolvers/inferred_cumulative/inferred_cumulative.cc
         presolvers/inferred_disjunctive/inferred_disjunctive.cc
         presolvers/innards/makespan_links.cc
+        presolvers/parity_system_gathering/parity_system_gathering.cc
 )
 
 # The repo root contains both gcs/ and util/, so it must be on the include path.
@@ -243,20 +249,95 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(auto_table_presolver_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME auto_table_presolver_test COMMAND $<TARGET_FILE:auto_table_presolver_test>)
 
+    # ---- issue #780: the start-checkpoint encoding, which is the only one
+    #
+    # Cumulative has exactly one OPB encoding: the start-checkpoint one, which
+    # is what a bare lane runs (#780). Two would mean cake had to reproduce our
+    # per-constraint choice exactly, and a disagreement shows up as a rejected
+    # proof rather than as an error.
+    #
+    # One arm survives that. `<name>_recovering` emits the old per-time block
+    # beside the checkpoint one, derives every per-time capacity row back out of
+    # the checkpoints, and checks it against the row the model still carries
+    # (CumulativeEncoding::BothRecovering). That is the only thing in the tree
+    # that catches a recovery which is *valid but derives the wrong row*: such a
+    # recovery emits a line veripb accepts, and only the implication check
+    # against ground truth rejects it. It is also the only reason the
+    # time-indexed emitter is still compiled --- it is a test fixture, not an
+    # encoding, and no solve and no .scp can select it.
+    #
+    # Mutation lanes do not get the arm. The recovery puts more in the database
+    # for unit propagation to reach, so a corrupted proof veripb rejects against
+    # the shipped encoding need not be rejected with the recovered rows beside
+    # it. The one exception is registered by hand below
+    # (cumulative_overload_mutation_recover_wrong), and it is a mutation *of the
+    # recovery*, which is what the arm is for.
+    #
+    # Neither does a `scp_chain_cumulative*` case, for a better reason: the
+    # chain checks our proof against cake's OPB, which carries the
+    # start-checkpoint block alone, so the per-time rows the arm checks its
+    # recovery against are not in it.
+    #
+    # The encoding comes from the environment rather than an argv flag because
+    # the fixtures build Cumulatives in sixty places, and threading a parameter
+    # through all of them would say nothing that GCS_CUMULATIVE_ENCODING does
+    # not. The arm gets its own working directory because the two copies write
+    # proof files under the same names (issue #562's problem, one directory up).
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering)
+    #
+    # Which arm a lane belongs to is *recorded* here and applied further down,
+    # after the runtime-cap block: that block sets ENVIRONMENT on every test in
+    # the directory with set_tests_properties, which replaces the property
+    # rather than adding to it, so an encoding set here would be silently
+    # dropped and the twin would run the arm it was meant to be twinning. That
+    # is not hypothetical --- it is how these lanes were first written, and
+    # every one of them was quietly vacuous until a mutation lane that must
+    # fail started passing. Follow the APPEND idiom the linear and disjunctive
+    # lanes below already use.
+    function(add_cumulative_arm name arm directory)
+        add_test(NAME ${name}_${arm} COMMAND ${ARGN})
+        set_tests_properties(${name}_${arm} PROPERTIES WORKING_DIRECTORY ${directory})
+        set_property(GLOBAL APPEND PROPERTY gcs_cumulative_${arm}_tests ${name}_${arm})
+    endfunction()
+    # The bare lane, which now *is* the start-checkpoint encoding.
+    function(add_cumulative_test name)
+        add_test(NAME ${name} COMMAND ${ARGN})
+    endfunction()
+    # ...plus the one surviving arm: both blocks in the model, every per-time row
+    # recovered from the checkpoints and checked against the row the model still
+    # carries beside it. That is the only thing in the tree that catches a
+    # recovery which is *valid but derives the wrong row* --- such a recovery
+    # emits a perfectly good line that veripb accepts, and only the implication
+    # check against ground truth rejects it. It earned its keep: the
+    # optional-task sabotage at step 12 left every start-checkpoint lane green.
+    #
+    # It is the reason the time-indexed emitter is still compiled. It is not an
+    # encoding anything ships, and no solve and no .scp can select it.
+    function(add_cumulative_test_with_recovery name)
+        add_test(NAME ${name} COMMAND ${ARGN})
+        add_cumulative_arm(${name} recovering ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering ${ARGN})
+    endfunction()
+
     add_executable(inferred_cumulative_presolver_test presolvers/inferred_cumulative/inferred_cumulative_test.cc)
     target_link_libraries(inferred_cumulative_presolver_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME inferred_cumulative_presolver
-        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_cumulative_presolver_test>)
+    add_cumulative_test_with_recovery(inferred_cumulative_presolver
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_cumulative_presolver_test>)
 
     add_executable(inferred_disjunctive_presolver_test presolvers/inferred_disjunctive/inferred_disjunctive_test.cc)
     target_link_libraries(inferred_disjunctive_presolver_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME inferred_disjunctive_presolver
-        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_disjunctive_presolver_test>)
+    # Twinned too: it cites a *Cumulative* donor's per-(task, time) flags.
+    add_cumulative_test_with_recovery(inferred_disjunctive_presolver
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_disjunctive_presolver_test>)
+
+    add_executable(parity_system_gathering_presolver_test presolvers/parity_system_gathering/parity_system_gathering_test.cc)
+    target_link_libraries(parity_system_gathering_presolver_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME parity_system_gathering_presolver
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_system_gathering_presolver_test>)
 
     add_executable(cumulative_strengthening_presolver_test presolvers/cumulative_strengthening/cumulative_strengthening_test.cc)
     target_link_libraries(cumulative_strengthening_presolver_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME cumulative_strengthening_presolver
-        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_strengthening_presolver_test>)
+    add_cumulative_test_with_recovery(cumulative_strengthening_presolver
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_strengthening_presolver_test>)
 
     add_executable(constraint_enumeration_test constraint_enumeration_test.cc)
     target_link_libraries(constraint_enumeration_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
@@ -351,6 +432,7 @@ if(GCS_BUILD_TESTS)
     add_executable(n_value_test constraints/n_value/n_value_test.cc)
     add_executable(nogoods_test constraints/nogoods/nogoods_test.cc)
     add_executable(parity_test constraints/parity/parity_test.cc)
+    add_executable(parity_system_test constraints/parity/parity_system_test.cc)
     add_executable(plus_minus_test constraints/plus_minus/plus_minus_test.cc)
     add_executable(power_test constraints/power/power_test.cc)
     add_executable(product_bounds_test constraints/innards/product_bounds_test.cc)
@@ -379,7 +461,7 @@ if(GCS_BUILD_TESTS)
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test bin_packing_test comparison_test
             count_test cumulative_test cumulative_overload_test cumulative_edge_finding_test cumulative_ttef_test cumulative_energetic_test cumulative_nfnl_test cumulative_published_nfnl_test cumulative_kaoc_test cumulative_optional_test derived_cumulative_test difference_test disjunctive_test disjunctive_optional_test disjunctive_overload_test disjunctive_edge_finding_test disjunctive_nfnl_test disjunctive_precedences_test disjunctive_set_precedences_test disjunctive_published_nfnl_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
-            logical_test mdd_test min_distance_test min_distance_matching_test min_max_test mini_linear_test multiply_test n_value_test nogoods_test parity_test
+            logical_test mdd_test min_distance_test min_distance_matching_test min_max_test mini_linear_test multiply_test n_value_test nogoods_test parity_test parity_system_test
             plus_minus_test power_test product_bounds_test product_justify_test reachable_test dag_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test subgraph_test tree_test path_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
@@ -400,46 +482,63 @@ if(GCS_BUILD_TESTS)
     add_test(NAME count_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:count_test>)
     add_test(NAME bounds_global_cardinality_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:bounds_global_cardinality_test>)
     add_test(NAME gac_global_cardinality_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:gac_global_cardinality_test>)
-    add_test(NAME cumulative_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
-    add_test(NAME cumulative_overload COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_overload_test>)
-    add_test(NAME cumulative_edge_finding COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_edge_finding_test>)
+    add_cumulative_test_with_recovery(cumulative_constraint ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
+    add_cumulative_test_with_recovery(cumulative_overload ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_overload_test>)
+    add_cumulative_test_with_recovery(cumulative_edge_finding ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_edge_finding_test>)
+    # All five still discriminate on the startcheckpoint arm, checked one at a
+    # time. `capacity` is the direct negative test for #780's step 7: it omits a
+    # row from the window supply, which on that arm is a recovered row.
     foreach(mutation drop toofar capacity mirror_drop mirror_toofar)
-        add_test(NAME cumulative_edge_finding_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+        add_cumulative_test(cumulative_edge_finding_mutation_${mutation}
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_edge_finding_mutation_${mutation} $<TARGET_FILE:cumulative_edge_finding_test> --mutate=${mutation})
     endforeach()
-    add_test(NAME cumulative_ttef COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_ttef_test>)
-    add_test(NAME cumulative_nfnl COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_nfnl_test>)
-    add_test(NAME cumulative_kaoc COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_kaoc_test>)
+    add_cumulative_test_with_recovery(cumulative_ttef ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_ttef_test>)
+    add_cumulative_test_with_recovery(cumulative_nfnl ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_nfnl_test>)
+    add_cumulative_test_with_recovery(cumulative_kaoc ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_kaoc_test>)
+    # On the startcheckpoint arm as well, each checked to still discriminate
+    # there. `capacity` is the one that earns it: it omits a row from the
+    # per-time availability line, which under that arm is a *recovered* row, so
+    # this is the negative test over the path #780's step 6 moved.
     foreach(fixture cloutier_ex2 dp_path compulsory)
         foreach(mutation claim_one_better strengthen_one_fewer capacity)
-            add_test(NAME cumulative_kaoc_mutation_${fixture}_${mutation}
-                COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            add_cumulative_test(cumulative_kaoc_mutation_${fixture}_${mutation}
+                ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                     --basename cumulative_kaoc_mutation_${fixture}_${mutation} $<TARGET_FILE:cumulative_kaoc_test>
                     --mutate=${mutation} --fixture=${fixture})
         endforeach()
     endforeach()
-    foreach(mutation toofar drop roomy_toofar roomy_drop)
-        add_test(NAME cumulative_nfnl_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+    foreach(mutation toofar drop roomy_toofar)
+        add_cumulative_test(cumulative_nfnl_mutation_${mutation}
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_nfnl_mutation_${mutation} $<TARGET_FILE:cumulative_nfnl_test> --mutate=${mutation})
     endforeach()
     # The detection as published (#746), certified by contiguity rather than by
     # the window-energy lemma. `emit_nothing` is the control and `drop_pin` the
     # lane aimed at what is new; dropping the contiguity rows themselves cannot
     # be caught, and cumulative_mutations.hh records why.
-    add_test(NAME cumulative_published_nfnl
-        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test>)
-    add_test(NAME cumulative_published_nfnl_random
-        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test> --random 7)
-    foreach(mutation emit_nothing drop_pin drop toofar roomy_toofar roomy_drop_pin)
-        add_test(NAME cumulative_published_nfnl_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+    add_cumulative_test_with_recovery(cumulative_published_nfnl
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test>)
+    add_cumulative_test_with_recovery(cumulative_published_nfnl_random
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test> --random 7)
+    # The same net over variable lengths and heights, which is what a mode gives
+    # this rule and what nothing here gave it until #778: not-last's contiguity
+    # rows are then stated over `s + l` rather than over `s`, which is a
+    # derivation unit propagation cannot finish on its own. Seed 9 is picked for
+    # rejecting at its sixth instance without that fix, under the runtime caps
+    # this lane runs with, so a regression fails it early rather than late.
+    add_cumulative_test_with_recovery(cumulative_published_nfnl_random_var
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_published_nfnl_test> --random-var 9)
+    # All five still discriminate on the startcheckpoint arm, checked one at a
+    # time. `drop_pin` is the one aimed at what #746 added, and it survives.
+    foreach(mutation emit_nothing drop_pin toofar roomy_toofar roomy_drop_pin)
+        add_cumulative_test(cumulative_published_nfnl_mutation_${mutation}
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_published_nfnl_mutation_${mutation} $<TARGET_FILE:cumulative_published_nfnl_test> --mutate=${mutation})
     endforeach()
-    foreach(mutation pins pin drop toofar mirror_pins mirror_pin mirror_toofar)
-        add_test(NAME cumulative_ttef_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+    foreach(mutation pins drop toofar mirror_pins mirror_toofar)
+        add_cumulative_test(cumulative_ttef_mutation_${mutation}
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_ttef_mutation_${mutation} $<TARGET_FILE:cumulative_ttef_test> --mutate=${mutation})
     endforeach()
     # The energetic form (#755), which charges every task its guaranteed energy
@@ -447,36 +546,159 @@ if(GCS_BUILD_TESTS)
     # mandatory part. `drop_energetic` is the lane that matters: it removes the
     # row of a task the window does not contain, which is the only energy plain
     # edge-finding would not have cited.
-    add_test(NAME cumulative_energetic
-        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test>)
-    add_test(NAME cumulative_energetic_random
-        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test> --random 17)
-    foreach(mutation drop_energetic drop toofar capacity mirror_drop_energetic mirror_toofar)
-        add_test(NAME cumulative_energetic_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+    add_cumulative_test_with_recovery(cumulative_energetic
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test>)
+    add_cumulative_test_with_recovery(cumulative_energetic_random
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test> --random 17)
+    foreach(mutation drop_energetic drop toofar capacity mirror_toofar)
+        add_cumulative_test(cumulative_energetic_mutation_${mutation}
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_energetic_mutation_${mutation} $<TARGET_FILE:cumulative_energetic_test> --mutate=${mutation})
     endforeach()
-    add_test(NAME derived_cumulative COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:derived_cumulative_test>)
+    add_cumulative_test_with_recovery(derived_cumulative ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:derived_cumulative_test>)
     # Mutation lanes: each writes a deliberately corrupted proof of the
     # sharp-margin fixture, and passes only if veripb rejects it. Distinct
     # basenames so the lanes do not race over one set of proof files.
+    #
+    # These three are twinned onto the recovering arm as well, which most
+    # mutation lanes are not: adding model rows gives unit propagation more to
+    # reach, so a lane that discriminates under one encoding need not under
+    # another, and each twin goes on only once it has been shown to still fail.
+    # These have been, and it matters here specifically --- since the overload
+    # check's window supply moved onto the recovered rows (#780), `capacity`
+    # corrupts a *derived* row rather than a model one, and without the twin the
+    # recovering arm would have no negative test over that path at all.
     foreach(mutation energy capacity window)
-        add_test(NAME cumulative_overload_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+        add_cumulative_test_with_recovery(cumulative_overload_mutation_${mutation}
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_overload_mutation_${mutation} $<TARGET_FILE:cumulative_overload_test> --mutate=${mutation})
     endforeach()
+    # #780: the corruption no `pol` failure catches. Recovering a capacity row
+    # from the neighbouring task's checkpoint leaves every step of the
+    # derivation valid and produces a perfectly good line --- it is simply not
+    # the row the model states, and only the implication check against that row
+    # rejects it. Needs the recovering encoding, since under any other the
+    # recovery does not run and the proof comes out honest.
+    add_cumulative_arm(cumulative_overload_mutation_recover_wrong checkpoint_recovering
+        ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            --basename cumulative_overload_mutation_recover_wrong $<TARGET_FILE:cumulative_overload_test>
+            --mutate=recover_wrong_checkpoint)
+
+    # And the other half of what the recovering arm has to be held to: that the
+    # recovery stands on the start-checkpoint rows *alone*. Every lane above
+    # runs with both blocks in the model, where a rup inside the recovery could
+    # be closing against the very row it claims to derive and nothing would say
+    # so. These cut the proof at the recovery's own marker (`prefix`) or leave
+    # it whole (`whole`), and recheck against an OPB with the per-time capacity
+    # rows stripped out.
+    #
+    # `whole` is the stronger claim: it refuses any model whose proof still cites
+    # a per-time row, so a model can only go in that mode once every rule it
+    # fires has been moved over to the recovered rows. Every case here is `whole`
+    # now, which says the *default* rule set --- time-tabling, the overload check
+    # and its (TTOC) strengthening --- is converted.
+    #
+    # These stay as a direct check on the recovery's own derivation --- `prefix`
+    # mode cuts the proof at the recovery's marker, which nothing else does.
+    # They are no longer #780's progress bar; there is one encoding now, so
+    # there is no leak to check for. See the note where that bar used to be.
+    # Only where the standalone .scp solver is built: these lanes run it, and
+    # GCS_ENABLE_EXECUTABLES=OFF (the MSVC frontends lane) leaves no such target
+    # for $<TARGET_FILE:> to name.
+    if(GCS_ENABLE_EXECUTABLES)
+        function(add_checkpoint_recovery_leak_check case mode)
+            add_test(NAME cumulative_checkpoint_recovery_${case}_${mode}
+                COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_checkpoint_recovery_leak_check.bash
+                    $<TARGET_FILE:glasgow_scp_solver>
+                    ${CMAKE_CURRENT_SOURCE_DIR}/constraints/cumulative/checkpoint_recovery_${case}.scp ${mode})
+            set_tests_properties(cumulative_checkpoint_recovery_${case}_${mode} PROPERTIES SKIP_RETURN_CODE 77
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering)
+        endfunction()
+        # Two tasks that must overlap and do not fit: the overflow contradiction and
+        # nothing else, which is the minimal end-state regression.
+        add_checkpoint_recovery_leak_check(overflow_only whole)
+        # Four tasks with four different durations, so the candidate set differs
+        # from one time point to the next and the weakening path is exercised. Fires
+        # both bound pushes as well as the overflow check.
+        add_checkpoint_recovery_leak_check(leak_check whole)
+        # Three tasks whose mandatory parts are all empty, so time-tabling sees
+        # nothing and the overload check is what refutes it. This is the (OC) arm:
+        # the contained tasks' own energy is what overflows the window.
+        add_checkpoint_recovery_leak_check(overload whole)
+        # And the (TTOC) arm, which supplies the same window and then adds the
+        # mandatory load of a task the window does *not* contain. Capacity 3 over
+        # [0,4): S1 (fixed at 0) and S2 are contained and carry 6 + 6 = 12 against a
+        # supply of 12, so (OC) alone finds nothing --- S0, which is not contained,
+        # has mandatory part [3,4) at height 2, and that is what tips it to 14 > 12.
+        # So the case cannot pass by accident on the plain overload check.
+        add_checkpoint_recovery_leak_check(ttoc whole)
+        # And each again in `no-block` mode, which solves under the shipped
+        # encoding and asserts the per-time rows were never emitted at all rather
+        # than deleting them afterwards. That is the tripwire on the encoder: if a
+        # change ever made it write both blocks again, every other lane would still
+        # pass while the model quietly paid for two encodings and diverged from
+        # what cake derives. `whole` and `prefix` force `both-recovering`
+        # themselves, so they are unaffected by what the default is. See the script.
+        add_checkpoint_recovery_leak_check(overflow_only no-block)
+        add_checkpoint_recovery_leak_check(leak_check no-block)
+        add_checkpoint_recovery_leak_check(overload no-block)
+        add_checkpoint_recovery_leak_check(ttoc no-block)
+    endif()
+
+    # #780's progress bar is retired: there is one encoding now, so there is no
+    # arm for a lane to be missing from. What it recorded is worth keeping,
+    # because it is what made the deletion safe to make:
+    #
+    # Every *rule* moved over, and then every *shape*. Nothing reads
+    # capacity_lines any more --- it all goes through capacity_row --- and the
+    # recovery speaks about optional tasks, variable lengths, variable heights
+    # and a variable capacity, so capacity_row's fallback to a model row was
+    # unreachable for any Cumulative with an active task before it was deleted.
+    # Of the 440 proofs the cumulative test binaries wrote under the arm, none
+    # contained a cap_ row, where 149 did when the arm was built. See dev_docs
+    # for what each shape took.
+    #
+    # Seven mutation lanes went with the flip rather than being pinned to an
+    # encoding the solver does not ship. Each dropped a row or a pin that the
+    # checkpoint rows put back by relating the starts directly, so veripb
+    # accepts the corruption and the lane asserts nothing:
+    #
+    #   cumulative_optional_mutation_{wrong_task,emit_nothing}
+    #   cumulative_ttef_mutation_{pin,mirror_pin}
+    #   cumulative_nfnl_mutation_roomy_drop
+    #   cumulative_energetic_mutation_mirror_drop_energetic
+    #   cumulative_published_nfnl_mutation_drop
+    #
+    # Read honestly, that is each of those certificate steps telling us it is no
+    # longer load-bearing: unit propagation over the richer model closes what the
+    # step used to supply. Whether the certificates should therefore drop those
+    # steps is a separate question and is not answered here.
+    # cumulative_optional_mutation_one_too_far was in that list once and is not:
+    # it rejects under every encoding, rechecked when optional tasks joined.
+    #
+    # One thing to keep in mind if a bar like this is ever built for another
+    # rule: the derived-cumulative lanes were the one place the arm did *not*
+    # fail loudly. derived_cumulative.cc reads its donors' rows and a donor with
+    # none makes the derivation *decline*, which is a supported outcome rather
+    # than an error --- so before step 9 those lanes failed on their own
+    # assertions about what got posted, not on veripb. A lane without such an
+    # assertion would have passed while silently losing propagation.
+
     # One ctest entry per mode, each writing proofs under its own basename, so a
     # parallel run does not have two entries racing over one set of files.
     foreach(mode enumerate falsify bijection objective)
-        add_test(NAME cumulative_optional_constraint_${mode}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_optional_test> ${mode})
+        add_cumulative_test_with_recovery(cumulative_optional_constraint_${mode}
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_optional_test> ${mode})
     endforeach()
     # Presence-falsification mutation lanes, the same shape as the overload
     # ones above: each writes a deliberately corrupted proof and passes only if
-    # veripb rejects it.
-    foreach(mutation wrong_task emit_nothing one_too_far)
-        add_test(NAME cumulative_optional_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+    # veripb rejects it. one_too_far is on all four arms: checked one encoding
+    # at a time once the recovery learned to speak about optional tasks, and it
+    # still rejects under every one of them.
+    foreach(mutation one_too_far)
+        add_cumulative_test_with_recovery(cumulative_optional_mutation_${mutation}
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_optional_mutation_${mutation} $<TARGET_FILE:cumulative_optional_test> --mutate=${mutation})
     endforeach()
     foreach(mode basic cycles views alias reified simplify incremental random random_reified)
@@ -577,7 +799,7 @@ if(GCS_BUILD_TESTS)
         add_test(NAME disjunctive_2d_constraint_${mode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_test> ${mode})
     endforeach()
-    foreach(mode const constgac const2d var var2d)
+    foreach(mode const constgac constauto const2d const2dauto var varauto var2d)
         add_test(NAME element_constraint_${mode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> ${mode})
     endforeach()
@@ -669,6 +891,7 @@ if(GCS_BUILD_TESTS)
     add_view_tests(min_max_constraint min_max_test 6)
     add_view_tests(at_most_one_constraint at_most_one_test 5)
     add_view_tests(parity_constraint parity_test 4)
+    add_view_tests(parity_system_constraint parity_system_test 4)
     add_view_tests(n_value_constraint n_value_test 6)
     add_view_tests(min_distance_constraint min_distance_test 6)
     add_view_tests(seq_precede_chain_constraint seq_precede_chain_test 5)
@@ -686,7 +909,9 @@ if(GCS_BUILD_TESTS)
     add_view_tests(element_constraint_var element_test 6 var)
     add_view_tests(element_constraint_const element_test 2 const)
     add_view_tests(element_constraint_constgac element_test 2 constgac)
+    add_view_tests(element_constraint_constauto element_test 2 constauto)
     add_view_tests(element_constraint_const2d element_test 3 const2d)
+    add_view_tests(element_constraint_const2dauto element_test 3 const2dauto)
     add_view_tests(element_constraint_var2d element_test 5 var2d)
     add_view_tests(logical_constraint logical_test 4)
     add_view_tests(inverse_constraint inverse_test 6)
@@ -694,6 +919,13 @@ if(GCS_BUILD_TESTS)
         add_view_tests(disjunctive_constraint_${mode} disjunctive_test 4 ${mode})
     endforeach()
     add_view_tests(cumulative_constraint cumulative_test 4)
+    # And its always-on mixed-view lane on the recovering arm (#780): two
+    # different views in one constraint is the shape the checkpoint rows meet
+    # that the per-time ones never do, since a checkpoint row names two starts.
+    # These are views on the *starts*; a view-valued height has no encoding at
+    # all and prepare() rejects it.
+    add_cumulative_arm(cumulative_constraint_view_mixed recovering ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test> --view-position=mixed)
     add_view_tests(regular_constraint regular_test 4)
     # Every MiniZinc model hands BinPacking views: glasgow_bin_packing_capa and
     # glasgow_bin_packing_load take the bin offset and fzn_glasgow applies it with
@@ -736,6 +968,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME n_value_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:n_value_test>)
     add_test(NAME nogoods_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:nogoods_test>)
     add_test(NAME parity_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_test>)
+    add_test(NAME parity_system_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_system_test>)
     add_test(NAME plus_minus_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test>)
     # The same test with consistency::Dynamic's threshold forced to zero, so that
     # every step of the Dynamic arm (and so of Auto) takes the hull fallback:
@@ -1040,6 +1273,14 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(conflict_observer_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME conflict_observer_test COMMAND $<TARGET_FILE:conflict_observer_test>)
 
+    add_executable(optional_interior_pruning_test innards/optional_interior_pruning_test.cc)
+    target_link_libraries(optional_interior_pruning_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME optional_interior_pruning_test COMMAND $<TARGET_FILE:optional_interior_pruning_test>)
+
+    add_executable(element_auto_test constraints/element/element_auto_test.cc)
+    target_link_libraries(element_auto_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME element_auto_test COMMAND $<TARGET_FILE:element_auto_test>)
+
     add_executable(bc_all_different_test constraints/all_different/bc_all_different_test.cc)
     target_link_libraries(bc_all_different_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME bc_all_different_test COMMAND $<TARGET_FILE:bc_all_different_test>)
@@ -1084,6 +1325,18 @@ if(GCS_BUILD_TESTS)
         set_tests_properties(${gcs_registered_tests} PROPERTIES ENVIRONMENT
             "GCS_TEST_MAX_SOLUTIONS=${GCS_TEST_MAX_SOLUTIONS};GCS_TEST_MAX_RECURSIONS=${GCS_TEST_MAX_RECURSIONS}")
     endif()
+
+    # #780's encoding arms, APPENDed after the runtime caps above rather than
+    # set at registration, since set_tests_properties there replaces the whole
+    # ENVIRONMENT property. See add_cumulative_arm.
+    get_property(gcs_cumulative_recovering_tests GLOBAL PROPERTY gcs_cumulative_recovering_tests)
+    foreach(cumulative_arm_test IN LISTS gcs_cumulative_recovering_tests)
+        set_property(TEST ${cumulative_arm_test} APPEND PROPERTY ENVIRONMENT "GCS_CUMULATIVE_ENCODING=both-recovering")
+    endforeach()
+    get_property(gcs_cumulative_checkpoint_recovering_tests GLOBAL PROPERTY gcs_cumulative_checkpoint_recovering_tests)
+    foreach(cumulative_arm_test IN LISTS gcs_cumulative_checkpoint_recovering_tests)
+        set_property(TEST ${cumulative_arm_test} APPEND PROPERTY ENVIRONMENT "GCS_CUMULATIVE_ENCODING=both-recovering")
+    endforeach()
 
     # Clear the runtime caps for the two lanes whose whole content is comparing
     # one model's solution *set* against another's. A cap that fires truncates

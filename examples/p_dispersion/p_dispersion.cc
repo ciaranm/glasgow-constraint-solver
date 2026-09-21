@@ -82,14 +82,15 @@ namespace
     // bounds-guarded so a ragged/undersized reqs matrix can never read out of
     // range (the caller also rejects an undersized matrix up front).
     auto post_tuple_variant(Problem & problem, const vector<IntegerVariableID> & x, IntegerVariableID z,
-        const std::shared_ptr<const DistanceMatrix> & distance, const vector<vector<long>> & reqs, Integer max_dist) -> void
+        const std::shared_ptr<const DistanceMatrix> & distance, const vector<vector<long>> & reqs, Integer max_dist,
+        const ElementConsistency & element_consistency) -> void
     {
         auto pp = static_cast<int>(x.size());
         vector<IntegerVariableID> ys;
         for (int i = 0; i < pp; ++i)
             for (int j = i + 1; j < pp; ++j) {
                 auto y = problem.create_integer_variable(0_i, max_dist, "y_" + to_string(i) + "_" + to_string(j));
-                problem.post(Element2DConstantArray{y, x[i], x[j], distance});
+                problem.post(Element2DConstantArray{y, x[i], x[j], distance}.with_consistency(element_consistency));
                 if (i < static_cast<int>(reqs.size()) && j < static_cast<int>(reqs[i].size()) && reqs[i][j] >= 0)
                     problem.post(GreaterThanEqual{y, constant_variable(Integer{reqs[i][j] + 1})});
                 ys.push_back(y);
@@ -200,6 +201,10 @@ auto main(int argc, char * argv[]) -> int
                 "(positive separation); use 0 to allow duplicate sites (z can be 0).",                    //
                 cxxopts::value<long long>()->default_value("1"))                                          //
             ("all-different", "Also post the (redundant) AllDifferent over the selected-point variables") //
+            ("element",
+                "Consistency for the tuple variant's Element constraints: 'bc' (the default), 'gac', or 'auto', " //
+                "which keeps GAC here, since the ArrayMin reads the distances' interiors (see issue #902)",       //
+                cxxopts::value<string>()->default_value("bc"))                                                    //
             ("homogeneous-req",
                 "Post a homogeneous PDDP requirement r_ij = R for every position pair "                     //
                 "(model enforces D >= R + 1). Overridden by file-provided per-pair reqs.",                  //
@@ -240,6 +245,17 @@ auto main(int argc, char * argv[]) -> int
     auto selected_variant = find_variant(variant);
     if (! selected_variant) {
         println(cerr, "Error: unknown --variant '{}'. Supported: {}.", variant, variant_names());
+        return EXIT_FAILURE;
+    }
+
+    ElementConsistency element_consistency = consistency::BC{};
+    auto element_mode = options_vars["element"].as<string>();
+    if (element_mode == "gac")
+        element_consistency = consistency::GAC{};
+    else if (element_mode == "auto")
+        element_consistency = consistency::Auto{};
+    else if (element_mode != "bc") {
+        println(cerr, "Error: --element must be 'bc', 'gac', or 'auto'.");
         return EXIT_FAILURE;
     }
 
@@ -321,7 +337,7 @@ auto main(int argc, char * argv[]) -> int
     if (selected_variant->mode)
         post_min_distance_variant(problem, x, z, distance, reqs, *selected_variant->mode);
     else
-        post_tuple_variant(problem, x, z, distance, reqs, max_dist);
+        post_tuple_variant(problem, x, z, distance, reqs, max_dist, element_consistency);
 
     if (options_vars.contains("all-different"))
         problem.post(AllDifferent{x});

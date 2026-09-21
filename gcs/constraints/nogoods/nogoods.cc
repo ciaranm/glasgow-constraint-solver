@@ -229,7 +229,7 @@ namespace
     // contradiction ends before this propagator runs -- is undone for free by the
     // following backtrack.
     auto install_refined_nogoods(Propagators & propagators, const ConstraintID & id, shared_ptr<vector<Nogood>> nogoods,
-        shared_ptr<vector<vector<IntegerVariableID>>> nogood_vars) -> void
+        shared_ptr<vector<vector<IntegerVariableID>>> nogood_vars, const vector<IntegerVariableID> & trigger_vars) -> void
     {
         // Detect any nogood already unit or violated against the initial domains in
         // initialise(), as the coarse path does, so a root-level contradiction is
@@ -360,7 +360,12 @@ namespace
                 }
                 return PropagatorState::Enable;
             },
-            Triggers{});
+            // No triggers at all: every watch is armed at run time, on whatever
+            // literals the store holds by then, so nothing here says what can
+            // affect the propagator. A nogood may hold x == v, which a hole in
+            // x falsifies, so say so explicitly: the nogoods to come may
+            // mention any variable they could be learned over.
+            Triggers{.holes_affect_propagation = trigger_vars});
     }
 }
 
@@ -368,7 +373,7 @@ auto Nogoods::install_propagators(Propagators & propagators) -> void
 {
     // The nogood data is shared with the store, so additions are visible here.
     if (_refined)
-        install_refined_nogoods(propagators, constraint_id(), _store->_nogoods, _store->_vars);
+        install_refined_nogoods(propagators, constraint_id(), _store->_nogoods, _store->_vars, _trigger_vars);
     else
         install_scan_nogoods(propagators, constraint_id(), _store->_nogoods, _store->_vars, _trigger_vars);
 }

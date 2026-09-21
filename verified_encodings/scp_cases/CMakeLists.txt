@@ -397,37 +397,44 @@ add_scp_chain_test(disjunctive2d_strict_sat none)
 
 # none (chain-only): cumulative. Tasks [start, start+length) each occupy `height`
 # of a shared resource; at every time point the total height of active tasks is at
-# most `cap` (lengths, heights and cap may each be a variable or a constant). cake
-# uses a time-table encoding: over a global time window it reifies, per (task,
-# time), before (start <= t), after (start + length > t) and active = before &
-# after, pins a proof-only contribution bit-sum to the height when active and 0
-# otherwise, and sums the contributions <= cap at each time. The solver's own
-# propagator is time-table consistent and emits a structurally matching proof --
-# the same before / after / active reifications -- so conforming is a naming-only
-# change: define_proof_model names the flags v[id][i_t][cb] / [ca] / [cact] (cake's
-# value-indexed family, via create_proof_flag_values_fully_reifying) instead of the
-# old f[..][cumbefore/cumafter/cumactive]. The solver's per-task time window is a
-# subset of cake's global one, so every flag the proof cites is one cake also
-# defines, and the proof's RUP steps over them resolve against cake's OPB. No
-# propagator change (it holds the flag handles, whose names the rename updates).
-# Stays none: the start / size bit encodings still diverge from cake's eager
-# variable encoding (#358). sat enumerates the placements that keep every slot
-# within capacity; unsat forces more load into a slot than the capacity allows.
-# Variable heights: the load contribution h_i*active is linearised over cake's
-# per-bit contribution flags v[id][i_t_k][cc] (weight 2^k), the same encoding cake
-# emits, so the contribution reasoning is also a naming conform (no bits-integer of
-# our own). cumulative_var_height_sat drives enough load to pin those contributions.
-# cumulative_var_duration_sat exercises variable durations (both start and length
-# vary). cake reifies after on s + l directly; the solver introduces a proof-only
-# end = s + l as a conservative extension (introduce_bits_of, no OPB axiom) purely
-# to give its propagator a single-variable after pin, bridged to cake's two-variable
-# after by a per-(task,time) `end >= t+1 -> after` lemma the initialiser emits. So
-# the chain has no end axiom to resolve. Stays none: the start / size bit encodings
+# most `cap` (lengths, heights and cap may each be a variable or a constant). Both
+# sides write the start-checkpoint encoding (#780): per ordered pair (j, i) of
+# active tasks, the fully reified flags v[id][j_i][sb] (s_j <= s_i), [sa] (s_j + l_j
+# > s_i) and [sact] (their conjunction), and one row @c[id][scap_<i>] per active
+# task saying the load when task i starts fits within the capacity. A variable
+# height's contribution is stated bit by bit, v[id][j_i_k][scc] <-> sact /\ bit_k(h_j),
+# and a variable capacity moves to the left of the row. No row mentions a time
+# point, so the block is O(n^2) whatever the horizon.
+#
+# cake_pb_cp derives the same block under the same labels (CakePB-dev a402078,
+# 2026-09-19; until then these five were pinned to the time-indexed encoding cake
+# used to derive). The one syntactic difference: where a reification half is
+# already implied by the start domains, cake writes a 0 coefficient on the flag and
+# the solver writes 1. Both rows are tautologies, and every other reified encoder in
+# the chain differs from cake in the same way. Stays none, for two reasons: cake
+# also writes @c[id][cap_ge0] and @c[id][h_<i>_ge0] rows the solver has no
+# counterpart for (it rejects a negative capacity or height when the constraint is
+# posted instead), and for the cases with {0,1} starts the start bit encodings
 # still diverge from cake's eager variable encoding (#358).
+#
+# sat enumerates the placements that keep every checkpoint within capacity; unsat
+# forces more load onto one than the capacity allows. cumulative_var_height_sat
+# drives enough load to pin the scc contributions. cumulative_var_duration_sat has
+# both start and length vary, so sa is reified on s + l directly and the diagonal
+# sact_{i,i} is minted, since a task whose length can vary is not trivially running
+# at its own start. The solver's proof-only end = s + l, which cake has no
+# counterpart for, is introduced inside the proof as a conservative extension, so
+# there is nothing in the OPB to match. cumulative_mixed_sat covers what the others
+# do not: a variable capacity, a start that can be negative (so sb and sa carry a
+# sign bit), constant lengths above one (so sa's right-hand side shifts), and one
+# task inactive for each reason, zero length and zero height, which neither side
+# gives a flag or a row. Its 264 solutions are 0, 72 and 192 at capacities 1, 2
+# and 3.
 add_scp_chain_test(cumulative_sat              none)
 add_scp_chain_test(cumulative_var_sat          none)
 add_scp_chain_test(cumulative_var_height_sat   none)
 add_scp_chain_test(cumulative_var_duration_sat none)
+add_scp_chain_test(cumulative_mixed_sat        none)
 add_scp_chain_test(cumulative_unsat            none)
 
 # increasing / decreasing / strictly_*: the sequence of variables is (strictly)
