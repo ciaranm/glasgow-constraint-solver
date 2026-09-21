@@ -51,7 +51,12 @@ constraints and do not restate it.
   whose propagators are not all GAC, and the only one whose dominant wire hint
   belongs to another family — 93% of the assertions it is responsible for
   arrive labelled `equals`, because it reuses `enforce_equality`. Three of its
-  six rules are published justification procedures; two are ours.
+  six rules are published justification procedures; two are ours. It is also
+  **the first and so far only client of optional interior pruning**: under
+  `consistency::Auto` its two result propagators are installed as a pair and
+  the solver decides, once and per model, whether anything could observe the
+  interior values the generalised arc consistent arm removes. Read it for the
+  two promises a pair makes and for the shapes where they do not hold.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
