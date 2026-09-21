@@ -48,22 +48,32 @@ exists for the places where the triggers do not tell the truth, which an audit
 of every install site in `gcs/constraints/` and `gcs/presolvers/` found in two
 directions.
 
-**Sensitivity the triggers miss**, now declared explicitly:
+**Sensitivity the triggers miss** is declared explicitly. The one case left is
+the refined learned-nogood store, which is installed with no triggers at all
+and arms every watch at run time; a nogood may hold `x == v`. It declares every
+variable it could learn over.
 
-- `Count` watches `how_many` for its bounds, but its value-of-interest support
-  test asks whether each achievable count is in `how_many`'s domain.
-- `SubCircuit`'s main propagator is woken only by instantiation under the
-  default `Prevent` algorithm, but its lookahead's evidence-node test asks
-  whether a node's own index is still in its successor's domain.
-- `BinPacking` watches the loads for their bounds, but the upfront Stage 3
-  sweep drops DAG terminals that fall into a hole in a load's domain.
-- The refined learned-nogood store is installed with no triggers at all and
-  arms every watch at run time; a nogood may hold `x == v`. It declares every
-  variable it could learn over.
+The audit found three more, each an `in_domain` test, usually of an interior
+value, on a variable registered only with `on_bounds` or `on_instantiated`.
+Those were wakes the propagators missed as well --- a hole
+appearing in `how_many` did not wake `Count` --- so issue #966 fixed the
+triggers rather than declaring around them, and the derived list is now right
+for all three:
 
-The first three are also wakes those propagators miss --- a hole appearing in
-`how_many` does not wake `Count` --- which is a propagation question in its own
-right, and not changed here.
+- `Count` asks whether each achievable count is in `how_many`'s domain, and
+  watches `how_many` with `on_change`.
+- `SubCircuit`'s lookahead, under the default `Prevent` algorithm, asks whether
+  a node's own index is still in its successor's domain. It has a refined watch
+  on each `succ[i] != i`, which is exactly the removal that test looks for,
+  where `on_change` would have woken it for every other removal as well.
+- `BinPacking`'s upfront Stage 3 sweep drops DAG terminals that fall into a
+  hole in a load's domain, so under that strategy it watches the loads with
+  `on_change`. Everything else it runs reads only their bounds.
+
+For a propagator on coarse triggers, a hole that could change what it infers
+but does not wake it is a missed wake, so a variable listed here that the same
+propagator registers only with `on_bounds` or `on_instantiated` is worth a
+second look.
 
 **Sensitivity the triggers overstate** costs nothing but a pruning kept on that
 could have been switched off, so those are left alone, with one exception: the
@@ -207,9 +217,9 @@ That last assumption is an idealisation, and it is worth knowing where it
 bends. `Element`'s range is not monotone on its own: shrink the index domain
 until no live entry is in range and it stops inferring anything. It is only in
 combination with the index propagators, which wipe out in exactly that case,
-that the fixpoint is order-independent. And a propagator that misses wakes ---
-the three under-triggered ones above, say --- makes fixpoints depend on order
-in general, whether or not anything here is switched off.
+that the fixpoint is order-independent. And a propagator that misses wakes, as
+the three in issue #966 did, makes fixpoints depend on order in general,
+whether or not anything here is switched off.
 
 So **every variable's bounds are the same at every fixpoint** either way.
 Anything that only ever reads bounds sees no difference at all: in particular a
