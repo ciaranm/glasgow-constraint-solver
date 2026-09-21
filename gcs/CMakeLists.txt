@@ -1268,6 +1268,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(conflict_observer_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME conflict_observer_test COMMAND $<TARGET_FILE:conflict_observer_test>)
 
+    add_executable(optional_interior_pruning_test innards/optional_interior_pruning_test.cc)
+    target_link_libraries(optional_interior_pruning_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME optional_interior_pruning_test COMMAND $<TARGET_FILE:optional_interior_pruning_test>)
+
     add_executable(variable_weighting_test variable_weighting_test.cc)
     target_link_libraries(variable_weighting_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME variable_weighting_test COMMAND $<TARGET_FILE:variable_weighting_test>)

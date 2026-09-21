@@ -1565,6 +1565,15 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
     if (_have_loads)
         triggers.on_bounds.insert(triggers.on_bounds.end(), _loads.begin(), _loads.end());
 
+    // The loads are only watched for their bounds, but the upfront Stage 3
+    // sweep drops DAG terminals that fall into a hole in a load's domain, so
+    // with Stage 3 running a hole in a load can change what this infers.
+    if (_have_loads && ! _bounds_only) {
+        vector<IntegerVariableID> hole_sensitivity = _items;
+        hole_sensitivity.insert(hole_sensitivity.end(), _loads.begin(), _loads.end());
+        triggers.holes_affect_propagation = move(hole_sensitivity);
+    }
+
     if (! _bounds_only) {
         // Per-bin Stage 3 Top-level scaffolding. In both strategies the
         // reified g_up/g_dn/S flags for every DAG node are defined at

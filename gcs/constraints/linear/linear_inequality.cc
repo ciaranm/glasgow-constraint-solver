@@ -345,6 +345,11 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
                 Triggers slack_triggers;
                 for (const auto & term : cv.terms)
                     slack_triggers.scope_only.push_back(get_var(term));
+                // scope_only would otherwise count as every term's holes
+                // affecting this, but the only watches it arms are bound
+                // literals (rearm_linear_slack_watches), and the sweep reads
+                // only bounds.
+                slack_triggers.holes_affect_propagation = vector<IntegerVariableID>{};
                 propagators.install(
                     constraint_id(),
                     [cv, val, cond, dir_proof_lines](
