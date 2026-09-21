@@ -296,9 +296,17 @@ are the only thing that tells "working" from "no-op".
 Donors come from two families.
 
 **`ParityOdd`.** The main one; everything a frontend produces lands here
-(`array_bool_xor` and `bool_xor` via `minizinc/fzn_glasgow.cc`, XCSP3, CPMpy,
-`.scp`). Its slack row is derived as in §2 above, and that derivation is where
-essentially all of this presolver's `Top` output goes.
+(`array_bool_xor` via `minizinc/fzn_glasgow.cc`, XCSP3's `intension` `xor`,
+`gcspy`'s `post_xor`, and `.scp`'s `parity`). Its slack row is derived as in §2
+above, and that derivation is where essentially all of this presolver's `Top`
+output goes.
+
+`bool_xor` is **not** one of them, despite the name, and the two spellings go
+different ways. Two-argument `bool_xor` posts `NotEquals`, so it arrives as a
+donor of the Boolean family below rather than as a chain — still gathered, just
+not here. The three-argument reified form posts `EqualsIff`, which is gathered
+by neither: only `MustHold` and `MustNotHold` are taken, and everything else is
+counted as `skipped_reified`.
 
 **Boolean `Equals` / `NotEquals`**, when both operands' declared domains are
 within `{0, 1}`. `x != y` is `[x != 0] XOR [y != 0] = 1`; `x = y` is the same
