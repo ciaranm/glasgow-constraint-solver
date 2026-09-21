@@ -115,7 +115,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
     triggers.on_change.insert(triggers.on_change.end(), _y.begin(), _y.end());
 
     if (_x_value_am1s) {
-        auto build_am1s = [](const vector<IntegerVariableID> & x, Integer x_start, const State &, auto &, ProofLogger * const logger,
+        auto build_am1s = [](const vector<IntegerVariableID> & x, Integer y_start, const State &, auto &, ProofLogger * const logger,
                               const auto & map) {
             // recover_am1 requires at least two atoms; with one variable
             // the at-most-one is trivially true and the map is never read
@@ -123,7 +123,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
             // single variable).
             if (x.size() < 2)
                 return;
-            for (Integer v = x_start; v < x_start + Integer(x.size()); ++v) {
+            for (Integer v = y_start; v < y_start + Integer(x.size()); ++v) {
                 // make an am1 for x[i] = v
                 vector<IntegerVariableCondition> xieqvs;
                 for (const auto & var : x)
@@ -136,11 +136,11 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
             }
         };
 
-        propagators.install_initialiser([x = _x, x_start = _x_start, x_value_am1s = _x_value_am1s, build_am1s = build_am1s](
+        propagators.install_initialiser([x = _x, y_start = _y_start, x_value_am1s = _x_value_am1s, build_am1s = build_am1s](
                                             const State & state, auto & inference, ProofLogger * const logger) -> void {
             if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                 return;
-            build_am1s(x, x_start, state, inference, logger, x_value_am1s);
+            build_am1s(x, y_start, state, inference, logger, x_value_am1s);
         });
     }
     else {
@@ -148,9 +148,11 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
         _x_value_am1s = make_shared<map<Integer, ProofLine>>();
     }
 
+    // The values x takes are y's indices, so they start at y_start, not
+    // x_start; the two only coincide when both arrays start at the same index.
     vector<Integer> x_values;
-    for (const auto & [i, _] : enumerate(_x))
-        x_values.push_back(Integer(i) + _x_start);
+    for (const auto & [i, _] : enumerate(_y))
+        x_values.push_back(Integer(i) + _y_start);
 
     propagators.install(
         constraint_id(),
