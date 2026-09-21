@@ -388,6 +388,114 @@ TEST_CASE("A pair's propagators must use coarse triggers only")
         UnexpectedException);
 }
 
+namespace
+{
+    // A pair on x whose pruning removes the interior value 4 and whose fallback
+    // moves the upper bound to 7, so that which one ran is visible afterwards.
+    auto install_visible_pair(Propagators & propagators, unsigned long long constraint, IntegerVariableID x) -> void
+    {
+        propagators.install_with_optional_interior_pruning(
+            NumberedConstraint{constraint}, {x},
+            [x](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                inference.infer(logger, x != 4_i, JustifyUsingRUP{}, NoReason{});
+                return PropagatorState::Enable;
+            },
+            Triggers{.on_change = {x}},
+            [x](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                inference.infer(logger, x < 8_i, JustifyUsingRUP{}, NoReason{});
+                return PropagatorState::Enable;
+            },
+            Triggers{.on_bounds = {x}});
+    }
+
+    enum class Ran
+    {
+        Pruning,
+        Fallback
+    };
+
+    auto which_ran(Propagators & propagators, State & state, IntegerVariableID x) -> Ran
+    {
+        auto timestamp = state.new_epoch();
+        REQUIRE(propagators.propagate(Literals{}, state, nullptr));
+        auto pruned = ! state.in_domain(x, 4_i);
+        auto fell_back = state.upper_bound(x) == 7_i;
+        state.backtrack(timestamp);
+        REQUIRE(pruned != fell_back);
+        return pruned ? Ran::Pruning : Ran::Fallback;
+    }
+}
+
+TEST_CASE("Choosing switches an unneeded pair to its fallback, and keeps a needed one")
+{
+    State state;
+    auto x = state.allocate_integer_variable_with_state(0_i, 9_i);
+    Stats stats;
+    Propagators propagators{stats};
+    install_visible_pair(propagators, 1, x);
+
+    CHECK(which_ran(propagators, state, x) == Ran::Pruning);
+    auto verdicts = propagators.choose_optional_interior_pruning();
+    REQUIRE(verdicts.size() == 1);
+    CHECK_FALSE(verdicts.at(0).needed);
+    CHECK(which_ran(propagators, state, x) == Ran::Fallback);
+
+    // Something that holes in x affect arrives later: choosing again puts
+    // the pruning back.
+    propagators.install(NumberedConstraint{2}, does_nothing(), Triggers{.on_change = {x}});
+    verdicts = propagators.choose_optional_interior_pruning();
+    REQUIRE(verdicts.size() == 1);
+    CHECK(verdicts.at(0).needed);
+    CHECK(which_ran(propagators, state, x) == Ran::Pruning);
+
+    // And choosing again changes nothing.
+    propagators.choose_optional_interior_pruning();
+    CHECK(which_ran(propagators, state, x) == Ran::Pruning);
+}
+
+TEST_CASE("Choosing leaves a retired pair retired")
+{
+    State state;
+    auto x = state.allocate_integer_variable_with_state(0_i, 9_i);
+    Stats stats;
+    Propagators propagators{stats};
+    install_visible_pair(propagators, 1, x);
+    vector<ConstraintID> retire{NumberedConstraint{1}};
+    propagators.disable_propagators_for_constraints(retire);
+
+    CHECK(propagators.choose_optional_interior_pruning().empty());
+    REQUIRE(propagators.propagate(Literals{}, state, nullptr));
+    CHECK(state.in_domain(x, 4_i));
+    CHECK(state.upper_bound(x) == 9_i);
+}
+
+TEST_CASE("Choosing reports what it decided")
+{
+    State state;
+    auto x = state.allocate_integer_variable_with_state(0_i, 9_i);
+    auto y = state.allocate_integer_variable_with_state(0_i, 9_i);
+    Stats stats;
+    stats.set_report_handler(silent_stats_report());
+    Propagators propagators{stats};
+    install_visible_pair(propagators, 1, x);
+    install_visible_pair(propagators, 2, y);
+    propagators.install(NumberedConstraint{3}, does_nothing(), Triggers{.on_change = {y}});
+    propagators.choose_optional_interior_pruning();
+
+    vector<StatsNote> general, detailed;
+    for (const auto & note : stats.notes()) {
+        if (note.level == StatsLevel::General)
+            general.push_back(note);
+        else if (note.level == StatsLevel::Detailed)
+            detailed.push_back(note);
+    }
+    REQUIRE(general.size() == 1);
+    CHECK(general.at(0).text.find("switched 1 of 2") != string::npos);
+    REQUIRE(detailed.size() == 1);
+    CHECK(detailed.at(0).constraint == optional<ConstraintID>{NumberedConstraint{2}});
+    CHECK(detailed.at(0).text.find("_3") != string::npos);
+}
+
 TEST_CASE("A pair counts once towards degree, over the union of its scopes")
 {
     State state;
@@ -472,13 +580,16 @@ TEST_CASE("qap: nothing can observe an element result's interior")
     CHECK(probe->needed);
 }
 
-TEST_CASE("Until something chooses, Auto propagates exactly as GAC, counts and all")
+TEST_CASE("Auto propagates exactly as the arm it chose, counts and all")
 {
-    // A pair runs its pruning member exactly as that propagator would run
+    // A pair runs its live member exactly as that propagator would run
     // installed alone: the same wakes, and the same idempotence verdict, so
-    // the same number of propagations, not merely the same tree.
+    // the same number of propagations, not merely the same tree. With nothing
+    // else affected by holes in the results, solve_with() switches every
+    // element to BC; with each result also equal to some other variable, it
+    // keeps them all on GAC.
     vector<vector<Integer>> distances{{0_i, 3_i, 7_i, 2_i}, {3_i, 0_i, 5_i, 9_i}, {7_i, 5_i, 0_i, 4_i}, {2_i, 9_i, 4_i, 0_i}};
-    auto run = [&](const ElementConsistency & level) {
+    auto run = [&](const ElementConsistency & level, bool observed) {
         Problem p;
         auto xs = p.create_integer_variable_vector(4, 0_i, 3_i, "xs");
         for (int i = 0; i < 4; ++i)
@@ -489,6 +600,8 @@ TEST_CASE("Until something chooses, Auto propagates exactly as GAC, counts and a
             for (int j = 0; j < 4; ++j) {
                 auto d = p.create_integer_variable(0_i, 10_i);
                 p.post(Element2DConstantArray{d, xs[i], xs[j], &distances}.with_consistency(level));
+                if (observed)
+                    p.post(Equals{d, p.create_integer_variable(0_i, 10_i)});
                 wcosts += Integer{i + j + 1} * d;
             }
         auto cost = p.create_integer_variable(0_i, 100000_i, "cost");
@@ -498,7 +611,8 @@ TEST_CASE("Until something chooses, Auto propagates exactly as GAC, counts and a
             p, SolveCallbacks{.branch = branch_with(variable_order::dom(xs), value_order::smallest_in()), .stats_report = silent_stats_report()});
         return std::tuple{stats.recursions, stats.propagations, stats.effectful_propagations, stats.solutions};
     };
-    CHECK(run(consistency::Auto{}) == run(consistency::GAC{}));
+    CHECK(run(consistency::Auto{}, false) == run(consistency::BC{}, false));
+    CHECK(run(consistency::Auto{}, true) == run(consistency::GAC{}, true));
 }
 
 TEST_CASE("tsp: nothing can observe an element result's interior")

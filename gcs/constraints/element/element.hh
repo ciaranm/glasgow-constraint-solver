@@ -41,9 +41,11 @@ namespace gcs
      * consistency on the result only where something else in the model could
      * observe the result's interior values, and bounds consistency where
      * nothing could: the element installs both result propagators as a pair
-     * (innards::Propagators::install_with_optional_interior_pruning), for
-     * innards::Propagators::analyse_optional_interior_pruning to choose
-     * between. Until that choice is made, Auto propagates exactly as GAC does.
+     * (innards::Propagators::install_with_optional_interior_pruning), and
+     * gcs::solve_with() chooses between them once presolving is done
+     * (innards::Propagators::choose_optional_interior_pruning). Until that
+     * choice is made, or in a search that does not make it, Auto propagates
+     * exactly as GAC does.
      * Over an array with any non-constant entries, Auto is GAC: there, bounds
      * consistency on the result is weaker than generalised arc consistency on
      * its bounds too, not only on its interior, so dropping to it could be

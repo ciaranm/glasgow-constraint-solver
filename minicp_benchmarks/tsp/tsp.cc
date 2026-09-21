@@ -44,6 +44,9 @@ auto main(int argc, char * argv[]) -> int
 
         options.add_options()(
             "propagator", "Specify which circuit propagation algorithm to use (prevent/scc)", cxxopts::value<string>()->default_value("prevent"));
+        options.add_options()("element",
+            "Consistency for the Element constraints: 'bc' (the default, and the MiniCP tree), 'gac', or 'auto' (see issue #902)",
+            cxxopts::value<string>()->default_value("bc"));
 
         options_vars = options.parse(argc, argv);
     }
@@ -66,6 +69,17 @@ auto main(int argc, char * argv[]) -> int
             cerr << "Error: Invalid value for propagator. Use 'prevent' or 'scc'." << endl;
             return EXIT_FAILURE;
         }
+    }
+
+    ElementConsistency element_consistency = consistency::BC{};
+    auto element_mode = options_vars["element"].as<string>();
+    if (element_mode == "gac")
+        element_consistency = consistency::GAC{};
+    else if (element_mode == "auto")
+        element_consistency = consistency::Auto{};
+    else if (element_mode != "bc") {
+        cerr << "Error: --element must be 'bc', 'gac', or 'auto'." << endl;
+        return EXIT_FAILURE;
     }
 
     cout << "Replicating the TSP benchmark." << endl;
@@ -109,7 +123,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     for (unsigned i = 0; i < n; ++i)
-        p.post(ElementConstantArray{dist[i], succ[i], &distances[i]});
+        p.post(ElementConstantArray{dist[i], succ[i], &distances[i]}.with_consistency(element_consistency));
 
     auto obj = p.create_integer_variable(0_i, 1000000_i, "obj");
     WeightedSum dist_sum;
