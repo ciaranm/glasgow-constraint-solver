@@ -15,21 +15,40 @@ namespace gcs
 {
     /**
      * \brief The consistency levels supported by AllDifferent: generalised arc
-     * consistency (the default), or value consistency (the weakest, cheapest
-     * level, which only removes a fixed variable's value from the others).
+     * consistency (the default), bounds consistency, or value consistency (the
+     * weakest, cheapest level, which only removes a fixed variable's value from
+     * the others).
+     *
+     * Bounds consistency here is bounds(Z): it reads only each variable's
+     * bounds, so it neither sees a hole in a domain nor makes one. On domains
+     * with no holes it leaves exactly the bounds generalised arc consistency
+     * would, differing only in the interior values arc consistency also
+     * removes; once something else has made holes it can leave weaker bounds
+     * too, since arc consistency can use a hole to close a Hall set.
+     *
+     * That does not make bounds consistency safe whenever the rest of the
+     * model leaves holes alone, because the holes arc consistency makes itself
+     * stay made, and later in the search they can move bounds that bounds
+     * consistency cannot. On magic squares, Langford's problem and orthogonal
+     * Latin squares it searches more nodes, up to three times as many, and
+     * Sudoku puzzles that arc consistency solves without search are out of its
+     * reach from 16 by 16 up. Where the holes do not help, as on Golomb rulers
+     * (benchmarks/golomb), the search is identical and bounds consistency is
+     * several times cheaper per call.
      *
      * \ingroup Consistency
      */
-    using AllDifferentConsistency = std::variant<consistency::GAC, consistency::VC>;
+    using AllDifferentConsistency = std::variant<consistency::GAC, consistency::BC, consistency::VC>;
 
     /**
      * \brief All different constraint: every variable must take a distinct value.
      *
-     * Defaults to generalised arc consistency; request consistency::VC for the
-     * cheaper value-consistent propagator. The propagator functions themselves
-     * live in gac_all_different.{hh,cc} and vc_all_different.{hh,cc}, which this
-     * class dispatches between; the choice selects propagation strength only and
-     * never changes the OPB encoding.
+     * Defaults to generalised arc consistency; request consistency::BC for the
+     * Hall interval propagator, or consistency::VC for the cheaper
+     * value-consistent one. The propagator functions themselves live in
+     * gac_all_different.{hh,cc}, bc_all_different.{hh,cc} and
+     * vc_all_different.{hh,cc}, which this class dispatches between; the choice
+     * selects propagation strength only and never changes the OPB encoding.
      *
      * \ingroup Constraints
      * \sa NValue
@@ -52,9 +71,10 @@ namespace gcs
     public:
         explicit AllDifferent(std::vector<IntegerVariableID> vars);
 
-        /// Select the consistency level: consistency::GAC (the default) or
-        /// consistency::VC. Requesting an unsupported level is a compile-time
-        /// error, and the choice never changes the OPB encoding.
+        /// Select the consistency level: consistency::GAC (the default),
+        /// consistency::BC, or consistency::VC. Requesting an unsupported level
+        /// is a compile-time error, and the choice never changes the OPB
+        /// encoding.
         auto with_consistency(AllDifferentConsistency level) -> AllDifferent &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

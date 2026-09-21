@@ -387,6 +387,7 @@ namespace
             p.post(AllDifferent{wide(p, 4)});
         });
         add("AllDifferent/VC", Expect::Clean, [](Problem & p) { p.post(AllDifferent{wide(p, 4)}.with_consistency(consistency::VC{})); });
+        add("AllDifferent/BC", Expect::Clean, [](Problem & p) { p.post(AllDifferent{wide(p, 4)}.with_consistency(consistency::BC{})); });
         add("AllDifferentExcept", Expect::KnownTrip, [](Problem & p) { p.post(AllDifferentExcept{wide(p, 4), {0_i}}); });
         add("SymmetricAllDifferent", Expect::NoWidePosition, [](Problem & p) { p.post(SymmetricAllDifferent{narrow(p, 4, 0_i, 3_i)}); });
         add("AllEqual", Expect::Clean, [](Problem & p) { p.post(AllEqual{wide(p, 3)}); });

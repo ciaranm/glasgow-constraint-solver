@@ -17,6 +17,7 @@ add_library(glasgow_constraint_solver
         constraints/abs/justify.cc
         constraints/all_different/all_different.cc
         constraints/all_different/all_different_except.cc
+        constraints/all_different/bc_all_different.cc
         constraints/all_different/encoding.cc
         constraints/all_different/gac_all_different.cc
         constraints/all_different/justify.cc
@@ -468,6 +469,7 @@ if(GCS_BUILD_TESTS)
 
     add_test(NAME abs_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:abs_test>)
     add_test(NAME all_different_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_different_test>)
+    add_test(NAME all_different_constraint_bc COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_different_test> bc)
     add_test(NAME all_different_except_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_different_except_test>)
     add_test(NAME all_equal_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_equal_test>)
     add_test(NAME among_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:among_test>)
@@ -883,6 +885,7 @@ if(GCS_BUILD_TESTS)
         add_view_tests(difference_constraint_${mode} difference_test 5 ${mode})
     endforeach()
     add_view_tests(all_different_constraint all_different_test 6)
+    add_view_tests(all_different_constraint_bc all_different_test 6 bc)
     add_view_tests(all_equal_constraint all_equal_test 4)
     add_view_tests(increasing_constraint increasing_test 5)
     add_view_tests(min_max_constraint min_max_test 6)
@@ -1277,6 +1280,10 @@ if(GCS_BUILD_TESTS)
     add_executable(element_auto_test constraints/element/element_auto_test.cc)
     target_link_libraries(element_auto_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME element_auto_test COMMAND $<TARGET_FILE:element_auto_test>)
+
+    add_executable(bc_all_different_test constraints/all_different/bc_all_different_test.cc)
+    target_link_libraries(bc_all_different_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME bc_all_different_test COMMAND $<TARGET_FILE:bc_all_different_test>)
 
     add_executable(variable_weighting_test variable_weighting_test.cc)
     target_link_libraries(variable_weighting_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)

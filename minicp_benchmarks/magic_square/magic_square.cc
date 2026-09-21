@@ -40,14 +40,14 @@ auto main(int argc, char * argv[]) -> int
             ("proof-files-basename", "Basename for the .opb and .pbp files",  //
                 cxxopts::value<std::string>()->default_value("magic_square")) //
             ("branch",
-                "Branching heuristic: default, or dom-wdeg[:VARIANT] "                                               //
-                "(VARIANT = classic/ia/ca/id/cd/ca.cd/chs; bare = chs)",                                             //
-                cxxopts::value<std::string>()->default_value("default"))                                             //
-            ("timeout", "Abort the solve after this many seconds (0 = no limit)",                                    //
-                cxxopts::value<double>()->default_value("0"))                                                        //
-            ("restarts", "Restart on a Luby schedule with the given conflict scale",                                 //
-                cxxopts::value<unsigned long long>()->implicit_value("100"))                                         //
-            ("all-different", "All-different encoding to use: 'gac', 'vc', or 'not-equals' (the not-equals clique)", //
+                "Branching heuristic: default, or dom-wdeg[:VARIANT] "                                                     //
+                "(VARIANT = classic/ia/ca/id/cd/ca.cd/chs; bare = chs)",                                                   //
+                cxxopts::value<std::string>()->default_value("default"))                                                   //
+            ("timeout", "Abort the solve after this many seconds (0 = no limit)",                                          //
+                cxxopts::value<double>()->default_value("0"))                                                              //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale",                                       //
+                cxxopts::value<unsigned long long>()->implicit_value("100"))                                               //
+            ("all-different", "All-different encoding to use: 'gac', 'bc', 'vc', or 'not-equals' (the not-equals clique)", //
                 cxxopts::value<std::string>()->default_value("not-equals"));
 
         options.add_options()("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("5"));
@@ -70,8 +70,8 @@ auto main(int argc, char * argv[]) -> int
     }
 
     const string all_different_mode = options_vars["all-different"].as<string>();
-    if (all_different_mode != "gac" && all_different_mode != "vc" && all_different_mode != "not-equals") {
-        cerr << "Error: --all-different must be 'gac', 'vc', or 'not-equals'." << endl;
+    if (all_different_mode != "gac" && all_different_mode != "bc" && all_different_mode != "vc" && all_different_mode != "not-equals") {
+        cerr << "Error: --all-different must be 'gac', 'bc', 'vc', or 'not-equals'." << endl;
         return EXIT_FAILURE;
     }
 
@@ -102,6 +102,10 @@ auto main(int argc, char * argv[]) -> int
     // which do the same pruning as each other).
     if (all_different_mode == "gac") {
         p.post(AllDifferent{grid_flat});
+    }
+    else if (all_different_mode == "bc") {
+        p.post(AllDifferent{grid_flat} //
+                .with_consistency(consistency::BC{}));
     }
     else if (all_different_mode == "vc") {
         p.post(AllDifferent{grid_flat} //

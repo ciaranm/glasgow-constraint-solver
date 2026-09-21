@@ -114,7 +114,8 @@ auto main(int argc, char * argv[]) -> int
             ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("7")) //
             ("all", "Find all solutions")                                                       //
             ("plus", "Consistency for the Plus constraints: 'tabulated', 'gac' (the interval propagator), 'dynamic', 'auto', or 'bc'",
-                cxxopts::value<string>()->default_value("tabulated"));
+                cxxopts::value<string>()->default_value("tabulated")) //
+            ("all-different", "Consistency for the AllDifferent constraint: 'gac' or 'bc'", cxxopts::value<string>()->default_value("gac"));
 
         options.parse_positional({"size", "all"});
         options_vars = options.parse(argc, argv);
@@ -149,6 +150,15 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
+    const string all_different_mode = options_vars["all-different"].as<string>();
+    AllDifferentConsistency all_different_consistency = consistency::GAC{};
+    if (all_different_mode == "bc")
+        all_different_consistency = consistency::BC{};
+    else if (all_different_mode != "gac") {
+        println(cerr, "Error: --all-different must be 'gac' or 'bc'.");
+        return EXIT_FAILURE;
+    }
+
     Problem p;
     vector<IntegerVariableID> position, solution;
     for (int i = 0; i < 2 * k; ++i) {
@@ -156,7 +166,7 @@ auto main(int argc, char * argv[]) -> int
         solution.emplace_back(p.create_integer_variable(1_i, Integer{k}));
     }
 
-    p.post(AllDifferent{position});
+    p.post(AllDifferent{position}.with_consistency(all_different_consistency));
 
     for (int i = 0; i < k; ++i) {
         auto i_var = p.create_integer_variable(Integer{i + 1}, Integer{i + 1});

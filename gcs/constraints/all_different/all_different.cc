@@ -1,5 +1,6 @@
 #include <gcs/constraint.hh>
 #include <gcs/constraints/all_different/all_different.hh>
+#include <gcs/constraints/all_different/bc_all_different.hh>
 #include <gcs/constraints/all_different/encoding.hh>
 #include <gcs/constraints/all_different/hints.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -147,7 +148,7 @@ auto AllDifferent::prepare(Propagators &, State & initial_state, ProofModel * co
 
 auto AllDifferent::define_proof_model(ProofModel & model, const State &) -> void
 {
-    // Identical for both consistency levels: the choice is a propagation-strength
+    // Identical for every consistency level: the choice is a propagation-strength
     // knob and never changes the encoding.
     define_clique_not_equals_encoding(model, _constraint_id, _sanitised_vars);
 }
@@ -223,6 +224,20 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
                     return PropagatorState::EnableButIdempotent;
                 },
                 triggers);
+        },
+        [&](const consistency::BC &) {
+            // Bounds are all the Hall interval algorithm reads, so bounds are
+            // all it needs waking for.
+            Triggers bc_triggers;
+            bc_triggers.on_bounds = {_sanitised_vars.begin(), _sanitised_vars.end()};
+            propagators.install(
+                constraint_id(),
+                [vars = move(_sanitised_vars), value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>(),
+                    scratch = make_bc_all_different_scratch(),
+                    owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    return propagate_bc_all_different(owner, vars, *value_am1_constraint_numbers, *scratch, state, inference, logger);
+                },
+                bc_triggers);
         },
         [&](const consistency::VC &) {
             auto reasons = build_single_value_reasons(_sanitised_vars);
