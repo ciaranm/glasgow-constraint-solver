@@ -35,7 +35,6 @@ namespace gcs
     private:
         std::vector<IntegerVariableID> _vars;
         Integer _start;
-        std::shared_ptr<std::map<Integer, innards::ProofLine>> _value_am1s;
         bool _has_duplicate_vars = false;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;

@@ -2,7 +2,6 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/constraints/all_different/hints.hh>
 #include <gcs/constraints/all_different/symmetric_all_different.hh>
-#include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -33,7 +32,6 @@ using std::make_shared;
 using std::make_unique;
 using std::map;
 using std::move;
-using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -101,10 +99,6 @@ auto SymmetricAllDifferent::define_proof_model(ProofModel & model, const State &
         }
 
     define_clique_not_equals_encoding(model, _constraint_id, _vars);
-
-    // Per-value am1s for the alldiff hall-set / SCC justifications,
-    // built once at the root.
-    _value_am1s = make_shared<map<Integer, ProofLine>>();
 }
 
 auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> void
@@ -119,26 +113,6 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
     auto start = _start;
     auto n = vars.size();
 
-    if (_value_am1s && n >= 2) {
-        propagators.install_initialiser([vars, start, n, value_am1s = _value_am1s](const State &, auto &, ProofLogger * const logger) -> void {
-            if (! logger || logger->get_assertion_level() >= AssertionLevel::Off)
-                return;
-            for (Integer v = start; v < start + Integer(n); ++v) {
-                vector<IntegerVariableCondition> xieqvs;
-                for (const auto & var : vars)
-                    xieqvs.push_back(var != v);
-                value_am1s->emplace(v,
-                    recover_am1<IntegerVariableCondition>(
-                        *logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
-                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
-                        }));
-            }
-        });
-    }
-
-    if (! _value_am1s)
-        _value_am1s = make_shared<map<Integer, ProofLine>>();
-
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), vars.begin(), vars.end());
 
@@ -148,8 +122,11 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
 
     propagators.install(
         constraint_id(),
-        [vars, start, values = move(values), value_am1s = _value_am1s, scratch = make_gac_all_different_scratch(), constraint_id = constraint_id()](
-            const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
+        // The per-value at-most-ones the Hall justifications cite start empty
+        // and are derived on first use, as AllDifferent's are, so a proof pays
+        // only for the values some Hall argument actually needs.
+        [vars, start, values = move(values), value_am1s = make_shared<map<Integer, ProofLine>>(), scratch = make_gac_all_different_scratch(),
+            constraint_id = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
             // Channeling: x_i = v  =>  x_v = i. If i is not in D(x_v), prune
             // v from D(x_i). Single pass — Inverse(x, y) runs this in both
             // directions, but with x = y the two passes are identical.
