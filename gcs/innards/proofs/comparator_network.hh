@@ -273,6 +273,10 @@ namespace gcs::innards
         /// What makes a state-dependent row vacuous; see \ref assume.
         WPBSum _guard;
 
+        /// EXPERIMENT (#972 route B): whether the caller's separation CLAUSES
+        /// are guarded too, rather than only the bounds.
+        bool _clauses_guarded = false;
+
         /// Each start wire's `window_hi - wire - duration(wire) >= 0` and
         /// `wire - window_lo >= 0`.
         std::map<int, ProofLine> _upper, _lower;
@@ -404,6 +408,20 @@ namespace gcs::innards
          * bounds come from the model and hold outright.
          */
         auto assume(const WPBSum & guard) -> void;
+
+        /**
+         * EXPERIMENT (#972 route B): as \ref assume, but also saying that the
+         * separation clauses the caller supplies carry the same guard. A 2-D
+         * relaxation's clauses are derived from the model's k-way clause under
+         * the reason, so unlike 1-D's they are not model rows.
+         *
+         * The discipline, which is the one the separation flags already use:
+         * the guard rides a CLAUSE at coefficient one and a ROW at `big()`,
+         * with `derive_gap`'s multiply and `separate_from_gap`'s divide as the
+         * only transitions. Clauses must carry the WHOLE guard, since every
+         * goal offers the whole of it.
+         */
+        auto assume_with_guarded_separations(const WPBSum & guard) -> void;
 
         /**
          * Emit the window's bounds for a task: `start + duration <= window_hi`
