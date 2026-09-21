@@ -207,6 +207,15 @@ namespace
             _problem.post(AllDifferent{need_variables(x_vars)});
         }
 
+        auto buildConstraintAlldifferentExcept(string, vector<XVariable *> & x_vars, vector<int> & except) -> void override
+        {
+            vector<Integer> excluded;
+            excluded.reserve(except.size());
+            for (auto v : except)
+                excluded.emplace_back(v);
+            _problem.post(AllDifferentExcept{need_variables(x_vars), std::move(excluded)});
+        }
+
         auto buildConstraintAlldifferentMatrix(string, vector<vector<XVariable *>> & matrix) -> void override
         {
             if (matrix.empty())

@@ -1,0 +1,11 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <array id="y" size="[3]"> 1..4 </array>
+    </variables>
+    <constraints>
+        <allDifferent>
+            <list> y[] </list>
+            <except> 2 4 </except>
+        </allDifferent>
+    </constraints>
+</instance>
