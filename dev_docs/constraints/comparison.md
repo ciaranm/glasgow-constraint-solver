@@ -1,9 +1,10 @@
 # `Comparison`: one operand is ordered against another
 
 > **Maturity** production ·
-> **Audited** 2026-09-08 at `76bfd836` ·
-> **Open issues** #907 (every reason built unguarded) and #908 (`MustNotHold`
-> and `NotIf` throw from `s_expr()`), both filed by this audit. #868 is the
+> **Audited** 2026-09-08 at `76bfd836`; re-audited 2026-09-21 at `6b220c79` ·
+> **Open issues** `None.` own to this family — **both the issues this audit
+> filed are fixed**: #907 (every reason built unguarded) in #916, and #908
+> (`MustNotHold` and `NotIf` throw from `s_expr()`) in #915. #868 is the
 > audit-wide cross-solver prerequisite; #598 would close a deliberate presolver
 > gap that is half about this family. Tracked under #871.
 
@@ -15,12 +16,30 @@ frontends** — both of them turn a binary ordering into a two-term linear
 inequality instead — so its main consumer is the difference-logic presolver,
 which reads it back and lifts it into a global propagator.
 
-Two things to know before touching it. Its facts are **single order literals**
-and nothing else: no value removals, no intervals, no proof flags, no
-scaffolding, one wire hint. That is why it is the one family so far with no
-exposure to #882 at all. And its propagator assembles a reason on every call
-without asking whether anything will read it, which this audit measured at
-**43% of the cycles** on a family-dominated benchmark.
+Two things to know before touching it, and the second has changed since the
+first pass. Its facts are **single order literals** and nothing else: no value
+removals, no intervals, no proof flags, no scaffolding, one wire hint — which
+is why it was the one family with no exposure to #882 at all, and why it is now
+the family that makes `consistency::Auto` worth having. Everything it reads is
+a bound, so **holes affect nothing here**, and a comparison in a model is not a
+reason for anybody else's interior pruning to stay on. See [Interior values and
+optional pruning](#interior-values-and-optional-pruning).
+
+And its propagator used to assemble a reason on every call without asking
+whether anything would read it, which this audit measured at **43% of the
+cycles** on a family-dominated benchmark. #916 guarded all nine.
+
+**What the second pass changed.** A narrow pass, against `6b220c79`. Both of
+the audit's own findings are fixed, and the two new template sections are
+filled in — and for this family they are almost entirely one-line answers, which
+is the point of asking every family rather than only the interesting ones.
+
+| Landed | What it changed here |
+|---|---|
+| #907 → #916 | all nine reasons are guarded on `want_reasons()`, not just the four hot ones, so [CPU performance](#cpu-performance)'s headline defect is gone and its "as it is today" row is now history |
+| #908 → #915 | a negated comparison is written as the comparison it enforces, so all five reification kinds have an `.scp` spelling and nothing truncates a file |
+| #902 → #965, #967 | this family installs no optional pruning and never will, but its **Holes affect** answer is the one that lets other families drop an arm |
+| #833's interval arc | [Interval efficiency](#interval-efficiency) is a section now, and this family answers all four of its questions by inspection |
 
 ## What it is
 
@@ -138,20 +157,36 @@ neighbouring linear family has `with_consistency` and
 `with_incremental_threshold`, and a reader arriving from there will look for
 the equivalent.
 
+**No `with_consistency()`, and the reason is stronger here than in `equals`.**
+A consistency level is a choice about how much of a domain to look at, and this
+family looks at two numbers. There is no arm below bounds and none above it: a
+comparison's bound transfer already leaves both operands' bounds
+bounds-consistent, and there is nothing in the interior for a stronger arm to
+find. So neither `consistency::Auto` nor `consistency::Dynamic` has anything to
+choose between, and a knob would be a tag with one alternative.
+
 ### Variable kinds and views
 
 Both operands are `IntegerVariableID`, so plain variables, constants and views
-are all accepted — and, uniquely among the families audited so far, **a view
-costs nothing anywhere**. There is no `both_simple` guard, no per-value
-fallback, no degradation of any kind, and no entry in #882's inventory of view
-detours.
+are all accepted, and **a view costs nothing anywhere**. There is no
+`both_simple` guard, no per-value fallback, and no degradation of any kind.
 
 The reason is structural and worth generalising: **this family never says
 anything interval-shaped.** Every fact it states is a single order literal
-(`v1 ≥ k`, `v1 < k`) or a reification condition, and a view has order literals.
-It is a range literal a view lacks, which is what forces the eight detours
-#882 counts — two of them in `equals`. A family whose whole vocabulary is
-bounds is immune by construction.
+(`v1 ≥ k`, `v1 < k`) or a reification condition, and a view has always had
+order literals. It was a *range* literal a view lacked, which is what forced
+the ten view detours #882 counted — two of them in `equals`. A family whose
+whole vocabulary is bounds was immune by construction.
+
+*This was the family's distinguishing feature when it was audited, and #904 has
+since made it unremarkable*: a registered view now owns its range literals too,
+so the ten detours are deleted and no family in the tree has one. The
+observation survives the change and is worth keeping for a different reason
+than the one it was written for — being immune by *construction* and being
+immune because a shared layer was fixed are not the same property, and only the
+first survives someone adding an interval-shaped rule here. Nothing here can
+acquire one without also acquiring a loop, which [Interval
+efficiency](#interval-efficiency) is the standing check on.
 
 In the proof this shows up as the view getting a proof-only variable and being
 cited like anything else. From a real `difference_chain` assertion, where the
@@ -323,6 +358,15 @@ above are what cake re-derives, and `constraint_type()` emits cake's own names
 (`less_than`, `less_equal`, `greater_than`, `greater_equal`) with the `_if` and
 `_iff` suffixes appended.
 
+Since #915 that covers all five reification kinds rather than three. A
+`MustNotHold` or `NotIf` is written as the comparison it **enforces** — both
+flips, since the negation exchanges the operands and inverts the strictness —
+so it needs no keyword of cake's that did not already exist. Worth contrasting
+with `and_if` / `or_if` (#953), where the negated form genuinely is a new shape
+and cake rejects it until its maintainers add a rule: here the negation stayed
+inside the family, which is the same fact that keeps the whole family inside
+one theorem (see [Inference catalogue](#inference-catalogue)).
+
 **Ten SCP chain cases, and all ten are unconditional:**
 
 ```
@@ -382,12 +426,12 @@ anything. So a bad model throws at `post` rather than at solve.
 **Two entirely different shapes, chosen in `install_propagators` on whether
 both operands are constants.**
 
-| Propagator | Triggers | Rule(s) | Enabled by | Idempotent? | Self-disables? |
-|---|---|---|---|---|---|
-| initialiser, both operands constant | — (runs once at root) | 6, 7 | any variant over two constants, where there is something to say | n/a | n/a — one shot |
-| dispatcher, decided must-hold | `on_bounds` both operands | 1 | the four unconditional `Less*`/`Greater*`, and `If`/`Iff` fixed true at install | never claims | yes, once the bounds are separated |
-| dispatcher, decided must-not-hold | `on_bounds` both operands | 2 | `NotIf`/`Iff` fixed false at install | never claims | yes, likewise |
-| dispatcher, undecided | `on_bounds` both operands **and** the condition | 1–5 | the four reified forms while `cond` is open | claims stripped | yes, on any verdict |
+| Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
+|---|---|---|---|---|---|---|
+| initialiser, both operands constant | — (runs once at root) | derived: **nothing** | 6, 7 | any variant over two constants, where there is something to say | n/a | n/a — one shot |
+| dispatcher, decided must-hold | `on_bounds` both operands | derived: **nothing** | 1 | the four unconditional `Less*`/`Greater*`, and `If`/`Iff` fixed true at install | never claims | yes, once the bounds are separated |
+| dispatcher, decided must-not-hold | `on_bounds` both operands | derived: **nothing** | 2 | `NotIf`/`Iff` fixed false at install | never claims | yes, likewise |
+| dispatcher, undecided | `on_bounds` both operands **and** the condition | derived: **the condition variable only** | 1–5 | the four reified forms while `cond` is open | claims stripped | yes, on any verdict |
 
 **`on_bounds` is the whole trigger story, and it is the right answer rather
 than a compromise.** Every pass reads `state.bounds()` and nothing else — no
@@ -395,6 +439,23 @@ than a compromise.** Every pass reads `state.bounds()` and nothing else — no
 appearing in either operand cannot change any verdict this family reaches, and
 a wake on it would be wasted. Contrast `equals`, whose trigger set has been
 tuned twice (#819, #889) because its passes read finer things.
+
+**No operand's holes affect anything here, on any row**, which is the answer
+another family's `consistency::Auto` is looking for. Nothing sets
+`Triggers::holes_affect_propagation`, and nothing should: the derivation from
+`on_bounds` says exactly what is true.
+
+The one entry that is not empty is worth reading carefully, because it is the
+sort of thing the column exists to make visible. The undecided dispatcher's
+**condition** variable is registered by `add_trigger_for()`, which maps an
+`Equal` or `NotEqual` condition to `on_change` — so holes in the condition
+variable are derived as affecting the propagator. That is correct rather than
+conservative: a reification condition need not be a Boolean `b == 1`, and for
+`If{x == 5}` a hole appearing at `x = 5` is precisely what decides the
+condition. For the ordinary `b == 1` spelling the variable is `{0, 1}` and has
+no interior for a hole to appear in, so the entry costs nothing in practice;
+the derivation does not special-case that, and does not need to, since
+over-reporting only ever keeps a pruning on.
 
 The interesting consequence is that this family has **no trigger work left to
 do**: it is already on the coarsest trigger that can see everything it reads.
@@ -428,31 +489,63 @@ reads and two `infer_*` calls, and there is nothing to cache that would not
 cost more to keep valid than to recompute. Note that the three `prepare()`-time
 members are constraint-level and immutable, not backtrackable state.
 
+### Interior values and optional pruning
+
+**Offers.** `None.`, necessarily. There is no interior pruning to make
+optional: every rule this family has moves a bound, and the strongest thing it
+can conclude about an operand is already about that operand's bounds. A pair
+needs two propagators differing only in the targets' interiors, and there is no
+second propagator to be had.
+
+**Observes.** `None.` either, on the operands — and **this is the family that
+makes the mechanism pay**. Every pass reads `state.bounds()` and nothing else,
+so from any domains, no number of interior removals ever gives this family an
+inference it could not already have made. A bound it infers can snap past a
+hole it never looked at; that is not the same thing, because what it infers
+depends only on the bounds, and the hole only changed the domain that inference
+was applied to. [optional-interior-pruning.md](../optional-interior-pruning.md)
+uses a linear inequality to make exactly this point, and a comparison is the
+two-term case of it.
+
+The consequence is worth stating in the concrete. Issue #901 measured it on
+`qap`: generalised arc consistency on a constant-array `Element`'s result made
+62% more effectful inferences than bounds consistency, over a bit-identical
+search tree, because the only thing looking at the result was a
+bounds-consistent sum. Put a `Comparison` there instead of an `Element` and the
+same thing happens for the same reason. **A family whose whole vocabulary is
+bounds is not merely cheap; it is what lets its neighbours be cheap**, and that
+is a property of this document's family rather than of anything in
+`comparison.cc`.
+
+The one non-empty entry is the reification condition, and [Propagator
+inventory](#propagator-inventory) explains why: `add_trigger_for()` maps an
+`Equal` condition to `on_change`, which is right for a general condition and
+vacuous for the usual `{0, 1}` one.
+
+**What this family would have to do to break it.** Nothing, today — but the
+declaration is derived rather than written down, so a future pass that added,
+say, an `in_domain` test to decide a verdict early would silently acquire hole
+sensitivity it did not declare, and the derivation would follow it correctly
+only if the trigger changed with it. That is the ordinary case and the reason
+the mapping is derived from the triggers in the first place; the hazard is a
+propagator whose triggers stop describing what it reads, which is a bug on its
+own terms before it is a hole-sensitivity bug.
+
 ### Robustness and limits
 
-**Large domains: nothing here is width-sensitive, and unusually this can be
-established by inspection rather than by measurement.** `comparison.cc`
-contains **no loop of any kind** — no `for`, no `each()`, no
-`copy_of_values()`, no `IntervalSet` — so there is no candidate for
-width-proportional work to find. Every pass is two bounds reads and at most two
-inferences.
-
-The `GCS_LARGE_DOMAIN_GUARD` audit lane carries three rows for the family
-(`LessThan`, `GreaterThan`, and `ReifiedCompareLessThanOrMaybeEqual` as a
-`LessThanIf`), all `Clean` over a `0..10⁹` domain. The `equals` audit's warning
-about `Clean` rows applies here and comes out the other way: there, a row was
-`Clean` because its probe never reached the hazard, and the lesson was that a
-`Clean` row nothing instruments is only as strong as the box it ran on. Here
-there is no hazard to reach, and the three rows between them cover both enforce
-passes and the undecided verdict. This is the rare family where `Clean` is a
-theorem.
-
-**Unbounded domains.** Not separately probed, and not expected to matter, for
-the same reason.
+**Unbounded domains.** Not separately probed, and not expected to matter: every
+pass is two bounds reads and at most two inferences, whatever those bounds are.
 
 **Negative values and zero.** Fine, and covered: the test matrix includes
 `[-2, 2]`-style ranges in both operand positions, and
 `greater_equal_neg_unsat.scp` covers a negative chain case.
+
+**Degenerate shapes.** Two constant operands take a different code path
+entirely — an initialiser rather than a propagator — and when there is nothing
+to say, the constraint installs nothing at all. Aliased operands under a strict
+comparison throw at construction rather than being reported as infeasible; see
+[Known limitations](#known-limitations), where the asymmetry with the reified
+forms is recorded.
 
 **Overflow.** The `+ 1_i` in every pass (`v2_bounds.second + (or_equal ? 1_i :
 0_i)` and its three siblings) goes through `Integer::operator+`, which throws
@@ -460,13 +553,56 @@ the same reason.
 `Integer::max_value()` gives a diagnosable exception. Not separately probed
 here; the mechanism is the same one `equals` verified UBSan-clean.
 
-**Per-value costs.** `None.`
+### Interval efficiency
 
-**One real cost, and it is not about domains.** The reason literals for all
-nine inference sites are constructed unconditionally, without asking
-`inference.want_reasons()`. On a family-dominated benchmark that is 43% of the
-cycles. See [CPU performance](#cpu-performance) and [Next
-steps](#next-steps).
+**Fine at any width, and this is the one family so far where all four questions
+can be answered by inspection rather than by measurement.** `comparison.cc`
+contains **no loop of any kind** — no `for`, no `each()`, no
+`copy_of_values()`, no `IntervalSet` — so there is no candidate for
+width-proportional work to find anywhere in it.
+
+**1. The propagation side.** `None.` Every pass is two `bounds()` reads and at
+most two `infer_*` calls. No interval primitive is needed because no question
+here is about a set.
+
+**2. The reason side.** Two literals per inference, both of them bounds, so
+there is nothing that could be per value — a reason here names order atoms and
+never a run. Since #916 every one of the nine reasons is also guarded on
+`inference.want_reasons()`, which was this audit's own finding as #907. That
+guard is about cost with proofs off rather than about width, but it belongs in
+this half of the section for the reason `equals` learned in #864: **a reason is
+where a search for pruning loops does not look**, and both families' one real
+cost turned out to be there.
+
+**3. The proof side.** One line per inference, no lemmas, nothing at
+`ProofLevel::Temporary`, no cover and no at-least-one. There is no second form
+for a width gate to choose between, and no `Justify` callback that could grow
+one.
+
+**4. Where the family stands in the audit lane.** Three rows in
+`gcs/large_domain_audit_test.cc` — `LessThan`, `GreaterThan`, and
+`ReifiedCompareLessThanOrMaybeEqual` as a `LessThanIf` — all pinned `Clean`
+over a `0..10⁹` domain, and between them covering both enforce passes and the
+undecided verdict.
+
+*The axes those rows do not vary are the usual three, and here it does not
+matter, which is worth saying because it is not true anywhere else in this arc.*
+No row is holey and no row is view-wrapped. For `equals` and for `Element`
+those were the gaps that hid a width-proportional fallback through two audits,
+and the standing rule since #931 is to put a view-wrapped row wherever a rewrite
+has an operand it could wrap. Here there is no rewrite and no fallback: the
+absence of a loop is a property of the file, so **a holey or wrapped row could
+not fail** — there is no branch for it to take. This is the rare family where
+`Clean` is a theorem rather than an observation, and the audit lane's own
+warning comes out the other way round: there, a `Clean` row nothing instruments
+is only as strong as the box it ran on; here there is no hazard to instrument.
+
+*The `equals` comparison is the useful one.* That family reads finer things,
+so it needed the interval vocabulary, two trigger tunings, an interval-wise
+witness and a `LargeDomainIterationCounter`. This one reads two numbers. The
+difference between the two documents' width sections is the whole argument for
+why a bounds-only family is worth keeping separate from an equality one, which
+is [the merge question](#relation-to-other-families) settled a second way.
 
 ## Inference catalogue
 
@@ -552,8 +688,9 @@ derivations of different *length*, and here they are all length one.
   row is 2.9's triple.
 - **Reason** — the base reason (the condition literal) plus the one bound
   literal being carried across: `{cond, right ≤ ub(right)}` for the first
-  inference and `{cond, left ≥ lb(left)}` for the second. Minimal. **Not**
-  guarded on `want_reasons()`, which is the family's one performance defect.
+  inference and `{cond, left ≥ lb(left)}` for the second. Minimal, and two
+  bound literals rather than anything per value. Guarded on `want_reasons()`
+  since #916 — these two were the hot pair that #907's measurement was about.
 - **Assertion** — `left < k ∨ ¬(right ≤ k−1+[or_equal]) ∨ ¬cond`. Measured, on
   a `difference_chain` edge whose right operand is a view:
   ```
@@ -588,7 +725,7 @@ the propagate loop sees `tracker.contradicted()` instead of paying for a throw.
   *negation* of a comparison is a comparison is what keeps this family inside
   one theorem.
 - **Reason** — `{cond, left ≤ ub(left)}` and `{cond, right ≥ lb(right)}`.
-  Minimal, and likewise unguarded.
+  Minimal, and likewise guarded since #916.
 - **Assertion** — as rule 1 with the operands exchanged and the margin flipped.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`, as rule 1.
@@ -836,33 +973,72 @@ comparison arm puts 51% of cycles in the enforce lambda, and **30% of all
 cycles in one `memcpy`** — the `small_vector` construction inside
 `ExplicitReason{ReasonLiterals{...}}`. `ReasonLiterals` holds a nested variant,
 so each element is large, and each call builds two of them. Every reason
-construction in `comparison.cc` — nine of them — is unconditional, where
+construction in `comparison.cc` — nine of them — was unconditional, where
 `gcs/constraints/linear/propagate.cc` routes all of its through
 `inference.want_reasons()`. `SimpleInferenceTracker::materialises_reasons` is
-`false`, so with proofs off the whole thing is built, never read, and thrown
+`false`, so with proofs off the whole thing was built, never read, and thrown
 away. `InferenceTracker`'s own header states the rule: *"A propagator whose
 reason is expensive to assemble (a `ConcatReason` allocation, a long
 extra-literal walk) should guard that assembly on this query, so it optimises
 away whenever nothing will read it."*
 
 Guarding the four reasons on the two enforce passes — the hot ones — was tried
-and measured:
+and measured here first:
 
 | | n=500 time | Recursions | Propagations | Effectful |
 |---|---|---|---|---|
-| as it is today | 4.01 s | 503 | 63,004,752 | 375,751 |
+| unguarded, as the first audit found it | 4.01 s | 503 | 63,004,752 | 375,751 |
 | four reasons guarded | **2.30 s** | 503 | 63,004,752 | 375,751 |
 
 **1.74x, at a byte-identical search tree**, with 63 of 63 `comparison` and
 `difference` ctest lanes green. The guard cannot affect proofs, because reasons
 are materialised whenever one is being written.
 
+***This is now history rather than a proposal: #916 guards all nine.*** Both
+rows above are from the first pass and are kept as the argument for the change
+rather than as a current figure, which matters because the numbers that went
+into #916 are not these ones and must not be quoted beside them. *Measured
+elsewhere, on a different machine — one core of an otherwise idle EPYC 7643,
+boost off, min of three, same instance at n=500:* 12.91 s against 8.56 s,
+**1.51x**, again at a byte-identical search tree. `perf stat` at n=300 puts it
+at −30% of instructions and −27% of cycles, and `perf record` has
+`__memmove_avx_unaligned_erms` going from 4.4% of cycles to 0.1% — which
+identifies the memcpy above as the thing the guard removes. Against the linear
+spelling of the same edge, over the same tree, the comparison spelling goes
+from 3.0x to 2.0x.
+
+Two things about how #916 was checked are worth carrying here, because they
+are what a `want_reasons()` guard costs to do properly anywhere else:
+
+- **Proofs were checked by measurement, not by argument.** 3,459 proofs (13,754
+  files) preserved under `GCS_PRESERVE_PROOF_FILES=all` at a pinned seed, across
+  `comparison_test` and twenty other lanes that reach a comparison, byte-identical
+  before and after. The argument — reasons are materialised whenever one is being
+  written, so the guard is unreachable on a proving run — is correct, and was not
+  relied on.
+- **The search had to be checked too, which is the less obvious half.**
+  `want_reasons()` is keyed on the tracker's needs rather than on whether there
+  is a logger, because **a contradiction hands its reason to the conflict
+  observers with proofs off**. No weighting scheme reads it today, but that is a
+  fact to verify rather than assume: 21 dom-wdeg arms of `table_layout` report
+  identical recursions, failures, propagations and depth either side.
+
+All nine were guarded rather than the four hot ones, deliberately. The other
+five — two reified verdicts and three both-constant initialiser arms — are cold,
+but a file where some reasons are guarded and some are not is the state that let
+this survive the pass before the audit. The detail that hid the site is worth
+knowing too, and it is the same one that hid `equals`'s in #873:
+`infer_cond_when_undecided` had left its tracker parameter unnamed, so the query
+was not to hand.
+
 That is not the whole gap. Guarded, the arm is still 1.55x the linear one, and
 the residual is IPC-shaped rather than instruction-shaped (2.73 against 4.25),
 which is consistent with the offset view's indirection on every bounds read —
 `--donor=comparison` spells each edge `LessThanEqual{x, y + d}`. This audit did
 **not** isolate that, and says so rather than guessing: the honest claim is
-that the reason accounts for 43% of the cycles and the rest is unattributed.
+that the reason accounted for 43% of the cycles and the rest is unattributed.
+It remains unattributed; #916 removed the attributed part and nothing has
+looked at the rest.
 
 **Cross-solver comparison: `Not measured.`** #868's harness exists and the
 method is written up in `dev_docs/cross-solver-benchmarking.md`, but it has
@@ -934,43 +1110,51 @@ rules is a bare RUP against a row the OPB carries under a label the presolver
 and cake both agree on.
 
 `None.` on cost gaps in the proof direction, too: the family emits one line per
-inference and no lemmas, and there is no view detour or interval degradation
-anywhere ([Variable kinds and views](#variable-kinds-and-views)).
+inference and no lemmas, and there is no interval degradation anywhere ([Variable kinds and views](#variable-kinds-and-views)).
 
-The cost gap runs the other way — the propagator pays a *proof-shaped* cost
-when proofs are off, by assembling reasons nothing will read. That is a
-propagation defect rather than a proof-logging one, and it is in [CPU
-performance](#cpu-performance) and [Next steps](#next-steps).
+The cost gap used to run the other way — the propagator paid a *proof-shaped*
+cost when proofs were off, by assembling reasons nothing would read. That was a
+propagation defect rather than a proof-logging one, it was the largest thing
+this audit found, and #916 fixed it. [CPU
+performance](#cpu-performance) keeps the measurement as the argument for the
+change.
 
-**One sharp edge rather than a gap:** two of the five reification kinds have no
-`.scp` spelling and throw from `s_expr()`. Details below.
+**And the one sharp edge is gone too.** Two of the five reification kinds had no
+`.scp` spelling and threw from `s_expr()`, leaving a truncated file behind;
+#915 gave them one. All five kinds now write a `.scp` term.
 
 ### Known limitations
 
-**`MustNotHold` and `NotIf` throw when an `.scp` is written, and leave a
-truncated file behind** (#908). Both kinds propagate correctly — verified against
-brute force, `¬(x ≤ y)` giving exactly the 6 pairs of `x > y` and `¬(x < y)`
-the 10 of `x ≥ y` over `[0,3]²` — and both have a correct, labelled OPB row.
-What they do not have is a cake spelling, so `s_expr()` throws
-`UnexpectedException{"Unexpected reification type in s_expr"}`. Measured:
-posting one from the public base class with proofs on writes the `.opb`, a
-33-byte `.pbp` and an **88-byte `.scp` cut off mid-`(constraints`**, then
-throws.
+***`MustNotHold` and `NotIf` used to throw when an `.scp` was written, leaving a
+truncated file behind*** (#908, fixed in #915). Recorded because the resolution
+is the interesting part. Both kinds always propagated correctly — verified
+against brute force, `¬(x ≤ y)` giving exactly the 6 pairs of `x > y` and
+`¬(x < y)` the 10 of `x ≥ y` over `[0,3]²` — and both always had a correct,
+labelled OPB row. What they did not have was a cake spelling, so `s_expr()`
+threw `UnexpectedException{"Unexpected reification type in s_expr"}`, after
+writing the `.opb`, a 33-byte `.pbp` and an **88-byte `.scp` cut off
+mid-`(constraints`**.
 
-This is known and worked around where it has to be:
-`constraint_row_test.cc` sets `names.s_expr_file = nullopt` with a comment
-saying exactly why, and it is the one test that needs those forms. The
-limitation is worth recording rather than fixing on sight for two reasons —
-nothing in `gcs` posts either kind, and the *linear* family has the identical
-gap, so a fix belongs to both at once. But two things make it sharper than the
-code comments suggest. The base class is public, so "there is no user-facing
-class for them" is true of the twelve named classes and not of the family. And
-the failure is not clean: a partial `.scp` on disk is worse than none.
+The audit's guess at the fix was right and its guess at the size was slightly
+wrong in an instructive direction. It expected `constraint_type()` to need a
+swap-and-flip and the `.scp` term to name the operands the other way round.
+The swap-and-flip is there — a `MustNotHold` `less_than` over `(x, y)` writes
+`(id greater_equal x y)` — but the operands need **no** reordering, because
+exchanging them and swapping less for greater cancel. **These two forms needed
+no keyword of their own**: negating an inequality gives another inequality of
+the same family, which is already exactly the row `define_proof_model` emits,
+so naming them for what they enforce describes the model that is actually
+there. The `.opb` a `MustNotHold` `less_than` writes is now byte-identical to
+`GreaterThanEqual{x, y}`'s, and the block comment over the row — which is
+`constraint_type()` — has stopped saying `less_equal` over a row stating the
+opposite.
 
-The spelling itself is mechanical, which is what makes this a small piece of
-work rather than a design question: `MustNotHold` with `or_equal` emits exactly
-the row `LessThan{right, left}` emits, so it *is* `(id less_than right left)`.
-`constraint_type()` would need the same swap-and-flip.
+`constraint_row_test.cc` no longer needs its `names.s_expr_file = nullopt`
+workaround, and the negated forms are swept the way the linear family already
+swept its own.
+
+**The linear family had the identical gap**, which was the audit's argument for
+fixing both at once; #915 did.
 
 **Half-reified forms are unreachable from every frontend.** The four `*If`
 classes exist, propagate, and are the difference-logic presolver's most
@@ -998,22 +1182,11 @@ reified forms behave the other way — `LessThanIff(x, x, c)` cheerfully forces
 
 ### Next steps
 
-Ranked. Two are findings of this audit and neither is filed yet; the third is
-the audit-wide prerequisite.
+Ranked. **Both of this audit's own findings are done**: #907 landed as #916 and
+#908 as #915, so what is left is one unattributed measurement and the
+audit-wide prerequisite.
 
-1. **#907 — guard the reason assembly on `want_reasons()`.** Nine reason
-   constructions in `comparison.cc`, none guarded; the four on the enforce
-   passes are the hot ones and guarding just those is **1.74x on
-   `difference_chain -n 500`** (4.01 s to 2.30 s) at a byte-identical search
-   tree, with 63 of 63 relevant ctest lanes green. The pattern is
-   `gcs/constraints/linear/propagate.cc`'s, which routes every reason through
-   the same query, and `equals`'s #864 was the same defect in a more dramatic
-   form. This is the largest single win the audit found and it is a handful of
-   lines; the remaining five sites belong to the reified verdicts and the
-   both-constant initialiser, which are not hot but should go the same way for
-   uniformity. A working patch is preserved at
-   `~/claude/tmp/famdocs-findings/`.
-2. **Find out what the rest of the comparison-versus-linear gap is.** Not
+1. **Find out what the rest of the comparison-versus-linear gap is.** Not
    filed. Guarded, the comparison spelling is still 1.55x the two-term linear
    one on an identical tree, and the difference is IPC-shaped rather than
    instruction-shaped — consistent with the offset view's indirection on every
@@ -1023,7 +1196,7 @@ the audit-wide prerequisite.
    experiment is small — the same chain with and without a zero-offset view —
    but it needs a propagation-bound harness, and the obvious two-line probe is
    not one (tried; search dominated it).
-3. **#868 — point the cross-solver harness at this family.** The harness and
+2. **#868 — point the cross-solver harness at this family.** The harness and
    method exist and have been used for `equals` only. This family is an easier
    target than that one was: a system of difference constraints is a model any
    solver would be given, and `difference_chain` pins its own search, so the
@@ -1037,8 +1210,9 @@ the audit-wide prerequisite.
 `int_lin_eq`. The `equals` recovery is a strength gain — `Equals` intersects
 domains where a linear equality is bounds-consistent — and there is no
 analogous gain here, since both spellings are bounds-consistent. The measured
-per-call costs say the recovery would be a 2.7x **loss** today, and 1.55x after
-item 1.
+per-call costs say the recovery would have been a 2.7x **loss** as the first
+audit found it, and 1.55x now that #916 has landed — which is the state item 1
+is about.
 
 *Tuning the trigger set.* `on_bounds` is already the coarsest trigger that can
 see everything any pass reads, and every pass self-disables once the bounds

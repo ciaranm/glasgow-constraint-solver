@@ -32,9 +32,14 @@ constraints and do not restate it.
   row, **no proof flags and no view detour anywhere**, seven inference rules
   each a single RUP, and 11.8% of its own proof. Nearly unreachable from the
   frontends, which turn a binary ordering into a two-term linear inequality;
-  its real consumer is the difference-logic presolver. The audit's finding is a
-  reason assembled on every call whether or not anything reads it — 43% of the
-  cycles on a family-dominated benchmark.
+  its real consumer is the difference-logic presolver. The audit's two findings
+  are both fixed — a reason assembled on every call whether or not anything
+  reads it, 43% of the cycles on a family-dominated benchmark (#907 → #916),
+  and two reification kinds that threw from `s_expr()` leaving a truncated
+  `.scp` behind (#908 → #915). It is also the family that makes
+  `consistency::Auto` pay: everything it reads is a bound, so **holes affect
+  nothing here**, and a comparison in a model is not a reason for anybody
+  else's interior pruning to stay on.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
