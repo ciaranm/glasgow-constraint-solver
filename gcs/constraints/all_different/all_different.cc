@@ -164,11 +164,10 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
         return;
     }
 
-    Triggers triggers;
-    triggers.on_change = {_sanitised_vars.begin(), _sanitised_vars.end()};
-
     overloaded{
         [&](const consistency::GAC &) {
+            Triggers triggers;
+            triggers.on_change = {_sanitised_vars.begin(), _sanitised_vars.end()};
             auto value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
             auto reasons = _gac_staged ? build_single_value_reasons(_sanitised_vars) : SingleValueReasons{};
             propagators.install(
@@ -243,6 +242,13 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
                 bc_triggers);
         },
         [&](const consistency::VC &) {
+            // The pass reads nothing but which variables have become fixed, so
+            // instantiation is all it needs waking for, and it declares that
+            // holes cannot affect it (a hole is never the last value to go).
+            // The staged GAC propagator above runs the same pass but must keep
+            // on_change: its second stage reads the interiors.
+            Triggers vc_triggers;
+            vc_triggers.on_instantiated = {_sanitised_vars.begin(), _sanitised_vars.end()};
             auto reasons = build_single_value_reasons(_sanitised_vars);
             propagators.install(
                 constraint_id(),
@@ -263,7 +269,7 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
                     // the same run and must not claim.
                     return PropagatorState::EnableButIdempotent;
                 },
-                triggers);
+                vc_triggers);
         }}
         .visit(_level);
 }
