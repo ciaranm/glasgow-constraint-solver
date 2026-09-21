@@ -1171,6 +1171,13 @@ if(GCS_BUILD_TESTS)
     add_test(NAME am1_from_pairs_test COMMAND $<TARGET_FILE:am1_from_pairs_test>)
     add_test(NAME comparator_network_test COMMAND $<TARGET_FILE:comparator_network_test>)
 
+    # The k-D diffn relaxation probe (#975): hand-builds the derivation for
+    # 2, 3 and 4 axes and checks each under veripb, with a satisfiable control
+    # per shape. Verifies its own proofs internally, as above.
+    add_executable(kd_relaxation_probe_test constraints/disjunctive_2d/kd_relaxation_probe_test.cc)
+    target_link_libraries(kd_relaxation_probe_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME kd_relaxation_probe_test COMMAND $<TARGET_FILE:kd_relaxation_probe_test>)
+
     add_executable(am1_from_row_test innards/proofs/am1_from_row_test.cc)
     target_link_libraries(am1_from_row_test PRIVATE glasgow_constraint_solver)
     # Verifies (and deliberately fails to verify) its own proofs internally, so
