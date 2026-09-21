@@ -1,5 +1,6 @@
 #include <gcs/constraints/disjunctive_2d/disjunctive_2d.hh>
 #include <gcs/constraints/disjunctive_2d/hints.hh>
+#include <gcs/constraints/innards/task_presence.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -7,6 +8,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
@@ -21,6 +23,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::get;
+using std::make_optional;
 using std::make_pair;
 using std::make_unique;
 using std::map;
@@ -54,6 +57,24 @@ Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariabl
 {
 }
 
+Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariableID> ys, vector<IntegerVariableID> widths,
+    vector<IntegerVariableID> heights, vector<IntegerVariableID> presences) : Disjunctive2D(move(xs), move(ys), move(widths), move(heights))
+{
+    _presences = move(presences);
+    if (_xs.size() != _presences.size())
+        throw InvalidProblemDefinitionException{"Disjunctive2D: xs and presences must have the same size"};
+    // A constant presence is checked here, by the rule that resolves it; a
+    // variable one is checked in prepare(), where its domain first becomes
+    // available.
+    for (const auto & p : _presences)
+        (void)task_presence(make_optional(p), "Disjunctive2D");
+}
+
+auto Disjunctive2D::presences() const -> const vector<IntegerVariableID> &
+{
+    return _presences;
+}
+
 auto Disjunctive2D::with_strict(std::optional<bool> strict) -> Disjunctive2D &
 {
     _strict = strict.value_or(true);
@@ -62,7 +83,8 @@ auto Disjunctive2D::with_strict(std::optional<bool> strict) -> Disjunctive2D &
 
 auto Disjunctive2D::clone() const -> unique_ptr<Constraint>
 {
-    auto cloned = make_unique<Disjunctive2D>(_xs, _ys, _widths, _heights);
+    auto cloned = _presences.empty() ? make_unique<Disjunctive2D>(_xs, _ys, _widths, _heights)
+                                     : make_unique<Disjunctive2D>(_xs, _ys, _widths, _heights, _presences);
     cloned->with_strict(_strict);
     return cloned;
 }
@@ -87,6 +109,28 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
             throw InvalidProblemDefinitionException{"Disjunctive2D: heights must be non-negative"};
     }
 
+    // Resolve each rectangle's presence to the variable its separation clauses
+    // have to carry a disjunct on, or nullopt when it is unconditionally
+    // present, by the rule Cumulative and 1D Disjunctive resolve theirs with
+    // --- these are alternative encodings of overlapping problems, so a
+    // presence argument one honours and another drops would be a difference in
+    // meaning between them with nothing recording it.
+    _presence.assign(n, nullopt);
+    vector<bool> never_present(n, false);
+    for (size_t i = 0; i < n; ++i) {
+        auto resolved = task_presence(_presences.empty() ? nullopt : make_optional(_presences[i]), "Disjunctive2D");
+        _presence[i] = resolved.literal;
+        never_present[i] = resolved.never_present;
+
+        // Only now are the domains available, which is why a variable presence
+        // is range-checked here rather than in the constructor.
+        if (resolved.literal && ! is_constant_variable(*resolved.literal)) {
+            auto [lo, hi] = initial_state.bounds(*resolved.literal);
+            if (lo < 0_i || hi > 1_i)
+                throw InvalidProblemDefinitionException{"Disjunctive2D: presences must be within {0, 1}"};
+        }
+    }
+
     // Resolve size snapshots. _*_vals is the constant value (0 placeholder for
     // a variable size); the initial upper bounds drive the active-rect filter.
     _width_vals.clear();
@@ -107,8 +151,13 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     // is zero-area and cannot overlap anything; drop it. In strict mode every
     // rectangle participates (its pairwise clauses remain in the OPB for leaf
     // correctness).
+    // A constantly-absent rectangle is dropped in either mode: it occupies no
+    // area, so it constrains nothing and nothing constrains it, and it must
+    // appear nowhere in the encoding at all.
     _active_rects.reserve(n);
     for (size_t i = 0; i < n; ++i) {
+        if (never_present[i])
+            continue;
         if (! _strict && (width_ub[i] == 0_i || height_ub[i] == 0_i))
             continue;
         _active_rects.push_back(i);
@@ -143,7 +192,8 @@ auto Disjunctive2D::define_proof_model(ProofModel & model, const State &) -> voi
     //   for each axis d in {x, y} and ordered pair (i, j):
     //     before_{i,j,d} <-> pos_{i,d} + size_{i,d} <= pos_{j,d}
     //   then one separation clause per unordered pair:
-    //     before_{i,j,x} + before_{j,i,x} + before_{i,j,y} + before_{j,i,y} >= 1
+    //     before_{i,j,x} + before_{j,i,x} + before_{i,j,y} + before_{j,i,y}
+    //       [ + presences[i] = 0 + presences[j] = 0 ] >= 1
     //
     // Nothing propagator-specific goes into the OPB, and (as in 1D
     // Disjunctive) this is also all the proof scaffolding there is: every
@@ -195,6 +245,19 @@ auto Disjunctive2D::define_proof_model(ProofModel & model, const State &) -> voi
                 if (_zero_h[r])
                     clause_sum += 1_i * *_zero_h[r];
             }
+            // And so does an absent one, which is the whole of what optional
+            // rectangles add to this encoding: the presence literal is the
+            // {0, 1} variable's single PB atom, so a pair of optional
+            // rectangles costs two more terms in one clause they already had
+            // --- no extra flag, no extra row, and nothing else in the encoding
+            // has to know whether a rectangle is optional. In particular the
+            // before flags stay reified *unconditionally* on the arithmetic,
+            // which is what keeps every justification below a pol over the same
+            // rows as before, and what makes the 4-way clause become 6-way
+            // rather than something new.
+            for (auto r : {i, j})
+                if (_presence[r])
+                    clause_sum += 1_i * (*_presence[r] == 0_i);
             // cake_pb_cp labels the separation clause @c[id][<i>_<j>sepal1].
             auto clause =
                 model.add_labelled_constraint(_constraint_id, std::to_string(i) + "_" + std::to_string(j) + "sepal1", move(clause_sum) >= 1_i);
@@ -219,13 +282,19 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             triggers.on_bounds.emplace_back(_widths[i]);
         if (! is_constant_variable(_heights[i]))
             triggers.on_bounds.emplace_back(_heights[i]);
+        // A rectangle starts blocking others the moment its presence is fixed
+        // to 1, and stops being worth looking at when it is fixed to 0, so an
+        // optional rectangle's presence has to wake the propagator as much as
+        // its origin does.
+        if (_presence[i] && ! is_constant_variable(*_presence[i]))
+            triggers.on_instantiated.emplace_back(*_presence[i]);
     }
 
     propagators.install(
         constraint_id(),
         [xs = move(_xs), ys = move(_ys), width_var = move(_widths), height_var = move(_heights), active_rects = move(_active_rects),
             before_x = move(_before_x), before_y = move(_before_y), clause_lines = move(_clause_lines), zero_w = move(_zero_w),
-            zero_h = move(_zero_h), strict = _strict,
+            zero_h = move(_zero_h), presence = move(_presence), strict = _strict,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Pairwise 2D time-table. The mandatory box of rectangle i is
             //   [ub(x_i), lb(x_i)+lb(w_i)) x [ub(y_i), lb(y_i)+lb(h_i))
@@ -300,20 +369,52 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 return {state.upper_bound(pos), state.lower_bound(pos) + size};
             };
 
+            // A rectangle with no presence variable is always here. An optional
+            // one is here only once its presence is fixed to 1: until then it
+            // occupies nothing that can be relied on, and it is absent once the
+            // presence is fixed to 0.
+            auto is_present = [&](size_t i) -> bool { return ! presence[i] || state.lower_bound(*presence[i]) == 1_i; };
+            auto is_absent = [&](size_t i) -> bool { return presence[i] && state.upper_bound(*presence[i]) == 0_i; };
+
+            // The presence literals a pairwise inference rests on: the pair's
+            // own, and no others, because nothing here reasons about a third
+            // rectangle. (1D Disjunctive and Cumulative build one list per
+            // propagator call instead, since their profile and energy rules
+            // speak about every task at once.) A rectangle with no presence
+            // variable contributes nothing, so a non-optional constraint's
+            // reasons are exactly what they were.
+            auto reason_for = [&](size_t i, size_t j, const vector<IntegerVariableID> & vars) -> Reason {
+                ReasonLiterals lits;
+                for (auto r : {i, j})
+                    if (presence[r] && is_present(r))
+                        lits.push_back(*presence[r] == 1_i);
+                return with_extra(generic_reason(vars), lits);
+            };
+
             for (size_t a = 0; a < active_rects.size(); ++a) {
                 auto i = active_rects[a];
+                if (is_absent(i))
+                    continue;
                 auto [lst_xi, eet_xi] = mand(xs[i], wlb(i));
                 auto [lst_yi, eet_yi] = mand(ys[i], hlb(i));
                 if (lst_xi >= eet_xi || lst_yi >= eet_yi)
                     continue;
                 for (size_t b = a + 1; b < active_rects.size(); ++b) {
                     auto j = active_rects[b];
+                    if (is_absent(j))
+                        continue;
                     auto [lst_xj, eet_xj] = mand(xs[j], wlb(j));
                     auto [lst_yj, eet_yj] = mand(ys[j], hlb(j));
                     if (lst_xj >= eet_xj || lst_yj >= eet_yj)
                         continue;
                     auto x_overlap = max(lst_xi, lst_xj) < min(eet_xi, eet_xj);
                     auto y_overlap = max(lst_yi, lst_yj) < min(eet_yi, eet_yj);
+                    // Both undecided: the pair cannot both be there, but that
+                    // is a two-literal fact with no single-variable conclusion
+                    // to record, so leave it to whichever presence is decided
+                    // first.
+                    if (x_overlap && y_overlap && ! is_present(i) && ! is_present(j))
+                        continue;
                     if (x_overlap && y_overlap) {
                         auto justify = [&, i, j](const ReasonLiterals & reason) -> void {
                             pin_escapes(reason, i, j);
@@ -339,8 +440,40 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             if (h_is_var(r))
                                 rvars.push_back(height_var[r]);
                         }
-                        inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, generic_reason(rvars));
-                        return PropagatorState::DisableUntilBacktrack;
+
+                        // Both present: no separating direction is available
+                        // and the pair is infeasible.
+                        if (is_present(i) && is_present(j)) {
+                            inference.contradiction(
+                                logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, reason_for(i, j, rvars));
+                            return PropagatorState::DisableUntilBacktrack;
+                        }
+
+                        // Exactly one is undecided, and it is the one that
+                        // cannot be there: the same four pols refute all four
+                        // separating directions, and the present one's
+                        // presence literal is in the reason, so the six-way
+                        // clause is left with the undecided one's own
+                        // "absent" disjunct and the framework's closing RUP
+                        // concludes it. Nothing here is conditional on a
+                        // rectangle that might not be present --- the before
+                        // flags are reified on the arithmetic alone.
+                        auto undecided = is_present(i) ? j : i;
+                        auto falsify = [&, undecided, justify](const ReasonLiterals & reason) -> void {
+                            // The marker a test counts to show the rule fired,
+                            // and counts to zero on the twin instance where it
+                            // must not.
+                            logger->emit_proof_comment("disjunctive2d optional: rectangle " + std::to_string(undecided) +
+                                " would overlap one that is present, so it is absent");
+                            justify(reason);
+                        };
+                        inference.infer_equal(logger, *presence[undecided], 0_i,
+                            JustifyExplicitly{falsify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, reason_for(i, j, rvars));
+                        // i is gone, so there is nothing left to say about it
+                        // against any later j.
+                        if (undecided == i)
+                            break;
+                        continue;
                     }
                 }
             }
@@ -415,7 +548,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         emit_before_pol(free_before, free_size, j, i, lb_lit(free_pos[j]), free_pos[i] < target);
                     };
                     inference.infer_greater_than_or_equal(
-                        logger, free_pos[i], target, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, generic_reason(rv));
+                        logger, free_pos[i], target, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, reason_for(i, j, rv));
                 }
                 // ub-push: i cannot fit above the blocker, push its origin down to
                 // blk_lo - sz -- capped at cur_lo - 1 by the same reasoning.
@@ -434,15 +567,25 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         // target: bf -> pos_i <= target.
                         emit_before_pol(free_before, free_size, i, j, free_pos[i] >= target + 1_i, ub_lit(free_pos[j]));
                     };
-                    inference.infer_less_than(
-                        logger, free_pos[i], target + 1_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, generic_reason(rv));
+                    inference.infer_less_than(logger, free_pos[i], target + 1_i,
+                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, reason_for(i, j, rv));
                 }
             };
 
             for (size_t a = 0; a < active_rects.size(); ++a) {
                 auto i = active_rects[a];
+                // A push is only sound between two rectangles that are both
+                // there: an undecided one neither blocks (it might be absent)
+                // nor may have its own bounds moved (the prune would be wrong
+                // if it turns out absent, and there is no conditional-bounds
+                // store to record it in). 1D leaves the same propagation on
+                // the table for the same reason.
+                if (! is_present(i))
+                    continue;
                 for (size_t b = a + 1; b < active_rects.size(); ++b) {
                     auto j = active_rects[b];
+                    if (! is_present(j))
+                        continue;
                     // Recompute fresh each pair: earlier pushes may have moved
                     // bounds this pass.
                     auto [lst_xi, eet_xi] = mand(xs[i], wlb(i));
@@ -476,11 +619,11 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             };
             for (size_t a = 0; a < active_rects.size(); ++a) {
                 auto i = active_rects[a];
-                if (! fixed(i) || ! zero_area(i))
+                if (! fixed(i) || ! zero_area(i) || ! is_present(i))
                     continue;
                 auto xi = state.lower_bound(xs[i]), yi = state.lower_bound(ys[i]);
                 for (auto j : active_rects) {
-                    if (j == i || ! fixed(j))
+                    if (j == i || ! fixed(j) || ! is_present(j))
                         continue;
                     auto xj = state.lower_bound(xs[j]), yj = state.lower_bound(ys[j]);
                     bool sep = (xi + wlb(i) <= xj) || (xj + wlb(j) <= xi) || (yi + hlb(i) <= yj) || (yj + hlb(j) <= yi);
@@ -492,7 +635,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             if (h_is_var(r))
                                 lr.push_back(height_var[r]);
                         }
-                        inference.contradiction(logger, JustifyUsingRUP{hints::Disjunctive2D{owner}}, generic_reason(lr));
+                        inference.contradiction(logger, JustifyUsingRUP{hints::Disjunctive2D{owner}}, reason_for(i, j, lr));
                         return PropagatorState::DisableUntilBacktrack;
                     }
                 }
@@ -505,7 +648,14 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
 
 auto Disjunctive2D::constraint_type() const -> std::string
 {
-    return _strict ? "disjunctive2d_strict" : "disjunctive2d";
+    // The optional forms are named apart from the plain ones rather than
+    // sharing a name: cake_pb_cp dispatches on this, and it has no encoder for
+    // an optional disjunctive2d, so a shared name would silently offer it the
+    // non-optional encoding of a different constraint. Naming the gap is what
+    // makes it a miss rather than a mismatch.
+    if (_presences.empty())
+        return _strict ? "disjunctive2d_strict" : "disjunctive2d";
+    return _strict ? "disjunctive2d_strict_optional" : "disjunctive2d_optional";
 }
 
 auto Disjunctive2D::s_expr(const ProofModel * const model) const -> SExpr
@@ -520,6 +670,16 @@ auto Disjunctive2D::s_expr(const ProofModel * const model) const -> SExpr
         widths.push_back(tracker.s_expr_term_of(w));
     for (const auto & h : _heights)
         heights.push_back(tracker.s_expr_term_of(h));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(xs)),
-        SExpr::list(std::move(ys)), SExpr::list(std::move(widths)), SExpr::list(std::move(heights))});
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(xs)),
+        SExpr::list(std::move(ys)), SExpr::list(std::move(widths)), SExpr::list(std::move(heights))};
+    // The presences list sits last, as it does for the 1D form, and is absent
+    // altogether for a non-optional constraint --- whose s-expression must stay
+    // exactly what it was.
+    if (! _presences.empty()) {
+        vector<SExpr> presences;
+        for (const auto & p : _presences)
+            presences.push_back(tracker.s_expr_term_of(p));
+        terms.push_back(SExpr::list(std::move(presences)));
+    }
+    return SExpr::list(std::move(terms));
 }

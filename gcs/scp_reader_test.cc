@@ -967,6 +967,24 @@ TEST_CASE("read_scp: disjunctive2d enumerates correctly")
     }
 }
 
+TEST_CASE("read_scp: disjunctive2d_optional enumerates correctly")
+{
+    // The same two 2x2 rectangles, each of which may be absent: they need
+    // separating only when both are placed.
+    for (const auto & s : enumerate("( (version 1) (variables (X0 0 3) (X1 0 3) (Y0 0 3) (Y1 0 3) (P0 0 1) (P1 0 1)) (constraints (_1 "
+                                    "disjunctive2d_optional (X0 X1) (Y0 Y1) (2 2) (2 2) (P0 P1))) (prob_type enumerate) )")) {
+        auto dx = s.at("X0") - s.at("X1");
+        auto dy = s.at("Y0") - s.at("Y1");
+        CHECK((s.at("P0") == 0 || s.at("P1") == 0 || dx >= 2 || dx <= -2 || dy >= 2 || dy <= -2));
+    }
+    // An absent rectangle is unconstrained, so both placements exist for every
+    // position of the other one: with rectangle 1 absent, rectangle 0 may sit
+    // anywhere at all, including on top of it.
+    auto absent = enumerate("( (version 1) (variables (X0 0 1) (X1 0 1) (Y0 0 1) (Y1 0 1) (P1 0 0)) (constraints (_1 disjunctive2d_optional (X0 X1) "
+                            "(Y0 Y1) (2 2) (2 2) (1 P1))) (prob_type enumerate) )");
+    CHECK(absent.size() == 16);
+}
+
 TEST_CASE("read_scp: cumulative enumerates correctly")
 {
     // Three unit-length, unit-height tasks sharing a capacity-2 resource over the
@@ -1007,6 +1025,9 @@ TEST_CASE("read_scp: regular, disjunctive, disjunctive2d and cumulative survive 
     original.post(Disjunctive2D{std::vector<IntegerVariableID>{s0, s1}, std::vector<IntegerVariableID>{y0, y1}, std::vector<Integer>{2_i, 2_i},
         std::vector<Integer>{2_i, 2_i}}
             .with_strict(false));
+    original.post(Disjunctive2D{std::vector<IntegerVariableID>{s0, s1}, std::vector<IntegerVariableID>{y0, y1},
+        as_constant_variables(std::vector<Integer>{2_i, 2_i}), as_constant_variables(std::vector<Integer>{2_i, 2_i}),
+        std::vector<IntegerVariableID>{p0, p1}}); // -> disjunctive2d_strict_optional
     original.post(Cumulative{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}, std::vector<Integer>{1_i, 1_i}, 2_i});
     auto scp_a = prove_to_scp(original, "scp_reader_regdisj_a");
 

@@ -1404,6 +1404,26 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
                     .with_strict(op == "disjunctive_strict_optional"),
                 label);
         }
+        else if (op == "disjunctive2d_optional" || op == "disjunctive2d_strict_optional") {
+            // (label disjunctive2d_optional (xs...) (ys...) (widths...)
+            // (heights...) (presences...)): the same rectangles, each placed
+            // only if presences[i] is 1. The presences list sits last, where
+            // the 1D optional form puts it. Deliberately a keyword of its own
+            // rather than an optional argument to `disjunctive2d`: the
+            // separation clauses carry two more disjuncts, so re-deriving it as
+            // a plain disjunctive2d would give a different, stronger
+            // constraint.
+            if (terms.size() != 7)
+                throw ScpReadError{"disjunctive2d_optional is (label " + op + " (xs...) (ys...) (widths...) (heights...) (presences...))"};
+            post_constraint(problem,
+                Disjunctive2D{resolve_variable_list(variables, terms[2], "the disjunctive2d_optional x list"),
+                    resolve_variable_list(variables, terms[3], "the disjunctive2d_optional y list"),
+                    resolve_variable_list(variables, terms[4], "the disjunctive2d_optional width list"),
+                    resolve_variable_list(variables, terms[5], "the disjunctive2d_optional height list"),
+                    resolve_variable_list(variables, terms[6], "the disjunctive2d_optional presence list")}
+                    .with_strict(op.ends_with("_strict_optional")),
+                label);
+        }
         else if (op == "disjunctive2d" || op == "disjunctive2d_strict") {
             // (label disjunctive2d (xs...) (ys...) (widths...) (heights...)): the
             // rectangles [x, x + w) x [y, y + h) pairwise do not overlap. As for
