@@ -816,8 +816,6 @@ if(GCS_BUILD_TESTS)
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename disjunctive_2d_relaxation_mutation_${mutation} $<TARGET_FILE:disjunctive_2d_relaxation_test> --mutate=${mutation})
     endforeach()
-    foreach(mode const constgac const2d var var2d)
-    endforeach()
     foreach(mode strict nonstrict falsify)
         add_test(NAME disjunctive_2d_optional_constraint_${mode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_optional_test> ${mode})
