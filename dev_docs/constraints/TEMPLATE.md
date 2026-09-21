@@ -958,7 +958,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 
 | Document | Covers | Notes |
 |---|---|---|
-| `all_different.md` | `all_different/` | GAC and VC variants, `AllDifferentExcept`, `ExceptZero` |
+| `all_different.md` | `all_different/` | **written**. GAC, BC and VC arms, `AllDifferentExcept`, `ExceptZero`, and `SymmetricAllDifferent`, which lives here and shares the encoding and the GAC propagator |
 | `all_equal.md` | `all_equal/` | |
 | `among.md` | `among/` | *candidate merge* with `count`, `global_cardinality`, `n_value` as one counting family |
 | `arithmetic.md` | `multiply/`, `divide_modulus/`, `plus_minus/`, `power/`, and the `plus.hh` / `minus.hh` / `divide.hh` / `modulus.hh` headers | one family over several directories; existing note is `arithmetic-proofs.md` |
