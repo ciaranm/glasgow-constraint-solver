@@ -35,6 +35,7 @@
 #include <random>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -302,5 +303,33 @@ TEST_CASE("The choice of arm never changes the OPB encoding")
         }
         CHECK(opbs.at(0) == opbs.at(1));
         CHECK(opbs.at(0) == opbs.at(2));
+    }
+}
+
+TEST_CASE("An AllDifferent keeps Auto's pruning on only at the level that reads holes")
+{
+    // An element's result is observed by nothing but an AllDifferent, so the
+    // verdict is AllDifferent's own declaration: generalised arc consistency
+    // reads interiors, and bounds consistency and value consistency do not.
+    // Value consistency reads only which variables are fixed, and a hole is
+    // never the last value to go; it used to share GAC's on_change triggers
+    // and so declared otherwise (#992).
+    for (auto [label, level, expect_needed] :
+        {std::tuple{"gac", AllDifferentConsistency{consistency::GAC{}}, true}, std::tuple{"bc", AllDifferentConsistency{consistency::BC{}}, false},
+            std::tuple{"vc", AllDifferentConsistency{consistency::VC{}}, false}}) {
+        INFO(label);
+        Problem p;
+        auto idx = p.create_integer_variable(0_i, 3_i);
+        auto result = p.create_integer_variable(-1_i, 8_i);
+        auto other = p.create_integer_variable(-1_i, 8_i);
+        p.post(ElementConstantArray{result, idx, vector<Integer>{1_i, 5_i, 2_i, 7_i}}.with_consistency(consistency::Auto{}));
+        p.post(AllDifferent{vector<IntegerVariableID>{result, other}}.with_consistency(level));
+
+        Stats stats;
+        auto state = p.create_state_for_new_search(nullptr);
+        auto propagators = p.create_propagators(state, stats, nullptr);
+        auto verdicts = propagators.analyse_optional_interior_pruning();
+        REQUIRE(verdicts.size() == 1);
+        CHECK(verdicts.at(0).needed == expect_needed);
     }
 }
