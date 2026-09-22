@@ -19,6 +19,8 @@ namespace gcs
      *
      * This is the index-sort constraint (MiniZinc `arg_sort`). By default `p`
      * is zero-based; pass `offset` (e.g. `1_i`) for a different index base.
+     * `p` is a permutation whatever `n` is, which is what MiniZinc documents;
+     * MiniZinc's library decomposition leaves `p` free when `n` is 1.
      *
      * \ingroup Constraints
      * \sa Sort

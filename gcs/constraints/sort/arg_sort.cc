@@ -126,9 +126,15 @@ auto ArgSort::define_proof_model(ProofModel & model, const State &) -> void
     // bit-sum (v[id][j_b][y] value bits + a forced v[id][j][ysgn] sign bit even
     // when the range is non-negative), with no OPB bound lines. Name y's bits to
     // match, so the in-proof introduction of y's atoms lines up with cake's.
+    //
+    // The bits carry the constraint id but the atoms carry y's own name, which a
+    // state variable's are rendered from verbatim, so that name has to be unique
+    // too: with the position alone, a second ArgSort's atoms took the first's
+    // names, and the proof conflated two different variables.
     vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
     for (size_t j = 0; j < _y.size(); ++j)
-        model.set_up_integer_variable(_y[j], _lowest_x, _highest_x, "argsort_y_" + std::to_string(j), IntegerVariableProofRepresentation::Bits,
+        model.set_up_integer_variable(_y[j], _lowest_x, _highest_x, "argsort_y_" + std::to_string(j) + "_" + std::to_string(_y[j].index),
+            IntegerVariableProofRepresentation::Bits,
             CakeBitNaming{.id = _constraint_id,
                 .indices = {static_cast<long long>(j)},
                 .value_annotation = "y",

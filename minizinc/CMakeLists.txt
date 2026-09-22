@@ -47,6 +47,25 @@ set_tests_properties(minizinc-alldifferentexcept PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-alldifferentexceptzero COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ alldifferentexceptzero true true)
 set_tests_properties(minizinc-alldifferentexceptzero PROPERTIES SKIP_RETURN_CODE 66)
 
+# The shapes a front end hands these globals (#1006): empty and single-element
+# arrays, integer literals among the variables, arrays indexed from negative
+# values, enum-typed arrays, and for the exception set, an empty set and one with
+# a hole. Each model packs several shapes, so --fzn-count insists that every one
+# of them reached the builtin rather than one being rewritten away behind the
+# others. --reference-std adds the standard library's decompositions, since
+# MiniZinc's default solver has its own all_different and alldifferent_except_0,
+# and agreeing with a propagator and with a decomposition are different evidence.
+# The except lane's count takes either builtin because MiniZinc 2.10's wrapper
+# turns an empty exception set into a plain all_different before our
+# redefinition is consulted, where 2.9 hands it over; the Linux lanes pin 2.9.7
+# and the macOS ones take Homebrew's current release, so the count has to hold
+# for both.
+add_test(NAME minizinc-alldifferent-shapes COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 5 glasgow_alldifferent --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ alldifferentshapes true true)
+set_tests_properties(minizinc-alldifferent-shapes PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-alldifferentexcept-shapes COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 6 "glasgow_all_different_except_int|glasgow_alldifferent" --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ alldifferentexceptshapes true true)
+set_tests_properties(minizinc-alldifferentexcept-shapes PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-among COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ amongtest true true)
 set_tests_properties(minizinc-among PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -285,6 +304,26 @@ set_tests_properties(minizinc-inverses PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-inverses-offset COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_inverse $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ inversesoffset true true)
 set_tests_properties(minizinc-inverses-offset PROPERTIES SKIP_RETURN_CODE 66)
 
+# More of the shapes a front end can misread for the index-valued globals
+# (#1006), several to a model, so --fzn-count guards each. The -negative lanes
+# are the shapes MiniZinc's default solver gets wrong itself: its own inverse,
+# which symmetric_all_different reaches through the stdlib, reports
+# `Int::channel: Number out of limits` on a negative index set and calls an
+# empty pair of arrays unsatisfiable. So those compare against the standard
+# library's decompositions alone, and the others against both.
+add_test(NAME minizinc-inverses-shapes COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 4 glasgow_inverse --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ inversesshapes true true)
+set_tests_properties(minizinc-inverses-shapes PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-inverses-negative COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 2 glasgow_inverse --reference-std --skip-default-reference $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ inversesnegative true true)
+set_tests_properties(minizinc-inverses-negative PROPERTIES SKIP_RETURN_CODE 66)
+
+# Arrays of different lengths, which the redefinition turns into `false` before
+# any builtin is posted. The default solver errors on the mismatch instead of
+# reporting it, and the flattener never runs a solver on a model it has already
+# found inconsistent, so there is no proof to check.
+add_test(NAME minizinc-inverses-unequal COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --unsatisfiable --reference-std --skip-default-reference $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ inversesunequal true false)
+set_tests_properties(minizinc-inverses-unequal PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-knapsack COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ knapsacktest false true)
 set_tests_properties(minizinc-knapsack PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -384,6 +423,17 @@ set_tests_properties(minizinc-argsort PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-argsort-offset COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_arg_sort_int $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ argsortoffset true true)
 set_tests_properties(minizinc-argsort-offset PROPERTIES SKIP_RETURN_CODE 66)
 
+# As minizinc-inverses-shapes. There is no --reference-std: MiniZinc's default
+# solver has no arg_sort of its own, so it already runs the stdlib decomposition.
+add_test(NAME minizinc-argsort-shapes COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 5 glasgow_arg_sort_int $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ argsortshapes true true)
+set_tests_properties(minizinc-argsort-shapes PROPERTIES SKIP_RETURN_CODE 66)
+
+# A reified and a half-reified arg_sort, which failed to flatten at all until
+# the redefinition included the stdlib's reified decomposition: nothing else
+# reaches that include, since every other lane posts arg_sort at the root.
+add_test(NAME minizinc-argsort-reif COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ argsortreif true true)
+set_tests_properties(minizinc-argsort-reif PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-splitrandom COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ splitrandom true true)
 set_tests_properties(minizinc-splitrandom PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -399,6 +449,13 @@ set_tests_properties(minizinc-symmetricalldifferent PROPERTIES SKIP_RETURN_CODE 
 # As minizinc-inverses-offset.
 add_test(NAME minizinc-symmetricalldifferent-offset COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_symmetric_all_different $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ symmetricalldifferentoffset true true)
 set_tests_properties(minizinc-symmetricalldifferent-offset PROPERTIES SKIP_RETURN_CODE 66)
+
+# As minizinc-inverses-shapes and minizinc-inverses-negative.
+add_test(NAME minizinc-symmetricalldifferent-shapes COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 4 glasgow_symmetric_all_different --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ symmetricalldifferentshapes true true)
+set_tests_properties(minizinc-symmetricalldifferent-shapes PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-symmetricalldifferent-negative COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 2 glasgow_symmetric_all_different --reference-std --skip-default-reference $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ symmetricalldifferentnegative true true)
+set_tests_properties(minizinc-symmetricalldifferent-negative PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-tablebool COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ tablebool true true)
 set_tests_properties(minizinc-tablebool PROPERTIES SKIP_RETURN_CODE 66)

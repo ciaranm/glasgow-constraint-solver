@@ -33,7 +33,29 @@
 # installed is reported and skipped rather than failing the test, in the same
 # spirit as the veripb check below.
 #
-# Usage: run_minizinc_test.bash [--fzn-pattern <regex>]... [--reference-solver <name>]...
+# A leading `--fzn-count N REGEX` (repeatable) is `--fzn-pattern` for a model
+# that exercises several shapes of one global at once: the regex must match
+# exactly N times in the flattened model, so that one shape being rewritten away
+# cannot hide behind another that still reaches the builtin.
+#
+# A leading `--reference-std` adds MiniZinc's default solver given the standard
+# library's decompositions (`-G std`) in place of its own globals. That is the
+# independent reading of what the model means, and it is the one to trust on the
+# shapes a front end gets wrong --- empty arrays, index sets not starting at 1 ---
+# where the default solver's own redefinitions can be wrong too. Where they are
+# known to be, a leading `--skip-default-reference` drops the comparison against
+# them; it needs `--reference-std`, so that some reference is always left.
+#
+# A leading `--unsatisfiable` says the model has no solutions: every run must
+# report UNSATISFIABLE, where otherwise the Glasgow run must find at least one.
+# The default is the guard against a lane degenerating quietly, since a typo
+# that makes a model unsatisfiable leaves every solver agreeing; the flag is for
+# a shape that is meant to be. MiniZinc's UNSATISFIABLE status is part of what
+# is compared either way.
+#
+# Usage: run_minizinc_test.bash [--fzn-pattern <regex>]... [--fzn-count <n> <regex>]...
+#                               [--reference-solver <name>]... [--reference-std]
+#                               [--skip-default-reference] [--unsatisfiable]
 #                               <fzn-glasgow> <minizincdir>
 #                               <testname> <enumeration> <doproofs>
 #                              [<solverflags> [<requiredpattern>...]]
@@ -41,14 +63,28 @@
 set -euo pipefail
 
 fzn_patterns=()
+fzn_count_patterns=()
+fzn_count_expected=()
 reference_solvers=()
-while [[ ${1:-} == --fzn-pattern || ${1:-} == --reference-solver ]] ; do
+reference_std=false
+default_reference=true
+unsatisfiable=false
+while [[ ${1:-} == --* ]] ; do
     case $1 in
-        --fzn-pattern) fzn_patterns+=("$2") ;;
-        --reference-solver) reference_solvers+=("$2") ;;
+        --fzn-pattern) fzn_patterns+=("$2") ; shift 2 ;;
+        --fzn-count) fzn_count_expected+=("$2") ; fzn_count_patterns+=("$3") ; shift 3 ;;
+        --reference-solver) reference_solvers+=("$2") ; shift 2 ;;
+        --reference-std) reference_std=true ; shift ;;
+        --skip-default-reference) default_reference=false ; shift ;;
+        --unsatisfiable) unsatisfiable=true ; shift ;;
+        *) echo "unknown option $1" 1>&2 ; exit 1 ;;
     esac
-    shift 2
 done
+
+if [[ "$default_reference" == "false" && "$reference_std" == "false" ]] ; then
+    echo "--skip-default-reference needs --reference-std, or nothing is left to compare against" 1>&2
+    exit 1
+fi
 
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=../proof_file_disposal.bash
@@ -82,11 +118,21 @@ sed -e "s|\"executable\": \"fzn-glasgow\"|\"executable\": \"$solverexe\"|" \
 
 minizinc --solver "$solver_msc" --fzn "$testname.fzn" -a \
     ${solverflags[@]+"${solverflags[@]}"} "$minizincdir/tests/$testname.mzn" | tee "$testname.glasgow.out" || exit 1
-minizinc -a "$minizincdir/tests/$testname.mzn" | tee "$testname.default.out" || exit 2
+if [[ "$default_reference" == "true" ]] ; then
+    minizinc -a "$minizincdir/tests/$testname.mzn" | tee "$testname.default.out" || exit 2
+fi
 
 for pattern in ${fzn_patterns[@]+"${fzn_patterns[@]}"} ; do
     if ! grep -Eq -- "$pattern" "$testname.fzn" ; then
         echo "expected flattened model matching '$pattern'; the model was rewritten before it reached the solver"
+        exit 10
+    fi
+done
+
+for i in ${fzn_count_patterns[@]+"${!fzn_count_patterns[@]}"} ; do
+    found=$(grep -Eo -- "${fzn_count_patterns[i]}" "$testname.fzn" | wc -l || true)
+    if (( found != fzn_count_expected[i] )) ; then
+        echo "expected flattened model matching '${fzn_count_patterns[i]}' ${fzn_count_expected[i]} times, not $found; part of the model was rewritten before it reached the solver"
         exit 10
     fi
 done
@@ -98,25 +144,50 @@ for pattern in ${required_patterns[@]+"${required_patterns[@]}"} ; do
     fi
 done
 
-if [[ "$enumeration" == "true" ]] ; then
-    grep -q '^ENUMSOL:' < "$testname.glasgow.out" || exit 3
-    grep '^ENUMSOL:' < "$testname.glasgow.out" | sort > "$testname.glasgow.sols"
-    # tolerate grep finding nothing: an empty default-solver solution set
-    # shows up as a difference in the diff below
-    grep '^ENUMSOL:' < "$testname.default.out" | sort > "$testname.default.sols" || true
-
-    if ! diff -u "$testname.glasgow.sols" "$testname.default.sols" ; then
-        echo "found different enumeration solutions"
-        exit 4
+# The solutions a run found, in a canonical order: every ENUMSOL line, sorted,
+# or the last OPTSOL line. MiniZinc's UNSATISFIABLE status comes too, so that
+# runs which all proved there are none agree, where otherwise they would all
+# look empty.
+solutions_of() {
+    if [[ "$enumeration" == "true" ]] ; then
+        grep -E '^(ENUMSOL:|=====UNSATISFIABLE=====$)' < "$1" | sort || true
+    else
+        { grep '^OPTSOL:' < "$1" | tail -n1 ; grep -x '=====UNSATISFIABLE=====' < "$1" ; } || true
     fi
+}
+
+if [[ "$unsatisfiable" == "true" ]] ; then
+    if grep -qE '^(ENUMSOL|OPTSOL):' < "$testname.glasgow.out" || ! grep -qx '=====UNSATISFIABLE=====' < "$testname.glasgow.out" ; then
+        echo "expected the Glasgow run to report the model unsatisfiable"
+        exit 13
+    fi
+elif [[ "$enumeration" == "true" ]] ; then
+    grep -q '^ENUMSOL:' < "$testname.glasgow.out" || exit 3
 else
     grep -q '^OPTSOL:' < "$testname.glasgow.out" || exit 5
-    grep '^OPTSOL:' < "$testname.glasgow.out" | tail -n1 > "$testname.glasgow.sols"
-    grep '^OPTSOL:' < "$testname.default.out" | tail -n1 > "$testname.default.sols" || true
+fi
+solutions_of "$testname.glasgow.out" > "$testname.glasgow.sols"
 
+if [[ "$default_reference" == "true" ]] ; then
+    # an empty default-solver solution set shows up as a difference here
+    solutions_of "$testname.default.out" > "$testname.default.sols"
     if ! diff -u "$testname.glasgow.sols" "$testname.default.sols" ; then
-        echo "found different objective solutions"
-        exit 6
+        if [[ "$enumeration" == "true" ]] ; then
+            echo "found different enumeration solutions"
+            exit 4
+        else
+            echo "found different objective solutions"
+            exit 6
+        fi
+    fi
+fi
+
+if [[ "$reference_std" == "true" ]] ; then
+    minizinc -G std -a "$minizincdir/tests/$testname.mzn" | tee "$testname.std.out" || exit 14
+    solutions_of "$testname.std.out" > "$testname.std.sols"
+    if ! diff -u "$testname.glasgow.sols" "$testname.std.sols" ; then
+        echo "found different solutions from the default solver on the standard library's decompositions"
+        exit 15
     fi
 fi
 
@@ -129,11 +200,7 @@ for reference in ${reference_solvers[@]+"${reference_solvers[@]}"} ; do
         continue
     fi
     minizinc --solver "$reference" -a "$minizincdir/tests/$testname.mzn" | tee "$testname.$reference.out" || exit 11
-    if [[ "$enumeration" == "true" ]] ; then
-        grep '^ENUMSOL:' < "$testname.$reference.out" | sort > "$testname.$reference.sols" || true
-    else
-        grep '^OPTSOL:' < "$testname.$reference.out" | tail -n1 > "$testname.$reference.sols" || true
-    fi
+    solutions_of "$testname.$reference.out" > "$testname.$reference.sols"
     if ! diff -u "$testname.glasgow.sols" "$testname.$reference.sols" ; then
         echo "found different solutions from reference solver $reference"
         exit 12

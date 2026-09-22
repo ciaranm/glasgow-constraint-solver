@@ -105,6 +105,44 @@ namespace
         solve_for_tests(prob, proof_name, actual, tuple{x, p});
         check_results(proof_name, expected, actual);
     }
+
+    // Two independent ArgSorts in one problem, as in any MiniZinc model with two
+    // arg_sort calls. Each ArgSort's internal sorted-value variables were named
+    // from their position alone, so the second one's took the first one's names
+    // and the proof conflated two different variables: the enumeration was right
+    // and VeriPB rejected the proof.
+    auto run_two_arg_sorts_test(bool proofs, int offset, const vector<pair<int, int>> & x_domains) -> void
+    {
+        auto n = x_domains.size();
+        vector<pair<int, int>> p_domains(n, {offset, offset + static_cast<int>(n) - 1});
+
+        print(cerr, "two arg_sorts offset={} x={}{}", offset, x_domains, proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        set<tuple<vector<int>, vector<int>, vector<int>, vector<int>>> expected, actual;
+        build_expected(
+            expected,
+            [&](const vector<int> & x1, const vector<int> & p1, const vector<int> & x2, const vector<int> & p2) {
+                return is_arg_sort(x1, p1, offset) && is_arg_sort(x2, p2, offset);
+            },
+            x_domains, p_domains, x_domains, p_domains);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem prob;
+        auto create = [&](const vector<pair<int, int>> & domains) {
+            vector<IntegerVariableID> vars;
+            for (const auto & d : domains)
+                vars.push_back(prob.create_integer_variable(Integer(d.first), Integer(d.second)));
+            return vars;
+        };
+        auto x1 = create(x_domains), p1 = create(p_domains), x2 = create(x_domains), p2 = create(p_domains);
+        prob.post(ArgSort{x1, p1, Integer(offset)});
+        prob.post(ArgSort{x2, p2, Integer(offset)});
+
+        auto proof_name = proofs ? make_optional("arg_sort_test_two") : nullopt;
+        solve_for_tests(prob, proof_name, actual, tuple{x1, p1, x2, p2});
+        check_results(proof_name, expected, actual);
+    }
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -155,6 +193,8 @@ auto main(int argc, char * argv[]) -> int
         run_arg_sort_test(proofs, 1, {{0, 0}, {0, 0}, {-1, 1}});
         // A wider hole: x[2] in [-2,0] reaches ranks {0, 3} only (holes at 1, 2).
         run_arg_sort_test(proofs, 0, {{0, 0}, {0, 0}, {-2, 0}, {-1, -1}, {3, 5}});
+
+        run_two_arg_sorts_test(proofs, 1, {{0, 1}, {0, 1}});
     }
 
     // Seeded randomized batch: small instances with a mix of overlapping and

@@ -1,3 +1,10 @@
+% The stdlib's reified decomposition, for a reified or negated arg_sort. The
+% stdlib's own arg_sort.mzn does not include it, since with the stdlib's
+% fzn_arg_sort_int a reified call can flatten that body in place. With this one
+% it cannot: the body is a builtin, and there is no glasgow_arg_sort_int_reif,
+% so without the include `b <-> arg_sort(x, p)` fails to flatten at all.
+include "fzn_arg_sort_int_reif.mzn";
+
 predicate glasgow_arg_sort_int(array[int] of var int: x, array[int] of var int: p, int: offset);
 
 % p is indexed 1..length(x) --- arg_sort_int asserts that before it gets here ---

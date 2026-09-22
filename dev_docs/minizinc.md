@@ -180,6 +180,28 @@ back, and the constraint now gets views on every MiniZinc model, so it needs
 Shifting *parameters* in a comprehension costs nothing; this is only about arrays
 of `var`.
 
+### A reified call has to reach a reified decomposition
+
+A redefinition replaces the body of `fzn_<name>`, and that body is a builtin
+with no reified form. That is fine only because a reified, half-reified or
+negated call never flattens it: MiniZinc looks for `fzn_<name>_reif` first,
+and the stdlib's global wrapper normally includes the file that defines it,
+so the reified call gets the stdlib's decomposition. When the wrapper does
+not include it, MiniZinc falls back to flattening the body in the reified
+context, finds the builtin there, and stops: `'glasgow_<name>' is used in a
+reified context but no reified version is available`. A solver without its
+own redefinition never notices, since the stdlib's body is a decomposition
+that reifies happily.
+
+`arg_sort.mzn` is the case in point: it includes `fzn_arg_sort_int.mzn` but
+not `fzn_arg_sort_int_reif.mzn`, so `b <-> arg_sort(x, p)` did not flatten
+for Glasgow at all until `fzn_arg_sort_int.mzn` included the reified file
+itself. A sweep of every override in the four contexts (#1006) found no other
+case, but that reflects this stdlib release, not a rule, so check a new
+override in a reified context. Where the stdlib's `fzn_<name>_reif` is an
+abort (`Reified circuit/1 is not supported`), every solver fails the same
+way and there is nothing to fix.
+
 ## When no predicate is the right answer
 
 Not every gcs feature wants an `mznlib/` override. The difference-logic
@@ -247,7 +269,7 @@ differenceLogic*` counters as well.
 
 ### Reachability guards and extra reference solvers
 
-Two more leading flags, both taken *before* the positional arguments:
+More leading flags, all taken *before* the positional arguments:
 
 - `--fzn-pattern REGEX` (repeatable) requires the regex to match the
   flattened model the solver was handed. This is the guard against a
@@ -266,6 +288,92 @@ Two more leading flags, both taken *before* the positional arguments:
   against a propagator *and* against MiniZinc's own reference reading. A
   solver that is not installed is reported and skipped rather than
   failing, like the `veripb` check.
+- `--fzn-count N REGEX` (repeatable) is `--fzn-pattern` for a model that
+  packs several shapes of one global together: the regex must match
+  exactly `N` times, so one call being rewritten away cannot hide behind
+  another that still reaches the builtin. A count is exact, so it is
+  sensitive to the MiniZinc version, and CI runs two: the Linux lanes pin
+  2.9.7, the macOS ones take whatever Homebrew ships. Check a count against
+  both. MiniZinc 2.10 hands `all_different_except(x, {})` to
+  `all_different`, where 2.9 hands it to our redefinition, so
+  `minizinc-alldifferentexcept-shapes` counts either builtin.
+- `--reference-std` diffs against the default solver given the standard
+  library's decompositions (`-G std`) instead of its own globals. See
+  *Which reference to trust* below.
+- `--skip-default-reference` drops the comparison against the default
+  solver's own globals, for a shape they are known to get wrong. It
+  needs `--reference-std`, so that some reference is always left, and
+  the lane's comment should say what goes wrong.
+- `--unsatisfiable` says the model has no solutions, so every run must
+  report `=====UNSATISFIABLE=====`. Without it the Glasgow run must find
+  at least one solution, which is the guard against a lane quietly
+  degenerating: a typo that makes a model unsatisfiable leaves every
+  solver agreeing. MiniZinc's `UNSATISFIABLE` status is part of what is
+  compared either way. When the flattener finds the inconsistency itself
+  no solver runs at all, so such a lane has no proof to check and passes
+  `false` for it.
+
+### Testing the shapes a front end gets wrong
+
+A front-end mistranslation is invisible to every other check in the tree.
+The core tests post the C++ class directly, so they never meet the front
+end, and the certified chain starts at the `.scp`, which records the
+constraint `fzn-glasgow` posted, so a wrong answer from a wrong
+redefinition verifies (#987). A differential MiniZinc run is the only
+check that sees it, and only on the shape that triggers it. So the lanes
+that matter vary *shape*, not volume (#1006):
+
+- **index sets** starting at 0, at a negative value and somewhere large,
+  and differing between two arrays of one global, plus enum-indexed
+  arrays;
+- **degenerate sizes**: empty arrays, which is where a missing
+  `if length(x) = 0` guard shows, and single elements;
+- **array contents**: integer literals among the variables, including one
+  a parameter set does not contain, and a variable repeated, which the
+  flattener creates by itself when it unifies two variables;
+- **parameters with structure**: an empty set, and a set with a hole in
+  it, which is two ranges in the JSON;
+- **domains** with negative values, holes, and values past the index set
+  where the values are indices;
+- **contexts**: reified, half-reified and negated calls, which reach the
+  stdlib's `_reif` decomposition rather than the builtin, but have to be
+  able to get there at all (see *A reified call has to reach a reified
+  decomposition* above).
+
+Pack several shapes into one model where the solution counts stay small,
+and guard each with `--fzn-count`: a lane's cost is dominated by starting
+MiniZinc three or four times, so 288 solutions cost about the same as 48.
+A shape that is meant to be unsatisfiable, or that the default solver
+cannot run, needs a model of its own.
+
+A lane earns its place by failing on a plausible regression. Break the
+redefinition the way a front end would get it wrong -- drop a guard,
+assume a start of 1, read a set's hull -- and check that some lane fails
+and that an unmutated copy still passes.
+
+#### Which reference to trust
+
+Gecode, MiniZinc's default solver, has its own redefinitions of several
+globals, and those are wrong on exactly the shapes above. Measured with
+MiniZinc 2.9.7:
+
+| model | Gecode | Gecode with `-G std` |
+|---|---|---|
+| `inverse`, both arrays empty | `UNSATISFIABLE` (wrong) | right |
+| `symmetric_all_different`, empty array | `UNSATISFIABLE` (wrong) | right |
+| `inverse` or `symmetric_all_different` over an index set with negative values | `Int::channel: Number out of limits` | right |
+| `inverse` on arrays of different lengths | `Int::channel: Sizes of argument arrays mismatch` | right |
+
+The empty cases come from Gecode's `fzn_inverse` taking `min` of an
+empty index set. `-G std` hands Gecode the standard library's
+decompositions instead, which makes it the independent reading of what
+the model means, so on these shapes trust it alone, with
+`--reference-std --skip-default-reference`. Elsewhere use both: agreeing
+with a propagator and with a decomposition are different evidence. The
+exception is a global Gecode does not redefine, `arg_sort` or the
+general `alldifferent_except` say, where the default solver already *is*
+the decomposition and `--reference-std` adds a run and nothing else;
+`ls share/minizinc/gecode` says which.
 
 ### Optional (`var opt int`) arguments
 
@@ -362,6 +470,16 @@ predicate, three readings.
   on the optimum, pin every node in. That is the shape the one corpus model with
   this problem in it has anyway, and the divergence cannot arise there.
 
+`arg_sort` has a smaller instance of the same thing. Its documentation says
+`p` is "the permutation which causes `x` to be in sorted order", and the
+decomposition only ties `p` to `x`'s index set through the `x[p[j]]` it reads
+for each adjacent pair; with a single element there are no pairs, so `p[1]` is
+free. `ArgSort` follows the documentation, so `arg_sort(x, p)` with
+`x : array[7..7]` and `p : array[1..1] of var 5..9` has 3 solutions for Glasgow
+and 15 for every solver that uses the decomposition. The stdlib's own function
+form, `p = arg_sort(x)`, declares `p` over `index_set(x)`, where the two
+agree, and `minizinc/tests/argsortshapes.mzn` tests the single element that way.
+
 The general lesson is the one the previous section states, plus a check it does
 not: read the `fzn_` body, not only the doc comment, and when they disagree say
 in the class documentation which one you followed and why.
@@ -421,8 +539,11 @@ minizinc/run_minizinc_test.bash        cross-solver diff + VeriPB harness
    variants when they map to the same C++ class.
 4. Add small `.mzn` tests in `minizinc/tests/`. Keep solution counts
    small; one test per constraint variant rather than one test with
-   all variants.
+   all variants. Do not name one after a stdlib file (`alldifferent.mzn`):
+   MiniZinc warns about it whenever it runs from `tests/`.
 5. Add `add_test` lines in `minizinc/CMakeLists.txt` with
-   `SKIP_RETURN_CODE 66`.
-6. Run `ctest -R minizinc-<your-name>` to verify; check that the
+   `SKIP_RETURN_CODE 66`, and a `--fzn-pattern` or `--fzn-count` guard.
+6. Add a lane over the shapes in *Testing the shapes a front end gets
+   wrong*, and check a reified call to the global flattens.
+7. Run `ctest -R minizinc-<your-name>` to verify; check that the
    default-solver enumeration matches and the VeriPB proof verifies.
