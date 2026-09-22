@@ -61,6 +61,8 @@ function(add_xcsp_test name)
         ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/lsan_suppressions.txt:print_suppressions=0")
 endfunction()
 
+add_xcsp_test(all_different_except)
+add_xcsp_test(all_different_except_values)
 add_xcsp_test(all_different_matrix)
 add_xcsp_test(all_equal)
 add_xcsp_test(bin_packing)

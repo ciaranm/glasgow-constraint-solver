@@ -35,7 +35,7 @@ equivalent for that frontend's vocabulary).
 | extension (table) | `Table` / `NegativeTable` | ✓ | ✓ | ? |
 | regular | `Regular` | ✓ | ✓ (DFA with named states + transitions) | ? |
 | mdd | `MDD` | ✓ (deterministic only)[^mdd] | ✓ | ? |
-| allDifferent | `AllDifferent` | ✓ | ✓ | ? |
+| allDifferent | `AllDifferent`; `AllDifferentExcept` with `except` | ✓ | ✓ (incl. `except`; not over expression trees) | ? |
 | allDifferent-list / -matrix | various decompositions | ? | matrix ✓ (rows + columns `AllDifferent`); list `s UNSUPPORTED` | ? |
 | allEqual | `AllEqual` | ✓ | ✓ | ? |
 | ordered (increasing/decreasing) | `Increasing` / `Decreasing` | ✓ | ✓ (basic + lengths form) | ? |
