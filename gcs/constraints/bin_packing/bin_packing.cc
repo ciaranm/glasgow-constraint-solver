@@ -104,14 +104,21 @@ namespace
     // admissibility. Each search gets its own constraint clone (and hence its
     // own bridge), so no synchronisation is needed even across threads.
     //
-    // Incremental recompute: fwd/bwd are a pure function of the per-item flags,
-    // so we cache the flags they were last built from (prev_can_be_*). On the
-    // next wake we diff current-vs-cached flags to find the changed layer range
-    // and recompute only that. This is correct across backtrack without any
-    // trailing: a backtrack simply relaxes the flags, which the diff sees as a
-    // change and rebuilds from. warm gates the first (full) build; old_fwd_n
-    // snapshots the terminal layer to decide whether the backward pass can be
-    // partial.
+    // Incremental recompute: fwd/bwd are a pure function of the per-item flags
+    // and the accepted terminals, so we cache the flags they were last built
+    // from (prev_can_be_*). On the next wake we diff current-vs-cached flags to
+    // find the changed layer range and recompute only that. This is correct
+    // across backtrack without any trailing: a backtrack simply relaxes the
+    // flags, which the diff sees as a change and rebuilds from. warm gates the
+    // first (full) build; comparing the terminal layer before and after decides
+    // whether the backward pass can be partial.
+    //
+    // A terminal is accepted when its load lies in loads[b]'s domain (always,
+    // in the constant-cap form, where Stage 2's rule already is per-bin GAC), so
+    // bwd[n] is fwd[n] restricted to the accepted terminals. accept is rebuilt
+    // only when the load's domain differs from prev_load, the intervals it was
+    // last built from. drew_inferences stops a sweep being skipped as unchanged
+    // when what it drew last time may since have been undone by a backtrack.
     struct Stage3Scratch
     {
         vector<vector<uint8_t>> fwd;
@@ -120,8 +127,11 @@ namespace
         vector<char> can_be_notb;
         vector<char> prev_can_be_b;
         vector<char> prev_can_be_notb;
-        vector<uint8_t> old_fwd_n;
+        vector<uint8_t> accept;
+        vector<pair<Integer, Integer>> prev_load;
+        vector<pair<Integer, Integer>> load_now;
         bool warm = false;
+        bool drew_inferences = false;
     };
 
     struct PerBinCoordFlags
@@ -134,6 +144,18 @@ namespace
         ProofLine g_dn_rev;
     };
 
+    // Which of the per-call strategy's state-independent Stage 3 lines have
+    // been derived at Top so far, so that each is written at most once per
+    // proof: an edge's forward chain, a node's split into its two successors,
+    // and a terminal's load in order atoms. Indexed by position in
+    // PerBinDag::nodes_at.
+    struct PerCallTopLines
+    {
+        vector<vector<uint8_t>> chain; // [i][2 * p + include]
+        vector<vector<uint8_t>> split; // [i][p]
+        vector<uint8_t> terminal;      // [p], in layer n
+    };
+
     struct PerBinFlags
     {
         // Per-layer w -> coord flags; covers both DAG and phantom w values
@@ -141,6 +163,8 @@ namespace
         vector<unordered_map<long long, PerBinCoordFlags>> coord;
         // Per-layer w -> S flag; same coverage.
         vector<unordered_map<long long, ProofFlag>> s;
+        // The per-call strategy only.
+        PerCallTopLines per_call_top;
     };
 
     // Backtrack-restored per-bin dead-state cache. dead[b][i] gathers w values
@@ -309,6 +333,36 @@ namespace
             .visit(v);
     }
 
+    // One edge's forward chain, for parent in DAG[i], branch, and succ in
+    // DAG[i+1]:
+    //
+    //    exclude branch (parent_w = succ_w):
+    //      pol succ.g_up.rev + parent.g_up.fwd ; saturate
+    //      rup ~parent.g_up + (items[i] == b) + succ.g_up >= 1
+    //    include branch (parent_w + sizes[i] = succ_w):
+    //      same shape, branch literal = (items[i] != b).
+    //    Twin g_dn chains. Then joint chain `~parent.S + branch + succ.S`.
+    //
+    // It is state-independent, so it goes at Top: the upfront scaffolding
+    // writes one for every edge, the per-call sweep one for each edge the first
+    // time a justification needs it.
+    auto emit_forward_chain(ProofLogger * const logger, const vector<IntegerVariableID> & items, Integer bin_idx, const PerBinFlags & flags, size_t i,
+        long long parent_w, long long succ_w, bool include) -> void
+    {
+        const auto & parent_cf = flags.coord[i].at(parent_w);
+        const auto & succ_cf = flags.coord[i + 1].at(succ_w);
+        auto branch_neg = include ? Literal{items[i] != bin_idx} : Literal{items[i] == bin_idx};
+
+        PolBuilder{}.add(succ_cf.g_up_rev).add(parent_cf.g_up_fwd).saturate().emit(*logger, ProofLevel::Top);
+        logger->emit_rup_proof_line(WPBSum{} + 1_i * ! parent_cf.g_up + 1_i * branch_neg + 1_i * succ_cf.g_up >= 1_i, ProofLevel::Top);
+        PolBuilder{}.add(succ_cf.g_dn_rev).add(parent_cf.g_dn_fwd).saturate().emit(*logger, ProofLevel::Top);
+        logger->emit_rup_proof_line(WPBSum{} + 1_i * ! parent_cf.g_dn + 1_i * branch_neg + 1_i * succ_cf.g_dn >= 1_i, ProofLevel::Top);
+
+        const auto & parent_s = flags.s[i].at(parent_w);
+        const auto & succ_s = flags.s[i + 1].at(succ_w);
+        logger->emit_rup_proof_line(WPBSum{} + 1_i * ! parent_s + 1_i * branch_neg + 1_i * succ_s >= 1_i, ProofLevel::Top);
+    }
+
     // Emit one bin's Top-level scaffolding. Mirrors knapsack.cc
     // `emit_scaffolding` specialised to k=1.
     //
@@ -346,13 +400,22 @@ namespace
             }
         }
 
-        // Per-call (default) strategy: only the reified per-node state
-        // flags are defined at Top; the per-call sweep (run_stage3_for_bin)
-        // does every aggregation via JustifyUsingRUP, RUP-closing through
-        // these flags plus the natural per-bin OPB equations. Skip the
-        // upfront phantom flags and forward/backward chain scaffolding.
-        if (! full_scaffolding)
+        // Per-call (default) strategy: only the reified per-node state flags
+        // are defined here. The per-call sweep (run_stage3_for_bin) derives the
+        // forward chains, splits and terminal lines it needs at Top the first
+        // time it needs them, after which each inference is RUP; it never needs
+        // the phantom flags, the layer ALOs or the backward chains.
+        if (! full_scaffolding) {
+            auto & top = flags.per_call_top;
+            top.chain.assign(n, {});
+            top.split.assign(n, {});
+            for (size_t i = 0; i < n; ++i) {
+                top.chain[i].assign(2 * dag.nodes_at[i].size(), uint8_t{0});
+                top.split[i].assign(dag.nodes_at[i].size(), uint8_t{0});
+            }
+            top.terminal.assign(dag.nodes_at[n].size(), uint8_t{0});
             return;
+        }
 
         // 2. Phantom flags. Same shape, just at the phantom's w value.
         for (size_t i = 0; i <= n; ++i) {
@@ -370,39 +433,17 @@ namespace
         }
 
         // 3. Per-coord + joint forward chains, for every (parent in DAG[i],
-        //    branch, succ in DAG[i+1]).
-        //
-        //    exclude branch (parent_w = succ_w):
-        //      pol succ.g_up.rev + parent.g_up.fwd ; saturate
-        //      rup ~parent.g_up + (items[i] == b) + succ.g_up >= 1
-        //    include branch (parent_w + sizes[i] = succ_w):
-        //      same shape, branch literal = (items[i] != b).
-        //    Twin g_dn chains. Then joint chain `~parent.S + branch + succ.S`.
-        auto emit_forward_chain = [&](size_t i, long long parent_w, long long succ_w, bool include) {
-            const auto & parent_cf = flags.coord[i].at(parent_w);
-            const auto & succ_cf = flags.coord[i + 1].at(succ_w);
-            auto branch_neg = include ? Literal{items[i] != bin_idx} : Literal{items[i] == bin_idx};
-
-            PolBuilder{}.add(succ_cf.g_up_rev).add(parent_cf.g_up_fwd).saturate().emit(*logger, ProofLevel::Top);
-            logger->emit_rup_proof_line(WPBSum{} + 1_i * ! parent_cf.g_up + 1_i * branch_neg + 1_i * succ_cf.g_up >= 1_i, ProofLevel::Top);
-            PolBuilder{}.add(succ_cf.g_dn_rev).add(parent_cf.g_dn_fwd).saturate().emit(*logger, ProofLevel::Top);
-            logger->emit_rup_proof_line(WPBSum{} + 1_i * ! parent_cf.g_dn + 1_i * branch_neg + 1_i * succ_cf.g_dn >= 1_i, ProofLevel::Top);
-
-            const auto & parent_s = flags.s[i].at(parent_w);
-            const auto & succ_s = flags.s[i + 1].at(succ_w);
-            logger->emit_rup_proof_line(WPBSum{} + 1_i * ! parent_s + 1_i * branch_neg + 1_i * succ_s >= 1_i, ProofLevel::Top);
-        };
-
+        //    branch, succ in DAG[i+1]); see emit_forward_chain.
         for (size_t i = 0; i < n; ++i) {
             auto sz = sizes[i].raw_value;
             for (auto parent_w : dag.nodes_at[i]) {
                 // exclude branch
                 if (dag.node_set[i + 1].contains(parent_w))
-                    emit_forward_chain(i, parent_w, parent_w, false);
+                    emit_forward_chain(logger, items, bin_idx, flags, i, parent_w, parent_w, false);
                 // include branch
                 auto succ_w = parent_w + sz;
                 if (dag.node_set[i + 1].contains(succ_w))
-                    emit_forward_chain(i, parent_w, succ_w, true);
+                    emit_forward_chain(logger, items, bin_idx, flags, i, parent_w, succ_w, true);
             }
         }
 
@@ -801,23 +842,167 @@ namespace
             logger->forget_proof_level(temporary_proof_level);
     }
 
+    // The inferring end of run_stage3_for_bin, kept apart from the sweep: the
+    // sweep runs on every wake, and this only when a bin has something to
+    // infer.
+    template <typename Inference_>
+    auto infer_stage3_for_bin(const State & state, Inference_ & inference, ProofLogger * logger, const vector<IntegerVariableID> & items,
+        bool have_loads, const vector<IntegerVariableID> & loads, const PerBinDag & dag, const Stage3Scratch & scratch, PerBinFlags & flags,
+        const pair<optional<ProofLine>, optional<ProofLine>> & opb_lines, size_t b, const ConstraintID & owner, bool feasible,
+        const vector<Literal> & inferences, const vector<size_t> & pruned, bool load_cut) -> void
+    {
+        auto n = items.size();
+        auto bin_idx = Integer{static_cast<long long>(b)};
+        const auto & can_be_b = scratch.can_be_b;
+        const auto & can_be_notb = scratch.can_be_notb;
+        const auto & fwd = scratch.fwd;
+        const auto & bwd = scratch.bwd;
+        const auto & terminals = dag.nodes_at[n];
+
+        // The reason: only what this bin's DAG reads, which is whether each
+        // item can be in the bin and whether it can be elsewhere, and the
+        // load's domain. Every line below is written under it, so keeping it
+        // to the bin rather than every item's whole domain matters. It is
+        // built now rather than lazily: a lazy reason is materialised afresh
+        // for each literal infer_all applies, against a state that already has
+        // the earlier ones in it.
+        ReasonLiterals bin_reason;
+        for (size_t i = 0; i < n; ++i) {
+            if (! can_be_b[i])
+                bin_reason.emplace_back(items[i] != bin_idx);
+            else if (! can_be_notb[i])
+                bin_reason.emplace_back(items[i] == bin_idx);
+        }
+        if (have_loads)
+            for (const auto & lit : materialise(generic_reason(vector{loads[b]}), state))
+                bin_reason.push_back(lit);
+        auto reason = Reason{move(bin_reason)};
+
+        // Every inference is then RUP under the reason, given the right lines
+        // at Top. Negate it, and unit propagation walks backwards from the
+        // terminals: a terminal whose load the domain (or the negated load
+        // cut) rules out is not the state, and neither is a node all of whose
+        // admissible successors are not, until the root, whose state its own
+        // definition forces, is not the state either. For a prune the walk
+        // starts from the pruned item's include edges instead, which the
+        // negated prune makes the only way on. The lines it needs are each
+        // node's forward chain for every branch its item still allows, the
+        // split into its two successors when it allows both, and each
+        // terminal's load in order atoms. None depends on the state, so each
+        // goes at Top the first time an inference needs it, and never again.
+        //
+        // The one step the walk cannot take by itself is a terminal whose load
+        // falls in a hole of the domain rather than off one of its ends. Its
+        // order atoms say the load is w, and the hole says it is not, but
+        // getting from the one to the other goes through the hole atom's
+        // definition, which unit propagation can only use once the terminal's
+        // state is assumed. So each such terminal is ruled out explicitly,
+        // under the reason, before the inferences are checked.
+        //
+        // Needed are every forward-reachable node down to the deepest pruned
+        // item, or down to the terminals for a load cut or a failure; the
+        // include edges out of each pruned item's layer; the dead nodes below
+        // the shallowest pruned item, which the walk has to get through; and
+        // the reachable terminals. infer_all runs this before it applies any
+        // inference, so the state is still the one the bitmaps were built from.
+        bool to_the_terminals = ! feasible || load_cut;
+        auto walk_to = to_the_terminals ? n : pruned.back();
+        auto dead_from = pruned.empty() ? n : pruned.front() + 1;
+        auto justify = [&](const ReasonLiterals & reason_lits) -> void {
+            auto & top = flags.per_call_top;
+            auto node_s = [&](size_t i, size_t p) { return flags.s[i].at(dag.nodes_at[i][p]); };
+
+            auto chain = [&](size_t i, size_t p, bool include) {
+                auto & done = top.chain[i][2 * p + (include ? 1 : 0)];
+                if (! done) {
+                    auto q = include ? dag.include_succ[i][p] : dag.exclude_succ[i][p];
+                    emit_forward_chain(logger, items, bin_idx, flags, i, dag.nodes_at[i][p], dag.nodes_at[i + 1][q], include);
+                    done = 1;
+                }
+            };
+
+            auto successors = [&](size_t i, size_t p) {
+                auto excl = can_be_notb[i] && dag.exclude_succ[i][p] >= 0;
+                auto incl = can_be_b[i] && dag.include_succ[i][p] >= 0;
+                if (excl)
+                    chain(i, p, false);
+                if (incl)
+                    chain(i, p, true);
+                if (excl && incl && ! top.split[i][p]) {
+                    auto e = dag.exclude_succ[i][p], c = dag.include_succ[i][p];
+                    auto split = WPBSum{} + 1_i * ! node_s(i, p) + 1_i * node_s(i + 1, e);
+                    if (c != e)
+                        split += 1_i * node_s(i + 1, c);
+                    logger->emit_rup_proof_line(move(split) >= 1_i, ProofLevel::Top);
+                    top.split[i][p] = 1;
+                }
+            };
+
+            // A terminal's state pins the load to its value: each half of the
+            // bin's equation against the matching half of the state bounds the
+            // load's bits, and a RUP turns that into the order atom, which is
+            // what unit propagation can follow to the inference and the reason.
+            auto terminal = [&](size_t p) {
+                if (! top.terminal[p]) {
+                    Integer w{terminals[p]};
+                    const auto & cf = flags.coord[n].at(terminals[p]);
+                    PolBuilder{}.add(*opb_lines.first).add(cf.g_up_fwd).emit(*logger, ProofLevel::Top);
+                    logger->emit_rup_proof_line(WPBSum{} + 1_i * ! node_s(n, p) + 1_i * (loads[b] >= w) >= 1_i, ProofLevel::Top);
+                    PolBuilder{}.add(*opb_lines.second).add(cf.g_dn_fwd).emit(*logger, ProofLevel::Top);
+                    logger->emit_rup_proof_line(WPBSum{} + 1_i * ! node_s(n, p) + 1_i * (loads[b] < w + 1_i) >= 1_i, ProofLevel::Top);
+                    top.terminal[p] = 1;
+                }
+            };
+
+            for (size_t i = 0; i < walk_to; ++i)
+                for (size_t p = 0; p < fwd[i].size(); ++p)
+                    if (fwd[i][p])
+                        successors(i, p);
+            for (auto i : pruned)
+                for (size_t p = 0; p < fwd[i].size(); ++p)
+                    if (fwd[i][p] && dag.include_succ[i][p] >= 0)
+                        chain(i, p, true);
+            for (auto i = dead_from; i < n; ++i)
+                for (size_t p = 0; p < fwd[i].size(); ++p)
+                    if (fwd[i][p] && ! bwd[i][p])
+                        successors(i, p);
+            if (have_loads) {
+                auto [load_lo, load_hi] = state.bounds(loads[b]);
+                for (size_t p = 0; p < terminals.size(); ++p)
+                    if (fwd[n][p]) {
+                        terminal(p);
+                        Integer w{terminals[p]};
+                        if (! scratch.accept[p] && load_lo < w && w < load_hi)
+                            logger->emit_rup_proof_line_under_reason(reason_lits, WPBSum{} + 1_i * ! node_s(n, p) >= 1_i, ProofLevel::Temporary);
+                    }
+            }
+        };
+
+        auto just = JustifyExplicitly{justify, ThenRUP::Yes, hints::BinPacking{owner}};
+        if (! feasible)
+            inference.contradiction(logger, just, reason);
+        else
+            inference.infer_all(logger, inferences, just, reason);
+    }
+
     // Per-call (default) Stage 3 per-bin DAG sweep. For each bin, recompute
-    // alive (i, w) nodes under the current item domains (forward + backward
-    // reachability restricted to the static DAG), then for each candidate
-    // items[i] == b that has no support at any alive (i, w) with
-    // (i+1, w + sizes[i]) also alive, prune items[i] != b.
+    // the alive (i, w) nodes under the current item domains: forward and
+    // backward reachability restricted to the static DAG, where a terminal
+    // counts only if loads[b]'s domain allows its load. Then prune
+    // items[i] != b wherever the "in bin b" edge has no alive support, and cut
+    // loads[b] down to the alive terminals. That is per-bin GAC, and the same
+    // inferences the upfront sweep (propagate_bin) draws: the two strategies
+    // differ only in the proof. Before issue #995 this sweep read no load, so
+    // it pruned nothing at all.
     //
-    // Proof: a plain JustifyUsingRUP at the prune site suffices — VeriPB's
-    // unit propagation closes the contradiction through the per-node reified
-    // state flags (defined at Top by emit_bin_scaffolding with
-    // full_scaffolding=false) plus the natural per-bin OPB equation. No
-    // explicit chain or dead-node lines are emitted per call; the
-    // inequality reifications carry that reach implicitly. This is the
-    // strategy that wins on both proof size and verify time (see
-    // dev_docs/bin-packing.md); the upfront alternative (propagate_bin) is
-    // the opt-in enabled by upfront_proof=true.
-    auto run_stage3_for_bin(const State & state, auto & inference, ProofLogger * logger, const vector<IntegerVariableID> & items,
-        const PerBinDag & dag, Stage3Scratch & scratch, size_t b, const Reason & reason, const ConstraintID & owner) -> void
+    // Proof: see justify below. It does not rely on the reified state flags
+    // alone, as this sweep used to claim it could: with only their definitions
+    // at Top, unit propagation cannot follow a partial sum from one layer to
+    // the next, so a prune needing subset-sum reasoning (sizes {1,2,2,2,2}
+    // into a load of 4) does not close.
+    auto run_stage3_for_bin(const State & state, auto & inference, ProofLogger * logger, const vector<IntegerVariableID> & items, bool have_loads,
+        const vector<IntegerVariableID> & loads, const PerBinDag & dag, Stage3Scratch & scratch, PerBinFlags & flags,
+        const pair<optional<ProofLine>, optional<ProofLine>> & opb_lines, size_t b, const ConstraintID & owner) -> void
     {
         auto n = items.size();
         auto bin_idx = Integer{static_cast<long long>(b)};
@@ -826,6 +1011,7 @@ namespace
         auto & can_be_notb = scratch.can_be_notb;
         auto & fwd = scratch.fwd;
         auto & bwd = scratch.bwd;
+        const auto & terminals = dag.nodes_at[n];
 
         // Read the current per-item admissibility and, against the flags the
         // cached bitmaps were built from, find the changed layer range. Flags
@@ -848,22 +1034,49 @@ namespace
             }
         }
 
+        // Which terminals the load allows, worked out again only when its
+        // domain differs from the one they were last worked out from. The
+        // domain and the terminals are both sorted, so walk them together.
+        bool load_changed = false;
+        if (have_loads) {
+            auto & now = scratch.load_now;
+            now.clear();
+            state.copy_of_values(loads[b]).for_each_interval([&](Integer lo, Integer hi) { now.emplace_back(lo, hi); });
+            if (! scratch.warm || now != scratch.prev_load) {
+                load_changed = true;
+                size_t k = 0;
+                for (size_t p = 0; p < terminals.size(); ++p) {
+                    Integer w{terminals[p]};
+                    while (k < now.size() && now[k].second < w)
+                        ++k;
+                    scratch.accept[p] = (k < now.size() && now[k].first <= w) ? 1 : 0;
+                }
+                std::swap(scratch.prev_load, now);
+            }
+        }
+
         // Forward reachability, restricted to the static DAG, over
         // position-indexed bitmaps: recompute fwd[from+1 .. n] from fwd[from]
         // (which is left untouched and valid). Each rebuilt layer is zeroed
         // before its reachable cells are set.
+        //
+        // Both passes read everything through locals: their stores are bytes,
+        // which may alias anything, so otherwise every store makes the compiler
+        // reload the flags and the vectors' data pointers.
         auto recompute_forward = [&](size_t from) {
             for (size_t i = from; i < n; ++i) {
-                auto & next_layer = fwd[i + 1];
-                std::fill(next_layer.begin(), next_layer.end(), uint8_t{0});
-                const auto & excl = dag.exclude_succ[i];
-                const auto & incl = dag.include_succ[i];
-                for (size_t p = 0; p < fwd[i].size(); ++p) {
-                    if (! fwd[i][p])
+                auto * next_layer = fwd[i + 1].data();
+                std::fill(next_layer, next_layer + fwd[i + 1].size(), uint8_t{0});
+                const int * excl = dag.exclude_succ[i].data();
+                const int * incl = dag.include_succ[i].data();
+                const uint8_t * layer = fwd[i].data();
+                const bool notb = can_be_notb[i], canb = can_be_b[i];
+                for (size_t p = 0, m = fwd[i].size(); p < m; ++p) {
+                    if (! layer[p])
                         continue;
-                    if (can_be_notb[i] && excl[p] >= 0)
+                    if (notb && excl[p] >= 0)
                         next_layer[excl[p]] = 1;
-                    if (can_be_b[i] && incl[p] >= 0)
+                    if (canb && incl[p] >= 0)
                         next_layer[incl[p]] = 1;
                 }
             }
@@ -874,18 +1087,32 @@ namespace
         // assuming bwd[hi+1 .. n] (and bwd[n] itself) are already valid.
         auto recompute_backward = [&](long long hi) {
             for (long long i = hi; i >= 0; --i) {
-                const auto & excl = dag.exclude_succ[i];
-                const auto & incl = dag.include_succ[i];
-                const auto & next_bwd = bwd[i + 1];
-                for (size_t p = 0; p < bwd[i].size(); ++p) {
+                const int * excl = dag.exclude_succ[i].data();
+                const int * incl = dag.include_succ[i].data();
+                const uint8_t * next_bwd = bwd[i + 1].data();
+                uint8_t * layer = bwd[i].data();
+                const bool notb = can_be_notb[i], canb = can_be_b[i];
+                for (size_t p = 0, m = bwd[i].size(); p < m; ++p) {
                     uint8_t reachable = 0;
-                    if (can_be_notb[i] && excl[p] >= 0 && next_bwd[excl[p]])
+                    if (notb && excl[p] >= 0 && next_bwd[excl[p]])
                         reachable = 1;
-                    else if (can_be_b[i] && incl[p] >= 0 && next_bwd[incl[p]])
+                    else if (canb && incl[p] >= 0 && next_bwd[incl[p]])
                         reachable = 1;
-                    bwd[i][p] = reachable;
+                    layer[p] = reachable;
                 }
             }
+        };
+
+        // The terminal layer of bwd is fwd's, restricted to the accepted
+        // terminals. Says whether bringing it up to date changed it.
+        auto refresh_terminals = [&]() -> bool {
+            uint8_t changed = 0;
+            for (size_t p = 0; p < terminals.size(); ++p) {
+                auto t = static_cast<uint8_t>(fwd[n][p] & scratch.accept[p]);
+                changed |= static_cast<uint8_t>(t ^ bwd[n][p]);
+                bwd[n][p] = t;
+            }
+            return changed != 0;
         };
 
         if (! scratch.warm) {
@@ -894,32 +1121,25 @@ namespace
             if (! dag.nodes_at[0].empty())
                 fwd[0][0] = 1;
             recompute_forward(0);
-            for (size_t p = 0; p < bwd[n].size(); ++p)
-                bwd[n][p] = fwd[n][p];
+            refresh_terminals();
             recompute_backward(static_cast<long long>(n) - 1);
             scratch.warm = true;
         }
-        else if (any_change) {
-            // Forward is valid up to and including first_change; rebuild the
-            // rest. Snapshot the terminal layer first so we can tell whether
-            // the backward pass has to restart from n or only from last_change.
-            std::copy(fwd[n].begin(), fwd[n].end(), scratch.old_fwd_n.begin());
-            recompute_forward(first_change);
-            if (! std::equal(fwd[n].begin(), fwd[n].end(), scratch.old_fwd_n.begin())) {
-                for (size_t p = 0; p < bwd[n].size(); ++p)
-                    bwd[n][p] = fwd[n][p];
+        else if (any_change || load_changed) {
+            if (any_change)
+                recompute_forward(first_change);
+            if (refresh_terminals())
                 recompute_backward(static_cast<long long>(n) - 1);
-            }
-            else {
+            else if (any_change)
                 // Terminals unchanged, so bwd[last_change+1 .. n] is still
                 // valid (those layers' edges did not change either).
                 recompute_backward(static_cast<long long>(last_change));
-            }
         }
-        else {
-            // Nothing this bin depends on changed since the last sweep: the
-            // cached alive DAG — and hence every prune decision — is identical,
-            // and those prunes were already drawn. Skip the bin entirely.
+        else if (! scratch.drew_inferences) {
+            // Nothing this bin depends on changed since the last sweep, which
+            // drew nothing, so this one would draw nothing either. (Had it drawn
+            // something, a backtrack could since have undone it without
+            // changing anything read here, so it is drawn again below.)
             return;
         }
 
@@ -928,28 +1148,69 @@ namespace
             scratch.prev_can_be_notb[i] = can_be_notb[i];
         }
 
+        // With no alive terminal there is nothing to support anything, so fail.
+        bool feasible = ! dag.nodes_at[0].empty() && bwd[0][0];
+
         // Prune items[i] != b when the "include" branch has no support: no
         // alive node (fwd ∩ bwd) at layer i whose include-successor is also
-        // alive at layer i+1.
-        for (size_t i = 0; i < n; ++i) {
-            if (! can_be_b[i])
-                continue;
-            const auto & incl = dag.include_succ[i];
-            const auto & next_fwd = fwd[i + 1];
-            const auto & next_bwd = bwd[i + 1];
-            bool supported = false;
-            for (size_t p = 0; p < fwd[i].size(); ++p) {
-                if (! (fwd[i][p] && bwd[i][p]))
+        // alive at layer i+1. Then cut loads[b] down to the alive terminals
+        // (every terminal in bwd[n] is in fwd[n] too): its bounds, and any gap
+        // between two of them that the load's domain still reaches into.
+        vector<Literal> inferences;
+        vector<size_t> pruned;
+        bool load_cut = false;
+        if (feasible) {
+            for (size_t i = 0; i < n; ++i) {
+                if (! can_be_b[i])
                     continue;
-                auto q = incl[p];
-                if (q >= 0 && next_fwd[q] && next_bwd[q]) {
-                    supported = true;
-                    break;
+                const auto & incl = dag.include_succ[i];
+                const auto & next_fwd = fwd[i + 1];
+                const auto & next_bwd = bwd[i + 1];
+                bool supported = false;
+                for (size_t p = 0; p < fwd[i].size(); ++p) {
+                    if (! (fwd[i][p] && bwd[i][p]))
+                        continue;
+                    auto q = incl[p];
+                    if (q >= 0 && next_fwd[q] && next_bwd[q]) {
+                        supported = true;
+                        break;
+                    }
+                }
+                if (! supported) {
+                    inferences.push_back(items[i] != bin_idx);
+                    pruned.push_back(i);
                 }
             }
-            if (! supported)
-                inference.infer_not_equal(logger, items[i], bin_idx, JustifyUsingRUP{hints::BinPacking{owner}}, reason);
+
+            auto items_pruned = inferences.size();
+            if (have_loads) {
+                auto [load_lo, load_hi] = state.bounds(loads[b]);
+                optional<long long> previous;
+                for (size_t p = 0; p < terminals.size(); ++p) {
+                    if (! bwd[n][p])
+                        continue;
+                    auto w = terminals[p];
+                    if (! previous) {
+                        if (load_lo < Integer{w})
+                            inferences.push_back(loads[b] >= Integer{w});
+                    }
+                    else if (w > *previous + 1 &&
+                        state.domain_intersects_with(loads[b], IntervalSet<Integer>{Integer{*previous + 1}, Integer{w - 1}}))
+                        inferences.push_back(not_in_range(loads[b], Integer{*previous + 1}, Integer{w - 1}));
+                    previous = w;
+                }
+                if (load_hi > Integer{*previous})
+                    inferences.push_back(loads[b] < Integer{*previous + 1});
+            }
+            load_cut = inferences.size() > items_pruned;
         }
+
+        scratch.drew_inferences = ! feasible || ! inferences.empty();
+        if (! scratch.drew_inferences)
+            return;
+
+        infer_stage3_for_bin(
+            state, inference, logger, items, have_loads, loads, dag, scratch, flags, opb_lines, b, owner, feasible, inferences, pruned, load_cut);
     }
 
     auto run_stage2(const State & state, auto & inference, ProofLogger * logger, const vector<IntegerVariableID> & items,
@@ -1507,8 +1768,12 @@ auto BinPacking::prepare(Propagators &, State & initial_state, ProofModel * cons
             sc.can_be_notb.assign(_items.size(), char{0});
             sc.prev_can_be_b.assign(_items.size(), char{0});
             sc.prev_can_be_notb.assign(_items.size(), char{0});
-            sc.old_fwd_n.assign(dag.nodes_at.back().size(), uint8_t{0});
+            // Every terminal is accepted in the constant-cap form; in the
+            // variable-load form the first sweep works it out.
+            sc.accept.assign(dag.nodes_at.back().size(), uint8_t{1});
+            sc.prev_load.clear();
             sc.warm = false;
+            sc.drew_inferences = false;
 
             _bridge->dags.push_back(move(dag));
         }
@@ -1563,11 +1828,11 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), _items.begin(), _items.end());
     if (_have_loads) {
-        // Stages 2 and 4, and the default per-call Stage 3 sweep, read only a
-        // load's bounds. The upfront Stage 3 sweep also drops DAG terminals
-        // that fall into a hole in a load's domain, so there a hole can leave
-        // an item's bin unsupported (issue #966).
-        auto & load_triggers = (_upfront_proof && ! _bounds_only) ? triggers.on_change : triggers.on_bounds;
+        // Stages 2 and 4 read only a load's bounds. Stage 3, under either
+        // proof strategy, also drops DAG terminals that fall into a hole in a
+        // load's domain, so there a hole can leave an item's bin unsupported
+        // (issues #966 and #995).
+        auto & load_triggers = _bounds_only ? triggers.on_bounds : triggers.on_change;
         load_triggers.insert(load_triggers.end(), _loads.begin(), _loads.end());
     }
 
@@ -1596,13 +1861,14 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
         });
     }
 
-    // The Stage 3 reason ranges over a fixed variable scope, so build it once
-    // here rather than reconstructing it — and re-copying the scope vector into
-    // a fresh shared_ptr — on every wake. The default (per-call) strategy
-    // reasons over the item variables alone; the upfront strategy additionally
-    // needs the load variables in the variable-load form, otherwise the
-    // cap-exceeded / load-bound / interior-hole ~S lines aren't sound under
-    // their reasons (for constant-cap the cap is static, so items suffice).
+    // The upfront Stage 3 reason, which Stage 4 shares, ranges over a fixed
+    // variable scope, so build it once here rather than reconstructing it ---
+    // and re-copying the scope vector into a fresh shared_ptr --- on every
+    // wake. It reasons over the item variables, plus the load variables in the
+    // upfront strategy's variable-load form, where otherwise the cap-exceeded /
+    // load-bound / interior-hole ~S lines aren't sound under their reasons (for
+    // constant-cap the cap is static, so items suffice). The per-call Stage 3
+    // sweep builds a narrower reason of its own, per bin, when it infers.
     vector<IntegerVariableID> stage3_reason_vars = _items;
     if (_upfront_proof && _have_loads)
         stage3_reason_vars.insert(stage3_reason_vars.end(), _loads.begin(), _loads.end());
@@ -1611,7 +1877,7 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
     // Stage 2 (per-bin bounds) always runs. Stage 3 (per-bin DAG sweep) only
     // runs when ! bounds_only. Both share state through `state`; Stage 3 sees
     // the bounds Stage 2 derived. The Stage 3 proof strategy is chosen by
-    // upfront_proof: run_stage3_for_bin (default, bare per-call RUP prunes)
+    // upfront_proof: run_stage3_for_bin (default, derives its chains per call)
     // or propagate_bin (opt-in, references the upfront chain scaffolding).
     propagators.install(
         constraint_id(),
@@ -1637,7 +1903,8 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
                 }
                 else {
                     for (size_t b = 0; b < num_bins; ++b)
-                        run_stage3_for_bin(state, inference, logger, items, bridge->dags[b], bridge->stage3_scratch[b], b, reason, owner);
+                        run_stage3_for_bin(state, inference, logger, items, have_loads, loads, bridge->dags[b], bridge->stage3_scratch[b],
+                            bridge->flags[b], bridge->opb_lines[b], b, owner);
                 }
             }
 
