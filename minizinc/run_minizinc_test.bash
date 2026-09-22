@@ -107,14 +107,14 @@ if ! command -v minizinc ; then
     exit 66
 fi
 
-# MiniZinc resolves the solver executable named in the .msc; a bare name relying on
-# PATH is not enough on Windows (it is not found / spawned as .exe), so generate a
-# config pointing at the absolute path of the built solver ($1, which already
-# carries the .exe suffix on Windows) with an absolute mznlib. Same result on Unix.
-solver_msc="$testname.glasgow.msc"
-sed -e "s|\"executable\": \"fzn-glasgow\"|\"executable\": \"$solverexe\"|" \
-    -e "s|\"mznlib\": \"mznlib\"|\"mznlib\": \"$minizincdir/mznlib\"|" \
-    "$minizincdir/glasgow-for-tests.msc" > "$solver_msc"
+# The build generates this next to the solver, with absolute paths to that binary
+# and to the source tree's mznlib (see minizinc/CMakeLists.txt), so the test runs
+# exactly what a user of this build tree would.
+solver_msc="$builddir/glasgow.msc"
+if ! grep -qF "\"executable\": \"$solverexe\"" "$solver_msc" ; then
+    echo "$solver_msc does not name $solverexe as its executable" 1>&2
+    exit 1
+fi
 
 minizinc --solver "$solver_msc" --fzn "$testname.fzn" -a \
     ${solverflags[@]+"${solverflags[@]}"} "$minizincdir/tests/$testname.mzn" | tee "$testname.glasgow.out" || exit 1

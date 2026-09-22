@@ -28,7 +28,6 @@ Doxyfile
 # because minizinc/tests/json/ and xcsp/tests/expected/ hold tracked .fzn and
 # .sols files that these patterns must not swallow.
 /*.fzn
-/*.glasgow.msc
 /*.glasgow.out
 /*.glasgow.sols
 /*.default.out

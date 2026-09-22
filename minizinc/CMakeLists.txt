@@ -1,6 +1,52 @@
 add_executable(fzn-glasgow fzn_glasgow.cc)
 target_link_libraries(fzn-glasgow PRIVATE glasgow_constraint_solver cxxopts gcs_fmt nlohmann_json::nlohmann_json)
 
+# The solver configuration is generated, twice, from glasgow.msc.in (issue #977).
+# MiniZinc resolves a relative "executable" against the .msc's own directory, but
+# when nothing is there it falls back silently to the working directory and then
+# PATH, so a hand-written relative path runs whichever fzn-glasgow the cwd happens
+# to reach. Hence:
+#
+# - The build tree gets <dir of fzn-glasgow>/glasgow.msc, with absolute paths: the
+#   binary this build made, and the source tree's mznlib, so that editing a .mzn
+#   there takes effect without rebuilding. It is per configuration, since
+#   multi-config generators put each configuration's binary somewhere different.
+#   ctest uses this file too, so it is the one that gets exercised.
+# - The install gets <datadir>/minizinc/solvers/glasgow.msc, with paths relative to
+#   itself, the same layout as the solvers in MiniZinc's own bundle, which keeps
+#   the install relocatable (`cmake --install --prefix` picks the prefix after
+#   configure time). A relative path is only right if it does not depend on the
+#   prefix, so a BINDIR or DATADIR configured as absolute gets absolute paths.
+set(GCS_MSC_EXECUTABLE "$<TARGET_FILE:fzn-glasgow>")
+set(GCS_MSC_MZNLIB "${CMAKE_CURRENT_SOURCE_DIR}/mznlib")
+configure_file(glasgow.msc.in ${CMAKE_CURRENT_BINARY_DIR}/glasgow.msc.build-tree @ONLY)
+file(GENERATE OUTPUT $<TARGET_FILE_DIR:fzn-glasgow>/glasgow.msc
+     INPUT ${CMAKE_CURRENT_BINARY_DIR}/glasgow.msc.build-tree)
+
+set(_gcs_msc_install_dir ${CMAKE_INSTALL_DATADIR}/minizinc/solvers)
+set(_gcs_mznlib_install_dir ${CMAKE_INSTALL_DATADIR}/minizinc/glasgow)
+set(_gcs_fzn_install_file ${CMAKE_INSTALL_BINDIR}/fzn-glasgow${CMAKE_EXECUTABLE_SUFFIX})
+if(IS_ABSOLUTE ${CMAKE_INSTALL_BINDIR} OR IS_ABSOLUTE ${CMAKE_INSTALL_DATADIR})
+    set(GCS_MSC_EXECUTABLE ${CMAKE_INSTALL_FULL_BINDIR}/fzn-glasgow${CMAKE_EXECUTABLE_SUFFIX})
+    set(GCS_MSC_MZNLIB ${CMAKE_INSTALL_FULL_DATADIR}/minizinc/glasgow)
+else()
+    file(RELATIVE_PATH GCS_MSC_EXECUTABLE ${CMAKE_INSTALL_PREFIX}/${_gcs_msc_install_dir} ${CMAKE_INSTALL_PREFIX}/${_gcs_fzn_install_file})
+    file(RELATIVE_PATH GCS_MSC_MZNLIB ${CMAKE_INSTALL_PREFIX}/${_gcs_msc_install_dir} ${CMAKE_INSTALL_PREFIX}/${_gcs_mznlib_install_dir})
+endif()
+configure_file(glasgow.msc.in ${CMAKE_CURRENT_BINARY_DIR}/install/glasgow.msc @ONLY)
+
+install(TARGETS fzn-glasgow RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT minizinc)
+install(DIRECTORY mznlib/ DESTINATION ${_gcs_mznlib_install_dir} COMPONENT minizinc)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/install/glasgow.msc DESTINATION ${_gcs_msc_install_dir} COMPONENT minizinc)
+
+# Installs the minizinc component into a scratch prefix and solves a model through
+# the installed glasgow.msc, from a working directory where the relative paths
+# resolve to nothing, so that only resolution against the .msc can succeed.
+add_test(NAME minizinc-installed-msc COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_installed_msc_test.bash
+    ${CMAKE_COMMAND} ${CMAKE_BINARY_DIR} $<CONFIG> ${CMAKE_CURRENT_BINARY_DIR}/installed-msc-prefix
+    ${_gcs_msc_install_dir}/glasgow.msc ${CMAKE_SOURCE_DIR}/minizinc/tests/abs.mzn)
+set_tests_properties(minizinc-installed-msc PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-abs COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ abs true true)
 set_tests_properties(minizinc-abs PROPERTIES SKIP_RETURN_CODE 66)
 
