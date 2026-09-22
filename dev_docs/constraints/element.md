@@ -405,8 +405,8 @@ array throws at `post`.
 |---|---|---|---|---|---|---|
 | index support, one per dimension | `on_change` result, the other indices, and the array when it has non-constants | derived: **result**, the other indices, and the entries when non-constant | 1 | always | claims, unless the scope aliases | no |
 | result range | `on_bounds` result and the array; `on_change` the indices | derived: **the indices only** | 2 | `BC`, or `Auto`'s fallback | **never claims** — see below | no |
-| result union | `on_change` result, indices and the array | derived: **the indices and the entries**; result is not in its triggers at all | 3, 4 | `GAC`, or `Auto`'s pruning | claims, unless the scope aliases | no |
-| selected-entry equality | `on_change` indices and result | derived: **result and the indices** | 5 | `_array_has_nonconstants` | claims, unless the scope aliases | via `enforce_equality` |
+| result union | `on_change` the indices, and the array when it has non-constants | derived: **the indices and the entries**; result is not in its triggers at all | 3, 4 | `GAC`, or `Auto`'s pruning | claims, unless the scope aliases | no |
+| selected-entry equality | `on_change` indices and result | derived: **result and the indices** | 5 | `_array_has_nonconstants` | claims, unless the scope aliases | no |
 | contradiction initialiser | — (runs once at root) | derived: **nothing** | 6 | a zero-length dimension | n/a | n/a |
 
 **Under `Auto` the two result propagators are one propagator id**, installed by
@@ -464,10 +464,13 @@ entries `{2,5,9}` first infers `[2,9]`, which snaps to `[3,6]`, and only a
 re-run gets `≥ 5` from the sole surviving entry. The union propagator has no
 such hazard because value removals are exact.
 
-**Self-disabling.** `None`, except through `enforce_equality`. Every propagator
-here returns `Enable` or `EnableButIdempotent`; none returns
-`DisableUntilBacktrack`, because none of them is finished after acting — an
-index removal can enable a further one on the next wake.
+**Self-disabling.** `None`. Every propagator here returns `Enable` or
+`EnableButIdempotent`; none returns `DisableUntilBacktrack`, because none of
+them is finished after acting — an index removal can enable a further one on
+the next wake. That includes the selected-entry equality, even though the
+helper it calls does disable `equals`'s own propagator once an operand is
+fixed: `Element` discards `enforce_equality`'s return value and returns its own
+verdict.
 
 ### Mutable state and incrementality
 
@@ -561,15 +564,18 @@ with the constraint that observes it. A search driven some other way than
 **What is tested, and why the obvious test would not work.** Both arms are
 sound, so a wrong switch-off can only ever make the solver weaker — no solution
 is lost and no proof fails. A comparison of *trees* is the only thing that can
-catch it, and `element_auto_test` is that: over two thousand random
-constant-array element models, under a brancher that reads only bounds, `Auto`
-explores exactly the tree `GAC` does. It also checks that its fixture is worth
-running — that about half the models switch something off, and that some of them
-are models where `BC` really does explore a different tree (a hole-aware
-all-different over the results, mostly) — and a mutation that makes every
-pruning unneeded fails it. Where `Auto` chose the same arm for every element it
-additionally has to match that arm forced, propagation counts and all, which is
-what the one-id shape promises.
+catch it, and `element_auto_test` is the nearest thing to one: over two
+thousand random constant-array element models, under a brancher that reads only
+bounds, `Auto` has to finish with the same **recursion count, solution count
+and best objective** as `GAC`. Equal aggregates are strong regression evidence
+but not a node-for-node comparison, and the test's own name ("explores exactly
+the tree GAC does") claims more than it checks. It also checks that its fixture
+is worth running — that at least a quarter of the models switch something off,
+and that at least fifteen are models where `BC`'s aggregates differ from `GAC`'s
+(a hole-aware all-different over the results, mostly) — and a mutation that
+makes every pruning unneeded fails it. Where `Auto` chose the same arm for every
+element it additionally has to match that arm forced on propagation and
+effectful-propagation counts, which is what the one-id shape promises.
 
 **What it costs when it changes nothing.** Over identical search, timed at
 eight stack alignments, `Auto` against the arm it chose was 0.9% slower on
@@ -710,8 +716,9 @@ Four facts hold across them and are not repeated in each entry.
 **Every rule is an explicit derivation, not a bare RUP.** The family contains no
 plain `JustifyUsingRUP` except the root contradiction: each of rules 1–4 emits a
 nested walk of proof lines at `ProofLevel::Temporary` and then RUPs its
-conclusion (`ThenRUP::Yes`). So the **Proof technique** is `RUP+hints`
-throughout, and the proof size of a single inference is *not* one line — it is a
+conclusion (`ThenRUP::Yes`). Every line of those walks is itself a RUP, so the
+**Proof technique** is `RUP sequence` throughout, and the proof size of a single
+inference is *not* one line — it is a
 product over the index domains, which is what makes this family's proofs the
 largest in the curated set.
 
@@ -731,13 +738,32 @@ per-rule literals, and assembled only when `inference.want_reasons()` — every
 site guards, which is worth stating given what the audit found in
 [`comparison`](comparison.md).
 
-**Two wire forms, and the second belongs to `equals`.** `hints::Element`, wire
-form `(constraint_id <id>)` with no subhint, carries rules 1–4 and 6. Rule 5
-arrives as `equals:((constraint_id <element's id>))`, because `enforce_equality`
-is shared code that hints with its `owner` argument. That is sound and the
-attribution is right, but it means **the hint name does not identify the
-constraint family**, and on this family's own benchmark the `equals`-hinted
-assertions outnumber the `element`-hinted ones 13 to 1.
+**Three wire forms, and the last two belong to `equals`.** `hints::Element`,
+wire form `(constraint_id <id>)` with no subhint, carries rules 1–4 and 6. Rule
+5 arrives in `equals`'s own forms under `Element`'s constraint id, because
+`enforce_equality` is shared code that hints with its `owner` argument:
+
+| Wire form | Hint type | When | Rules |
+|---|---|---|---|
+| `element:((constraint_id N))` | `hints::Element` | every rule of this family's own | 1–4, 6 |
+| `equals:((constraint_id N))` | `hints::Equals` | one of the selected entry and `result` is fixed, or neither has a hole | 5 |
+| `equals:((constraint_id N) (subhint not_in_range))` | `hints::EqualsNotInRange` | neither is fixed and at least one has a hole, so runs are removed through the interval bridge | 5 |
+
+The third form does not arise on `langford --size=8`, whose 6,545
+`equals`-hinted assertions all wear the bare form, so that benchmark cannot
+show it is absent. A probe with the index fixed at 0, one variable entry over
+`[0, 7]` and `result ∈ {0, 3, 4, 7}` emits it for both gaps, at `d3f3f1aa`:
+
+```
+a 1 ~i[entry][in1_2] 1 ~i[index][eq0] 1 i[result][in1_2] >= 1::equals:((constraint_id _2) (subhint not_in_range));
+a 1 ~i[entry][in5_6] 1 ~i[index][eq0] 1 i[result][in5_6] >= 1::equals:((constraint_id _2) (subhint not_in_range));
+```
+
+where `_2` is `* constraint element _2` in the `.opb`. The same instance fully
+justified gives `VERIFIED COMPLETE ENUMERATION OF 4 SOLUTIONS`. That is sound
+and the attribution is right, but it means **the hint name does not identify
+the constraint family**, and on this family's own benchmark the
+`equals`-hinted assertions outnumber the `element`-hinted ones 13 to 1.
 
 ### Rule: index-support
 
@@ -761,7 +787,7 @@ assertions outnumber the `element`-hinted ones 13 to 1.
   no per-value work on any domain.
 - **Why it is true** — if no cell reachable with `indexₖ = v` can take a value
   `result` can also take, then `indexₖ = v` has no support.
-- **Proof technique** — `RUP+hints`. The published form is **JP 3.9 (empty
+- **Proof technique** — `RUP sequence`. The published form is **JP 3.9 (empty
   intersection for Element)**: for each way the other indices are assigned, one
   line per value `w` of the selected entry — `R ⇒ (indexₖ ≠ v) ∨ (entry ≠ w)`,
   RUP by **Theorem 2.8** because the guarded equality forces `result = w`
@@ -844,7 +870,7 @@ assertions outnumber the `element`-hinted ones 13 to 1.
   range already covers `result`'s bounds. O(cells) bounds reads.
 - **Why it is true** — `result` must equal some live entry, so it lies within
   the range those entries span.
-- **Proof technique** — `RUP+hints`. **No published procedure for this
+- **Proof technique** — `RUP sequence`. **No published procedure for this
   conclusion**: the derivation is JP 3.10's tuple walk with a bound as the
   conclusion instead of a value, and nothing in that argument depends on which
   literal is concluded, so this is a gap in the published list rather than a new
@@ -882,7 +908,7 @@ line of code is a correctness condition and the argument for a design.
   run by run. O(cells · runs), with no per-value step.
 - **Why it is true** — a value of `result` survives iff some live entry can take
   it.
-- **Proof technique** — `RUP+hints`, and **this rule has no published form**:
+- **Proof technique** — `RUP sequence`, and **this rule has no published form**:
   JP 3.10 states the same fact one value at a time. Stating it over an interval
   costs **two extra lemmas per index tuple**, which carry the range literal
   across the model's half-reified equality — under this tuple's guard, `result`
@@ -922,7 +948,7 @@ line of code is a correctness condition and the argument for a design.
   takes every run of two or more values, so this is reached once per interval and
   never once per value.
 - **Why it is true** — as rule 3.
-- **Proof technique** — `RUP+hints`, by **JP 3.10 (missing value for Element)**,
+- **Proof technique** — `RUP sequence`, by **JP 3.10 (missing value for Element)**,
   which is this rule exactly: one line per index tuple ruling out the value
   under that tuple's guard, then the collapse by **Theorem 3.2**.
 - **Reason** — `generic_reason` over the indices plus `entry ≠ v` per entry
@@ -952,13 +978,21 @@ line of code is a correctness condition and the argument for a design.
   literals as the base reason. See [`equals.md`](equals.md) rules 1–4 for the
   four inferences and their costs.
 - **Why it is true** — with the index fixed, the constraint *is* an equality.
-- **Proof technique** — `RUP` or `RUP+hints` per the `equals` rule that fires,
-  by **JP 3.12** and **JP 3.2**; **JP 3.11 (single value for Element)** is the
-  thesis's statement of this rule in the entry-pruning direction, and its
-  correctness proof is the one to read, because it is where the index literals
-  in the reason do their work. There is no separate derivation here: the index
-  literals sit in the base reason, which activates the cell's half-reified rows,
-  and `equals`'s procedures then apply to them.
+- **Proof technique** — `RUP` or `RUP sequence` per the `equals` rule that
+  fires, by **JP 3.12** and **JP 3.2**; **JP 3.11 (single value for Element)**
+  is the thesis's statement of this rule in the entry-pruning direction, and
+  its correctness proof is the one to read, because it is where the index
+  literals in the reason do their work. There is no separate derivation here:
+  the index literals sit in the base reason, which activates the cell's
+  half-reified rows, and `equals`'s procedures then apply to them. That holds
+  for the **interval bridge** too, and the way it holds is worth stating,
+  because `justify_not_in_range_across_equality` has an `under` argument for a
+  guarded link and `enforce_equality` does not pass it. The guard reaches the
+  bridge through the reason instead. Each of the two bound lemmas is written
+  under the reason, so its negation sets the index literals. They switch on the
+  selected cell's rows `index = i ⇒ result − entry = 0`, which then supply the
+  opposing bounds across a difference, just as `equals`'s unconditional rows
+  do — the configuration **Theorem 2.9** needs.
 - **Reason** — the index equality literals, plus whatever the `equals` rule
   adds.
 - **Assertion** — whatever the `equals` rule asserts. Measured on
@@ -966,20 +1000,27 @@ line of code is a correctness condition and the argument for a design.
   ```
   a 1 i[_20][eq8] 1 ~i[_15][eq9] 1 ~i[_40][eq8] >= 1::equals:((constraint_id _23));
   ```
-  — where `_23` is `* constraint element _23` in the OPB.
-- **Hint** — **`hints::Equals{owner}`, with `owner` this `Element`.** Not
-  `hints::Element`. This is the family's most consequential proof-model fact and
+  — where `_23` is `* constraint element _23` in the OPB. The interval bridge's
+  form, from the probe under [Inference catalogue](#inference-catalogue):
+  ```
+  a 1 ~i[entry][in1_2] 1 ~i[index][eq0] 1 i[result][in1_2] >= 1::equals:((constraint_id _2) (subhint not_in_range));
+  ```
+- **Hint** — **`hints::Equals{owner}`, or `hints::EqualsNotInRange{owner}` for
+  the interval bridge, with `owner` this `Element`.** Not `hints::Element`.
+  This is the family's most consequential proof-model fact and
   the one most likely to mislead a tool; see [Proof
   performance](#proof-performance).
 - **Offline reconstructibility** — `hinted`, and with a caveat that is this
   rule's alone: the hint says `equals`, and a justifier that resolves the
   constraint id expecting `Equals`'s two equality rows will find an `Element`'s
   per-cell half-reified rows instead. What it needs is the cell those rows
-  belong to, which the reason's index literals name.
+  belong to, which the reason's index literals name. For the `not_in_range`
+  form it also has to know that the bridge's guard comes from those literals,
+  not from a flag.
 - **Proof size** — as `equals`: one line for the RUP rules, three per interval
   for the bridge.
-- **Gaps** — `None.`, and it inherits `equals`'s view degradation along with
-  everything else.
+- **Gaps** — `None.` It inherits `equals`'s gaps, and since #904 gave views
+  their own range literals `equals` has none left to pass on.
 - **Tightness** — **shown, by inheritance and only partly.** `equals`'s
   `fixed_operand_reason` and `bridge_lemmas` mutation lanes corrupt
   `enforce_equality` itself, so they cover this rule's derivation as it is
@@ -1033,15 +1074,17 @@ enumeration test at all.
   checks directly.
 - **`element_auto_test` checks a property no enumeration test can reach.** Both
   arms of the pair are sound, so a wrong switch-off loses no solution and fails
-  no proof; only a comparison of **trees** can catch it. Over two thousand
+  no proof; only a comparison of **search** can catch it. Over two thousand
   random constant-array element models, under a brancher that reads only bounds,
-  `Auto` explores exactly the tree `GAC` does. Three things about how it is
-  built are worth copying for the next client of the mechanism: it checks that
-  **its own fixture is discriminating** — that about half the models switch
-  something off, and that some of them are models where `BC` really does explore
-  a different tree — it checks that a **mutation making every pruning unneeded
-  fails it**, and where `Auto` chose one arm for every element it additionally
-  has to match that arm forced, propagation counts and all. It also compares the
+  `Auto` has to match `GAC`'s recursion count, solution count and best
+  objective — equal aggregates, not a node-for-node trace, whatever the test's
+  name says. Three things about how it is built are worth copying for the next
+  client of the mechanism: it checks that **its own fixture is
+  discriminating** — that at least 500 of the models switch something off, and
+  that at least fifteen are models where `BC`'s aggregates differ from `GAC`'s —
+  it checks that a **mutation making every pruning unneeded fails it**, and
+  where `Auto` chose one arm for every element it additionally has to match that
+  arm forced on propagation and effectful-propagation counts. It also compares the
   `.opb` files of `GAC`, `BC` and `Auto` byte for byte, which is how the
   "propagation strength only" claim in [Options](#options) is enforced rather
   than asserted.
@@ -1063,7 +1106,19 @@ enumeration test at all.
   efficiency](#interval-efficiency) — the most careful set in that lane, and
   three of the five exist because an earlier probe could not reach the site they
   cover.
-- **No runtime caps** on the element lanes.
+- **Runtime caps: the defaults fire on the variable-array lanes.** No lane
+  sets or clears a cap of its own, so under a default `ctest` every lane runs
+  with the suite-wide caps (300 solutions and 1,500 search nodes per solve; see
+  [`building.md`](../building.md)), and a truncated solve checks soundness and
+  a partial proof only. Over three unseeded runs at `d3f3f1aa` (2026-09-22)
+  they truncated solves on all five variable-array lanes — `var` and
+  `var_view_mixed` 28 each, `varauto` 22, `var2d` 14, `var2d_view_mixed` 12 —
+  and never on a constant-array one. `element_auto_test` calls `solve_with`
+  directly and never reads the caps. The two Ubuntu CI lanes build with the caps
+  off, so every pull request gets the complete check; the 16 `element_*` lanes,
+  `element_auto_test` included, also pass uncapped locally at `d3f3f1aa`
+  (`cmake --preset release -DGCS_TEST_CAP_DEFAULTS=OFF`, then
+  `ctest -R '^element_'`).
 
 What the tests do **not** cover:
 
@@ -1269,13 +1324,49 @@ derivations, both measured below.
 
 **Note what the assertion levels do here, because it is the opposite of the
 other two families.** Asserting inferences makes the proof *bigger* — 3.92 MB
-to 4.77 MB — where it cut `equals`'s by 44% and `comparison`'s by 10.5×. The
-reason is that this family's derivations are nested walks whose intermediate
-lines are short, so replacing a walk with a single `a` line carrying a full
-`generic_reason` over the entire scope is not a saving. A family whose
-justifications are already one line per inference gains from the switch; one
-whose justifications are a product over index domains, with a wide reason, does
-not.
+to 4.77 MB — where it cut `equals`'s by 44% and `comparison`'s by 10.5×. An
+earlier version of this section blamed the nested walks: a walk of short lines
+replaced by one `a` line carrying the full `generic_reason`. That was wrong.
+`infer_explicitly` states the same conclusion under the same reason at both
+levels, since a fully justified inference ends with a RUP of exactly the line
+an assertion carries. So the reason's width is paid once either way, and
+assertion mode can only remove the walk around it. What it adds is text the
+walk never had, and on this benchmark that outweighs what it removes.
+
+*Measured separately, at `d3f3f1aa` on 2026-09-22 with VeriPB 3.0.2 — a
+different snapshot from the table above, so do not put the two together.*
+`langford --size=8` fully justified is 3,972,370 bytes in 76,145 lines and
+gives `VERIFIED COMPLETE ENUMERATION OF 300 SOLUTIONS`; at `Inferences` it is
+4,766,288 bytes. By line kind:
+
+| Line kind | `Off`, bytes | `Inferences`, bytes |
+|---|---:|---:|
+| `rup` | 3,070,333 (43,824 lines) | 11 (1 line) |
+| `a`, without its annotation | — | 2,940,495 (39,593 lines) |
+| `a`, the annotation text alone | — | 1,241,992 |
+| `pol` | 289,936 | — |
+| `del` | 229,924 | 49,795 |
+| `red` | 145,950 | — |
+| `core` | 58,488 | — |
+| `solx` | 144,900 | 506,100 |
+| everything else | 32,839 | 27,895 |
+
+The assertion bodies are 4% smaller than the `rup` lines they stand in for,
+which is the point above. What assertion mode removes — the `pol`, `red` and
+`core` lines, most of the deletions and that 4% — comes to about 0.80 MB. What
+it adds is 1.24 MB of annotation text, one per assertion, and 0.36 MB of
+solution lines, which at this level are spelled in bits rather than by one
+equality literal per variable. Neither addition is `Element`'s in particular:
+the annotation is paid per assertion whatever the family, and 82% of these
+assertions are not `Element`'s — they belong to `AllDifferent`, `Plus`, or the
+framework's own backtracks and solution blocks (see below).
+
+So this is not evidence that nested derivations lose from assertion mode, and
+the figure should not be generalised that way. File size before trimming is an
+intermediate measure in any case. Whether assertion mode pays has to be judged
+over the whole pipeline — trimming, reconstruction and checking — and that
+waits for the external tool. Removing the annotations above is accounting
+only, not a proposal to drop them.
 
 **Where the assertions come from, and this is the finding.** Of the 39,593
 assertions at `Inferences` level, `element` is only 485 (1.2%) — behind
@@ -1440,6 +1531,20 @@ half of #901 rather than a proof-size problem.
    target the arc has: every solver has an `element`, every solver's is GAC on
    the index, and both frontends produce one directly, so the model-choice
    question that dominated #868 for `equals` barely arises.
+4. **A selected-entry fixture with a hole, read for its wire forms.** The
+   `equals/not_in_range` form under an `Element` id is established by a
+   one-off probe (see [Inference catalogue](#inference-catalogue)), not by a
+   test: no lane reads this family's hint inventory the way
+   `run_hint_inventory_equals_test` reads `equals`', and `langford` never
+   reaches the bridge. A small instance — index fixed, one variable entry,
+   `result` with a hole — would pin the three-form inventory and give the
+   delegated bridge a lane of its own. Not filed.
+5. **`element_auto_test`'s name claims more than it checks.** "Explores exactly
+   the tree GAC does" is backed by equal recursion counts, solution counts and
+   objectives, which is good regression evidence and not a node-for-node
+   comparison. Renaming it to what it checks is the small fix. A node trace or
+   digest would be needed only if exact tree equality ever becomes a claim that
+   needs certifying, and nothing here needs that yet. Not filed.
 
 **Not to do, having been considered.**
 

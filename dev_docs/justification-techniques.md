@@ -122,11 +122,15 @@ being copied into plain text and a dropped one inverts the procedure.
 |---|---|---|---|
 | **JP 3.1** (Not-Equals) | `rup x=v ∧ y=v ⇒ 0 ≥ 1` | Thm 2.8 | `equals`'s not-equal-to-fixed-operand rule |
 | **JP 3.2** (Comparison) | `rup y≥v ∧ x<u ⇒ 0 ≥ 1` for `X − Y ≥ B`, precondition `B ∈ {0,1}` | Thm 2.9 | every bound transfer in `comparison`, and `equals`'s bounds-intersection and interval-bridge rules |
-| **JP 3.9** (Empty intersection for Element) | per `w` in the entry's domain, `rup R ⇒ y=v + xv=w ≥ 1`; then `rup R ⇒ y=v ≥ 1` | Thm 2.8 per line, Thm 3.2 for the collapse | `element`'s index-support rule |
-| **JP 3.10** (Missing value for Element) | per index value `i`, `rup R ⇒ z=v + y=i ≥ 1`; then collapse | as JP 3.9 | `element`'s per-value result-union rule |
-| **JP 3.11** (Single value for Element) | one step, `rup R ⇒ xi=v ≥ 1`, with the index a singleton | Thm 2.8 | `element`'s selected-entry rule, in the entry-pruning direction |
+| **JP 3.9** (Empty intersection for Element) | per `w` in the entry's domain, `rup R ⇒ y≠v + xv≠w ≥ 1`; then `rup R ⇒ y≠v ≥ 1` | Thm 2.8 per line, Thm 3.2 for the collapse | `element`'s index-support rule |
+| **JP 3.10** (Missing value for Element) | per index value `i`, `rup R ⇒ z≠v + y≠i ≥ 1`; then collapse to `rup R ⇒ z≠v ≥ 1`[^jp310] | as JP 3.9 | `element`'s result-union-value rule, for a run one value wide |
+| **JP 3.11** (Single value for Element) | one step, `rup R ⇒ xi≠v ≥ 1`, with the index a singleton | Thm 2.8 | `element`'s selected-entry rule, in the entry-pruning direction |
 | **JP 3.12** (Equality propagation) | `rup y=v ⇒ x=v ≥ 1`[^jp312] | Thm 2.8, twice | `equals`'s equal-to-fixed-operand rule |
 | **JP 3.13** (Equality infeasibility) | a per-value RUP for each surviving value, then a generic-reason contradiction | JP 3.12 for each line | **nothing any more** — see below |
+
+[^jp310]: The thesis's box ends with `rup R ⇒ ¬(y=i) ≥ 1`, after the loop over
+    `i` has closed. Its precondition says the inference is `Z ≠ v`, so the
+    final line should read `¬(z=v)`, as here.
 
 [^jp312]: The thesis's box prints `rup ¬(y=y) ⇒ ¬(x=v) ≥ 1` — `y=y` for
     `y=v`, and both literals negated — which is the contrapositive direction,
@@ -162,12 +166,16 @@ lines per run — which is not in the thesis and is argued from scratch in
 [`constraints/equals.md`](constraints/equals.md).
 
 **`element`'s interval result-union rule has no published form either.** JP 3.10
-states "this result value is supported by no entry" one value at a time. When
-the result and every entry it considers are bare variables, `element` states the
-same thing over an *interval* — which costs two extra bound lemmas per index
-tuple to carry a range literal across the model's half-reified equality, and is
-then independent of how wide the interval is. The per-value form is kept as the
-fallback, and is JP 3.10 exactly. See
+states "this result value is supported by no entry" one value at a time.
+`element` states the same thing over an *interval* for every unsupported run
+two or more values wide, whatever kind of variable the result and the entries
+are — which costs two extra bound lemmas per index tuple to carry a range
+literal across the model's half-reified equality, and is then independent of
+how wide the interval is. A run exactly one value wide is removed by the
+per-value form, which is JP 3.10 exactly. Until #925 the choice was made on the
+kind of the variables rather than the width of the run, and a view anywhere
+sent the whole rule down the per-value path; #904 gave views their own range
+literals, which is what made the interval form safe for them. See
 [`constraints/element.md`](constraints/element.md).
 
 `element`'s bounds-consistency arm is a third case, and a milder one: its
