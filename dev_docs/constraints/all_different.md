@@ -1,10 +1,11 @@
 # `AllDifferent`: no two variables take the same value
 
 > **Maturity** production ·
-> **Audited** 2026-09-21 at `6b220c79`; its six fixes written 2026-09-22, each
-> an open pull request off `main`, and this document updated to describe them ·
-> **Open issues** filed by this audit, every one now with a pull request: #987
-> → #997, #988 → #1004, #989 → #1002, #990 → #1001, #991 → #1000, #992 → #999.
+> **Audited** 2026-09-21 at `6b220c79`; its six fixes merged 2026-09-22, all in
+> `main` by `1d7dcf28`, and this document updated to describe them ·
+> **Open issues** `None.` of the six this audit filed, each closed by its pull
+> request: #987 → #997, #988 → #1004, #989 → #1002, #990 → #1001, #991 → #1000,
+> #992 → #999.
 > Two more wrong answers turned up while fixing them and are fixed in the same
 > pull requests. Filed since: #1006 (MiniZinc differential tests over the shapes
 > a front end gets wrong). Already open and touching this family: #522 (SCC
@@ -43,9 +44,9 @@ the MiniZinc library for the same shape found two more, `inverse` and
 all the way through `cake_pb_cp`, because the mistranslation happened before the
 `.scp` was written. See [Known limitations](#known-limitations).
 
-**What the fixes changed.** Every finding the audit filed has a pull request,
-none of them merged when this was written, and the document describes the code
-as they leave it; a figure taken at `6b220c79` says so. Merge it after them.
+**What the fixes changed.** Every finding the audit filed is fixed, all six
+merged by `1d7dcf28`, and the document describes the code as they leave it; a
+figure taken at `6b220c79` says so.
 
 | Issue | Pull request | What it changed here |
 |---|---|---|
@@ -1639,9 +1640,9 @@ preamble.
 
 ### Next steps
 
-Ranked. The audit's six filed findings all have pull requests — #997, #999,
-#1000, #1001, #1002 and #1004, to merge before this document — and so they are
-gone from this list. What is left is evidence, and the family's standing work.
+Ranked. The audit's six filed findings are all fixed — #997, #999, #1000,
+#1001, #1002 and #1004 — and so they are gone from this list. What is left is
+evidence, and the family's standing work.
 
 1. **Test the path nothing tests.** An instance with at least 43 distinct values
    over six variables, so that the per-node GAC assertion reaches the staged
