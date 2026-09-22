@@ -112,6 +112,8 @@ auto ComparatorNetwork::pin(const ProofWire & wire, Integer value) -> void
 
 auto ComparatorNetwork::add_task(const ProofWire & start, Integer duration) -> void
 {
+    if (_optional)
+        throw ProofError{"a comparator network's tasks are all optional or none are"};
     if (duration < 1_i)
         throw ProofError{"a zero-duration task does not participate in a comparator network"};
 
@@ -131,6 +133,141 @@ auto ComparatorNetwork::add_task(const ProofWire & start, Integer duration) -> v
     // And its upper bound, which is what makes a model row duration-relative.
     // The pins are units, so this closes at once.
     _duration_upper.emplace(wire.id, _logger.emit_rup_proof_line(terms(wire, -1_i) >= -duration, _level));
+}
+
+auto ComparatorNetwork::add_optional_task(const ProofLiteralOrFlag & active, const ProofWire & start, Integer duration, const string & stem)
+    -> ProofWire
+{
+    if (! _positivity.empty())
+        throw ProofError{"a comparator network's tasks are all optional or none are"};
+    if (! _guard.terms.empty())
+        throw ProofError{"optional tasks derive an unconditional row, so take no guard"};
+    if (duration < 1_i || duration > _span || _window_hi > _span || _window_lo < 0_i)
+        throw ProofError{"optional task or window does not fit the comparator network's width"};
+    _optional = true;
+
+    // The duration is `duration * active`, which needs no flags of its own:
+    // each of its bits is either the activity literal or a constant zero.
+    ProofWire d{.id = _next_wire_id++, .bits = {}};
+    ProofWire parked{.id = _next_wire_id++, .bits = {}};
+    for (auto t = 0; t < _width; ++t) {
+        d.bits.push_back(0 != ((duration.raw_value >> t) & 1) ? active : ProofLiteralOrFlag{ProofLiteral{FalseLiteral{}}});
+        parked.bits.push_back(
+            ProofLiteralOrFlag{ProofLiteral{0 != ((_window_hi.raw_value >> t) & 1) ? Literal{TrueLiteral{}} : Literal{FalseLiteral{}}}});
+    }
+
+    // The position, muxed bitwise on the activity literal exactly as compare()
+    // muxes an output on its selector: `active` takes the start, otherwise the
+    // constant `window_hi`.
+    auto position = fresh_wire(stem);
+    vector<vector<ProofLine>> clauses;
+    for (auto t = 0; t < _width; ++t) {
+        const auto &out_bit = position.bits[t], &on_t = start.bits[t], &on_f = parked.bits[t];
+        vector<ProofLine> per_bit;
+        for (auto which = 0; which < 4; ++which) {
+            WPBSum clause;
+            switch (which) {
+            case 0: add_term_to(clause, 1_i, ! active), add_term_to(clause, 1_i, ! on_t), add_term_to(clause, 1_i, out_bit); break;
+            case 1: add_term_to(clause, 1_i, active), add_term_to(clause, 1_i, ! on_f), add_term_to(clause, 1_i, out_bit); break;
+            case 2: add_term_to(clause, 1_i, ! active), add_term_to(clause, 1_i, on_t), add_term_to(clause, 1_i, ! out_bit); break;
+            default: add_term_to(clause, 1_i, active), add_term_to(clause, 1_i, on_f), add_term_to(clause, 1_i, ! out_bit); break;
+            }
+            auto witness = (which < 2) ? ProofLiteralOrFlag{TrueLiteral{}} : ProofLiteralOrFlag{FalseLiteral{}};
+            per_bit.push_back(_logger.emit_red_proof_line(move(clause) >= 1_i, {{out_bit, witness}}, _level));
+        }
+        clauses.push_back(move(per_bit));
+    }
+    auto record = [&](int which) -> ProofLine {
+        PolBuilder pol;
+        for (auto t = 0; t < _width; ++t)
+            pol.add(clauses[t][which], Integer{1LL << t});
+        return pol.emit(_logger, _level);
+    };
+    OptionalTask task{.active = active, .le_start = record(2), .ge_start = record(0), .ge_parked = record(1)};
+    auto le_parked = record(3);
+    _duration.emplace(position.id, d);
+    auto k = _window_hi - _window_lo;
+
+    // The window's bounds, by cases on activity: an active task is its start,
+    // whose bounds are model facts, and an inactive one is a zero-duration
+    // wire at `window_hi`.
+    WPBSum start_fits;
+    add_terms(start_fits, start, -1_i);
+    auto start_upper = _logger.emit_rup_proof_line(move(start_fits) >= duration - _window_hi, _level);
+    PolBuilder active_upper;
+    active_upper.add(task.le_start).add(start_upper);
+    WPBSum fits;
+    add_terms(fits, position, -1_i);
+    add_terms(fits, d, -1_i);
+    _upper.insert_or_assign(position.id, case_split(move(fits) >= -_window_hi, {active_upper.emit(_logger, _level), le_parked}));
+
+    auto start_lower = _logger.emit_rup_proof_line(terms(start, 1_i) >= _window_lo, _level);
+    PolBuilder active_lower_builder;
+    active_lower_builder.add(task.ge_start).add(start_lower);
+    auto active_lower = active_lower_builder.emit(_logger, _level);
+    _lower.insert_or_assign(position.id, case_split(terms(position, 1_i) >= _window_lo, {active_lower, task.ge_parked}));
+
+    // Parking: `position + K * duration >= window_hi`, K the window's width,
+    // by the same cases. Active, the position is at least `window_lo` and the
+    // duration is at least one, which is the lower bound just derived. Inactive
+    // is the one propagation reaches: the negation of `position + (K *
+    // duration + span) * active >= window_hi` cannot afford `active`, and with
+    // `active` false the muxes put the position at `window_hi`. (Not the
+    // parking row itself by propagation: that needs `K * duration >=
+    // window_hi`, which fails as soon as the window starts above zero.)
+    WPBSum inactive_park;
+    add_terms(inactive_park, position, 1_i);
+    add_term_to(inactive_park, k * duration + _span, active);
+    auto inactive = _logger.emit_rup_proof_line(move(inactive_park) >= _window_hi, _level);
+    WPBSum park;
+    add_terms(park, position, 1_i);
+    add_terms(park, d, k);
+    _parking.emplace(position.id, case_split(move(park) >= _window_hi, {active_lower, inactive}, (1_i + k) * _span));
+
+    _optional_tasks.emplace(position.id, move(task));
+    return position;
+}
+
+auto ComparatorNetwork::add_optional_separation(
+    const ProofWire & x, const ModelSeparation & x_first, const ProofWire & y, const ModelSeparation & y_first, ProofLine clause) -> void
+{
+    const auto & task_x = _optional_tasks.at(x.id);
+    const auto & task_y = _optional_tasks.at(y.id);
+    auto flags = reify_separation(x, y, "o");
+
+    // Both active: the model's separation, read through the two muxes. The
+    // reverse half of "first runs first" says it does not; the model row says
+    // it does; the records turn starts into positions; and the durations, being
+    // `duration * active`, cancel against the model's constant up to a
+    // `~active` term. Saturating leaves `first_runs_first + ~model_flag +
+    // ~active_first + ~active_second`.
+    auto both_active = [&](ProofLine reverse, const ModelSeparation & model, const OptionalTask & first, const OptionalTask & second) {
+        PolBuilder pol;
+        pol.add(reverse).add(model.row).add(first.le_start).add(second.ge_start).saturate();
+        return pol.emit(_logger, _level);
+    };
+    (void)both_active(flags.x_first_reverse, x_first, task_x, task_y);
+    (void)both_active(flags.y_first_reverse, y_first, task_y, task_x);
+
+    // One inactive: it is parked at the top of the window and the other fits
+    // below it, so the other runs first. `other_first + active_parked`.
+    auto one_parked = [&](ProofLine other_first_reverse, const ProofWire & other, const OptionalTask & parked) {
+        PolBuilder pol;
+        pol.add(other_first_reverse).add(_upper.at(other.id)).add(parked.ge_parked).saturate();
+        return pol.emit(_logger, _level);
+    };
+    (void)one_parked(flags.y_first_reverse, y, task_x);
+    (void)one_parked(flags.x_first_reverse, x, task_y);
+
+    // Those four clauses and the caller's resolve to the separation: under its
+    // negation, the parked clauses make both tasks active, the active ones then
+    // refute both model flags, and the caller's clause is falsified.
+    (void)clause;
+    WPBSum goal;
+    goal += 1_i * flags.x_first;
+    goal += 1_i * flags.y_first;
+    auto separated = _logger.emit_rup_proof_line(move(goal) >= 1_i, _level);
+    record_separation(x, flags.x_first_row, y, flags.y_first_row, separated);
 }
 
 auto ComparatorNetwork::assume(const WPBSum & guard) -> void
@@ -163,6 +300,8 @@ auto ComparatorNetwork::set_bounds(const ProofWire & start) -> void
 auto ComparatorNetwork::add_separation(
     const ProofWire & x, const ModelSeparation & x_first, const ProofWire & y, const ModelSeparation & y_first, ProofLine clause) -> void
 {
+    if (_optional)
+        throw ProofError{"optional tasks are separated by add_optional_separation"};
     auto adopt = [&](const ProofWire & first, const ModelSeparation & direction) -> ProofLine {
         if (direction.guard_coefficient > _big)
             throw ProofError{"comparator network guard coefficient is too small for the model's rows"};
@@ -311,6 +450,11 @@ auto ComparatorNetwork::compare(const ProofWire & a, const ProofWire & b, const 
 
 auto ComparatorNetwork::case_split(const WPBSumLE & goal, const vector<ProofLine> & guarded_halves) -> ProofLine
 {
+    return case_split(goal, guarded_halves, _div);
+}
+
+auto ComparatorNetwork::case_split(const WPBSumLE & goal, const vector<ProofLine> & guarded_halves, Integer divisor) -> ProofLine
+{
     // The goal holds under each polarity of a selector, so it holds. Each half
     // is the goal plus a guard: adding the negated goal cancels every record
     // term and leaves the guard alone, and the two guards then sum past one.
@@ -321,7 +465,7 @@ auto ComparatorNetwork::case_split(const WPBSumLE & goal, const vector<ProofLine
         vector<ProofLine> guards;
         for (const auto & half : guarded_halves) {
             PolBuilder builder;
-            builder.add(half).add(negation).divide_by(_div);
+            builder.add(half).add(negation).divide_by(divisor);
             guards.push_back(builder.emit(sub_logger, ProofLevel::Temporary));
         }
         PolBuilder builder;
@@ -351,6 +495,27 @@ auto ComparatorNetwork::derive_positivity(const ProofWire & out, const vector<pa
     _positivity.emplace(out.id,
         holds_alternative<comparator_network_mutation::RupPositivity>(_mutation) ? _logger.emit_rup_proof_line(goal, _level)
                                                                                  : case_split(goal, rows));
+}
+
+auto ComparatorNetwork::derive_parking(
+    const Comparator & c, const ProofWire & out, const ProofWire & d_out, ProofLine ge_a, ProofLine ge_b, ProofLine d_ge_a, ProofLine d_ge_b) -> void
+{
+    // `out + K * d_out >= window_hi`, carried through the mux from the inputs'
+    // --- positivity's replacement once a duration can be zero. Each half is
+    // an input's parking row with the output's records rewriting it: the
+    // position record at one and the duration record at K. The guard that
+    // leaves is `(1 + K) * span`, past the default divisor, hence the explicit
+    // one.
+    auto k = _window_hi - _window_lo;
+    PolBuilder from_a;
+    from_a.add(ge_a).add(d_ge_a, k).add(_parking.at(c.a.id));
+    PolBuilder from_b;
+    from_b.add(ge_b).add(d_ge_b, k).add(_parking.at(c.b.id));
+
+    WPBSum goal;
+    add_terms(goal, out, 1_i);
+    add_terms(goal, d_out, k);
+    _parking.emplace(out.id, case_split(move(goal) >= _window_hi, {from_a.emit(_logger, _level), from_b.emit(_logger, _level)}, (1_i + k) * _span));
 }
 
 auto ComparatorNetwork::derive_preservation(const Comparator & c) -> ProofLine
@@ -434,6 +599,83 @@ auto ComparatorNetwork::derive_gap(const Comparator & c) -> ProofLine
     if (holds_alternative<comparator_network_mutation::RupGap>(_mutation))
         return _logger.emit_rup_proof_line(move(goal) >= 0_i, _level);
     return case_split(move(goal) >= 0_i, {when_a_is_later, when_b_is_later});
+}
+
+auto ComparatorNetwork::derive_gap_allowing_zero(const Comparator & c) -> ProofLine
+{
+    // `hi - lo - d_lo >= 0` again, now that a duration may be zero. What
+    // positivity bought in derive_gap was refuting "the later-starting task
+    // went first" --- which a zero-duration task level with the other really
+    // can do. It is harmless all the same, because a zero-duration wire is
+    // parked at `window_hi`: the tie is then with a task that ends there too,
+    // and the gap still holds. So instead of refuting that case, derive the gap
+    // in it as well: four halves, one per selector polarity and per direction
+    // of the separation, each the goal plus a guard.
+    const auto & separation = separation_between(c.a, c.b);
+    auto a_first = separation.first.at(c.a.id), b_first = separation.first.at(c.b.id);
+    auto k = _window_hi - _window_lo;
+
+    // The direction the selector agrees with: the separation row read off.
+    auto agreeing = [&](ProofLine earlier_first, ProofLine hi_ge, ProofLine lo_le, ProofLine d_lo_le) -> ProofLine {
+        PolBuilder builder;
+        builder.add(earlier_first).add(hi_ge).add(lo_le).add(d_lo_le);
+        return builder.emit(_logger, _level);
+    };
+
+    // The direction it disagrees with. The separation row and the selector's
+    // own row cancel the positions and leave `-d_later >= 0`; K of that plus
+    // the later task's parking puts it at `window_hi`, and the earlier task's
+    // upper bound then gives the gap. Under the strict polarity the degree
+    // comes out at K rather than zero, which is only stronger.
+    auto disagreeing = [&](ProofLine later_first, ProofLine selector_row, const ProofWire & later, const ProofWire & earlier, ProofLine hi_ge,
+                           ProofLine lo_le, ProofLine d_lo_le) -> ProofLine {
+        PolBuilder builder;
+        builder.add(later_first).add(selector_row).multiply_by(k);
+        if (! holds_alternative<comparator_network_mutation::DropParking>(_mutation))
+            builder.add(_parking.at(later.id));
+        builder.add(_upper.at(earlier.id)).add(hi_ge).add(lo_le).add(d_lo_le);
+        return builder.emit(_logger, _level);
+    };
+
+    // Selector true: lo is a, hi is b.
+    auto sel_a_first = agreeing(a_first, c.hi_ge_b, c.lo_le_a, c.d_lo_le_a);
+    auto sel_b_first = disagreeing(b_first, c.forward, c.b, c.a, c.hi_ge_b, c.lo_le_a, c.d_lo_le_a);
+    // Selector false: lo is b, hi is a.
+    auto nsel_b_first = agreeing(b_first, c.hi_ge_a, c.lo_le_b, c.d_lo_le_b);
+    auto nsel_a_first = disagreeing(a_first, c.reverse, c.a, c.b, c.hi_ge_a, c.lo_le_b, c.d_lo_le_b);
+
+    WPBSum goal;
+    add_terms(goal, c.hi, 1_i);
+    add_terms(goal, c.lo, -1_i);
+    add_terms(goal, c.d_lo, -1_i);
+
+    map<ProofGoal, Subproof> subproofs;
+    subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
+        auto negation = sub_logger.get_current_proof_line();
+        // Each half against the negated goal leaves only its guard, a clause
+        // over the selector and one separation flag once saturated. The strict
+        // disagreeing half's degree is K + 1, hence the division.
+        auto to_clause = [&](ProofLine half) {
+            PolBuilder builder;
+            builder.add(half).add(negation).saturate().divide_by(k + 1_i);
+            return builder.emit(sub_logger, ProofLevel::Temporary);
+        };
+        // The two halves naming a flag differ only in the selector's polarity,
+        // so their sum refutes the flag, and the separation clause then refutes
+        // the pair of refutations.
+        auto refute = [&](ProofLine one, ProofLine other) {
+            PolBuilder builder;
+            builder.add(to_clause(one)).add(to_clause(other)).divide_by(2_i);
+            return builder.emit(sub_logger, ProofLevel::Temporary);
+        };
+        auto not_a_first = refute(sel_a_first, nsel_a_first);
+        auto not_b_first = refute(sel_b_first, nsel_b_first);
+        PolBuilder builder;
+        builder.add(not_a_first).add(not_b_first).add(separation.clause);
+        builder.emit(sub_logger, ProofLevel::Temporary);
+    }});
+
+    return _logger.emit_red_proof_line(move(goal) >= 0_i, {}, _level, subproofs);
 }
 
 auto ComparatorNetwork::derive_dominance(const Comparator & c) -> ProofLine
@@ -667,10 +909,16 @@ auto ComparatorNetwork::sort(const vector<ProofWire> & tasks) -> SortedTasks
 
         for (size_t j = 1; j < live.size(); ++j) {
             auto c = compare(running, live[j], "c");
-            derive_positivity(c.d_lo, {{c.d_lo_ge_a, c.d_a}, {c.d_lo_ge_b, c.d_b}});
-            derive_positivity(c.d_hi, {{c.d_hi_ge_b, c.d_b}, {c.d_hi_ge_a, c.d_a}});
+            if (_optional) {
+                derive_parking(c, c.lo, c.d_lo, c.lo_ge_a, c.lo_ge_b, c.d_lo_ge_a, c.d_lo_ge_b);
+                derive_parking(c, c.hi, c.d_hi, c.hi_ge_a, c.hi_ge_b, c.d_hi_ge_a, c.d_hi_ge_b);
+            }
+            else {
+                derive_positivity(c.d_lo, {{c.d_lo_ge_a, c.d_a}, {c.d_lo_ge_b, c.d_b}});
+                derive_positivity(c.d_hi, {{c.d_hi_ge_b, c.d_b}, {c.d_hi_ge_a, c.d_a}});
+            }
             result.preserved.push_back(derive_preservation(c));
-            auto gap = derive_gap(c);
+            auto gap = _optional ? derive_gap_allowing_zero(c) : derive_gap(c);
 
             // Every wire the outputs will still be compared against needs a
             // separation with them: the ones not yet reached in this pass, and

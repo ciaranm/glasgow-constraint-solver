@@ -85,11 +85,20 @@ namespace gcs::innards
         struct DropPreservation
         {
         };
+
+        /// Optional tasks only: leave the parking row out of the gap lemma's
+        /// "later task went first" halves. Those halves are the tie against a
+        /// zero-duration dummy, and parking is the only thing that says the
+        /// dummy is at the top of the window rather than level with whatever
+        /// it ties.
+        struct DropParking
+        {
+        };
     }
 
     using ComparatorNetworkMutation = std::variant<comparator_network_mutation::None, comparator_network_mutation::DropPositivity,
         comparator_network_mutation::SwapDurations, comparator_network_mutation::RupGap, comparator_network_mutation::RupPositivity,
-        comparator_network_mutation::RupPreservation, comparator_network_mutation::DropPreservation>;
+        comparator_network_mutation::RupPreservation, comparator_network_mutation::DropPreservation, comparator_network_mutation::DropParking>;
 
     /**
      * \brief A proof-only bit-encoded integer: `width` flags, read as
@@ -270,6 +279,25 @@ namespace gcs::innards
         std::map<int, ProofWire> _duration;
         std::map<int, ProofLine> _positivity, _duration_upper;
 
+        /// Whether the tasks are optional ones (\ref add_optional_task), which
+        /// is a property of the whole network: a zero duration is allowed, so
+        /// positivity is replaced by parking throughout.
+        bool _optional = false;
+
+        /// Each start wire's parking row, `wire + (window_hi - window_lo) *
+        /// duration >= window_hi`, i.e. a zero-duration wire sits at the top of
+        /// the window. Optional tasks only.
+        std::map<int, ProofLine> _parking;
+
+        /// What \ref add_optional_task records about the task behind a muxed
+        /// position wire, for \ref add_optional_separation to consume.
+        struct OptionalTask
+        {
+            ProofLiteralOrFlag active;
+            ProofLine le_start, ge_start, ge_parked;
+        };
+        std::map<int, OptionalTask> _optional_tasks;
+
         /// What makes a state-dependent row vacuous; see \ref assume.
         WPBSum _guard;
 
@@ -302,6 +330,13 @@ namespace gcs::innards
         [[nodiscard]] auto reify_separation(const ProofWire & x, const ProofWire & y, const std::string & stem) -> SeparationFlags;
 
         [[nodiscard]] auto case_split(const WPBSumLE & goal, const std::vector<ProofLine> & guarded_halves) -> ProofLine;
+
+        [[nodiscard]] auto case_split(const WPBSumLE & goal, const std::vector<ProofLine> & guarded_halves, Integer divisor) -> ProofLine;
+
+        auto derive_parking(const Comparator &, const ProofWire & out, const ProofWire & d_out, ProofLine ge_a, ProofLine ge_b, ProofLine d_ge_a,
+            ProofLine d_ge_b) -> void;
+
+        [[nodiscard]] auto derive_gap_allowing_zero(const Comparator &) -> ProofLine;
 
         auto derive_positivity(const ProofWire & out, const std::vector<std::pair<ProofLine, ProofWire>> & halves) -> void;
 
@@ -385,6 +420,46 @@ namespace gcs::innards
          * requiring a positive duration costs no generality.
          */
         auto add_task(const ProofWire & start, Integer duration) -> void;
+
+        /**
+         * An optional task: a wire `position = active ? start : window_hi`
+         * with duration `active ? duration : 0`, so that an inactive task
+         * becomes a zero-duration dummy parked at the top of the window. The
+         * returned wire is what the network sorts; `start` is only read.
+         *
+         * What this buys is an *unconditional* endgame. Every pair of optional
+         * tasks is separated under every assignment of the activity literals
+         * --- both active is the model's own separation, one inactive puts the
+         * other entirely below the dummy, both inactive is a tie of two
+         * zero-duration wires --- so \ref sum_up lands on `sum_i duration_i *
+         * active_i <= window_hi - window_lo`, with no guard and no case left
+         * over. That is the flagged capacity row a time-indexed rule sums.
+         *
+         * A zero duration means the gap lemma can no longer use positivity, so
+         * the network carries a parking row instead (`wire + (window_hi -
+         * window_lo) * duration >= window_hi`), and the whole network is in
+         * this mode or none of it is. No \ref assume guard, either: the point
+         * of the construction is a row that holds outright.
+         *
+         * `start` must fit the window --- `window_lo <= start` and `start +
+         * duration <= window_hi` must close by propagation from the model's
+         * bound rows --- and `duration` must be positive.
+         */
+        [[nodiscard]] auto add_optional_task(const ProofLiteralOrFlag & active, const ProofWire & start, Integer duration, const std::string & stem)
+            -> ProofWire;
+
+        /**
+         * Separate two optional tasks, given the model's separation of their
+         * starts and a clause saying they are separated whenever both are
+         * active: `~active_x + ~active_y + x_first.flag + y_first.flag >= 1`.
+         * `x` and `y` are the wires \ref add_optional_task returned.
+         *
+         * Only the model rows' forward halves are read, and their guard
+         * coefficients are not: the clauses derived here are saturated, so
+         * they come out the same whatever `M` the model used.
+         */
+        auto add_optional_separation(
+            const ProofWire & x, const ModelSeparation & x_first, const ProofWire & y, const ModelSeparation & y_first, ProofLine clause) -> void;
 
         /**
          * State that every bound below holds only where `guard` is zero.

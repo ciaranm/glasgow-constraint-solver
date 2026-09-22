@@ -1200,6 +1200,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(route_b_probe_test PRIVATE glasgow_constraint_solver)
     add_test(NAME route_b_probe_test COMMAND $<TARGET_FILE:route_b_probe_test>)
 
+    add_executable(route_a_probe_test constraints/disjunctive_2d/route_a_probe_test.cc)
+    target_link_libraries(route_a_probe_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME route_a_probe_test COMMAND $<TARGET_FILE:route_a_probe_test>)
+
     add_executable(am1_from_row_test innards/proofs/am1_from_row_test.cc)
     target_link_libraries(am1_from_row_test PRIVATE glasgow_constraint_solver)
     # Verifies (and deliberately fails to verify) its own proofs internally, so
