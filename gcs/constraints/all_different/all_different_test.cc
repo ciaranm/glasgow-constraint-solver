@@ -206,6 +206,37 @@ auto run_alldiff_collection_test(bool proofs, const string & label, const vector
     check_results(proof_name, expected, actual);
 }
 
+// Two positions that are views of one variable. u is {3, 5}, e is fixed to
+// -2, and the scope is (1 - u, -1 - u, e), so the only solution is u = 5. GAC
+// deletes 1 - u = -2, whose reason is e = -2, and -1 - u = -4, whose reason is
+// 1 - u = -4: both say u != 3, in batches for two different components. Run
+// sinks first, as the propagator must, the first line is logged and the second
+// is already entailed. Run the other way, the second is logged with a reason,
+// u = 5, that only its own inference makes true, the first is then skipped as
+// entailed, and nothing left in the proof derives u != 3, so the proof is
+// rejected. It is the smallest instance on which the batch order is visible to
+// VeriPB; see the ordering comment in propagate_gac_all_different.
+auto run_alldiff_aliased_views_test(bool proofs) -> void
+{
+    print(cerr, "all_different_aliased_views{}", proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    for (int u : {3, 5})
+        if (1 - u != -2 && -1 - u != -2)
+            expected.emplace(vector<int>{u, -2});
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto u = p.create_integer_variable(vector<Integer>{3_i, 5_i}, "u");
+    auto e = p.create_integer_variable(vector<Integer>{-2_i}, "e");
+    p.post(AllDifferent{vector<IntegerVariableID>{-u + 1_i, -u + -1_i, e}});
+
+    auto proof_name = proofs ? make_optional("all_different_test_aliased_views") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{vector<IntegerVariableID>{u, e}});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -295,6 +326,8 @@ auto main(int argc, char * argv[]) -> int
             run_alldiff_collection_test(proofs, "single_const", {5});
             run_alldiff_collection_test(proofs, "const_distinct", {1, 2, 3});
             run_alldiff_collection_test(proofs, "const_dup", {1, 2, 1});
+
+            run_alldiff_aliased_views_test(proofs);
         }
     }
 

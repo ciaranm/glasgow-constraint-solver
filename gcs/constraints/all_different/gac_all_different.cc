@@ -478,8 +478,8 @@ namespace
     }
 
     auto prove_deletion_using_sccs(const ConstraintID & constraint_id, const vector<IntegerVariableID> & vars, const vector<Integer> & vals,
-        const vector<Integer> & excluded, size_t n_right, map<Integer, ProofLine> & value_am1_constraint_numbers, const State &, ProofLogger * const,
-        const Right delete_value, GacAllDifferentScratch & scratch) -> tuple<DeletionJustification, Reason>
+        const vector<Integer> & excluded, size_t n_right, map<Integer, ProofLine> & value_am1_constraint_numbers, const State & state,
+        ProofLogger * const, const Right delete_value, GacAllDifferentScratch & scratch) -> tuple<DeletionJustification, Reason>
     {
         const auto & components = scratch.components;
 
@@ -550,8 +550,16 @@ namespace
             if (! scratch.inverse_matching[delete_value.offset])
                 throw UnexpectedException{"missing edge out from value in trivial scc"};
 
+            // It need not have been given it when the wake started: its other
+            // values are deleted by the batches downstream of this one, and
+            // the reason is only true because those ran first. See the
+            // ordering comment in propagate_gac_all_different.
+            const auto & matched_var = vars[scratch.inverse_matching[delete_value.offset]->offset];
+            if (state.optional_single_value(matched_var) != vals[delete_value.offset])
+                throw UnexpectedException{"all_different: a trivial component was processed before its matched variable was fixed"};
+
             return tuple{DeletionJustification{hints::AllDifferent{constraint_id}},
-                Reason{ExplicitReason{ReasonLiterals{{vars[scratch.inverse_matching[delete_value.offset]->offset] == vals[delete_value.offset]}}}}};
+                Reason{ExplicitReason{ReasonLiterals{{matched_var == vals[delete_value.offset]}}}}};
         }
         else {
             // a hall set is at work
@@ -904,9 +912,27 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
     // anything left can be deleted: an edge survives if it is in the matching,
     // was marked by the unmatched sweep, or starts and ends in the same
     // component (checked inline rather than via a separate marking pass over
-    // the edges). Deletions must be batched by SCC so the justifications
-    // don't have to order nested Hall sets; phantom edges are skipped, they
-    // are never deletable.
+    // the edges). Deletions are batched by the SCC of the deleted value, so
+    // each batch's Hall set is its component alone rather than everything the
+    // component reaches; phantom edges are skipped, they are never deletable.
+    //
+    // The batches must run sinks first, as below: Tarjan numbers components
+    // in the order it completes them, so every component comes after each
+    // component it can reach. Both justifications depend on that. A component
+    // is a Hall set, and its reason (the Hall variables' domains, read from
+    // the state) says so, only once every edge from it into a downstream
+    // component has been deleted by an earlier batch. A trivial component's
+    // reason is its matched variable being fixed, and that variable's other
+    // values are deleted by the batches downstream of it;
+    // prove_deletion_using_sccs checks that it is. Every reason is then true,
+    // through lines already written, when its own line is written, and that
+    // is what makes this safe when two positions are views of one variable.
+    // There, one batch's deletion can entail a later batch's literal, which
+    // the tracker then does not log; out of order, a line can be written whose
+    // reason only its own inference makes true, and the batch that would have
+    // supported it is skipped (the aliased-views case in all_different_test).
+    // A future incremental SCC scheme (#522) can use any order that keeps each
+    // component after everything it reaches, but not an arbitrary one.
     auto & deletions_by_scc = scratch.deletions_by_scc;
     auto & representatives_for_scc = scratch.representatives_for_scc;
     clear_inners_to_size(deletions_by_scc, number_of_components);
