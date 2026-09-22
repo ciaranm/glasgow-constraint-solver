@@ -115,9 +115,10 @@ namespace
         const vector<pair<int, int>> & item_ranges, const vector<int> & sizes, const vector<pair<int, int>> & load_ranges,
         const vector<vector<int>> & load_holes = {}) -> unsigned long long
     {
-        print(cerr, "bin_packing load [{}] {} sizes={} loads={}{}{}{}{}", view_wrap_config_label(view_cfg), item_ranges, sizes, load_ranges,
-            load_holes.empty() ? "" : format(" without {}", load_holes), upfront ? " upfront" : "", cardinality ? " cardinality" : "",
-            proofs ? " with proofs:" : ":");
+        print(cerr, "bin_packing load [{}] {} sizes={} loads={}", view_wrap_config_label(view_cfg), item_ranges, sizes, load_ranges);
+        if (! load_holes.empty())
+            print(cerr, " without {}", load_holes);
+        print(cerr, "{}{}{}", upfront ? " upfront" : "", cardinality ? " cardinality" : "", proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = item_ranges.size();
