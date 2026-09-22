@@ -1562,16 +1562,13 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
 {
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), _items.begin(), _items.end());
-    if (_have_loads)
-        triggers.on_bounds.insert(triggers.on_bounds.end(), _loads.begin(), _loads.end());
-
-    // The loads are only watched for their bounds, but the upfront Stage 3
-    // sweep drops DAG terminals that fall into a hole in a load's domain, so
-    // with Stage 3 running a hole in a load can change what this infers.
-    if (_have_loads && ! _bounds_only) {
-        vector<IntegerVariableID> hole_sensitivity = _items;
-        hole_sensitivity.insert(hole_sensitivity.end(), _loads.begin(), _loads.end());
-        triggers.holes_affect_propagation = move(hole_sensitivity);
+    if (_have_loads) {
+        // Stages 2 and 4, and the default per-call Stage 3 sweep, read only a
+        // load's bounds. The upfront Stage 3 sweep also drops DAG terminals
+        // that fall into a hole in a load's domain, so there a hole can leave
+        // an item's bin unsupported (issue #966).
+        auto & load_triggers = (_upfront_proof && ! _bounds_only) ? triggers.on_change : triggers.on_bounds;
+        load_triggers.insert(load_triggers.end(), _loads.begin(), _loads.end());
     }
 
     if (! _bounds_only) {

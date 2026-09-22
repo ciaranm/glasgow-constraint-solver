@@ -1301,6 +1301,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(bc_all_different_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME bc_all_different_test COMMAND $<TARGET_FILE:bc_all_different_test>)
 
+    add_executable(hole_wakes_test constraints/hole_wakes_test.cc)
+    target_link_libraries(hole_wakes_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME hole_wakes_test COMMAND $<TARGET_FILE:hole_wakes_test>)
+
     add_executable(variable_weighting_test variable_weighting_test.cc)
     target_link_libraries(variable_weighting_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME variable_weighting_test COMMAND $<TARGET_FILE:variable_weighting_test>)

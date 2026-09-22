@@ -82,16 +82,14 @@ auto Count::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
     triggers.on_change.emplace_back(_value_of_interest);
-    triggers.on_bounds.emplace_back(_how_many);
+    // Not only how_many's bounds: the value-of-interest support test below asks
+    // whether each achievable count is still in how_many's domain, so a hole in
+    // how_many can leave a value of interest with no support (issue #966).
+    triggers.on_change.emplace_back(_how_many);
 
     vector<IntegerVariableID> all_vars = _vars;
     all_vars.push_back(_value_of_interest);
     all_vars.push_back(_how_many);
-
-    // how_many is only watched for its bounds, but the value-of-interest
-    // support test below asks whether each achievable count is still in
-    // how_many's domain, so a hole in it can change what this infers.
-    triggers.holes_affect_propagation = all_vars;
 
     // The reason ranges over the whole (fixed) variable scope, so build it once
     // here and reuse it at every inference site rather than reconstructing it —
