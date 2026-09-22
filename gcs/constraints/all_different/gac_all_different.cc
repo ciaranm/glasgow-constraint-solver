@@ -791,7 +791,11 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
 
     if (cmp_not_equal(count(scratch.left_covered.begin(), scratch.left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
-        // one thing on the left uncovered.
+        // one thing on the left uncovered. Only a proof, or something recording
+        // reasons, wants to know which Hall set is violated, so only they pay
+        // to find it.
+        if (! logger && ! tracker.want_reasons())
+            return tracker.infer(logger, FalseLiteral{}, NoJustificationNeeded{}, NoReason{});
         auto [hall, reason] =
             prove_matching_is_too_small(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, scratch);
         return tracker.infer(logger, FalseLiteral{},
@@ -922,6 +926,13 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
     for (int scc = 0; scc < number_of_components; ++scc) {
         if (! representatives_for_scc[scc])
             continue;
+
+        // As for a failed matching: the Hall set behind a deletion is only
+        // for a proof or a reason, so without either it is not looked for.
+        if (! logger && ! tracker.want_reasons()) {
+            tracker.infer_all(logger, deletions_by_scc[scc], NoJustificationNeeded{}, NoReason{});
+            continue;
+        }
 
         auto [justification, reason] = prove_deletion_using_sccs(
             constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, *representatives_for_scc[scc], scratch);
