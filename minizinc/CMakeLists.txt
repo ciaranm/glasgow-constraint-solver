@@ -384,6 +384,12 @@ set_tests_properties(minizinc-argsort PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-argsort-offset COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_arg_sort_int $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ argsortoffset true true)
 set_tests_properties(minizinc-argsort-offset PROPERTIES SKIP_RETURN_CODE 66)
 
+# A reified and a half-reified arg_sort, which failed to flatten at all until
+# the redefinition included the stdlib's reified decomposition: nothing else
+# reaches that include, since every other lane posts arg_sort at the root.
+add_test(NAME minizinc-argsort-reif COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ argsortreif true true)
+set_tests_properties(minizinc-argsort-reif PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-splitrandom COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ splitrandom true true)
 set_tests_properties(minizinc-splitrandom PROPERTIES SKIP_RETURN_CODE 66)
 

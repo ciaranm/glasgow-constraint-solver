@@ -180,6 +180,28 @@ back, and the constraint now gets views on every MiniZinc model, so it needs
 Shifting *parameters* in a comprehension costs nothing; this is only about arrays
 of `var`.
 
+### A reified call has to reach a reified decomposition
+
+A redefinition replaces the body of `fzn_<name>`, and that body is a builtin
+with no reified form. That is fine only because a reified, half-reified or
+negated call never flattens it: MiniZinc looks for `fzn_<name>_reif` first,
+and the stdlib's global wrapper normally includes the file that defines it,
+so the reified call gets the stdlib's decomposition. When the wrapper does
+not include it, MiniZinc falls back to flattening the body in the reified
+context, finds the builtin there, and stops: `'glasgow_<name>' is used in a
+reified context but no reified version is available`. A solver without its
+own redefinition never notices, since the stdlib's body is a decomposition
+that reifies happily.
+
+`arg_sort.mzn` is the case in point: it includes `fzn_arg_sort_int.mzn` but
+not `fzn_arg_sort_int_reif.mzn`, so `b <-> arg_sort(x, p)` did not flatten
+for Glasgow at all until `fzn_arg_sort_int.mzn` included the reified file
+itself. A sweep of every override in the four contexts (#1006) found no other
+case, but that reflects this stdlib release, not a rule, so check a new
+override in a reified context. Where the stdlib's `fzn_<name>_reif` is an
+abort (`Reified circuit/1 is not supported`), every solver fails the same
+way and there is nothing to fix.
+
 ## When no predicate is the right answer
 
 Not every gcs feature wants an `mznlib/` override. The difference-logic
