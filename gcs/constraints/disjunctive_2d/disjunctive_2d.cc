@@ -1,6 +1,7 @@
 #include <gcs/constraints/disjunctive_2d/disjunctive_2d.hh>
 #include <gcs/constraints/disjunctive_2d/hints.hh>
 #include <gcs/constraints/innards/task_presence.hh>
+#include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/comparator_network.hh>
@@ -17,9 +18,11 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -59,6 +62,7 @@ namespace
     {
         std::array<map<pair<size_t, long long>, RelaxationActivity>, 2> activity;
         std::array<map<long long, ProofLine>, 2> rows;
+        std::array<map<std::tuple<size_t, long long, long long, long long, long long>, window_energy::GuardedWindowEnergy>, 2> guarded;
     };
 
     /// The widest wire the cumulative relaxation's comparator network will
@@ -1142,15 +1146,16 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 }
             }
 
-            // The overload check on the relaxation (#984). Rectangles lying
-            // wholly inside a time-axis window [a, b) need their total area
-            // there, and the resource axis supplies at most H per time point,
-            // H being the model's extent. Detection is the plain O(n^3) scan
-            // over (est, lct) windows; the certificate is 1D Disjunctive's
-            // time-indexed one with the at-most-one per time point replaced by
+            // The energetic rungs on the relaxation (#984): the overload check
+            // and edge-finding, over one sweep of (est, lct) windows. Rectangles
+            // lying wholly inside a time-axis window [a, b) need their area
+            // there, and the resource axis supplies at most H per time point, H
+            // being the model's extent. The certificates are 1D Disjunctive's
+            // time-indexed ones with the at-most-one per time point replaced by
             // the flagged capacity row sum_i h_i * active_{i,t} <= H, which
-            // ComparatorNetwork's optional tasks derive.
-            if (rules.relaxation_overload) {
+            // ComparatorNetwork's optional tasks derive, and with every energy
+            // multiplied by its rectangle's height.
+            if (rules.relaxation_overload || rules.relaxation_edge_finding) {
                 for (auto time_axis : {0, 1}) {
                     const auto & tpos = 0 == time_axis ? xs : ys;
                     const auto & tsize = 0 == time_axis ? width_var : height_var;
@@ -1177,6 +1182,143 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     auto est = [&](size_t i) { return state.lower_bound(tpos[i]); };
                     auto lct = [&](size_t i) { return state.upper_bound(tpos[i]) + len(i); };
 
+                    // --- the proof vocabulary, all of it at Top -------------
+
+                    auto activity_flag = [&](size_t i, Integer t) -> const RelaxationActivity & {
+                        auto & cache = overload_cache->activity[time_axis];
+                        auto key = pair{i, t.raw_value};
+                        if (auto found = cache.find(key); found != cache.end())
+                            return found->second;
+                        auto started = tpos[i] >= t - len(i) + 1_i, starts_by = tpos[i] < t + 1_i;
+                        auto flag = logger->create_proof_flag("d2act");
+                        auto implies_started = logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * started >= 1_i, flag, ProofLevel::Top);
+                        auto implies_starts_by =
+                            logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * starts_by >= 1_i, flag, ProofLevel::Top);
+                        auto backward =
+                            logger->emit_red_proof_lines_reverse_reifying(WPBSum{} + 1_i * started + 1_i * starts_by >= 2_i, flag, ProofLevel::Top);
+                        return cache.emplace(key, RelaxationActivity{flag, implies_started, implies_starts_by, backward}).first->second;
+                    };
+
+                    // The flagged row at `t`, over every task whose *declared*
+                    // position lets it cover `t`: a fixed set per time point,
+                    // so the row can be cached, and one containing every task a
+                    // window about `t` can hold, whose current domain is inside
+                    // its declared one.
+                    auto row_at = [&](Integer t) -> ProofLine {
+                        auto & cache = overload_cache->rows[time_axis];
+                        if (auto found = cache.find(t.raw_value); found != cache.end())
+                            return found->second;
+                        auto & tracker = logger->names_and_ids_tracker();
+
+                        vector<size_t> members;
+                        for (auto i : tasks)
+                            if (declared.at(i).first <= t && t < declared.at(i).second + len(i))
+                                members.push_back(i);
+
+                        WPBSum flagged;
+                        for (auto i : members)
+                            flagged += height(i) * activity_flag(i, t).flag;
+                        // One task alone is trivially inside the window; the
+                        // network wants two to sort.
+                        if (members.size() < 2)
+                            return cache.emplace(t.raw_value, logger->emit_rup_proof_line(move(flagged) <= capacity, ProofLevel::Top)).first->second;
+
+                        auto width = static_cast<int>(std::bit_width(static_cast<unsigned long long>(window_hi.raw_value)));
+                        for (auto i : members) {
+                            auto rv = get<SimpleIntegerVariableID>(rpos[i]);
+                            if (tracker.num_bits(rv) > 0_i && tracker.get_bit(rv, 0_i).first != 1_i)
+                                throw ProofError{"disjunctive2d relaxation energetic rules want an unsigned resource position"};
+                            width = max(width, static_cast<int>(tracker.num_bits(rv).raw_value));
+                        }
+                        ComparatorNetwork network(*logger, width, window_lo, window_hi, ProofLevel::Top);
+
+                        vector<ProofWire> wires;
+                        for (auto i : members) {
+                            auto rv = get<SimpleIntegerVariableID>(rpos[i]);
+                            vector<ProofLiteralOrFlag> bits;
+                            for (Integer bit = 0_i; bit < tracker.num_bits(rv); ++bit)
+                                bits.push_back(ProofBitVariable{rv, bit, true});
+                            wires.push_back(
+                                network.add_optional_task(ProofLiteralOrFlag{activity_flag(i, t).flag}, network.wire_over(bits), height(i), "d2p"));
+                        }
+
+                        for (size_t p = 0; p < members.size(); ++p)
+                            for (size_t q = p + 1; q < members.size(); ++q) {
+                                auto i = members[p], j = members[q];
+                                // Both active at `t` refutes both time-axis
+                                // disjuncts of the pair's clause, exactly as
+                                // the time-table rung's certificate refutes
+                                // them, then the order literals are traded for
+                                // the activity flags.
+                                auto refute = [&](size_t x, size_t y) {
+                                    PolBuilder pol;
+                                    pol.add(tbefore.at(make_pair(x, y)).forward_line);
+                                    pol.add_for_literal(tracker, tpos[x] >= t - len(x) + 1_i);
+                                    pol.add_for_literal(tracker, tpos[y] < t + 1_i);
+                                    pol.saturate().emit(*logger, ProofLevel::Temporary);
+                                };
+                                refute(i, j);
+                                refute(j, i);
+                                WPBSum both_active;
+                                both_active += 1_i * ! activity_flag(i, t).flag;
+                                both_active += 1_i * ! activity_flag(j, t).flag;
+                                both_active += 1_i * rbefore.at(make_pair(i, j)).flag;
+                                both_active += 1_i * rbefore.at(make_pair(j, i)).flag;
+                                auto clause = logger->emit_rup_proof_line(move(both_active) >= 1_i, ProofLevel::Top);
+
+                                auto direction = [&](size_t x, size_t y) -> ModelSeparation {
+                                    const auto & data = rbefore.at(make_pair(x, y));
+                                    return ModelSeparation{data.flag, data.forward_line, data.forward_guard_coefficient};
+                                };
+                                network.add_optional_separation(wires[p], direction(i, j), wires[q], direction(j, i), clause);
+                            }
+
+                        return cache.emplace(t.raw_value, network.sum_up(network.sort(wires))).first->second;
+                    };
+
+                    // A task's activity over a window, as a row about the model
+                    // rather than the current bounds: 1D's guarded window
+                    // energy, over the activity flags' own backward rows.
+                    auto guarded_energy = [&](size_t i, Integer a, Integer b, Integer low_guard,
+                                              Integer high_guard) -> const window_energy::GuardedWindowEnergy & {
+                        auto & cache = overload_cache->guarded[time_axis];
+                        auto key = std::tuple{i, a.raw_value, b.raw_value, low_guard.raw_value, high_guard.raw_value};
+                        if (auto found = cache.find(key); found != cache.end())
+                            return found->second;
+                        std::function<auto(Integer)->ProofLine> row = [&](Integer t) -> ProofLine { return activity_flag(i, t).backward; };
+                        auto derived = window_energy::derive_guarded_window_energy(*logger,
+                            window_energy::WindowRows{get<SimpleIntegerVariableID>(tpos[i]), len(i), a, static_cast<size_t>((b - a).raw_value), row},
+                            a, b, low_guard, high_guard, ProofLevel::Top);
+                        if (! derived)
+                            throw ProofError{"disjunctive2d relaxation: rectangle " + std::to_string(i) + " has no derivable window energy"};
+                        return cache.emplace(key, *derived).first->second;
+                    };
+
+                    // A task inside the window occupies at least its length of
+                    // it: the backward rows telescope, and the order literals
+                    // left at the two ends hold under the reason.
+                    auto energy_under_reason = [&](size_t i, Integer a, Integer b, const ReasonLiterals & reason) -> ProofLine {
+                        PolBuilder pol;
+                        for (Integer t = a; t < b; ++t)
+                            pol.add(activity_flag(i, t).backward);
+                        for (Integer v = a - len(i) + 1_i; v <= a; ++v)
+                            pol.add(logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (tpos[i] >= v) >= 1_i, ProofLevel::Temporary));
+                        for (Integer v = b - len(i) + 1_i; v <= b; ++v)
+                            pol.add(logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (tpos[i] < v) >= 1_i, ProofLevel::Temporary));
+                        return pol.emit(*logger, ProofLevel::Temporary);
+                    };
+
+                    auto window_rows = [&](Integer a, Integer b) {
+                        vector<ProofLine> rows;
+                        for (Integer t = a; t < b; ++t)
+                            rows.push_back(row_at(t));
+                        if (std::holds_alternative<disjunctive_2d_proof_mutation::OverloadSkipRow>(mutation))
+                            rows.erase(rows.begin() + static_cast<long>(rows.size() / 2));
+                        return rows;
+                    };
+
+                    // --- the sweep ------------------------------------------
+
                     vector<Integer> starts, ends;
                     for (auto i : tasks) {
                         starts.push_back(est(i));
@@ -1198,155 +1340,147 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     inside.push_back(i);
                                     energy += len(i) * height(i);
                                 }
-                            if (energy <= capacity * (b - a))
-                                continue;
+                            auto supply = capacity * (b - a);
 
-                            ReasonLiterals literals;
-                            for (auto i : inside) {
-                                literals.push_back(ProofLiteral{tpos[i] >= a});
-                                literals.push_back(ProofLiteral{tpos[i] < b - len(i) + 1_i});
+                            if (energy > supply) {
+                                if (! rules.relaxation_overload)
+                                    continue;
+                                ReasonLiterals literals;
+                                for (auto i : inside) {
+                                    literals.push_back(ProofLiteral{tpos[i] >= a});
+                                    literals.push_back(ProofLiteral{tpos[i] < b - len(i) + 1_i});
+                                }
+
+                                auto justify = [&, a, b, inside](const ReasonLiterals & reason) -> void {
+                                    if (! logger)
+                                        return;
+                                    logger->emit_proof_comment("disjunctive2d cumulative relaxation overload axis=" + std::to_string(time_axis) +
+                                        " window=[" + std::to_string(a.raw_value) + "," + std::to_string(b.raw_value) +
+                                        ") w=" + std::to_string(inside.size()));
+                                    if (std::holds_alternative<disjunctive_2d_proof_mutation::EmitNothing>(mutation))
+                                        return;
+                                    PolBuilder total;
+                                    for (auto row : window_rows(a, b))
+                                        total.add(row);
+                                    if (! std::holds_alternative<disjunctive_2d_proof_mutation::OverloadSkipEnergy>(mutation))
+                                        for (auto i : inside)
+                                            total.add(energy_under_reason(i, a, b, reason), height(i));
+                                    total.emit(*logger, ProofLevel::Temporary);
+                                };
+
+                                inference.contradiction(
+                                    logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, ExplicitReason{move(literals)});
+                                return PropagatorState::DisableUntilBacktrack;
                             }
 
-                            auto justify = [&, a, b, inside](const ReasonLiterals & reason) -> void {
-                                if (! logger)
-                                    return;
-                                logger->emit_proof_comment("disjunctive2d cumulative relaxation overload axis=" + std::to_string(time_axis) +
-                                    " window=[" + std::to_string(a.raw_value) + "," + std::to_string(b.raw_value) +
-                                    ") w=" + std::to_string(inside.size()));
-                                if (std::holds_alternative<disjunctive_2d_proof_mutation::EmitNothing>(mutation))
-                                    return;
-                                auto & tracker = logger->names_and_ids_tracker();
+                            if (! rules.relaxation_edge_finding || inside.empty())
+                                continue;
 
-                                auto activity_flag = [&](size_t i, Integer t) -> const RelaxationActivity & {
-                                    auto & cache = overload_cache->activity[time_axis];
-                                    auto key = pair{i, t.raw_value};
-                                    if (auto found = cache.find(key); found != cache.end())
-                                        return found->second;
-                                    auto started = tpos[i] >= t - len(i) + 1_i, starts_by = tpos[i] < t + 1_i;
-                                    auto flag = logger->create_proof_flag("d2act");
-                                    auto implies_started =
-                                        logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * started >= 1_i, flag, ProofLevel::Top);
-                                    auto implies_starts_by =
-                                        logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * starts_by >= 1_i, flag, ProofLevel::Top);
-                                    auto backward = logger->emit_red_proof_lines_reverse_reifying(
-                                        WPBSum{} + 1_i * started + 1_i * starts_by >= 2_i, flag, ProofLevel::Top);
-                                    return cache.emplace(key, RelaxationActivity{flag, implies_started, implies_starts_by, backward}).first->second;
+                            // Edge-finding: a task with exactly one end inside
+                            // the window, which the contained set leaves too
+                            // little room for, is pushed away from it. The
+                            // threshold is found by asking the window-energy
+                            // lemma for exactly what the row the certificate
+                            // will cite establishes at each candidate, rather
+                            // than by the closed form over the state's bounds:
+                            // the row is a model fact, and firing on energy it
+                            // does not carry is a rejected proof.
+                            for (auto j : tasks) {
+                                if (est(j) >= a && lct(j) <= b)
+                                    continue;
+                                auto starts_inside = est(j) >= a && est(j) < b;
+                                auto ends_inside = lct(j) <= b && lct(j) > a;
+                                if (starts_inside == ends_inside)
+                                    continue;
+                                auto p_j = len(j), h_j = height(j);
+                                auto width = static_cast<size_t>((b - a).raw_value);
+                                auto overflows_with = [&](Integer low_guard, Integer high_guard) {
+                                    auto clipped = window_energy::window_energy_bound(p_j, a, width, a, b, pair{low_guard, high_guard - 1_i});
+                                    return clipped > 0_i && energy + h_j * clipped > supply;
                                 };
 
-                                // The flagged row at `t`, over every task whose
-                                // *declared* position lets it cover `t`: a fixed
-                                // set per time point, so the row can be cached,
-                                // and one containing every task a window about
-                                // `t` can hold, whose current domain is inside
-                                // its declared one.
-                                auto row_at = [&](Integer t) -> ProofLine {
-                                    auto & cache = overload_cache->rows[time_axis];
-                                    if (auto found = cache.find(t.raw_value); found != cache.end())
-                                        return found->second;
-
-                                    vector<size_t> members;
-                                    for (auto i : tasks)
-                                        if (declared.at(i).first <= t && t < declared.at(i).second + len(i))
-                                            members.push_back(i);
-
-                                    WPBSum flagged;
-                                    for (auto i : members)
-                                        flagged += height(i) * activity_flag(i, t).flag;
-                                    // One task alone is trivially inside the
-                                    // window; the network wants two to sort.
-                                    if (members.size() < 2)
-                                        return cache.emplace(t.raw_value, logger->emit_rup_proof_line(move(flagged) <= capacity, ProofLevel::Top))
-                                            .first->second;
-
-                                    auto width = static_cast<int>(std::bit_width(static_cast<unsigned long long>(window_hi.raw_value)));
-                                    for (auto i : members) {
-                                        auto rv = get<SimpleIntegerVariableID>(rpos[i]);
-                                        if (tracker.num_bits(rv) > 0_i && tracker.get_bit(rv, 0_i).first != 1_i)
-                                            throw ProofError{"disjunctive2d relaxation overload wants an unsigned resource position"};
-                                        width = max(width, static_cast<int>(tracker.num_bits(rv).raw_value));
-                                    }
-                                    ComparatorNetwork network(*logger, width, window_lo, window_hi, ProofLevel::Top);
-
-                                    vector<ProofWire> wires;
-                                    for (auto i : members) {
-                                        auto rv = get<SimpleIntegerVariableID>(rpos[i]);
-                                        vector<ProofLiteralOrFlag> bits;
-                                        for (Integer bit = 0_i; bit < tracker.num_bits(rv); ++bit)
-                                            bits.push_back(ProofBitVariable{rv, bit, true});
-                                        wires.push_back(network.add_optional_task(
-                                            ProofLiteralOrFlag{activity_flag(i, t).flag}, network.wire_over(bits), height(i), "d2p"));
-                                    }
-
-                                    for (size_t p = 0; p < members.size(); ++p)
-                                        for (size_t q = p + 1; q < members.size(); ++q) {
-                                            auto i = members[p], j = members[q];
-                                            // Both active at `t` refutes both
-                                            // time-axis disjuncts of the pair's
-                                            // clause, exactly as the time-table
-                                            // rung's certificate refutes them,
-                                            // then the order literals are
-                                            // traded for the activity flags.
-                                            auto refute = [&](size_t x, size_t y) {
-                                                PolBuilder pol;
-                                                pol.add(tbefore.at(make_pair(x, y)).forward_line);
-                                                pol.add_for_literal(tracker, tpos[x] >= t - len(x) + 1_i);
-                                                pol.add_for_literal(tracker, tpos[y] < t + 1_i);
-                                                pol.saturate().emit(*logger, ProofLevel::Temporary);
-                                            };
-                                            refute(i, j);
-                                            refute(j, i);
-                                            WPBSum both_active;
-                                            both_active += 1_i * ! activity_flag(i, t).flag;
-                                            both_active += 1_i * ! activity_flag(j, t).flag;
-                                            both_active += 1_i * rbefore.at(make_pair(i, j)).flag;
-                                            both_active += 1_i * rbefore.at(make_pair(j, i)).flag;
-                                            auto clause = logger->emit_rup_proof_line(move(both_active) >= 1_i, ProofLevel::Top);
-
-                                            auto direction = [&](size_t x, size_t y) -> ModelSeparation {
-                                                const auto & data = rbefore.at(make_pair(x, y));
-                                                return ModelSeparation{data.flag, data.forward_line, data.forward_guard_coefficient};
-                                            };
-                                            network.add_optional_separation(wires[p], direction(i, j), wires[q], direction(j, i), clause);
+                                auto [j_lo, j_hi] = state.bounds(tpos[j]);
+                                optional<Integer> threshold;
+                                if (starts_inside) {
+                                    // s_j < T is refuted: the largest such T.
+                                    for (auto t = min(b, j_hi + 1_i); t > j_lo; --t)
+                                        if (overflows_with(a, t)) {
+                                            threshold = t;
+                                            break;
                                         }
+                                }
+                                else {
+                                    // s_j >= L is refuted: the smallest such L.
+                                    for (auto l = max(a - p_j + 1_i, j_lo); l <= j_hi; ++l)
+                                        if (overflows_with(l, b - p_j + 1_i)) {
+                                            threshold = l;
+                                            break;
+                                        }
+                                }
+                                if (! threshold)
+                                    continue;
 
-                                    return cache.emplace(t.raw_value, network.sum_up(network.sort(wires))).first->second;
-                                };
+                                auto low_guard = starts_inside ? a : *threshold;
+                                auto high_guard = starts_inside ? *threshold : b - p_j + 1_i;
 
-                                // A task inside the window occupies at least its
-                                // length of it: the backward rows telescope,
-                                // and the order literals left at the two ends
-                                // hold under the reason.
-                                auto energy = [&](size_t i) -> ProofLine {
-                                    PolBuilder pol;
-                                    for (Integer t = a; t < b; ++t)
-                                        pol.add(activity_flag(i, t).backward);
-                                    for (Integer v = a - len(i) + 1_i; v <= a; ++v)
-                                        pol.add(logger->emit_rup_proof_line_under_reason(
-                                            reason, WPBSum{} + 1_i * (tpos[i] >= v) >= 1_i, ProofLevel::Temporary));
-                                    for (Integer v = b - len(i) + 1_i; v <= b; ++v)
-                                        pol.add(logger->emit_rup_proof_line_under_reason(
-                                            reason, WPBSum{} + 1_i * (tpos[i] < v) >= 1_i, ProofLevel::Temporary));
-                                    return pol.emit(*logger, ProofLevel::Temporary);
-                                };
+                                ReasonLiterals literals;
+                                for (auto i : inside) {
+                                    literals.push_back(ProofLiteral{tpos[i] >= a});
+                                    literals.push_back(ProofLiteral{tpos[i] < b - len(i) + 1_i});
+                                }
+                                // The pushed task's other end, which puts it on
+                                // the side of the window its guard assumes.
+                                if (starts_inside)
+                                    literals.push_back(ProofLiteral{tpos[j] >= a});
+                                else
+                                    literals.push_back(ProofLiteral{tpos[j] < b - p_j + 1_i});
 
-                                vector<ProofLine> rows;
-                                for (Integer t = a; t < b; ++t)
-                                    rows.push_back(row_at(t));
-                                if (std::holds_alternative<disjunctive_2d_proof_mutation::OverloadSkipRow>(mutation))
-                                    rows.erase(rows.begin() + static_cast<long>(rows.size() / 2));
+                                auto justify = [&, a, b, inside, j, low_guard, high_guard, starts_inside](const ReasonLiterals & reason) -> void {
+                                    if (! logger)
+                                        return;
+                                    logger->emit_proof_comment("disjunctive2d cumulative relaxation edge-finding axis=" + std::to_string(time_axis) +
+                                        " window=[" + std::to_string(a.raw_value) + "," + std::to_string(b.raw_value) +
+                                        ") w=" + std::to_string(inside.size()) + (starts_inside ? " lb" : " ub"));
+                                    if (std::holds_alternative<disjunctive_2d_proof_mutation::EmitNothing>(mutation))
+                                        return;
 
-                                PolBuilder total;
-                                for (auto row : rows)
-                                    total.add(row);
-                                if (! std::holds_alternative<disjunctive_2d_proof_mutation::OverloadSkipEnergy>(mutation))
+                                    PolBuilder total;
+                                    for (auto row : window_rows(a, b))
+                                        total.add(row);
+
+                                    // Each cited row carries low_coeff copies of
+                                    // ~[s >= low_guard] and `bound` copies of
+                                    // [s >= high_guard]; discharging one means
+                                    // adding that many copies of the literal the
+                                    // reason refutes it with, times the height.
+                                    auto cite = [&](size_t i, Integer lg, Integer hg, bool do_low, bool do_high) {
+                                        const auto & row = guarded_energy(i, a, b, lg, hg);
+                                        total.add(row.line, height(i));
+                                        if (do_low && row.low_coeff > 0_i)
+                                            total.add(logger->emit_rup_proof_line_under_reason(
+                                                          reason, WPBSum{} + 1_i * (tpos[i] >= row.low_guard) >= 1_i, ProofLevel::Temporary),
+                                                row.low_coeff * height(i));
+                                        if (do_high && row.bound > 0_i)
+                                            total.add(logger->emit_rup_proof_line_under_reason(
+                                                          reason, WPBSum{} + 1_i * (tpos[i] < row.high_guard) >= 1_i, ProofLevel::Temporary),
+                                                row.bound * height(i));
+                                    };
                                     for (auto i : inside)
-                                        total.add(energy(i), height(i));
-                                total.emit(*logger, ProofLevel::Temporary);
-                            };
+                                        cite(i, a, b - len(i) + 1_i, true, true);
+                                    if (! std::holds_alternative<disjunctive_2d_proof_mutation::EdgeFindingDropPushed>(mutation))
+                                        cite(j, low_guard, high_guard, starts_inside, ! starts_inside);
+                                    total.emit(*logger, ProofLevel::Temporary);
+                                };
 
-                            inference.contradiction(
-                                logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, ExplicitReason{move(literals)});
-                            return PropagatorState::DisableUntilBacktrack;
+                                auto one_too_far = std::holds_alternative<disjunctive_2d_proof_mutation::EdgeFindingOneTooFar>(mutation);
+                                auto justification = JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}};
+                                if (starts_inside)
+                                    inference.infer_greater_than_or_equal(
+                                        logger, tpos[j], one_too_far ? high_guard + 1_i : high_guard, justification, ExplicitReason{move(literals)});
+                                else
+                                    inference.infer_less_than(
+                                        logger, tpos[j], one_too_far ? low_guard - 1_i : low_guard, justification, ExplicitReason{move(literals)});
+                            }
                         }
                 }
             }

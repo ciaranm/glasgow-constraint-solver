@@ -1487,8 +1487,37 @@ lanes, an enumeration against brute force, and a dense random sweep
 mandatory parts, since otherwise the pairwise rule refutes the same
 roots and the sweep proves nothing about this rule.
 
-Not yet: variable sizes, optional rectangles, and the rungs above
-overload (edge-finding, TTEF), which would cite the same row.
+### Edge-finding over the same row
+
+`Disjunctive2DRules::relaxation_edge_finding`, off by default:
+`Cumulative`'s edge-finding on each projection, capacity `H`. A
+rectangle with exactly one time-axis end inside a window, which the
+contained rectangles leave too little room for, is pushed away from it.
+The certificate is 1D edge-finding's (above) with heights: the flagged
+row per time point, plus `h_i ×` each contained rectangle's guarded
+window-energy row (`derive_guarded_window_energy` over `WindowRows`,
+cached at Top), plus `h_j ×` the pushed rectangle's row with its
+conclusion guard left standing, so the sum derives the push. As in 1D,
+the threshold is found by asking `window_energy_bound` at exactly the
+guards the cited row will carry, never from the state's bounds.
+
+Fixtures push both ways by exactly the amount a unit of slack allows,
+with controls (every other relaxation rule on) that do not reach it. Two
+mutation lanes: one unit too far, and the pushed rectangle's energy
+dropped. Its sweep lane draws the fixtures' family (most rectangles
+confined to a four-wide window, one or two free across a six-wide box):
+all-free boxes give every root window every rectangle, so nothing has one
+end inside and the root check never fires.
+
+**What it is worth on `examples/squares`: nothing in search, so far.**
+Enumerating three exact-area instances, the trees are identical with it
+on and off (225, 29 and 60 recursions). It does fire, 134 times on the
+first, taking the place of about fifty overload conflicts and five
+hundred time-table pushes, so the proofs shrink by 1.2–1.7×: it reaches
+the same fixpoint with cheaper certificates. Whether any family gets
+search out of it is not measured.
+
+Not yet: variable sizes, optional rectangles, and TTEF.
 
 ## Reusable ideas
 
