@@ -48,41 +48,6 @@ namespace
     // 10 x 10 = 100 (QWH quasigroup7) is ~2% slower, so the cutoff sits
     // between them, at the rounded geometric mean.
     constexpr std::size_t min_var_val_pairs_for_staged_gac = 256;
-
-    // Prebuilt per-variable "v == its single value" reasons for the
-    // value-consistency pass, indexed by the variable's own
-    // SimpleIntegerVariableID index (offset by base). Each is a deferred
-    // ExactSingleValue, so it materialises to v == whatever value v is fixed
-    // to at the point of inference. Constraint-owned (moved into the
-    // propagator closure), not backtracked: the table never changes during
-    // search. Views and constants get no entry and fall back to inline
-    // construction in the propagator.
-    struct SingleValueReasons
-    {
-        unsigned long long base = 0;
-        vector<Reason> table;
-    };
-
-    auto build_single_value_reasons(const vector<IntegerVariableID> & vars) -> SingleValueReasons
-    {
-        SingleValueReasons result;
-        auto lo = ~0ull, hi = 0ull;
-        bool any_simple = false;
-        for (const auto & v : vars)
-            if (auto s = std::get_if<SimpleIntegerVariableID>(&v)) {
-                lo = std::min(lo, s->index);
-                hi = std::max(hi, s->index);
-                any_simple = true;
-            }
-        if (any_simple) {
-            result.base = lo;
-            result.table.resize(hi - lo + 1);
-            for (const auto & v : vars)
-                if (auto s = std::get_if<SimpleIntegerVariableID>(&v))
-                    result.table[s->index - lo] = Reason{ExactSingleValue{ReasonVars{vector<IntegerVariableID>{v}}}};
-        }
-        return result;
-    }
 }
 
 AllDifferent::AllDifferent(vector<IntegerVariableID> v) : _vars(move(v))
@@ -169,7 +134,7 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
             Triggers triggers;
             triggers.on_change = {_sanitised_vars.begin(), _sanitised_vars.end()};
             auto value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
-            auto reasons = _gac_staged ? build_single_value_reasons(_sanitised_vars) : SingleValueReasons{};
+            auto reasons = _gac_staged ? NonGacAllDifferentSingleValueReasons::build(_sanitised_vars) : NonGacAllDifferentSingleValueReasons{};
             propagators.install(
                 constraint_id(),
                 [vars = move(_sanitised_vars), vals = move(_compressed_vals), value_am1_constraint_numbers = move(value_am1_constraint_numbers),
@@ -181,8 +146,7 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
                     // value-consistency pass, over the same backtrackable
                     // unassigned list, as the VC propagator below.
                     if (staged) {
-                        if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, constraint_id,
-                                reasons.table.empty() ? nullptr : &reasons.table, reasons.base))
+                        if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, constraint_id, &reasons))
                             return PropagatorState::Enable; // contradiction: loop sees tracker.contradicted()
 
                         // If stage 1 inferred anything (the progress flag is
@@ -249,13 +213,12 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
             // on_change: its second stage reads the interiors.
             Triggers vc_triggers;
             vc_triggers.on_instantiated = {_sanitised_vars.begin(), _sanitised_vars.end()};
-            auto reasons = build_single_value_reasons(_sanitised_vars);
+            auto reasons = NonGacAllDifferentSingleValueReasons::build(_sanitised_vars);
             propagators.install(
                 constraint_id(),
                 [unassigned_handle = _unassigned_handle, owner = constraint_id(), reasons = std::move(reasons)](
                     const State & state, auto & tracker, ProofLogger * const logger) -> PropagatorState {
-                    if (! propagate_non_gac_alldifferent(
-                            unassigned_handle, state, tracker, logger, owner, reasons.table.empty() ? nullptr : &reasons.table, reasons.base))
+                    if (! propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger, owner, &reasons))
                         return PropagatorState::Enable; // contradiction: loop sees tracker.contradicted()
                     // Idempotent: the to_propagate worklist re-checks
                     // optional_single_value after every removal and processes the
