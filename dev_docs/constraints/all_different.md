@@ -94,6 +94,11 @@ The degenerate cases, where the frontends and the tests disagree most often:
   root contradiction. For `AllDifferentExcept` it **forces the variable into
   `excluded`**, by an initialiser that removes the runs of other values between
   the excluded ones — and if `excluded` is empty, it is unsatisfiable too.
+- **Two views of one variable** (`x` and `x + 1`, or `x` and `−x`) are not a
+  repeated handle, so `prepare()` does not divert them: they reach the
+  propagator, which treats the positions as independent. This is the one shape
+  where the order the deletion batches run in is visible to VeriPB (see rule 3),
+  and since #1013 `run_alldiff_aliased_views_test` covers it.
 - **An excluded value no variable can take** is dropped from the propagator's
   graph but kept in the encoding: `cake_pb_cp` encodes every listed exception
   value, and dropping one changes the rows' unit-propagation strength, which the
@@ -538,7 +543,10 @@ item**. Keeping the decomposition across the search and reprocessing only the
 component a deletion touches is the textbook incremental form; the persistent
 matching is its prerequisite and is done. Contracting matched pairs to run
 Tarjan over variables only would renumber the components and so change the
-proof's shape, which is why #526 left it for this. The bounds consistent
+proof's shape, which is why #526 left it for this. Either change has to run the
+deletion batches in an order that puts each component after every component it
+reaches: rules 2 and 3 both depend on it, and #1013 checks it. Tarjan's exact
+numbering is not needed, only that property. The bounds consistent
 propagator re-sorts every call, but by insertion sort from the previous call's
 order, which is nearly sorted already.
 
@@ -635,7 +643,9 @@ choice; `ExceptZero` is a constructor.
 constants, and a repeated handle at every level (`run_alldiff_dup_test` runs all
 three levels over three shapes). **What is not tested is a repeated handle
 reaching the propagator** — it never does, since `prepare` diverts it — so the
-duplicate tests say nothing about any propagator's behaviour. Until #999 the
+duplicate tests say nothing about any propagator's behaviour. Two views of one
+variable do reach it, and since #1013 `run_alldiff_aliased_views_test` is the
+one case that posts them. Until #999 the
 `vc` one was the *only* place `consistency::VC` appeared in the family's test
 file, which is how the arm's fixed-at-post bug went unseen. See
 [Tests](#tests).
@@ -723,9 +733,10 @@ time and is a `Clean` row.
   proof-logging tracker materialises reasons — but not by the contract
   `want_reasons()` states, which anticipates conflict-directed search wanting
   reasons without a logger. A one-word inconsistency, not filed.
-- **One-literal reasons built unconditionally**: the trivial-SCC deletion's
-  `v == val`, and the symmetric channelling pass's `x_v ≠ i`. Cheap, and the
-  second is on a constraint nothing benchmarks.
+- **One-literal reasons built unconditionally**: the symmetric channelling
+  pass's `x_v ≠ i`. Cheap, and on a constraint nothing benchmarks. The
+  trivial-SCC deletion's `m == d` was one too, until #1000 moved it behind the
+  same guard as the Hall search.
 
 **3. The proof side.**
 
@@ -955,6 +966,17 @@ states every Hall variable's domain already. Not filed; recorded here and in
   deletion in it: `infer_all` with `ThenRUP::Yes` emits the steps once under a
   temporary level and RUPs each literal inside it.
 - **Reason** — as rule 1, over the Hall set; pinned once for the whole batch.
+  **It is only sufficient because the batches run sinks first.** The Hall set
+  is the component's own variables and values, and the reason is their domains
+  read from the state, so it describes a Hall set only once every edge from the
+  component into a downstream component has been deleted, by an earlier batch.
+  No views are needed for that to matter: reversing the loop breaks `langford`,
+  `ortho_latin-5` and the three `sudoku` lanes, and `all_different_test`'s
+  default lane and its view lane with them. Stating the Hall condition in the
+  reason instead — `x ≠ w` for every non-Hall value still in a Hall variable's
+  domain — makes the order irrelevant when no two positions are views of one
+  variable (measured on a throwaway branch: every family lane verifies reversed
+  and shuffled), but not when two are; see rule 3.
 - **Assertion** — `x ≠ d ∨ ¬reason`, one per deleted literal.
 - **Hint** — `hints::AllDifferentHall`, as rule 1.
 - **Offline reconstructibility** — `hinted`, as rule 1. Each assertion carries its
@@ -981,23 +1003,39 @@ states every Hall variable's domain already. Not filed; recorded here and in
   share a value.
 - **Proof technique** — `RUP`, by **JP 3.1**, against the pair `(m, x)`,
   licensed by **Theorem 2.8**.
-- **Reason** — `{m == d}`, one literal, constructed unconditionally with proofs
-  off too.
+- **Reason** — `{m == d}`, one literal, built only when a proof or reasons are
+  wanted (since #1000, as rule 2).
 
-  **Why that literal is true when the inference is made is an ordering argument,
-  and it is not written down in the code.** `m` is not necessarily fixed when the
-  wake starts: it can have other values, each in a component downstream of `d`'s.
-  Every edge from `m` to one of those is deleted too, in an earlier batch,
-  because Tarjan numbers components in the order it completes them — sinks first
-  — and the deletion loop takes them in that order. So by the time `d`'s batch
-  runs, `m` has lost every other value and the reason holds. Checked by assertion
-  under the family's tests; see [Tests](#tests). The order is load-bearing: #522's
-  incremental components and #526's contraction idea both renumber, and either
-  would have to keep sinks first or this reason would be asserted before it was
-  true. The *proof* would survive that — `x ≠ d ∨ m ≠ d` is RUP whenever it is
-  written, and unit propagation reaches `m = d` through the earlier deletions —
-  but a reason that is not yet entailed is exactly what nogood learning cannot
-  use.
+  **Why that literal is true when the inference is made is an ordering
+  argument.** `m` is not necessarily fixed when the wake starts: it can have
+  other values, each in a component downstream of `d`'s. Every edge from `m` to
+  one of those is deleted too, in an earlier batch, because Tarjan numbers
+  components in the order it completes them — sinks first — and the deletion
+  loop takes them in that order. So by the time `d`'s batch runs, `m` has lost
+  every other value and the reason holds. Since #1013 the code says so at the
+  loop, and `prove_deletion_using_sccs` throws if `m` is not already fixed to
+  `d`; with the loop reversed, an ordinary unaliased case of
+  `all_different_test --seed=12345` trips it.
+
+  **The order matters to the proof, not only to the reason, once two positions
+  are views of one variable.** Without that, this rule on its own survives a
+  reversed order (rule 2, as written, does not): `x ≠ d ∨ m ≠ d` is RUP
+  whenever it is written, every batch's line is written
+  before anything needs it, and unit propagation reaches `m = d` through the
+  other batches' lines. With it, one batch's deletion can entail a later batch's
+  literal, and the tracker does not log an inference that is already entailed.
+  Out of order, a line is written whose reason only its own inference makes
+  true, and the batch that would have supported it is skipped. In
+  `AllDifferent(1 − u, −1 − u, e)` with `u ∈ {3, 5}` and `e = −2`, sinks first
+  logs `e = −2 → u ≠ 3` and skips `u = 5 → u ≠ 3` as entailed; reversed, it
+  logs the second, skips the first, and VeriPB rejects the proof. That instance
+  is `run_alldiff_aliased_views_test`. Sinks first is safe even here, because
+  every reason already holds, through lines written earlier, when its own line
+  is written. So #522's incremental components and #526's contraction idea,
+  which both renumber, have to keep each component after everything it
+  reaches. A reason that is not yet entailed would also defeat trail-ordered
+  nogood learning, which needs every reason literal on the trail before its
+  consequence.
 - **Assertion** — `x ≠ d ∨ ¬(m = d)`.
 - **Hint** — `hints::AllDifferent`.
 - **Offline reconstructibility** — `offline`.
@@ -1238,7 +1276,10 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
   per-position view sweep behind `GCS_ENABLE_VIEW_WRAP_SWEEP`. Six variables per
   instance: seven fixed rows, including #108's two constant-in-a-Hall-set
   crashes and #254's all-constant cases, and forty seeded random rows over
-  `[-10, 10]`. **Per-node consistency is asserted**:
+  `[-10, 10]`, and since #1013 one case whose scope holds two views of one
+  variable, `run_alldiff_aliased_views_test`, which fails if the deletion
+  batches run out of order (checked by mutation). **Per-node consistency is
+  asserted**:
   `solve_for_tests_checking_gac` at the default,
   `solve_for_tests_checking_consistency` with `CheckConsistency::BC` on every
   variable in the `bc` lane, and in the `vc` lane a check at every node that no
@@ -1291,9 +1332,10 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
   `equals` rather than this family.
 - **Six audit-lane rows and two proof-size rows**, under [Interval
   efficiency](#interval-efficiency).
-- **One assertion added for this audit and not committed**: rule 3's reason
-  checked, on every trivial-component deletion, to be entailed already when the
-  batch runs. It held on all **76,541** such deletions across
+- **Rule 3's reason, checked on every trivial-component deletion to be
+  entailed already when the batch runs.** Added for this audit as a local
+  assertion; #1013 commits it as a check that throws. It held on all
+  **76,541** such deletions across
   `all_different_test` (15,222), `all_different_except_test` (200),
   `symmetric_all_different_test` (50), `inverse_test` (94), `arg_sort_test`
   (142), `langford` at 8 and 11 (326 and 56,568), `sudoku` (911) and
@@ -1692,14 +1734,14 @@ evidence, and the family's standing work.
 2. **#1006 — MiniZinc differential tests over the shapes front ends get
    wrong.** #987 was invisible to every check but one, and this family's globals
    are the natural pilot.
-3. **Write down, in `gac_all_different.cc`, that rule 3's reason depends on
-   processing components sinks first.** It is true, and checked for this audit
-   by assertion over 76,541 firings, but the only record of it is this document,
-   and #522's remaining work is exactly the change that could break it. A
-   comment, not an issue.
+3. **#1013 writes the sinks-first order down and checks it.** The
+   comment at the batch loop covers rule 2 as well, which depends on the order
+   too; `prove_deletion_using_sccs` throws if rule 3's reason does not already
+   hold; and `run_alldiff_aliased_views_test` fails if the order is reversed,
+   because with aliased views the order decides which lines are logged at all.
 4. **#522 — incremental strongly connected components.** The remaining
-   propagation work in the generalised arc consistent arm, with the ordering
-   above as a constraint on it.
+   propagation work in the generalised arc consistent arm. It has to keep each
+   component's batch after every component it reaches; any such order will do.
 5. **#944 — Hall proofs over intervals.** The measurement under [Proof
    performance](#proof-performance) says how much of the family's own proof the
    answer decides; #944 says why the answer is not known yet.
