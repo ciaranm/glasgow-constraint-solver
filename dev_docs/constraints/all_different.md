@@ -1,17 +1,15 @@
 # `AllDifferent`: no two variables take the same value
 
 > **Maturity** production ·
-> **Audited** 2026-09-21 at `6b220c79` ·
-> **Open issues** filed by this audit: #987 (MiniZinc's
-> `symmetric_all_different`, `inverse` and `arg_sort` give wrong answers on arrays
-> not indexed from 1, and the certified chain verifies them), #988
-> (`AllDifferentExcept` forces a repeated variable one value at a time), #991
-> (the generalised arc consistent arm searches for Hall sets with proofs off),
-> #992 (the value consistent arm's trigger overstates its wakes and its hole
-> sensitivity), #989 (XCSP3's `allDifferent` with `except` is unbound), #990 (a
-> dead initialiser in `SymmetricAllDifferent`). Already open and touching this
-> family: #522 (SCC incrementality), #944 (Hall proofs cost values × vars²), #833
-> (the large-domain policy; the GAC arm is a `KnownTrip`), #868 (cross-solver).
+> **Audited** 2026-09-21 at `6b220c79`; its six fixes written 2026-09-22, each
+> an open pull request off `main`, and this document updated to describe them ·
+> **Open issues** filed by this audit, every one now with a pull request: #987
+> → #997, #988 → #1004, #989 → #1002, #990 → #1001, #991 → #1000, #992 → #999.
+> Two more wrong answers turned up while fixing them and are fixed in the same
+> pull requests. Filed since: #1006 (MiniZinc differential tests over the shapes
+> a front end gets wrong). Already open and touching this family: #522 (SCC
+> incrementality), #944 (Hall proofs cost values × vars²), #833 (the
+> large-domain policy; the GAC arm is a `KnownTrip`), #868 (cross-solver).
 > Tracked under #871.
 
 Four posted classes over three propagation algorithms: `AllDifferent` with a
@@ -36,14 +34,35 @@ there. Third, `AllDifferent` has a bounds consistent arm but **no**
 say about the #902 mechanism: see [Interior values and optional
 pruning](#interior-values-and-optional-pruning).
 
-**The audit's most serious finding is not in this directory.** MiniZinc's
-`symmetric_all_different` reaches `SymmetricAllDifferent` with its start
-hard-coded to 1, so on any array whose index set does not start at 1 it enforces
+**The audit's most serious finding was not in this directory.** MiniZinc's
+`symmetric_all_different` reached `SymmetricAllDifferent` with its start
+hard-coded to 1, so on any array whose index set did not start at 1 it enforced
 a different constraint — wrong solutions, or a wrong `UNSATISFIABLE`. Sweeping
 the MiniZinc library for the same shape found two more, `inverse` and
-`arg_sort`, in other families (#987). And the wrong `UNSATISFIABLE` **verifies**,
-all the way through `cake_pb_cp`, because the mistranslation happens before the
-`.scp` is written. See [Known limitations](#known-limitations).
+`arg_sort`, in other families (#987). And the wrong `UNSATISFIABLE` **verified**,
+all the way through `cake_pb_cp`, because the mistranslation happened before the
+`.scp` was written. See [Known limitations](#known-limitations).
+
+**What the fixes changed.** Every finding the audit filed has a pull request,
+none of them merged when this was written, and the document describes the code
+as they leave it; a figure taken at `6b220c79` says so. Merge it after them.
+
+| Issue | Pull request | What it changed here |
+|---|---|---|
+| #987 | #997 | the three MiniZinc globals pass the model's index set, behind `circuit`'s empty-array guard, with a non-1-based differential test each. **And `Inverse` numbered `x`'s values from `x_start` rather than `y_start`**, in the value set it hands this family's propagator and in its root at-most-ones, so two arrays starting at different indices failed at the root: a wrong `UNSATISFIABLE` that XCSP3's two-list `channel` could already reach |
+| #992 | #999 | the value consistent arm wakes `on_instantiated` and declares no hole sensitivity. **And it ignored every variable fixed at post time**, whose values it therefore never removed: at `VC`, `AllDifferent{x, y}` with `y = 3` accepted `x = 3`. The arm gains the enumeration lane it never had, which the old code fails at its first row with a constant |
+| #991 | #1000 | the Hall search runs only when a proof or reasons want it, in all five constraints that run the propagator |
+| #990 | #1001 | `SymmetricAllDifferent`'s dead root initialiser is deleted |
+| #989 | #1002 | XCSP3's `allDifferent` with `except` posts `AllDifferentExcept` |
+| #988 | #1004 | a repeated `AllDifferentExcept` variable is forced a run at a time, by RUP alone, and is no longer walked for the value set — which, not the forcing loop, was most of the measured cost |
+
+The sections that moved are the frontend table, the [propagator
+inventory](#propagator-inventory), [Interior values and optional
+pruning](#interior-values-and-optional-pruning), [Interval
+efficiency](#interval-efficiency), rules 1, 2, 4 and 8, the tests, and
+everything under [Status, gaps, and next steps](#status-gaps-and-next-steps).
+The rule catalogue's arguments for rules 1 to 7 and 9 were not re-derived, and
+the main performance tables are still `6b220c79`'s.
 
 ## What it is
 
@@ -71,8 +90,8 @@ The degenerate cases, where the frontends and the tests disagree most often:
   what it means differs by class. For `AllDifferent` and `SymmetricAllDifferent`
   it is unsatisfiable (`x ≠ x`), and `install_propagators` installs only a
   root contradiction. For `AllDifferentExcept` it **forces the variable into
-  `excluded`**, by an initialiser that removes every other value — and if
-  `excluded` is empty, it is unsatisfiable too.
+  `excluded`**, by an initialiser that removes the runs of other values between
+  the excluded ones — and if `excluded` is empty, it is unsatisfiable too.
 - **An excluded value no variable can take** is dropped from the propagator's
   graph but kept in the encoding: `cake_pb_cp` encodes every listed exception
   value, and dropping one changes the rows' unit-propagation strength, which the
@@ -83,9 +102,9 @@ The degenerate cases, where the frontends and the tests disagree most often:
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
 | `AllDifferent` | ✓ `fzn_all_different_int` | ✓ `allDifferent`; `decompose` for `allDifferent` as a matrix[^matrix]; `unsupported` over expressions[^xexpr] | ?[^cpmpy] | ✓ `all_different` | the level is not selectable from either frontend[^level] |
-| `AllDifferentExcept` | ✓ `fzn_alldifferent_except` | `frontend gap` for `allDifferent` with `except`[^xexcept] | ? | ✓ `all_different_except` | |
+| `AllDifferentExcept` | ✓ `fzn_alldifferent_except` | ✓ `allDifferent` with `except`[^xexcept] | ? | ✓ `all_different_except` | |
 | `AllDifferentExceptZero` | ✓ via `fzn_alldifferent_except`[^zero] | as above | ? | ✓ as `all_different_except` | |
-| `SymmetricAllDifferent` | **wrong for a non-1-based index set**[^sym] | `n/a` | ? | ✓ `symmetric_all_different` | |
+| `SymmetricAllDifferent` | ✓ `fzn_symmetric_all_different`, passing the index set's start[^sym] | `n/a` | ? | ✓ `symmetric_all_different` | wrong for a non-1-based index set until #997 |
 
 [^matrix]: `buildConstraintAlldifferentMatrix` posts one `AllDifferent` per row
     and one per column. `allDifferent-list` — lists pairwise distinct *as
@@ -109,9 +128,11 @@ The degenerate cases, where the frontends and the tests disagree most often:
     decomposition, which is [`equals`](equals.md)'s family, not this one.
 
 [^xexcept]: The parser's default `buildConstraintAlldifferentExcept` throws
-    "AllDiff constraint with exception is not yet supported", and the binding
-    does not override it — although `AllDifferentExcept` takes exactly that
-    constraint's arguments. The cheapest gap in the family to close.
+    "AllDiff constraint with exception is not yet supported", and until #1002
+    the binding did not override it, although `AllDifferentExcept` takes exactly
+    that constraint's arguments. It now posts `AllDifferentExcept` over the list
+    and the excepted values. `xcsp/tests/all_different_except` and
+    `all_different_except_values` are cached from ACE, at 73 and 44 solutions.
 
 [^zero]: MiniZinc's `alldifferent_except_0` is defined in the standard library
     as `alldifferent_except(vs, {0})`, which reaches `fzn_alldifferent_except`,
@@ -120,12 +141,13 @@ The degenerate cases, where the frontends and the tests disagree most often:
     `minizinc/tests/alldifferentexceptzero.mzn`: its one constraint is
     `glasgow_all_different_except_int`.
 
-[^sym]: `fzn_symmetric_all_different(x) = glasgow_symmetric_all_different(x)`,
-    and `fzn_glasgow.cc` posts `SymmetricAllDifferent{vars, 1_i}`. The start is
-    hard-coded because the flattened call carries no index set: FlatZinc arrays
-    are 1-based, so by the time the builtin runs the information is gone. The
-    standard library's own default is `inverse(x, x)`, which respects the index
-    set. Diffing solution sets against MiniZinc's default solver:
+[^sym]: Until #997, `fzn_symmetric_all_different(x) =
+    glasgow_symmetric_all_different(x)`, and `fzn_glasgow.cc` posted
+    `SymmetricAllDifferent{vars, 1_i}`. The start was hard-coded, and the
+    flattened call carries no index set: FlatZinc arrays are 1-based, so by the
+    time the builtin runs the information is gone. The standard library's own
+    default is `inverse(x, x)`, which respects the index set. Diffing solution
+    sets against MiniZinc's default solver at `6b220c79`:
 
     | index set | domain | Glasgow | default | in common |
     |---|---|---|---|---|
@@ -135,11 +157,16 @@ The degenerate cases, where the frontends and the tests disagree most often:
     | `2..5` | `1..6` | 10 | 10 | **0** |
     | `0..3` | `-1..5` | 10 | 10 | **0** |
 
-    The fix belongs in the front end, as model rewrites always do here: pass
-    `min(index_set(x))` to the builtin as a second argument and read it in
-    `fzn_glasgow.cc`. `minizinc/tests/symmetricalldifferent.mzn` is the only test
-    and uses `array[1..3]`, which is why nothing caught it. See [Known
-    limitations](#known-limitations) for what the proof does with it.
+    The fix is in the front end, as model rewrites always are here: the
+    redefinition passes `min(index_set(x))` as a second argument, behind the
+    `if length(x) = 0` guard `fzn_circuit.mzn` uses, and `fzn_glasgow.cc` reads
+    it. Every row above now agrees with the default solver, and so does an
+    index set starting at −2 — checked against a hand-written standard-library
+    decomposition instead, since Gecode's native `inverse` errors on a negative
+    offset. `minizinc/tests/symmetricalldifferentoffset.mzn`, over `array[0..3]`
+    and `array[2..5]`, fails on the old front end; the 1-based
+    `symmetricalldifferent.mzn`, the only test before it, never could. See
+    [Known limitations](#known-limitations) for what the proof did with it.
 
 ### Options
 
@@ -205,9 +232,10 @@ over whatever the positions are; an at-least-one for a registered view is stated
 over the view's own encoded variable, which is where its atoms live since #904;
 and an unregistered view falls back to the per-value at-least-one over the
 underlying variable, which is correct and is the one place a view costs more.
-The view sweep exercises six positions for `AllDifferent` in both the default and
-the `bc` lanes, four for `AllDifferentExcept`, and **none** for
-`SymmetricAllDifferent`, which has no view lane at all.
+The view sweep exercises six positions for `AllDifferent` in the default, `bc`
+and (since #999) `vc` lanes, four for `AllDifferentExcept` — whose repeated
+variable has a negated and two offset views of its own since #1004 — and
+**none** for `SymmetricAllDifferent`, which has no view lane at all.
 
 ### Reification
 
@@ -240,8 +268,15 @@ them:
 The idempotence claims are deliberately **not** in the shared helpers: the value
 consistent propagator's comment says so, because `Circuit` wraps the same helper
 in propagators that do more work in the same run and must not claim. The
-triggers are not in the helpers either, which matters for [#992](#next-steps):
-changing `AllDifferent`'s value consistent trigger touches no other family.
+triggers are not in the helpers either, which is why #999 could change
+`AllDifferent`'s value consistent trigger without touching any other family.
+
+**A caller has to hand `propagate_gac_all_different` the values its variables
+take**, and `Inverse` did not: it passed `x`'s own indices where `x`'s values
+are `y`'s indices, which coincide only when both arrays start at the same
+index. Nothing in `Inverse`'s tests used different starts, and no front end
+passed them except XCSP3's two-list `channel`. Fixed in #997, and
+`inverse_test` now runs every case again over shifted index sets.
 
 **Presolvers.** None rewrites this family or into it. `AutoTable` and
 `DifferenceLogic` post `AllDifferent` in their tests only.
@@ -320,7 +355,7 @@ and bound rows, and every `AllDifferentExcept` row, are unlabelled.
 | Class | Chain mode | Cases | Where it diverges |
 |---|---|---|---|
 | `AllDifferent` | `strict` | `all_different_sat` (three over `0..3`), `all_different_unsat` (four into three) | nowhere: byte-matches cake since #354 |
-| `AllDifferentExcept` | `none` | `all_different_except_sat`, `all_different_except_unsat` | the excluded-value literals are equality literals, which diverge from cake's eager variable encoding (#358) |
+| `AllDifferentExcept` | `none` | `all_different_except_sat`, `all_different_except_unsat`, and since #1004 `all_different_except_duplicate` (two repeated variables) | the excluded-value literals are equality literals, which diverge from cake's eager variable encoding (#358) |
 | `SymmetricAllDifferent` | `none` | `symmetric_all_different_sat`, `symmetric_all_different_unsat` | the bit/eq encoding's labels; the boundary pins cake's encoder needs are arranged as persistent proof lines |
 
 Two things no case exercises. **The `BC` and `VC` arms never reach the chain**:
@@ -334,9 +369,9 @@ only kind whose reason states runs.
 
 - **At the root, nothing** for `AllDifferent` and `AllDifferentExcept`.
   `SymmetricAllDifferent` infers its range at the root (the `define_bound`
-  initialisers, under the `InitialBound` hint), and was *meant* to emit every
-  value's at-most-one at the root too — see [Proof-logging
-  gaps](#proof-logging-gaps) for why it does not.
+  initialisers, under the `InitialBound` hint). It also had an initialiser
+  meant to emit every value's at-most-one at the root, dead since it was added
+  and deleted by #1001; see [Proof-logging gaps](#proof-logging-gaps).
 - **Lazily, per value: an at-most-one**, the first time a Hall argument needs
   that value. `C(n, 2)` pairwise `rup` clauses at `ProofLevel::Temporary`,
   folded into one cardinality line by `recover_am1_from_pairs` at
@@ -387,8 +422,12 @@ duplicated handle, and then does level-specific work:
   arm a `KnownTrip`. It also takes the staging decision, which needs the set's
   size.
 - **`VC`**, and **`GAC` when staged**, register a backtrackable list of the
-  variables not yet fixed. Skipped otherwise, because an unused constraint state
-  is still saved and restored at every node.
+  variables whose values the value consistent pass has not yet pushed through
+  the clique: every variable at the start, a fixed one included. Until #999 a
+  variable already fixed here was left out, and since a variable leaves the list
+  only once its value has been removed from the others, that value never was —
+  at `VC`, a wrong answer; see rule 4. Skipped otherwise, because an unused
+  constraint state is still saved and restored at every node.
 - **`BC`** does nothing at install beyond the sort.
 
 **`AllDifferentExcept::prepare`** additionally prunes the excluded list to values
@@ -396,7 +435,10 @@ some variable can take (an `in_domain` probe per variable per excluded value),
 finds the runs of duplicated variables, and builds the compressed value set
 without the excluded values — the same walk, with a linear `find` in the excluded
 list per value, which is `O(Σ |D| · |excluded|)` and harmless because the
-excluded list is the model's and not domain-sized.
+excluded list is the model's and not domain-sized. Since #1004 the walk skips a
+repeated variable altogether: its initialiser puts it inside the excluded set
+before anything propagates, so none of its other values can be matched, and
+walking a wide one was most of what #988 measured.
 
 **`SymmetricAllDifferent::prepare`** detects duplicates and calls `define_bound`
 twice per variable, which writes the range into the OPB and installs a root
@@ -409,7 +451,7 @@ so it builds nothing proportional to a domain.
 |---|---|---|---|---|---|---|
 | generalised arc consistent, maybe staged | `on_change` every variable | derived: **every variable** | 1, 2, 3, and 4 as stage 1 | `AllDifferent` at `GAC` | claims | no |
 | bounds consistent | `on_bounds` every variable | derived: **nothing** | 5, 6 | `AllDifferent` at `BC` | claims | no |
-| value consistent | `on_change` every variable | derived: **every variable** — overstated, see below | 4 | `AllDifferent` at `VC` | claims | no |
+| value consistent | `on_instantiated` every variable | derived: **nothing** | 4 | `AllDifferent` at `VC` | claims | no |
 | except | `on_change` every variable | derived: **every variable** | 1, 2, 3 | `AllDifferentExcept` | never claims | no |
 | symmetric | `on_change` every variable | derived: **every variable** | 1, 2, 3, 9 | `SymmetricAllDifferent` | never claims | no |
 | duplicate contradiction, initialiser | — | nothing | 7 | a repeated handle in `AllDifferent` at any level, in `SymmetricAllDifferent`, or in `AllDifferentExcept` with nothing excluded | n/a | one shot |
@@ -434,18 +476,25 @@ pass reach the fixpoint of the bounds they read, so it re-sweeps only when a
 written bound *snapped past a hole* — #970's main speed-up, checked against a
 brute-force oracle on 100,000 instances.
 
-**The value consistent propagator's trigger is wrong in a way that costs twice.**
-It reads nothing but `optional_single_value`, so `on_instantiated` is all it
-needs; it is registered `on_change`, because it shares the `triggers` object the
-generalised arc consistent arm builds. That means it is woken by every interior
-removal on any of its variables, scans its unassigned list, and finds nothing —
-exactly what #819 found and fixed for `NotEquals`. And because the hole
-sensitivity is *derived* from the triggers, it also declares that holes in every
-variable affect it, which they cannot: removing a value from strictly between the
-bounds never fixes a variable. So an `AllDifferent` at `VC` keeps another
-constraint's optional pruning alive — an `Element`'s, say — for nothing. One
-change fixes both: register `on_instantiated`. Measured under [CPU
-performance](#cpu-performance); filed as #992.
+**The value consistent propagator wakes on instantiation only** (#999). It reads
+nothing but `optional_single_value`, and until #999 it was registered
+`on_change`, because it shared the `triggers` object the generalised arc
+consistent arm builds. That cost twice. Every interior removal on any of its
+variables woke it to scan its unassigned list and find nothing, which is what
+#819 found for `NotEquals`. And because hole sensitivity is *derived* from the
+triggers, it declared that holes in every variable affected it, which they
+cannot, since removing a value from strictly between the bounds never fixes a
+variable; so an `AllDifferent` at `VC` kept another constraint's optional
+pruning alive for nothing. It now builds its own `Triggers`. The staged
+generalised arc consistent propagator runs the same pass as its first stage and
+keeps `on_change`, since its second stage reads the interiors.
+
+The same tree under the example's own brancher, which reads only domains and
+degree, with 23% fewer calls; see [CPU performance](#cpu-performance). **Under
+dom-wdeg the tree changes**: 626 to 560 nodes on `ortho_latin --all 5`, the same
+eighteen solutions. A wake that fixes nothing infers nothing, so the per-node
+fixpoint is unchanged; what moves is the order propagators run in, and so which
+one detects a failure and is weighted for it.
 
 **Self-disabling.** None. The duplicate initialisers are one-shot by nature.
 
@@ -536,25 +585,29 @@ change the matching — so an `AllDifferent` at its default keeps alive any
 optional pruning whose target it constrains. That is the expected answer for a
 domain consistent global, and correct.
 
-The bounds consistent arm is hole-transparent, derived from `on_bounds` and
-right: it reads nothing else. So **an `AllDifferent` at `BC` over an
-`Element`'s result lets that element drop to `BC` too**, which is the one place
-the two families' options compose.
+The bounds consistent and value consistent arms are hole-transparent, derived
+from `on_bounds` and `on_instantiated` and right: they read nothing else. So
+**an `AllDifferent` at `BC` or `VC` over an `Element`'s result lets that element
+drop to `BC` too**, which is where the two families' options compose.
+`element_auto_test` pins the verdict at each level: the pruning is kept for
+`GAC` and switched off for `BC` and `VC`.
 
-The value consistent arm is the finding. Its triggers **overstate** its hole
-sensitivity — derived as every variable, truly none — so an `AllDifferent` at
-`VC` keeps other constraints' prunings on when nothing here could observe them.
-Over-reporting is never unsound; it costs time elsewhere, in a pruning kept on
-that could have been switched off. #902's own audit left overstated declarations
-alone on purpose, with the one exception of the slack-watched linear inequality,
-since long sums are what an element result tends to feed. This one is worth
-fixing for a different reason: it comes free with fixing the wakes (#992).
+The value consistent arm was the finding. Until #999 its triggers
+**overstated** its hole sensitivity — derived as every variable, truly none — so
+an `AllDifferent` at `VC` kept other constraints' prunings on when nothing here
+could observe them. Over-reporting is never unsound; it costs time elsewhere,
+in a pruning kept on that could have been switched off. #902's own audit left
+overstated declarations alone on purpose, with the one exception of the
+slack-watched linear inequality, since long sums are what an element result
+tends to feed. This one came free with fixing the wakes.
 
 ### Robustness and limits
 
-**Unbounded domains.** Every arm but `BC` needs an explicit value set somewhere
-— `GAC` at install, `VC` and the except initialiser per call — so an unbounded
-domain is a width question; see [Interval efficiency](#interval-efficiency).
+**Unbounded domains.** Only the generalised arc consistent propagator needs an
+explicit value set, at install: `BC` reads bounds and `VC` reads fixed values.
+The except class's forcing initialiser walked a repeated variable's domain until
+#1004 and no longer does. So an unbounded domain is a width question; see
+[Interval efficiency](#interval-efficiency).
 
 **Negative values and zero.** Fine, and covered: the random data in
 `all_different_test.cc` is drawn from `[-10, 10]`, in every position, in both
@@ -566,9 +619,10 @@ choice; `ExceptZero` is a constructor.
 constants, and a repeated handle at every level (`run_alldiff_dup_test` runs all
 three levels over three shapes). **What is not tested is a repeated handle
 reaching the propagator** — it never does, since `prepare` diverts it — so the
-duplicate tests say nothing about any propagator's behaviour, and the `vc` one
-in particular is the *only* place `consistency::VC` appears in the family's test
-file. See [Tests](#tests).
+duplicate tests say nothing about any propagator's behaviour. Until #999 the
+`vc` one was the *only* place `consistency::VC` appeared in the family's test
+file, which is how the arm's fixed-at-post bug went unseen. See
+[Tests](#tests).
 
 **Overflow.** The value-index arithmetic is `(val − min).as_index()` over a span
 the dense table has already bounded, and the bounds consistent propagator's
@@ -582,8 +636,9 @@ one `equals` verified UBSan-clean.
 **Three arms, three different answers, and one hidden site.** The bounds
 consistent and value consistent arms are fine at any width. The generalised arc
 consistent arm is per value by the nature of the algorithm, has a weaker arm to
-fall back on, and is correctly a `KnownTrip`. And `AllDifferentExcept` has a
-per-value loop the audit lane has never reached.
+fall back on, and is correctly a `KnownTrip`. And `AllDifferentExcept` had a
+per-value loop the audit lane never reached, which since #1004 goes a run at a
+time and is a `Clean` row.
 
 **1. The propagation side.**
 
@@ -600,26 +655,30 @@ per-value loop the audit lane has never reached.
   proportional to a domain.
 - **Value consistency is width-independent.** It reads `optional_single_value`
   and walks the unassigned list.
-- **`AllDifferentExcept`'s duplicate-forcing initialiser is per value, and it
-  is the one hidden site.** For a variable posted twice it removes every value
-  not in `excluded`, one `infer(x != v)` at a time, over `each_value_immutable`.
-  That is large-domains.md's **H1a** — a per-value spelling of an interval
-  operation, "the domain minus a small given set", which is
-  `each_interval_minus` against the excluded values and one
-  `infer_not_in_range` per run. Measured through `glasgow_scp_solver` on
-  `all_different_except (X X Y) (0)` with `X` over `0..w`, proofs off, one core
-  of the other socket:
+- **`AllDifferentExcept`'s duplicate forcing was per value, and it was the one
+  hidden site** (#988). For a variable posted twice it removed every value not
+  in `excluded`, one `infer(x != v)` at a time, over `each_value_immutable`:
+  large-domains.md's **H1a**, a per-value spelling of "the domain minus a small
+  given set". Since #1004 it takes `each_interval_minus` against the excluded
+  values and makes one `infer_not_in_range` per run.
 
-  | width | time | peak memory |
+  **The forcing loop was not most of the cost, though.** Fixed on its own, it
+  moved the measurement below from 7.99 s to 7.29 s at width 10⁷, with memory
+  unchanged: `prepare()` was walking the repeated variable's domain as well, to
+  build the generalised arc consistent value set, and #1004 stops that too (see
+  [Initialisation](#initialisation-and-global-data)). Measured through
+  `glasgow_scp_solver --all` on `all_different_except (X X Y) (0)`, `X` over
+  `0..w`, `Y` over `0..3`, proofs off, one core, fataepyc-09:
+
+  | width | before #1004 | after |
   |---|---|---|
-  | 10³ | 0.11 s | 6.3 MB |
-  | 10⁵ | 0.11 s | 18.5 MB |
-  | 10⁶ | 0.71 s | 137 MB |
-  | 10⁷ | 8.02 s | 1.33 GB |
+  | 10³ | 0.00 s, 4.7 MB | 0.04 s, 4.7 MB |
+  | 10⁶ | 0.69 s, 137 MB | 0.00 s, 4.7 MB |
+  | 10⁷ | 8.03 s, 1.33 GB | 0.00 s, 4.7 MB |
+  | 10⁹ | not run: linear, about 130 GB | 0.00 s, 4.7 MB |
 
-  Linear in both, so a `0..10⁹` variable would want about 130 GB. The answers
-  are right — four solutions, `X = 0` — so nothing in the suite can see it. See
-  [Next steps](#next-steps).
+  Four solutions, `X = 0`, at every width. The audit's own run of the "before"
+  column, on the other socket, measured 0.71 s and 8.02 s at 10⁶ and 10⁷.
 - **`SymmetricAllDifferent`'s channelling pass** walks each variable's domain,
   but `prepare` has narrowed every domain to `[start, start + n)`, so the walk is
   bounded by `n`.
@@ -631,17 +690,17 @@ per-value loop the audit lane has never reached.
   only if something reads it; `generic_reason` states each variable's bounds and
   holes, and since #935 finds the holes by reading the domain's intervals rather
   than testing every value. So the output and the work are both per run.
-- **But the Hall *search* is not guarded.** `prove_deletion_using_sccs` walks a
-  strongly connected component to find the Hall set, `prove_matching_is_too_small`
-  grows a violator along alternating paths, and both build the hint's two vectors,
-  on every wake that deletes or fails — with proofs off, for a hint and a reason
-  nothing reads. The bounds consistent
-  arm, written later (#970), guards the equivalent search on `logger ||
-  want_reasons()`; the generalised arc consistent one never has. That is not a
-  width cost — the walk is over the value graph, which is already per value —
-  but it is the pattern #864 and #907 found in `equals` and `comparison`: work
-  for a proof, paid with proofs off. Measured under [CPU
-  performance](#cpu-performance); filed as #991.
+- **The Hall *search* is guarded since #1000.** `prove_deletion_using_sccs`
+  walks a strongly connected component to find the Hall set,
+  `prove_matching_is_too_small` grows a violator along alternating paths, and
+  both build the hint's two vectors. Until #1000 they did so on every wake that
+  deleted or failed, with proofs off too, for a hint and a reason nothing read.
+  Now both run only when `logger || want_reasons()`, as the bounds consistent
+  arm (#970) always did, and otherwise the inference goes in bare. That was
+  never a width cost — the walk is over the value graph, which is already per
+  value — but it was the pattern #864 and #907 found in `equals` and
+  `comparison`: work for a proof, paid with proofs off. Measured under [CPU
+  performance](#cpu-performance).
 - **Bounds consistent reasons** are two bound literals per Hall variable plus one,
   built only when `logger || want_reasons()` for a bound push. The contradiction
   path is guarded on `logger` alone. The two are equivalent today — only the
@@ -673,15 +732,18 @@ per-value loop the audit lane has never reached.
 - **Each caller names only the values its variable can still take**, not the
   whole Hall set, so the residue is exactly the complement of the domain and the
   reason discharges it by construction.
-- **The except duplicate-forcing initialiser's proof is per value too**: two
-  `rup` lines and the conclusion for every value it removes. Measured on the same instance with proofs on: exactly
-  `14w + 78` proof lines — 14,078 at 10³ and 140,078 at 10⁴ — and VeriPB takes
-  0.61 s and **90.2 s** respectively, so verification is already super-linear in
-  a width no one would call large. The per-run rewrite would make the proof flat
-  as well as the propagation; whether the two-line argument carries over to a
-  range literal unchanged is the thing to check first, since a range literal
-  names order atoms rather than the equality atoms the duplicate rows are
-  written over.
+- **The except duplicate forcing's proof was per value too, and per run it
+  needs nothing at all** (#1004). Per value it was two `rup` lemmas and the
+  conclusion for every value removed, plus the eleven lines defining each
+  value's equality atom: exactly `14w + 78` lines on the instance above,
+  14,078 at 10³ and 140,078 at 10⁴, and 0.61 s and **90.2 s** of VeriPB. The
+  audit asked whether the two lemmas would carry over to a range literal, since
+  a range literal names order atoms and the duplicate rows are written over
+  equality atoms. They are not needed: with `x` inside a run, unit propagation
+  falsifies every excluded value's equality atom down the chain of `x`'s order
+  atoms, and the pair's two rows then force the selector both ways, so each run
+  is RUP from the rows alone. The whole proof of that instance is now **91
+  lines at every width up to 10⁹**, verifying in about 20 ms.
 - **No form here is chosen by the kind of a variable.** The one fork on kind is
   the at-least-one for an *unregistered* view, which falls back to per value over
   the underlying variable because the singled-out values would otherwise need
@@ -696,25 +758,28 @@ per-value loop the audit lane has never reached.
 | `AllDifferent/BC` | `Clean` | the sweep; four identical wide domains, so no Hall interval |
 | `AllDifferent/VC` | `Clean` | the unassigned scan |
 | `AllDifferentExcept` | `KnownTrip` | the same value set, with the excluded values filtered |
+| `AllDifferentExcept/duplicate` | `Clean` | the forcing, over a wide repeated variable with a narrow partner; trips before #1004 |
 | `SymmetricAllDifferent` | `NoWidePosition` | nothing: the range is `n` values |
 
-And one row in `TEST_CASE("Large domain proof sizes")`: `AllDifferent/confined`,
-three variables confined to two values inside `0..10⁴`, 132 lines. It cannot be
-checked at 10⁹ — not because of the proof, but because the generalised arc
-consistent setup still wants a vertex per value, which is the `KnownTrip` above.
+And two rows in `TEST_CASE("Large domain proof sizes")`, which runs in the
+ordinary suite. `AllDifferent/confined`, three variables confined to two values
+inside `0..10⁴`, 132 lines; it cannot be checked at 10⁹ — not because of the
+proof, but because the generalised arc consistent setup still wants a vertex per
+value, which is the `KnownTrip` above. And since #1004
+`AllDifferentExcept/duplicate`, a repeated variable over `0..10⁴` forced into
+`{5}`, 124 lines against 140,108 before.
 
-The `AllDifferent` row's comment is stale: it blames "a linear find per value",
-which e45b8e1a replaced with a set. The row still trips, and correctly, on the
-walk itself.
+The `AllDifferent` row's comment was stale — it blamed "a linear find per
+value", which e45b8e1a replaced with a set — and #1004 corrects it. The row
+still trips, and correctly, on the walk itself.
 
 **Which axes those rows do not vary**, and here the gaps are real:
 
-- **No row posts a repeated handle**, so `AllDifferentExcept`'s forcing loop —
-  the one genuinely width-proportional site in the family that is not by design
-  — is reached by no row. It carries no `LargeDomainIterationCounter` of its own
-  but does not need one: it iterates through `each_value_immutable`, which is
-  counted, so a row posting `AllDifferentExcept{{x, x, y}, {0}}` would trip at
-  once.
+- **A repeated handle is reached since #1004**, by
+  `AllDifferentExcept/duplicate`. Before it no row posted one, so the forcing
+  loop — the one width-proportional site in the family that was not by design —
+  was reached by no row, although, iterating through `each_value_immutable`,
+  it was counted and would have tripped at once.
 - **No bounds consistent row reaches a Hall interval.** Four identical wide
   domains contain no interval holding more variables than values, so neither the
   push nor its justification runs. The justification is bounded by `n` by the
@@ -773,7 +838,7 @@ know, because each changes what it can find in the proof:
 | `all_different:((constraint_id N))` | `hints::AllDifferent` | one RUP | 3, 4, 7, 9 |
 | `all_different:((constraint_id N) (subhint hall))` | `hints::AllDifferentHall` | a Hall set or violator over the value graph | 1, 2 |
 | `all_different:((constraint_id N) (subhint hall_interval))` | `hints::AllDifferentHallInterval` | a Hall interval or violator over bounds | 5, 6 |
-| `all_different_except:((constraint_id N))` | `hints::AllDifferentExcept` | one RUP, or two lemmas and a RUP | 7, 8 |
+| `all_different_except:((constraint_id N))` | `hints::AllDifferentExcept` | one RUP | 7, 8 |
 
 **The hint's name does not identify the class**, and a justifier dispatching on
 it alone will be wrong. `propagate_gac_all_different` builds its own hints, so
@@ -808,11 +873,13 @@ states every Hall variable's domain already. Not filed; recorded here and in
 - **Strength** — `GAC`: this is the closure detecting infeasibility.
 - **Algorithm** — the matching is kept across wakes and repaired, greedily and
   then by breadth-first augmenting paths, so a wake that leaves most of it
-  intact costs little. A violator is then grown from the first uncovered
-  variable along alternating paths (`prove_matching_is_too_small`), adding each
-  value's matched variable until the neighbourhood closes. `O(edges)` per step
-  of that growth, and edges are `(variable, value)` pairs, so all of it is in
-  **values**. Régin (1994) for the matching; Hall (1935) for the argument.
+  intact costs little. When a proof or reasons are wanted, a violator is then
+  grown from the first uncovered variable along alternating paths
+  (`prove_matching_is_too_small`), adding each value's matched variable until
+  the neighbourhood closes; otherwise, since #1000, the contradiction goes in
+  bare. `O(edges)` per step of that growth, and edges are `(variable, value)`
+  pairs, so all of it is in **values**. Régin (1994) for the matching; Hall
+  (1935) for the argument.
 - **Why it is true** — Hall's marriage theorem: a set of variables whose domains
   together hold fewer values than there are variables cannot take distinct
   values.
@@ -861,9 +928,10 @@ states every Hall variable's domain already. Not filed; recorded here and in
 - **Algorithm** — Régin's: the components of the residual graph by an iterative
   Tarjan, rebuilt **every wake** (#522's remaining item), plus a sweep from the
   unmatched values that is skipped outright when there are exactly as many
-  values as variables. Then, per component with deletions, a walk inside it from
-  one deleted value (`prove_deletion_using_sccs`) to collect the Hall set, by
-  Lemma 3.6. `O(variables + edges)`, in values.
+  values as variables. Then, per component with deletions and only when a proof
+  or reasons are wanted, a walk inside it from one deleted value
+  (`prove_deletion_using_sccs`) to collect the Hall set, by Lemma 3.6; otherwise,
+  since #1000, the batch goes in bare. `O(variables + edges)`, in values.
 - **Why it is true** — a Hall set uses every value in its neighbourhood, so no
   variable outside it can take one.
 - **Proof technique** — `pol`, then `RUP+hints` per deleted literal, by **JP
@@ -878,9 +946,9 @@ states every Hall variable's domain already. Not filed; recorded here and in
   optimisation of the proof, not something a justifier has to reproduce.
 - **Proof size** — one `pol` per component, one RUP per deletion, and the first
   use of any at-least-one or at-most-one.
-- **Gaps** — `None.` for the proof. With proofs **off**, the Hall set is still
-  collected, and the hint's vectors and the reason still built, on every wake
-  that deletes — see [CPU performance](#cpu-performance) and #991.
+- **Gaps** — `None.` Until #1000 the Hall set was collected, and the hint's
+  vectors and the reason built, on every wake that deleted, with proofs **off**
+  too; see [CPU performance](#cpu-performance).
 - **Tightness** — `Not shown.`
 
 ### Rule: forced-value-deletion
@@ -930,8 +998,14 @@ states every Hall variable's domain already. Not filed; recorded here and in
 - **Fires when** — a variable in the backtrackable unassigned list is found
   fixed. The whole of `AllDifferent` at `VC`, and the first stage of the staged
   generalised arc consistent propagator, which defers the matching whenever this
-  stage removed something. Registered `on_change` rather than
-  `on_instantiated` at `VC`; see [Propagator inventory](#propagator-inventory).
+  stage removed something. Registered `on_instantiated` at `VC` since #999; see
+  [Propagator inventory](#propagator-inventory). The list starts with every
+  variable, a fixed one included. Until #999 a variable fixed at post time was
+  left out, so its value was never removed from the others, and at `VC` the
+  arm accepted assignments that are not solutions: `{x, z, y}` with `x, z ∈
+  {3, 4}` and `y = 3` has none and got two. With a proof, VeriPB rejects the
+  first of them as conflicting with a constraint; a run without one returned
+  them.
 - **Strength** — `partial`: a fixed variable's value is removed from every other
   variable, and nothing else.
 - **Algorithm** — collect the newly fixed variables by swap-and-pop from the
@@ -953,8 +1027,9 @@ states every Hall variable's domain already. Not filed; recorded here and in
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line.
 - **Gaps** — `None.`
-- **Tightness** — `Not shown.` Its only proving lane anywhere is the
-  `seat_moving-vc` example; see [Tests](#tests).
+- **Tightness** — `Not shown.` Since #999 `all_different_test vc` proves every
+  instance and checks value consistency at every node; before it, the only
+  proving lane anywhere was the `seat_moving-vc` example. See [Tests](#tests).
 
 ### Rule: hall-interval-bound
 
@@ -1051,38 +1126,50 @@ states every Hall variable's domain already. Not filed; recorded here and in
 
 ### Rule: duplicate-forcing
 
-- **Infers** — `x ≠ v`, at the root, for every value `v` of a repeated variable
-  `x` that is not excluded.
+- **Infers** — `x ∉ [lo, hi]`, at the root, for every maximal run `[lo, hi]` of
+  a repeated variable `x`'s domain that holds no excluded value.
 - **Fires when** — an initialiser, for `AllDifferentExcept` with a repeated handle
-  and something excluded. Afterwards the propagator sees the variable once.
+  and something excluded. Afterwards the propagator sees the variable once, and
+  since #1004 the variable contributes nothing to the propagator's value set.
 - **Strength** — n/a; it forces `x` into the excluded set, which is exact.
-- **Algorithm** — **per value of `x`'s domain**: `each_value_immutable`, a
-  linear search of the excluded list, and one `infer` per surviving value.
-  `O(|D(x)| · |excluded|)`. See [Interval efficiency](#interval-efficiency).
+- **Algorithm** — `each_interval_minus` of `x`'s domain against the excluded
+  values, and one `infer_not_in_range` per run: `O(runs)`, however wide `x` is.
+  Per value, with a linear search of the excluded list for each, until #1004;
+  see [Interval efficiency](#interval-efficiency).
 - **Why it is true** — `x` must differ from itself unless it takes an excluded
   value.
-- **Proof technique** — `RUP+hints`, ours: two lemmas, `x ≠ v ∨ selector` and
-  `x ≠ v ∨ ¬selector`, one per half-reified row of the pair `(x, x)`, then the
-  conclusion. As written into a proof:
+- **Proof technique** — `RUP`, directly on the encoding, needing no procedure
+  and no lemma. Under their guards the pair `(x, x)`'s two rows read `0 ≤ −1`,
+  so they collapse to `selector ∨ ⋁ [x = s]` and `¬selector ∨ ⋁ [x = s]` over
+  the excluded values `s`. With `x` inside the run each `[x = s]` is false by
+  unit propagation, down the chain of `x`'s order atoms from the run's bound on
+  whichever side `s` lies — no excluded value is inside a run — and the two rows
+  then force the selector both ways. As written into a proof, for `x` over
+  `-3..0` with `-1` excluded:
   ```
-  rup 1 ~i[X][eq500] 1 f[0][notequals_except] >= 1;
-  rup 1 ~i[X][eq500] 1 ~f[0][notequals_except] >= 1;
-  rup 1 ~i[X][eq500] >= 1;
+  rup 1 ~i[_1][in-3_-2] >= 1;
+  rup 1 ~i[_1][eq0] >= 1;
   ```
+  Per value, until #1004, each conclusion followed two lemmas on the selector,
+  `x ≠ v ∨ selector` and `x ≠ v ∨ ¬selector`; the range form turned out to need
+  neither. Checked with proofs on holes (an excluded value in a hole between two
+  runs, one outside the bounds, one in no domain at all), on negated and offset
+  views, and through the full `cake_pb_cp` chain.
 - **Reason** — none; it is a root inference.
-- **Assertion** — `x ≠ v`.
-- **Hint** — `hints::AllDifferentExcept`. The pair's selector is held by the
-  emitter, from the map `define_clique_not_equals_except_encoding` returns, and is
-  not on the wire.
-- **Offline reconstructibility** — `hinted`, with a caveat: the lemmas name the
-  pair's selector, which is an unnamed `notequals_except` flag on unlabelled
-  rows, so a justifier has to find it by the rows' shape — the one pair whose
-  two variables are the same — rather than by name.
-- **Proof size** — three lines per removed value, and another eleven per value
-  from the literal layer defining that value's equality atom: `14w + 78`
-  measured, for a variable of width `w`.
-- **Gaps** — `None.` for the inference; the size is the hazard.
-- **Tightness** — `Not shown.`
+- **Assertion** — `x ∉ [lo, hi]`.
+- **Hint** — `hints::AllDifferentExcept`, carrying only the constraint id. The
+  encoding helper no longer hands back the pair's selector, which only the
+  lemmas used.
+- **Offline reconstructibility** — `offline`. RUP finds the rows without naming
+  them, so the selector being an unnamed flag on unlabelled rows no longer
+  matters.
+- **Proof size** — one line per run, plus the literal layer's lines defining
+  the range literal. On `(X X Y) except (0)`, the whole proof is 91 lines at
+  every width up to 10⁹; per value it was `14w + 78`.
+- **Gaps** — `None.`
+- **Tightness** — `Not shown`, and there is little to corrupt: the conclusion is
+  the only step. What is pinned is the width, by an audit-lane row and a
+  proof-size row that both fail on the per-value code.
 
 ### Rule: symmetric-channel
 
@@ -1119,19 +1206,24 @@ states every Hall variable's domain already. Not filed; recorded here and in
 
 Four binaries, and a family whose coverage is uneven in an instructive way.
 
-- **`all_different_test`**, run as two lanes — `all_different_constraint` at the
-  default and `all_different_constraint_bc` — each with a mixed view lane, and the
-  full per-position view sweep behind `GCS_ENABLE_VIEW_WRAP_SWEEP`. Six variables
-  per instance: seven fixed rows, including #108's two constant-in-a-Hall-set
+- **`all_different_test`**, run as three lanes — `all_different_constraint` at
+  the default, `all_different_constraint_bc`, and since #999
+  `all_different_constraint_vc` — each with a mixed view lane, and the full
+  per-position view sweep behind `GCS_ENABLE_VIEW_WRAP_SWEEP`. Six variables per
+  instance: seven fixed rows, including #108's two constant-in-a-Hall-set
   crashes and #254's all-constant cases, and forty seeded random rows over
   `[-10, 10]`. **Per-node consistency is asserted**:
-  `solve_for_tests_checking_gac` at the default, and
+  `solve_for_tests_checking_gac` at the default,
   `solve_for_tests_checking_consistency` with `CheckConsistency::BC` on every
-  variable in the `bc` lane. **VeriPB really runs**, on every instance, when it is
-  installed. Seeded and reproducible with `--seed=N`. No runtime cap.
+  variable in the `bc` lane, and in the `vc` lane a check at every node that no
+  fixed variable's value is left in another domain, which is the whole of what
+  value consistency promises. **VeriPB really runs**, on every instance, when it
+  is installed. Seeded and reproducible with `--seed=N`. No runtime cap.
 - **`all_different_except_test`**, one lane and a mixed view lane over four
   positions; per-node GAC asserted; duplicate cases that exercise the forcing
-  initialiser at test widths.
+  initialiser at test widths, and since #1004 six more over a repeated variable
+  with holes or as a view: an excluded value in a hole between two runs, one
+  outside the bounds, one in no domain, and negated and offset views.
 - **`symmetric_all_different_test`**, one lane, no view lane. Small fixed cases
   up to four variables, with GAC asserted only on the cases where the
   constraint is GAC — it is not, in general, since the channelling is weaker
@@ -1140,11 +1232,16 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
   against a brute-force reference at the root, on thousands of small random
   instances: it checks that the arm reaches **exactly** bounds(Z) consistency,
   which pins the strength rather than the proof.
-- **Six `.scp` chain cases**, listed under [Cake
-  conformity](#cake-conformity). **Three MiniZinc differential tests**
-  (`alldifferentexcept`, `alldifferentexceptzero`, `symmetricalldifferent`) and
-  one XCSP3 one (`all_different_matrix`). Plain `all_different` has no MiniZinc
-  test of its own, being reached by a great many models.
+- **Seven `.scp` chain cases**, listed under [Cake
+  conformity](#cake-conformity); #1004's `all_different_except_duplicate` is the
+  first to repeat a variable. **Four MiniZinc differential tests**
+  (`alldifferentexcept`, `alldifferentexceptzero`, `symmetricalldifferent`, and
+  since #997 `symmetricalldifferentoffset`, the only non-1-based one) and three
+  XCSP3 ones (`all_different_matrix`, and since #1002 `all_different_except` and
+  `all_different_except_values`). Plain `all_different` has no MiniZinc test of
+  its own, being reached by a great many models.
+- **`element_auto_test`** checks each level's hole-sensitivity verdict, from the
+  side of an `Element` whose result only an `AllDifferent` observes (#999).
 - **Examples with proving lanes that reach the family**: `seat_moving` under its
   default, under `--all-different vc` and under `not-equals` (the last reaching
   only its `AllDifferentExcept`), `sudoku` and `sudoku-sixteen`, `ortho_latin-5`
@@ -1152,7 +1249,7 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
   `seat_moving` is where `AllDifferentExcept` is posted by a realistic model.
   `magic_square-3` runs its default, the disequality clique, and so exercises
   `equals` rather than this family.
-- **Five audit-lane rows and one proof-size row**, under [Interval
+- **Six audit-lane rows and two proof-size rows**, under [Interval
   efficiency](#interval-efficiency).
 - **One assertion added for this audit and not committed**: rule 3's reason
   checked, on every trivial-component deletion, to be entailed already when the
@@ -1165,13 +1262,10 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
 
 **What the tests do not cover**, and this is the section's point:
 
-- **The value consistent arm has no enumeration test and no strength
-  assertion.** `consistency::VC` appears in the family's test file only in the
-  duplicate cases, and those never reach a propagator — `prepare` diverts every
-  repeated handle to an initialiser. Its only proving lane anywhere is the
-  `seat_moving-vc` example, and its only width row the audit lane's. A `vc` mode
-  for `all_different_test`, asserting value consistency per node the way #970
-  added the `bc` one, would close it.
+- **The value consistent arm had no enumeration test and no strength
+  assertion**, until #999 added the `vc` lane. It failed at its first data row
+  with a constant, on a wrong answer no other lane could see: the arm ignored
+  variables fixed at post time (rule 4).
 - **The staged path and the dense-table sweep are never reached by the family's
   own tests**, and that follows from arithmetic rather than from reading. Every
   domain is drawn from `[-10, 10]`, so a constraint sees at most 21 distinct
@@ -1181,11 +1275,14 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
   — "the per-node fixpoint is therefore still exactly the GAC closure" — is
   argued in a comment and exercised by examples, which check solutions and
   proofs but not consistency.
-- **No non-1-based `symmetric_all_different`**, which is the whole of why the
-  MiniZinc bug survived. `minizinc/tests/symmetricalldifferent.mzn` uses
-  `array[1..3]`.
-- **No wide repeated handle in `AllDifferentExcept`**, so the forcing loop's width
-  cost is visible only to a probe written for this audit.
+- **There was no non-1-based `symmetric_all_different`**, which is the whole of
+  why the MiniZinc bug survived; #997 added one. Every global's MiniZinc tests
+  are thin on the shapes a front end gets wrong — index sets, empty arrays,
+  repeated variables — and Gecode, the harness's reference, is itself wrong or
+  errors on some of them: that is #1006.
+- **There was no wide repeated handle in `AllDifferentExcept`**, so the forcing
+  loop's width cost was visible only to a probe written for this audit. Since
+  #1004 an audit-lane row and a proof-size row see it.
 - **The `BC` and `VC` arms never reach `cake_pb_cp`**, since the `.scp` does not
   record a level.
 - **No mutation lane.** Per the template's policy that is an ordinary state. If
@@ -1219,9 +1316,10 @@ all-different does not constrain.
 verify fully justified on this machine. And the `.scp` pigeonholes of [Proof
 performance](#proof-performance), which isolate the family's own cost.
 
-**Never run uncapped**: any proving run of `AllDifferentExcept` with a repeated
-handle over a wide domain — 90 s of VeriPB at width 10⁴ already. `ortho_latin
---all 7` was not attempted; at 6 the arms take 63–167 s.
+**Never run uncapped**: `ortho_latin --all 7`, which was not attempted; at 6 the
+arms take 63–167 s. A proving run of `AllDifferentExcept` with a wide repeated
+handle used to belong here too — 90 s of VeriPB at width 10⁴ — and since #1004
+is 91 lines at any width.
 
 ### CPU performance
 
@@ -1264,11 +1362,11 @@ rounds, same machine and pinning. The experimental binary is not the one in the
 table above and its baselines differ from it by about 1%, so compare within
 these rows only.
 
-*The value consistent trigger* (#992), `--all-different vc`:
+*The value consistent trigger* (#992, fixed by #999), `--all-different vc`:
 
 | Trigger | Time, min of three | Range | Recursions | Propagator calls | Instructions |
 |---|---|---|---|---|---|
-| `on_change` (today) | 63.38 s | 63.38–63.70 s | 1,283,966 | 37,681,972 | 340.6 G |
+| `on_change` (before #999) | 63.38 s | 63.38–63.70 s | 1,283,966 | 37,681,972 | 340.6 G |
 | `on_instantiated` | **61.82 s** | 61.82–62.07 s | 1,283,966 | **28,989,095** | 333.9 G |
 
 **The same tree with 23.1% fewer propagator calls**, 2.0% fewer instructions,
@@ -1278,22 +1376,38 @@ three interleaved pairs, stable to 0.03%; cycles in the same runs moved by
 found nothing, which is what #819 measured for `NotEquals`; the saving in time is
 small because on this model most of the work is the other constraints'.
 
-*The Hall-search guard* (#991), `--all-different gac`, skipping
+*The Hall-search guard* (#991, fixed by #1000), `--all-different gac`, skipping
 `prove_deletion_using_sccs` and `prove_matching_is_too_small` when
 `! logger && ! want_reasons()`:
 
 | Hall search | Time, min of three | Range | Recursions | Propagator calls | Instructions |
 |---|---|---|---|---|---|
-| unguarded (today) | 73.89 s | 73.89–74.07 s | 864,835 | 29,006,249 | 382.5 G |
+| unguarded (before #1000) | 73.89 s | 73.89–74.07 s | 864,835 | 29,006,249 | 382.5 G |
 | guarded | **72.06 s** | 72.06–72.27 s | 864,835 | 29,006,249 | 376.4 G |
 
 **2.5% faster with every count identical**, 1.6% fewer instructions (one
 `perf stat` pair; cycles −2.7%), the ranges again not overlapping.
 Small, and deliberately not overstated: the family is 49% of this benchmark's
 propagation time, so the guard is worth about 5% of the family's own cost here.
-It is filed because it is free, because the bounds consistent arm already does
-it, and because it applies unchanged to `Inverse` and `ArgSort`, which run the
-same code.
+It was worth doing because it is free, because the bounds consistent arm
+already did it, and because it applies unchanged to `Inverse` and `ArgSort`,
+which run the same code.
+
+**The same two, measured on the fixes themselves**, since an experiment is not
+the change that ships. Same machine, boost off, pinned with `taskset -c 24`
+alone rather than the main table's `numactl` and `setarch`; three interleaved
+rounds, min of three. Each pair is the pull request's parent against its tip, so
+code layout differs between them and the counts are the firmer evidence:
+
+| Fix | Arm | Before | After | Recursions | Propagator calls | Instructions |
+|---|---|---|---|---|---|---|
+| #999 | `vc` | 63.59 s (63.59–64.16) | **62.03 s** (62.03–62.58) | 1,283,966 both | 37,681,972 → **28,989,095** | not taken |
+| #1000 | `gac` | 73.68 s (73.68–73.90) | **71.97 s** (71.97–72.19) | 864,835 both | 29,006,249 both | 381.8 G → **375.7 G** |
+
+Both reproduce the experiment, the ranges again not overlapping. #999's parent
+is its own first commit, the fixed-at-post fix, which changes nothing on this
+model: every count at size 5 is identical to `main`'s at `5397a50b`, because
+no `ortho_latin` scope holds a variable fixed when it is posted.
 
 **Identical-tree comparison of `GAC` and `BC`, on Golomb rulers**, the one shape
 where #970 found the trees agree. Same build as the main table, on one core of
@@ -1349,6 +1463,13 @@ The `gac`, `bc` and `vc` arms write **byte-identical** `.opb` files (423,961
 bytes), which is the claim that the level is a propagation choice checked rather
 than asserted. The clique's is different (435,170 bytes), being a different
 model.
+
+The table is `6b220c79`'s, and one fix moves one row. #999 changes when the `vc`
+arm runs, and so the order its inferences reach the proof in: the `.opb` stays
+byte-identical, and the proof goes from 130,921 lines to 130,154, both `VERIFIED
+COMPLETE ENUMERATION OF 18 SOLUTIONS`. #1000 moves nothing, since its guard
+cannot fire with a logger: all 592 proof artefacts of the five constraints'
+tests that run the propagator are byte-identical at a pinned seed.
 
 `gac` proves the smallest tree in about the same proof as the cheaper arms: its
 Hall justifications are bigger per inference than a single disequality, and it
@@ -1422,33 +1543,39 @@ propagator changes strength with a logger attached: the bounds consistent arm
 changes only *whether it looks for* the interval behind a bound, never whether
 it moves the bound.
 
-**One piece of dead proof code.** `SymmetricAllDifferent` installs an
-initialiser meant to emit every value's at-most-one at the root, and opens it
-with `if (! logger || logger->get_assertion_level() >= AssertionLevel::Off)
-return;`. `Off` is 0, the lowest level, so the test is always true and the
-initialiser has returned immediately since it was added in 4a433958
-(2026-06-19). Proofs verify regardless, because the Hall justification emits the
-at-most-ones lazily on first use, the way `AllDifferent` always has. The right
-fix is to **delete it, not to repair the comparison**: either repair — `> Off`
-or `== Off` — would start writing `n · C(n, 2)` root lines that the lazy path
-makes unnecessary. #990.
+**One piece of dead proof code, now deleted** (#990, #1001).
+`SymmetricAllDifferent` installed an initialiser meant to emit every value's
+at-most-one at the root, and opened it with `if (! logger ||
+logger->get_assertion_level() >= AssertionLevel::Off) return;`. `Off` is 0, the
+lowest level, so the test was always true and the initialiser had returned
+immediately since it was added in 4a433958 (2026-06-19). Proofs verified
+regardless, because the Hall justification emits the at-most-ones lazily on
+first use, the way `AllDifferent` always has. It was **deleted, not repaired**:
+a repair writes `n · C(n, 2)` root lines that the lazy path makes unnecessary —
+12% more proof lines even on the family's own small test instances, all still
+verifying — and the deletion leaves every one of those tests' 64 proof
+artefacts byte-identical, which is the check that it really never ran.
+
+`Inverse` has the same initialiser, and there it is **live** (`> Off`), so it
+pays the root cost this one avoids. Whether it should go lazy too is a
+proof-size question for another family, and not filed.
 
 **One invariant exception, safe today.** The Hall justifications read `state`
 rather than the reason; see the catalogue's preamble.
 
-**The cost gap runs the other way, as in `equals` and `comparison`**: the
-generalised arc consistent propagator does proof-shaped work — finding the Hall
-set, building the hint — with proofs off. That is a propagation cost and is in
-[CPU performance](#cpu-performance).
+**The cost gap ran the other way, as in `equals` and `comparison`, and is
+closed**: until #1000 the generalised arc consistent propagator did proof-shaped
+work — finding the Hall set, building the hint — with proofs off. See [CPU
+performance](#cpu-performance).
 
 ### Known limitations
 
-**MiniZinc's `symmetric_all_different`, `inverse` and `arg_sort` give wrong
-answers on arrays not indexed from 1** (#987). The first is this family's;
-the other two were found by sweeping the MiniZinc library for the same shape,
-and are recorded here because the fix is one pattern for all three. Each passes
-its arrays to a builtin that carries no index set, and `fzn_glasgow.cc` posts
-the propagator with its offset fixed at 1:
+**MiniZinc's `symmetric_all_different`, `inverse` and `arg_sort` gave wrong
+answers on arrays not indexed from 1** (#987, fixed by #997). The first is this
+family's; the other two were found by sweeping the MiniZinc library for the same
+shape, and are recorded here because the fix is one pattern for all three. Each
+passed its arrays to a builtin that carries no index set, and `fzn_glasgow.cc`
+posted the propagator with its offset fixed at 1. At `6b220c79`:
 
 | model | Glasgow | MiniZinc's default |
 |---|---|---|
@@ -1456,20 +1583,34 @@ the propagator with its offset fixed at 1:
 | `inverse(f, g)`, both `array[0..2] of var 0..2` | `UNSATISFIABLE` | 6 solutions |
 | `arg_sort(x, p)`, `x : array[0..2] of var 0..3` | `UNSATISFIABLE` | 64 solutions |
 
-and where Glasgow does return solutions on a shifted array, none of them is a
-solution of the model. **The wrong `UNSATISFIABLE` verifies** — through VeriPB,
+and where Glasgow did return solutions on a shifted array, none of them was a
+solution of the model. **The wrong `UNSATISFIABLE` verified** — through VeriPB,
 and through the full `cake_pb_cp` chain, re-deriving the OPB from the `.scp`,
 elaborating to a core and re-checking it — because the `.scp` records the
 constraint Glasgow posted, `(_1 symmetric_all_different (...) 1)`, and the chain
-certifies that. Nothing is wrong with any proof. The chain starts at the `.scp`,
-and a front end that posts the wrong constraint is upstream of everything it
-can check. That is the most useful sentence this audit has for the paper.
-`circuit` and `subcircuit` already pass `min(index_set(x))` to their builtins,
-empty-array guard included, and are the pattern to copy.
+certifies that. Nothing was wrong with any proof. The chain starts at the
+`.scp`, and a front end that posts the wrong constraint is upstream of
+everything it can check. That is the most useful sentence this audit has for
+the paper.
 
-**`AllDifferentExcept` forces a repeated variable into the excluded set one value
-at a time**, which is linear in the variable's width in time, memory and proof
-(#988). See [Interval efficiency](#interval-efficiency).
+The fix copies `circuit` and `subcircuit`, which already passed
+`min(index_set(x))` to their builtins, empty-array guard included; `inverse`
+passes both arrays' starts, and also says `false` for arrays of different
+lengths, as the standard library's decomposition does, rather than reaching
+`Inverse` and failing as an invalid problem. And letting two different starts
+through exposed a second wrong answer, in `Inverse` itself: see [Relation to
+other families](#relation-to-other-families). There the proof does catch it:
+VeriPB rejects the wrong `UNSATISFIABLE` at a RUP step, so it was a wrong answer
+only for runs without a proof.
+
+**`AllDifferent` at `VC` ignored variables fixed at post time**, fixed by #999
+and found by it rather than by the audit: see rule 4. Like `Inverse`'s, a proof
+catches the wrong solutions and a run without one returns them.
+
+**`AllDifferentExcept` forced a repeated variable into the excluded set one value
+at a time**, linear in the variable's width in time, memory and proof (#988).
+Since #1004 it is a run at a time and flat in all three; see [Interval
+efficiency](#interval-efficiency).
 
 **Generalised arc consistency wants a vertex per value**, so an `AllDifferent`
 over genuinely wide domains at its default is the audit lane's `KnownTrip`, and
@@ -1489,56 +1630,41 @@ remaining item).
 conjunction**, being the bipartite algorithm plus channelling rather than
 Régin's non-bipartite one. Its tests assert GAC only where it happens to hold.
 
-**XCSP3's `allDifferent` with `except` is unsupported** although the class
-exists (#989), and `allDifferent` over expressions likewise.
+**XCSP3's `allDifferent` over expressions is unsupported.** With `except` it
+is supported since #1002 (#989); over expressions each one would need a
+variable first, which is a different size of job.
 
 **The hint's name does not say which class sent it**; see the catalogue's
 preamble.
 
 ### Next steps
 
-Ranked. Four issues filed by this audit are bugs or width hazards; the rest are
-evidence and cleanup.
+Ranked. The audit's six filed findings all have pull requests — #997, #999,
+#1000, #1001, #1002 and #1004, to merge before this document — and so they are
+gone from this list. What is left is evidence, and the family's standing work.
 
-1. **#987 — pass the index offset for `symmetric_all_different`, `inverse`
-   and `arg_sort`.** Wrong answers from a mainstream front end, verified by the
-   whole certified chain. Small: three `mznlib` files, three `fzn_glasgow.cc`
-   call sites, three tests with a non-1-based array. Nothing is more important
-   than this in the family.
-2. **#991 — guard the Hall search on `logger || want_reasons()`.**
-   2.5% on the family's own benchmark with every count identical, and it
-   carries to `Inverse` and `ArgSort` for free. Two call sites. What makes it
-   more than a two-line change is the checking #916 found necessary: proofs
-   byte-identical at a pinned seed, and a dom-wdeg arm or two, since a
-   contradiction hands its reason to the conflict observers with proofs off.
-3. **#992 — register the value consistent arm `on_instantiated`.** 23% fewer
-   propagator calls on an identical tree, 2.5% faster, and it stops `VC`
-   declaring a hole sensitivity it does not have. One `Triggers` object at one
-   call site; `Circuit` and `SubCircuit` are untouched. Ranked below the guard
-   only because the arm is opt-in and nothing in the frontends selects it.
-4. **#988 — force a repeated `AllDifferentExcept` variable per run, and
-   add the audit row.** The canonical H1a rewrite; the thing to check first is
-   whether the two lemmas carry over to a range literal unaided.
-5. **Test the arms and paths nothing tests.** A `vc` mode for
-   `all_different_test` asserting value consistency per node, as #970 did for
-   `bc`; and an instance with at least 43 distinct values over six variables, so
-   that the per-node GAC assertion reaches the staged path and the dense-table
-   sweep, which today it never does. No issue yet; cheap.
-6. **#989 — bind XCSP3's `allDifferent` with `except`.** A few lines.
-7. **#990 — delete `SymmetricAllDifferent`'s dead initialiser.** Cleanup.
-8. **Write down, in `gac_all_different.cc`, that rule 3's reason depends on
+1. **Test the path nothing tests.** An instance with at least 43 distinct values
+   over six variables, so that the per-node GAC assertion reaches the staged
+   path and the dense-table sweep, which today it never does. The other half of
+   this item as the audit wrote it, a `vc` lane, is done (#999), and found a
+   wrong answer on its first run; that is the argument for this half. No issue
+   yet; cheap.
+2. **#1006 — MiniZinc differential tests over the shapes front ends get
+   wrong.** #987 was invisible to every check but one, and this family's globals
+   are the natural pilot.
+3. **Write down, in `gac_all_different.cc`, that rule 3's reason depends on
    processing components sinks first.** It is true, and checked for this audit
    by assertion over 76,541 firings, but the only record of it is this document,
    and #522's remaining work is exactly the change that could break it. A
    comment, not an issue.
-9. **#522 — incremental strongly connected components.** The remaining
+4. **#522 — incremental strongly connected components.** The remaining
    propagation work in the generalised arc consistent arm, with the ordering
    above as a constraint on it.
-10. **#944 — Hall proofs over intervals.** The measurement under [Proof
-    performance](#proof-performance) says how much of the family's own proof the
-    answer decides; #944 says why the answer is not known yet.
-11. **#868 — the cross-solver comparison.** This is the best family in the arc to
-    point it at.
+5. **#944 — Hall proofs over intervals.** The measurement under [Proof
+   performance](#proof-performance) says how much of the family's own proof the
+   answer decides; #944 says why the answer is not known yet.
+6. **#868 — the cross-solver comparison.** This is the best family in the arc to
+   point it at.
 
 **Not to do, having been considered.**
 
@@ -1548,7 +1674,7 @@ pruning](#interior-values-and-optional-pruning). #970 considered and measured
 it, and this audit agrees.
 
 *Repairing `SymmetricAllDifferent`'s dead initialiser.* See [Proof-logging
-gaps](#proof-logging-gaps): deleting it is the fix.
+gaps](#proof-logging-gaps): deleting it was the fix (#1001).
 
 *Reading the reason instead of `state` in the Hall justifications, now.* Right in
 principle, as #885 was for `equals`, and harmless to leave while every
@@ -1611,6 +1737,25 @@ bounds.
   hand-rolled folds it replaced.
 
 ## Developer commentary
+
+**What fixing the audit taught**, which is about the next family's fixes more
+than this one's.
+
+- **A finding is a place to look harder, not only a thing to fix.** Two of the
+  six fixes found a second wrong answer in the code the finding pointed at:
+  `Inverse`'s value set, exposed the moment the MiniZinc fix let two different
+  starts through, and the value consistent arm's unassigned list, exposed by the
+  enumeration lane that fixing its trigger made worth writing. Fixing either
+  finding as filed and stopping would have found neither.
+- **Re-measure an issue's headline after its named fix.** #988 put 8 s and
+  1.33 GB at width 10⁷ on the forcing loop. Fixing the loop alone moved the time
+  by 9% and the memory not at all; the cost was `prepare()`'s value set, one
+  function over. The audit's probe measured the right thing and attributed it to
+  the wrong line.
+- **The proof question an issue asks first can have a simpler answer than
+  either option it offers.** #988 asked whether the per-value lemmas carry over
+  to a range, or whether bound lemmas are needed instead. The range needs
+  neither.
 
 **The family's history is a performance arc, and it is worth knowing in order.**
 #522 found the generalised arc consistent propagator rebuilding everything from
