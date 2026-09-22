@@ -277,6 +277,14 @@ set_tests_properties(minizinc-increasing PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-inverses COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ inverses true true)
 set_tests_properties(minizinc-inverses PROPERTIES SKIP_RETURN_CODE 66)
 
+# The index sets the three index-valued alldifferent-family globals were given
+# in the model (#987): the flattened arrays are 1-based whatever the model's
+# were, so the redefinitions pass them explicitly. --fzn-pattern is load-bearing,
+# as for circuit: the stdlib decomposition agrees with the reference solver and
+# verifies its proof whatever the builtin would have done.
+add_test(NAME minizinc-inverses-offset COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_inverse $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ inversesoffset true true)
+set_tests_properties(minizinc-inverses-offset PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-knapsack COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ knapsacktest false true)
 set_tests_properties(minizinc-knapsack PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -372,6 +380,10 @@ set_tests_properties(minizinc-sort PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-argsort COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ argsorttest true true)
 set_tests_properties(minizinc-argsort PROPERTIES SKIP_RETURN_CODE 66)
 
+# As minizinc-inverses-offset.
+add_test(NAME minizinc-argsort-offset COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_arg_sort_int $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ argsortoffset true true)
+set_tests_properties(minizinc-argsort-offset PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-splitrandom COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ splitrandom true true)
 set_tests_properties(minizinc-splitrandom PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -383,6 +395,10 @@ set_tests_properties(minizinc-strictlyincreasing PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-symmetricalldifferent COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ symmetricalldifferent true true)
 set_tests_properties(minizinc-symmetricalldifferent PROPERTIES SKIP_RETURN_CODE 66)
+
+# As minizinc-inverses-offset.
+add_test(NAME minizinc-symmetricalldifferent-offset COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_symmetric_all_different $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ symmetricalldifferentoffset true true)
+set_tests_properties(minizinc-symmetricalldifferent-offset PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-tablebool COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ tablebool true true)
 set_tests_properties(minizinc-tablebool PROPERTIES SKIP_RETURN_CODE 66)

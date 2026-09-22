@@ -139,6 +139,21 @@ The general recipe (see `gcs/constraints/lex/lex.cc` and the
    `.mzn` test, all set to `SKIP_RETURN_CODE 66` (which means
    "MiniZinc isn't installed, skip").
 
+### Pass the index set of an array whose values are indices
+
+FlatZinc arrays are 1-based, whatever the model's were, so by the time a
+`glasgow_*` builtin is called the model's index sets are gone. A predicate whose
+*values* are positions in an array — `circuit`, `subcircuit`, `inverse`,
+`symmetric_all_different`, `arg_sort` — has to read the index set in its
+redefinition and pass it on, as `min(index_set(x))`, with the
+`if length(x) = 0 then true` guard that `min` of an empty set needs. Assuming 1
+posts a different constraint on every array that starts elsewhere, and nothing
+downstream can tell: the answers are wrong, and a wrong `UNSATISFIABLE` comes
+with a proof that verifies through the whole `cake_pb_cp` chain, because the
+chain starts at the `.scp`, which records the constraint that was posted
+(#987). The only check that sees it is a differential test on an array that is
+not indexed from 1, so such a predicate wants one.
+
 ### Never shift a `var` array inside a comprehension
 
 A redefinition that rebases an array of *variables* — `[x[i] - min(index_set(x))

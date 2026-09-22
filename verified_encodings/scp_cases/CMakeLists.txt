@@ -221,6 +221,10 @@ add_scp_chain_test(parity_unsat  none)
 # encoding gap as element (#358) (cake's full ge0 ladder + eq0 <=> ge0 & ~ge1),
 # and its clauses are unlabelled vs cake -- so no opbdiff byte-match yet.
 add_scp_chain_test(inverse_sat  none)
+# The same with the two arrays numbered from different places, 0 and 5, so that
+# the chain pins that cake reads each offset as its own list's first index, as we
+# do. Inverse's value set once confused the two and failed at the root (#987).
+add_scp_chain_test(inverse_offsets_sat  none)
 
 # strict: `in` (membership). cake_pb_cp's parser takes the candidate list first
 # then the variable -- (id in (values...) var). A constant candidate contributes

@@ -30,6 +30,8 @@
 using std::cerr;
 using std::cmp_not_equal;
 using std::flush;
+using std::get;
+using std::get_if;
 using std::make_optional;
 using std::mt19937;
 using std::nullopt;
@@ -53,10 +55,11 @@ using namespace gcs;
 using namespace gcs::test_innards;
 
 auto run_inverse_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<variant<int, pair<int, int>>> & x_range,
-    const vector<variant<int, pair<int, int>>> & y_range) -> void
+    const vector<variant<int, pair<int, int>>> & y_range, int x_start, int y_start) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, static_cast<int>(x_range.size() + y_range.size()));
-    print(cerr, "inverse [{}] {} {} {}", view_wrap_config_label(view_cfg), x_range, y_range, proofs ? " with proofs:" : ":");
+    print(cerr, "inverse [{}] {} {} starts {} {}{}", view_wrap_config_label(view_cfg), x_range, y_range, x_start, y_start,
+        proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>, vector<int>>> expected, actual;
@@ -66,17 +69,19 @@ auto run_inverse_test(bool proofs, const ViewWrapConfig & view_cfg, const vector
             // Random sweeps may pick domains that include out-of-range
             // values; the propagator's prepare() trims them but the
             // brute-force predicate runs over raw enumerated values, so
-            // we need explicit bounds checks before the .at() calls.
+            // we need explicit bounds checks before the .at() calls. x's
+            // values are y's indices, numbered from y_start, and the other
+            // way around.
             for (const auto & [i, _] : enumerate(x)) {
-                if (x.at(i) < 0 || std::cmp_greater_equal(x.at(i), y.size()))
+                if (x.at(i) - y_start < 0 || std::cmp_greater_equal(x.at(i) - y_start, y.size()))
                     return false;
-                if (cmp_not_equal(y.at(x.at(i)), i))
+                if (cmp_not_equal(y.at(x.at(i) - y_start) - x_start, i))
                     return false;
             }
             for (const auto & [i, _] : enumerate(y)) {
-                if (y.at(i) < 0 || std::cmp_greater_equal(y.at(i), x.size()))
+                if (y.at(i) - x_start < 0 || std::cmp_greater_equal(y.at(i) - x_start, x.size()))
                     return false;
-                if (cmp_not_equal(x.at(y.at(i)), i))
+                if (cmp_not_equal(x.at(y.at(i) - x_start) - y_start, i))
                     return false;
             }
             return true;
@@ -96,7 +101,7 @@ auto run_inverse_test(bool proofs, const ViewWrapConfig & view_cfg, const vector
         auto w = wraps.at(pos++);
         y.push_back(visit([&](auto e) { return create_integer_variable_or_constant_with_view(p, e, w); }, entry));
     }
-    p.post(Inverse{x, y});
+    p.post(Inverse{x, y, Integer(x_start), Integer(y_start)});
 
     auto proof_name = proofs ? make_optional("inverse_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y});
@@ -164,11 +169,35 @@ auto main(int argc, char * argv[]) -> int
         var_data.emplace_back(x_doms, y_doms);
     }
 
+    // Every case also runs again with the arrays numbered from somewhere other
+    // than zero. x's values are y's indices and the other way around, so x's
+    // domains move by y_start and y's by x_start. Two of the three pairs have
+    // x_start != y_start, which the propagator's value set once got wrong: it
+    // numbered x's values from x_start, and so failed at the root on every
+    // such instance. MiniZinc's 1-based arrays give the first pair.
+    auto shifted = [](const vector<Entry> & entries, int by) {
+        vector<Entry> result;
+        for (const auto & e : entries) {
+            if (auto c = get_if<int>(&e))
+                result.emplace_back(*c + by);
+            else {
+                auto [lo, hi] = get<pair<int, int>>(e);
+                result.emplace_back(pair{lo + by, hi + by});
+            }
+        }
+        return result;
+    };
+    const vector<pair<int, int>> other_starts = {{1, 1}, {3, -2}, {-2, 4}};
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        for (auto & [x, y] : var_data)
-            run_inverse_test(proofs, view_cfg, x, y);
+        for (const auto & [idx, data] : enumerate(var_data)) {
+            const auto & [x, y] = data;
+            run_inverse_test(proofs, view_cfg, x, y, 0, 0);
+            auto [x_start, y_start] = other_starts.at(idx % other_starts.size());
+            run_inverse_test(proofs, view_cfg, shifted(x, y_start), shifted(y, x_start), x_start, y_start);
+        }
     }
 
     {

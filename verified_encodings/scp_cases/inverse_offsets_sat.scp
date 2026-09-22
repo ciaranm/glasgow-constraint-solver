@@ -1,0 +1,1 @@
+( (version 1) (variables (X0 5 7) (X1 5 7) (X2 5 7) (Y0 0 2) (Y1 0 2) (Y2 0 2)) (constraints (_1 inverse ((X0 X1 X2) 0) ((Y0 Y1 Y2) 5))) (prob_type enumerate) )

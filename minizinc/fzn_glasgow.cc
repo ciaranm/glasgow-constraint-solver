@@ -892,9 +892,9 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "glasgow_arg_sort_int") {
                 const auto & x = arg_as_array_of_var(data, args, 0);
                 const auto & p = arg_as_array_of_var(data, args, 1);
-                // FlatZinc arg_sort is 1-based: p's values index into x's
-                // 1-based index set.
-                problem.post(ArgSort{x, p, 1_i});
+                // p's values index x, so its offset is the first index of x's
+                // array in the model, which the flattened call no longer has.
+                problem.post(ArgSort{x, p, arg_as_constant(args, 2)});
             }
             else if (id == "glasgow_bin_packing_capa") {
                 // BinPacking numbers bins 0..num_bins-1, which the fourth argument's
@@ -1053,7 +1053,9 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "glasgow_inverse") {
                 const auto & vars1 = arg_as_array_of_var(data, args, 0);
                 const auto & vars2 = arg_as_array_of_var(data, args, 1);
-                problem.post(Inverse{vars1, vars2, 1_i, 1_i});
+                // Each array's first index in the model, which the flattened
+                // call no longer has.
+                problem.post(Inverse{vars1, vars2, arg_as_constant(args, 2), arg_as_constant(args, 3)});
             }
             else if (id == "glasgow_knapsack") {
                 auto weights = arg_as_array_of_integer(data, args, 0);
@@ -1217,7 +1219,9 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (id == "glasgow_symmetric_all_different") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
-                problem.post(SymmetricAllDifferent{vars, 1_i});
+                // The first index of the array in the model, which the
+                // flattened call no longer has.
+                problem.post(SymmetricAllDifferent{vars, arg_as_constant(args, 1)});
             }
             else if (id == "glasgow_table_int" || id == "glasgow_table_bool") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
