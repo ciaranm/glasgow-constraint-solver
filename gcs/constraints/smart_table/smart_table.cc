@@ -97,6 +97,36 @@ SmartTable::SmartTable(vector<IntegerVariableID> v, SmartTuples t) : _vars(move(
                 if (deview_for_alias_check(be->var_1) == deview_for_alias_check(be->var_2))
                     throw InvalidProblemDefinitionException{
                         "SmartTable: BinaryEntry with aliased endpoints (both sides share the same underlying variable handle)"};
+
+    // The same goes for any BinaryEntry that closes a cycle among a tuple's
+    // underlying variables, including a second entry on a pair already joined:
+    // build_tree finds both ends already visited and drops it (issue #1014). The
+    // propagator relies on each tuple's binary entries forming a forest, which is
+    // what lets it reach GAC without iterating, so reject a cycle rather than
+    // handle it. An exact repeat of an entry already in the tuple is the one
+    // exception: dropping it loses nothing, and AtMostOneSmartTable produces
+    // them when its array repeats a variable.
+    for (const auto & tuple : _tuples) {
+        map<IntegerVariableID, IntegerVariableID> parent;
+        auto find = [&](IntegerVariableID v) {
+            while (parent.contains(v) && parent.at(v) != v)
+                v = parent.at(v);
+            return v;
+        };
+
+        set<std::tuple<IntegerVariableID, IntegerVariableID, SmartEntryConstraint>> seen;
+        for (const auto & entry : tuple)
+            if (auto * be = std::get_if<BinaryEntry>(&entry)) {
+                if (! seen.emplace(be->var_1, be->var_2, be->constraint_type).second)
+                    continue;
+                auto root_1 = find(deview_for_alias_check(be->var_1));
+                auto root_2 = find(deview_for_alias_check(be->var_2));
+                if (root_1 == root_2)
+                    throw InvalidProblemDefinitionException{
+                        "SmartTable: the binary entries of a tuple form a cycle (each tuple's binary entries must form a forest)"};
+                parent.insert_or_assign(root_1, root_2);
+            }
+    }
 }
 
 namespace
