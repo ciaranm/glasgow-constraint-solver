@@ -183,15 +183,23 @@ support matrix across all three frontends is in
 Using the MiniZinc Solver
 -------------------------
 
-The easiest way is probably to add symbolic links into your user solver directory, which you can
-find by running `minizinc --config-dirs` and looking for `userSolverConfigDir`. For example:
+Building generates a solver configuration next to the solver, `build/glasgow.msc`, which runs
+exactly that build from any working directory:
 
 ```shell
-ln -s $HOME/glasgow-constraint-solver/minizinc $HOME/.minizinc/solvers/glasgow
-ln -s $HOME/glasgow-constraint-solver/minizinc/glasgow.msc $HOME/.minizinc/solvers/glasgow.msc
+minizinc --solver build/glasgow.msc -a -s cake.mzn
 ```
 
-Then you can run
+To use it by name, add a symbolic link to it in your user solver directory, which you can find
+by running `minizinc --config-dirs` and looking for `userSolverConfigDir`. For example:
+
+```shell
+ln -s $HOME/glasgow-constraint-solver/build/glasgow.msc $HOME/.minizinc/solvers/glasgow.msc
+```
+
+Alternatively, `cmake --install build --prefix <prefix>` installs `fzn-glasgow`, its predicate
+library, and a configuration in `<prefix>/share/minizinc/solvers`, which MiniZinc finds if that
+directory is in `MZN_SOLVER_PATH`. Either way, you can then run
 
 ```shell
 minizinc --solver glasgow -a -s cake.mzn
