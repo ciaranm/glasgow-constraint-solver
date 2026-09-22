@@ -30,7 +30,8 @@ layer, and it overtakes the literal layer at about `n = 19`. Second, this
 directory's propagators are **not only this family's**: `Inverse` and `ArgSort`
 run the generalised arc consistent propagator, and `Circuit` and `SubCircuit` run
 the value consistent one and the clique encoding, so a change here is a change
-there. Third, `AllDifferent` has a bounds consistent arm but **no**
+there. Third, `AllDifferent` has a bounds consistent arm but that arm **cannot**
+be paired with the generalised arc consistent one as an optional-interior-pruning
 `consistency::Auto`, and the reason is the most useful thing this family has to
 say about the #902 mechanism: see [Interior values and optional
 pruning](#interior-values-and-optional-pruning).
@@ -176,8 +177,12 @@ The degenerate cases, where the frontends and the tests disagree most often:
 consistency::VC>` — those three and nothing else, so asking for `Tabulated`,
 `Dynamic` or `Auto` is a compile-time error. The default is `GAC`, for every
 posted class that has the setter. `AllDifferentExcept` and
-`SymmetricAllDifferent` have no setter and are always generalised arc
-consistent.
+`SymmetricAllDifferent` have no setter. `AllDifferentExcept` is always
+generalised arc consistent. `SymmetricAllDifferent` always runs the same
+generalised arc consistent all-different component plus a symmetric channelling
+pass, and that conjunction is **weaker** than generalised arc consistency on the
+symmetric all-different, which needs non-bipartite matching; see
+[symmetric-channel](#rule-symmetric-channel).
 
 | Tag | Installs | Strength |
 |---|---|---|
@@ -193,14 +198,24 @@ that **neither the `BC` nor the `VC` arm's proofs ever go through
 `cake_pb_cp`**. Their encoding is the one the chain checks; their derivations are
 checked by VeriPB only.
 
-**No `consistency::Auto`, deliberately, and no `consistency::Dynamic`.** The
-reason is the same fact from two sides and is written out under [Interior values
-and optional pruning](#interior-values-and-optional-pruning): bounds consistency
-is not the generalised arc consistent propagator with the interior removals
-switched off, because GAC's own holes stay made and later move bounds BC cannot.
-#970 measured what that costs over a whole search — trees ×1.23 on
-`magic_square`, ×1.27 on `langford`, ×3.1 on `ortho_latin` — and the tag is
-opt-in for that reason.
+**No `consistency::Auto` and no `consistency::Dynamic`: two separate facts.**
+The first is a disproved guarantee. The existing `BC`/`GAC` pair cannot be an
+optional-interior-pruning pair, the mechanism `Element`'s `Auto` uses, because
+bounds consistency is not the generalised arc consistent propagator with the
+interior removals switched off: GAC's own holes stay made and later move bounds
+BC cannot. [Interior values and optional
+pruning](#interior-values-and-optional-pruning) writes that out. So there is no
+`Auto` that promises `GAC`'s search.
+
+The second is a design choice nobody has made, and the first fact does not
+settle it. Neither tag has to promise `GAC`'s search: `consistency::Dynamic` is
+defined as `GAC` where the `GAC` algorithm is cheap on the current domains and
+something weaker otherwise, and `consistency::Auto` is a policy that may fall
+back on something cheaper. A cost-based policy of either kind would be a
+deliberate weakening, and #970's figures are what it would have to trade
+against — trees ×1.23 on `magic_square`, ×1.27 on `langford`, ×3.1 on
+`ortho_latin`. That is why `BC` is opt-in. It is not a proof that no such
+policy could pay, and none is proposed here.
 
 **Two internal thresholds that are not options**, recorded because they change
 the propagation counts and the proof shape without changing the search:
@@ -884,7 +899,7 @@ states every Hall variable's domain already. Not filed; recorded here and in
 - **Why it is true** — Hall's marriage theorem: a set of variables whose domains
   together hold fewer values than there are variables cannot take distinct
   values.
-- **Proof technique** — `pol`, then `RUP+hints`, by **JP 3.16**, with the
+- **Proof technique** — `pol`, then `RUP`, by **JP 3.16**, with the
   departures listed above. The `pol` sums one at-least-one per Hall variable and
   one at-most-one per Hall value; after the reason restricts it, the left-hand
   side cancels to nothing and the right-hand side is `|W| − |N(W)| ≥ 1`.
@@ -935,7 +950,7 @@ states every Hall variable's domain already. Not filed; recorded here and in
   since #1000, the batch goes in bare. `O(variables + edges)`, in values.
 - **Why it is true** — a Hall set uses every value in its neighbourhood, so no
   variable outside it can take one.
-- **Proof technique** — `pol`, then `RUP+hints` per deleted literal, by **JP
+- **Proof technique** — `pol`, then `RUP` per deleted literal, by **JP
   3.17**, with the departures above. One `pol` per component serves every
   deletion in it: `infer_all` with `ThenRUP::Yes` emits the steps once under a
   temporary level and RUPs each literal inside it.
@@ -1041,25 +1056,34 @@ states every Hall variable's domain already. Not filed; recorded here and in
   variables' bounds, holes ignored — which is what the algorithm promises and
   all it promises.
 - **Algorithm** — López-Ortiz, Quimper, Tromp and van Beek (IJCAI 2003): sort
-  the variables by their bounds — by insertion sort from the previous call's
-  order, which is nearly sorted — and sweep them with union-find over the sorted
+  the variables by their bounds, and sweep them with union-find over the sorted
   distinct bounds, lower bounds in one pass and upper in a mirrored second. Those
   two passes reach the fixpoint of the bounds they read, so it re-sweeps only
-  when a written bound snapped past a hole. `O(n log n)` per sweep with no
-  per-value step. Only when a proof or reasons are wanted, the narrowest interval
-  behind each moved bound is then found afresh against the current state,
-  `O(n²)`.
+  when a written bound snapped past a hole. The published `O(n log n)` is the
+  cost of the sort; the sweeps after it are the cheap part. **This
+  implementation's sort does not meet that bound.** It is an insertion sort
+  from the previous call's order, for each of the two orders, with no fallback.
+  That costs `O(n + inversions)`: close to linear while the saved order is still
+  nearly sorted, which is the common case it was chosen for, but `Θ(n²)` in the
+  worst case. The first call reaches that when the bounds are reversed against
+  scope order, and a backtrack can leave the saved order far from sorted again.
+  So a call is `O(n²)` in the worst case. No per-value step either way. Only
+  when a proof or reasons are wanted, the narrowest interval behind each moved
+  bound is then found afresh against the current state, `O(n²)`.
 - **Why it is true** — a Hall interval holds at least as many variables with
   their bounds inside it as it has values, so between them they take every value
   in it; any other variable whose bound lies inside must move past it.
-- **Proof technique** — `pol`, then `RUP+hints`. **Ours**, with no published
+- **Proof technique** — `pol`, then `RUP`. **Ours**, with no published
   procedure: it is JP 3.16 and 3.17's summing argument with the Hall
   neighbourhood replaced by the interval `[lo, hi]`. Each Hall variable's
   at-least-one names **every** value between its bounds, holes included, so that
   the reason need state only bounds — which is all a bounds consistent propagator
   knows — and the holes cost nothing, because they lie inside `[lo, hi]` where
-  the at-most-ones cancel them. The moved variable's own opposite bound goes into
-  the reason so that RUP can walk it past every value the interval takes.
+  the at-most-ones cancel them. The moved variable's current bound **on the side
+  being moved** goes into the reason, so that RUP can walk it past every value
+  the interval takes: for `x ≥ b` that is `x ≥ lb(x)`, which confines `x` to the
+  interval once `x ≥ b` is negated. With `x, y ∈ [1, 2]` and `z ∈ [1, 4]`, the
+  assertion for `z ≥ 3` carries the old `z ≥ 1`, not `z ≤ 4`.
 - **Reason** — each Hall variable's two bound literals, and the moved variable's
   current bound on the side being moved. Built only when `logger ||
   want_reasons()`, and otherwise `NoReason{}` with `NoJustificationNeeded{}`.
@@ -1086,7 +1110,8 @@ states every Hall variable's domain already. Not filed; recorded here and in
 - **Infers** — a contradiction: some interval holds more variables than values.
 - **Fires when** — either sweep fails.
 - **Strength** — `bounds(Z)`.
-- **Algorithm** — the failed sweep, `O(n log n)`. Then, with a logger, a
+- **Algorithm** — the failed sort and sweep, as rule 5: `O(n²)` in the worst
+  case, for the same insertion sort. Then, with a logger, a
   violating interval found by trying every pair of a lower and an upper bound and
   counting the variables inside: `O(n³)`, and only when proving.
 - **Why it is true** — pigeonhole over the interval.
@@ -1219,7 +1244,8 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
   variable in the `bc` lane, and in the `vc` lane a check at every node that no
   fixed variable's value is left in another domain, which is the whole of what
   value consistency promises. **VeriPB really runs**, on every instance, when it
-  is installed. Seeded and reproducible with `--seed=N`. No runtime cap.
+  is installed. Seeded and reproducible with `--seed=N`. Capped by default; see
+  below.
 - **`all_different_except_test`**, one lane and a mixed view lane over four
   positions; per-node GAC asserted; duplicate cases that exercise the forcing
   initialiser at test widths, and since #1004 six more over a repeated variable
@@ -1233,6 +1259,19 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
   against a brute-force reference at the root, on thousands of small random
   instances: it checks that the arm reaches **exactly** bounds(Z) consistency,
   which pins the strength rather than the proof.
+- **Runtime caps: the defaults fire on every `all_different_test` lane.** No
+  lane sets or clears a cap of its own, so under a default `ctest` every lane
+  runs with the suite-wide caps (300 solutions and 1,500 search nodes per
+  solve; see [`building.md`](../building.md)), and a truncated solve checks
+  soundness and a partial proof only. Over three unseeded runs at `d3f3f1aa`
+  (2026-09-22) they truncated between 126 and 144 solves on each of the six
+  `all_different_constraint*` lanes, and none on `all_different_except_test`'s
+  two or `symmetric_all_different_test`'s one. So this family's default local
+  run checks noticeably less than its uncapped one. The two Ubuntu CI lanes
+  build with the caps off, so every pull request gets the complete check, and
+  all ten lanes of the four binaries also pass uncapped locally at `d3f3f1aa`
+  (`cmake --preset release -DGCS_TEST_CAP_DEFAULTS=OFF`, then
+  `ctest -R '^(all_different|symmetric_all_different|bc_all_different)'`).
 - **Seven `.scp` chain cases**, listed under [Cake
   conformity](#cake-conformity); #1004's `all_different_except_duplicate` is the
   first to repeat a variable. **Four MiniZinc differential tests**
@@ -1669,10 +1708,13 @@ evidence, and the family's standing work.
 
 **Not to do, having been considered.**
 
-*A `consistency::Auto` for `AllDifferent`.* The pair's first promise fails, and
-fails without any other constraint's help; see [Interior values and optional
+*An optional-interior-pruning `consistency::Auto` for `AllDifferent`.* The
+pair's first promise fails, and fails without any other constraint's help; see
+[Interior values and optional
 pruning](#interior-values-and-optional-pruning). #970 considered and measured
-it, and this audit agrees.
+it, and this audit agrees. A cost-based `Auto` or `Dynamic` that deliberately
+weakens propagation is a different question, which nobody has proposed and
+this audit does not settle; see [Options](#options).
 
 *Repairing `SymmetricAllDifferent`'s dead initialiser.* See [Proof-logging
 gaps](#proof-logging-gaps): deleting it was the fix (#1001).
