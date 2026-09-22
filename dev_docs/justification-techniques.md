@@ -106,14 +106,25 @@ fixture would have concluded the lemmas were unnecessary.
 Chapter 3 §3.4 sets out a ladder of justification procedures — single-RUP,
 multiple-RUP, cutting-planes, reified — and gives named procedures with
 correctness proofs for the common constraints. These are the ones our audited
-families land on:
+families land on. The thesis writes a negated literal with an overline; the
+table spells it out, as `x≠v` or `x<u`, because an overline does not survive
+being copied into plain text and a dropped one inverts the procedure.
 
 | Procedure | Shape | Licensed by | Used by |
 |---|---|---|---|
 | **JP 3.1** (Not-Equals) | `rup x=v ∧ y=v ⇒ 0 ≥ 1` | Thm 2.8 | `equals`'s not-equal-to-fixed-operand rule |
-| **JP 3.2** (Comparison) | `rup y≥v ∧ x≥u ⇒ 0 ≥ 1`, precondition `B ∈ {0,1}` | Thm 2.9 | every bound transfer in `comparison`, and `equals`'s bounds-intersection and interval-bridge rules |
-| **JP 3.12** (Equality propagation) | `rup y=v ⇒ x=v ≥ 1` | Thm 2.8, twice | `equals`'s equal-to-fixed-operand rule, and its per-value symmetric-difference fallback |
+| **JP 3.2** (Comparison) | `rup y≥v ∧ x<u ⇒ 0 ≥ 1` for `X − Y ≥ B`, precondition `B ∈ {0,1}` | Thm 2.9 | every bound transfer in `comparison`, and `equals`'s bounds-intersection and interval-bridge rules |
+| **JP 3.12** (Equality propagation) | `rup y=v ⇒ x=v ≥ 1`[^jp312] | Thm 2.8, twice | `equals`'s equal-to-fixed-operand rule |
 | **JP 3.13** (Equality infeasibility) | a per-value RUP for each surviving value, then a generic-reason contradiction | JP 3.12 for each line | **nothing any more** — see below |
+
+[^jp312]: The thesis's box prints `rup ¬(y=y) ⇒ ¬(x=v) ≥ 1` — `y=y` for
+    `y=v`, and both literals negated — which is the contrapositive direction,
+    removing `v` from `X` once it has left `Y`. Its correctness proof argues the
+    positive form given here, which is the direction `equals`'s
+    equal-to-fixed-operand rule uses. Both directions are RUP by the same
+    Theorem 2.8 argument. Removing a value that has left the other operand is
+    now done by run, not by value — see `equals`'s symmetric-difference rule —
+    and its per-value spelling was deleted in #904.
 
 JP 3.2's correctness proof is worth reading rather than taking on trust,
 because it is careful about a case our encoding hits: if either operand is
@@ -158,7 +169,7 @@ then the licence:
 and where there is no published procedure:
 
 ```
-- **Proof technique** — `RUP+hints`. **No published procedure**: JP 3.13 states
+- **Proof technique** — `RUP sequence`. **No published procedure**: JP 3.13 states
   this per value, and the interval witness below is ours. Argued in full under
   *Why it is true*.
 ```
