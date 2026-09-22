@@ -179,6 +179,13 @@ re-audit with a short `issue → PR → what it changed here` table, so the diff
 against the first pass is legible, and say outright which figures were taken
 again.*
 
+*A fix to a **shared helper** does not stop at this document. Follow it into
+[justification-techniques.md](../justification-techniques.md) and into every
+other family that calls the helper, and bring their present-tense claims into
+line. The status table records that a fix happened; it does not update a
+sentence elsewhere that still describes the old behaviour as current, and
+keeping the old behaviour is fine only as dated history.*
+
 *One short paragraph: what this family is for, and the single most important
 thing a reader should know before touching it.*
 
@@ -516,7 +523,10 @@ between rules stays in the entries, even when most of them agree.*
   no published procedure — the rule is ours — say so outright, because that is
   precisely what an external justifier cannot replay, and then owe the
   argument to **Why it is true**. State the procedure's **preconditions**: they
-  are what tells a later reader whether the citation survives a change.*
+  are what tells a later reader whether the citation survives a change. This
+  field describes the **derivation**, the lines a checker is given; the
+  annotation an assertion carries in hints-only mode is a separate thing and
+  goes in **Hint**.*
 - **Reason** — *which literals go into the reason, and whether that set is
   minimal. The reason is what the external tool sees; a non-minimal one costs
   it trimming work. A justification reads the reason, never `state`. Say
@@ -530,8 +540,12 @@ between rules stays in the entries, even when most of them agree.*
   give both and say what picks between them, which should be a width test and
   not a test on the kind of a variable.*
 - **Hint** — *the `gcs::innards::hints` type, and one line per field giving its
-  type and meaning. If the hint does not exist yet, say so — that is a work
-  item, and it belongs in [Next steps](#next-steps).*
+  type and meaning. This is the **reconstruction annotation** on the `a` line:
+  its subhint tells an external justifier which procedure to run, and its
+  payload carries any witness that procedure needs. It is not a proof
+  technique, and it is not VeriPB's own RUP antecedent list. If the hint does
+  not exist yet, say so — that is a work item, and it belongs in [Next
+  steps](#next-steps).*
 - **Offline reconstructibility** — *one of the three verdicts in [Appendix
   C](#appendix-c-reconstructibility-verdicts). If `solver-side`, name the
   information that is not recoverable.*
@@ -561,7 +575,15 @@ between rules stays in the entries, even when most of them agree.*
 - *the enumeration tests, and whether they use `solve_for_tests_checking_gac`
   (per-node GAC assertion) or plain `solve_for_tests`;*
 - *whether VeriPB actually runs in the tests, which is not true everywhere;*
-- *whether any test caps its runtime, and what the uncapped setting exercises;*
+- *runtime caps, as two separate facts. First the **default policy**: every
+  registered test runs under the suite-wide solution and search-node caps
+  (`GCS_TEST_CAP_DEFAULTS`, see [`building.md`](../building.md)) unless the
+  lane clears them, a truncated solve checks soundness and a partial proof
+  only, and the two Ubuntu CI lanes build with the caps off. Say whether any of
+  this family's lanes sets or clears a cap, and whether the default caps
+  actually **fire** on them, which decides whether the capped run checked less.
+  Second, the **configuration the reported results came from**, with the
+  invocation recorded once. "No runtime caps" answers neither question;*
 - *whether the tests are seeded (`--seed=N`) and so byte-reproducible;*
 - *whether any real instance has been ported into a data-driven test, and
   which repros have not been;*
@@ -571,7 +593,11 @@ between rules stays in the entries, even when most of them agree.*
   does not verify either. The per-rule evidence goes in that rule's
   **Tightness** field; this is the inventory and the harness. Partial coverage
   is the expected state, so say which rules have a lane rather than treating
-  the rest as outstanding work.*
+  the rest as outstanding work. And keep the family-level claim to what the
+  lanes show: some named corruptions are rejected on some named fixtures.
+  That a step is a RUP does not make a finite set of mutations exhaustive over
+  its premises, its literals or the cases it applies to, so "the derivations
+  are tight" is not a conclusion any set of lanes supports.*
 
 *Then, as a separate list, **what the tests do not cover**. This is the half
 that makes the section worth writing: the domain widths the suite never reaches,
@@ -689,8 +715,9 @@ paraphrase the proof.
 
 | Name | Meaning | Where the licence comes from |
 |---|---|---|
-| `RUP` | plain reverse unit propagation, no hints | a justification procedure (JP 3.1, 3.2, 3.12, 3.15, …) resting on Thm 2.6–2.9 |
-| `RUP+hints` | RUP with explicit constraint-id hints | as `RUP`; the hint is for the reader, not the checker |
+| `RUP` | one reverse-unit-propagation step: the conclusion is RUP against the database as it stands | a justification procedure (JP 3.1, 3.2, 3.12, 3.15, …) resting on Thm 2.6–2.9 |
+| `RUP sequence` | several RUP steps: lemmas at a temporary level, then the conclusion by RUP once they are in place. Say what the lemmas are and how many there are | per step, as `RUP`; the procedure that orders the steps, where one is published (JP 3.9, 3.10, 3.13) |
+| `hinted RUP` | a RUP step carrying VeriPB's own antecedent list (`RUPProofRule::lines`): the checker propagates over the cited lines only, so a hinted step is cheaper to check and **fails** if the list misses part of the conflict path. See [`veripb-facts.md`](../veripb-facts.md) | as `RUP`, over the cited lines |
 | `pol` | a cutting-planes derivation: linear combination, with `saturate` / division as needed | the derivation itself, stated in the rule |
 | `extended reason` | a hypothetical literal pinned into the reason so the inference becomes RUP-derivable | Thm 2.6, plus whatever licenses the underlying step |
 | `redundance` | extension-variable introduction, i.e. defining a `ProofFlag` | Thm 2.4 (extension variables) |
@@ -704,6 +731,18 @@ paraphrase the proof.
 
 Adding a name here is fine; inventing one locally is not. Adding one **without**
 saying what licenses it is how the table stopped being useful the first time.
+
+**The assertion's annotation has no row here, deliberately.** An earlier version
+had `RUP+hints`, meaning "RUP with constraint-id hints", and it ended up naming
+two different things: a lemma-then-conclusion derivation (what `RUP sequence`
+now names) and the `hints::` annotation that every assertion carries in
+hints-only mode, whatever the derivation behind it. It also collided with
+VeriPB's RUP antecedent hints, which really are part of the proof, and which
+`veripb-facts.md` and the code already call a **hinted RUP**; that name now has
+its own row, and means only that. The
+annotation goes in a rule's **Hint** field; it is what a reconstructor reads to
+choose a procedure, and the derivation is only one way of reaching the same
+conclusion.
 
 ## Appendix B: consistency level vocabulary
 
@@ -789,17 +828,35 @@ A `?` is an acceptable answer and marks a row that wants attention.
 # The presolver variant
 
 Presolvers get a document too, under `dev_docs/presolvers/`, but not this
-template with the propagation sections deleted. A presolver does not infer; it
-rewrites the model before search. The differences:
+template with the propagation sections deleted. A presolver's own pass runs
+once, before search, and infers nothing during it. The differences:
 
-**Dropped.** Propagator inventory, mutable state and incrementality,
-idempotence, consistency level, and interior values and optional pruning. A
-presolver runs once, infers nothing, and has no propagator whose hole
-sensitivity anything could read. It does still run **before** the choice is
-made — `gcs::solve_with()` calls `choose_optional_interior_pruning()` after the
-last presolver, precisely so that a constraint a presolver installs is counted
-— so a presolver that posts constraints says here what their hole sensitivity
-is, since that is what its rewrite contributes to someone else's choice.
+**Dropped, conditionally.** Propagator inventory, mutable state and
+incrementality, idempotence, consistency level, and interior values and
+optional pruning — **for the presolver's own pass**, which has none of them.
+They are not dropped for what the pass **installs**. Every presolver in the tree
+today installs runtime machinery directly, as a propagator under
+`CurrentlyUnnamedConstraint` rather than as a posted constraint, and two of them
+can also disable their donors' propagators:
+
+| Presolver | Installs | Can disable donors | Runtime machinery documented in |
+|---|---|---|---|
+| `auto_table` | an extensional propagator (`propagate_extensional`) over a table it builds | no | `table.md` |
+| `cumulative_strengthening` | a derived cumulative (`install_derived_cumulative`) | no | `cumulative.md` |
+| `difference_logic` | a difference-graph propagator (`install_difference_propagator`) | yes | `difference.md` |
+| `inferred_cumulative` | a derived cumulative | no | `cumulative.md` |
+| `inferred_disjunctive` | a derived cumulative | no | `cumulative.md` |
+| `parity_system_gathering` | a GF(2) system propagator (`install_parity_system_propagator`) | yes | `parity.md` |
+
+So a presolver document either covers that machinery — its proof rules, its
+state, its idempotence and its hole sensitivity — or links to the family
+document that does and says so. Where neither happens, the machinery falls
+between the rewrite catalogue and the family catalogue and nobody documents it.
+Hole sensitivity matters here because presolvers run **before** the choice
+is made: `gcs::solve_with()` calls `choose_optional_interior_pruning()` after
+the last presolver, precisely so that what a presolver installs is counted.
+What the installed propagators observe is therefore part of what a presolver
+contributes to someone else's choice.
 
 **Replaced.** The inference catalogue becomes a **rewrite catalogue**, one
 entry per rewrite, with fields: what pattern is matched; what is posted or
@@ -854,8 +911,9 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `comparison.md` | `comparison/` | twelve classes over `ReifiedCompareLessThanOrMaybeEqual`; **not** merged with `equals` — same reified-dispatcher pattern, no shared code, separate encodings |
 | `equals.md` | `equals/` | **written** — the pilot. `Equals`, `NotEquals` and the four reified forms |
 | `count.md` | `count/` | see `among` |
-| `cumulative.md` | `cumulative/` | the largest family; notes `cumulative-proof-logging.md`, `certified-makespan-bounds.md`, `rule-counters.md` |
+| `cumulative.md` | `cumulative/` | the largest family, including the derived cumulative (`derived_cumulative.hh`) that three presolvers install; notes `cumulative-proof-logging.md`, `certified-makespan-bounds.md`, `rule-counters.md` |
 | `difference.md` | `difference/` | difference constraints; note `difference-logic.md`, whose presolver half belongs under `dev_docs/presolvers/` |
+| `dag.md` | `dag/` | `Dag`; shares `connectivity-proofs.md` with `reachable` |
 | `disjunctive.md` | `disjunctive/`, `disjunctive_2d/` | one family, two dimensions; note `disjunctive-proof-logging.md` |
 | `element.md` | `element/` | `Element`, `Element2D` |
 | `global_cardinality.md` | `global_cardinality/` | see `among` |
@@ -871,7 +929,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `min_max.md` | `min_max/` | |
 | `n_value.md` | `n_value/` | see `among` |
 | `nogoods.md` | `nogoods/` | search machinery rather than a posted constraint; notes `restarts-nogoods-weighting.md`, `refined-triggers.md` |
-| `parity.md` | `parity/` | |
+| `parity.md` | `parity/` | `ParityOdd`, and the GF(2) system propagator in `gf2_system.{hh,cc}` that the `parity_system_gathering` presolver installs; note `parity-system.md` |
 | `path.md` | `path/` | |
 | `reachable.md` | `reachable/` | |
 | `regular.md` | `regular/` | existing note `regular.md` |
@@ -888,6 +946,9 @@ helpers — documented where they are used, or in `constraints.md`).
 
 Presolvers, one document each under `dev_docs/presolvers/`: `auto_table`,
 `cumulative_strengthening`, `difference_logic`, `inferred_cumulative`,
-`inferred_disjunctive`. Existing notes: `cumulative-strengthening.md`,
-`inferred-cumulative.md`, `inferred-disjunctive.md`, and the presolver half of
-`difference-logic.md`.
+`inferred_disjunctive`, `parity_system_gathering`. Existing notes:
+`cumulative-strengthening.md`, `inferred-cumulative.md`,
+`inferred-disjunctive.md`, the presolver half of `difference-logic.md`, and the
+gathering half of `parity-system.md`. What each one installs, and which family
+document owns that machinery, is the table under [The presolver
+variant](#the-presolver-variant).

@@ -51,7 +51,7 @@ findings did — the trigger set. Between them they changed what this document
 | #865 → #883 | `clone()` carries `_neq`, so all six variants write their own `.scp` keyword |
 | #866 → #884 | the interval bridge carries its own subhint, so the family's wire inventory is three forms, not two |
 | #867 → #881 | the no-overlap certificate is **interval-wise**: two lines plus the conclusion at any domain width, against `width + 1` |
-| #869 → #886 | five mutation lanes and a control, so the derivations are known to be tight rather than merely accepted |
+| #869 → #886 | five mutation lanes and a control: named corruptions of rules 1, 2 and 8 are rejected, and the same instances verify uncorrupted |
 | #870 → #885 | no justification in the family reads `state`, which was the last exception to an invariant the rest of the solver keeps |
 | #889 → #894 | a constant-operand reified equals wakes on a refined watch, not `on_change` |
 
@@ -243,7 +243,11 @@ posts nothing.
 
 - `enforce_equality` is exported from `gcs::innards` and called by `Element` to
   tie a result variable to a selected array entry. Any change to its inference
-  set or its return value is an `Element` change too.
+  set, its reasons or its hints is an `Element` change too. Its **return value
+  is not**: `Element` discards it and decides for itself whether to disable.
+  The hints travel with the inferences, so `Element`'s proofs carry this
+  family's wire forms under `Element`'s constraint id — the bare form and, when
+  either operand has a hole, `not_in_range`.
 - The disjointness walk behind rule 8 is no longer ours. #900 lifted it into
   `gcs/constraints/innards/no_overlap_walk.hh` as `walk_no_overlap()` and the
   `NoOverlapStep` vocabulary, because `Element`'s index-support rule needed the
@@ -498,10 +502,14 @@ soundness, so nothing failed; what showed it was the learned-nogood store,
 also a refined-watch client, exploring a different tree on the refined path
 than on the scan oracle.
 
-**Self-disabling.** Rules 1, 2 and 4 return `DisableUntilBacktrack` — once an
+**Self-disabling.** Rules 1 and 4 return `DisableUntilBacktrack`: once an
 operand is fixed, an equality has nothing left to say at this node or below.
-Any verdict from the undecided pass also disables. This is a large part of why
-the per-call cost is so low.
+Rules 2 and 3 return `Enable`, and have to. After either of them the two
+domains are equal, but equal domains do not entail the equality: with both
+operands at `{1, 2}`, a later removal of `1` from one of them still has to be
+carried to the other. Any verdict from the undecided pass disables, since each
+one decides the constraint outright. Disabling on the fixed-operand paths is a
+large part of why the per-call cost is so low.
 
 ### Mutable state and incrementality
 
@@ -512,7 +520,11 @@ That is the right answer for this family rather than an omission. The most
 expensive pass materialises two `IntervalSet`s and merge-walks them; there is
 nothing worth carrying across a call that would not cost more to keep valid
 than to recompute. The one thing a reader might expect — remembering that the
-domains were already equal — is subsumed by `DisableUntilBacktrack`.
+domains were already equal — would buy nothing. It cannot license disabling,
+because equal non-singleton domains do not entail the equality (see
+[Self-disabling](#propagator-inventory)). And a wake comes from a change to
+an operand's domain, so the remembered fact is usually stale by the time the
+propagator runs again.
 
 ### Interior values and optional pruning
 
@@ -745,8 +757,9 @@ an external justifier needs must be recoverable from the asserted literal, the
 reason and the OPB rows. Two of the three hold extra fields for the internal
 emitter's use only.
 
-**The wire inventory is a closed list of three forms**, and this is what
-distinguishes derivations of different length:
+**The wire inventory is a closed list of three forms**, and each one names a
+different reconstruction procedure — which is what a subhint is for, and
+which is not the same thing as a different derivation length:
 
 | Wire form | Hint type | Means | Rules |
 |---|---|---|---|
@@ -816,7 +829,7 @@ reason is what the conclusion is asserted under.
   *intervals*, not values, which is the whole point of the rule.
 - **Why it is true** — if `v1 = v2` then any value in neither domain is in
   neither variable's support.
-- **Proof technique** — `RUP+hints` — two bound lemmas, then the conclusion.
+- **Proof technique** — `RUP sequence` — two bound lemmas, then the conclusion.
   Each lemma is an instance of **JP 3.2 (comparison)** against one half of the
   equality, licensed by **Theorem 2.9** with `B = 0`: the lemma's negation
   supplies a lower bound on one operand, the equality half, and an upper bound
@@ -1059,7 +1072,7 @@ alias" bug the dup tests were added for.
   integers, and someone auditing that can stop reading here. What each move
   *costs to certify* — nothing for a move inside `v1`, one or two lemmas for a
   move that crosses to `v2` — is under **Proof size**.
-- **Proof technique** — `RUP+hints` — at most two lemmas per run, then the
+- **Proof technique** — `RUP sequence` — at most two lemmas per run, then the
   conclusion. **No published procedure: this rule is ours.** The thesis states
   the same fact as **JP 3.13 (equality infeasibility)**, one RUP line per
   surviving value followed by a contradiction against the generic reason, which
@@ -1149,8 +1162,8 @@ alias" bug the dup tests were added for.
   #904 that holds for a wrapped operand too, where a run belonging to a view
   used to be spelled value by value for want of a range literal (#882) — one
   run rather than the rule, but a residual all the same.
-- **Tightness** — shown, by three of the five mutation lanes, which between
-  them cover the rule's whole proof surface. `no_overlap_stop` drops the
+- **Tightness** — shown for three corruptions, by three of the five mutation
+  lanes, on the instances in `equals_mutations.hh`. `no_overlap_stop` drops the
   walk's last reason literal, so the reason climbs to a position and never
   says the position is impossible. `no_overlap_lemmas` emits no lemmas at all,
   which is the control for the rule: it says whether the walk is load-bearing
@@ -1196,7 +1209,18 @@ the evidence that an interval of `infer_not_equal` really does collapse into one
 - **Coverage of the awkward cases**: all-constant operands in both directions
   (issue #254), aliasing for all six variants, negative domains, disjoint
   domains, singleton domains, and the `NotEquals(x, x)` rejection.
-- **No runtime caps.** Nothing here is slow enough to need one.
+- **Runtime caps: the defaults fire here, so the complete check is the
+  uncapped one.** No lane sets or clears a cap of its own, so under a default
+  `ctest` every lane runs with the suite-wide caps (300 solutions and 1,500
+  search nodes per solve; see [`building.md`](../building.md)), and a
+  truncated solve checks soundness and a partial proof only. The caps do bite:
+  over three unseeded runs at `d3f3f1aa` (2026-09-22), `equals_constraint`
+  truncated 42 solves and `equals_constraint_view_mixed` 44, while the
+  mutation lanes and their control never reached a cap. The two Ubuntu CI lanes
+  build with the caps off, so every pull request gets the complete check; the
+  same eight lanes also pass uncapped locally at `d3f3f1aa`
+  (`cmake --preset release -DGCS_TEST_CAP_DEFAULTS=OFF`, then
+  `ctest -R '^equals_'`).
 
 Six lanes were added by the fixes, and each covers a shape the original suite
 structurally could not reach. They are worth listing individually, because
@@ -1211,15 +1235,19 @@ five of the six exist for a reason that will recur in the next family:
 | `run_value_indicator_equals_test` | the `nmseq` shape in miniature — one reified equality per (variable, value) — with a **driver** that punches a value out of the interior on its own. Every other lane posts a single constraint over its operands, so nothing removes an interior value and a trigger that sees only instantiations passes. Checked as consistency at every node, since a missed wake loses no solutions. |
 | `run_hint_inventory_equals_test` | the wire inventory, read off two real proofs at `AssertionLevel::Inferences`, failing on a subhint outside the family's closed list. |
 
-**The derivations are known to be tight** (#886). `EqualsProofMutation` is
+**Five named corruptions are rejected** (#886). `EqualsProofMutation` is
 five corruptions behind a testing-only `with_proof_mutation()`, each changing
 the proof and nothing else, registered as `equals_mutation_*` ctest lanes that
-pass only if veripb *refuses* the result. Two corrupt reasons and three
-corrupt emitted lemmas, which between them are the family's whole proof
-surface — every step here is a RUP, so there is nowhere else for a mistake to
-live. A sixth lane is the **control**: the same instances, uncorrupted,
-verified. Without it a lane could be green because its instance does not
-verify either.
+pass only if veripb *refuses* the result. Two corrupt reasons and three corrupt
+emitted lemmas, over rules 1, 2 and 8. A sixth lane is the **control**: the
+same instances, uncorrupted, verified. Without it a lane could be green because
+its instance does not verify either.
+
+That is evidence about those five corruptions on those fixtures, and no more.
+Rules 3–7 have no lane, and their **Tightness** fields say `Not shown`. Even
+for the three rules that have lanes, that every step is a RUP does not make a
+finite set of mutations exhaustive over the steps' premises, their literals or
+the cases they apply to. The catalogue records which rule has which evidence.
 
 This matters more here than in most families and not less: almost every
 inference is a single RUP against a two-row encoding, "veripb accepted a
@@ -1425,9 +1453,10 @@ constraint.
 
 **Nothing is left unjustified, and no rule is weakened when proofs are
 enabled.** There is no `a`-oracle use, no unlogged inference, and no strength
-difference between a proving and a non-proving run. Since #886 the derivations
-are also known to be **tight**: five corruptions of them are rejected by
-VeriPB, against a control that shows the same instances verify uncorrupted.
+difference between a proving and a non-proving run. Since #886 five named
+corruptions of rules 1, 2 and 8 are rejected by VeriPB, against a control that
+shows the same instances verify uncorrupted; see [Tests](#tests) for what that
+does and does not establish.
 
 `None.` on cost gaps, too, which was not true at either of the first two
 audits, and the two that were are now both closed.
