@@ -264,22 +264,39 @@ namespace
     /// concurrently under a parallel ctest from one directory, so a sweep that
     /// also ran the fixtures would race the fixture lane over their proof files
     /// (issue #562, and #961 for what that looks like).
-    auto run_random_sweep(int search_instances, bool proofs, Disjunctive2DRules with, Disjunctive2DRules without) -> void
+    auto run_random_sweep(int search_instances, bool proofs, Disjunctive2DRules with, Disjunctive2DRules without, const string & stem, bool dense)
+        -> void
     {
         mt19937 rand;
         rand.seed(1234);
         auto total_markers = 0;
         auto pruned_somewhere = false;
         for (auto instance = 0; instance < search_instances; ++instance) {
-            auto n = uniform_int_distribution<int>{2, 4}(rand);
+            // The overload check is conflict-only and fires on area, and a
+            // narrow domain gives a rectangle a mandatory part the pairwise rule
+            // then refutes just as well. So its sweep packs four or five
+            // rectangles, mostly two by two, into a box four by four, each
+            // free to go anywhere in it --- which gives none of them a
+            // mandatory part on either axis, and often more area than the box.
+            auto n = dense ? uniform_int_distribution<int>{4, 5}(rand) : uniform_int_distribution<int>{2, 4}(rand);
             Instance inst;
             for (auto i = 0; i < n; ++i) {
-                inst.widths.push_back(uniform_int_distribution<int>{1, 3}(rand));
-                inst.heights.push_back(uniform_int_distribution<int>{1, 3}(rand));
-                inst.x_ranges.emplace_back(0, uniform_int_distribution<int>{0, 3}(rand));
-                inst.y_ranges.emplace_back(0, uniform_int_distribution<int>{0, 3}(rand));
+                if (dense) {
+                    auto size = [&]() { return uniform_int_distribution<int>{0, 3}(rand) == 0 ? 1 : 2; };
+                    auto w = size(), h = size();
+                    inst.widths.push_back(w);
+                    inst.heights.push_back(h);
+                    inst.x_ranges.emplace_back(0, 4 - w);
+                    inst.y_ranges.emplace_back(0, 4 - h);
+                }
+                else {
+                    inst.widths.push_back(uniform_int_distribution<int>{1, 3}(rand));
+                    inst.heights.push_back(uniform_int_distribution<int>{1, 3}(rand));
+                    inst.x_ranges.emplace_back(0, uniform_int_distribution<int>{0, 3}(rand));
+                    inst.y_ranges.emplace_back(0, uniform_int_distribution<int>{0, 3}(rand));
+                }
             }
-            auto name = "disjunctive_2d_relaxation_search_" + to_string(instance);
+            auto name = stem + to_string(instance);
             println(
                 cerr, "disjunctive2d relaxation random {}: xr={} yr={} w={} h={}", instance, inst.x_ranges, inst.y_ranges, inst.widths, inst.heights);
             total_markers += enumerate_and_check(inst, with, proofs ? make_optional(name) : nullopt);
@@ -306,6 +323,9 @@ auto main(int argc, char * argv[]) -> int
     auto proofs = gcs::test_innards::can_run_veripb();
     auto search_instances = 0;
     optional<Disjunctive2DProofMutation> mutation;
+    // The overload check on the relaxation (#984) rather than its time-table
+    // rung: selects the rule the sweep and the mutation lanes run.
+    auto overload = false;
     string mutation_basename = "disjunctive_2d_relaxation_mutation";
     for (auto a = 1; a < argc; ++a) {
         string arg = argv[a];
@@ -319,15 +339,38 @@ auto main(int argc, char * argv[]) -> int
             mutation = disjunctive_2d_proof_mutation::SkipGuardWeakening{};
         else if (arg == "--mutate=skip_escape_pins")
             mutation = disjunctive_2d_proof_mutation::SkipEscapePins{};
+        else if (arg == "--mutate=overload_emit_nothing") {
+            mutation = disjunctive_2d_proof_mutation::EmitNothing{};
+            overload = true;
+        }
+        else if (arg == "--mutate=overload_skip_energy") {
+            mutation = disjunctive_2d_proof_mutation::OverloadSkipEnergy{};
+            overload = true;
+        }
+        else if (arg == "--mutate=overload_skip_row") {
+            mutation = disjunctive_2d_proof_mutation::OverloadSkipRow{};
+            overload = true;
+        }
+        else if (arg == "--overload")
+            overload = true;
         else if (arg == "--proof-files-basename" && a + 1 < argc)
             mutation_basename = argv[++a];
     }
 
-    const Disjunctive2DRules with{.cumulative_relaxation = true};
-    const Disjunctive2DRules without{.cumulative_relaxation = false};
+    const Disjunctive2DRules with = overload ? Disjunctive2DRules{.relaxation_overload = true} : Disjunctive2DRules{.cumulative_relaxation = true};
+    const Disjunctive2DRules without{};
+
+    // The overload fixture: seven squares of two in a box five by five, 28
+    // units of area in 25. Every origin ranges over [0, 3], so no square has
+    // a mandatory part on either axis and neither the pairwise rule nor the
+    // relaxation's time-table rung has anything to go on.
+    const Instance area{vector<pair<int, int>>(7, {0, 3}), vector<pair<int, int>>(7, {0, 3}), vector<int>(7, 2), vector<int>(7, 2)};
 
     if (search_instances > 0) {
-        run_random_sweep(search_instances, proofs, with, without);
+        // A stem per rule: the two sweep lanes run concurrently from one
+        // directory, and a shared proof name is the race #961 was.
+        run_random_sweep(search_instances, proofs, with, without,
+            overload ? "disjunctive_2d_relaxation_overload_search_" : "disjunctive_2d_relaxation_search_", overload);
         return EXIT_SUCCESS;
     }
 
@@ -352,6 +395,8 @@ auto main(int argc, char * argv[]) -> int
         Problem p;
         if (std::holds_alternative<disjunctive_2d_proof_mutation::SkipEscapePins>(*mutation))
             post_two_escapes(p, with, *mutation);
+        else if (overload)
+            post(p, area, with, *mutation);
         else
             post(p, sharp, with, *mutation);
         solve_with(p, SolveCallbacks{}, make_optional<ProofOptions>(ProofFileNames{mutation_basename}));
@@ -729,6 +774,82 @@ auto main(int argc, char * argv[]) -> int
         auto markers = enumerate_and_check(small, with, proofs ? make_optional(string{"disjunctive_2d_relaxation_enumerate"}) : nullopt);
         if (proofs && markers == 0)
             fail("enumerate: the rule never fired, so agreeing with brute force says nothing about it");
+    }
+
+    // --- the overload check on the relaxation (#984) ---------------------
+    //
+    // Everything below is about Disjunctive2DRules::relaxation_overload alone,
+    // so the controls are "that rule off" and not "the time-table rung off".
+    if (! overload) {
+        const Disjunctive2DRules overload_on{.relaxation_overload = true};
+        auto closes = [&](const Instance & inst, Disjunctive2DRules rules, const optional<string> & name) -> pair<bool, int> {
+            auto result = probe(inst, rules, name);
+            return {result.refuted_at_root, name ? count_markers(*name, "disjunctive2d cumulative relaxation overload") : 0};
+        };
+
+        {
+            auto name = "disjunctive_2d_relaxation_overload_area";
+            auto [closed, markers] = closes(area, overload_on, proofs ? make_optional(string{name}) : nullopt);
+            if (! closed)
+                fail("overload_area: the root did not close, but 28 units of area do not fit in 25");
+            if (proofs && markers < 1)
+                fail("overload_area: no overload marker, so something else closed the root");
+            if (proofs && ! verify(name))
+                fail("overload_area: veripb rejected the overload certificate");
+            if (closes(area, Disjunctive2DRules{.cumulative_relaxation = true}, nullopt).first)
+                fail("overload_area: the time-table rung closed the root too, so the fixture says nothing about the overload check");
+        }
+
+        // The margin: four squares of two in four by four fill it exactly.
+        {
+            auto name = "disjunctive_2d_relaxation_overload_exact";
+            const Instance exact{vector<pair<int, int>>(4, {0, 2}), vector<pair<int, int>>(4, {0, 2}), vector<int>(4, 2), vector<int>(4, 2)};
+            auto result = probe(exact, overload_on, proofs ? make_optional(string{name}) : nullopt);
+            if (result.refuted_at_root || ! result.satisfiable)
+                fail("overload_exact: four squares of two tile four by four");
+            // Not "no marker": the search goes on past the root, and once some
+            // squares are placed the rest do overload the windows left, so the
+            // rule rightly fires below the root. What it must not do is close
+            // the root, or lose the tiling.
+            if (proofs && ! verify(name))
+                fail("overload_exact: veripb rejected the proof");
+        }
+
+        // Only the y projection overloads. Four squares confined to y in [0, 1]
+        // put 16 units of area in a y window of three against an x extent of
+        // five; a fifth, up at y in [3, 4], makes the whole box six tall, so on
+        // the x projection 20 units sit in 30 and nothing fires. The two axes
+        // run over the same code with the roles swapped, and this is what says
+        // the swap is wired up right.
+        {
+            auto name = "disjunctive_2d_relaxation_overload_y_only";
+            const Instance y_only{vector<pair<int, int>>(5, {0, 3}), {{0, 1}, {0, 1}, {0, 1}, {0, 1}, {3, 4}}, vector<int>(5, 2), vector<int>(5, 2)};
+            auto [closed, markers] = closes(y_only, overload_on, proofs ? make_optional(string{name}) : nullopt);
+            if (! closed)
+                fail("overload_y_only: the root did not close");
+            if (proofs && count_markers(name, "disjunctive2d cumulative relaxation overload axis=1") < 1)
+                fail("overload_y_only: no y-axis overload marker");
+            if (proofs && count_markers(name, "disjunctive2d cumulative relaxation overload axis=0") != 0)
+                fail("overload_y_only: the x projection claimed an overload it does not have");
+            if (proofs && ! verify(name))
+                fail("overload_y_only: veripb rejected the certificate");
+            if (closes(y_only, without, nullopt).first)
+                fail("overload_y_only: the root closed with the rule off");
+        }
+
+        // Soundness by enumeration against brute force, with the rule firing.
+        {
+            // Four squares of two tiling four by four exactly: satisfiable, and
+            // so tight that any placement below the root leaves windows the
+            // rest overload, whichever way the reseeded search branches.
+            const Instance small{vector<pair<int, int>>(4, {0, 2}), vector<pair<int, int>>(4, {0, 2}), vector<int>(4, 2), vector<int>(4, 2)};
+            // Counted by enumerate_and_check itself, which disposes of the proof:
+            // the overload marker shares the relaxation's prefix.
+            auto markers =
+                enumerate_and_check(small, overload_on, proofs ? make_optional(string{"disjunctive_2d_relaxation_overload_enumerate"}) : nullopt);
+            if (proofs && markers == 0)
+                fail("overload_enumerate: the rule never fired, so agreeing with brute force says nothing about it");
+        }
     }
 
     println(cerr, "disjunctive2d cumulative relaxation: all fixtures pass");

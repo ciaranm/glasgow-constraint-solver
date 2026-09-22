@@ -74,11 +74,24 @@ namespace gcs::innards
         struct SkipEscapePins
         {
         };
+
+        /// The relaxation overload check: leave the window energies out of
+        /// the sum, so the capacity rows have nothing to contradict.
+        struct OverloadSkipEnergy
+        {
+        };
+
+        /// The relaxation overload check: leave one time point's capacity row
+        /// out of the sum.
+        struct OverloadSkipRow
+        {
+        };
     }
 
     using Disjunctive2DProofMutation = std::variant<disjunctive_2d_proof_mutation::None, disjunctive_2d_proof_mutation::EmitNothing,
         disjunctive_2d_proof_mutation::SkipOneRefutation, disjunctive_2d_proof_mutation::SkipGuardWeakening,
-        disjunctive_2d_proof_mutation::SkipEscapePins>;
+        disjunctive_2d_proof_mutation::SkipEscapePins, disjunctive_2d_proof_mutation::OverloadSkipEnergy,
+        disjunctive_2d_proof_mutation::OverloadSkipRow>;
 }
 
 #endif

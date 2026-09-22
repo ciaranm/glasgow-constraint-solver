@@ -75,6 +75,11 @@ namespace
             // The same with the unit back, so it is satisfiable and the
             // refutation above is not a technicality.
             {"loose", Instance{{3, 3, 3}, 5, 9}},
+            // Seven squares of two in a box five by five: 28 units of area in
+            // 25. No square has a mandatory part on either axis at the root,
+            // so time-tabling sees nothing until search makes some; the
+            // overload check sees the area at once.
+            {"area", Instance{{2, 2, 2, 2, 2, 2, 2}, 5, 5}},
             // Duijvestijn's order-21 perfect squared square: twenty-one
             // squares of distinct sizes that tile 112 x 112 exactly, the
             // smallest such dissection there is. Every column is exactly full,
@@ -115,6 +120,7 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<string>()->default_value("squares"))                                              //
             ("stats", "Print solve statistics")                                                                  //
             ("relaxation", "Enable Disjunctive2D's cumulative relaxation rule")                                  //
+            ("relaxation-overload", "Enable the overload check on the cumulative relaxation")                    //
             ("all", "Enumerate every packing rather than stopping at the first")                                 //
             ("timeout", "Abort the solve after this many seconds", cxxopts::value<double>()->default_value("0")) //
             ("instance", "Built-in instance to solve", cxxopts::value<string>()->default_value("tight"))         //
@@ -136,9 +142,12 @@ auto main(int argc, char * argv[]) -> int
         println("Pack squares of the given sizes into a box, without overlap. Non-overlap");
         println("is the diffn (Disjunctive2D) constraint; --relaxation adds the cumulative");
         println("relaxation, which is what sees that the squares crossing one column are");
-        println("together taller than the box.");
+        println("together taller than the box; --relaxation-overload adds the overload check");
+        println("on that relaxation, which sees that the squares inside a range of columns");
+        println("have more area between them than the box has there.");
         println("");
-        println("Built-in instances: tight (unsatisfiable by one unit), loose, perfect21");
+        println("Built-in instances: tight (unsatisfiable by one unit), loose, area (too");
+        println("much area, with no mandatory parts at the root), perfect21");
         println("(Duijvestijn's order-21 squared square --- a benchmark, not a demo: this");
         println("solver does not close it, so always pass --timeout).");
         println("");
@@ -185,7 +194,8 @@ auto main(int argc, char * argv[]) -> int
     branch_vars = xs;
     branch_vars.insert(branch_vars.end(), ys.begin(), ys.end());
 
-    Disjunctive2DRules rules{.cumulative_relaxation = options_vars.contains("relaxation")};
+    Disjunctive2DRules rules{
+        .cumulative_relaxation = options_vars.contains("relaxation"), .relaxation_overload = options_vars.contains("relaxation-overload")};
     p.post(Disjunctive2D{xs, ys, sizes, sizes}.with_rules(rules));
 
     auto enumerate = options_vars.contains("all");
