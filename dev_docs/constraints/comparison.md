@@ -98,9 +98,12 @@ Degenerate cases:
 are reachable — `ReifiedCompareLessThanOrMaybeEqual{x, y, reif::MustNotHold{},
 true}` compiles and propagates. They are not a dead branch: the propagator has
 a must-not-hold pass, `define_proof_model` emits the negated row, and
-`constraint_row_test.cc` posts a `NotIf` deliberately. What they do **not**
-have is an `.scp` spelling, and `s_expr()` throws on both. See [Known
-limitations](#known-limitations).
+`constraint_row_test.cc` posts a `NotIf` deliberately. Both write an `.scp`
+term: each is spelled as the comparison it enforces, operands exchanged and
+strictness inverted, so it needs no cake keyword of its own (see [Cake
+conformity](#cake-conformity)). Until #915 neither had a spelling and
+`s_expr()` threw on both, leaving a truncated file; [Known
+limitations](#known-limitations) keeps that history.
 
 ### Concrete constraints and frontend coverage
 
@@ -657,8 +660,9 @@ plain binary.
 `(constraint_id <id>)`, with no subhint and no payload beyond the owning
 constraint. Measured across four proofs covering every rule: 13 annotations,
 all of them that form. This is the simplest hint inventory of any family, and
-it is simple for a reason worth stating — a subhint exists to distinguish
-derivations of different *length*, and here they are all length one.
+it is simple for a reason worth stating — a subhint exists to tell a
+reconstructor which procedure to run, and any witness it needs, and every rule
+here is reconstructed the same way: one RUP against the row, with no witness.
 
 **No justification reads `state`.** There is nothing to read: no rule holds a
 `State *` and no rule needs one.
@@ -683,15 +687,17 @@ derivations of different *length*, and here they are all length one.
 - **Algorithm** — two `bounds()` reads, two `infer_*_or_stop` calls. O(1).
 - **Why it is true** — immediate from `left ≤ right`.
 - **Proof technique** — `RUP`, by **JP 3.2 (comparison)**, licensed by
-  **Theorem 2.9** with `B ∈ {0,1}` as above. The negated conclusion gives
-  `left ≥ k` and `right ≤ k − 1 + [or_equal]`, which with this family's single
-  row is 2.9's triple.
+  **Theorem 2.9** with `B ∈ {0,1}` as above. For the first inference, with
+  `k = ub(right) + [or_equal]`, the negated conclusion gives `left ≥ k` and the
+  reason gives `right ≤ ub(right) = k − [or_equal]`, which with this family's
+  single row is 2.9's triple.
 - **Reason** — the base reason (the condition literal) plus the one bound
   literal being carried across: `{cond, right ≤ ub(right)}` for the first
   inference and `{cond, left ≥ lb(left)}` for the second. Minimal, and two
   bound literals rather than anything per value. Guarded on `want_reasons()`
   since #916 — these two were the hot pair that #907's measurement was about.
-- **Assertion** — `left < k ∨ ¬(right ≤ k−1+[or_equal]) ∨ ¬cond`. Measured, on
+- **Assertion** — `left < k ∨ ¬(right ≤ k − [or_equal]) ∨ ¬cond`, the first
+  inference with `k` as above; the second is its mirror. Measured, on
   a `difference_chain` edge whose right operand is a view:
   ```
   a 1 ~i[x[40]][ge80] 1 p[39_view_of_y[0]_plus_-1][ge80] >= 1
@@ -881,7 +887,18 @@ other three are `scp_chain_multi_comparison_unsat` and the two
   covering `MustHold` twice, `If`, `Iff` and `NotIf`, checking that each
   published role resolves to a label the `.opb` really contains, and that the
   three kinds which publish `nullopt` do so.
-- **No runtime caps.** Nothing here is slow enough to need one.
+- **Runtime caps: the defaults fire on the half-reified lanes.** No lane
+  sets or clears a cap of its own, so under a default `ctest` every lane runs
+  with the suite-wide caps (300 solutions and 1,500 search nodes per solve;
+  see [`building.md`](../building.md)), and a truncated solve checks soundness
+  and a partial proof only. Over three unseeded runs at `d3f3f1aa`
+  (2026-09-22) they truncated solves on ten of the 28 lanes — the `_if` forms
+  of all four comparisons and `le_notif`, bare and `_view_mixed`, 4 to 10
+  solves each — and never on a full or unreified form. The two Ubuntu CI
+  lanes build with the caps off, so every pull request gets the complete
+  check; the 28 lanes and `constraint_row_test` also pass uncapped locally at
+  `d3f3f1aa` (`cmake --preset release -DGCS_TEST_CAP_DEFAULTS=OFF`, then
+  `ctest -R '^(comparison_constraint|constraint_row_test)'`).
 
 What the tests do **not** cover:
 
