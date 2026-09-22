@@ -5,7 +5,6 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 
-using std::map;
 using std::string;
 using std::to_string;
 using std::vector;
@@ -51,10 +50,8 @@ template auto gcs::innards::install_clique_duplicate_contradiction_initialiser(
     Propagators &, const ConstraintID &, const string &, const string &, const hints::AllDifferentExcept &) -> void;
 
 auto gcs::innards::define_clique_not_equals_except_encoding(
-    ProofModel & model, const vector<gcs::IntegerVariableID> & vars, const vector<gcs::Integer> & excluded) -> map<IntegerVariableID, ProofFlag>
+    ProofModel & model, const vector<gcs::IntegerVariableID> & vars, const vector<gcs::Integer> & excluded) -> void
 {
-    map<IntegerVariableID, ProofFlag> duplicate_selectors;
-
     for (unsigned i = 0; i < vars.size(); ++i)
         for (unsigned j = i + 1; j < vars.size(); ++j) {
             auto selector = model.create_proof_flag("notequals_except");
@@ -68,10 +65,5 @@ auto gcs::innards::define_clique_not_equals_except_encoding(
             }
             model.add_constraint(WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, lower_conj);
             model.add_constraint(WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, higher_conj);
-
-            if (vars[i] == vars[j])
-                duplicate_selectors.insert_or_assign(vars[i], selector);
         }
-
-    return duplicate_selectors;
 }

@@ -517,6 +517,10 @@ add_scp_chain_test(smart_table_unsat      none)
 # seq_precede_chain -- are conformed and chain separately, below.)
 add_scp_chain_test(all_different_except_sat    none)
 add_scp_chain_test(all_different_except_unsat  none)
+# Two repeated variables, X and Y, each forced into the two excluded values, which
+# lie either side of and between the runs removed; the forcing is one RUP range
+# removal per run against the aliased pair's own rows (#988).
+add_scp_chain_test(all_different_except_duplicate  none)
 add_scp_chain_test(at_most_one_sat             none)
 add_scp_chain_test(at_most_one_unsat           none)
 add_scp_chain_test(among_sat                   none)

@@ -119,6 +119,47 @@ auto run_alldiffexcept_dup_test(
     check_results(proof_name, expected, actual);
 }
 
+// A duplicated variable whose domain has holes, or which is a view, posted as
+// {dup, dup, other}. The initialiser forces dup into the excluded set by removing
+// the runs between excluded values as ranges (#988), and each range's proof has
+// to reach every excluded value's eq atom through dup's own order atoms: a hole
+// can put an excluded value between two runs, or leave one in no domain at all,
+// and a view states its runs over its own encoding.
+auto run_alldiffexcept_dup_shape_test(
+    bool proofs, const vector<int> & dup_values, ViewWrap wrap, const vector<int> & other_values, const vector<int> & excluded) -> void
+{
+    print(cerr, "all_different_except dup shape {} wrap (bare {} negate {} offset {}) other {} excl {}{}", dup_values, wrap.bare, wrap.negate,
+        wrap.offset, other_values, excluded, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto is_excluded = [&](int v) { return std::find(excluded.begin(), excluded.end(), v) != excluded.end(); };
+    set<tuple<int, int>> expected, actual;
+    for (auto d : dup_values)
+        for (auto o : other_values) {
+            vector<int> posted{d, d, o};
+            bool ok = true;
+            for (size_t i = 0; i < posted.size(); ++i)
+                for (size_t j = i + 1; j < posted.size(); ++j)
+                    if (! is_excluded(posted[i]) && ! is_excluded(posted[j]) && posted[i] == posted[j])
+                        ok = false;
+            if (ok)
+                expected.emplace(d, o);
+        }
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto dup = create_integer_variable_or_constant_with_view(p, dup_values, wrap);
+    auto other = p.create_integer_variable(vector<Integer>(other_values.begin(), other_values.end()));
+    vector<Integer> excluded_i;
+    for (const auto & v : excluded)
+        excluded_i.push_back(Integer(v));
+    p.post(AllDifferentExcept{{dup, dup, other}, excluded_i});
+
+    auto proof_name = proofs ? make_optional("all_different_except_test") : nullopt;
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{dup, other});
+    check_results(proof_name, expected, actual);
+}
+
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -> void
 {
     // Empty / single — trivial cases.
@@ -187,6 +228,17 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -
 
         // Two duplicate runs in the same constraint.
         run_alldiffexcept_dup_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1, 1}, {0, 1});
+
+        // Holes and views on the duplicated variable (#988). An excluded value
+        // in a hole of dup's domain, and so between two of the removed runs;
+        // one outside dup's bounds; one in no domain at all; and dup as a
+        // negated and as an offset view, with holes.
+        run_alldiffexcept_dup_shape_test(proofs, {0, 1, 2, 3, 6, 7, 8, 9}, view_none(), {5, 6}, {5, 8});
+        run_alldiffexcept_dup_shape_test(proofs, {-5, -4, -3, 0, 4, 5, 6}, view_none(), {0, 1, 2}, {0, 10});
+        run_alldiffexcept_dup_shape_test(proofs, {0, 1, 2, 4, 5}, view_none(), {0, 1}, {1, 3});
+        run_alldiffexcept_dup_shape_test(proofs, {-3, -2, -1, 0, 1, 2, 3}, view_neg(), {0, 1, 2}, {0});
+        run_alldiffexcept_dup_shape_test(proofs, {1, 2, 4, 7, 8}, view_offset(5), {4, 5, 6, 7, 8}, {4, 7});
+        run_alldiffexcept_dup_shape_test(proofs, {-2, -1, 0, 2, 3, 4, 5, 6}, view_neg_offset(-6), {3, 4}, {-1, 3});
 
         // AllDifferentExceptZero is a thin wrapper over AllDifferentExcept
         // with excluded={0}. Exercise it by name once on a dup posting to
