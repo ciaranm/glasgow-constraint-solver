@@ -162,8 +162,13 @@ namespace gcs
 
     constexpr inline auto operator+=(Integer & a, Integer b) -> Integer &
     {
-        if (innards::add_overflows(a.raw_value, b.raw_value, &a.raw_value))
+        // Into a local rather than straight into a: on overflow the builtin stores
+        // the wrapped result, which the message would then report as the left
+        // operand, and which would be left in a (issue #1003).
+        long long r;
+        if (innards::add_overflows(a.raw_value, b.raw_value, &r))
             innards::throw_integer_overflow("+=", a.raw_value, b.raw_value);
+        a.raw_value = r;
         return a;
     }
 
@@ -177,8 +182,11 @@ namespace gcs
 
     constexpr inline auto operator-=(Integer & a, Integer b) -> Integer &
     {
-        if (innards::sub_overflows(a.raw_value, b.raw_value, &a.raw_value))
+        // Into a local rather than straight into a, as for +=.
+        long long r;
+        if (innards::sub_overflows(a.raw_value, b.raw_value, &r))
             innards::throw_integer_overflow("-=", a.raw_value, b.raw_value);
+        a.raw_value = r;
         return a;
     }
 
