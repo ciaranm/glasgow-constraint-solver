@@ -4,6 +4,7 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -366,14 +367,21 @@ auto run_wide_constants_test(bool proofs, const string & mode) -> void
     }
 }
 
-// A tuple whose trees are checked one at a time must not grant support from an
-// early tree before a later one kills the tuple (issue #994). This is the worked
-// example from examples/smart_table_small: at A = B = 2, the first tuple is dead
-// because A < B fails, but its C = 3 tree is still valid, and only the second tuple,
-// which forces C <= 2, is left. Whether the C tree is checked before the A, B tree
-// depends on how the variables hash, so the instance is posted twice, with the
-// variables created in both orders. Consistency is checked at every node, which is
-// the only thing that can see the missed pruning: the solutions are right either way.
+// Two bugs in how a tuple's trees are filtered, on the worked example from
+// examples/smart_table_small. Trees are rooted, and checked, in the order their
+// variables first appear in the tuple, so each bug is reached by one of the two entry
+// orders posted here.
+//
+// Reversed, the first tuple's C = 3 tree is checked before its A, B tree. At
+// A = B = 2 the tuple is dead because A < B fails, and the C tree must not grant
+// C = 3 support on its behalf before that is found (issue #994).
+//
+// In order, the second tuple's tree is rooted at A, and its A != 1 entry comes after
+// A = B at the root. B = 1 has no support at the root, but only a pass from the root
+// back down to the leaves can see that.
+//
+// Consistency is checked at every node, which is the only thing that can see the
+// missed pruning: the solutions are right either way.
 auto run_dead_tuple_test(bool proofs, const string & mode) -> void
 {
     auto basename = "smart_table_test_" + mode;
@@ -382,15 +390,15 @@ auto run_dead_tuple_test(bool proofs, const string & mode) -> void
         print(cerr, "smart table {}{}{}", mode, reversed ? " reversed" : "", proofs ? " with proofs:" : ":");
         cerr << flush;
         Problem p;
-        vector<IntegerVariableID> created;
-        for (int i = 0; i < 3; ++i)
-            created.push_back(p.create_integer_variable(1_i, 3_i));
-        auto a = reversed ? created[2] : created[0];
-        auto b = created[1];
-        auto c = reversed ? created[0] : created[2];
+        auto a = p.create_integer_variable(1_i, 3_i);
+        auto b = p.create_integer_variable(1_i, 3_i);
+        auto c = p.create_integer_variable(1_i, 3_i);
 
         auto tuples = SmartTuples{{SmartTable::less_than(a, b), SmartTable::in_set(a, {1_i, 2_i}), SmartTable::equals(c, 3_i)},
             {SmartTable::equals(a, b), SmartTable::not_equals(a, 1_i), SmartTable::greater_than_equal(b, c)}};
+        if (reversed)
+            for (auto & tuple : tuples)
+                std::ranges::reverse(tuple);
         p.post(SmartTable{{a, b, c}, tuples});
 
         set<tuple<int, int, int>> expected{{1, 2, 3}, {1, 3, 3}, {2, 3, 3}, {2, 2, 1}, {2, 2, 2}, {3, 3, 1}, {3, 3, 2}, {3, 3, 3}}, actual;
@@ -399,6 +407,34 @@ auto run_dead_tuple_test(bool proofs, const string & mode) -> void
             p, proof_name, expected, actual, tuple{pair{a, CheckConsistency::GAC}, pair{b, CheckConsistency::GAC}, pair{c, CheckConsistency::GAC}});
         check_results(proof_name, expected, actual);
     }
+}
+
+// The first tuple's tree is the chain A - B - C rooted at A, whose A != 1 entry is only
+// applied at the root, after A = B has already been filtered. Two passes from the
+// leaves up would get B right but not C, so C = 1 survives unless the second pass goes
+// from the root back down. The second tuple supports every value of A and B, so B = 1
+// is never pruned: otherwise the propagator would be run again on the smaller B, and
+// that rerun would find C = 1 unsupported whichever way the second pass went.
+auto run_deep_tree_test(bool proofs, const string & mode) -> void
+{
+    print(cerr, "smart table {}{}", mode, proofs ? " with proofs:" : ":");
+    cerr << flush;
+    Problem p;
+    auto a = p.create_integer_variable(1_i, 3_i);
+    auto b = p.create_integer_variable(1_i, 3_i);
+    auto c = p.create_integer_variable(1_i, 3_i);
+
+    auto tuples = SmartTuples{{SmartTable::equals(a, b), SmartTable::equals(b, c), SmartTable::not_equals(a, 1_i)}, {SmartTable::equals(c, 3_i)}};
+    p.post(SmartTable{{a, b, c}, tuples});
+
+    set<tuple<int, int, int>> expected{{2, 2, 2}}, actual;
+    for (int x = 1; x <= 3; ++x)
+        for (int y = 1; y <= 3; ++y)
+            expected.emplace(x, y, 3);
+    auto proof_name = proofs ? make_optional("smart_table_test_" + mode) : nullopt;
+    solve_for_tests_checking_consistency(
+        p, proof_name, expected, actual, tuple{pair{a, CheckConsistency::GAC}, pair{b, CheckConsistency::GAC}, pair{c, CheckConsistency::GAC}});
+    check_results(proof_name, expected, actual);
 }
 
 // issue #254: degenerate SmartTable instances — an empty tuple list (no
@@ -481,7 +517,7 @@ auto main(int argc, char * argv[]) -> int
     // Keep in sync with the mode dispatch below and the matching foreach(mode ...)
     // in gcs/CMakeLists.txt.
     const vector<string> all_modes = {"lex_gt", "lex_ge", "lex_lt", "lex_le", "lex_gt_fixed", "lex_ge_fixed", "lex_lt_fixed", "lex_le_fixed",
-        "am1_eq", "am1_in_set", "al1_eq", "al1_in_set", "mixed_same_var", "stacked_unary", "wide_constants", "degenerate", "dead_tuple"};
+        "am1_eq", "am1_in_set", "al1_eq", "al1_in_set", "mixed_same_var", "stacked_unary", "wide_constants", "degenerate", "dead_tuple", "deep_tree"};
     const vector<string> modes = requested_mode.empty() ? all_modes : vector<string>{requested_mode};
 
     vector<pair<int, vector<pair<int, int>>>> data = {
@@ -497,7 +533,8 @@ auto main(int argc, char * argv[]) -> int
     for (const auto & mode : modes) {
         // These modes carry their own instances rather than using the
         // length/ranges table below.
-        if (mode == "mixed_same_var" || mode == "stacked_unary" || mode == "wide_constants" || mode == "degenerate" || mode == "dead_tuple") {
+        if (mode == "mixed_same_var" || mode == "stacked_unary" || mode == "wide_constants" || mode == "degenerate" || mode == "dead_tuple" ||
+            mode == "deep_tree") {
             for (bool proofs : {false, true}) {
                 if (proofs && ! can_run_veripb())
                     continue;
@@ -509,6 +546,8 @@ auto main(int argc, char * argv[]) -> int
                     run_wide_constants_test(proofs, mode);
                 else if (mode == "dead_tuple")
                     run_dead_tuple_test(proofs, mode);
+                else if (mode == "deep_tree")
+                    run_deep_tree_test(proofs, mode);
                 else
                     run_degenerate_test(proofs, mode);
             }

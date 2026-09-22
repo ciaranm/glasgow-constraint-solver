@@ -368,11 +368,19 @@ namespace
     auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree, VariableDomainMap & unsupported,
         const ProofFlag * tuple_selector, const State & state, auto & inference, const ReasonLiterals & reason, ProofLogger * const logger) -> void
     {
-        for (int l = tree.size() - 1; l >= 0; --l) {
-            for (const auto & edge : tree[l]) {
+        // The first pass went from the leaves up, so each node now holds only values
+        // its own subtree supports, and the root is final. Going back down from the
+        // root makes each child final in turn, which is GAC on the tree with no
+        // iteration. A second pass from the leaves up would not: it filters each edge
+        // before the edge above it has passed down the parent's final values, so a
+        // restriction at the root gets only one level further down per pass.
+        for (const auto & level : tree)
+            for (const auto & edge : level)
                 filter_edge(edge, supported_by_tree, tuple_selector, state, inference, reason, logger);
 
-                // Collect supported vals for this tree
+        // Only now is every node final, so only now can values be counted as supported.
+        for (const auto & level : tree) {
+            for (const auto & edge : level) {
                 overloaded{
                     [&](const BinaryEntry & binary_entry) {
                         auto supported_var_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
@@ -612,11 +620,23 @@ namespace
                     .visit(entry);
             }
 
+            // Root the trees in the order their variables first appear in the tuple,
+            // not in node_visited's order, which differs between standard libraries.
+            vector<IntegerVariableID> vars_in_order;
+            for (const auto & entry : current_tuple)
+                overloaded{
+                    [&](const BinaryEntry & binary_entry) {
+                        vars_in_order.emplace_back(deview(binary_entry.var_1));
+                        vars_in_order.emplace_back(deview(binary_entry.var_2));
+                    },                                                                                                         //
+                    [&](const UnaryValueEntry & unary_val_entry) { vars_in_order.emplace_back(deview(unary_val_entry.var)); }, //
+                    [&](const UnarySetEntry & unary_set_entry) { vars_in_order.emplace_back(deview(unary_set_entry.var)); }    //
+                }
+                    .visit(entry);
+
             Forest forest{};
-            for (auto & var_pair : node_visited) {
-                auto & var = var_pair.first;
-                auto & visited = var_pair.second;
-                if (visited)
+            for (const auto & var : vars_in_order) {
+                if (node_visited.at(var))
                     continue;
                 vector<vector<SmartEntry>> entry_tree;
                 entry_tree.emplace_back();
