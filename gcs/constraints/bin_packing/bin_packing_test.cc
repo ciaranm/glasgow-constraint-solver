@@ -31,9 +31,11 @@ using std::tuple;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 using std::println;
 #else
+using fmt::format;
 using fmt::print;
 using fmt::println;
 #endif
@@ -44,7 +46,7 @@ using namespace gcs::test_innards;
 namespace
 {
     auto run_bin_packing_capa_test(bool proofs, bool upfront, bool cardinality, const ViewWrapConfig & view_cfg,
-        const vector<pair<int, int>> & item_ranges, const vector<int> & sizes, const vector<int> & capacities) -> void
+        const vector<pair<int, int>> & item_ranges, const vector<int> & sizes, const vector<int> & capacities) -> unsigned long long
     {
         print(cerr, "bin_packing capa [{}] {} sizes={} caps={}{}{}{}", view_wrap_config_label(view_cfg), item_ranges, sizes, capacities,
             upfront ? " upfront" : "", cardinality ? " cardinality" : "", proofs ? " with proofs:" : ":");
@@ -101,15 +103,21 @@ namespace
         // form's load-pruning side. A per-bin-GAC reference checker can be
         // added later if regressions appear.
         solve_for_tests(p, proof_name, actual, tuple{items});
+        auto recursions = last_run_recursions();
 
         check_results(proof_name, expected, actual);
+        return recursions;
     }
 
+    // load_holes, if given, has for each bin the values its load's range starts
+    // without.
     auto run_bin_packing_load_test(bool proofs, bool upfront, bool cardinality, const ViewWrapConfig & view_cfg,
-        const vector<pair<int, int>> & item_ranges, const vector<int> & sizes, const vector<pair<int, int>> & load_ranges) -> void
+        const vector<pair<int, int>> & item_ranges, const vector<int> & sizes, const vector<pair<int, int>> & load_ranges,
+        const vector<vector<int>> & load_holes = {}) -> unsigned long long
     {
-        print(cerr, "bin_packing load [{}] {} sizes={} loads={}{}{}{}", view_wrap_config_label(view_cfg), item_ranges, sizes, load_ranges,
-            upfront ? " upfront" : "", cardinality ? " cardinality" : "", proofs ? " with proofs:" : ":");
+        print(cerr, "bin_packing load [{}] {} sizes={} loads={}{}{}{}{}", view_wrap_config_label(view_cfg), item_ranges, sizes, load_ranges,
+            load_holes.empty() ? "" : format(" without {}", load_holes), upfront ? " upfront" : "", cardinality ? " cardinality" : "",
+            proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = item_ranges.size();
@@ -123,7 +131,7 @@ namespace
                 bin_load[items[i]] += sizes[i];
             }
             for (size_t b = 0; b < num_bins; ++b)
-                if (bin_load[b] != loads[b])
+                if (bin_load[b] != loads[b] || (b < load_holes.size() && std::ranges::find(load_holes[b], loads[b]) != load_holes[b].end()))
                     return false;
             return true;
         };
@@ -140,8 +148,13 @@ namespace
         vector<IntegerVariableID> items, loads;
         for (size_t i = 0; i < item_ranges.size(); ++i)
             items.push_back(create_integer_variable_or_constant_with_view(p, item_ranges.at(i), wraps.at(i)));
-        for (auto & [lo, hi] : load_ranges)
-            loads.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        for (size_t b = 0; b < load_ranges.size(); ++b) {
+            vector<Integer> domain;
+            for (auto v = load_ranges[b].first; v <= load_ranges[b].second; ++v)
+                if (b >= load_holes.size() || std::ranges::find(load_holes[b], v) == load_holes[b].end())
+                    domain.push_back(Integer{v});
+            loads.push_back(p.create_integer_variable(domain));
+        }
 
         vector<Integer> sizes_i;
         for (auto s : sizes)
@@ -157,8 +170,22 @@ namespace
         // Enumeration only; see capa runner for why per-bin GAC isn't
         // checked here.
         solve_for_tests(p, proof_name, actual, tuple{items, loads});
+        auto recursions = last_run_recursions();
 
         check_results(proof_name, expected, actual);
+        return recursions;
+    }
+
+    // The proof strategy is meant to change only the proof, so the two have to
+    // draw the same inferences, and so search the same tree. Until issue #995
+    // the per-call Stage 3 sweep read no load and pruned nothing, and nothing
+    // here noticed, because the runners above only check the solutions.
+    auto check_strategies_agree(unsigned long long per_call, unsigned long long upfront) -> void
+    {
+        if (per_call != upfront) {
+            println(cerr, "FAILED: the proof strategies searched different trees ({} recursions per-call, {} upfront)", per_call, upfront);
+            exit(EXIT_FAILURE);
+        }
     }
 
     // A load operand need not be a plain variable: the class takes
@@ -369,6 +396,22 @@ auto main(int argc, char * argv[]) -> int
         // DAG and prunes items[1]!=0 and items[2]!=0 from bin 0 (no path
         // through their "in bin 0" edges hits the unique accepting w=8).
         {{{0, 0}, {0, 1}, {0, 1}, {0, 1}}, {1, 3, 5, 7}, {{8, 8}, {0, 20}}},
+        // Issue #995: only {2, 3} makes 5, so the size-4 item goes in bin 1,
+        // and bin 1's load is 4. Unit propagation on the bin's equation alone
+        // is enough to see it.
+        {{{0, 1}, {0, 1}, {0, 1}}, {2, 3, 4}, {{5, 5}, {0, 9}}},
+        // Issue #995: the size-1 item cannot be in bin 0, because what else
+        // goes there is even. Unit propagation on the equation does not see
+        // that, so the prune needs the per-call proof's forward chain.
+        {{{0, 1}, {0, 1}, {0, 1}, {0, 1}, {0, 1}}, {1, 2, 2, 2, 2}, {{4, 4}, {0, 9}}},
+        // The same with the size-1 item last, so the prune is at the bottom of
+        // the DAG rather than the top. At the top, the state after one item is
+        // that item's literal, which unit propagation reads off directly; at
+        // the bottom it has to be reached through the chains.
+        {{{0, 1}, {0, 1}, {0, 1}, {0, 1}, {0, 1}}, {2, 2, 2, 2, 1}, {{4, 4}, {0, 9}}},
+        // Stage 3 cuts each load to multiples of 3, and the search then
+        // branches on the loads, so a terminal's load can fall in a hole.
+        {{{0, 1}, {0, 1}, {0, 1}}, {3, 3, 3}, {{0, 9}, {0, 9}}},
         // Stage 4 in the variable-load form: the same cross-bin prune as the
         // capa worked example, with the capacities arriving as load upper
         // bounds instead of constants (so the per-bin rows are read under a
@@ -378,25 +421,45 @@ auto main(int argc, char * argv[]) -> int
         {{{0, 1}, {0, 1}, {0, 1}}, {3, 3, 3}, {{0, 5}, {0, 5}}},
     };
 
+    // Each load case with holes: { item_ranges, sizes, load_ranges, the values
+    // each load's range starts without }.
+    vector<tuple<vector<pair<int, int>>, vector<int>, vector<pair<int, int>>, vector<vector<int>>>> load_hole_data = {
+        {{{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 4}, {0, 5}}, {{1, 3}, {}}},
+        {{{0, 1}, {0, 1}}, {2, 2}, {{1, 4}, {0, 4}}, {{2}, {}}},
+        {{{0, 1}, {0, 1}}, {2, 3}, {{0, 5}, {0, 5}}, {{2, 3}, {}}},
+        {{{0, 1}, {0, 1}, {0, 1}}, {1, 4, 3}, {{0, 5}, {0, 8}}, {{2, 3, 4}, {}}},
+    };
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        // upfront_proof only changes the proof output, so there is nothing
-        // extra to check on a no-proof run — exercise both strategies only
-        // when proofs are on (default per-call first, then upfront opt-in).
-        // The cardinality pass is a strength choice rather than a proof one, so
-        // it is exercised on both. It is run against the upfront Stage 3
-        // strategy as well as the default: the two write into the same proof,
-        // and nothing but running them together checks that they agree about
-        // what the per-bin OPB rows say.
-        for (auto [upfront, cardinality] : {pair{false, false}, pair{true, false}, pair{false, true}, pair{true, true}}) {
-            if (upfront && ! proofs)
-                continue;
+        // Both proof strategies on every case, with and without proofs, and
+        // their search trees compared (see check_strategies_agree). The
+        // cardinality pass is a strength choice rather than a proof one, so it
+        // is exercised on both. It is run against the upfront Stage 3 strategy
+        // as well as the default: the two write into the same proof, and
+        // nothing but running them together checks that they agree about what
+        // the per-bin OPB rows say.
+        for (bool cardinality : {false, true}) {
             for (auto & [items, sizes, caps] : capa_data)
-                run_bin_packing_capa_test(proofs, upfront, cardinality, view_cfg, items, sizes, caps);
+                check_strategies_agree(run_bin_packing_capa_test(proofs, false, cardinality, view_cfg, items, sizes, caps),
+                    run_bin_packing_capa_test(proofs, true, cardinality, view_cfg, items, sizes, caps));
             for (auto & [items, sizes, loads] : load_data)
-                run_bin_packing_load_test(proofs, upfront, cardinality, view_cfg, items, sizes, loads);
+                check_strategies_agree(run_bin_packing_load_test(proofs, false, cardinality, view_cfg, items, sizes, loads),
+                    run_bin_packing_load_test(proofs, true, cardinality, view_cfg, items, sizes, loads));
         }
+
+        // Loads that start with holes on terminals the DAG can reach, inside
+        // their bounds, so that the per-call proof has to rule those terminals
+        // out through the holes rather than a bound. One of each inference:
+        // a prune (an odd load is impossible), a bound cut, and a gap cut
+        // whose gap contains reachable holes; then a prune whose item can only
+        // reach holes (3 or 4) or loads over the bound (7 or 8), which Stage 2
+        // cannot see either. The search can make holes like these by branching
+        // on a load, but only on some seeds.
+        for (auto & [items, sizes, loads, holes] : load_hole_data)
+            check_strategies_agree(run_bin_packing_load_test(proofs, false, false, view_cfg, items, sizes, loads, holes),
+                run_bin_packing_load_test(proofs, true, false, view_cfg, items, sizes, loads, holes));
 
         // Seven items each needing more than half of a bin, four bins.
         run_stage4_pigeonhole_test(proofs, view_cfg, 7, 7, {10, 10, 10, 10});

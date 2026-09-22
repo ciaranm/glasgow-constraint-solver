@@ -31,11 +31,12 @@ namespace gcs
     /**
      * \brief The proof-logging strategies BinPacking supports for its Stage 3
      * sweep: proof_strategy::PerCall (the default — reified per-node state
-     * flags at Top, per-call RUP prunes) or proof_strategy::Upfront (also
-     * derive the full forward/backward chain scaffolding at Top). Both draw
-     * the same inferences; PerCall's proofs are smaller and verify faster on
-     * the in-tree benchmarks. No effect under consistency::BC (no Stage 3
-     * sweep) or with proof logging off.
+     * flags at Top, and each piece of chain scaffolding an inference needs
+     * derived at Top the first time it is needed) or proof_strategy::Upfront
+     * (derive the full forward/backward chain scaffolding at Top at the
+     * start). Both draw the same inferences; PerCall's proofs are smaller and
+     * verify faster on the in-tree benchmarks. No effect under consistency::BC
+     * (no Stage 3 sweep) or with proof logging off.
      *
      * \ingroup ProofStrategy
      */
@@ -111,11 +112,13 @@ namespace gcs
      * selected by `upfront_proof`:
      *
      * - `upfront_proof = false` (the default): only the reified per-node
-     *   state flags are defined at `ProofLevel::Top`; every aggregation
-     *   is left to the per-call sweep's `JustifyUsingRUP` prunes, which
-     *   RUP-close through those flags plus the natural per-bin OPB
-     *   equations. This wins on both proof size (6–10× smaller) and
-     *   VeriPB verify time (8–16× faster) on the `bin_packing_bench`
+     *   state flags are defined at `ProofLevel::Top` at the start. The
+     *   per-call sweep derives the rest at Top the first time an inference
+     *   needs it --- a reachable node's forward chains and its split into
+     *   its successors, and a reachable terminal's load --- and each
+     *   inference is then RUP, with a terminal that falls in a hole of the
+     *   load's domain ruled out under the reason first. This wins on both
+     *   proof size and VeriPB verify time on the `bin_packing_bench`
      *   instances, so it is the default.
      * - `upfront_proof = true`: an off-by-default opt-in that additionally
      *   derives the full forward/backward chain scaffolding (per-coord

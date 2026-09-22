@@ -83,7 +83,7 @@ not change). All proofs verified (`s VERIFIED`, zero failures).
 | **Regular** (#213) | upfront **13–55× smaller** (9 MB vs 496 MB @7660 sol) | upfront **2.3–7× faster** (1.66 s vs 11.69 s) | **`proof_strategy::Upfront`** | `PerCall` (`--legacy`), `Bacchus` |
 | **MDD** (#211) | upfront **7–9× smaller** (1.8 MB vs 15.8 MB) | upfront **4–5× faster** (0.04 s vs 0.21 s) | **upfront (only)** | per-call **deferred** (see below) |
 | **Knapsack** (#210) | upfront **3–6× smaller** (20.7 MB vs 121 MB) | upfront **3.6–18× SLOWER** (6.68 s vs 1.85 s) | **`proof_strategy::PerCall`** | `proof_strategy::Upfront` |
-| **BinPacking** (#212) | upfront **6–10× BIGGER** (8 MB vs 1.3 MB) | upfront **8–16× SLOWER** (4.45 s vs 0.55 s) | **`proof_strategy::PerCall`** | `proof_strategy::Upfront` |
+| **BinPacking** (#212, re-measured for #995) | upfront **4.5–21× BIGGER** (309 MB vs 16.4 MB) | upfront **2.8–5.6× SLOWER** (80.0 s vs 21.8 s) | **`proof_strategy::PerCall`** | `proof_strategy::Upfront` |
 
 All four expose the choice through the fluent `with_proof_strategy(...)`
 setter over the shared `gcs::proof_strategy` tags (`PerCall`, `Upfront`,
@@ -92,8 +92,7 @@ bounds via `with_consistency(consistency::BC{})`.
 
 The per-line cost (`us/line`) is the DB-tax signature: Regular upfront 6.8–16 vs
 legacy 3.2–5; MDD upfront 2.5–2.8 vs 2.6–3.5; Knapsack upfront **38–68** vs
-3.7–4.4; BinPacking upfront **60–79** vs 24–30. The decomposition matched
-measurement at every point:
+3.7–4.4. The decomposition matched measurement at every point:
 
 | instance | displacement (line ratio) | DB-tax (us/line ratio) | predicted | measured |
 |---|---|---|---|---|
@@ -103,8 +102,12 @@ measurement at every point:
 | Regular 771 | 13.2× | 2.1× | 6.2× faster | **6.2×** |
 | Regular 7660 | 26.9× | 3.9× | 7.0× faster | **7.0×** |
 | MDD n12 | 4.2× | 0.8× | 5.2× faster | **5.2×** |
-| BinPacking bp_l | 3.2× | 2.5× | 8.1× slower | **8.1×** |
-| BinPacking bp_xl | 3.6× | 2.6× | 9.4× slower | **9.4×** |
+
+BinPacking had two rows here too, and a per-line figure above. Both were
+dropped when issue #995 found that the per-call sweep they measured drew
+no Stage 3 inference at all, so its side of every comparison was a sweep
+doing nothing. Its current figures are the row above and the table in
+[`bin-packing.md`](bin-packing.md).
 
 Why each lands where it does:
 
@@ -122,14 +125,23 @@ Why each lands where it does:
   (2–3×) → the proof shrinks in bytes but verifies 3.6–18× slower. So the
   default is **per-call**; `proof_strategy::Upfront` remains the opt-in when byte size
   is the priority.
-- **BinPacking — per-call wins both.** Stage 3 is *already* an upfront-flag
-  design (`bpup/bpdn/bpat` reifications emitted once at Top, all pruning via
-  *hinted* `JustifyUsingRUP` — **zero** manual `emit_rup_proof_line`). There is
-  nothing per-call left to displace (displacement < 1). The upfront twin only
-  *adds* 27 more Top lines (forward/backward chains, layer ALOs, per-state
-  implications, phantoms) → a bigger permanent DB (`red` 2k–8k, DB-tax ≈ 2.5×)
-  taxing every enumeration RUP. Both factors align against it → bigger *and*
-  slower. Default **per-call** (`proof_strategy::PerCall`), `proof_strategy::Upfront` the opt-in.
+- **BinPacking — per-call wins both.** Stage 3's per-call strategy writes
+  almost nothing per call. The `bpup/bpdn/bpat` reifications are defined once
+  at Top. The rest of what it needs is state-independent: an edge's forward
+  chain, a node's split into its two successors, and a terminal's load in
+  order atoms. Each of those goes at Top too, the first time an inference
+  needs it, and every inference is then a bare RUP. The one per-call line
+  refutes a terminal that falls in a hole of the load's domain. So there is
+  little per-call volume to displace. The upfront twin writes the whole
+  scaffold up front, including backward chains, layer ALOs and phantoms that
+  the per-call strategy never needs, and that bigger permanent DB taxes every
+  enumeration RUP. Both factors align against it, so it is bigger *and*
+  slower. Default **per-call** (`proof_strategy::PerCall`),
+  `proof_strategy::Upfront` the opt-in. (Before issue #995 this bullet
+  credited the per-call path's leanness to hinted RUP through the flags
+  alone. It was really that the sweep never inferred anything. A bare RUP
+  through the flags does not close a prune that needs subset-sum reasoning,
+  because nothing links one layer's flags to the next.)
 
 ### Note on the MDD per-call opt-in
 
@@ -145,10 +157,11 @@ carried. If MDD ever needs the per-call path back, take it from `#205`.
 > **Upfront pays off when the per-call baseline emits heavy per-`(state, val)`
 > DP/chain intermediates on every call AND the diagram is narrow (small
 > scaffold).** It **backfires** when either (a) the per-call path is already
-> near-empty — it relies on hinted RUP + natural OPB + reified flags with no
-> manual per-call emission (BinPacking Stage 3), so there is nothing to displace;
-> or (b) the scaffold is wide/dense (Knapsack's k-dimensional partial-sum DAG),
-> so the permanent DB-tax swamps the modest displacement.
+> near-empty --- what it needs is state-independent, so it can be written at Top
+> lazily, once, and each inference is a bare RUP (BinPacking Stage 3) --- so
+> there is nothing to displace; or (b) the scaffold is wide/dense (Knapsack's
+> k-dimensional partial-sum DAG), so the permanent DB-tax swamps the modest
+> displacement.
 
 Concretely: estimate *displacement* from the per-call baseline's per-call line
 count, estimate *DB-tax* from the Top scaffold's line count, and compare. Narrow
@@ -205,7 +218,7 @@ dominant cost here is better attacked by hinting the propagator's own RUPs
 
 - Narrow diagram + verbose per-call baseline → **upfront default** (Regular #213,
   MDD #211).
-- Lean per-call baseline (already hint-driven) or wide/dense scaffold →
+- Lean per-call baseline (lazily-written Top lines, bare RUP) or wide/dense scaffold →
   **per-call default** (BinPacking #212, Knapsack #210), with the upfront twin
   kept as an opt-in for the size-critical case.
 - Proof *size* and verification *time* are different questions; decide on time

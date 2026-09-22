@@ -30,14 +30,16 @@ capacity is much larger than the number of items).
 The `with_proof_strategy(...)` fluent setter selects the Stage 3
 *proof-emission* strategy (only meaningful under `consistency::GAC`). It
 changes only the proof, never the set of inferences drawn or the
-solutions found:
+solutions found. (Until issue #995 that was not so: the per-call sweep
+read no load, and in fact drew no Stage 3 inference at all.
+`bin_packing_test` now runs both strategies on every case and requires
+their search trees to match.)
 
 - **`proof_strategy::PerCall` (the default).** Only the reified per-node
-  state flags are defined at `ProofLevel::Top`; every aggregation is left
-  to the per-call sweep's `JustifyUsingRUP` prunes, which RUP-close
-  through those flags plus the natural per-bin OPB equations. This wins
-  on both proof size and VeriPB verify time (see the benchmark table
-  below), so it is the default.
+  state flags are defined at `ProofLevel::Top` up front. The per-call
+  sweep derives the rest at `Top` the first time an inference needs it,
+  and each inference is then RUP. This wins on both proof size and VeriPB
+  verify time (see the benchmark table below), so it is the default.
 - **`proof_strategy::Upfront` (opt-in).** The initialiser additionally
   derives the full forward/backward chain scaffolding once at
   `ProofLevel::Top`, so the per-call sweep only has to reference it.
@@ -158,14 +160,56 @@ constructor flag.
 initialiser emits nothing beyond the flag definitions above. The
 per-call sweep (`run_stage3_for_bin`) recomputes the alive `(i, w)`
 nodes under the current item domains (forward ∩ backward reachability
-restricted to the static DAG) and, for each item whose "in bin `b`"
-edge has no support in the alive DAG, prunes `items[i] ≠ b` with a bare
-`JustifyUsingRUP`. VeriPB closes each prune by unit propagation through
-the reified flags plus the natural per-bin OPB equation — no chain,
-dead-node, or per-`(parent, val)` lines are written per call. Load
-bounds are left to the Stage 2 bounds pass (`run_stage3_for_bin` prunes
-item variables only). This is the smaller, faster-verifying proof
-(benchmark below), so it is the default.
+restricted to the static DAG, where a terminal counts only if its load
+is in `loads[b]`'s domain). For each item whose "in bin `b`" edge has
+no support in the alive DAG it prunes `items[i] ≠ b`. It then cuts
+`loads[b]` down to the alive terminals: its bounds, and any gap between
+two of them that the domain reaches into. Those are the inferences the
+upfront sweep draws. In the constant-cap form Stage 3 can add nothing to
+Stage 2 under either strategy: per-bin GAC for a capacity row is Stage
+2's own rule, since every other item not forced into the bin can leave
+it. So the per-call sweep accepts every terminal there, and never infers.
+
+The proof rests on the flags alone plus a handful of state-independent
+lines, written at `Top` the first time an inference needs them and never
+again:
+
+1. an edge's forward chain (`~S_parent + branch + S_succ`, and the
+   per-coordinate lines it closes from), for each branch the item still
+   allows out of a forward-reachable node;
+2. a node's split, `~S_{i,w} + S_{i+1,w} + S_{i+1,w+sizes[i]} ≥ 1`, when
+   the item allows both branches;
+3. a reachable terminal's load in order atoms: `~S_{n,w} + (load ≥ w)`
+   and `~S_{n,w} + (load < w+1)`, each a RUP from a `pol` of the matching
+   half of the bin's equation with the state's forward reification.
+
+Given those, each inference is RUP under a per-bin reason (whether each
+item can be in the bin and whether it can be elsewhere, and the load's
+domain). Negate it, and unit propagation walks backwards: from the
+terminals the negated inference or the reason rules out, through the
+nodes all of whose admissible successors are ruled out, to the root,
+whose state its own definition forces. A prune starts the walk from the
+pruned item's include edges instead. The walk cannot take one step by
+itself. A terminal whose load falls in a *hole* of the domain has its
+order atoms say the load is `w`, and the hole say it is not, but joining
+the two goes through the hole atom's definition. Unit propagation can use
+that only once the terminal's state is assumed. So each such terminal is
+ruled out explicitly, `~S_{n,w}` under the reason, before the inferences
+are checked. That is the only line written per call.
+
+Mutation-tested: dropping any of the three kinds of `Top` line, the hole
+refutations, or the include edges out of a pruned item's layer makes
+VeriPB reject. The last two each needed a fixture of their own to show
+it. At the top of the DAG the state after one item is that item's
+literal, which unit propagation reads off directly, so the include edges
+matter only for a prune deeper down. And a hole on a reachable terminal
+arises in the search only on some seeds. A consultant review found the
+hole case independently, from the version without the refutations. The
+per-call sweep before issue #995 claimed that a bare RUP through the
+flags and the equation closed its prunes. With no chain between layers,
+it does not once a prune needs subset-sum reasoning: sizes `{1,2,2,2,2}`
+into a load of 4. It had never been caught, because the sweep never
+pruned anything.
 
 **Opt-in strategy — upfront (`upfront_proof = true`).** On top of the
 flag definitions the initialiser derives the full chain scaffolding
@@ -213,25 +257,42 @@ emission anyway.
 
 **Benchmark — why per-call is the default.** `bin_packing_bench` (built from
 `benchmarks/bin_packing_bench/`), per-call (default) versus upfront
-(`--upfront`):
+(`--upfront`), re-measured for issue #995 on one core of an otherwise
+idle fataepyc-10. Each VeriPB run was on its own, and repeated runs
+agreed to 0.01s:
 
 | inst | layout | per-call proof | upfront proof | per-call veripb | upfront veripb | per-call solve | upfront solve |
 |------|--------|---------------:|--------------:|----------------:|---------------:|---------------:|--------------:|
-| 1 | 10it 3bin capa | 2.6 MB | 22 MB | 1.8s | 14.6s | 0.25s | 0.31s |
-| 2 | 10it 3bin load | 14 MB | 296 MB | 10.3s | 102s | 2.34s | 2.54s |
-| 5 | 8it 2bin tight capa | 155 KB | 1.1 MB | <0.01s | 0.10s | 0.006s | 0.01s |
-| 6 | 8it 2bin wide-sizes | 177 KB | 1.2 MB | <0.01s | 0.14s | 0.008s | 0.01s |
+| 1 | 10it 3bin capa | 2.94 MB | 22.2 MB | 3.71s | 20.8s | 0.074s | 0.593s |
+| 2 | 10it 3bin load | 16.4 MB | 309 MB | 21.8s | 80.0s | 0.304s | 3.86s |
+| 5 | 8it 2bin tight capa | 0.20 MB | 1.07 MB | 0.11s | 0.31s | 0.010s | 0.021s |
+| 6 | 8it 2bin wide-sizes | 0.22 MB | 1.22 MB | 0.11s | 0.41s | 0.010s | 0.022s |
+| 7 | 9it 4bin pigeonhole capa | 1.64 MB | 7.31 MB | 0.21s | 1.11s | 0.061s | 0.194s |
+| 8 | 9it 4bin pigeonhole load | 2.42 MB | 50.4 MB | 0.61s | 3.01s | 0.065s | 0.566s |
 
-Upfront proofs are 7–21× larger and 8–14× slower to verify than
-per-call, while solver wall time stays within 1.1–1.5× (the extra
-inferences `propagate_bin` draws barely move the search on these
-instances). Per-call wins decisively on both proof axes, so it is the
-default; upfront is an off-by-default opt-in (`upfront_proof = true`, or
-`--upfront` in the bench) kept for robustness and A/B measurement. The
-upfront design is the one that generalises to the #200 unified
-path-DAG framework, which is why it is retained rather than deleted.
-Worth revisiting if a future model makes either axis a measured pain
-point.
+Both strategies search the same tree on every instance (they draw the
+same inferences). Upfront proofs are 4.5–21× larger and 2.8–5.6× slower
+to verify, so per-call is the default. Upfront is an off-by-default opt-in
+(`upfront_proof = true`, or `--upfront` in the bench), kept for
+robustness and A/B measurement. The upfront design is the one that
+generalises to the #200 unified path-DAG framework, which is why it is
+retained rather than deleted. Worth revisiting if a future model makes
+either axis a measured pain point.
+
+What issue #995 cost the per-call strategy shows only on the load
+instances. There the sweep now does real work: instance 2's proof is 13%
+larger than before (14.5 MB) and takes 60% longer to verify (13.6s), and
+instance 8's takes 49% longer (0.41s). The constant-cap proofs are
+byte-identical, as they should be. Instances 1, 2, 3 and 4 enumerate
+every solution, so extra pruning cannot shorten them. Without proofs the
+constant-cap instances got faster (instance 3 34.9s → 30.7s), from moving
+the sweep's loop invariants into locals: its stores are bytes, which
+alias everything. The load instances got 7–10% slower (instance 4 24.7s
+→ 26.4s), which is the load cuts' own effect: they punch holes in the
+loads for nothing. On the 13 MiniZinc Challenge models that post
+BinPacking (60s, 3 reps), no best objective got worse and one got better
+(2022 team-assignment, 2884 → 2887). Nodes per minute rose on most:
+2016 gbac +15%, steelmillslab +14–24%, 2022 team-assignment 2.6×.
 
 **Per-bin GAC, not joint GAC.** Each bin's DAG sees only its own
 constraint; cross-bin interactions that route an item elsewhere are
