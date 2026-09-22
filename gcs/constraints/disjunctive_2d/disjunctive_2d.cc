@@ -215,18 +215,26 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     // on, and the rule draws the same inferences either way --- which is what
     // keeps a proofs-off run from taking a different search path.
     //
-    // An optional rectangle takes no part. Membership below is decided from
-    // *bounds alone*, and a rectangle whose mandatory part covers a time is
-    // taken to occupy it --- which an undecided presence does not, so counting
-    // its height into the load would make the overflow conclusion unsound, and
-    // a solve would lose the placements that need the rectangle absent. A
-    // constant-present one is fine and is kept: its disjunct folds out of the
-    // separation clause, which is why such a model's OPB is byte-identical to
-    // the non-optional form's.
+    // A rectangle with a presence *variable* takes no part. Membership below is
+    // decided from bounds alone, and a rectangle whose mandatory part covers a
+    // time is taken to occupy it --- which an undecided presence does not, so
+    // counting its height would prune the placements that need it absent. With
+    // proofs on VeriPB rejects that (the separation clause carries a presence
+    // disjunct no goal of the network's offers); with them off, a solve would
+    // simply lose those solutions, so this is a decline rather than something
+    // left to the checker.
     //
-    // Carrying an undecided one properly means putting its presence literal in
-    // every fact list the certificate builds, so that the guard covers the
-    // disjunct the clause brings in. That is a larger change than this decline
+    // A *constant* presence never gets this far: task_presence resolves a
+    // constant 1 to no literal at all, so such a rectangle is a plain one here
+    // and takes part like any other, and a constant 0 has already been dropped
+    // from _active_rects. So `_presence[i]` is set here only for a variable.
+    //
+    // That makes the decline coarser than it has to be: a presence variable
+    // with the domain {1}, or one fixed to 1 during search, is present and is
+    // still left out, for the whole solve, because membership is settled once
+    // here. Taking such a rectangle part properly means putting its presence
+    // literal in every fact list the certificate builds, so that the guard
+    // covers the disjunct its clause brings in --- a larger change than this,
     // and nothing asks for it yet.
     //
     // A position variable two rectangles share is a bar to both of them. The
@@ -250,7 +258,7 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         const auto & res_pos = time_axis == 0 ? _ys : _xs;
         const auto & res_size = time_axis == 0 ? _heights : _widths;
         for (auto i : _active_rects) {
-            if (_presence[i] && ! (is_constant_variable(*_presence[i]) && constant_value_of(*_presence[i]) == 1_i))
+            if (_presence[i])
                 continue;
             if (position_uses[_xs[i]] > 1 || position_uses[_ys[i]] > 1)
                 continue;

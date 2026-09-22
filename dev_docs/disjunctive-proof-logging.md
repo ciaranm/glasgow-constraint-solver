@@ -1399,14 +1399,31 @@ mints one with two `red` rows, a boundary pin and a chain link, at
 position rather than per firing, and it is the price of the degree-one
 cancellation above.
 
-**It does not yet know about optional rectangles.** Membership is
-decided from bounds alone, so a rectangle whose *presence* is still
-undecided would be counted into the load and its height summed, which
-the overflow conclusion is not entitled to. Nothing would catch it: the
-certificate would carry the same wrong set and verify against it. When
-the 2-D optional form (#974) lands, such a rectangle has to be kept out
-of the relaxation's membership or have its presence literal added to
-every fact list.
+**Optional rectangles take part only when their presence is a
+constant.** Membership is decided from bounds alone, so a rectangle
+whose presence is a *variable* is left out: counted in, its height
+would make the overflow conclusion prune the placements that need it
+absent. That is sound but coarse. A presence variable with the domain
+`{1}`, or one fixed to 1 during search, is present and still left out,
+for the whole solve, because membership is settled once in `prepare()`.
+A constant presence never reaches the decline at all: `task_presence`
+resolves a constant 1 to no literal, so the rectangle is a plain one,
+and drops a constant 0 before anything else sees it.
+
+Two things about how this fails are worth knowing, because the first
+version of this section got one of them wrong. **With proofs on, VeriPB
+catches it**: the clause of a pair involving such a rectangle carries
+its presence disjunct, which no goal of the network's offers, so a case
+split cannot close. **With proofs off, nothing does**: the solve loses
+the solutions and says nothing. So the test that pins the decline is an
+enumeration against brute force, not a proof lane, and it has to post
+optional rectangles *with the rule on* --- the optional-form tests never
+turn it on, and until #985's review nothing put the two together.
+
+Leaving a rectangle out only ever weakens propagation, so a comparison
+of solution sets with the rule on and off cannot notice the decline
+being made too coarse. What notices that is asserting the rule *fires*
+on a constant-present model.
 
 **What it does not reach.** The endgame lands on a statement about the
 *mandatory* set with no activity flags in it, which is exactly enough

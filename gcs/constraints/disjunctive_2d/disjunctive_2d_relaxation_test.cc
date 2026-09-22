@@ -98,6 +98,33 @@ namespace
         return {xs, ys};
     }
 
+    /// As `post`, but through the optional-rectangle constructor: each entry of
+    /// `presences` is either a constant (0 or 1) or nullopt for a fresh {0, 1}
+    /// variable, and the variables made are returned so they can be enumerated.
+    auto post_optional(Problem & p, const Instance & inst, Disjunctive2DRules rules, const vector<optional<int>> & presences)
+        -> std::tuple<vector<IntegerVariableID>, vector<IntegerVariableID>, vector<IntegerVariableID>>
+    {
+        vector<IntegerVariableID> xs, ys, widths, heights, pres, pres_vars;
+        for (const auto & [lo, hi] : inst.x_ranges)
+            xs.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        for (const auto & [lo, hi] : inst.y_ranges)
+            ys.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        for (auto w : inst.widths)
+            widths.push_back(ConstantIntegerVariableID{Integer{w}});
+        for (auto h : inst.heights)
+            heights.push_back(ConstantIntegerVariableID{Integer{h}});
+        for (const auto & pr : presences)
+            if (pr)
+                pres.push_back(ConstantIntegerVariableID{Integer{*pr}});
+            else {
+                auto v = p.create_integer_variable(0_i, 1_i);
+                pres.push_back(v);
+                pres_vars.push_back(v);
+            }
+        p.post(Disjunctive2D{xs, ys, widths, heights, pres}.with_rules(rules));
+        return {xs, ys, pres_vars};
+    }
+
     auto count_markers(const string & basename, const string & marker) -> int
     {
         ifstream f{basename + ".pbp"};
@@ -550,6 +577,120 @@ auto main(int argc, char * argv[]) -> int
         gcs::test_innards::check_results(proofs ? make_optional(name) : nullopt, expected, actual);
         if (proofs && markers == 0)
             fail(name + ": the rule never fired, so this route through the certificate went unchecked");
+    }
+
+    // --- optional rectangles, from both sides ---------------------------
+    //
+    // The rule decides membership from bounds alone, so an optional rectangle
+    // whose presence is undecided must take no part: counting its height would
+    // make the overflow conclusion prune placements that need it absent. A
+    // constant-present one must still take part, or the rule quietly does
+    // nothing on the optional form. The guard in prepare() has to get both
+    // right, and each fixture below pins one direction: deleting the guard
+    // turns the first red, and tightening it to exclude every optional
+    // rectangle turns the other two red. An on-and-off enumeration of the
+    // constant-present case would pin neither --- leaving a rectangle out only
+    // ever weakens propagation, so the solution set is the same either way ---
+    // which is why those two assert that the rule *fires*.
+
+    // Undecided. Two unconditionally present rectangles two tall share the
+    // time 2 on a window five high, so four fits; a third, three tall and
+    // optional, would make seven. Every solution has the third one absent, so
+    // counting it refutes the root and loses all six of them.
+    {
+        auto name = "disjunctive_2d_relaxation_optional_undecided";
+        const Instance inst{{{2, 2}, {2, 2}, {2, 2}}, {{0, 2}, {0, 2}, {0, 2}}, {1, 1, 1}, {2, 2, 3}};
+        auto is_satisfying = [&](const vector<int> & vals) {
+            // y0, y1, y2, present2. Every x is 2 and every width 1, so no pair
+            // can separate on the time axis: it is the resource axis or nothing.
+            vector<int> y{vals[0], vals[1], vals[2]};
+            vector<bool> here{true, true, vals[3] == 1};
+            for (size_t i = 0; i < 3; ++i)
+                for (size_t j = i + 1; j < 3; ++j)
+                    if (here[i] && here[j] && ! (y[i] + inst.heights[i] <= y[j] || y[j] + inst.heights[j] <= y[i]))
+                        return false;
+            return true;
+        };
+        set<vector<int>> expected, actual;
+        gcs::test_innards::build_expected(expected, is_satisfying, vector<pair<int, int>>{{0, 2}, {0, 2}, {0, 2}, {0, 1}});
+        if (expected.empty())
+            fail("optional_undecided: the fixture has no solutions, so it could not lose any");
+
+        Problem p;
+        auto [xs, ys, pres] = post_optional(p, inst, with, {1, 1, nullopt});
+        vector<IntegerVariableID> all_vars{ys[0], ys[1], ys[2], pres.at(0)};
+        gcs::test_innards::solve_for_tests(p, proofs ? make_optional(string{name}) : nullopt, actual, std::tuple{all_vars});
+        if (gcs::test_innards::last_run_truncated())
+            fail("optional_undecided: a cap fired, so the enumeration checked no completeness");
+        gcs::test_innards::check_results(proofs ? make_optional(string{name}) : nullopt, expected, actual);
+    }
+
+    // Constant-present, and the rule has to fire. `sharp` with every presence
+    // the constant 1 is the same instance, and its root must close by the
+    // relaxation alone --- which it could not if the constant-present
+    // rectangles were being left out.
+    {
+        auto name = "disjunctive_2d_relaxation_optional_constant_sharp";
+        auto root_closes = [&](Disjunctive2DRules rules, const optional<string> & proof_name) -> pair<bool, int> {
+            Problem p;
+            (void)post_optional(p, sharp, rules, {1, 1, 1});
+            auto reached_a_node = false, satisfiable = false;
+            solve_with(p,
+                SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                                   satisfiable = true;
+                                   return false;
+                               },
+                    .trace = [&](const CurrentState &) -> bool {
+                        reached_a_node = true;
+                        return false;
+                    }},
+                proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+            return {! reached_a_node && ! satisfiable, proof_name ? count_markers(*proof_name, "disjunctive2d cumulative relaxation ") : 0};
+        };
+        auto [closed, markers] = root_closes(with, proofs ? make_optional(string{name}) : nullopt);
+        if (! closed)
+            fail("optional_constant_sharp: the root did not close, so constant-present rectangles are being left out of the rule");
+        if (proofs && markers < 1)
+            fail("optional_constant_sharp: no relaxation marker, so something else closed the root");
+        if (proofs && ! verify(name))
+            fail("optional_constant_sharp: veripb rejected the certificate");
+        if (root_closes(without, nullopt).first)
+            fail("optional_constant_sharp: the root closed with the rule off, so the fixture says nothing about the rule");
+    }
+
+    // Constant-present, enumerated: `small` with every presence the constant
+    // 1, against brute force, and with the rule required to have fired. The
+    // enumeration is what says taking part is *sound* for such a rectangle;
+    // the firing is what says it took part at all.
+    {
+        auto name = "disjunctive_2d_relaxation_optional_constant_enumerate";
+        const Instance small{{{0, 3}, {0, 3}, {0, 3}}, {{0, 4}, {0, 4}, {0, 4}}, {2, 2, 2}, {2, 2, 2}};
+        auto n = small.x_ranges.size();
+        auto is_satisfying = [&](const vector<int> & vals) {
+            for (size_t i = 0; i < n; ++i)
+                for (size_t j = i + 1; j < n; ++j) {
+                    auto xi = vals[i], yi = vals[n + i], xj = vals[j], yj = vals[n + j];
+                    if (! (xi + small.widths[i] <= xj || xj + small.widths[j] <= xi || yi + small.heights[i] <= yj || yj + small.heights[j] <= yi))
+                        return false;
+                }
+            return true;
+        };
+        auto all_ranges = small.x_ranges;
+        all_ranges.insert(all_ranges.end(), small.y_ranges.begin(), small.y_ranges.end());
+        set<vector<int>> expected, actual;
+        gcs::test_innards::build_expected(expected, is_satisfying, all_ranges);
+
+        Problem p;
+        auto [xs, ys, pres] = post_optional(p, small, with, {1, 1, 1});
+        vector<IntegerVariableID> all_vars = xs;
+        all_vars.insert(all_vars.end(), ys.begin(), ys.end());
+        gcs::test_innards::solve_for_tests(p, proofs ? make_optional(string{name}) : nullopt, actual, std::tuple{all_vars});
+        if (gcs::test_innards::last_run_truncated())
+            fail("optional_constant_enumerate: a cap fired, so the enumeration checked no completeness");
+        auto markers = proofs ? count_markers(name, "disjunctive2d cumulative relaxation ") : 0;
+        gcs::test_innards::check_results(proofs ? make_optional(string{name}) : nullopt, expected, actual);
+        if (proofs && markers == 0)
+            fail("optional_constant_enumerate: the rule never fired, so constant-present rectangles are being left out");
     }
 
     // Rectangles sharing a position handle take no part in the rule (their
