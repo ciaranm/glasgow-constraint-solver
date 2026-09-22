@@ -74,14 +74,15 @@ auto run_count_test(bool proofs, const ViewWrapConfig & view_cfg, variant<int, p
     p.post(Count{array, voi, result});
 
     auto proof_name = proofs ? make_optional("count_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    // The Count propagator is GAC on the value-of-interest but only
-    // bounds-consistent on how_many: it tightens how_many's bounds from the
-    // achievable-count range but does not remove interior unsupported counts.
-    // Those holes are real when the achievable counts are non-contiguous
-    // (e.g. array [9,9], voi in [6,15] gives counts {0,2}, so how_many=1 is
-    // unsupported but stays within [0,2]). Check how_many at BC accordingly.
+    // The Count propagator is GAC on the value-of-interest and the array but
+    // only bounds-consistent on how_many: it tightens how_many's bounds from
+    // the achievable-count range but does not remove interior unsupported
+    // counts. Those holes are real when the achievable counts are
+    // non-contiguous (e.g. array [9,9], voi in [6,15] gives counts {0,2}, so
+    // how_many=1 is unsupported but stays within [0,2]). Check how_many at BC
+    // accordingly.
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
-        tuple{pair{voi, CheckConsistency::GAC}, pair{result, CheckConsistency::BC}, pair{array, CheckConsistency::None}});
+        tuple{pair{voi, CheckConsistency::GAC}, pair{result, CheckConsistency::BC}, pair{array, CheckConsistency::GAC}});
 
     check_results(proof_name, expected, actual);
 }
@@ -180,6 +181,16 @@ auto main(int argc, char * argv[]) -> int
         // Constant array entries: voi seen N times where some array slots are fixed.
         {pair{0, 3}, pair{0, 3}, {1, 2, pair{1, 3}}},    //
         {pair{0, 3}, 2, {pair{1, 4}, 2, pair{1, 4}, 2}}, //
+        // Array pruning at the root (issue #996). With value_of_interest fixed:
+        // no room for a match, so every variable loses it; and every variable
+        // that can match has to.
+        {0, 3, {pair{1, 3}, pair{1, 3}}},             //
+        {2, 3, {pair{1, 3}, pair{1, 3}, pair{4, 5}}}, //
+        // With it not fixed: both values of interest need every variable that can
+        // match to, so a variable holding both must be one of them; and 1 needs the
+        // second variable to match while 2 allows it no match, so it cannot be 2.
+        {3, pair{1, 2}, {pair{1, 3}, pair{0, 4}, pair{1, 2}}}, //
+        {1, pair{1, 2}, {2, pair{1, 3}}},                      //
         // Degenerate cases (issue #254): empty array, single element, all-constant.
         // Genuine ConstantIntegerVariableIDs for how_many / voi / array entries.
         {0, 5, {}},                         // empty array: count of 5 is 0 (tautology)

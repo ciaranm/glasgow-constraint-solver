@@ -150,6 +150,24 @@ auto Count::install_propagators(Propagators & propagators) -> void
             // is each value of interest supported? also track how_many bounds supports
             // whilst we're here
             optional<Integer> lowest_how_many_must, highest_how_many_might;
+            // Does how_many's domain hold any count in [lo, hi]? Usually an end of
+            // the range does, so try those before walking the domain.
+            auto some_count_between = [&](Integer lo, Integer hi) -> bool {
+                if (lo > hi)
+                    return false;
+                if (state.in_domain(how_many, lo) || state.in_domain(how_many, hi))
+                    return true;
+                return lo + 1_i <= hi - 1_i && state.domain_intersects_with(how_many, IntervalSet<Integer>{lo + 1_i, hi - 1_i});
+            };
+            // For the array pruning after the loop (issue #996). A surviving value of
+            // interest v "takes every candidate" when the only count how_many allows
+            // it is how_many_might, so that if value_of_interest is v then every
+            // variable that can be v must be. The pruning looks at the survivors that
+            // do not: with two or more of them nothing can be pruned, and with one it
+            // matters whether that one leaves room for any further matches.
+            int survivors_not_taking_every_candidate = 0;
+            Integer lone_survivor_not_taking_every_candidate = 0_i;
+            bool lone_survivor_allows_no_further_matches = false;
             // Set when a pruning below empties value_of_interest's domain, so the
             // loop leaves and the propagator returns rather than carrying on
             // reading a state that has already failed.
@@ -203,14 +221,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
                     // for true GAC, voi is supported iff some count in the range is
                     // actually in how_many's domain. If the whole range falls into
                     // an interior hole of how_many, voi has no support.
-                    bool supported = false;
-                    for (auto c = how_many_must; c <= how_many_might; ++c)
-                        if (state.in_domain(how_many, c)) {
-                            supported = true;
-                            break;
-                        }
-
-                    if (! supported) {
+                    if (! some_count_between(how_many_must, how_many_might)) {
                         auto justf = [&](const ReasonLiterals & reason) -> void {
                             // Materialise both conditional count bounds for this
                             // voi, then value_of_interest != voi follows because
@@ -249,6 +260,13 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             lowest_how_many_must = how_many_must;
                         if ((! highest_how_many_might) || (how_many_might > *highest_how_many_might))
                             highest_how_many_might = how_many_might;
+
+                        // Past two, the answer cannot change, so stop asking.
+                        if (survivors_not_taking_every_candidate < 2 && some_count_between(how_many_must, how_many_might - 1_i)) {
+                            ++survivors_not_taking_every_candidate;
+                            lone_survivor_not_taking_every_candidate = voi;
+                            lone_survivor_allows_no_further_matches = ! some_count_between(how_many_must + 1_i, how_many_might);
+                        }
                     }
                 }
             }
@@ -299,6 +317,148 @@ auto Count::install_propagators(Propagators & propagators) -> void
                 auto just = JustifyExplicitly{emit, ThenRUP::Yes, hints::Count{owner}};
                 if (! inference.infer_less_than_or_stop(logger, how_many, *highest_how_many_might + 1_i, just, reason))
                     return PropagatorState::DisableUntilBacktrack;
+            }
+
+            // Now the array (issue #996). With value_of_interest = v, a variable
+            // that can be v but is not yet fixed is supported at v iff how_many
+            // allows a count above how_many_must, and at every other value iff
+            // it allows one below how_many_might. So var = a has no support
+            // exactly when every value of interest other than a takes every
+            // candidate and var can take it, and a is either not a value of
+            // interest or leaves no room for another match. If two or more
+            // survivors do not take every candidate, between them they support
+            // every value, and nothing goes. If exactly one, w, does not, only w
+            // can go, and only if it allows no further matches. If they all do,
+            // everything outside value_of_interest's domain goes. Either way a
+            // variable loses values only if it is unfixed and can take every
+            // value of interest, which it keeps, so nothing here can empty a
+            // domain.
+            bool removing_lone_survivor = survivors_not_taking_every_candidate == 1;
+            if (survivors_not_taking_every_candidate == 0 || (removing_lone_survivor && lone_survivor_allows_no_further_matches)) {
+                auto voi_values = state.copy_of_values(value_of_interest);
+                auto voi_single = state.optional_single_value(value_of_interest);
+
+                // Each pruning as a range of values: the lone survivor, or one gap
+                // between values of interest, which var loses; or, when fixing,
+                // the fixed value of interest, which var is fixed to.
+                bool fixing = voi_single && ! removing_lone_survivor;
+                vector<Literal> prunings;
+                vector<tuple<std::size_t, Integer, Integer>> pruned_ranges;
+                for (const auto & [idx, var] : enumerate(vars)) {
+                    if (state.has_single_value(var))
+                        continue;
+                    if (voi_single) {
+                        if (! state.in_domain(var, *voi_single))
+                            continue;
+                        prunings.push_back(fixing ? var == *voi_single : var != *voi_single);
+                        pruned_ranges.emplace_back(idx, *voi_single, *voi_single);
+                    }
+                    else {
+                        auto var_values = state.copy_of_values(var);
+                        if (! var_values.contains_all_of(voi_values))
+                            continue;
+                        if (removing_lone_survivor) {
+                            prunings.push_back(var != lone_survivor_not_taking_every_candidate);
+                            pruned_ranges.emplace_back(idx, lone_survivor_not_taking_every_candidate, lone_survivor_not_taking_every_candidate);
+                        }
+                        else
+                            // Both sets are named locals, as each_interval_minus()
+                            // borrows them (see IntervalSet's class documentation).
+                            for (auto [lo, hi] : var_values.each_interval_minus(voi_values)) {
+                                prunings.push_back(not_in_range(var, lo, hi));
+                                pruned_ranges.emplace_back(idx, lo, hi);
+                            }
+                    }
+                }
+
+                if (! prunings.empty()) {
+                    auto emit = [&](const ReasonLiterals & reason) -> void {
+                        // infer_all runs this once, before it applies any of the
+                        // prunings, so the state here is the one they were
+                        // decided on. For each value of interest v, and each
+                        // pruning, show that value_of_interest = v and var in
+                        // the pruned range together pin the count into a range
+                        // how_many cannot take, exactly as the unsupported-voi
+                        // proof above does without the pruning; then the
+                        // pruning itself is RUP over value_of_interest's domain.
+                        auto [how_many_lo, how_many_hi] = state.bounds(how_many);
+                        for (const auto & v : voi_values.each()) {
+                            Integer must = 0_i, might = 0_i;
+                            for (const auto & var : vars) {
+                                if (auto sv = state.optional_single_value(var)) {
+                                    if (*sv == v) {
+                                        ++must;
+                                        ++might;
+                                    }
+                                }
+                                else if (state.in_domain(var, v))
+                                    ++might;
+                            }
+
+                            // The equality flags of the variables that cannot be v
+                            // are zero when value_of_interest is; wanted only when
+                            // an upper bound on the count is.
+                            bool zeroed_flags = false;
+                            auto zero_flags_of_variables_without_v = [&]() -> void {
+                                if (zeroed_flags)
+                                    return;
+                                zeroed_flags = true;
+                                for (const auto & [idx, var] : enumerate(vars))
+                                    if (! state.in_domain(var, v))
+                                        logger->emit_rup_proof_line_under_reason(reason,
+                                            WPBSum{} + 1_i * (value_of_interest != v) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                            };
+
+                            for (const auto & [idx, lo, hi] : pruned_ranges) {
+                                const auto & var = vars[idx];
+                                // value_of_interest != v, or the pruning holds.
+                                auto unless_v_then_pruned = [&]() -> WPBSum {
+                                    auto result = WPBSum{} + 1_i * (value_of_interest != v);
+                                    if (fixing)
+                                        result += 1_i * (var == lo);
+                                    else if (lo == hi)
+                                        result += 1_i * (var != lo);
+                                    else {
+                                        result += 1_i * (var < lo);
+                                        result += 1_i * (var >= hi + 1_i);
+                                    }
+                                    return result;
+                                };
+                                // var is unfixed and can be v, so it counts towards
+                                // might but not must. Where the pruning fails it is v
+                                // only when it would keep the lone survivor, v.
+                                bool var_is_v = removing_lone_survivor && v == lo;
+                                auto count_lo = var_is_v ? must + 1_i : must;
+                                auto count_hi = var_is_v ? might : might - 1_i;
+
+                                // The fixed variables' equality flags propagate on
+                                // their own, as does var's when it is pinned to v,
+                                // so a count_lo above how_many needs nothing more.
+                                // Anything else needs the count's upper bound, for
+                                // which var's flag needs no help either: RUP zeroes
+                                // it from value_of_interest = v and the failed
+                                // pruning, which keeps var off v.
+                                if (count_lo <= how_many_hi) {
+                                    zero_flags_of_variables_without_v();
+                                    // Both bounds, when the count falls in a hole of
+                                    // how_many rather than off one of its ends.
+                                    if (count_hi >= how_many_lo) {
+                                        logger->emit_rup_proof_line_under_reason(
+                                            reason, unless_v_then_pruned() + 1_i * (how_many < count_hi + 1_i) >= 1_i, ProofLevel::Temporary);
+                                        logger->emit_rup_proof_line_under_reason(
+                                            reason, unless_v_then_pruned() + 1_i * (how_many >= count_lo) >= 1_i, ProofLevel::Temporary);
+                                    }
+                                }
+
+                                // With value_of_interest fixed, this is the pruning
+                                // itself, which infer_all RUPs next.
+                                if (! voi_single)
+                                    logger->emit_rup_proof_line_under_reason(reason, unless_v_then_pruned() >= 1_i, ProofLevel::Temporary);
+                            }
+                        }
+                    };
+                    inference.infer_all(logger, prunings, JustifyExplicitly{emit, ThenRUP::Yes, hints::Count{owner}}, reason);
+                }
             }
 
             return PropagatorState::Enable;
