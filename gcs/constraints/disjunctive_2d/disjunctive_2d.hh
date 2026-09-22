@@ -2,10 +2,12 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_DISJUNCTIVE_2D_DISJUNCTIVE_2D_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/innards/disjunctive_2d_mutations.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -15,6 +17,75 @@
 
 namespace gcs
 {
+    /**
+     * \brief Which of Disjunctive2D's propagation rules are enabled.
+     *
+     * Turning one off weakens propagation but never changes the solutions
+     * found, and never changes the OPB encoding: these select propagation
+     * strength only, so that a test can attribute an inference to the rule that
+     * made it, and so that a fixture can show a rule is load-bearing by
+     * watching a solve without it fail to make the inference. Same intent as
+     * DisjunctiveRules one dimension down.
+     *
+     * The pairwise 2D time-table is not among them and is always on: it is
+     * what checks a fully assigned pair, so a solve without it would report
+     * overlapping rectangles as solutions rather than merely propagate less.
+     *
+     * \ingroup Constraints
+     */
+    struct Disjunctive2DRules
+    {
+        /**
+         * \brief The cumulative relaxation: project onto one axis and
+         * time-table the `Cumulative` that projection implies, on each axis in
+         * turn.
+         *
+         * Project onto x and rectangle `i` becomes a task with start `x_i`,
+         * duration `w_i` and *height* `h_i`, on a resource whose capacity is
+         * the y extent the rectangles are confined to. That is a real
+         * `Cumulative`, and it sees conflicts the pairwise rule cannot: three
+         * rectangles whose mandatory x parts share a time, no two of whose
+         * mandatory boxes overlap, can still be too tall between them to fit in
+         * the y window.
+         *
+         * Nothing reaches the OPB --- the relaxation is a consequence of the
+         * 4-way separation clause, so it is *derived*, per firing, inside the
+         * proof. Two rectangles that both occupy a time on the time axis can
+         * satisfy neither of that clause's time-axis disjuncts, so what is left
+         * of the clause separates them on the resource axis; the set occupying
+         * that time is then pairwise separated, and
+         * innards::ComparatorNetwork sorts it and telescopes to "the window is
+         * at least as tall as what is in it", which the firing says it is not.
+         * See #972, and dev_docs/disjunctive-proof-logging.md.
+         *
+         * Off by default, and the cost is in two places. The *sweep* is cubic
+         * in the number of rectangles per propagator call --- for each one, a
+         * blocked time is looked for over the load profile's segments, and each
+         * segment costs a pass over the others --- and a solve that never fires
+         * the rule pays it anyway: measured at 1.74x wall clock, with proofs
+         * off, on an instance where it prunes 0.4%. The *certificate* is then a
+         * comparator network per firing, `O(|S|^3)` in the size of the set.
+         *
+         * Against that, where it does fire it can be the whole solve: on
+         * `examples/squares`, five squares of three in a box five wide goes
+         * from 156,856 search nodes to one, and its proof from 145 MB to
+         * 218 KB. Both arms verify. What it buys on a corpus rather than on a
+         * packing family has not been measured.
+         *
+         * A rectangle takes part on an axis only if its size *on the other*
+         * axis is a positive constant, its position there is a plain variable
+         * with a non-negative domain, and that domain is narrow enough for the
+         * network's guard coefficients --- the conditions
+         * innards::ComparatorNetwork::wire_over imposes. Those are all
+         * properties of the model rather than of the search state, so they are
+         * settled once, in `prepare()`, and the same set is used whether or not
+         * proofs are on: a rectangle the certificate could not speak about
+         * takes no part in the *inference* either, rather than the two drifting
+         * apart.
+         */
+        bool cumulative_relaxation = false;
+    };
+
     /**
      * \brief Disjunctive2D (2D non-overlap, a.k.a. <code>diffn</code>)
      * constraint: rectangles with variable origins; the widths and heights may
@@ -49,9 +120,12 @@ namespace gcs
      * Propagation is pairwise 2D time-table strength (the analogue of 1D
      * Disjunctive one dimension up): if two rectangles' mandatory boxes overlap
      * the constraint is infeasible, and if a pair is forced to overlap in one
-     * dimension their positions are pushed apart in the other. Stronger
-     * reasoning (the cumulative relaxation, a 2D sweep, edge-finding) and
-     * k dimensions are left for future work.
+     * dimension their positions are pushed apart in the other. On top of that,
+     * and off by default, the *cumulative relaxation* time-tables the
+     * `Cumulative` each axis projection implies --- see
+     * Disjunctive2DRules::cumulative_relaxation. The energetic rules over that
+     * relaxation (overload, edge-finding, TTEF), a 2D sweep, and k dimensions
+     * are left for future work; see #976.
      *
      * A rectangle whose presence is still undecided blocks nothing and is
      * pushed nowhere, in either role: a prune that is only valid when the
@@ -111,6 +185,12 @@ namespace gcs
             innards::ProofFlag flag;
             innards::ProofLine forward_line;
             innards::ProofLine reverse_line;
+            /// The big-M the reifier chose for the forward row, asked for
+            /// rather than assumed: the cumulative relaxation's comparator
+            /// network raises that row to its own guard coefficient, and the
+            /// two directions of a pair get different constants whenever their
+            /// sizes or encoding widths differ.
+            Integer forward_guard_coefficient;
         };
         // Keyed by (i, j); axis 0 = x, axis 1 = y.
         std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_x;
@@ -121,6 +201,16 @@ namespace gcs
         // reified "size <= 0" flag that escapes the separation clause (a
         // zero-area rectangle does not constrain). nullopt otherwise.
         std::vector<std::optional<innards::ProofFlag>> _zero_w, _zero_h;
+
+        Disjunctive2DRules _rules;
+        innards::Disjunctive2DProofMutation _mutation;
+
+        // Which rectangles the cumulative relaxation may use, by which axis
+        // plays the part of time: index 0 is x as time (so the set at a time
+        // point is sorted on y), index 1 is y as time. Resolved in prepare(),
+        // from the model alone, so that the rule makes the same inferences
+        // whether or not proofs are on.
+        std::array<std::vector<std::size_t>, 2> _relaxation_members;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
@@ -168,6 +258,14 @@ namespace gcs
          * "is this an optional-rectangle Disjunctive2D?".
          */
         [[nodiscard]] auto presences() const -> const std::vector<IntegerVariableID> &;
+
+        /// Select which propagation rules run; see Disjunctive2DRules.
+        auto with_rules(Disjunctive2DRules rules) -> Disjunctive2D &;
+
+        /// Corrupt the cumulative relaxation's certificate. For tests only,
+        /// which assert that VeriPB rejects the result; see
+        /// innards::Disjunctive2DProofMutation.
+        auto with_proof_mutation(innards::Disjunctive2DProofMutation mutation) -> Disjunctive2D &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
