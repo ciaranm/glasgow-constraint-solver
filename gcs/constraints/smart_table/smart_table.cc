@@ -441,9 +441,20 @@ namespace
             // only in that case to avoid out-of-bounds access on an empty vector.
             const auto * pb_selector = logger ? &pb_selectors[tuple_idx] : nullptr;
 
-            for (const auto & tree : forests[tuple_idx]) {
+            // A tuple supports nothing unless every one of its trees can still be
+            // satisfied, so check them all before any of them takes values out of
+            // unsupported. Otherwise a tree found valid first grants support on behalf
+            // of a tuple that a later tree then kills, and since the selector is not a
+            // trigger, nothing re-runs this to take it back (issue #994). The trees
+            // are the tuple's connected components, so no tree's filtering reads
+            // another's.
+            const auto & forest = forests[tuple_idx];
+            vector<VariableDomainMap> supported_by_trees;
+            supported_by_trees.reserve(forest.size());
+            bool tuple_feasible = true;
+            for (const auto & tree : forest) {
                 // Initialise supported by tree to current variable domains
-                VariableDomainMap supported_by_tree{};
+                auto & supported_by_tree = supported_by_trees.emplace_back();
 
                 for (const auto & var : vars)
                     for (auto value : state.each_value_immutable(var))
@@ -453,17 +464,21 @@ namespace
                 if (! filter_and_check_valid(tree, supported_by_tree, pb_selector, state, inference, reason, logger)) {
                     // Not feasible
                     inference.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{}, NoReason{});
+                    tuple_feasible = false;
                     break;
                 }
-
-                filter_again_and_remove_supported(tree, supported_by_tree, unsupported, pb_selector, state, inference, reason, logger);
             }
 
-            if (state.optional_single_value(selectors[tuple_idx]) != 0_i) {
-                const auto unrestricted = get_unrestricted(vars, tuples[tuple_idx]);
-                for (const auto & var : unrestricted) {
-                    unsupported[var] = vector<Integer>{};
-                }
+            if (! tuple_feasible)
+                continue;
+
+            for (std::size_t tree_idx = 0; tree_idx < forest.size(); ++tree_idx)
+                filter_again_and_remove_supported(
+                    forest[tree_idx], supported_by_trees[tree_idx], unsupported, pb_selector, state, inference, reason, logger);
+
+            const auto unrestricted = get_unrestricted(vars, tuples[tuple_idx]);
+            for (const auto & var : unrestricted) {
+                unsupported[var] = vector<Integer>{};
             }
         }
 
