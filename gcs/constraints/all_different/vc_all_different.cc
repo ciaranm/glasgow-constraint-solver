@@ -47,26 +47,54 @@ using fmt::format;
 using fmt::print;
 #endif
 
+auto gcs::innards::NonGacAllDifferentSingleValueReasons::build(const vector<IntegerVariableID> & vars) -> NonGacAllDifferentSingleValueReasons
+{
+    vector<pair<unsigned long long, IntegerVariableID>> simple;
+    for (const auto & v : vars)
+        if (auto s = std::get_if<SimpleIntegerVariableID>(&v))
+            simple.emplace_back(s->index, v);
+    sort(simple, {}, &pair<unsigned long long, IntegerVariableID>::first);
+
+    NonGacAllDifferentSingleValueReasons result;
+    result.indices.reserve(simple.size());
+    result.reasons.reserve(simple.size());
+    for (const auto & [index, v] : simple) {
+        result.indices.push_back(index);
+        result.reasons.emplace_back(ExactSingleValue{ReasonVars{vector<IntegerVariableID>{v}}});
+    }
+    return result;
+}
+
+auto gcs::innards::NonGacAllDifferentSingleValueReasons::find(const IntegerVariableID & v) const -> const Reason *
+{
+    auto s = std::get_if<SimpleIntegerVariableID>(&v);
+    if (! s)
+        return nullptr;
+    auto it = std::ranges::lower_bound(indices, s->index);
+    if (it == indices.end() || *it != s->index)
+        return nullptr;
+    return &reasons[it - indices.begin()];
+}
+
 // Returns false if an inference contradicted (the caller must stop and not read
 // state again until backtrack); true if propagation completed. Uses the
 // non-throwing infer_not_equal_or_stop path so a contradiction does not unwind via
 // an exception -- this propagator fails roughly once per node in circuit-style
 // models, so the throw was a large per-node cost.
 auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference,
-    ProofLogger * const logger, const ConstraintID & owner, const std::vector<Reason> * single_value_reasons, unsigned long long reason_base) -> bool
+    ProofLogger * const logger, const ConstraintID & owner, const NonGacAllDifferentSingleValueReasons * single_value_reasons) -> bool
 {
     auto & unassigned = any_cast<NonGacAllDifferentUnassigned &>(state.get_constraint_state(unassigned_handle));
 
     // The reason every removal cites is "v == val", where v is a variable already
-    // fixed to val. When the caller hands us a prebuilt table, look it up by v's own
-    // index and return a reference -- no per-inference construction. A view/constant,
-    // or a variable outside the table, falls back to building the reason inline (the
+    // fixed to val. When the caller hands us prebuilt reasons, look v's up and return
+    // a reference -- no per-inference construction. A view/constant, or a variable
+    // with no prebuilt reason, falls back to building the reason inline (the
     // want_reasons() guard still applies there, since that construction is not free).
     auto reason_for = [&](const IntegerVariableID & v, Integer val, Reason & inline_storage) -> const Reason & {
         if (single_value_reasons)
-            if (auto s = std::get_if<SimpleIntegerVariableID>(&v))
-                if (auto idx = s->index - reason_base; idx < single_value_reasons->size())
-                    return (*single_value_reasons)[idx];
+            if (auto prebuilt = single_value_reasons->find(v))
+                return *prebuilt;
         inline_storage = inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{{v == val}}}} : Reason{};
         return inline_storage;
     };
@@ -129,8 +157,8 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
 
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
     SimpleInferenceTracker & inference_tracker, ProofLogger * const logger, const ConstraintID & owner,
-    const std::vector<Reason> * single_value_reasons, unsigned long long reason_base) -> bool;
+    const NonGacAllDifferentSingleValueReasons * single_value_reasons) -> bool;
 
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
     EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger, const ConstraintID & owner,
-    const std::vector<Reason> * single_value_reasons, unsigned long long reason_base) -> bool;
+    const NonGacAllDifferentSingleValueReasons * single_value_reasons) -> bool;
