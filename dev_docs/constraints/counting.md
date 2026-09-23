@@ -1,14 +1,18 @@
 # Counting: `Count`, `Among`, `NValue` and `GlobalCardinality`
 
 > **Maturity** production ·
-> **Audited** 2026-09-23 at `347e2f8c` ·
-> **Open issues** filed by this audit: #1026 (wrong answers at `GAC` on an
-> unsorted open cover; fix open as #1030), #1028 (`GlobalCardinality`'s default
-> arm), #1029 (`Count` on a constant value of interest). Already open and
-> touching this family: #843 (`NValue`'s encoding is per value), #876 (the `GAC`
-> arm has no large-domain row), #488 (`NValue`'s occurrence rows disagree with
-> cake's), #944 (Hall proofs cost values × variables²), #868 (cross-solver).
-> More to file from [Next steps](#next-steps). Tracked under #871.
+> **Audited** 2026-09-23 at `347e2f8c`; #1030 merged the same day, and the
+> document describes the code it leaves ·
+> **Open issues** filed by this audit: #1028 (`GlobalCardinality`'s default
+> arm), #1029 (`Count` on a constant value of interest). Its wrong answer,
+> #1026 (at `GAC` on an unsorted open cover), is fixed by #1030. Filed since:
+> #1046 (`GlobalCardinality` proofs abort or are rejected when its array holds a
+> constant), by the `inverse` audit, and #1053 (`NValue`'s count-only wakes and
+> its idempotence), by review. Already open and touching this family: #843
+> (`NValue`'s encoding is per value), #876 (the `GAC` arm has no large-domain
+> row), #488 (`NValue`'s occurrence rows disagree with cake's), #944 (Hall
+> proofs cost values × variables²), #868 (cross-solver). More to file from
+> [Next steps](#next-steps). Tracked under #871.
 
 Four constraints that count occurrences of values in an array. `Count` counts one
 value, which may be a variable. `Among` counts membership in a fixed set.
@@ -26,19 +30,24 @@ Three things to know before touching it.
   `Count` posts across one instance of each of 298 MiniZinc Challenge models,
   1,464 have a constant value of interest; the other 352 are all in four models.
   `Among` appears in none. On that shape `Count` propagates exactly as a
-  one-value `GlobalCardinality`, with an identical search tree, and is slower on
-  eight of the nine models measured. That is #1029, and the decision (Ciaran,
-  2026-09-23) is to make `Count` faster, not to rewrite it into another
-  constraint in a front end.
-- **`GlobalCardinality`'s default arm is the slower one.** `consistency::BC`
-  searches for Hall intervals over every contiguous pair of cover values, every
-  call. It is up to 235 times slower than `consistency::GAC` on the instances
-  measured, and about level on the rest, never meaningfully faster. Its proofs,
-  though, are several times smaller. The default is #1028.
-- **`GlobalCardinality` at `GAC` loses solutions** on an open constraint whose
-  cover is not in ascending order (#1026), until #1030 merges. No test covered
-  it, and neither MiniZinc nor XCSP3 reaches that arm; only a `.scp` term
-  recording it does.
+  one-value `GlobalCardinality`: the same solutions in the same order as far as
+  each run got, and the same node counts on the two models that finish. It is
+  slower than the GCC at its default level on eight of the nine models measured.
+  That is #1029, and the decision (Ciaran, 2026-09-23) is to make `Count`
+  faster, not to rewrite it into another constraint in a front end.
+- **`GlobalCardinality`'s default arm is the slower one on covers of several
+  values.** `consistency::BC` searches for Hall intervals over every contiguous
+  pair of cover values, every call. Over such covers it is up to 235 times
+  slower than `consistency::GAC` on the instances measured, and about level on
+  the rest. On a **one-value** cover, which has no pair to search, it is the
+  other way round: `BC` explores 1.4 to 13 times as many nodes in the same time
+  as `GAC`. `BC`'s proofs have about an eighth as many lines on the one
+  instance measured with the same search. The default is #1028.
+- **With proofs on, `GlobalCardinality` over an array holding a constant can
+  abort, or write a proof VeriPB rejects** (#1046), at both levels, and MiniZinc
+  can reach it. It was found after this audit, by the `inverse` one. This
+  audit's own wrong answer, solutions lost at `GAC` on an open constraint whose
+  cover was not ascending (#1026), is fixed by #1030.
 
 ## What it is
 
@@ -60,9 +69,10 @@ Three things to know before touching it.
   otherwise. The cover must be pairwise distinct and the two lists the same
   length; the constructor throws otherwise (#922), and front ends whose input
   may repeat a value call `fold_repeated_cover_values()` first and post the
-  `Equals` it returns. At `347e2f8c` only `clone()` sorts the cover, and only
-  under `BC`; #1030 (open) moves the sort into the constructor, for both arms. Empty `vars` makes every count zero. An empty cover is no
-  constraint at all when open, and when closed it makes any non-empty `vars`
+  `Equals` it returns. The constructor sorts the cover, and the counts with it,
+  for both arms (#1030; at `347e2f8c` only `clone()` sorted it, and only under
+  `BC`). Empty `vars` makes every count zero. An empty cover is no constraint
+  at all when open, and when closed it makes any non-empty `vars`
   unsatisfiable.
 
 ### Concrete constraints and frontend coverage
@@ -155,6 +165,28 @@ found nothing wrong. See [Tests](#tests).
 A family whose facts are all `==`, `!=`, bounds and ranges is outside #882's view
 problem by construction: every literal it states is one a view has.
 
+**Constants in `GlobalCardinality`'s array can break its proofs** (#1046),
+found after this audit by the `inverse` one. With proofs off the answers are
+right. With proofs on there are two faults, at both levels, each only when a
+Hall or flow justification involves the constant:
+
+- The capacity-side justifications (rules 20, 22, 23, 26 and 28) ask the names
+  tracker for each confined variable's at-least-one, and the tracker's case for
+  a constant throws `UnimplementedException`, so the solve aborts.
+- The demand-side justifications (rules 21, 24, 25, 27, 29 and 30) build their
+  at-most-ones with `recover_am1` over **positive** atoms `X_i = v`. The
+  helper's #171 shortcut assumes negated ones: it treats two falsified atoms as
+  a violated at-most-one and writes `0 ≥ 1` as a RUP. Over a constant, every
+  atom but the constant's own value is false, so with three or more values in
+  the set it writes a bare `rup >= 1;`, which VeriPB rejects. The rejections in
+  #1046's sweep were all at `BC`; the flow arm makes the same call.
+
+`Among` asks the tracker only for non-constant variables, and passes the negated
+atoms the shortcut assumes. `Count` and `NValue` call neither. At the audit,
+the family's tests put constants only in rows where every variable is a
+constant, which are decided at the root without a Hall justification, and that
+is how the audit missed it; see [Tests](#tests).
+
 ### Reification
 
 `None.` There is no reified form of any of the four. MiniZinc's `*_reif` forms
@@ -200,14 +232,23 @@ write and came later, or whether the specialised propagators earn their keep by
 being faster. Measured on the corpus (see [CPU performance](#cpu-performance)):
 
 - `Count` with a variable value of interest, `Among` over more than one value,
-  and `NValue` are **not** `GlobalCardinality` without auxiliary variables and
-  extra constraints. A wrapper would weaken each of them.
+  and `NValue` are **not** one `GlobalCardinality` on their own: each needs
+  auxiliary variables and extra constraints around it. That is a cost in the
+  model. What such a decomposition would propagate depends on the
+  decomposition and on the propagators it uses, and was not measured. It need
+  not be weaker. For `NValue`, occurrence counts under a GCC, a flag
+  `b_v ⇔ c_v ≥ 1` per value and `Σ b_v = n` fix `y = 1` at the root from
+  `x = 1`, `y ∈ {1, 2}` and `n = 1`, where the native `NValue` leaves `y` alone
+  (rule 14). That example is from review, run at `00797a97`, and both
+  spellings' proofs verify. It does not say a rewrite would be faster.
 - **`Count` with a constant value is exactly a one-value open
-  `GlobalCardinality`**, and exactly `Among` over one value. All three spellings
-  give identical search trees, and the one-value GCC explores 1.4 to 3.7 times
-  as many nodes in the same time on seven of nine `Count`-heavy models. It also
-  writes about half the OPB and verifies in about 60% of the time on `roster`.
-  **The specialised constraint is the slow one**.
+  `GlobalCardinality`**, and exactly `Among` over one value. In the A/B below,
+  every spelling finds the same solutions in the same order as far as each run
+  got, with the same node counts on the two models that finish; the trees were
+  not compared node by node. The one-value GCC at its default level explores 1.4
+  to 3.7 times as many nodes in the same time on seven of nine `Count`-heavy
+  models. It also writes about half the OPB and verifies in about 60% of the
+  time on `roster`. **The specialised constraint is the slow one**.
 - The decision is to **make `Count` fast** on the constant case (#1029), and
   **not** to route it to `GlobalCardinality` in a front end. Ciaran does not
   want the MiniZinc front end doing anything too clever, and a front-end
@@ -296,8 +337,8 @@ hands back.
 | `GlobalCardinality`'s closed rows | `c[id][<i>_al1]` | rule 15, by RUP; nothing reads the line number |
 
 With the cover sorted in the constructor (#1030), `<j>` is the position in the
-**sorted** cover under both arms. At `347e2f8c` that is so under `BC` only; at
-`GAC` it is the posted order. The two agree with cake either way, because cake
+**sorted** cover under both arms. At `347e2f8c` that was so under `BC` only; at
+`GAC` it was the posted order. The two agreed with cake either way, because cake
 rebuilds from the `.scp`, which is written from the same object.
 
 ### Cake conformity
@@ -404,12 +445,28 @@ loop's `stop`. It never disables itself on success. `Among` disables itself
 until backtrack after rule 11 or rule 12. Either leaves every variable decided
 and the count fixed, so nothing can wake it usefully until something is undone.
 
-**Idempotence.** None of the seven claims it. The closed propagator's comment
-calls it idempotent ("once a domain is inside the cover it stays there"), and it
-is, but it returns `Enable`, not `EnableButIdempotent`. So the claim is not made
-to the engine, and `GCS_CHECK_IDEMPOTENT_CLAIMS` does not check it. The others
-genuinely are not: `Count`'s array pruning (rule 8) can fix variables that rule
-2 then counts on the next call.
+**Idempotence.** None of the six propagators claims it, and not claiming it is
+not the same as not being it. Three are idempotent whenever no variable appears
+twice across their scope:
+
+- **GCC closed.** Its comment says so ("once a domain is inside the cover it
+  stays there"), and it is right.
+- **`NValue`.** Both its rules are computed from the array alone and change only
+  `n`, so a second call recomputes the same bounds. #1053, filed by review,
+  proposes declaring it.
+- **`Among`.** Rules 11 and 12 read `n`'s bounds after rules 9 and 10 have
+  moved them, in the same call, and either of them disables the propagator
+  until backtrack. If neither fires, a second call sees the same partition and
+  the same bounds.
+
+All three return `Enable`, not `EnableButIdempotent`, so no claim reaches the
+engine and `GCS_CHECK_IDEMPOTENT_CLAIMS` checks none of them. The other three
+are not idempotent. `Count`'s array pruning (rule 8) can fix variables that rule
+2 then counts on the next call. Both GCC arms count before they prune: the
+bounds arm runs rules 16–19 value by value and then the Hall rules, and the flow
+arm runs rules 16 and 17 before the flow. So a variable fixed later in the
+call, by rule 18 or 19 or by a Hall or flow removal, can be missed by a count
+already taken, and is counted only on the next call.
 
 **Holes affect**, beyond "derived":
 
@@ -422,11 +479,16 @@ genuinely are not: `Count`'s array pruning (rule 8) can fix variables that rule
   the corpus uses, the column overstates `n`'s sensitivity. That is never
   unsound. It keeps somebody else's optional pruning on `n` alive for no gain,
   and wakes `Count` for nothing (#1029).
-- **`Among`'s and `NValue`'s `n` and GCC's `counts` are `on_bounds`**, which is
-  the truth. `Among` counts membership in a fixed set, so its count's supports
-  are intervals, as for constant `Count`. `NValue` reads only `n`'s bounds.
-  Both GCC arms read only `state.bounds(counts[j])`: the flow's capacities are
-  the count bounds, and #413 is why that is deliberate.
+- **`Among`'s and `NValue`'s `n` and GCC's `counts` are `on_bounds`.** For
+  `Among` and GCC that is the truth. `Among` counts membership in a fixed set,
+  so its count's supports are intervals, as for constant `Count`. Both GCC arms
+  read only `state.bounds(counts[j])`: the flow's capacities are the count
+  bounds, and #413 is why that is deliberate. `NValue` does not read `n` at
+  all: both its bounds are computed from the array, and the inference machinery
+  only checks whether they change `n`. So holes in `n` change nothing, which
+  the declaration gets right, but after the first call a change to `n` alone
+  cannot enable anything either, so the bounds wake costs a call for nothing
+  (#1053).
 - **Every propagator's `vars` are `on_change`**, and every one of them reads
   the variables' holes: which values are still there is the whole content of
   counting.
@@ -454,9 +516,11 @@ genuinely are not: `Count`'s array pruning (rule 8) can fix variables that rule
 - **The bounds arm's Hall search** recomputes every contiguous pair's capacity,
   demand and confined/potential sets every call: `O(m²)` pairs × `n` variables ×
   up to `|H|` membership tests. That is the whole of #1028's cost. An
-  incremental form is not the obvious fix. A real bounds-consistent GCC
-  algorithm (Quimper et al., 2003) is linear once the variables are sorted by
-  their bounds.
+  incremental form is not the obvious fix. Quimper et al. (2003) filter the
+  assignment variables to bounds consistency in linear time after sorting, but
+  they take the occurrence limits as fixed parameters, with preprocessing that
+  depends on them. Here the limits are variables, which change during search,
+  and rules 20 and 21 also tighten them. See [Next steps](#next-steps).
 - **`Count`** recounts `must` and `might` from scratch per value of `y`, and
   walks the array up to four times per call (#1029).
 - **`Among`** copies and partitions its whole scope, and **materialises a
@@ -469,8 +533,10 @@ genuinely are not: `Count`'s array pruning (rule 8) can fix variables that rule
   runs posted each constant `Count` as `Among` by the local switch; `Among`
   itself is in no corpus model.)
 - **`NValue`** rebuilds a `std::set` of every value of every domain every call,
-  to take its size. On `gfd-schedule` 2015 and 2022 that is 31% and 42% of
-  propagation time, from 0.4% and 0.9% of the calls.
+  to take its size. On `gfd-schedule` 2015 and 2022 the whole propagator is 31%
+  and 42% of propagation time, from 0.4% and 0.9% of the calls. How much of
+  that is the `std::set` was not profiled. It is the propagator's only
+  per-value work besides the fixed-value set, so it is the obvious candidate.
 
 ### Interior values and optional pruning
 
@@ -523,14 +589,16 @@ correctly. The counts are the interesting half:
   - An unsorted cover at `GAC`: wrong answers, #1026, fixed by #1030.
   - A repeated cover value is rejected by the constructor (#922), and every
     front end folds repeats first.
-- **Overflow.** Counts are bounded by `|vars|` and summed as `Integer`.
-  `GlobalCardinality`'s `cap` and `demand` sum up to `m` count bounds, which a
-  user can make arbitrarily large (`[0, 10¹⁸]` counts, say). Those sums are
-  checked `Integer` arithmetic and throw on overflow rather than wrap. The `GAC`
-  arm puts `c_hi.raw_value` straight into a `long long` capacity, and computes
-  `need` as a sum of excesses. With several huge count upper bounds that sum
-  could exceed `2⁶³`. Not probed; the realistic bound is `n`, and clipping the
-  capacities to `n` would remove the question.
+- **Overflow.** Counts are bounded by `|vars|` and summed as `Integer`, which
+  is checked arithmetic and throws rather than wraps. A user can declare a
+  count as wide as they like, but it never reaches the Hall sums or the flow.
+  Both GCC arms run rules 16 and 17 first, which clip every count to
+  `[must, can]`, inside `[0, |vars|]`, or fail. So `cap`, `demand`, the flow's
+  `long long` capacities and its `need`, a sum of lower-bound excesses, are all
+  bounded by `|vars|` per value. In review, three variables over `1..3` with
+  counts declared in `[0, 10¹⁸]` were clipped to `[0, 3]` under both arms, and
+  both proofs verified, at `00797a97`. That covers these sums. It is not a
+  claim that nothing in the family can overflow.
 - **The two `UnexpectedException`s in `Among`** ("something's wrong,
   at_least_how_many != at_most_how_many") are sound invariants, not bugs
   waiting to fire. By the time they are read, rules 9 and 10 have clipped `n`
@@ -634,9 +702,14 @@ And in `"Large domain proof sizes"`: `GlobalCardinality/confined` and
   GCC rows post one (`GlobalCardinality`, `/closed`) or two (`/hall`). Neither is
   a width axis in the template's sense, but both are where this family's real
   costs are. `Among`'s root proof is quadratic in `|S|` (the table under
-  [Initialisation](#initialisation-and-global-data)). The bounds arm's per-call
-  CPU is at least quartic in `m` when `n ≈ m` (#1028: 0.38 s at `m = 40`, 275 s
-  at `m = 160`, root to first solution, proofs off). A lane that pins proof
+  [Initialisation](#initialisation-and-global-data)). The bounds arm's Hall
+  search is, per call, `O(m²)` runs, each classifying all `n` variables by
+  walks of at most `|H| + 1` membership tests. That is `O(m³ · n)` tests in the
+  worst case, quartic when `n ≈ m`. It is a worst case, not what every call
+  costs, since many walks stop at their first value. What was measured is a
+  whole solve, root to first solution with proofs off, where the number of
+  calls and the domains change too: 0.38, 9.58 and 275 s at `m` = 40, 80 and
+  160, against 0.017, 0.13 and 1.17 s at `GAC` (#1028). A lane that pins proof
   lines or node throughput against these would catch both. Neither exists.
 - **A constant `y` for `Count`.** The row uses `v[0]` as `y`, so it probes the
   variable-`y` path only. The constant path has no per-value site.
@@ -667,10 +740,11 @@ distinguishes rules**, so a reconstructor has to tell them apart from the
 asserted clause's shape and from the constraint's `.scp` term. That can be done
 within a class: a bound on the count, a value removed from `y`, and a value
 removed from an array variable are different shapes. It cannot always be done
-between rules of the same shape. Rules 1 and 7 both bound `n` from above, and
-rules 18, 23, 25, 28, 29 and 30 all remove a value from an array variable. This is
-recorded, not raised as an issue: whether a reconstructor needs a subhint is
-for the justifier implementation to find out, as with
+between rules of the same shape. Rules 1 and 7 both bound `n` from above (rule
+7's procedure proves either; see its entry), and rules 18, 23, 25, 28, 29 and
+30 all remove a value from an array variable. This is recorded, not raised as
+an issue: whether a reconstructor needs a subhint is for the justifier
+implementation to find out, as with
 [`element`](element.md)'s rules 1–4 and 6, which share one bare wire form too.
 
 **What licenses them.** The thesis gives the encodings of `Count` and `NValue`
@@ -687,12 +761,24 @@ four. So:
   per confined variable (capacity side) or one at-most-one per potential
   variable (demand side), added to the count rows of the cut values. Each count
   row is resolved against the count's bound (`add_for_literal`) so that its bits
-  cancel. The capacity/demand duality and the bound resolution are ours; there
-  is no published procedure for a GCC cut.
+  cancel. The capacity/demand duality and the bound resolution are ours. The
+  cited thesis gives no justification procedure for a GCC cut, and the
+  procedures below describe this implementation; whether other certifying work
+  gives one was not surveyed (see [Prior art](#prior-art)).
 
 **Justifications read `state`**, in every explicit rule. See [Proof-time
 state](#proof-time-state) for why that is safe today and when it would stop
 being.
+
+**The GCC reasons do not always name the whole cut.** The Hall and flow reasons
+(`capacity_reason`, `demand_reason`, `gcc_capacity_reason`,
+`gcc_demand_reason`) omit a count that is a constant, deliberately, since a
+constant's bound is no condition. So a cover value with a constant count can be
+in the cut without appearing in the reason. A reconstructor has the constants
+from the constraint's definition, and combines them with the reason and the
+asserted literal. Where that does not single out the original cut, any cut that
+suffices will do: it does not have to recover the one the solver used. Each
+GCC entry's reconstructibility is read with that in mind.
 
 **No mutation lane exists in this family**, so every rule's **Tightness** is
 `Not shown.`. Per the template's policy that is an ordinary state.
@@ -868,9 +954,15 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Reason** — the whole-scope `generic_reason`.
 - **Assertion** — `n ≤ highest ∨ ¬reason`.
 - **Hint** — `hints::Count`.
-- **Offline reconstructibility** — `hinted`. Same shape as rule 1's assertion:
-  a reconstructor holding only the clause cannot tell which of the two ran, but
-  either derivation works for either conclusion when it is true.
+- **Offline reconstructibility** — `hinted`. Same shape as rule 1's assertion,
+  so a reconstructor holding only the clause cannot tell which of the two ran.
+  It need not: this rule's per-value procedure proves either assertion when it
+  is true, because the variables rule 1 zeroes lack every value of `y`, so
+  `might(v) ≤ |vars| − k` for every `v`. The converse fails. With two variables
+  over `{1, 3}`, two over `{2, 4}`, `y ∈ 1..4` and `n ∈ 0..4`, every domain
+  meets `y`'s, so rule 1's procedure proves only `n ≤ 4` and zeroes nothing,
+  where this rule concludes `n ≤ 2`. In review, replacing that inference's 20
+  supporting RUPs with tautologies made VeriPB reject its conclusion.
 - **Proof size** — two lines per `(value of y, variable lacking it)`, plus one
   per value of `y`. In values; `O(|D(y)| · n)` worst case.
 - **Gaps** — `None.`
@@ -1199,13 +1291,17 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   for the other run values.
 - **Assertion** — `C_j ≥ lower ∨ ¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
-- **Offline reconstructibility** — `hinted`: the run is the cover values whose
-  count bounds the reason names plus `j`, and the confined variables are those
-  it names.
+- **Offline reconstructibility** — `hinted`: the confined variables are those
+  whose bounds the reason names, and the run is `j` plus the cover values whose
+  count bounds it names, plus those inside the run with a constant count, which
+  it omits. When such a value sits at an end of the run, the reason does not
+  say where the run ends, and a sufficient run will do (see the catalogue
+  preamble).
 - **Proof size** — one `pol` over `(b − a + 1)` count rows, a bound resolution
-  for each of the `b − a` others whose count is not a constant, and one at-least-one per confined variable (cached); one
-  RUP.
-- **Gaps** — `None.`
+  for each of the `b − a` others whose count is not a constant, and one
+  at-least-one per confined variable (cached); one RUP.
+- **Gaps** — a constant among the confined variables aborts the proof (#1046),
+  here and in rules 22 and 23, which ask for the same at-least-ones.
 - **Tightness** — `Not shown.`
 
 ### Rule: hall-count-upper
@@ -1231,7 +1327,9 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Offline reconstructibility** — `hinted`.
 - **Proof size** — `potential · C(|H|, 2)` pairwise lines plus a fold each, then
   a `pol` and a RUP. In **cover values**, quadratic, never width (#944).
-- **Gaps** — `None.`
+- **Gaps** — a constant among the potential variables can make `recover_am1`
+  write a bare `0 ≥ 1`, which VeriPB rejects (#1046). Rules 24 and 25 build the
+  same at-most-ones, and rules 27, 29 and 30 through `emit_gcc_demand_pol`.
 - **Tightness** — `Not shown.`
 
 ### Rule: hall-capacity-violator
@@ -1283,7 +1381,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Offline reconstructibility** — `hinted`.
 - **Proof size** — **one `pol` per removal**, not per Hall set: the `pol` is
   rebuilt for each `(X_i, v)`.
-- **Gaps** — `None.`
+- **Gaps** — a constant among the confined variables aborts the proof
+  (#1046), as in rule 20.
 - **Tightness** — `Not shown.`
 
 ### Rule: hall-demand-violator
@@ -1331,7 +1430,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Proof size** — per removed **value**: `potential · C(|H|, 2)` pairwise lines,
   folds, a `pol` and a RUP. Per value of a domain, so unbounded in width, and
   quadratic in the run.
-- **Gaps** — `None.`
+- **Gaps** — a constant among the potential variables can make the proof
+  write a bare `0 ≥ 1` (#1046), as in rule 21.
 - **Tightness** — `Not shown.`
 
 ### Rule: flow-capacity-violator
@@ -1357,10 +1457,13 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   (#936), and the cut values' count upper bounds.
 - **Assertion** — `¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
-- **Offline reconstructibility** — `hinted`: cut values and confined variables
-  are both named by the reason.
+- **Offline reconstructibility** — `hinted`: the confined variables and the cut
+  values with variable counts are named by the reason; cut values with constant
+  counts are not (see the catalogue preamble).
 - **Proof size** — one `pol` and one RUP, plus cached at-least-ones.
-- **Gaps** — `None.` If neither violator search finds anything, the arm throws
+- **Gaps** — a constant among the confined variables aborts the proof (#1046),
+  here and in rule 28, which shares `emit_gcc_capacity_pol`. If neither
+  violator search finds anything, the arm throws
   `UnexpectedException` rather than emit an unjustified contradiction. For a
   closed constraint whose unassigned variable has no cover value left, it
   returns without inferring, and leaves the closed propagator (rule 15) to
@@ -1389,7 +1492,9 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Offline reconstructibility** — `hinted`.
 - **Proof size** — `suppliers · C(|cut|, 2)` pairwise lines, folds, a `pol` and
   a RUP.
-- **Gaps** — `None.`
+- **Gaps** — `emit_gcc_demand_pol` builds the same positive-atom at-most-ones
+  as rule 21, so a constant supplier can make the proof write a bare `0 ≥ 1`
+  (#1046). #1046's sweep saw rejections only at `BC`.
 - **Tightness** — `Not shown.`
 
 ### Rule: flow-capacity-cut
@@ -1414,12 +1519,13 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Reason** — `gcc_capacity_reason`, lazy.
 - **Assertion** — `X_i ≠ V_j ∨ ¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
-- **Offline reconstructibility** — `hinted`. The cut is recoverable from the
-  reason, but the reconstructor would rebuild the residual graph to know which
-  cut it was. The reason names it, so it need not.
+- **Offline reconstructibility** — `hinted`. The reason names the cut, apart
+  from any cut values with constant counts (see the catalogue preamble), so a
+  reconstructor need not rebuild the residual graph to find it.
 - **Proof size** — one `pol` and one RUP per pruning. The cut is rebuilt per
   pruning and not shared across the edges it would explain.
-- **Gaps** — `None.`
+- **Gaps** — a constant among the confined variables aborts the proof (#1046),
+  as in rule 26.
 - **Tightness** — `Not shown.`
 
 ### Rule: flow-demand-cut
@@ -1445,7 +1551,7 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   large.** On `frequency_square 12 --all` all 4,916 of the arm's prunings are
   this rule. The bounds arm makes the same prunings with rules 18 and 19, at one
   RUP each.
-- **Gaps** — `None.`
+- **Gaps** — #1046, as rule 27.
 - **Tightness** — `Not shown.`
 
 ### Rule: flow-non-cover-removal
@@ -1472,9 +1578,10 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Proof size** — rule 29's per removed **value**, over a whole domain.
   Unbounded in width. Removing the non-cover values as runs, with one
   derivation for the batch, would fix both halves.
-- **Gaps** — `None.` Before #1030 the rule removed cover values on an unsorted
-  cover, and VeriPB rejected the justification. That was a soundness bug in the
-  propagator, which the proof caught; not a gap in the logging.
+- **Gaps** — #1046, as rule 27. Before #1030 the rule removed cover values on
+  an unsorted cover, and VeriPB rejected the justification. That was a
+  soundness bug in the propagator, which the proof caught; not a gap in the
+  logging.
 - **Tightness** — `Not shown.`
 
 ## Evidence
@@ -1531,10 +1638,19 @@ unreachable; see their entries.
 
 **What the tests do not cover**, which is the point of this section:
 
-- **An unsorted cover under `GAC`**, until #1030. Every test row built its
-  cover ascending, from a `std::set` or by hand. That is how #1026 survived
-  from `55783337` in July to this audit. A random differential found it in its
-  first 2,000 instances.
+- **An unsorted cover under `GAC`**, until #1030 added rows for it. Every test
+  row built its cover ascending, from a `std::set` or by hand. That is how #1026
+  survived from `55783337` in July to this audit. A random differential found
+  it in its first 2,000 instances.
+- **A constant among `GlobalCardinality`'s variables.** At the audit, and at
+  `00797a97` where #1046 was found, both GCC tests used constants only in rows
+  where every variable is a constant, which are decided at the root with no
+  Hall justification. No row mixed a constant with variables, which is how
+  #1046 got past this audit. #1030 has since added one such row to the `GAC`
+  test; whether it reaches a justification involving the constants was not
+  checked. In #1046's random sweep, with about a third of the variables
+  constant, 127 of 300 proof-logged runs abort, 8 more are rejected by VeriPB,
+  and 165 verify.
 - **`GlobalCardinality` over repeated variables or views.** There is no GCC view
   lane. This audit's differential (6,000 instances against brute force, 600 with
   VeriPB) found nothing, but it is not in the tree.
@@ -1599,9 +1715,13 @@ each**; the `frequency_square` runs are the minimum of three.
 
 **The wrapper A/B.** Each constant-valued `Count` posted as itself, as
 `Among({c})`, or as a one-value `GlobalCardinality` at `BC` and at `GAC`.
-Solution sequences are identical under all four on every model, and the node
-counts are identical on the two that finish (`roster` 2011: 1,812; 2015:
-2,605). Nodes explored in 30 s:
+Solution sequences agree under all four on every model, over the solutions
+each run found; on 2018 `gfd-schedule` no run found one, and on `ptv` the GCC
+`GAC` run found none, so there the comparison is empty. The node counts are
+identical on the two that finish (`roster` 2011: 1,812; 2015: 2,605). That is
+what was checked: the trees were not compared node by node,
+and different failed subtrees could give the same solutions and totals. Nodes
+explored in 30 s:
 
 | Model | `Count` | `Among({c})` | GCC `BC` | GCC `GAC` |
 |---|---|---|---|---|
@@ -1622,9 +1742,22 @@ its per-call reason and scope copy; only the GCC `GAC` spelling is slower
 still. The 2014 `jp-encoding` row, where the GCC
 is slower than `Count`, is a single run and wants repeating.
 
-**The two GCC arms**, same search tree, time to the Nth solution:
+**The one-value cover reverses the two GCC arms.** In every row the `BC`
+spelling explores more nodes than the `GAC` one, from 1.4 times (`jp-encoding`
+2014) to 13 times (`gfd-schedule` 2016 and `ptv`). The likely reason, not
+profiled: a one-value cover has no pair of cover values, so `BC`'s Hall
+search, which is its cost below, does nothing, while the flow arm still builds
+its network every call. The headline
+that `GAC` is faster holds for the multi-value covers measured next, not for
+this shape. #1028's experiments need one-value and small-cover controls for
+that reason.
 
-| Instance | N | nodes (both) | `BC` | `GAC` |
+**The two GCC arms over covers of several values**, time to the Nth solution.
+The node counts are equal except on `frequency_square`, where `GAC` prunes a
+little more, and the solution sequences agree; the trees were not compared node
+by node:
+
+| Instance | N | nodes (`BC` / `GAC`) | `BC` | `GAC` |
 |---|---|---|---|---|
 | `frequency_square 12 --holes 5 --all --seed 2` | all 13,608 | 27,779 / 27,759 | 11.70 s | 2.67 s |
 | `frequency_square 12 --holes 5 --lambda 3 --all` | all 20,543 | 41,921 / 41,913 | 6.00 s | 2.58 s |
@@ -1637,8 +1770,8 @@ is slower than `Count`, is a single run and wants repeating.
 | 2025 mondoku | all | 20,367 | 2.83 s | 2.27 s |
 
 Only on `frequency_square` does `GAC` prune more, by 20 and 8 recursions. At
-fixed time, where the tree could not be confirmed identical, the gaps widen
-with the cover: `oocsp_racks` (cover 30) 6,357 against 133,784 nodes,
+fixed time, where the node counts cannot be compared, the gaps widen with the
+cover: `oocsp_racks` (cover 30) 6,357 against 133,784 nodes,
 `evm-super-compilation` (cover 54) 2,346 against 121,910. A synthetic `m`
 variables over `[1, m]` with cover `1..m`, root to first solution, proofs off:
 0.38 s against 0.017 s at `m = 40`, 9.58 s against 0.13 s at 80, 275 s against
@@ -1666,22 +1799,26 @@ family, the right target is `frequency_square` against Gecode's
 
 `347e2f8c`, same machine, VeriPB 3.0.2.
 
-**`frequency_square 12 --all`**, both arms, identical tree (569 recursions,
-282 solutions):
+**`frequency_square 12 --all`**, both arms, with the same recursion and
+solution counts (569 and 282):
 
 | Arm | OPB rows | proof lines | size | VeriPB | solve | `rup` / `pol` / `del` | at `inferences`: lines, GCC assertions |
 |---|---|---|---|---|---|---|---|
 | `GAC` | 4,321 | 86,014 | 3.7 MB | 0.80 s | 0.13 s | 36,001 / 17,009 / 30,149 | 8,040, 4,919 of 5,770 |
 | `BC` | 4,321 | 10,966 | 1.2 MB | 0.45 s | 0.28 s | 5,817 / 899 / 1,216 | 7,951, 4,830 of 5,681 |
 
+`GAC`'s proof has about 7.8 times as many lines as `BC`'s, is about 3.1 times
+the size in bytes, and takes about 1.8 times as long to check. Those are three
+different outcomes, and "eight times" below always means lines.
+
 **Own against shared.** In the OPB the family is small: 288 of the 4,321 rows
 are the 24 constraints' count rows, and 4,032 are the literal definitions. In
-the proof it is the other way round. The tree and the search lines are the same
-under both arms, and the inference counts at `inferences` differ by 2%. So the
-difference between the arms, about 30,000 `rup`, 16,000 `pol` and 29,000 `del`
-lines, is the flow arm's own justifications: rule 29's per-pruning at-most-ones,
-recovered afresh (#944). At `inferences` the GCC assertions are 85% of the
-proof's assertions under both arms.
+the proof it is the other way round. The search counts and the search lines are
+the same under both arms, and the inference counts at `inferences` differ by 2%.
+So the difference between the arms, about 30,000 `rup`, 16,000 `pol` and
+29,000 `del` lines, is the flow arm's own justifications: rule 29's per-pruning
+at-most-ones, recovered afresh (#944). At `inferences` the GCC assertions are
+85% of the proof's assertions under both arms.
 
 **The same constraint under three spellings** (`roster`, finishes):
 
@@ -1723,7 +1860,10 @@ solution) were not checked.
 
 ### Proof-logging gaps
 
-`None.` Every inference in the family is justified, nothing is asserted, and no
+**One, found after this audit: #1046.** A constant in `GlobalCardinality`'s
+array can make its Hall and flow justifications abort, or write a line VeriPB
+rejects; see [Variable kinds and views](#variable-kinds-and-views). Apart from
+that, every inference in the family is justified, nothing is asserted, and no
 propagator changes strength when proofs are on. The one thing a proof changes is
 whether `Among`'s root initialiser runs, and that initialiser only adds
 scaffolding.
@@ -1742,13 +1882,15 @@ no `In` has been posted since `76c8eeab`, and it is the closed propagator
 
 ### Known limitations
 
-- **`GlobalCardinality` with `consistency::GAC` can lose solutions** when it is
-  open and its cover is not in ascending order (#1026), until #1030 merges. A
-  proof-logged run fails verification instead. Neither MiniZinc nor XCSP3
-  reaches this arm.
+- **`GlobalCardinality` proofs can break when its array holds a constant**, at
+  both levels (#1046). The solve aborts, or VeriPB rejects the proof, when a
+  Hall or flow justification involves the constant. Proofs off are
+  unaffected. MiniZinc reaches it with a par entry in the array.
 - **`GlobalCardinality`'s default is slow on large covers.** Posting it at
-  `consistency::GAC` from C++ is faster or level on every model measured, but
-  gives larger proofs (#1028). Neither front end can ask for `GAC`.
+  `consistency::GAC` from C++ is faster or level on every multi-value cover
+  measured, but gives proofs with about eight times as many lines (#1028). On a
+  one-value cover `BC` is the faster, by up to 13 times in nodes per second.
+  Neither front end can ask for `GAC`.
 - **`GlobalCardinality` at `GAC` is only arc consistent relative to the counts'
   bounds.** A count domain with holes is treated as its hull (#413), which is
   deliberate: full GAC there is NP-hard.
@@ -1770,31 +1912,51 @@ no `In` has been posted since `76c8eeab`, and it is the closed propagator
 
 Ranked by what they buy for what they cost.
 
-1. **#1030** (fixes #1026). Open. A wrong answer, a one-line cause, and a
-   test that fails on every seed before it.
+1. **#1046 — constants in `GlobalCardinality`'s array.** A proof that aborts
+   or is rejected, reachable from MiniZinc. Two separate fixes: give the
+   tracker's constant case an answer, or keep constants out of the sets the
+   justifications sum; and make `recover_am1`'s shortcut polarity-aware, or
+   convert GCC's calls to the convention it assumes. Then add mixed rows to
+   both tests. (Step 1 used to be #1030, which merged on 2026-09-23.)
 2. **#1029 — make `Count` fast on a constant value of interest.** One pass for
    `must` and `might`, then the bounds and #996's pruning. Watch `n`
    `on_bounds` in that case. The one-value GCC shows 1.4–3.7 times as many nodes
    per second is available on seven of nine models, on the constraint the
    corpus uses most. Medium cost; the variable-value path stays as it is.
 3. **#1028 — `GlobalCardinality`'s default arm.** Experiments at several scales,
-   proofs on and off separately. Three options, not exclusive: flip to `GAC`
-   after #1030; give the `GAC` arm rules 18 and 19 first, so the prunings they
-   make cost one RUP instead of a rule 29 cut (on `frequency_square` that is all
-   4,916 of them); replace rules 20–25 with a real bounds-consistent algorithm.
+   proofs on and off separately, including one-value and small covers, where
+   `BC` is the faster. Three options, not exclusive:
+   - flip to `GAC`, now that #1030 has merged;
+   - give the `GAC` arm rules 18 and 19 first, so the prunings they make cost
+     one RUP instead of a rule 29 cut (on `frequency_square` that is all 4,916
+     of them);
+   - replace rules 20–25 with a real bounds-consistent algorithm. Quimper et
+     al. (2003) filter the assignment variables against fixed occurrence
+     limits. The count variables here are filtered too, by rules 20 and 21: for
+     `x1, x2 ∈ 1..2`, cover `{1, 2}`, `c1 ∈ 0..2` and `c2 ∈ 0..1`, both bounds
+     of both `x`s have support, but rule 20 derives `c1 ≥ 1`. A replacement has
+     to keep that, or say what strength it gives up and measure it. It also has
+     to account for redoing the limits' preprocessing when the counts' bounds
+     change.
 4. **`NValue`, three small fixes, unfiled.** Build `_possible_values` in
    `define_proof_model`, not `prepare()`, which removes all its per-value work
    with proofs off. Take rule 13's count from an interval union rather than a
-   `std::set` of values, which is 31–42% of propagation time on
-   `gfd-schedule`. And say, in the class comment at least, how weak it is. A
-   real propagator (Bessiere et al.'s bounds, or Beldiceanu's pruning for the
-   at-most side) is a project, not a fix; the encoding is #843.
+   `std::set` of values. The whole propagator is 31–42% of propagation time on
+   `gfd-schedule`; how much of that the `std::set` is was not profiled, so no
+   speedup is claimed. And say, in the class comment at least, how weak it is.
+   #1053, filed by review, adds two more: stop waking on `n`, and declare
+   idempotence. A real propagator (Bessiere et al.'s bounds, or Beldiceanu's
+   pruning for the at-most side) is a project, not a fix; the encoding is
+   #843.
 5. **`Among`, two cheap fixes, unfiled.** Build the per-call reason lazily over
    a prebuilt `generic_reason`, as `Count` and `NValue` do, and stop copying the
-   scope to partition it. That is 12.5% plus 10.7% of the run on `ptv`, with
-   proofs off. Then make the root initialiser lazy, and drop its per-pair proof
-   comment, which halves it. Replacing the pairwise at-most-ones with something
-   linear in `|S|` is #944's question. `Among` is in no corpus model, so this is
+   scope to partition it. On `ptv` with proofs off, `materialise_generic` is
+   12.5% of the run and `memmove` 10.7%, but the profile does not say how much
+   of the `memmove` is the scope copy and how much the reason's, so that is
+   where the time goes, not what the fix would save. Then make the root
+   initialiser lazy, and drop its per-pair proof comment, which halves it.
+   Replacing the pairwise at-most-ones with something linear in `|S|` is
+   #944's question. `Among` is in no corpus model, so this is
    low priority for all its size.
 6. **`GlobalCardinality` tidying, unfiled.** Delete rules 22 and 24, or reduce
    each to a comment saying why it cannot happen, and correct the three stale
@@ -1871,9 +2033,10 @@ supplies, that differential is cheap.
 `Among` and `NValue` were written first because they were easy.
 `GlobalCardinality` came later, and was expected to be the heavy one. On the
 shape the models use, the one-value GCC is faster than `Count`, smaller in the
-OPB, quicker to verify, and identical in search. And GCC's own "cheap" bounds
-arm is the slower of its two. In both cases the reason is the same:
-recomputing too much per call, not algorithmic weakness.
+OPB and quicker to verify, with the same solutions and node counts. And over
+covers of several values, GCC's own "cheap" bounds arm is the slower of its
+two. In both cases the reason is the same: recomputing too much per call, not
+algorithmic weakness.
 
 **Count rule firings before trusting a catalogue.** A local-only counter at each
 rule site, printed at exit, took ten minutes to add. It found two rules that
@@ -1885,7 +2048,7 @@ environment variable, and an `audit_rule("name")` call at each site, conditioned
 on the inference changing something.
 
 **CPU and proof size can point opposite ways, and the default is chosen on
-CPU.** The flow arm is up to 235 times faster and writes 8 times the proof. The
-tree's policy is that propagator defaults favour the no-proofs case, so the
-proof side is a thing to fix (next step 3's second option), not a reason to keep
-the slow default.
+CPU.** Over covers of several values, the flow arm is up to 235 times faster
+and writes about eight times as many proof lines. The tree's policy is that
+propagator defaults favour the no-proofs case, so the proof side is a thing to
+fix (next step 3's second option), not a reason to keep the slow default.
