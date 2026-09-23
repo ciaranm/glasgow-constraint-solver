@@ -103,6 +103,19 @@ constraints and do not restate it.
   and incremental sweeps find the same solutions and each wins by up to 3×
   somewhere; the default loses 2.2× on one model to per-node heap copies of its
   fold state (#1034).
+- [`inverse.md`](inverse.md) — `Inverse`: one class, one propagator that
+  channels between two arrays and then runs `all_different`'s generalised arc
+  consistent algorithm on one of them, which is `GAC` on the pair whenever every
+  position is a different variable. So nearly a third of its assertions arrive
+  named for `all_different`, and its Hall proofs derive each pairwise
+  at-most-one through two channelling rows rather than reading it from a clique.
+  Where it is the cost (`black-hole`) it searches the same number of nodes as
+  Gecode, to the same first solution, and is 8–10 times slower, because every
+  call rescans every pair (#1048); with proofs on it writes every value's
+  at-most-one at the root, a cubic cost the lazy path avoids (#1049). Two legal
+  inputs error or abort (#1047). Checking how it calls a shared helper found a
+  proof bug in `GlobalCardinality`: a constant in the array can make its proofs
+  abort or fail (#1046).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
