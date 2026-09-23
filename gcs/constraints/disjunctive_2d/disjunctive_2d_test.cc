@@ -384,6 +384,31 @@ auto main(int argc, char * argv[]) -> int
             // issue #553 analog). "neg" is tight; "neg_wide" forces bound-pushes.
             run_disjunctive_2d_var_test(proofs, mode, strict, "neg", {{-2, 1}, {-2, 1}}, {{-2, 1}, {-2, 1}}, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
             run_disjunctive_2d_var_test(proofs, mode, strict, "neg_wide", {{-4, 0}, {-4, 0}}, {{-3, 0}, {-3, 0}}, {{2, 4}, {1, 3}}, {{1, 3}, {2, 4}});
+
+            // A rectangle whose origin is a constant, found by a random fuzz
+            // campaign. The pairwise push was attempted on it, and a constant
+            // has no order literal for the certificate to cite: it threw with
+            // proofs on. The third rectangle cannot avoid both of the others,
+            // so this is unsatisfiable.
+            {
+                Problem p;
+                auto one = [&]() -> IntegerVariableID { return p.create_integer_variable(1_i, 1_i); };
+                vector<IntegerVariableID> xs{one(), one(), one()}, ys{one(), constant_variable(4_i), p.create_integer_variable(1_i, 2_i)};
+                vector<IntegerVariableID> widths{constant_variable(3_i), constant_variable(1_i), constant_variable(1_i)};
+                vector<IntegerVariableID> heights{constant_variable(1_i), constant_variable(1_i), p.create_integer_variable(3_i, 3_i)};
+                p.post(Disjunctive2D{xs, ys, widths, heights}.with_strict(strict));
+                auto name = "disjunctive_2d_" + mode + "_constant_origin";
+                auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }},
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
+                if (stats.solutions != 0) {
+                    println(cerr, "constant origin: the instance is unsatisfiable but solutions were reported");
+                    return EXIT_FAILURE;
+                }
+                if (proofs && ! run_veripb(name + ".opb", name + ".pbp")) {
+                    println(cerr, "constant origin: veripb rejected the proof");
+                    return EXIT_FAILURE;
+                }
+            }
         }
     }
 

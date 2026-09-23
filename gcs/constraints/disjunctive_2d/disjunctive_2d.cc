@@ -618,6 +618,12 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 auto sz = state.lower_bound(free_size[i]);
                 if (sz == 0_i)
                     return; // a zero-size rectangle spans no cells on this axis
+                // A constant origin has no bound to push, and no order literal
+                // for the certificate to cite. Where a push would have fired
+                // its placement overlaps the blocker's mandatory part on both
+                // axes, which is the pairwise contradiction's to refute.
+                if (is_constant_variable(free_pos[i]))
+                    return;
                 auto [cur_lo, cur_hi] = state.bounds(free_pos[i]);
                 auto blk_lo = state.upper_bound(free_pos[j]);
                 auto blk_hi = state.lower_bound(free_pos[j]) + state.lower_bound(free_size[j]);
