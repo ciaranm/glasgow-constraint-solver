@@ -961,18 +961,18 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `all_different.md` | `all_different/` | **written**. GAC, BC and VC arms, `AllDifferentExcept`, `ExceptZero`, and `SymmetricAllDifferent`, which lives here and shares the encoding and the GAC propagator |
 | `all_equal.md` | `all_equal/` | |
 | `arithmetic.md` | `multiply/`, `divide_modulus/`, `plus_minus/`, `power/`, and the `plus.hh` / `minus.hh` / `divide.hh` / `modulus.hh` headers | one family over several directories; existing note is `arithmetic-proofs.md` |
-| `abs.md` | `abs/` | *candidate merge* into `arithmetic`; kept separate for now because of the view-proof gap |
+| `abs.md` | `abs/` | **written**. The candidate merge into `arithmetic`, settled: separate. The view-proof gap that first kept it apart has closed; it shares no code or encoding with the product family |
 | `at_most_one.md` | `at_most_one/` | |
 | `bin_packing.md` | `bin_packing/` | existing note `bin-packing.md` |
 | `circuit.md` | `circuit/` | includes subcircuit |
 | `counting.md` | `count/`, `among/`, `global_cardinality/`, `n_value/` | **written**. The candidate merge, settled: four classes (`Count`, `Among`, `NValue`, `GlobalCardinality` at `BC` and `GAC`), no shared propagation code and four encodings, so one document and no code merge |
-| `comparison.md` | `comparison/` | twelve classes over `ReifiedCompareLessThanOrMaybeEqual`; **not** merged with `equals` — same reified-dispatcher pattern, no shared code, separate encodings |
+| `comparison.md` | `comparison/` | **written**. Twelve classes over `ReifiedCompareLessThanOrMaybeEqual`; **not** merged with `equals` — same reified-dispatcher pattern, no shared code, separate encodings |
 | `equals.md` | `equals/` | **written** — the pilot. `Equals`, `NotEquals` and the four reified forms |
 | `cumulative.md` | `cumulative/` | the largest family, including the derived cumulative (`derived_cumulative.hh`) that three presolvers install; notes `cumulative-proof-logging.md`, `certified-makespan-bounds.md`, `rule-counters.md` |
 | `difference.md` | `difference/` | difference constraints; note `difference-logic.md`, whose presolver half belongs under `dev_docs/presolvers/` |
 | `dag.md` | `dag/` | `Dag`; shares `connectivity-proofs.md` with `reachable` |
 | `disjunctive.md` | `disjunctive/`, `disjunctive_2d/` | one family, two dimensions; note `disjunctive-proof-logging.md` |
-| `element.md` | `element/` | `Element`, `Element2D` |
+| `element.md` | `element/` | **written**. `Element`, `Element2D` |
 | `in.md` | `in/` | note `range_literals_spec.md` |
 | `increasing.md` | `increasing/` | `Increasing`, `Decreasing` |
 | `inverse.md` | `inverse/` | **written**. One class; its propagator runs `all_different`'s generalised arc consistent algorithm on one array, and is documented there as well |
