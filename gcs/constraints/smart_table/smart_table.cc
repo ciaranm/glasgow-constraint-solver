@@ -624,14 +624,13 @@ namespace
             // not in node_visited's order, which differs between standard libraries.
             vector<IntegerVariableID> vars_in_order;
             for (const auto & entry : current_tuple)
-                overloaded{
+                overloaded{//
                     [&](const BinaryEntry & binary_entry) {
                         vars_in_order.emplace_back(deview(binary_entry.var_1));
                         vars_in_order.emplace_back(deview(binary_entry.var_2));
-                    },                                                                                                         //
-                    [&](const UnaryValueEntry & unary_val_entry) { vars_in_order.emplace_back(deview(unary_val_entry.var)); }, //
-                    [&](const UnarySetEntry & unary_set_entry) { vars_in_order.emplace_back(deview(unary_set_entry.var)); }    //
-                }
+                    },
+                    [&](const UnaryValueEntry & unary_val_entry) { vars_in_order.emplace_back(deview(unary_val_entry.var)); },
+                    [&](const UnarySetEntry & unary_set_entry) { vars_in_order.emplace_back(deview(unary_set_entry.var)); }}
                     .visit(entry);
 
             Forest forest{};
