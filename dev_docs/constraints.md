@@ -1374,6 +1374,10 @@ standing regression test.
    form (e.g. `SmartTable`'s `build_forests` uses the underlying
    `SimpleIntegerVariableID`), the check needs to match that — see
    `smart_table/smart_table.cc`'s `deview_for_alias_check` helper.
+   `SmartTable` also rejects the wider shape that its alias case is the
+   smallest instance of: a `BinaryEntry` closing a cycle among a tuple's
+   underlying variables, since `build_tree` would drop it the same way
+   (issue #1014). An exact repeat of an entry is still accepted.
 
    The discipline above was retro-fitted across the existing
    constraints in PRs #223–#234.

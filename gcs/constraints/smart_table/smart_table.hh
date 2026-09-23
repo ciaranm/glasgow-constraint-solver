@@ -58,6 +58,13 @@ namespace gcs
      * specified smart tuples. "short_reasons" uses aliases for reasons when
      * proof logging is enabled, which can result in shorter proofs.
      *
+     * Within each tuple, the binary entries must form a forest over the
+     * underlying variables, with views counting as the variable they view:
+     * no entry may relate a variable to itself, and no entry may close a
+     * cycle, including a second, different entry on a pair that is already
+     * joined. This is what lets the propagator achieve GAC without iterating.
+     * An exact repeat of an entry is allowed. Anything else throws
+     * InvalidProblemDefinitionException.
      *
      * \ingroup Constraints
      * \see Table

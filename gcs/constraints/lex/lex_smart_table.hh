@@ -18,6 +18,10 @@ namespace gcs
      * Lex* constraints in lex.hh), which share a single specialised
      * propagator and produce smaller, cleaner proofs.
      *
+     * A variable repeated across the two arrays can make a SmartTable tuple
+     * cyclic, for example {a, b} >_lex {b, a}, which SmartTable rejects:
+     * solving then throws InvalidProblemDefinitionException.
+     *
      * \ingroup Constraints
      */
     class LexSmartTable : public Constraint
