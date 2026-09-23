@@ -979,7 +979,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `knapsack.md` | `knapsack/` | existing note `knapsack.md`; `decision-diagram-proof-strategies.md` |
 | `lex.md` | `lex/`, `lex_smart_table.hh` | |
 | `linear.md` | `linear/` | **written**. Note `linear-slack-waking.md` is cross-referenced and due to be folded in; `subset-sum-strengthening.md` is not this family's (an `innards/proofs` helper for `knapsack` and `cumulative`) |
-| `logical.md` | `logical/` | |
+| `logical.md` | `logical/` | **written**. `And`, `Or`, `AndIf`, `OrIf` over one propagator |
 | `mdd.md` | `mdd/` | `decision-diagram-proof-strategies.md` |
 | `min_distance.md` | `min_distance/` | note `min-distance-proofs.md` |
 | `min_max.md` | `min_max/` | |
