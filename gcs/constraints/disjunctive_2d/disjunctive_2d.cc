@@ -638,11 +638,21 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         rv.push_back(height_var[r]);
                 }
 
+                // Every bound literal the justifications below cite, read now,
+                // before the push. The justification runs after the push has
+                // landed, and a position two rectangles share --- or one a push
+                // has just wiped out --- would otherwise be read post-push: a
+                // literal the reason does not support, or the bound of an
+                // empty domain.
+                auto forced_i_lb = lb_lit(forced_pos[i]), forced_i_ub = ub_lit(forced_pos[i]);
+                auto forced_j_lb = lb_lit(forced_pos[j]), forced_j_ub = ub_lit(forced_pos[j]);
+                auto free_j_lb = lb_lit(free_pos[j]), free_j_ub = ub_lit(free_pos[j]);
+
                 // Both forced-axis precedences are refuted by the mandatory
                 // overlap on that axis, exactly as in the contradiction.
-                auto eliminate_forced_axis = [&]() -> void {
-                    emit_before_pol(forced_before, forced_size, i, j, lb_lit(forced_pos[i]), ub_lit(forced_pos[j]));
-                    emit_before_pol(forced_before, forced_size, j, i, lb_lit(forced_pos[j]), ub_lit(forced_pos[i]));
+                auto eliminate_forced_axis = [&, forced_i_lb, forced_i_ub, forced_j_lb, forced_j_ub]() -> void {
+                    emit_before_pol(forced_before, forced_size, i, j, forced_i_lb, forced_j_ub);
+                    emit_before_pol(forced_before, forced_size, j, i, forced_j_lb, forced_i_ub);
                 };
 
                 // lb-push: i cannot fit below the blocker, push its origin up to
@@ -655,16 +665,17 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     // landed by the time the justification runs, so re-reading
                     // the pushed variable's bounds from the state would cite
                     // the post-push bound, which the reason does not support.
-                    auto justify = [&, i, j, cur_lo = cur_lo, target](const ReasonLiterals & reason) -> void {
+                    auto justify = [&, i, j, cur_lo = cur_lo, target, free_j_lb, free_j_ub, eliminate_forced_axis](
+                                       const ReasonLiterals & reason) -> void {
                         pin_escapes(reason, i, j);
                         eliminate_forced_axis();
                         // Free axis: i entirely before j contradicts i's lower
                         // bound (it cannot fit below the blocker) ...
-                        emit_before_pol(free_before, free_size, i, j, free_pos[i] >= cur_lo, ub_lit(free_pos[j]));
+                        emit_before_pol(free_before, free_size, i, j, free_pos[i] >= cur_lo, free_j_ub);
                         // ... so j precedes i, putting pos_i at j's mandatory
                         // end or later, folded onto the target order literal's
                         // definition row: bf -> pos_i >= target.
-                        emit_before_pol(free_before, free_size, j, i, lb_lit(free_pos[j]), free_pos[i] < target);
+                        emit_before_pol(free_before, free_size, j, i, free_j_lb, free_pos[i] < target);
                     };
                     inference.infer_greater_than_or_equal(
                         logger, free_pos[i], target, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, reason_for(i, j, rv));
@@ -675,16 +686,17 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     auto target = max(blk_lo - sz, cur_lo - 1_i);
                     // As above: cur_hi is captured, not re-read, because the
                     // push has landed by justification time.
-                    auto justify = [&, i, j, cur_hi = cur_hi, target](const ReasonLiterals & reason) -> void {
+                    auto justify = [&, i, j, cur_hi = cur_hi, target, free_j_lb, free_j_ub, eliminate_forced_axis](
+                                       const ReasonLiterals & reason) -> void {
                         pin_escapes(reason, i, j);
                         eliminate_forced_axis();
                         // Free axis: j entirely before i would put pos_i past
                         // its upper bound (i cannot fit above the blocker) ...
-                        emit_before_pol(free_before, free_size, j, i, lb_lit(free_pos[j]), free_pos[i] < cur_hi + 1_i);
+                        emit_before_pol(free_before, free_size, j, i, free_j_lb, free_pos[i] < cur_hi + 1_i);
                         // ... so i precedes j, capping pos_i at the blocker's
                         // latest start minus lb(size_i), folded onto the
                         // target: bf -> pos_i <= target.
-                        emit_before_pol(free_before, free_size, i, j, free_pos[i] >= target + 1_i, ub_lit(free_pos[j]));
+                        emit_before_pol(free_before, free_size, i, j, free_pos[i] >= target + 1_i, free_j_ub);
                     };
                     inference.infer_less_than(logger, free_pos[i], target + 1_i,
                         JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, reason_for(i, j, rv));
