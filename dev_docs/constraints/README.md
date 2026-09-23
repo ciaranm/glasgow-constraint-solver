@@ -119,6 +119,15 @@ constraints and do not restate it.
   which `cake_pb_cp` cannot check (#1047 → #1088). Checking how it called a
   shared helper found a proof bug in `GlobalCardinality`: a constant in the
   array can make its proofs abort or fail (#1046, still open).
+- [`abs.md`](abs.md) — `Abs`: one class, nine rules, one `pol` shape. Its
+  propagator is generalised arc consistent in a single call and does not claim
+  it; claiming it is 18–20% on `celar`, where `Abs` is most of the propagation
+  (#1057). The encoding is the thesis's; the negative branch is a sum, not a
+  difference, so its proofs resolve by `pol` rather than Theorem 2.9's RUP. A
+  constant `v2` falls off the interval path and costs time and proof lines in
+  proportion to the constant, 30% of `celar`'s proof (#1058). Its audit
+  also found the test harness's idempotence-claim checker off in 100 lanes
+  (#1056). Not merged into `arithmetic`: no shared code.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
