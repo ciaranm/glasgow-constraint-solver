@@ -35,11 +35,11 @@ Three things to know before touching it.
   propagator: an XCSP3 translation that predates `LinearNotEquals` (#1032), a
   constant-condition mapping that no front end reaches (#1033), and a Python
   binding that posts `≤` where its name says `≥` (#1036).
-- **The implementation choice matters more than any algorithm.** The
-  stateless sweep and the incremental one give identical searches, and each
-  beats the other by up to 3× on some real model. The default, incremental from
-  8 terms up, loses 2.2× on one of them for a reason that is not linear's at
-  all (#1034).
+- **The implementation choice matters more than any algorithm.** The stateless
+  sweep and the incremental one find the same solutions in the same order, and
+  each beats the other by up to 3× on some real model. The default, incremental
+  from 8 terms up, loses 2.2× on one of them for a reason that is not linear's
+  at all (#1034).
 
 ## What it is
 
@@ -723,8 +723,8 @@ the same instances, the same verified proofs.
   `xᵢ ∈ 0..3` fails once on `c = 1`, where the `≥` form infers `¬c` at the root.
   On the corpus it costs nothing: a local experiment adding the check fired
   millions of times, on `grid-colouring`, `diameterc-mst` and `gfd-schedule`,
-  and changed no solution. `l2p`, which finishes, searched an identical
-  119,187 nodes either way.
+  and changed no solution. `l2p`, which finishes, searched 119,187 nodes
+  either way.
 - **Tightness** — `Not shown.`
 
 ### Rule: equality-last-value-missing
@@ -849,8 +849,8 @@ slack-watched wake were not counted; the slack lanes force that path on.
   `unit-commitment`, `pattern-set-mining` and `nfc`.
 - **For CPU**: `vrp` 2012, `unit-commitment` 2023 and
   `pattern-set-mining-k2` 2012. Between them, the default configuration wins
-  by 1.9–3× or loses by 2.2×, and they have identical trees under every
-  configuration. `shortest_path` 2008 finishes in under a second.
+  by 1.9–3× or loses by 2.2×, and they give the same solution sequences under
+  every configuration. `shortest_path` 2008 finishes in under a second.
 - **For proofs**: nothing linear-dominated in the corpus is a practical size.
   `shortest_path` is the smallest that finishes, and its proof is 15 GB (#1035).
   The test lanes are the only verified proofs.
@@ -866,7 +866,8 @@ with a median share of 8.4%, and at least 50% in 44 of them.
 
 **The implementation, measured.** Nodes in 30 s under four configurations.
 Solution sequences are identical in every row, and the one model that finishes
-under all four (`shortest_path` 2008) searches 42,437 nodes in each.
+under all four (`shortest_path` 2008) searches 42,437 nodes in each. The trees
+were not compared node by node.
 
 | Model | default (8) | stateless | incremental (0) | slack (128) |
 |---|---|---|---|---|
@@ -900,8 +901,8 @@ under all four (`shortest_path` 2008) searches 42,437 nodes in each.
 
 **The reified equality's missing bounds check**: a local experiment adding it
 fired 13.9 million times on `grid-colouring` 2011 and 5.7 million on
-`diameterc-mst`, and changed no solution anywhere. `l2p` searched an identical
-119,187 nodes. So its absence costs nothing measurable here.
+`diameterc-mst`, and changed no solution anywhere. `l2p` searched 119,187 nodes
+either way. So its absence costs nothing measurable here.
 
 **What these benchmarks exercise**, from local counters over 10 s each:
 
