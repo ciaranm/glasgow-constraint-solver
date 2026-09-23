@@ -11,7 +11,7 @@
 > a front end gets wrong), whose pilot on this family's globals merged as #1011
 > and fixed two more `arg_sort` bugs, one of them #1010; and #1008 (the
 > single-value reason cache sized by the span of variable IDs, not the scope),
-> fix open as #1020. Already open and touching this family: #522 (SCC
+> fixed by #1020. Already open and touching this family: #522 (SCC
 > incrementality), #944 (Hall proofs cost values × vars²), #833 (the
 > large-domain policy; the GAC arm is a `KnownTrip`), #868 (cross-solver).
 > Tracked under #871.
@@ -60,14 +60,16 @@ figure taken at `6b220c79` says so.
 | #990 | #1001 | `SymmetricAllDifferent`'s dead root initialiser is deleted |
 | #989 | #1002 | XCSP3's `allDifferent` with `except` posts `AllDifferentExcept` |
 | #988 | #1004 | a repeated `AllDifferentExcept` variable is forced a run at a time, by RUP alone, and is no longer walked for the value set — which, not the forcing loop, was most of the measured cost |
+| #1008 | #1020 | the single-value reason cache is sized by the scope, not by the span of its variable IDs; filed after the audit, while reviewing this document. No search tree or proof changes |
 
 The sections that moved are the frontend table, the [propagator
 inventory](#propagator-inventory), [Interior values and optional
 pruning](#interior-values-and-optional-pruning), [Interval
 efficiency](#interval-efficiency), rules 1, 2, 4 and 8, the tests, and
 everything under [Status, gaps, and next steps](#status-gaps-and-next-steps).
-The rule catalogue's arguments for rules 1 to 7 and 9 were not re-derived, and
-the main performance tables are still `6b220c79`'s.
+#1020 moved [Mutable state](#mutable-state-and-incrementality), rule 4's
+reason and the tests. The rule catalogue's arguments for rules 1 to 7 and 9
+were not re-derived, and the main performance tables are still `6b220c79`'s.
 
 ## What it is
 
@@ -539,6 +541,18 @@ drops the stale ones, and repairs by augmenting paths. The deletions are the
 edges in no maximum matching, which does not depend on which maximum matching was
 found, so the search is unchanged; the proof's shape can differ. Also kept: the
 value-index lookup table, built once, since the value set is fixed.
+
+**The single-value reason cache** is not backtrackable either, and never changes
+once built: one prebuilt `ExactSingleValue` per plain variable in the scope,
+built at install time and held by the value consistent propagator and by staged
+GAC's first stage. It is found by a binary search over the scope's sorted
+variable IDs, paid once per newly fixed variable, which the pass then checks
+against every unassigned variable anyway. It is sized by the scope. Until #1020
+it was a table indexed by variable ID across the span of the scope's IDs (#1008),
+which over the columns of a row-major `n × n` Latin square is `n³` reasons: 194
+MB at `n = 100`, with proofs off, before any search. #1020 changes no search tree
+and no proof: the `.opb` and `.pbp` for `sudoku-sixteen` are byte-identical
+before and after it, at both `GAC` and `VC`.
 
 **Recomputed per call, and what maintaining it would buy.** The strongly
 connected components, every wake, into reused buffers — **#522's remaining
@@ -1077,8 +1091,9 @@ states every Hall variable's domain already. Not filed; recorded here and in
   rows are.
 - **Reason** — `{x == v}`, one literal. For a plain variable it is prebuilt once,
   as a deferred `ExactSingleValue` that materialises to whatever `x` is fixed to,
-  and handed back by reference; a view or constant builds it inline, guarded on
-  `want_reasons()`. Minimal.
+  found by binary search over the scope's variable IDs (see [Mutable
+  state](#mutable-state-and-incrementality)), and handed back by reference; a
+  view or constant builds it inline, guarded on `want_reasons()`. Minimal.
 - **Assertion** — `y ≠ v ∨ ¬(x = v)`.
 - **Hint** — `hints::AllDifferent`.
 - **Offline reconstructibility** — `offline`.
@@ -1271,7 +1286,7 @@ states every Hall variable's domain already. Not filed; recorded here and in
 
 ### Tests
 
-Four binaries, and a family whose coverage is uneven in an instructive way.
+Five binaries, and a family whose coverage is uneven in an instructive way.
 
 - **`all_different_test`**, run as three lanes — `all_different_constraint` at
   the default, `all_different_constraint_bc`, and since #999
@@ -1303,6 +1318,12 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
   against a brute-force reference at the root, on thousands of small random
   instances: it checks that the arm reaches **exactly** bounds(Z) consistency,
   which pins the strength rather than the proof.
+- **`vc_all_different_test`**, since #1020, a Catch2 test of the single-value
+  reason cache alone, over a scope whose IDs are 10,000 apart and which holds a
+  view and a constant. A lookup that misses is invisible to every solver-level
+  test, because the propagator then builds an equivalent reason inline, and the
+  cache's size is a memory cost no correctness test sees. So both are checked
+  directly.
 - **Runtime caps: the defaults fire on every `all_different_test` lane.** No
   lane sets or clears a cap of its own, so under a default `ctest` every lane
   runs with the suite-wide caps (300 solutions and 1,500 search nodes per
@@ -1313,8 +1334,8 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
   two or `symmetric_all_different_test`'s one. So this family's default local
   run checks noticeably less than its uncapped one. The two Ubuntu CI lanes
   build with the caps off, so every pull request gets the complete check, and
-  all ten lanes of the four binaries also pass uncapped locally at `d3f3f1aa`
-  (`cmake --preset release -DGCS_TEST_CAP_DEFAULTS=OFF`, then
+  all ten lanes of the four binaries it then had pass uncapped locally at
+  `d3f3f1aa` (`cmake --preset release -DGCS_TEST_CAP_DEFAULTS=OFF`, then
   `ctest -R '^(all_different|symmetric_all_different|bc_all_different)'`).
 - **Seven `.scp` chain cases**, listed under [Cake
   conformity](#cake-conformity); #1004's `all_different_except_duplicate` is the
@@ -1351,12 +1372,13 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
   assertion**, until #999 added the `vc` lane. It failed at its first data row
   with a constant, on a wrong answer no other lane could see: the arm ignored
   variables fixed at post time (rule 4).
-- **The staged path and the dense-table sweep are never reached by the family's
-  own tests**, and that follows from arithmetic rather than from reading. Every
-  domain is drawn from `[-10, 10]`, so a constraint sees at most 21 distinct
-  values across its six variables: `6 × 21 = 126`, under the staging threshold of
-  256, and 21 is under the sweep's threshold of 24. So the per-node GAC assertion
-  has only ever checked the unstaged, probing propagator. The staged one's claim
+- **The staged path is never reached by the family's own tests** (#1023), and
+  that follows from arithmetic rather than from reading. Every variable is a
+  constant or a range of at most six values, so a scope holds at most 36
+  distinct values: `6 × 36 = 216`, under the staging threshold of 256. So the
+  per-node GAC assertion has only ever checked the unstaged propagator. The
+  dense-table sweep, at 24 or more values, is within that bound; whether any
+  seed reaches it was not checked. The staged one's claim
   — "the per-node fixpoint is therefore still exactly the GAC closure" — is
   argued in a comment and exercised by examples, which check solutions and
   proofs but not consistency.
@@ -1740,8 +1762,9 @@ evidence, and the family's standing work.
    over six variables, so that the per-node GAC assertion reaches the staged
    path and the dense-table sweep, which today it never does. The other half of
    this item as the audit wrote it, a `vc` lane, is done (#999), and found a
-   wrong answer on its first run; that is the argument for this half. No issue
-   yet; cheap.
+   wrong answer on its first run; that is the argument for this half. #1023,
+   filed from #1020's work, proposes a per-constraint staging threshold so the
+   existing instances can be run staged; cheap.
 2. **#1006 — MiniZinc differential tests over the shapes front ends get
    wrong.** #987 was invisible to every check but one, and this family's globals
    were the natural pilot. The pilot is done (#1011); what is left of #1006 is
