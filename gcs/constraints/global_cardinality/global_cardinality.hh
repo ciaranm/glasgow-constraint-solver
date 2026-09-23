@@ -95,12 +95,12 @@ namespace gcs
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
-        // The bounds propagator's Hall-interval reasoning ranges over contiguous
-        // runs of the cover values, so under consistency::BC they (and their count
-        // variables) must be in ascending order. Done in clone() rather than a
-        // constructor because the level is chosen post-construction, and both the
-        // stored constraint (which s_expr reads) and its install-time clone (which
-        // define_proof_model reads) must agree.
+        // Put the cover values (and their count variables with them) in
+        // ascending order, which both propagators rely on: the bounds arm's Hall
+        // reasoning ranges over contiguous runs of the cover, and the GAC arm
+        // binary-searches it. Called from the constructor, so every copy of the
+        // constraint -- the stored one that s_expr reads and the clone that is
+        // installed -- has the same order.
         auto sort_cover_values() -> void;
 
     public:

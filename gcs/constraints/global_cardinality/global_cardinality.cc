@@ -83,9 +83,16 @@ GlobalCardinality::GlobalCardinality(vector<IntegerVariableID> vars, vector<Inte
     // (#922). Rejecting it here rather than folding it means the .scp keeps
     // describing what was posted; fold_repeated_cover_values() is what a front
     // end whose input permits repeats should call first.
-    auto sorted = _values;
-    sort(sorted);
-    if (adjacent_find(sorted) != sorted.end())
+    //
+    // Both arms also need the cover ascending: the bounds arm's Hall reasoning
+    // ranges over contiguous runs of it, and the GAC arm finds a value's cover
+    // position by binary search. Sorting it here, whatever the level, means no
+    // arm can be handed it any other way. Until #1026 this happened in clone()
+    // and only under consistency::BC, so the GAC arm binary-searched an
+    // unsorted cover, mistook cover values for non-cover ones, and pruned
+    // them.
+    sort_cover_values();
+    if (adjacent_find(_values) != _values.end())
         throw InvalidProblemDefinitionException{"GlobalCardinality: cover values must be pairwise distinct"};
 }
 
@@ -123,8 +130,6 @@ auto GlobalCardinality::clone() const -> unique_ptr<Constraint>
 {
     auto cloned = make_unique<GlobalCardinality>(_vars, _values, _counts);
     cloned->with_consistency(_level).with_closed(_closed);
-    if (holds_alternative<consistency::BC>(_level))
-        cloned->sort_cover_values();
     return cloned;
 }
 
@@ -176,14 +181,10 @@ auto GlobalCardinality::install_propagators(Propagators & propagators) -> void
     if (_closed) {
         // The cover as intervals, built once: it is fixed for the life of the
         // constraint, and every call takes each variable's domain difference
-        // against it. insert_at_end() needs its input ascending and distinct;
-        // distinct the constructor guarantees, ascending it does not, because
-        // sort_cover_values() only runs on the BC path -- so sort a copy rather
-        // than assume _values is ordered.
-        auto sorted_cover = _values;
-        sort(sorted_cover);
+        // against it. insert_at_end() needs its input ascending and distinct,
+        // which the constructor guarantees.
         IntervalSet<Integer> cover_set;
-        for (const auto & value : sorted_cover)
+        for (const auto & value : _values)
             cover_set.insert_at_end(value);
 
         Triggers closed_triggers;

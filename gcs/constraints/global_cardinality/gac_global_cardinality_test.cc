@@ -159,6 +159,14 @@ auto main(int argc, char * argv[]) -> int
         {{1, 1, 2}, {1, 2}, {1, 1}, false},                   // all-const vars + counts, wrong count (contradiction)
         {{pair{1, 2}, pair{1, 2}}, {1}, {pair{0, 2}}, false}, // single cover value
         {{pair{1, 2}}, {}, {}, false},                        // empty value set, open: any assignment allowed
+        // Covers not in ascending order (#1026). The GAC arm binary-searches
+        // the cover, and until #1026 only the BC arm sorted it, so an open
+        // constraint mistook a cover value for a non-cover one and pruned it
+        // through the dummy value's edge. The first row is the issue's own
+        // repro: x = 1 is the only solution, and it was lost.
+        {{pair{1, 2}}, {3, 1}, {0, 1}, false},
+        {{pair{0, 3}, pair{0, 1}, pair{0, 2}, pair{1, 3}}, {4, 0}, {pair{0, 1}, pair{0, 1}}, false},
+        {{0, pair{0, 1}, pair{0, 2}, 0}, {2, 1, 0}, {pair{1, 1}, pair{1, 1}, pair{1, 2}}, false},
     };
 
     mt19937 rand(*get_seed());
@@ -183,6 +191,9 @@ auto main(int argc, char * argv[]) -> int
         while (static_cast<int>(value_set.size()) < n_values)
             value_set.insert(value_dist(rand));
         vector<int> values(value_set.begin(), value_set.end());
+        // The set hands them over ascending, which is the one order that hid
+        // #1026, so shuffle them.
+        std::shuffle(values.begin(), values.end(), rand);
 
         vector<Range> counts_range;
         for (int i = 0; i < n_values; ++i) {
