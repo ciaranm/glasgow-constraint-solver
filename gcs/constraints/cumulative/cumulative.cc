@@ -2190,6 +2190,18 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             return cap;
         };
 
+        // Whether edge-finding or not-first / not-last has moved a bound yet in
+        // this sweep. Everything the sweep reads was taken before the first such
+        // push --- the candidates' bounds, the profile and the elastic
+        // per-time-point arrays --- while a certificate reads the state as it
+        // is when it is written. The elastic checks' certificates recompute
+        // what they charge from that state, and a push that grew a contained
+        // task's mandatory part makes them charge a different window from the
+        // one the check fired on. So they are not tried again in a sweep that
+        // has pushed: the propagator claims no idempotence and is run again
+        // after its own pushes, and that run tries them over the new bounds.
+        auto pushed_in_sweep = false;
+
         for (size_t w = 0; w < window_starts.size(); ++w) {
             if (w > 0 && window_starts[w] == window_starts[w - 1])
                 continue;
@@ -2419,10 +2431,12 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                         if (starts_inside) {
                             inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? high_guard + 1_i : high_guard,
                                 JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                            pushed_in_sweep = true;
                         }
                         else {
                             inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
                                 JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                            pushed_in_sweep = true;
                         }
                     }
                 }
@@ -2475,6 +2489,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 auto justify = published_nfnl_justification(min_est, b, published_theta, j.task, s_lo, s_hi, min_ect, true);
                                 inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
                                     JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                pushed_in_sweep = true;
                             }
                             if (max_lst >= j.lct)
                                 ++cumulative_counters[rule_not_last].already_true;
@@ -2483,6 +2498,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 auto justify = published_nfnl_justification(min_est, b, published_theta, j.task, s_lo, s_hi, max_lst, false);
                                 inference.infer_less_than(logger, starts[j.task], one_too_far ? max_lst - p_j : max_lst - p_j + 1_i,
                                     JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                pushed_in_sweep = true;
                             }
                             continue;
                         }
@@ -2512,6 +2528,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                     a, b, inside_tasks, j.task, low_guard, min_ect, GuardToDischarge::Low, energetic_contributors);
                                 inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
                                     JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                pushed_in_sweep = true;
                             }
                         }
 
@@ -2532,6 +2549,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                     a, b, inside_tasks, j.task, low_guard, s_hi + 1_i, GuardToDischarge::High, energetic_contributors);
                                 inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
                                     JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                pushed_in_sweep = true;
                             }
                         }
                     }
@@ -2561,7 +2579,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 // because it dominates neither: whatever (TTOC) detects, this
                 // detects too. What that buys is the cheaper certificate
                 // wherever the cheaper rule was enough.
-                if (elastic_rules && ! inside_tasks.empty() && energy + outside_profile <= supply) {
+                if (elastic_rules && ! pushed_in_sweep && ! inside_tasks.empty() && energy + outside_profile <= supply) {
                     auto required = energy - inside_mandatory;
 
                     // What each time point supplies with and without the
