@@ -90,6 +90,20 @@ constraints and do not restate it.
   `inverse` audit; #1187), aliasing in `GlobalCardinality` and `Count` (#1191,
   #1197, #1201) and a view registered by a later constraint (#1200).
   Re-audited 2026-10-08.
+- [`linear.md`](linear.md) — `LinearEquality`, `LinearNotEquals`,
+  `LinearLessThanEqual`, `LinearGreaterThanEqual` and their reified forms:
+  twelve named classes over two base classes and one bound sweep, and the
+  family that reaches the most models (250 of 298). Its vocabulary is bounds,
+  so every cost is in terms, never width. That includes the proof: every bound
+  push names every term's bound, trivial ones included, and a 0.92 s
+  `shortest_path` search writes 15 GB (#1035). Three wrong answers, all at the
+  edges and none in the propagator: an XCSP3 `sum ≠` translation whose wrong
+  `UNSATISFIABLE` verifies (#1032), constant-condition `If` forms (#1033), and a
+  `gcspy` binding posting `≤` for `≥` (#1036). Its inequality's bound pushes are
+  the only unhinted assertions any family document has recorded. The stateless and
+  incremental sweeps give identical searches and each wins by up to 3× somewhere;
+  the default loses 2.2× on one model to per-node heap copies of its fold state
+  (#1034).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
