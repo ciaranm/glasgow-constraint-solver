@@ -446,6 +446,38 @@ namespace gcs::innards
         [[nodiscard]] auto boundary_pin_line(const SimpleOrProofOnlyIntegerVariableID & id, Integer v) const -> std::optional<ProofLine>;
 
         /**
+         * Does the variable's own bit sum satisfy the order literal `id >= v`
+         * (or `id < v`) under every assignment of its bits? That is, is `v` at
+         * or below the least value the bits can spell (above the greatest, for
+         * `<`), so that the literal's defining line constrains nothing?
+         *
+         * A 0/1 variable's `>= 0` and `< 2` are the everyday case; a `[1, 5]`
+         * variable's `>= 1` is not, because its bits can spell 0, and nor is its
+         * `< 6`, because they can spell 7. Only GreaterEqual and Less are
+         * answered; anything else, and a variable with no bits, gets false.
+         */
+        [[nodiscard]] auto bit_sum_implies(const SimpleOrProofOnlyIntegerVariableID & id, VariableConditionOperator op, Integer v) const -> bool;
+
+        /**
+         * As above, for a condition on a plain variable. A view gets false.
+         */
+        [[nodiscard]] auto bit_sum_implies(const IntegerVariableCondition & cond) const -> bool;
+
+        /**
+         * Is the order literal `id >= v` (or `id < v`) one the proof already
+         * has as true at the top, so that a reason may leave it out?
+         *
+         * True for the literal at a declared bound (`v` the lower bound for
+         * `>=`, one past the upper for `<`) when either bit_sum_implies it, so
+         * that no step can need it, or its boundary pin has been emitted, so
+         * that unit propagation has it before any step starts. Also true for
+         * one that would have been pinned, when assertions are on above
+         * AssertionLevel::Links and no pins are written.
+         */
+        [[nodiscard]] auto order_literal_holds_at_top(const SimpleOrProofOnlyIntegerVariableID & id, VariableConditionOperator op, Integer v) const
+            -> bool;
+
+        /**
          * Set things up internally as if the specified variable was a real
          * variable, so that proof_name() etc will work with it.
          */

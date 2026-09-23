@@ -896,7 +896,7 @@ namespace
     {
         run_comparison_label_tests();
 
-        auto solve_and_read = [](const string & basename, Config config, auto && post) -> pair<string, string> {
+        auto solve_and_read = [](const string & basename, Config config, auto && post) -> tuple<string, string, size_t> {
             auto stats = make_shared<DifferenceLogicStats>();
             Problem p;
             post(p);
@@ -914,7 +914,7 @@ namespace
             auto opb = read_file(basename + ".opb"), pbp = read_file(basename + ".pbp");
             for (auto ext : proof_file_extensions)
                 std::remove((basename + ext).c_str());
-            return {opb, pbp};
+            return {opb, pbp, stats->edges_lifted};
         };
 
         // Positive case: a system the presolver does lift, once written as
@@ -922,31 +922,45 @@ namespace
         // comparison donors add no OPB content of their own either --- they
         // must not, for exactly the same reason, and it is worth stating
         // separately because it is a different detection path.
-        for (auto [what, post] : vector<pair<string, void (*)(Problem &)>>{//
+        //
+        // Only the comparison fixture's .pbp is expected to differ. On the
+        // linear one the linear propagators reach the same bounds as the global
+        // propagator before it runs, so it has nothing to log; that .pbp used to
+        // differ anyway, but only by a `1 d` in the linear justifications whose
+        // presence depended on the sign the lifted run happened to give a term,
+        // and the division is gone (issue #1035). The lift itself is checked
+        // through the stats instead, which is what it always rested on.
+        for (auto [what, post, pbp_must_differ] : vector<tuple<string, void (*)(Problem &), bool>>{//
                  {"linear",
                      [](Problem & p) {
                          auto x = p.create_integer_variable_vector(4, 0_i, 5_i, "x");
                          p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[0] + -1_i * x[1], -1_i});
                          p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[1] + -1_i * (x[2] + 1_i), -1_i});
                          p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[2] + -1_i * x[3], -1_i});
-                     }},
-                 {"comparison", [](Problem & p) {
-                      auto x = p.create_integer_variable_vector(4, 0_i, 5_i, "x");
-                      p.post(LessThan{x[0], x[1]});
-                      p.post(LessThan{x[1], x[2] + 1_i});
-                      p.post(LessThan{x[2], x[3]});
-                  }}}) {
-            auto [off_opb, off_pbp] = solve_and_read("difference_presolver_opb_" + what + "_off", Config::NoPresolver, post);
-            auto [on_opb, on_pbp] = solve_and_read("difference_presolver_opb_" + what + "_on", Config::Hybrid, post);
+                     },
+                     false},
+                 {"comparison",
+                     [](Problem & p) {
+                         auto x = p.create_integer_variable_vector(4, 0_i, 5_i, "x");
+                         p.post(LessThan{x[0], x[1]});
+                         p.post(LessThan{x[1], x[2] + 1_i});
+                         p.post(LessThan{x[2], x[3]});
+                     },
+                     true}}) {
+            auto [off_opb, off_pbp, off_lifted] = solve_and_read("difference_presolver_opb_" + what + "_off", Config::NoPresolver, post);
+            auto [on_opb, on_pbp, on_lifted] = solve_and_read("difference_presolver_opb_" + what + "_on", Config::Hybrid, post);
+            if (0 != off_lifted || 3 != on_lifted)
+                throw UnexpectedException{"the difference-logic presolver lifted " + to_string(on_lifted) + " edges from the " + what +
+                    " fixture (and " + to_string(off_lifted) + " with no presolver), expected 3 (and 0)." + detection_is_broken};
             if (off_opb != on_opb)
                 throw UnexpectedException{"the difference-logic presolver changed the .opb on the " + what +
                     " fixture. It must not: Presolver::run is handed no ProofModel, "
                     "and the whole design rests on the global propagator citing rows the donors already emitted"};
-            if (off_pbp == on_pbp)
+            if (pbp_must_differ && off_pbp == on_pbp)
                 throw UnexpectedException{"the difference-logic presolver left the .pbp byte-identical on the " + what +
                     " fixture, which it is supposed to lift three edges from, so it evidently propagated nothing." + detection_is_broken};
-            println(cerr, "difference presolver opb: lifted {} fixture .opb identical ({} bytes), .pbp differs ({} vs {} bytes)", what,
-                off_opb.size(), off_pbp.size(), on_pbp.size());
+            println(cerr, "difference presolver opb: lifted {} fixture ({} edges) .opb identical ({} bytes), .pbp {} ({} vs {} bytes)", what,
+                on_lifted, off_opb.size(), off_pbp == on_pbp ? "identical" : "differs", off_pbp.size(), on_pbp.size());
         }
 
         // Negative control: nothing is difference shaped, so the presolver posts
@@ -958,8 +972,11 @@ namespace
                 p.post(AllDifferent{x});
                 p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[0] + 1_i * x[1] + 1_i * x[2], 4_i});
             };
-            auto [off_opb, off_pbp] = solve_and_read("difference_presolver_control_off", Config::NoPresolver, post);
-            auto [on_opb, on_pbp] = solve_and_read("difference_presolver_control_on", Config::Hybrid, post);
+            auto [off_opb, off_pbp, off_lifted] = solve_and_read("difference_presolver_control_off", Config::NoPresolver, post);
+            auto [on_opb, on_pbp, on_lifted] = solve_and_read("difference_presolver_control_on", Config::Hybrid, post);
+            if (0 != off_lifted || 0 != on_lifted)
+                throw UnexpectedException{
+                    "the difference-logic presolver lifted " + to_string(on_lifted) + " edges from a model containing nothing difference shaped"};
             if (off_opb != on_opb || off_pbp != on_pbp)
                 throw UnexpectedException{"the difference-logic presolver changed the proof of a model containing nothing difference shaped"};
             println(cerr, "difference presolver opb: control .opb and .pbp both identical ({} and {} bytes)", off_opb.size(), off_pbp.size());

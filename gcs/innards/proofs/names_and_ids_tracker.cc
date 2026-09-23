@@ -142,6 +142,13 @@ namespace
         // twice, and the queued step is the only record that the first ask
         // happened.
         std::unordered_set<long long> ge_pins_arranged;
+        // The declared bounds (track_bounds), and the range the variable's own
+        // bit sum spans over every assignment of its bits (track_bits), copied
+        // here from their hash maps so that order_literal_holds_at_top, asked
+        // for every reason literal rendered into every proof line, answers from
+        // this dense table.
+        optional<pair<Integer, Integer>> declared_bounds;
+        optional<pair<Integer, Integer>> bits_span;
     };
 
     struct HashView
@@ -757,6 +764,67 @@ auto NamesAndIDsTracker::boundary_pin_line(const SimpleOrProofOnlyIntegerVariabl
     return pin->second;
 }
 
+auto NamesAndIDsTracker::bit_sum_implies(const SimpleOrProofOnlyIntegerVariableID & id, VariableConditionOperator op, Integer v) const -> bool
+{
+    auto atoms = _imp->find_atoms(id);
+    if (! atoms || ! atoms->bits_span)
+        return false;
+    switch (op) {
+        using enum VariableConditionOperator;
+    case GreaterEqual: return v <= atoms->bits_span->first;
+    case Less: return v > atoms->bits_span->second;
+    default: return false;
+    }
+}
+
+auto NamesAndIDsTracker::bit_sum_implies(const IntegerVariableCondition & cond) const -> bool
+{
+    if (const auto * var = std::get_if<SimpleIntegerVariableID>(&cond.var))
+        return bit_sum_implies(*var, cond.op, cond.value);
+    return false;
+}
+
+auto NamesAndIDsTracker::order_literal_holds_at_top(const SimpleOrProofOnlyIntegerVariableID & id, VariableConditionOperator op, Integer v) const
+    -> bool
+{
+    auto atoms = _imp->find_atoms(id);
+    if (! atoms || ! atoms->declared_bounds)
+        return false;
+
+    // Only the literal at the declared bound itself: that is the one a reason
+    // built from a variable's current bounds can name, and the one a pin covers.
+    // (A literal strictly outside the bounds is true too, but only via the order
+    // chain from the pin, which is not a unit.)
+    auto [lower, upper] = *atoms->declared_bounds;
+    switch (op) {
+        using enum VariableConditionOperator;
+    case GreaterEqual:
+        if (v != lower)
+            return false;
+        break;
+    case Less:
+        if (v != upper + 1_i)
+            return false;
+        break;
+    default: return false;
+    }
+
+    // Holds whatever the bits are, so nothing need know it at all.
+    if (atoms->bits_span && (VariableConditionOperator::GreaterEqual == op ? v <= atoms->bits_span->first : v > atoms->bits_span->second))
+        return true;
+
+    // Otherwise the atom must already be pinned. The pin is emitted when the atom
+    // is created, so an atom without one either does not exist yet --- and then
+    // nothing in the proof mentions it, and leaving the literal out would lose
+    // the only statement of the bound a RUP step might need --- or belongs to a
+    // variable whose bounds are not trivially derivable. Above
+    // AssertionLevel::Links no pin is ever emitted, but nor is anything checked
+    // that could want one.
+    if (atoms->ge_pins.contains(v.raw_value))
+        return true;
+    return _imp->assertion_level > AssertionLevel::Links && ! _imp->bounds_not_trivially_derivable.contains(id);
+}
+
 auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, XLiteral>
 {
     return overloaded{
@@ -979,7 +1047,14 @@ auto NamesAndIDsTracker::num_bits(const gcs::innards::SimpleOrProofOnlyIntegerVa
 auto NamesAndIDsTracker::track_bits(
     const SimpleOrProofOnlyIntegerVariableID & id, Integer negative_coeff, const vector<pair<Integer, XLiteral>> & bit_vars) -> void
 {
-    _imp->integer_variable_bits_to_size_and_proof_vars.emplace(id, pair{negative_coeff, bit_vars});
+    auto [_, inserted] = _imp->integer_variable_bits_to_size_and_proof_vars.emplace(id, pair{negative_coeff, bit_vars});
+    if (inserted) {
+        // bit_vars carries the sign bit too, at its negative coefficient.
+        Integer lowest = 0_i, highest = 0_i;
+        for (const auto & [c, _] : bit_vars)
+            (c < 0_i ? lowest : highest) += c;
+        _imp->atoms_for(id).bits_span = pair{lowest, highest};
+    }
 }
 
 auto NamesAndIDsTracker::allocate_flag_index() -> unsigned long long
@@ -2074,7 +2149,8 @@ auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
 
 auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
 {
-    _imp->integer_variable_definition_bounds.emplace(id, pair{lower, upper});
+    if (_imp->integer_variable_definition_bounds.emplace(id, pair{lower, upper}).second)
+        _imp->atoms_for(id).declared_bounds = pair{lower, upper};
 }
 
 auto NamesAndIDsTracker::tracked_bounds(const SimpleOrProofOnlyIntegerVariableID & id) const -> pair<Integer, Integer>

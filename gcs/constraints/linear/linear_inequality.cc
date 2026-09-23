@@ -69,15 +69,23 @@ namespace
         pol.enable_deview_mode(logger.names_and_ids_tracker());
         pol.add(proof_lines.first.value());
 
+        bool any_bound_added = false;
         for (const auto & cv : coeff_vars.terms) {
             // the following line of logic is definitely correct until you inevitably
             // discover otherwise
             bool upper = (get_coeff(cv) < 0_i);
             auto lit = upper ? get_var(cv) <= state.upper_bound(get_var(cv)) : get_var(cv) >= state.lower_bound(get_var(cv));
+            // A bound the bits cannot violate is left out, and its term's bits
+            // with it, at no cost to the slack: see justify_linear_bounds.
+            if (logger.names_and_ids_tracker().bit_sum_implies(lit))
+                continue;
             pol.add_for_literal(logger.names_and_ids_tracker(), lit, abs(get_coeff(cv)));
+            any_bound_added = true;
         }
 
-        pol.emit(logger, ProofLevel::Temporary);
+        // Otherwise the pol would only restate its base line.
+        if (any_bound_added)
+            pol.emit(logger, ProofLevel::Temporary);
     }
 }
 
