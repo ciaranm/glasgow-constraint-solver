@@ -216,7 +216,7 @@ auto main(int argc, char * argv[]) -> int
                 run_at_most_one_test(variant, proofs, view_cfg, ranges, {v_lo, v_lo + width_dist(rand)});
             }
 
-            if (run_dup && variant == Variant::Native) {
+            if (run_dup) {
                 // {x, x} — forces x != val.
                 run_dup_at_most_one_test(variant, proofs, {{1, 3}}, {0, 0}, {1, 3});
                 // {x, x, y} — x != val; y unconstrained by it.
@@ -224,11 +224,6 @@ auto main(int argc, char * argv[]) -> int
                 // {x, y, x} — same as above with reordering.
                 run_dup_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}}, {0, 1, 0}, {1, 3});
             }
-            // FIXME: AtMostOneSmartTable dup with non-adjacent duplicate
-            // positions (e.g. {x, y, x}) returns wrong solutions — the
-            // SmartTable encoding accepts tuples where both x positions
-            // equal val. Tracked in tmp/duplicate_var_tier1_findings.md.
-            // Re-enable once the encoding handles aliased positions.
         }
     }
 
