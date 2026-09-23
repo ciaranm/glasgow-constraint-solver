@@ -122,6 +122,7 @@ auto main(int argc, char * argv[]) -> int
             ("relaxation", "Enable Disjunctive2D's cumulative relaxation rule")                                  //
             ("relaxation-overload", "Enable the overload check on the cumulative relaxation")                    //
             ("relaxation-edge-finding", "Enable edge-finding on the cumulative relaxation")                      //
+            ("relaxation-ttef", "Enable time-table edge-finding on the cumulative relaxation")                   //
             ("all", "Enumerate every packing rather than stopping at the first")                                 //
             ("timeout", "Abort the solve after this many seconds", cxxopts::value<double>()->default_value("0")) //
             ("instance", "Built-in instance to solve", cxxopts::value<string>()->default_value("tight"))         //
@@ -147,7 +148,8 @@ auto main(int argc, char * argv[]) -> int
         println("on that relaxation, which sees that the squares inside a range of columns");
         println("have more area between them than the box has there; and");
         println("--relaxation-edge-finding pushes a square away from a range of columns");
-        println("that the squares inside it leave too little room in.");
+        println("that the squares inside it leave too little room in; --relaxation-ttef");
+        println("does the same counting the mandatory parts of the squares outside it.");
         println("");
         println("Built-in instances: tight (unsatisfiable by one unit), loose, area (too");
         println("much area, with no mandatory parts at the root), perfect21");
@@ -199,7 +201,8 @@ auto main(int argc, char * argv[]) -> int
 
     Disjunctive2DRules rules{.cumulative_relaxation = options_vars.contains("relaxation"),
         .relaxation_overload = options_vars.contains("relaxation-overload"),
-        .relaxation_edge_finding = options_vars.contains("relaxation-edge-finding")};
+        .relaxation_edge_finding = options_vars.contains("relaxation-edge-finding"),
+        .relaxation_time_table_edge_finding = options_vars.contains("relaxation-ttef")};
     p.post(Disjunctive2D{xs, ys, sizes, sizes}.with_rules(rules));
 
     auto enumerate = options_vars.contains("all");

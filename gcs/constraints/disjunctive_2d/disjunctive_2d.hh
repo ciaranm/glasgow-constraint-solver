@@ -128,6 +128,19 @@ namespace gcs
          * relaxation_overload. Off by default.
          */
         bool relaxation_edge_finding = false;
+
+        /**
+         * \brief Time-table edge-finding on each axis's cumulative
+         * relaxation: \ref relaxation_edge_finding with the mandatory-part
+         * load of the rectangles a window does not contain counted too, as
+         * `Cumulative`'s TTEF counts its profile.
+         *
+         * The certificate is edge-finding's plus one pin per profile
+         * rectangle and time point, `active_{i,t} >= 1` under the reason's
+         * bounds on it, times its height. Subsumes \ref
+         * relaxation_edge_finding. Off by default.
+         */
+        bool relaxation_time_table_edge_finding = false;
     };
 
     /**

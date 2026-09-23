@@ -818,8 +818,10 @@ if(GCS_BUILD_TESTS)
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_relaxation_test> --overload --search 16)
     add_test(NAME disjunctive_2d_relaxation_edge_finding_search
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_relaxation_test> --edge-finding --search 16)
+    add_test(NAME disjunctive_2d_relaxation_ttef_search
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_relaxation_test> --ttef --search 16)
     foreach(mutation emit_nothing skip_refutation skip_guard_weakening skip_escape_pins overload_emit_nothing overload_skip_energy overload_skip_row
-            edge_finding_one_too_far edge_finding_drop_pushed)
+            edge_finding_one_too_far edge_finding_drop_pushed ttef_one_too_far ttef_drop_pushed)
         add_test(NAME disjunctive_2d_relaxation_mutation_${mutation}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename disjunctive_2d_relaxation_mutation_${mutation} $<TARGET_FILE:disjunctive_2d_relaxation_test> --mutate=${mutation})
@@ -1411,7 +1413,7 @@ if(GCS_BUILD_TESTS)
     # under two seconds with VeriPB checking every proof. The test fails loudly
     # if a cap ever does fire, rather than quietly comparing prefixes.
     foreach(lane disjunctive_2d_relaxation disjunctive_2d_relaxation_search disjunctive_2d_relaxation_overload_search
-            disjunctive_2d_relaxation_edge_finding_search)
+            disjunctive_2d_relaxation_edge_finding_search disjunctive_2d_relaxation_ttef_search)
         set_property(TEST ${lane} APPEND PROPERTY ENVIRONMENT "GCS_TEST_MAX_SOLUTIONS=;GCS_TEST_MAX_RECURSIONS=")
     endforeach()
 

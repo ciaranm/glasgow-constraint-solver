@@ -1521,7 +1521,33 @@ hundred time-table pushes, so the proofs shrink by 1.2–1.7×: it reaches
 the same fixpoint with cheaper certificates. Whether any family gets
 search out of it is not measured.
 
-Not yet: variable sizes, optional rectangles, and TTEF.
+### TTEF over the same row
+
+`Disjunctive2DRules::relaxation_time_table_edge_finding`, off by
+default: edge-finding with the mandatory-part load of the rectangles a
+window does *not* contain counted too, less the pushed rectangle's own
+(its clipped energy covers those points, and each has one capacity row).
+The certificate is edge-finding's plus `Cumulative`'s pins: one
+`active_{i,t} ≥ 1` per profile rectangle and time point, a RUP under the
+reason's two bounds on it, times its height. With nothing contained it
+is time-tabling, which is how the `ttef_lb` fixture goes 0 → 3 → 4.
+
+**The pins are never load-bearing here.** A `--survey` mode in the test
+runs a mutation over the sweep's family and reports which instances
+reject it: dropping the pins was rejected on **0 of 199** firing
+instances, against 13 of 248 on `Cumulative`. The flag's reverse row
+turns the reason's two bounds straight into the pin by propagation, so
+the closing RUP always finds it. They are emitted anyway, so that the
+closing RUP is handed its facts rather than searching for them, and no
+lane pins them. Dropping the pushed rectangle's energy is rejected on
+53 of 199, but *not* on `ttef_lb`, where propagation closes the push
+unaided; that lane runs on an instance the survey found.
+
+On `examples/squares` the same three enumerations give identical trees
+again; TTEF fires 47–335 times per instance, mostly in place of
+edge-finding and time-table pushes, and moves proof size by −8% to +10%.
+
+Not yet: variable sizes and optional rectangles.
 
 ## Reusable ideas
 
