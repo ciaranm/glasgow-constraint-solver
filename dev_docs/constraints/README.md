@@ -140,6 +140,12 @@ constraints and do not restate it.
   fast as Gecode on `grid-colouring`; the half-reified forms reach only CPMpy
   and the `.scp`, and cannot chain through cake yet, which has no rule for
   them (#1100).
+- [`parity.md`](parity.md) — `ParityOdd`, and the certified GF(2) system that
+  `ParitySystem` and the `parity_system_gathering` presolver run over many XORs.
+  No front end reaches the system (#983). On the one corpus model where parity
+  dominates, `parity-learning`, gathering prunes nothing and costs four times as
+  much: at every node, unit propagation has already done all elimination could.
+  `ParityOdd` alone matches Gecode's node count and is 7.4 times slower.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
