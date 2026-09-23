@@ -2,6 +2,8 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
+#include <gcs/restarts.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
@@ -406,6 +408,36 @@ auto main(int argc, char * argv[]) -> int
                 }
                 if (proofs && ! run_veripb(name + ".opb", name + ".pbp")) {
                     println(cerr, "constant origin: veripb rejected the proof");
+                    return EXIT_FAILURE;
+                }
+            }
+
+            // Two rectangles sharing an x origin, found by a random fuzz
+            // campaign under AddressSanitizer. A push's justification runs after
+            // the push has landed, and it read the blocker's bounds from the
+            // state: sharing the pushed variable, they were the pushed bounds,
+            // and after a push that wiped the domain out they were the bounds of
+            // an empty interval set. The search settings are the ones that reach
+            // that push, and the check that bites is the sanitizer's, so this
+            // only pins the fix in the Sanitize build.
+            if (strict) {
+                Problem p;
+                vector<pair<int, int>> domains{{1, 6}, {0, 4}, {1, 4}, {1, 4}, {0, 5}, {0, 3}, {1, 6}, {1, 2}, {0, 5}, {2, 4}, {0, 2}};
+                vector<IntegerVariableID> v;
+                for (auto [lo, hi] : domains)
+                    v.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+                auto c = [](int k) -> IntegerVariableID { return constant_variable(Integer{k}); };
+                p.post(Disjunctive2D{{v[0], v[2], v[4], v[6], v[8], v[4]}, {v[1], v[3], v[5], v[7], c(2), v[10]},
+                    {c(1), c(3), c(2), c(1), c(2), v[9]}, {c(1), c(1), c(2), c(3), c(1), c(3)}}
+                        .with_strict(true)
+                        .with_rules(Disjunctive2DRules{.cumulative_relaxation = true}));
+                auto name = "disjunctive_2d_" + mode + "_shared_origin";
+                SolveCallbacks callbacks{.solution = [](const CurrentState &) -> bool { return true; },
+                    .branch = branch_with(variable_order::random(p, 672642), value_order::random(672642)),
+                    .restarts = RestartSchedule::luby(50)};
+                solve_with(p, callbacks, proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
+                if (proofs && ! run_veripb(name + ".opb", name + ".pbp")) {
+                    println(cerr, "shared origin: veripb rejected the proof");
                     return EXIT_FAILURE;
                 }
             }
