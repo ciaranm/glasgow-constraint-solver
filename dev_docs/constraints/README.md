@@ -97,10 +97,10 @@ constraints and do not restate it.
   edges and none in the propagator: an XCSP3 `sum ≠` translation whose wrong
   `UNSATISFIABLE` verifies (#1032), constant-condition `If` forms (#1033), and a
   `gcspy` binding posting `≤` for `≥` (#1036). Its inequality's bound pushes are
-  the only unhinted assertions any family document has recorded. The stateless and
-  incremental sweeps give identical searches and each wins by up to 3× somewhere;
-  the default loses 2.2× on one model to per-node heap copies of its fold state
-  (#1034).
+  the only unhinted assertions any family document has recorded. The stateless
+  and incremental sweeps find the same solutions and each wins by up to 3×
+  somewhere; the default loses 2.2× on one model to per-node heap copies of its
+  fold state (#1034).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
