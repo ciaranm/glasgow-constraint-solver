@@ -8,7 +8,10 @@
 > #992 → #999.
 > Two more wrong answers turned up while fixing them and are fixed in the same
 > pull requests. Filed since: #1006 (MiniZinc differential tests over the shapes
-> a front end gets wrong). Already open and touching this family: #522 (SCC
+> a front end gets wrong), whose pilot on this family's globals merged as #1011
+> and fixed two more `arg_sort` bugs, one of them #1010; and #1008 (the
+> single-value reason cache sized by the span of variable IDs, not the scope),
+> fix open as #1020. Already open and touching this family: #522 (SCC
 > incrementality), #944 (Hall proofs cost values × vars²), #833 (the
 > large-domain policy; the GAC arm is a `KnownTrip`), #868 (cross-solver).
 > Tracked under #871.
@@ -1361,7 +1364,15 @@ Four binaries, and a family whose coverage is uneven in an instructive way.
   why the MiniZinc bug survived; #997 added one. Every global's MiniZinc tests
   are thin on the shapes a front end gets wrong — index sets, empty arrays,
   repeated variables — and Gecode, the harness's reference, is itself wrong or
-  errors on some of them: that is #1006.
+  errors on some of them: that is #1006. For this family's globals it is now
+  done: #1011 added nine MiniZinc shape lanes over `all_different`,
+  `alldifferent_except` and its `_0` spelling, `symmetric_all_different`,
+  `inverse` and `arg_sort`, compared against the standard library's
+  decompositions (`-G std`) where native Gecode is wrong, and mutation-checked
+  against eleven front-end breakages. `all_different` itself had no lane before.
+  They found two `arg_sort` bugs, both outside this family's classes: two
+  `ArgSort`s in one problem shared proof names (#1010), and a reified
+  `arg_sort` did not flatten.
 - **There was no wide repeated handle in `AllDifferentExcept`**, so the forcing
   loop's width cost was visible only to a probe written for this audit. Since
   #1004 an audit-lane row and a proof-size row see it.
@@ -1733,7 +1744,8 @@ evidence, and the family's standing work.
    yet; cheap.
 2. **#1006 — MiniZinc differential tests over the shapes front ends get
    wrong.** #987 was invisible to every check but one, and this family's globals
-   are the natural pilot.
+   were the natural pilot. The pilot is done (#1011); what is left of #1006 is
+   the other families.
 3. **#1013 writes the sinks-first order down and checks it.** The
    comment at the batch loop covers rule 2 as well, which depends on the order
    too; `prove_deletion_using_sccs` throws if rule 3's reason does not already
