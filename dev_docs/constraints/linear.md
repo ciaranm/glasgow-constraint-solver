@@ -7,9 +7,9 @@
 > forms with a constant condition enforce the wrong constraint), #1034 (the
 > incremental propagator's state is a heap allocation per slot per node),
 > #1035 (reasons and justifications name every term's bound, even untouched
-> ones), #1036 (`gcspy`'s `post_linear_greater_equal_iff` posts `≤`). Already
-> open and touching this family: #868 (cross-solver). More to record under
-> [Next steps](#next-steps). Tracked under #871.
+> ones), #1036 (`gcspy`'s `post_linear_greater_equal_iff` posts `≤`), #1042
+> (the reified equality ignores its bounds), #1043 (tidying). Already open and
+> touching this family: #868 (cross-solver). Tracked under #871.
 
 The linear family is `LinearEquality`, `LinearNotEquals`,
 `LinearLessThanEqual`, `LinearGreaterThanEqual` and their `If`/`Iff` reified
@@ -185,7 +185,7 @@ branch for the equality.
 That asymmetry is a strength gap: the equality never asks whether its bounds
 already exclude `v`. `c ↔ (Σ xᵢ = 100)` over `xᵢ ∈ 0..3` fails once on `c = 1`,
 where the `≥` form infers `¬c` at the root. It costs nothing measurable on the
-corpus; see [Next steps](#next-steps).
+corpus (#1042).
 
 ### Relation to other families
 
@@ -978,7 +978,7 @@ no propagator changes strength when proofs are on.
   overflow` from inside propagation.
 - **A reified equality waits for its last unfixed term** before deciding its
   condition, even when its bounds already exclude the value. This costs nothing
-  measurable on the corpus.
+  measurable on the corpus (#1042).
 - **No `If` forms from MiniZinc**, since `mznlib` declares no `*_imp`.
 
 ### Next steps
@@ -995,16 +995,15 @@ Ranked by what they buy for what they cost.
    proofs consultant whether the `pol` can drop them too. The largest proof-size
    lever in the family, and on 0/1 sums likely an order of magnitude.
 5. **Hint the inequality's bound pushes** with `hints::LinearInequality{owner}`,
-   which already exists. Unfiled, and cheap. It is the only thing standing
-   between rule 1 and `hinted` for an inequality. It is attribution, not a
-   subhint, so it is outside the policy of waiting for the justifier to ask.
+   which already exists. It is the only thing standing between rule 1 and
+   `hinted` for an inequality. Deliberately not filed (Ciaran, 2026-09-23): it
+   will show up clearly when the justifier work reaches it.
 6. **#1034** — make the fold state fit in `std::any`, make slot copies cheap
    engine-wide, or allocate an `Iff`'s second direction lazily. Then re-measure
    `pattern-set-mining-k2`, `unit-commitment` and `vrp` together.
 7. **Tests**: long sums (tens of terms, so folding and reasons have something to
-   do), large coefficients, a constant condition on every form, and an
-   inferences-level check that every assertion carries a hint. Unfiled.
-8. **Tidying**, unfiled:
+   do), large coefficients, and a constant condition on every form. Unfiled.
+8. **Tidying**, #1043:
    - delete `propagate_linear`'s dead `pair<bool, SimpleIntegerVariableID>`
      branches, which never match `PositiveOrNegative`;
    - correct `infer_cond_when_undecided`'s comment about which forms reach it;
@@ -1015,9 +1014,8 @@ Ranked by what they buy for what they cost.
    - fold `linear-slack-waking.md` into this document's commentary. That also
      means updating the comment in `propagate.cc` that cites it, so it waits for
      a non-docs change.
-9. **A bounds check in the undecided reified equality.** Cheap, and it would
-   remove the one-failure probe case, but the corpus shows no benefit. Record,
-   don't prioritise.
+9. **#1042 — a bounds check in the undecided reified equality.** Cheap, and it
+   would remove the one-failure probe case, but the corpus shows no benefit.
 10. **#868** — cross-solver, against Gecode's `linear` on the linear-only corpus
     models, which is the family's natural benchmark.
 
