@@ -113,16 +113,21 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program options")                                                                   //
-            ("help", "Display help information")                                                                 //
-            ("prove", "Create a proof")                                                                          //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                                     //
-                cxxopts::value<string>()->default_value("squares"))                                              //
-            ("stats", "Print solve statistics")                                                                  //
-            ("relaxation", "Enable Disjunctive2D's cumulative relaxation rule")                                  //
-            ("relaxation-overload", "Enable the overload check on the cumulative relaxation")                    //
-            ("relaxation-edge-finding", "Enable edge-finding on the cumulative relaxation")                      //
-            ("relaxation-ttef", "Enable time-table edge-finding on the cumulative relaxation")                   //
+        options.add_options("Program options")                                                 //
+            ("help", "Display help information")                                               //
+            ("prove", "Create a proof")                                                        //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",                   //
+                cxxopts::value<string>()->default_value("squares"))                            //
+            ("stats", "Print solve statistics")                                                //
+            ("relaxation", "Enable Disjunctive2D's cumulative relaxation rule")                //
+            ("relaxation-overload", "Enable the overload check on the cumulative relaxation")  //
+            ("relaxation-edge-finding", "Enable edge-finding on the cumulative relaxation")    //
+            ("relaxation-ttef", "Enable time-table edge-finding on the cumulative relaxation") //
+            ("projection",
+                "Run Cumulative's propagator on each axis's projection, with these of its rules: "
+                "a comma-separated list of tt, overload, profile, elastic, knapsack, ef, ttef, eef, nfnl, "
+                "nfnl-published, or 'default' or 'all'",
+                cxxopts::value<string>())                                                                        //
             ("all", "Enumerate every packing rather than stopping at the first")                                 //
             ("timeout", "Abort the solve after this many seconds", cxxopts::value<double>()->default_value("0")) //
             ("instance", "Built-in instance to solve", cxxopts::value<string>()->default_value("tight"))         //
@@ -150,6 +155,8 @@ auto main(int argc, char * argv[]) -> int
         println("--relaxation-edge-finding pushes a square away from a range of columns");
         println("that the squares inside it leave too little room in; --relaxation-ttef");
         println("does the same counting the mandatory parts of the squares outside it.");
+        println("--projection runs Cumulative's own propagator on each axis instead, over");
+        println("the same capacity rows, with whichever of its rules are listed.");
         println("");
         println("Built-in instances: tight (unsatisfiable by one unit), loose, area (too");
         println("much area, with no mandatory parts at the root), perfect21");
@@ -203,6 +210,50 @@ auto main(int argc, char * argv[]) -> int
         .relaxation_overload = options_vars.contains("relaxation-overload"),
         .relaxation_edge_finding = options_vars.contains("relaxation-edge-finding"),
         .relaxation_time_table_edge_finding = options_vars.contains("relaxation-ttef")};
+    if (options_vars.contains("projection")) {
+        auto spec = options_vars["projection"].as<string>();
+        CumulativeRules projection;
+        if (spec == "all")
+            projection = CumulativeRules{.elastic_overload = true,
+                .knapsack_overload = true,
+                .edge_finding = true,
+                .time_table_edge_finding = true,
+                .energetic_edge_finding = true,
+                .not_first_not_last = true,
+                .not_first_not_last_published = true};
+        else if (spec != "default") {
+            projection = CumulativeRules{.time_table = false, .overload = false, .profile_overload = false};
+            std::stringstream names{spec};
+            string rule;
+            while (std::getline(names, rule, ',')) {
+                if (rule == "tt")
+                    projection.time_table = true;
+                else if (rule == "overload")
+                    projection.overload = true;
+                else if (rule == "profile")
+                    projection.profile_overload = true;
+                else if (rule == "elastic")
+                    projection.elastic_overload = true;
+                else if (rule == "knapsack")
+                    projection.knapsack_overload = true;
+                else if (rule == "ef")
+                    projection.edge_finding = true;
+                else if (rule == "ttef")
+                    projection.time_table_edge_finding = true;
+                else if (rule == "eef")
+                    projection.energetic_edge_finding = true;
+                else if (rule == "nfnl")
+                    projection.not_first_not_last = true;
+                else if (rule == "nfnl-published")
+                    projection.not_first_not_last_published = true;
+                else {
+                    println(cerr, "Error: no Cumulative rule named '{}'", rule);
+                    return EXIT_FAILURE;
+                }
+            }
+        }
+        rules.cumulative_projection = projection;
+    }
     p.post(Disjunctive2D{xs, ys, sizes, sizes}.with_rules(rules));
 
     auto enumerate = options_vars.contains("all");

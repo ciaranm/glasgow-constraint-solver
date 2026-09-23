@@ -1,3 +1,4 @@
+#include <gcs/constraints/cumulative/propagate.hh>
 #include <gcs/constraints/disjunctive_2d/disjunctive_2d.hh>
 #include <gcs/constraints/disjunctive_2d/hints.hh>
 #include <gcs/constraints/innards/task_presence.hh>
@@ -5,6 +6,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/comparator_network.hh>
+#include <gcs/innards/proofs/flag_bridge.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
@@ -325,6 +327,60 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         }
     }
 
+    // Disjunctive2DRules::cumulative_projection: the Cumulative each axis
+    // projects to, over the relaxation's members with a constant time-axis
+    // size as well --- a variable one would need the proof-only end a
+    // Cumulative pins a two-variable `after` through, which is a later step.
+    // Resolved here, from the model alone, like the members themselves, so
+    // that the projection draws the same inferences with proofs off.
+    for (auto time_axis : {0, 1}) {
+        auto & rects = _projection_rects[time_axis];
+        rects.clear();
+        _projection[time_axis] = nullptr;
+        if (! _rules.cumulative_projection)
+            continue;
+
+        const auto & time_pos = time_axis == 0 ? _xs : _ys;
+        const auto & time_size = time_axis == 0 ? _widths : _heights;
+        const auto & res_size = time_axis == 0 ? _heights : _widths;
+        for (auto i : _relaxation_members[time_axis])
+            if (is_constant_variable(time_size[i]) && constant_value_of(time_size[i]) >= 1_i)
+                rects.push_back(i);
+        if (rects.size() < 2) {
+            rects.clear();
+            continue;
+        }
+
+        auto [window_lo, window_hi] = _relaxation_window[time_axis];
+        auto inputs = std::make_shared<CumulativeInputs>();
+        inputs->capacity = constant_variable(window_hi - window_lo);
+        inputs->rules = *_rules.cumulative_projection;
+        for (size_t k = 0; k < rects.size(); ++k) {
+            auto i = rects[k];
+            inputs->starts.push_back(time_pos[i]);
+            inputs->lengths.push_back(time_size[i]);
+            inputs->heights.push_back(res_size[i]);
+            inputs->presence.push_back(nullopt);
+            inputs->active_tasks.push_back(k);
+            auto window = cumulative_task_window(initial_state, time_pos[i], time_size[i]);
+            inputs->per_task_t_lo.push_back(window.lo);
+            inputs->per_task_t_hi.push_back(window.hi);
+            inputs->flag_key_positions.push_back(static_cast<size_t>(time_axis) * n + i);
+        }
+        if (inputs->rules.overload) {
+            auto overload_data = prepare_cumulative_overload_check(
+                inputs->starts, inputs->lengths, inputs->heights, inputs->active_tasks, inputs->per_task_t_lo, inputs->per_task_t_hi, initial_state);
+            inputs->overload_tasks = move(overload_data.overload_tasks);
+            inputs->time_slot_prefix = move(overload_data.time_slot_prefix);
+            inputs->time_slot_lo = overload_data.time_slot_lo;
+        }
+        inputs->end_ge_lines = std::make_shared<vector<optional<ProofLine>>>(rects.size());
+        inputs->guarded_energy =
+            std::make_shared<map<std::tuple<size_t, Integer, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>();
+        inputs->capacity_row_family = time_axis == 0 ? "projx" : "projy";
+        _projection[time_axis] = move(inputs);
+    }
+
     return true;
 }
 
@@ -415,6 +471,33 @@ auto Disjunctive2D::define_proof_model(ProofModel & model, const State &) -> voi
             _clause_lines.emplace(make_pair(i, j), clause);
         }
     }
+
+    // Disjunctive2DRules::cumulative_projection's per-(task, time) flags,
+    // *named* here and nothing more: they are defined inside the proof, on
+    // demand, by the definer install_propagators publishes, exactly as a
+    // start-checkpoint Cumulative's are. So nothing reaches the OPB. The keys
+    // are Cumulative's own, at position `axis x n + i`, so that the propagator
+    // asking to have one defined, and anyone else looking one up, finds it by
+    // the scheme every other Cumulative flag is found by.
+    for (auto time_axis : {0, 1}) {
+        auto & inputs = _projection[time_axis];
+        if (! inputs)
+            continue;
+        auto & tracker = model.names_and_ids_tracker();
+        auto m = _projection_rects[time_axis].size();
+        inputs->before_flags.assign(m, {});
+        inputs->after_flags.assign(m, {});
+        inputs->active_flags.assign(m, {});
+        auto name = [&](const ProofFlagKey & key) { return tracker.create_proof_flag_values(_constraint_id, key.values, key.annotation); };
+        for (size_t k = 0; k < m; ++k) {
+            auto position = inputs->flag_key_positions[k];
+            for (Integer t = inputs->per_task_t_lo[k]; t <= inputs->per_task_t_hi[k]; ++t) {
+                inputs->before_flags[k].push_back(name(ConstraintProofModelData<Cumulative>::before_flag_key(position, t)));
+                inputs->after_flags[k].push_back(name(ConstraintProofModelData<Cumulative>::after_flag_key(position, t)));
+                inputs->active_flags[k].push_back(name(ConstraintProofModelData<Cumulative>::active_flag_key(position, t)));
+            }
+        }
+    }
 }
 
 auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
@@ -435,6 +518,199 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
         // its origin does.
         if (_presence[i] && ! is_constant_variable(*_presence[i]))
             triggers.on_instantiated.emplace_back(*_presence[i]);
+    }
+
+    // Disjunctive2DRules::cumulative_projection: Cumulative's own propagator,
+    // one per axis, over flags and rows this constraint supplies inside the
+    // proof (#973). Installed before the main propagator below moves the
+    // members this needs out.
+    if (_projection[0] || _projection[1]) {
+        for (auto time_axis : {0, 1}) {
+            if (! _projection[time_axis])
+                continue;
+            _projection[time_axis]->owner = constraint_id();
+            Triggers projection_triggers;
+            for (const auto & start : _projection[time_axis]->starts)
+                projection_triggers.on_bounds.emplace_back(start);
+            propagators.install(
+                constraint_id(),
+                [inputs = _projection[time_axis]](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    return propagate_cumulative(*inputs, state, inference, logger);
+                },
+                projection_triggers);
+        }
+
+        // The proof side: a definer for the flags define_proof_model named, and
+        // per axis a family deriving the capacity row at a time point the first
+        // time something cites it. From an initialiser because that is the
+        // earliest point with a logger, as for a start-checkpoint Cumulative.
+        propagators.install_initialiser(
+            [id = constraint_id(), n = _xs.size(), projection = _projection, rects = _projection_rects, window = _relaxation_window, xs = _xs,
+                ys = _ys, before_x = _before_x, before_y = _before_y, mutation = _mutation](State &, auto &, ProofLogger * const logger) -> void {
+                if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
+                    return;
+                auto & tracker = logger->names_and_ids_tracker();
+
+                // Which of a projection's tasks a flag key's position names, if
+                // any: `axis x n + i`, for a rectangle that axis projects.
+                auto task_named = [=](size_t position) -> optional<pair<int, size_t>> {
+                    auto axis = static_cast<int>(position / n);
+                    if (axis > 1 || ! projection[axis])
+                        return nullopt;
+                    const auto & axis_rects = rects[axis];
+                    auto found = std::find(axis_rects.begin(), axis_rects.end(), position % n);
+                    if (found == axis_rects.end())
+                        return nullopt;
+                    return pair{axis, static_cast<size_t>(found - axis_rects.begin())};
+                };
+
+                // The same three definitions a start-checkpoint Cumulative emits for
+                // its own flags, from the same statements of what they say, and
+                // keyed the same way: all three for one (task, time) at once, on the
+                // activity flag's key.
+                tracker.publish_flag_definer(id, [=, &tracker](ProofLogger & definer_logger, const ProofFlagKey & key) {
+                    if (key.values.size() != 2 || key.annotation != ConstraintProofModelData<Cumulative>::active_flag_key(0, 0_i).annotation)
+                        return;
+                    auto named = task_named(static_cast<size_t>(key.values[0]));
+                    if (! named)
+                        return;
+                    auto [axis, k] = *named;
+                    const auto & inputs = *projection[axis];
+                    auto t = Integer{key.values[1]};
+                    if (t < inputs.per_task_t_lo[k] || t > inputs.per_task_t_hi[k])
+                        return;
+                    auto idx = static_cast<size_t>((t - inputs.per_task_t_lo[k]).raw_value);
+                    auto define = [&](const ProofFlag & flag, const WPBSumLE & says) {
+                        auto [implies, implied_by] = definer_logger.emit_red_proof_lines_reifying(says, flag, ProofLevel::Top);
+                        tracker.register_in_proof_reification(flag, implies, implied_by);
+                    };
+                    define(inputs.before_flags[k][idx], per_time_before_says(inputs.starts[k], t));
+                    define(inputs.after_flags[k][idx], per_time_after_says(inputs.starts[k], inputs.lengths[k], t));
+                    define(inputs.active_flags[k][idx], per_time_active_says(inputs.before_flags[k][idx], inputs.after_flags[k][idx], nullopt));
+                });
+
+                for (auto time_axis : {0, 1}) {
+                    if (! projection[time_axis])
+                        continue;
+                    tracker.publish_derived_line_family(
+                        id, *projection[time_axis]->capacity_row_family, [=, &tracker](ProofLogger & row_logger, Integer t) -> optional<ProofLine> {
+                            const auto & inputs = *projection[time_axis];
+                            const auto & tpos = 0 == time_axis ? xs : ys;
+                            const auto & rpos = 0 == time_axis ? ys : xs;
+                            const auto & tbefore = 0 == time_axis ? before_x : before_y;
+                            const auto & rbefore = 0 == time_axis ? before_y : before_x;
+                            const auto & axis_rects = rects[time_axis];
+                            auto [window_lo, window_hi] = window[time_axis];
+
+                            vector<size_t> members;
+                            for (size_t k = 0; k < axis_rects.size(); ++k)
+                                if (inputs.per_task_t_lo[k] <= t && t <= inputs.per_task_t_hi[k])
+                                    members.push_back(k);
+                            if (members.empty())
+                                return nullopt;
+                            row_logger.emit_proof_comment(
+                                "disjunctive2d cumulative projection row axis=" + std::to_string(time_axis) + " t=" + std::to_string(t.raw_value));
+
+                            auto flag_index = [&](size_t k) { return static_cast<size_t>((t - inputs.per_task_t_lo[k]).raw_value); };
+                            auto active = [&](size_t k) -> const ProofFlag & {
+                                tracker.ensure_flag_defined(
+                                    id, ConstraintProofModelData<Cumulative>::active_flag_key(inputs.flag_key_positions[k], t), row_logger);
+                                return inputs.active_flags[k][flag_index(k)];
+                            };
+                            auto len = [&](size_t k) { return constant_value_of(inputs.lengths[k]); };
+                            auto height = [&](size_t k) { return constant_value_of(inputs.heights[k]); };
+
+                            WPBSum flagged;
+                            for (auto k : members)
+                                flagged += height(k) * active(k);
+                            auto too_strong = std::holds_alternative<disjunctive_2d_proof_mutation::ProjectionRowTooStrong>(mutation);
+                            auto claim = flagged <= window_hi - window_lo - (too_strong ? 1_i : 0_i);
+
+                            // One task alone is inside the window by construction:
+                            // the window is the members' own declared extent.
+                            if (members.size() < 2)
+                                return row_logger.emit_rup_proof_line(claim, ProofLevel::Top);
+
+                            auto width = static_cast<int>(std::bit_width(static_cast<unsigned long long>(window_hi.raw_value)));
+                            for (auto k : members) {
+                                auto rv = get<SimpleIntegerVariableID>(rpos[axis_rects[k]]);
+                                if (tracker.num_bits(rv) > 0_i && tracker.get_bit(rv, 0_i).first != 1_i)
+                                    throw ProofError{"disjunctive2d cumulative projection wants an unsigned resource position"};
+                                width = max(width, static_cast<int>(tracker.num_bits(rv).raw_value));
+                            }
+                            ComparatorNetwork network(row_logger, width, window_lo, window_hi, ProofLevel::Top);
+
+                            // Being active at `t` puts a rectangle's time-axis
+                            // position in `[t - len + 1, t]`. The flags say that
+                            // over the position's bits, as a Cumulative's do, and
+                            // the pair refutations below speak order literals, so
+                            // each bound is bridged across once:
+                            //   before -> pos <= t, plus pos >= t + 1's definition,
+                            // saturates to `~before + ~[pos >= t + 1] >= 1`, and
+                            // likewise for `after`.
+                            vector<ProofWire> wires;
+                            auto skip_bridge = std::holds_alternative<disjunctive_2d_proof_mutation::ProjectionSkipBridge>(mutation);
+                            for (auto k : members) {
+                                auto i = axis_rects[k];
+                                if (! skip_bridge) {
+                                    PolBuilder pol;
+                                    pol.add(reification_half(tracker, inputs.before_flags[k][flag_index(k)], ReificationHalf::Implies));
+                                    pol.add_for_literal(tracker, tpos[i] >= t + 1_i);
+                                    pol.saturate().emit(row_logger, ProofLevel::Temporary);
+                                }
+                                if (! skip_bridge) {
+                                    PolBuilder pol;
+                                    pol.add(reification_half(tracker, inputs.after_flags[k][flag_index(k)], ReificationHalf::Implies));
+                                    pol.add_for_literal(tracker, tpos[i] < t - len(k) + 1_i);
+                                    pol.saturate().emit(row_logger, ProofLevel::Temporary);
+                                }
+
+                                auto rv = get<SimpleIntegerVariableID>(rpos[i]);
+                                vector<ProofLiteralOrFlag> bits;
+                                for (Integer bit = 0_i; bit < tracker.num_bits(rv); ++bit)
+                                    bits.push_back(ProofBitVariable{rv, bit, true});
+                                wires.push_back(network.add_optional_task(ProofLiteralOrFlag{active(k)}, network.wire_over(bits), height(k), "d2p"));
+                            }
+
+                            for (size_t p = 0; p < members.size(); ++p)
+                                for (size_t q = p + 1; q < members.size(); ++q) {
+                                    auto kp = members[p], kq = members[q];
+                                    auto i = axis_rects[kp], j = axis_rects[kq];
+                                    // Both active at `t` refutes both time-axis
+                                    // disjuncts of the pair's clause, and what is
+                                    // left of it separates them on the other axis.
+                                    auto refute = [&](size_t x, size_t kx, size_t y) {
+                                        PolBuilder pol;
+                                        pol.add(tbefore.at(make_pair(x, y)).forward_line);
+                                        pol.add_for_literal(tracker, tpos[x] >= t - len(kx) + 1_i);
+                                        pol.add_for_literal(tracker, tpos[y] < t + 1_i);
+                                        pol.saturate().emit(row_logger, ProofLevel::Temporary);
+                                    };
+                                    if (! std::holds_alternative<disjunctive_2d_proof_mutation::ProjectionSkipRefutations>(mutation)) {
+                                        refute(i, kp, j);
+                                        refute(j, kq, i);
+                                    }
+                                    WPBSum both_active;
+                                    both_active += 1_i * ! active(kp);
+                                    both_active += 1_i * ! active(kq);
+                                    both_active += 1_i * rbefore.at(make_pair(i, j)).flag;
+                                    both_active += 1_i * rbefore.at(make_pair(j, i)).flag;
+                                    auto clause = row_logger.emit_rup_proof_line(move(both_active) >= 1_i, ProofLevel::Top);
+
+                                    auto direction = [&](size_t x, size_t y) -> ModelSeparation {
+                                        const auto & data = rbefore.at(make_pair(x, y));
+                                        return ModelSeparation{data.flag, data.forward_line, data.forward_guard_coefficient};
+                                    };
+                                    network.add_optional_separation(wires[p], direction(i, j), wires[q], direction(j, i), clause);
+                                }
+
+                            // Restated as exactly the row a Cumulative's citers
+                            // sum, whatever order the network left its terms in.
+                            auto derived = network.sum_up(network.sort(wires));
+                            return row_logger.emit(ImpliesProofRule{derived}, claim, ProofLevel::Top);
+                        });
+                }
+            });
     }
 
     propagators.install(

@@ -829,6 +829,37 @@ extra donor. #548's are emitted at `Top`, where none of them ever dies, which is
 that raises the level around its own working before bridging does not have that
 problem --- `InferredCumulative`'s does, and only the row it hands back
 survives.
+
+### A constraint with no rows of its own runs the propagator itself (#973)
+
+A derived Cumulative is how a *presolver* gets `Cumulative`'s reasoning over
+someone else's rows. A *constraint* that implies a `Cumulative` does not need
+it: `CumulativeInputs` was hoisted out of the propagator so that nothing about
+it says where the flags and rows came from, and a constraint can fill one in
+and install `propagate_cumulative` on it directly. `Disjunctive2D`'s
+projection onto each axis
+([`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)) is the first
+to, and it needed two things the posted constraint never did, both defaulting
+to what a posted `Cumulative` does, so that its proofs are unchanged:
+
+- **`capacity_row_family`**: where a row comes from when `capacity_lines` has
+  none. The propagator asks the owner's line family (the same
+  `publish_derived_line_family` a start-checkpoint `Cumulative` publishes for
+  derived constraints to ask), so a row is derived the first time anything
+  cites it and memoised. Deriving every row up front, as
+  `install_derived_cumulative` does so that it can decline cleanly, would be the
+  wrong trade for a row that cannot decline and costs `O(n^3)`.
+- **`flag_key_positions`**: the position each task's flags are keyed under by
+  the owner. The propagator asks the owner to define a flag before citing it,
+  by `ConstraintProofModelData<Cumulative>::active_flag_key(position, t)`; a
+  constraint running the propagator over a subset of its objects, or over two
+  projections of them, keys its flags its own way.
+
+What the flags *say* is stated once, in `per_time_before_says` and friends
+(`propagate.hh`), which are no longer private to `cumulative.cc`: there are now
+three places that define flags the propagator cites, and every one of them has
+to mean exactly what its certificates assume.
+
 ## Optional tasks (issue #543)
 
 The optional-task constructor gives each task a `{0, 1}` presence

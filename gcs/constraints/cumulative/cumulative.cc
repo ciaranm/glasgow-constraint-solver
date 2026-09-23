@@ -132,50 +132,6 @@ namespace
 
     // The variable-height contribution h_i·active is linearised over cake's
     // per-bit contribution flags cc_k (weight 2^k): contrib = Σ 2^k · cc_k.
-    // What the three per-(task, time) flags say. One statement each, because
-    // #780 defines them two ways --- as labelled OPB rows under the
-    // time-indexed encodings, and as `red` steps inside the proof under the
-    // start-checkpoint one --- and a second copy that drifted would make a flag
-    // mean one thing to the encoder and another to everything that cites it.
-    //
-    // `operator>=` renders as a WPBSumLE like `operator<=` does, so all three
-    // come back in the one type the reifying calls take.
-    auto per_time_before_says(const IntegerVariableID & start, Integer t) -> WPBSumLE
-    {
-        return WPBSum{} + 1_i * start <= t;
-    }
-
-    // after_{i,t} <-> task i not yet finished at t <-> s_i + l_i >= t + 1.
-    // Constant length: single-variable s_i >= t-l+1. Variable length: reify on
-    // s_i + l_i directly (any constant operand folds in), as cake_pb_cp's
-    // time-indexed encoder did. The proof-only end (when both vary)
-    // is NOT used here; it is only the single-variable handle the propagator
-    // pins through, bridged to this flag by the lemma the initialiser emits.
-    auto per_time_after_says(const IntegerVariableID & start, const IntegerVariableID & length, Integer t) -> WPBSumLE
-    {
-        if (is_constant_variable(length))
-            return WPBSum{} + 1_i * start >= t - constant_value_of(length) + 1_i;
-        return WPBSum{} + 1_i * start + 1_i * length >= t + 1_i;
-    }
-
-    // active_{i,t} <-> before /\ after, plus the presence conjunct for an
-    // optional task. The presence literal is the {0,1} variable's single PB
-    // atom, so the three-way AND costs one more term in the same two
-    // reification halves --- no extra flag, and nothing else in the encoding
-    // has to know whether the task is optional. An absent task fails the AND at
-    // every t, so it drops out of every capacity row, which is exactly "an
-    // absent task consumes nothing".
-    auto per_time_active_says(const ProofFlag & before, const ProofFlag & after, const optional<IntegerVariableID> & presence) -> WPBSumLE
-    {
-        auto conjuncts = WPBSum{} + 1_i * before + 1_i * after;
-        auto arity = 2_i;
-        if (presence) {
-            conjuncts += 1_i * (*presence == 1_i);
-            arity = 3_i;
-        }
-        return move(conjuncts) >= arity;
-    }
-
     auto contrib_sum_of(const vector<ProofFlag> & cc) -> WPBSum
     {
         WPBSum sum;
@@ -183,6 +139,47 @@ namespace
             sum += power2(k) * cc[k.raw_value];
         return sum;
     }
+}
+
+// What the three per-(task, time) flags say, stated once; propagate.hh says
+// why that matters.
+//
+// `operator>=` renders as a WPBSumLE like `operator<=` does, so all three
+// come back in the one type the reifying calls take.
+auto gcs::innards::per_time_before_says(const IntegerVariableID & start, Integer t) -> WPBSumLE
+{
+    return WPBSum{} + 1_i * start <= t;
+}
+
+// after_{i,t} <-> task i not yet finished at t <-> s_i + l_i >= t + 1.
+// Constant length: single-variable s_i >= t-l+1. Variable length: reify on
+// s_i + l_i directly (any constant operand folds in), as cake_pb_cp's
+// time-indexed encoder did. The proof-only end (when both vary)
+// is NOT used here; it is only the single-variable handle the propagator
+// pins through, bridged to this flag by the lemma the initialiser emits.
+auto gcs::innards::per_time_after_says(const IntegerVariableID & start, const IntegerVariableID & length, Integer t) -> WPBSumLE
+{
+    if (is_constant_variable(length))
+        return WPBSum{} + 1_i * start >= t - constant_value_of(length) + 1_i;
+    return WPBSum{} + 1_i * start + 1_i * length >= t + 1_i;
+}
+
+// active_{i,t} <-> before /\ after, plus the presence conjunct for an
+// optional task. The presence literal is the {0,1} variable's single PB
+// atom, so the three-way AND costs one more term in the same two
+// reification halves --- no extra flag, and nothing else in the encoding
+// has to know whether the task is optional. An absent task fails the AND at
+// every t, so it drops out of every capacity row, which is exactly "an
+// absent task consumes nothing".
+auto gcs::innards::per_time_active_says(const ProofFlag & before, const ProofFlag & after, const optional<IntegerVariableID> & presence) -> WPBSumLE
+{
+    auto conjuncts = WPBSum{} + 1_i * before + 1_i * after;
+    auto arity = 2_i;
+    if (presence) {
+        conjuncts += 1_i * (*presence == 1_i);
+        arity = 3_i;
+    }
+    return move(conjuncts) >= arity;
 }
 
 Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<IntegerVariableID> lengths, vector<IntegerVariableID> heights,
@@ -1161,7 +1158,9 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     auto ensure_flags_defined = [&](size_t i, size_t idx) {
         if (logger)
             logger->names_and_ids_tracker().ensure_flag_defined(inputs.owner,
-                ConstraintProofModelData<Cumulative>::active_flag_key(i, inputs.per_task_t_lo[i] + Integer{static_cast<long long>(idx)}), *logger);
+                ConstraintProofModelData<Cumulative>::active_flag_key(inputs.flag_key_positions.empty() ? i : inputs.flag_key_positions[i],
+                    inputs.per_task_t_lo[i] + Integer{static_cast<long long>(idx)}),
+                *logger);
     };
     auto before_flag = [&](size_t i, size_t idx) -> const ProofFlag & {
         ensure_flags_defined(i, idx);
@@ -1219,9 +1218,14 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             if (auto recovered = recover_cumulative_capacity_row(*logger, inputs, *inputs.checkpoint_recovery, t))
                 return recovered;
         auto line = capacity_lines.find(t);
-        if (line == capacity_lines.end())
-            return std::nullopt;
-        return line->second;
+        if (line != capacity_lines.end())
+            return line->second;
+        // A constraint with no rows of its own, deriving them as they are
+        // cited (#973). The tracker memoises, so the second citer of a point
+        // pays nothing, and the deriver's rows are at Top.
+        if (logger && inputs.capacity_row_family)
+            return logger->names_and_ids_tracker().find_or_derive_line_in_family(inputs.owner, *inputs.capacity_row_family, t, *logger);
+        return std::nullopt;
     };
     const auto & rules = inputs.rules;
     const auto & mutation = inputs.proof_mutation;

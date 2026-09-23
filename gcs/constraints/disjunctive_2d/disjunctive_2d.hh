@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_DISJUNCTIVE_2D_DISJUNCTIVE_2D_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/constraints/innards/disjunctive_2d_mutations.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/integer.hh>
@@ -11,9 +12,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
+
+namespace gcs::innards
+{
+    struct CumulativeInputs;
+}
 
 namespace gcs
 {
@@ -141,6 +148,31 @@ namespace gcs
          * relaxation_edge_finding. Off by default.
          */
         bool relaxation_time_table_edge_finding = false;
+
+        /**
+         * \brief Run `Cumulative`'s own propagator, with these rules, on each
+         * axis's projection: the whole certified cumulative ladder rather
+         * than the rungs above one at a time.
+         *
+         * Project onto an axis and each rectangle is a task with that axis's
+         * position and size as its start and length and the other axis's size
+         * as its height, on a resource of capacity `H`, the model's extent on
+         * the other axis. A `Cumulative` states that with per-(task, time)
+         * activity flags and one capacity row per time point in its OPB;
+         * this constraint has neither, so it supplies both inside the proof
+         * (#973). The flags are *named* with the model, under
+         * `ConstraintProofModelData<Cumulative>`'s keys at position `axis x n
+         * + i`, and *defined* by `red`, on demand, exactly as a
+         * start-checkpoint `Cumulative` defines its own. The row at a time
+         * point is \ref relaxation_overload's flagged row, over those flags,
+         * derived by innards::ComparatorNetwork the first time something
+         * cites it and cached at `ProofLevel::Top`. Past that the propagator
+         * and every certificate it writes are `Cumulative`'s, unchanged.
+         *
+         * Uses the members \ref relaxation_overload does. nullopt, the
+         * default, runs nothing.
+         */
+        std::optional<CumulativeRules> cumulative_projection = std::nullopt;
     };
 
     /**
@@ -181,9 +213,11 @@ namespace gcs
      * and off by default, the *cumulative relaxation* time-tables the
      * `Cumulative` each axis projection implies --- see
      * Disjunctive2DRules::cumulative_relaxation --- and, also off by default,
-     * checks it for overload (Disjunctive2DRules::relaxation_overload). The
-     * energetic rules above that (edge-finding, TTEF), a 2D sweep, and k
-     * dimensions are left for future work; see #976.
+     * checks it for overload, edge-finding and TTEF
+     * (Disjunctive2DRules::relaxation_overload and the two after it), or runs
+     * `Cumulative`'s own propagator on each projection with whichever of its
+     * rules are asked for (Disjunctive2DRules::cumulative_projection). A 2D
+     * sweep and k dimensions are left for future work; see #976.
      *
      * A rectangle whose presence is still undecided blocks nothing and is
      * pushed nowhere, in either role: a prune that is only valid when the
@@ -276,6 +310,13 @@ namespace gcs
         // the capacity row the check cites be cached at Top.
         std::array<std::pair<Integer, Integer>, 2> _relaxation_window{{{Integer{0}, Integer{0}}, {Integer{0}, Integer{0}}}};
         std::array<std::map<std::size_t, std::pair<Integer, Integer>>, 2> _relaxation_declared_time;
+
+        // Disjunctive2DRules::cumulative_projection, per axis: the rectangles
+        // projected, in the order the projected Cumulative numbers its tasks,
+        // and that Cumulative's inputs, built by prepare() and given their
+        // flags by define_proof_model(). Null where the axis projects nothing.
+        std::array<std::vector<std::size_t>, 2> _projection_rects;
+        std::array<std::shared_ptr<innards::CumulativeInputs>, 2> _projection;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;

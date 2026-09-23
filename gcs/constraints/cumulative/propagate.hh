@@ -8,6 +8,7 @@
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
+#include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/state.hh>
@@ -17,6 +18,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -88,6 +90,24 @@ namespace gcs::innards
         /// its donor's, in the proof.
         std::map<Integer, ProofLine> capacity_lines;
 
+        /// Where the row for a time point comes from when it is not in \ref
+        /// capacity_lines: a family \ref owner published with
+        /// NamesAndIDsTracker::publish_derived_line_family, whose deriver is
+        /// asked for the row the first time something cites it. For a
+        /// constraint that has no per-time rows of its own and derives them,
+        /// which Disjunctive2D's projection onto one axis does (#973): a
+        /// horizon's worth of those derived up front would be paid for whether
+        /// or not any rule ever cited them.
+        std::optional<std::string> capacity_row_family;
+
+        /// Per task, the position its per-(task, time) flags are keyed under
+        /// by \ref owner, which is what asking the owner to define one on
+        /// demand has to name. Empty means each task's own index, which is
+        /// every posted Cumulative; a constraint that runs this propagator over
+        /// a subset of its own objects, or over more than one projection of
+        /// them, keys them its own way and says so here.
+        std::vector<std::size_t> flag_key_positions;
+
         /// Where an inference gets the row for a time point from, when it is
         /// not \ref capacity_lines: recovered from the start-checkpoint block,
         /// in the proof, and cached. Null unless
@@ -153,6 +173,40 @@ namespace gcs::innards
         std::shared_ptr<std::map<std::tuple<std::size_t, Integer, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>
             guarded_energy;
     };
+
+    /**
+     * \brief What `before_{i,t}` says: task `i` has started by `t`, `start <=
+     * t`.
+     *
+     * The three per-(task, time) flags' meanings are stated once, here, because
+     * they are defined in more than one place --- as labelled OPB rows under
+     * the time-indexed encodings, as `red` steps inside the proof under the
+     * start-checkpoint one, and by a Disjunctive2D projecting itself onto an
+     * axis (#973) --- and every citer in propagate_cumulative relies on them
+     * meaning exactly this. A second copy that drifted would make a flag mean
+     * one thing to its definer and another to everything that cites it.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto per_time_before_says(const IntegerVariableID & start, Integer t) -> WPBSumLE;
+
+    /**
+     * \brief What `after_{i,t}` says: task `i` has not finished by `t`,
+     * `start + length >= t + 1`, over the start alone when the length is a
+     * constant.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto per_time_after_says(const IntegerVariableID & start, const IntegerVariableID & length, Integer t) -> WPBSumLE;
+
+    /**
+     * \brief What `active_{i,t}` says: `before /\ after`, and present where
+     * the task is optional.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto per_time_active_says(const ProofFlag & before, const ProofFlag & after, const std::optional<IntegerVariableID> & presence)
+        -> WPBSumLE;
 
     /**
      * \brief The time points one of a Cumulative's tasks could possibly be

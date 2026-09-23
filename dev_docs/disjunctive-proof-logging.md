@@ -1549,6 +1549,116 @@ edge-finding and time-table pushes, and moves proof size by −8% to +10%.
 
 Not yet: variable sizes and optional rectangles.
 
+### `Cumulative`'s own propagator over each projection (#973)
+
+`Disjunctive2DRules::cumulative_projection`, a
+`std::optional<CumulativeRules>` and off by default, takes the other
+route to the same place. It does not build one rung at a time out of the
+flagged row. It installs `Cumulative`'s propagator, `propagate_cumulative`,
+on each axis, over flags and rows this constraint supplies in the proof,
+with whichever of `Cumulative`'s rules are asked for. Every rung
+`Cumulative` has then comes with its certificate unchanged: time-tabling,
+(OC)/(TTOC), the elastic and knapsack rungs, edge-finding, TTEF, energetic
+edge-finding, and both forms of not-first / not-last.
+
+The propagator wants two things: per-(task, time) `before` / `after` /
+`active` flags, meaning what `per_time_before_says` and its two siblings
+say, and one capacity row per time point, `Σ h_i · active_{i,t} ≤ H`, over
+exactly those flags. Both are supplied the way a start-checkpoint
+`Cumulative` supplies its own:
+
+- **Flags.** Named in `define_proof_model`, under
+  `ConstraintProofModelData<Cumulative>`'s keys at position `axis · n + i`.
+  They are defined by `red`, on demand, by a definer that an install
+  initialiser publishes.
+- **Rows.** Derived on demand by one line family per axis (`projx` and
+  `projy`), which the propagator reaches through
+  `CumulativeInputs::capacity_row_family`. The deriver is route A's
+  network over these flags, where route A used flags it minted itself,
+  and it restates the network's endgame as exactly the row with an `ia`.
+
+(See [`cumulative-proof-logging.md`](cumulative-proof-logging.md) for the
+two fields this added to `CumulativeInputs`.)
+
+**The one new step: from bits to order literals.** Route A's activity
+flags were minted over order literals. `Cumulative`'s flags are reified
+over the position's bits, so `before` is itself a PB constraint over
+those bits, and the pair refutations speak order literals. Nothing
+propagates from one PB constraint over a variable's bits to another. So
+before the refutations, each row emits, for every member,
+`~before + ~[x ≥ t + 1] ≥ 1` and `~after + ~[x < t − w + 1] ≥ 1`. Each
+is the flag's forward half plus the literal's definition, saturated.
+These are load-bearing: without them VeriPB rejects `area` and the
+enumeration (the `projection_skip_bridge` lane).
+
+**Why not through `install_derived_cumulative`, as #973 proposed.** The
+issue wanted the derived-Cumulative machinery to learn a second kind of
+donor. That machinery is for presolvers. A constraint can run the
+propagator over its own `CumulativeInputs`, which were hoisted out of
+`Cumulative` for exactly this. The derived path is also eager: it derives
+every row up front so that it can decline cleanly, which is the wrong
+trade for a row that cannot decline and costs about `1.4 KB · n³`.
+Using a `Disjunctive2D` as a *presolver's* donor (capacity strengthening,
+cliques, lifted covers, makespan bounds) is now a small step, because its
+flags can be found under `Cumulative`'s keys. Only the row lookup
+differs: a family per axis, not a `cap_<t>` label or the one `cap`
+family. That step is not taken here.
+
+**Two things about `Cumulative`'s rules the fixtures had to allow for.**
+Its overload check leaves out a task whose start is a {0, 1} variable,
+so the rungs' `y_only` fixture is used one unit higher. And its
+edge-finding runs inside the overload check's sweep, with TTEF a
+strengthening of edge-finding: `edge_finding` needs `overload` on, and
+`time_table_edge_finding` needs `edge_finding` on. With those set it
+reaches the rungs' push fixtures' bounds exactly (3, 3, 4 and 2).
+
+**What the sweep found in `Cumulative`.** The random sweep turns every
+`Cumulative` rule on at once, which nothing in `Cumulative`'s own suite
+did with proofs. Its fourth instance hit #1024: the elastic rungs threw
+after an edge-finding push earlier in the same sweep. That is fixed in
+#1025, and this branch carries the fix.
+
+**Measured on `examples/squares`**, enumerating (`--all`). Each cell gives
+recursions / proof size, and every proof verifies. "Route A" is
+`--relaxation --relaxation-overload --relaxation-ttef`: route B's
+time-tabling plus the route A rungs. The two projection arms are
+`--projection default` (time-tabling and (OC)/(TTOC)) and
+`--projection all`.
+
+| instance | pairwise | route B | route A | projection, default | projection, all |
+|---|---|---|---|---|---|
+| `area` (7×2 in 5×5) | 101,221 / 145 MB | 53 / 12.9 MB | 1 / 2.3 MB | 1 / 2.3 MB | 1 / 2.3 MB |
+| 9×2 in 5×7 | 19.2M, no proof | 637 / 328 MB | 1 / 4.6 MB | 1 / 4.7 MB | 1 / 4.7 MB |
+| 3,2,2,2,1⁴ in 5×5 (4,608 packings) | 40,297 / 34.7 MB | 10,513 / 751 MB | 10,513 / 546 MB | 10,513 / 62.3 MB | 10,513 / 43.2 MB |
+| 3²,2⁴,1² in 6×6 | 11,313 / 7.6 MB | 225 / 64.6 MB | 225 / 37.9 MB | 265 / 10.4 MB | **29** / 8.4 MB |
+| 3³,2³,1³ in 7×6 | 14,875 / 10.6 MB | 29 / 12.5 MB | 29 / 9.6 MB | 29 / 5.0 MB | 29 / 6.0 MB |
+
+Two things stand out. The projection's proofs are much smaller wherever
+the relaxation fires a lot. Its rows are cached at Top and cited by
+every rule, where route B derives a certificate per firing: 546 MB
+against 43 MB on the enumeration. And with every rule on, the 6×6
+instance's tree drops from 225 to 29. That is the first search the
+energetic ladder has bought on this family, and it is the **knapsack
+rung (KAOC)** alone: time-tabling and (OC)/(TTOC) give 265, adding
+KAOC gives 29, and elastic overload, edge-finding, TTEF, energetic
+edge-finding and both not-first / not-last each give 241–265. Edge-finding
+and TTEF alone bought none (above).
+
+Tested by:
+- **Fixtures.** `sharp` by time-tabling alone, `area` by the overload
+  check, `y_only` on the second axis, the four push fixtures each with a
+  control one rule down, and three enumerations with every rule on.
+- **The sweep lane.** 16 instances alternating the two dense families,
+  every rule on; offline, 200 instances all verify and all agree with
+  brute force.
+- **Three mutation lanes.** The row claimed one unit too strong, the
+  bridges dropped, and the refutations dropped.
+- **`squares_projection`.**
+- **Proofs on and off.** The search trees are identical.
+
+Same members as route A: constant sizes only, and no optional
+rectangles.
+
 ## Reusable ideas
 
 [`cumulative-proof-logging.md`](cumulative-proof-logging.md) ends with

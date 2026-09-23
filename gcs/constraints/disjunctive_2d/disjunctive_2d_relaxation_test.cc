@@ -75,6 +75,11 @@ namespace
         vector<int> widths, heights;
     };
 
+    /// What every rule under test writes into the proof when it fires: the
+    /// relaxation's rungs, and the projection's capacity rows, which are only
+    /// ever derived because some rule of Cumulative's cited one.
+    const string firing_marker = "disjunctive2d cumulative ";
+
     auto fail(const string & message) -> void
     {
         println(cerr, "disjunctive_2d_relaxation_test: {}", message);
@@ -179,7 +184,7 @@ namespace
             proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
         result.refuted_at_root = ! reached_a_node && ! result.satisfiable;
         if (proof_name)
-            result.markers = count_markers(*proof_name, "disjunctive2d cumulative relaxation ");
+            result.markers = count_markers(*proof_name, firing_marker);
         return result;
     }
 
@@ -223,7 +228,7 @@ namespace
         if (gcs::test_innards::last_run_truncated())
             fail("an enumeration was stopped early by a cap, so it checked no completeness");
 
-        auto markers = proof_name ? count_markers(*proof_name, "disjunctive2d cumulative relaxation ") : 0;
+        auto markers = proof_name ? count_markers(*proof_name, firing_marker) : 0;
         gcs::test_innards::check_results(proof_name, expected, actual);
         return markers;
     }
@@ -327,7 +332,10 @@ namespace
         auto total_markers = 0;
         auto pruned_somewhere = false;
         for (auto instance = 0; instance < search_instances; ++instance) {
-            auto inst = random_instance(rand, shape);
+            // -1 alternates between the two dense families, for a rule set
+            // wide enough to want both: overload on area, and pushes out of a
+            // window its contents nearly fill.
+            auto inst = random_instance(rand, shape == -1 ? 1 + instance % 2 : shape);
             auto name = stem + to_string(instance);
             println(
                 cerr, "disjunctive2d relaxation random {}: xr={} yr={} w={} h={}", instance, inst.x_ranges, inst.y_ranges, inst.widths, inst.heights);
@@ -362,6 +370,9 @@ auto main(int argc, char * argv[]) -> int
     auto edge_finding = false;
     // And time-table edge-finding on the relaxation.
     auto ttef = false;
+    // And Cumulative's own propagator on each projection (#973), with every
+    // one of its rules on.
+    auto projection = false;
     // With a mutation: run it over this many instances of the sweep's family
     // and report which ones VeriPB rejects, to find a fixture on which it is
     // load-bearing. A development tool, not a lane.
@@ -419,14 +430,40 @@ auto main(int argc, char * argv[]) -> int
             mutation = disjunctive_2d_proof_mutation::TimeTableEdgeFindingDropPins{};
             ttef = true;
         }
+        else if (arg == "--projection")
+            projection = true;
+        else if (arg == "--mutate=projection_row_too_strong") {
+            mutation = disjunctive_2d_proof_mutation::ProjectionRowTooStrong{};
+            projection = true;
+        }
+        else if (arg == "--mutate=projection_skip_bridge") {
+            mutation = disjunctive_2d_proof_mutation::ProjectionSkipBridge{};
+            projection = true;
+        }
+        else if (arg == "--mutate=projection_skip_refutations") {
+            mutation = disjunctive_2d_proof_mutation::ProjectionSkipRefutations{};
+            projection = true;
+        }
         else if (arg == "--proof-files-basename" && a + 1 < argc)
             mutation_basename = argv[++a];
     }
 
-    const Disjunctive2DRules with = ttef ? Disjunctive2DRules{.relaxation_time_table_edge_finding = true}
-        : edge_finding                   ? Disjunctive2DRules{.relaxation_edge_finding = true}
-        : overload                       ? Disjunctive2DRules{.relaxation_overload = true}
-                                         : Disjunctive2DRules{.cumulative_relaxation = true};
+    // Every rule Cumulative has, for the projection's sweep and enumerations:
+    // what is being checked is the rows and flags the projection supplies, and
+    // each rule cites them differently.
+    const CumulativeRules every_cumulative_rule{.elastic_overload = true,
+        .knapsack_overload = true,
+        .edge_finding = true,
+        .time_table_edge_finding = true,
+        .energetic_edge_finding = true,
+        .not_first_not_last = true,
+        .not_first_not_last_published = true};
+
+    const Disjunctive2DRules with = projection ? Disjunctive2DRules{.cumulative_projection = every_cumulative_rule}
+        : ttef                                 ? Disjunctive2DRules{.relaxation_time_table_edge_finding = true}
+        : edge_finding                         ? Disjunctive2DRules{.relaxation_edge_finding = true}
+        : overload                             ? Disjunctive2DRules{.relaxation_overload = true}
+                                               : Disjunctive2DRules{.cumulative_relaxation = true};
 
     // The edge-finding fixtures. Three squares of two confined to x in [0, 2]
     // fill 12 of the 16 units of area the window [0, 4) has under a y extent
@@ -466,13 +503,15 @@ auto main(int argc, char * argv[]) -> int
         // A stem per rule: the two sweep lanes run concurrently from one
         // directory, and a shared proof name is the race #961 was.
         run_random_sweep(search_instances, proofs, with, without,
-            ttef               ? "disjunctive_2d_relaxation_ttef_search_"
+            projection         ? "disjunctive_2d_projection_search_"
+                : ttef         ? "disjunctive_2d_relaxation_ttef_search_"
                 : edge_finding ? "disjunctive_2d_relaxation_edge_finding_search_"
                 : overload     ? "disjunctive_2d_relaxation_overload_search_"
                                : "disjunctive_2d_relaxation_search_",
-            (ttef || edge_finding) ? 2
-                : overload         ? 1
-                                   : 0);
+            projection                   ? -1
+                : (ttef || edge_finding) ? 2
+                : overload               ? 1
+                                         : 0);
         return EXIT_SUCCESS;
     }
 
@@ -498,12 +537,12 @@ auto main(int argc, char * argv[]) -> int
         rand.seed(1234);
         auto rejected = 0, fired = 0;
         for (auto k = 0; k < survey; ++k) {
-            auto inst = random_instance(rand, (edge_finding || ttef) ? 2 : overload ? 1 : 0);
+            auto inst = random_instance(rand, projection ? 1 + k % 2 : (edge_finding || ttef) ? 2 : overload ? 1 : 0);
             auto name = mutation_basename + "_survey";
             Problem p;
             post(p, inst, with, *mutation);
             solve_with(p, SolveCallbacks{}, make_optional<ProofOptions>(ProofFileNames{name}));
-            if (count_markers(name, "disjunctive2d cumulative relaxation ") == 0)
+            if (count_markers(name, firing_marker) == 0)
                 continue;
             ++fired;
             if (! verify(name)) {
@@ -524,12 +563,12 @@ auto main(int argc, char * argv[]) -> int
                 *mutation);
         else if (edge_finding)
             post(p, ef_lb, with, *mutation);
-        else if (overload)
+        else if (overload || projection)
             post(p, area, with, *mutation);
         else
             post(p, sharp, with, *mutation);
         solve_with(p, SolveCallbacks{}, make_optional<ProofOptions>(ProofFileNames{mutation_basename}));
-        if (count_markers(mutation_basename, "disjunctive2d cumulative relaxation ") == 0)
+        if (count_markers(mutation_basename, firing_marker) == 0)
             fail("mutation mode: the rule never fired, so the proof has nothing corrupted in it");
         println(cerr, "wrote a deliberately corrupted proof to {}.pbp", mutation_basename);
         return EXIT_SUCCESS;
@@ -656,7 +695,7 @@ auto main(int argc, char * argv[]) -> int
             proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
         if (satisfiable || reached_a_node)
             fail("two_escapes: seven units of height do not fit in five, and the rule should close the root");
-        if (proofs && count_markers(name, "disjunctive2d cumulative relaxation ") < 1)
+        if (proofs && count_markers(name, firing_marker) < 1)
             fail("two_escapes: no relaxation marker, so the escapes were never in a guard");
         if (proofs && ! verify(name))
             fail("two_escapes: veripb rejected the certificate");
@@ -683,7 +722,7 @@ auto main(int argc, char * argv[]) -> int
             proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
         if (satisfiable || reached_a_node)
             fail("shared_width: seven units of height do not fit in five, and the rule should close the root");
-        if (proofs && count_markers(name, "disjunctive2d cumulative relaxation ") < 1)
+        if (proofs && count_markers(name, firing_marker) < 1)
             fail("shared_width: no relaxation marker");
         if (proofs && ! verify(name))
             fail("shared_width: veripb rejected the certificate");
@@ -747,7 +786,7 @@ auto main(int argc, char * argv[]) -> int
         gcs::test_innards::solve_for_tests(p, proofs ? make_optional(name) : nullopt, actual, std::tuple{all_vars});
         if (gcs::test_innards::last_run_truncated())
             fail(name + ": a cap fired, so the enumeration checked no completeness");
-        auto markers = proofs ? count_markers(name, "disjunctive2d cumulative relaxation ") : 0;
+        auto markers = proofs ? count_markers(name, firing_marker) : 0;
         gcs::test_innards::check_results(proofs ? make_optional(name) : nullopt, expected, actual);
         if (proofs && markers == 0)
             fail(name + ": the rule never fired, so this route through the certificate went unchecked");
@@ -819,7 +858,7 @@ auto main(int argc, char * argv[]) -> int
                         return false;
                     }},
                 proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
-            return {! reached_a_node && ! satisfiable, proof_name ? count_markers(*proof_name, "disjunctive2d cumulative relaxation ") : 0};
+            return {! reached_a_node && ! satisfiable, proof_name ? count_markers(*proof_name, firing_marker) : 0};
         };
         auto [closed, markers] = root_closes(with, proofs ? make_optional(string{name}) : nullopt);
         if (! closed)
@@ -861,7 +900,7 @@ auto main(int argc, char * argv[]) -> int
         gcs::test_innards::solve_for_tests(p, proofs ? make_optional(string{name}) : nullopt, actual, std::tuple{all_vars});
         if (gcs::test_innards::last_run_truncated())
             fail("optional_constant_enumerate: a cap fired, so the enumeration checked no completeness");
-        auto markers = proofs ? count_markers(name, "disjunctive2d cumulative relaxation ") : 0;
+        auto markers = proofs ? count_markers(name, firing_marker) : 0;
         gcs::test_innards::check_results(proofs ? make_optional(string{name}) : nullopt, expected, actual);
         if (proofs && markers == 0)
             fail("optional_constant_enumerate: the rule never fired, so constant-present rectangles are being left out");
@@ -1049,6 +1088,106 @@ auto main(int argc, char * argv[]) -> int
                 enumerate_and_check(ttef_lb, ttef_on, proofs ? make_optional(string{"disjunctive_2d_relaxation_ttef_enumerate"}) : nullopt);
             if (proofs && markers == 0)
                 fail("ttef_enumerate: the rule never fired");
+        }
+    }
+
+    // --- Cumulative's own propagator on each projection (#973) -----------
+    //
+    // Disjunctive2DRules::cumulative_projection, which reaches the same
+    // capacity rows as the rungs above but runs Cumulative's rules over them
+    // rather than rules of this constraint's own. So the fixtures are the
+    // rungs' own, and what they check is that the projection gets there too.
+    if (! overload && ! edge_finding && ! ttef && ! projection) {
+        auto only = [](auto set) {
+            CumulativeRules rules{.time_table = false, .overload = false, .profile_overload = false};
+            set(rules);
+            return Disjunctive2DRules{.cumulative_projection = rules};
+        };
+        const auto tt_only = only([](CumulativeRules & r) { r.time_table = true; });
+        const auto overload_only = only([](CumulativeRules & r) { r.overload = true; });
+        // Cumulative's edge-finding runs inside its overload check's window
+        // sweep, so it needs that on, and its TTEF is a strengthening of its
+        // edge-finding, so that needs edge-finding on too. Each fixture's
+        // control is the rule set one step down.
+        const auto tt_and_overload = only([](CumulativeRules & r) {
+            r.time_table = true;
+            r.overload = true;
+        });
+        const auto ef_only = only([](CumulativeRules & r) {
+            r.time_table = true;
+            r.overload = true;
+            r.edge_finding = true;
+        });
+        const auto ttef_only = only([](CumulativeRules & r) {
+            r.time_table = true;
+            r.overload = true;
+            r.edge_finding = true;
+            r.time_table_edge_finding = true;
+        });
+        const Disjunctive2DRules projection_all{.cumulative_projection = every_cumulative_rule};
+
+        auto closes = [&](const Instance & inst, Disjunctive2DRules rules, const string & name) {
+            auto result = probe(inst, rules, proofs ? make_optional(name) : nullopt);
+            if (! result.refuted_at_root)
+                fail(name + ": the root did not close");
+            if (proofs && result.markers < 1)
+                fail(name + ": no projection row was derived, so something else closed the root");
+            if (proofs && ! verify(name))
+                fail(name + ": veripb rejected the proof");
+        };
+
+        // Time-tabling alone refutes `sharp`, which the pairwise rule cannot.
+        closes(sharp, tt_only, "disjunctive_2d_projection_sharp");
+
+        // The overload check refutes `area`, and time-tabling cannot: no
+        // square has a mandatory part.
+        closes(area, overload_only, "disjunctive_2d_projection_area");
+        if (probe(area, tt_only, nullopt, true).refuted_at_root)
+            fail("projection_area: time-tabling closed the root too, so the fixture says nothing about the overload check");
+
+        // Only the y projection overloads, which is what says the second axis
+        // is keyed and wired up right: its flags are at positions n + i. The
+        // rungs' `y_only` a unit higher, since Cumulative's overload check
+        // leaves out a task whose start is a {0, 1} variable.
+        {
+            auto name = string{"disjunctive_2d_projection_y_only"};
+            const Instance y_only{vector<pair<int, int>>(5, {0, 3}), {{1, 2}, {1, 2}, {1, 2}, {1, 2}, {4, 5}}, vector<int>(5, 2), vector<int>(5, 2)};
+            closes(y_only, overload_only, name);
+            if (proofs && count_markers(name, "disjunctive2d cumulative projection row axis=1") < 1)
+                fail(name + ": no y-axis row was derived");
+        }
+
+        // The rungs' push fixtures, reached by Cumulative's rules of the same
+        // names.
+        auto check_push = [&](const Instance & inst, Disjunctive2DRules rules, Disjunctive2DRules control_rules, const string & name, bool lower,
+                              Integer expected) {
+            auto result = probe(inst, rules, proofs ? make_optional(name) : nullopt);
+            if (result.root_x.size() != 4)
+                fail(name + ": no root node was traced");
+            auto got = lower ? result.root_x[3].first : result.root_x[3].second;
+            if (got != expected)
+                fail(name + ": the tall rectangle's " + (lower ? "lower" : "upper") + " bound is " + to_string(got.raw_value) + ", expected " +
+                    to_string(expected.raw_value));
+            if (proofs && ! verify(name))
+                fail(name + ": veripb rejected the proof");
+            if (! result.satisfiable)
+                fail(name + ": the fixture is satisfiable, but no solution was found");
+            auto control = probe(inst, control_rules, nullopt);
+            if ((lower ? control.root_x[3].first : control.root_x[3].second) == expected)
+                fail(name + ": the control made the same push, so the fixture says nothing about the rule");
+        };
+        check_push(ef_lb, ef_only, tt_and_overload, "disjunctive_2d_projection_ef_lb", true, 3_i);
+        check_push(ef_ub, ef_only, tt_and_overload, "disjunctive_2d_projection_ef_ub", false, 3_i);
+        check_push(ttef_lb, ttef_only, ef_only, "disjunctive_2d_projection_ttef_lb", true, 4_i);
+        check_push(ttef_ub, ttef_only, ef_only, "disjunctive_2d_projection_ttef_ub", false, 2_i);
+
+        // Soundness by enumeration against brute force, every rule on.
+        const Instance tiling{vector<pair<int, int>>(4, {0, 2}), vector<pair<int, int>>(4, {0, 2}), vector<int>(4, 2), vector<int>(4, 2)};
+        for (const auto & [inst, name] : {pair{tiling, "tiling"}, pair{ef_lb, "ef_lb"}, pair{ttef_lb, "ttef_lb"}}) {
+            auto markers =
+                enumerate_and_check(inst, projection_all, proofs ? make_optional("disjunctive_2d_projection_enumerate_" + string{name}) : nullopt);
+            if (proofs && markers == 0)
+                fail(string{"projection_enumerate_"} + name + ": no projection row was derived");
         }
     }
 
