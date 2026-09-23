@@ -582,6 +582,21 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     .first->second;
             };
 
+            // The same fact for a task whose length is declared from zero, where
+            // it is not a model fact at all: the escape is false only because
+            // the search has since raised the length, which the reason says.
+            // So it is pinned under the reason, at Temporary, and never cached.
+            // Every caller but the overload vocabulary's bridges can meet such
+            // a task --- those only ever see tasks with a guaranteed length ---
+            // and has to go through here rather than escape_is_false.
+            auto escape_is_false_under = [&](size_t i, const ReasonLiterals & reason) -> optional<ProofLine> {
+                if (! zero[i])
+                    return nullopt;
+                if (energy_len(i) > 0_i)
+                    return escape_is_false(i);
+                return logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ! *zero[i] >= 1_i, ProofLevel::Temporary);
+            };
+
             auto activity_flag = [&](size_t i, Integer t) -> const ActivityFlag & {
                 auto key = make_tuple(i, t.raw_value, energy_len(i).raw_value);
                 if (auto found = activity->find(key); found != activity->end())
@@ -1011,7 +1026,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 forced.add(clause_lines.at(make_pair(min(j, k.task), max(j, k.task))));
                 forced.add(refutation);
                 for (auto r : {j, k.task})
-                    if (auto row = escape_is_false(r))
+                    if (auto row = escape_is_false_under(r, reason))
                         forced.add(*row);
                 auto ordering = forced.saturate().emit(*logger, ProofLevel::Temporary);
 
@@ -1195,7 +1210,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 forced.add(clause_lines.at(make_pair(min(j, k.task), max(j, k.task))));
                 forced.add(refutation);
                 for (auto r : {j, k.task})
-                    if (auto row = escape_is_false(r))
+                    if (auto row = escape_is_false_under(r, reason))
                         forced.add(*row);
                 auto ordering = forced.saturate().emit(*logger, ProofLevel::Temporary);
 
@@ -1374,6 +1389,15 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // time-tabling's push chains and detectable precedences infer
                 // through this same shape; only how they choose k and target
                 // differs. `mut` is honest for everything but a mutation lane.
+                // The pushed task's own conditions, or nothing for a constant
+                // start: its value is already folded into the before rows, and a
+                // push on it is a conflict whose certificate is the same pols
+                // without the literal.
+                auto on_start = [&](size_t j, const IntegerVariableCondition & cond) -> optional<IntegerVariableCondition> {
+                    if (is_constant_variable(starts[j]))
+                        return nullopt;
+                    return cond;
+                };
                 auto emit_lb_dichotomy = [&](size_t j, size_t k, Integer bound, Integer target, const DisjunctiveProofMutation & mut) -> void {
                     auto [emit_nothing, skip_refutation, skip_target_fold, loose_bound] = unpack_mutation(mut);
                     if (emit_nothing)
@@ -1382,12 +1406,12 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     // running bound -- s_j >= bound plus lb(l_j) reaches past
                     // ub(s_k), forcing bf_{j,k} false.
                     if (! skip_refutation)
-                        emit_before_pol(j, k, starts[j] >= (loose_bound ? bound - 1_i : bound), start_ub_lit(k));
+                        emit_before_pol(j, k, on_start(j, starts[j] >= (loose_bound ? bound - 1_i : bound)), start_ub_lit(k));
                     // Right branch: k finishing before j puts s_j at k's
                     // earliest end or later, folded onto the target order
                     // literal's definition row: bf_{k,j} -> s_j >= target.
                     if (! skip_target_fold)
-                        emit_before_pol(k, j, start_lb_lit(k), starts[j] < target);
+                        emit_before_pol(k, j, start_lb_lit(k), on_start(j, starts[j] < target));
                 };
                 // The mirror image, on j's upper bound: k finishing before j
                 // is impossible under the running bound -- s_j would be at k's
@@ -1398,9 +1422,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     if (emit_nothing)
                         return;
                     if (! skip_refutation)
-                        emit_before_pol(k, j, start_lb_lit(k), starts[j] < bound + (loose_bound ? 2_i : 1_i));
+                        emit_before_pol(k, j, start_lb_lit(k), on_start(j, starts[j] < bound + (loose_bound ? 2_i : 1_i)));
                     if (! skip_target_fold)
-                        emit_before_pol(j, k, starts[j] >= target + 1_i, start_ub_lit(k));
+                        emit_before_pol(j, k, on_start(j, starts[j] >= target + 1_i), start_ub_lit(k));
                 };
 
                 // One step of a time-tabling push chain, which is one
@@ -1853,6 +1877,20 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // push has landed and the state holds a bound the reason
                         // does not support.
                         vector<SetTask> predecessors, successors;
+                        // What the set's certificate can speak about: its
+                        // guarded window-energy rows are over the start's own
+                        // order literals, at the length the energy vocabulary
+                        // counts, which is the declared lower bound
+                        // (Disjunctive::_energy_lens) and not the current one.
+                        // So the set is built at that length too --- a variable
+                        // length declared from zero has none to count, and a
+                        // start that is a constant or a view has no literals to
+                        // cite. Decided the same way with proofs off, so the
+                        // rule draws the same inferences either way; a task
+                        // left out, or counted short, only weakens the cut.
+                        auto in_set_vocabulary = [&](size_t k) {
+                            return energy_len(k) > 0_i && std::holds_alternative<SimpleIntegerVariableID>(starts[k]);
+                        };
                         for (auto k : active_tasks) {
                             if (k == j || min_len(k) == 0_i || ! is_present(k))
                                 continue;
@@ -1863,16 +1901,21 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     predecessor = k;
                                     predecessor_eet = eet_k;
                                 }
-                                if (rules.detectable_precedences_set)
-                                    predecessors.push_back(SetTask{k, k_lb, min_len(k), k_lb, k_ub});
+                                if (rules.detectable_precedences_set && in_set_vocabulary(k))
+                                    predecessors.push_back(SetTask{k, k_lb, energy_len(k), k_lb, k_ub});
                             }
                             if (eet_k > cur_ub) {
                                 if (! successor || k_ub < successor_lst) {
                                     successor = k;
                                     successor_lst = k_ub;
                                 }
-                                if (rules.detectable_precedences_set)
-                                    successors.push_back(SetTask{k, k_ub + min_len(k), min_len(k), k_lb, k_ub});
+                                // Detectable at the length the set counts, too:
+                                // the certificate's refutation of `k` before `j`
+                                // is stated at that length, and has no degree
+                                // left where only the longer current one
+                                // detects it.
+                                if (rules.detectable_precedences_set && in_set_vocabulary(k) && k_lb + energy_len(k) > cur_ub)
+                                    successors.push_back(SetTask{k, k_ub + energy_len(k), energy_len(k), k_lb, k_ub});
                             }
                         }
 
@@ -1933,12 +1976,19 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 
                         auto one_too_far = std::holds_alternative<disjunctive_proof_mutation::PushOneTooFar>(mutation);
 
+                        // The set rule's certificate refutes orderings over j's
+                        // own order literals as well as its members', so a j
+                        // whose start is a constant or a view takes the pairwise
+                        // push instead --- with proofs off too, so that the rule
+                        // draws the same inferences either way.
+                        auto set_rule_applies = rules.detectable_precedences_set && std::holds_alternative<SimpleIntegerVariableID>(starts[j]);
+
                         // lb-push, to the predecessor's earliest end, clipped
                         // to one past j's upper bound: a push that wipes the
                         // domain is a contradiction, and the target has to
                         // stay somewhere the order literal exists.
                         if (predecessor) {
-                            auto cut = rules.detectable_precedences_set ? set_ect() : nullopt;
+                            auto cut = set_rule_applies ? set_ect() : nullopt;
                             auto pairwise_target = min(predecessor_eet, cur_ub + 1_i) + (one_too_far ? 1_i : 0_i);
                             auto target = cut ? min(cut->threshold, cur_ub + 1_i) + (one_too_far ? 1_i : 0_i) : pairwise_target;
                             // A target the domain clip caps is one #734's own
@@ -1973,7 +2023,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // runs, the state holds the pushed bound, which the
                         // reason does not support.
                         if (successor) {
-                            auto cut = rules.detectable_precedences_set ? set_lst() : nullopt;
+                            auto cut = set_rule_applies ? set_lst() : nullopt;
                             auto pairwise_target = max(successor_lst - min_len(j), cur_lb - 1_i) - (one_too_far ? 1_i : 0_i);
                             auto target = cut ? max(cut->threshold - min_len(j), cur_lb - 1_i) - (one_too_far ? 1_i : 0_i) : pairwise_target;
                             auto set_based = target < pairwise_target;
@@ -2054,6 +2104,16 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // duration carries no energy, and one not known present
                         // might not be here to carry any.
                         if (energy_len(i) == 0_i || ! is_present(i))
+                            continue;
+                        // The certificate's guarded window-energy row is over
+                        // the start variable's own order literals, so a start
+                        // that is a constant or a view has none to cite. Left
+                        // out of the sweep rather than refused at the proof,
+                        // and whether or not proofs are on, so that the rule
+                        // draws the same inferences either way: a task left out
+                        // is energy the window is not charged, which weakens the
+                        // rule and cannot make it wrong.
+                        if (! std::holds_alternative<SimpleIntegerVariableID>(starts[i]))
                             continue;
                         auto [s_lo, s_hi] = state.bounds(starts[i]);
                         candidates.push_back(EdgeTask{i, s_lo, s_hi + energy_len(i), energy_len(i)});
@@ -2309,6 +2369,15 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // and one not known present might not be here to carry
                         // any: counting either would manufacture a conflict.
                         if (energy_len(i) == 0_i || ! is_present(i))
+                            continue;
+                        // The certificate mints activity flags over the start's
+                        // order literals and bridges them through its
+                        // definitions, and a constant start has neither. Left
+                        // out whether or not proofs are on, so that the rule
+                        // draws the same inferences either way; a fixed task
+                        // left out is energy the window is not charged, which
+                        // weakens the check and cannot make it wrong.
+                        if (is_constant_variable(starts[i]))
                             continue;
                         auto [s_lo, s_hi] = state.bounds(starts[i]);
                         candidates.push_back(Candidate{i, s_lo, s_hi + energy_len(i), energy_len(i)});
