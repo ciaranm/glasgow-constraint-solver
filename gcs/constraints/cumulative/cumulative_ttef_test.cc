@@ -422,6 +422,26 @@ auto main(int argc, char * argv[]) -> int
             verify_proof_and_clean_up("cumulative_ttef_" + name);
     }
 
+    // Two tasks sharing one start variable, which a random fuzz campaign found.
+    // The certificate pins the profile from the live bounds, and the
+    // justification runs after the push has landed, so a task whose start is
+    // the pushed task's own variable read the pushed bound: its mandatory part
+    // was claimed over times the reason could not support. The two full-height
+    // tasks at 3 and 9 leave the pair nowhere to go, so this is unsatisfiable.
+    {
+        const string name = "cumulative_ttef_shared_start";
+        Problem p;
+        auto x = p.create_integer_variable(1_i, 8_i), y = p.create_integer_variable(3_i, 3_i), z = p.create_integer_variable(9_i, 9_i);
+        p.post(Cumulative{{x, x, y, z}, {4_i, 4_i, 4_i, 3_i}, {3_i, 1_i, 5_i, 5_i}, 5_i}.with_rules(ttef));
+        auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
+        if (stats.solutions != 0)
+            fail("shared start: the instance is unsatisfiable but solutions were reported");
+        if (proofs)
+            verify_proof_and_clean_up(name);
+        println(cerr, "cumulative ttef shared start: refuted{}", proofs ? ", proof verified" : "");
+    }
+
     // Soundness, over instances small enough to enumerate: the rule may not
     // lose a solution, with or without a proof being written.
     for (const auto & [name, inst] : vector<pair<string, Instance>>{{"profile_push", profile_push}, {"profile_push_mirror", profile_push_mirror},
