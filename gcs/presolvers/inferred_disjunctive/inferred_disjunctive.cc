@@ -109,9 +109,17 @@ namespace
 
     /// The flags a task's activity is expressed in, on one resource, at one
     /// time. Absent when that resource never encoded the pair.
-    [[nodiscard]] auto flags_for(const NamesAndIDsTracker & tracker, const ConstraintID & donor, size_t position, Integer t)
+    ///
+    /// Asking for them is also asking the donor to define them: #780's
+    /// per-(task, time) flags are named with the model but defined on demand,
+    /// so a citer that skipped this would cite reification halves that do not
+    /// exist yet. Nothing happens for a donor whose flags are OPB rows. The same
+    /// ask InferredCumulative makes before it cites a donor's flags.
+    [[nodiscard]] auto flags_for(ProofLogger & logger, const ConstraintID & donor, size_t position, Integer t)
         -> optional<std::tuple<ProofFlag, ProofFlag, ProofFlag>>
     {
+        auto & tracker = logger.names_and_ids_tracker();
+        tracker.ensure_flag_defined(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t), logger);
         auto before = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
         auto after = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
         auto active = tracker.find_proof_flag(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
@@ -572,7 +580,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                 vector<ProofLiteralOrFlag> flags;
                 for (auto i : here) {
                     const auto & home = task_data[i].appearances.front();
-                    auto found = flags_for(tracker, home.donor, home.position, t);
+                    auto found = flags_for(recipe_logger, home.donor, home.position, t);
                     if (! found)
                         return std::nullopt;
                     flags.push_back(std::get<2>(*found));
@@ -611,8 +619,8 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                     if (already != bridges.end())
                         return already->second;
 
-                    auto from = flags_for(tracker, home.donor, home.position, t);
-                    auto to = flags_for(tracker, witness, witness_position, t);
+                    auto from = flags_for(recipe_logger, home.donor, home.position, t);
+                    auto to = flags_for(recipe_logger, witness, witness_position, t);
                     if (! from || ! to)
                         throw ProofError{"inferred disjunctive: a resource that witnesses a conflict at time " + to_string(t.raw_value) +
                             " has no flags for one of the tasks it is about"};
@@ -645,8 +653,8 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         if (! reduced)
                             return std::nullopt;
 
-                        auto u_flags = flags_for(tracker, c.witness, c.witness_position_u, t);
-                        auto v_flags = flags_for(tracker, c.witness, c.witness_position_v, t);
+                        auto u_flags = flags_for(recipe_logger, c.witness, c.witness_position_u, t);
+                        auto v_flags = flags_for(recipe_logger, c.witness, c.witness_position_v, t);
                         if (! u_flags || ! v_flags)
                             return std::nullopt;
 
@@ -662,7 +670,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         for (auto other : witness_view.usable) {
                             if (other == c.witness_position_u || other == c.witness_position_v)
                                 continue;
-                            auto other_flags = flags_for(tracker, c.witness, other, t);
+                            auto other_flags = flags_for(recipe_logger, c.witness, other, t);
                             if (other_flags)
                                 weaken_out.push_back(std::get<2>(*other_flags));
                         }
