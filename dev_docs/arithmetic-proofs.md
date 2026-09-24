@@ -36,6 +36,18 @@ via x and r, or the two gated rows' disjunction when x's sign is
 undecided) established each bound, and the justifications rebuild exactly
 that chain.
 
+Once an operand's sign is decided, the channel stages carry bounds between
+it and its magnitude. While it is still open (the divisor, and Divide's
+quotient), the propagator bounds the two against each other directly: `|v|
+<= u` gives `-u <= v <= u`, `v`'s bounds cap `|v|` at `max(-lo, hi)`, and
+`v != 0` gives `|v| >= 1`, each by `conclude_by_sign_cases` over `[v>=0]` /
+`[v<0]`. The quotient's sign is pinned when the dividend's sign is decided
+only weakly too (`x >= 0` or `x <= 0`, with 0 still in play). For `q <= 0`
+the sign clauses close the `x = 0` case by RUP (`sgn_x0`), but for `q >= 0`
+none does, so that refutation goes through the grid: `[q<0] /\ [|y|>=1] =>
+Sum >= 1`, derived once at `Top`, against the remainder rows' `Sum <= 0` at
+`x = 0` (issue #1065).
+
 Power is a chain of multiply links sharing one constraint id,
 disambiguated by `LinkNaming`; the first link is a native square. cake
 has no power encoder, so Power self-verifies rather than chain-verifying.
