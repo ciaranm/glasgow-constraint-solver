@@ -233,8 +233,6 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
             const auto & cv = coeff_vars.terms[i];
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
                 s += bounds[i].first;
-            else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>)
-                s += (cv.first ? bounds[i].first : -bounds[i].second);
             else {
                 auto coeff = get_coeff(cv);
                 s += (coeff >= 0_i) ? (coeff * bounds[i].first) : (coeff * bounds[i].second);
@@ -279,8 +277,6 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
             Integer lower_without_me{0_i};
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
                 lower_without_me = lower_sum - bounds[p].first;
-            else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>)
-                lower_without_me = lower_sum - (cv.first ? bounds[p].first : -bounds[p].second);
             else
                 lower_without_me = lower_sum - ((get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
             Integer remainder = value - lower_without_me;
@@ -312,8 +308,6 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
             Integer inv_lower_without_me{0_i};
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
                 inv_lower_without_me = inv_lower_sum + bounds[p].second;
-            else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>)
-                inv_lower_without_me = inv_lower_sum + (! cv.first ? -bounds[p].first : bounds[p].second);
             else
                 inv_lower_without_me =
                     inv_lower_sum + ((-get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
@@ -327,8 +321,6 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
 
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
                 inv_lower_sum = inv_lower_without_me - bounds[p].second;
-            else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>)
-                inv_lower_sum = inv_lower_without_me + (! cv.first ? bounds[p].first : -bounds[p].second);
             else
                 inv_lower_sum =
                     inv_lower_without_me + ((-get_coeff(cv) >= 0_i) ? (-get_coeff(cv) * bounds[p].first) : (-get_coeff(cv) * bounds[p].second));

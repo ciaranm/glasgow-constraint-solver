@@ -20,7 +20,10 @@ namespace gcs
 {
     /**
      * \brief The consistency levels supported by the linear equality family:
-     * bounds consistency (the default), or generalised arc consistency.
+     * bounds consistency (the default), or consistency::Tabulated, which
+     * reaches generalised arc consistency by tabulating the constraint, so its
+     * set-up work and proof size grow with the product of the variables'
+     * domain sizes.
      *
      * \ingroup Consistency
      */
