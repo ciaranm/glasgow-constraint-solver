@@ -370,6 +370,18 @@ set_tests_properties(minizinc-inverses-negative PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-inverses-unequal COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --unsatisfiable --reference-std --skip-default-reference $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ inversesunequal true false)
 set_tests_properties(minizinc-inverses-unequal PROPERTIES SKIP_RETURN_CODE 66)
 
+# Two entries of one array equated, which MiniZinc flattens into the same
+# variable twice. Each is unsatisfiable and used to be an error (#1047); the
+# pattern checks that the array really did reach the builtin with a repeat.
+add_test(NAME minizinc-inverses-aliased COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --unsatisfiable --fzn-pattern glasgow_inverse --fzn-pattern "\\[\"(X_INTRODUCED_[0-9]+_)\", \"\\1\"" $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ inversesaliased true true)
+set_tests_properties(minizinc-inverses-aliased PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-circuit-aliased COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --unsatisfiable --fzn-pattern glasgow_circuit --fzn-pattern "\\[\"(X_INTRODUCED_[0-9]+_)\", \"\\1\"" $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ circuitaliased true true)
+set_tests_properties(minizinc-circuit-aliased PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-subcircuit-aliased COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --unsatisfiable --fzn-pattern glasgow_subcircuit --fzn-pattern "\\[\"(X_INTRODUCED_[0-9]+_)\", \"\\1\"" $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ subcircuitaliased true true)
+set_tests_properties(minizinc-subcircuit-aliased PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-knapsack COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ knapsacktest false true)
 set_tests_properties(minizinc-knapsack PROPERTIES SKIP_RETURN_CODE 66)
 

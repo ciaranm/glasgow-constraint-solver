@@ -966,14 +966,17 @@ namespace
 
 SubCircuit::SubCircuit(vector<IntegerVariableID> succ) : _succ(std::move(succ))
 {
-    // As Circuit: two slots pinned to the same constant are a valid (if trivially
-    // infeasible) model, so only reject true variable aliasing.
-    for (size_t i = 0; i < _succ.size(); ++i) {
+    // As Circuit: the successors are all different -- a node off the tour points
+    // at itself, which is what stops anyone else pointing at it -- so the same
+    // variable in two slots is unsatisfiable, and is answered with a root
+    // contradiction rather than rejected (#1047). Two slots pinned to the same
+    // constant are left to the propagators.
+    for (size_t i = 0; i < _succ.size() && ! _has_duplicate_vars; ++i) {
         if (is_constant_variable(_succ[i]))
             continue;
         for (size_t j = i + 1; j < _succ.size(); ++j)
             if (_succ[i] == _succ[j])
-                throw InvalidProblemDefinitionException{"SubCircuit: successor array contains the same variable handle twice"};
+                _has_duplicate_vars = true;
     }
 }
 
@@ -1029,7 +1032,7 @@ auto SubCircuit::prepare(Propagators & propagators, State & initial_state, Proof
     // from here, and it must carry this constraint's identity or two SubCircuits in one
     // problem would share its labelled rows and pair selectors (issue #449). The non-GAC
     // alternative is pure encoding and lives in define_proof_model().
-    if (_gac_all_different) {
+    if (_gac_all_different && ! _has_duplicate_vars) {
         AllDifferent all_diff{_succ};
         all_diff.set_constraint_id(constraint_id());
         std::move(all_diff).install(propagators, initial_state, model);
@@ -1080,7 +1083,8 @@ auto SubCircuit::prepare(Propagators & propagators, State & initial_state, Proof
 
 auto SubCircuit::define_proof_model(ProofModel & model, const State &) -> void
 {
-    if (! _gac_all_different)
+    // As Circuit's: a repeated variable gets these rows here, not from a child.
+    if (! _gac_all_different || _has_duplicate_vars)
         define_clique_not_equals_encoding(model, _constraint_id, _succ);
 
     if (_succ.empty()) {
@@ -1205,6 +1209,12 @@ auto SubCircuit::define_proof_model(ProofModel & model, const State &) -> void
 
 auto SubCircuit::install_propagators(Propagators & propagators) -> void
 {
+    if (_has_duplicate_vars) {
+        propagators.install_initial_contradiction(constraint_id(), constraint_type(),
+            "A SubCircuit constraint was posted with the same variable more than once", JustifyUsingRUP{hints::SubCircuit{constraint_id()}});
+        return;
+    }
+
     auto prevent = ! std::holds_alternative<Check>(_algorithm);
     auto scc_anchor = std::holds_alternative<gcs::subcircuit::SCC>(_algorithm) ? _anchor : nullopt;
     // Proof lines, not search state: they stay valid at every later node, so the cache

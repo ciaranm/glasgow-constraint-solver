@@ -377,10 +377,11 @@ auto main(int argc, char * argv[]) -> int
                     throw UnimplementedException{};
             }
 
-            // Dup-variable cases. lt/gt themselves throw (Bucket A — covered
-            // separately); lt_if/gt_if were Bucket B (propagator weak on alias)
-            // and are now fixed via the alias check in
-            // ReifiedCompareLessThanOrMaybeEqual's infer_cond_when_undecided.
+            // Dup-variable cases. lt/gt are unsatisfiable, and get a contradiction
+            // as soon as they must hold (#1047: XCSP3's intension reaches them);
+            // lt_if/gt_if were Bucket B (propagator weak on alias) and are now
+            // fixed via the alias check in ReifiedCompareLessThanOrMaybeEqual's
+            // infer_cond_when_undecided.
             if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
                 vector<pair<int, int>> dup_data = {{0, 0}, {0, 5}, {-3, 3}, {2, 5}};
                 for (auto & xr : dup_data) {
@@ -412,24 +413,10 @@ auto main(int argc, char * argv[]) -> int
                     else if (mode == "le_notif")
                         // LessThanEqualNotIf(x, x, c) is c -> not(x<=x), i.e. not c.
                         run_dup_reif_binary_comparison_test<LessThanEqualNotIf>(proofs, mode, xr, [](int, int c) { return c == 0; });
-                    // else: lt, gt — Bucket A throw, no dup test
-                }
-
-                // lt, gt on aliased operands are trivially unsat: reject at
-                // construction. Only check once per binary, not per view-cfg.
-                if (mode == "lt" || mode == "gt") {
-                    Problem ep;
-                    auto x = ep.create_integer_variable(Integer{0}, Integer{3});
-                    try {
-                        if (mode == "lt")
-                            ep.post(LessThan{x, x});
-                        else
-                            ep.post(GreaterThan{x, x});
-                        cerr << "expected " << mode << "(x,x) to throw InvalidProblemDefinitionException" << '\n';
-                        return EXIT_FAILURE;
-                    }
-                    catch (const InvalidProblemDefinitionException &) {
-                    }
+                    else if (mode == "lt")
+                        run_dup_binary_comparison_test<LessThan>(proofs, mode, xr, [](int) { return false; });
+                    else if (mode == "gt")
+                        run_dup_binary_comparison_test<GreaterThan>(proofs, mode, xr, [](int) { return false; });
                 }
             }
         }

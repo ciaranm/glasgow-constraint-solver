@@ -5,10 +5,14 @@
 
 #include <util/enumerate.hh>
 
+#include <optional>
+
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::map;
+using std::nullopt;
+using std::optional;
 using std::vector;
 
 namespace
@@ -38,40 +42,62 @@ namespace
     }
 }
 
+namespace
+{
+    // The set form behind both justify_all_different_hall_set_or_violator() and
+    // justify_all_different_hall_set_needs_value(): the second leaves one value's
+    // at-most-one out of the sum.
+    auto justify_hall_set(ProofLogger & logger, const State & state, const vector<IntegerVariableID> & all_variables,
+        const vector<IntegerVariableID> & hall_variables, const vector<Integer> & hall_values, const optional<Integer> & needed,
+        map<Integer, ProofLine> & value_am1_constraint_numbers) -> void
+    {
+        need_value_am1s(logger, all_variables, hall_values, value_am1_constraint_numbers);
+
+        // We are going to need the at least one value variables, and each only has to
+        // name the values its own domain still holds. Those are a subset of the hall
+        // values (that is what makes these variables a Hall set), so the at-most-ones
+        // below still cancel every term this contributes; the hall values a particular
+        // variable *cannot* take would contribute a term with nothing to cancel it, and
+        // the reason would then have to discharge it separately. Everything else in the
+        // definition range goes in as runs, which are exactly the holes the reason
+        // states.
+        vector<ProofLine> at_least_one_constraints;
+        vector<Integer> still_possible;
+        for (const auto & var : hall_variables) {
+            still_possible.clear();
+            for (const auto & val : hall_values)
+                if (state.in_domain(var, val))
+                    still_possible.push_back(val);
+            at_least_one_constraints.push_back(
+                logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value_over_cover(var, still_possible));
+        }
+
+        // each variable in the violator has to take at least one value that is
+        // left in its domain, and each value in the component can only be used
+        // once. Without the needed value's at-most-one, the one unit of slack
+        // that leaves is some Hall variable taking the needed value.
+        PolBuilder pol;
+        for (auto & c : at_least_one_constraints)
+            pol.add(c);
+        for (const auto & val : hall_values)
+            if (val != needed)
+                pol.add(value_am1_constraint_numbers.at(val));
+        pol.emit(logger, ProofLevel::Current);
+    }
+}
+
 auto gcs::innards::justify_all_different_hall_set_or_violator(ProofLogger & logger, const State & state,
     const vector<IntegerVariableID> & all_variables, const vector<IntegerVariableID> & hall_variables, const vector<Integer> & hall_values,
     map<Integer, ProofLine> & value_am1_constraint_numbers) -> void
 {
-    need_value_am1s(logger, all_variables, hall_values, value_am1_constraint_numbers);
+    justify_hall_set(logger, state, all_variables, hall_variables, hall_values, nullopt, value_am1_constraint_numbers);
+}
 
-    // We are going to need the at least one value variables, and each only has to
-    // name the values its own domain still holds. Those are a subset of the hall
-    // values (that is what makes these variables a Hall set), so the at-most-ones
-    // below still cancel every term this contributes; the hall values a particular
-    // variable *cannot* take would contribute a term with nothing to cancel it, and
-    // the reason would then have to discharge it separately. Everything else in the
-    // definition range goes in as runs, which are exactly the holes the reason
-    // states.
-    vector<ProofLine> at_least_one_constraints;
-    vector<Integer> still_possible;
-    for (const auto & var : hall_variables) {
-        still_possible.clear();
-        for (const auto & val : hall_values)
-            if (state.in_domain(var, val))
-                still_possible.push_back(val);
-        at_least_one_constraints.push_back(
-            logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value_over_cover(var, still_possible));
-    }
-
-    // each variable in the violator has to take at least one value that is
-    // left in its domain, and each value in the component can only be used
-    // once.
-    PolBuilder pol;
-    for (auto & c : at_least_one_constraints)
-        pol.add(c);
-    for (const auto & val : hall_values)
-        pol.add(value_am1_constraint_numbers.at(val));
-    pol.emit(logger, ProofLevel::Current);
+auto gcs::innards::justify_all_different_hall_set_needs_value(ProofLogger & logger, const State & state,
+    const vector<IntegerVariableID> & all_variables, const vector<IntegerVariableID> & hall_variables, const vector<Integer> & hall_values,
+    Integer needed, map<Integer, ProofLine> & value_am1_constraint_numbers) -> void
+{
+    justify_hall_set(logger, state, all_variables, hall_variables, hall_values, needed, value_am1_constraint_numbers);
 }
 
 auto gcs::innards::justify_all_different_hall_interval(ProofLogger & logger, const State & state, const vector<IntegerVariableID> & all_variables,

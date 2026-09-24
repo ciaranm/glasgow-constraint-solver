@@ -29,6 +29,9 @@ add_scp_chain_test(less_equal_sat           strict)
 add_scp_chain_test(less_equal_unsat         strict)
 add_scp_chain_test(less_than_sat            strict)
 add_scp_chain_test(less_than_unsat          strict)
+# less_than X X: its row is 0 >= 1, and the propagator's contradiction is RUP
+# against it (#1047, which XCSP3's lt(x,x) reached).
+add_scp_chain_test(less_than_aliased_unsat  strict)
 add_scp_chain_test(greater_equal_unsat      strict)
 add_scp_chain_test(greater_equal_sat        strict)
 add_scp_chain_test(greater_than_unsat       strict)
@@ -75,6 +78,8 @@ add_scp_chain_test(lin_equals_maximize_neg_opt  strict)  # sign bit inside the o
 # UNSAT cases (operands forced equal) exercise the refutation proof shape.
 add_scp_chain_test(not_equals_sat       strict)
 add_scp_chain_test(not_equals_unsat     strict)
+# not_equals X X: both halves are 0 >= 1, one on each polarity of the selector.
+add_scp_chain_test(not_equals_aliased_unsat strict)
 add_scp_chain_test(lin_not_equals_sat   strict)
 add_scp_chain_test(lin_not_equals_unsat strict)
 
@@ -225,6 +230,9 @@ add_scp_chain_test(inverse_sat  none)
 # the chain pins that cake reads each offset as its own list's first index, as we
 # do. Inverse's value set once confused the two and failed at the root (#987).
 add_scp_chain_test(inverse_offsets_sat  none)
+# The same variable twice in X: each of its values asks one Y to name both
+# entries, and the contradiction rules them out one at a time (#1047).
+add_scp_chain_test(inverse_aliased_unsat  none)
 
 # strict: `in` (membership). cake_pb_cp's parser takes the candidate list first
 # then the variable -- (id in (values...) var). A constant candidate contributes
@@ -267,6 +275,9 @@ add_scp_chain_test(in_unsat      none)
 # confines successors to {0,1} so two of the four nodes are unreachable.
 add_scp_chain_test(circuit_sat    none)
 add_scp_chain_test(circuit_unsat  none)
+# The same successor variable twice: the all_different pair rows for the two
+# slots are a unit and its negation, which the root contradiction cites (#1047).
+add_scp_chain_test(circuit_aliased_unsat  none)
 
 # none (chain-only): array_min / array_max. cake now FULLY reifies the per-value
 # selector x[id][i] <=> (var = result) (it used to half-reify, which left the

@@ -706,7 +706,8 @@ namespace
 
 auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_id, const vector<IntegerVariableID> & vars,
     const vector<Integer> & vals, const vector<Integer> & excluded, map<Integer, ProofLine> & value_am1_constraint_numbers,
-    GacAllDifferentScratch & scratch, const State & state, auto & tracker, ProofLogger * const logger) -> void
+    GacAllDifferentScratch & scratch, const State & state, auto & tracker, ProofLogger * const logger, vector<uint8_t> * values_in_every_matching)
+    -> void
 {
     // find a matching to check feasibility
     auto & edges = scratch.edges;
@@ -909,6 +910,17 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
         }
     }
 
+    // A value is taken by every matching unless the sweep above reached it: that
+    // means an alternating path leads from it to a free vertex, and moving the
+    // matching along that path frees it. Without the sweep, every value is
+    // matched and none is free.
+    if (values_in_every_matching) {
+        values_in_every_matching->assign(vals.size(), 1);
+        if (n_right != vars.size())
+            for (Right v{0}; v.offset != vals.size(); ++v.offset)
+                (*values_in_every_matching)[v.offset] = ! scratch.explored[vertex_to_offset(vars, vals, v)];
+    }
+
     // anything left can be deleted: an edge survives if it is in the matching,
     // was marked by the unmatched sweep, or starts and ends in the same
     // component (checked inline rather than via a separate marking pass over
@@ -977,8 +989,10 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
 
 template auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_id, const std::vector<IntegerVariableID> & vars,
     const std::vector<Integer> & vals, const std::vector<Integer> & excluded, std::map<Integer, ProofLine> & value_am1_constraint_numbers,
-    GacAllDifferentScratch & scratch, const State & state, SimpleInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
+    GacAllDifferentScratch & scratch, const State & state, SimpleInferenceTracker & inference_tracker, ProofLogger * const logger,
+    std::vector<uint8_t> * values_in_every_matching) -> void;
 
 template auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_id, const std::vector<IntegerVariableID> & vars,
     const std::vector<Integer> & vals, const std::vector<Integer> & excluded, std::map<Integer, ProofLine> & value_am1_constraint_numbers,
-    GacAllDifferentScratch & scratch, const State & state, EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
+    GacAllDifferentScratch & scratch, const State & state, EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger,
+    std::vector<uint8_t> * values_in_every_matching) -> void;

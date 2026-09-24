@@ -77,6 +77,15 @@ add_xcsp_test(cardinality_intervals)
 add_xcsp_test(cardinality_repeated)
 add_xcsp_test(channel_self)
 add_xcsp_test(channel_two)
+# The first list shorter than the second, where channel only says
+# list1[i] = j -> list2[j] = i, and an entry of the second that nothing names
+# is free, even outside the first's indices (#1047). ACE errors unless the
+# first list's domain is exactly the second's indices, which is why _free has
+# x over 0..3.
+add_xcsp_test(channel_unequal)
+add_xcsp_test(channel_unequal_free)
+# The same variable twice in the first list, which is unsatisfiable (#1047).
+add_xcsp_test(channel_aliased)
 add_xcsp_test(circuit)
 add_xcsp_test(circuit_size)
 add_xcsp_test(circuit_size_var)

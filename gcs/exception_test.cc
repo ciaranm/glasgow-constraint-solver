@@ -144,12 +144,13 @@ TEST_CASE("fold_repeated_cover_values turns a repeated cover into a distinct one
     }
 }
 
-TEST_CASE("Inverse rejects mismatched array sizes")
+TEST_CASE("Inverse rejects a first array longer than the second")
 {
+    // A shorter first array is XCSP3's one-directional channel (#1047), but a
+    // longer one is all different over fewer values than it has entries.
     Problem p;
     auto x1 = p.create_integer_variable(0_i, 1_i);
+    auto x2 = p.create_integer_variable(0_i, 1_i);
     auto y1 = p.create_integer_variable(0_i, 1_i);
-    auto y2 = p.create_integer_variable(0_i, 1_i);
-    p.post(Inverse{{x1}, {y1, y2}});
-    REQUIRE_THROWS_AS((solve(p, [](const CurrentState &) -> bool { return true; })), InvalidProblemDefinitionException);
+    REQUIRE_THROWS_AS((Inverse{{x1, x2}, {y1}}), InvalidProblemDefinitionException);
 }

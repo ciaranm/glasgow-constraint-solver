@@ -1,0 +1,1 @@
+( (version 1) (variables (X 0 3)) (constraints (_1 not_equals X X)) (prob_type enumerate) )

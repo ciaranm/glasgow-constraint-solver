@@ -1268,18 +1268,24 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
             post_constraint(problem,
                 NValue{resolve_variable(variables, terms[3]), resolve_variable_list(variables, terms[2], "the nvalue variable list")}, label);
         }
-        else if (op == "inverse") {
-            // (label inverse ((X...) offx) ((Y...) offy)): X[i]=j+offy <-> Y[j]=i+offx.
+        else if (op == "inverse" || op == "inverse_injective") {
+            // (label inverse ((X...) offx) ((Y...) offy)): X[i]=j+offy <-> Y[j]=i+offx,
+            // over lists of the same length. inverse_injective is the same shape with X
+            // shorter, and only X[i]=j+offy -> Y[j]=i+offx; Inverse tells the two apart
+            // by the lengths, so each keyword checks that its lengths are its own.
             if (terms.size() != 4)
-                throw ScpReadError{"inverse takes (label inverse ((X...) offx) ((Y...) offy))"};
+                throw ScpReadError{op + " takes (label " + op + " ((X...) offx) ((Y...) offy))"};
             const auto & a = children_of(terms[2], "the inverse X group");
             const auto & b = children_of(terms[3], "the inverse Y group");
             if (a.size() != 2 || b.size() != 2)
-                throw ScpReadError{"each inverse group is ((vars...) offset)"};
-            post_constraint(problem,
-                Inverse{resolve_variable_list(variables, a[0], "the inverse X list"), resolve_variable_list(variables, b[0], "the inverse Y list"),
-                    as_integer(a[1]), as_integer(b[1])},
-                label);
+                throw ScpReadError{"each " + op + " group is ((vars...) offset)"};
+            auto xs = resolve_variable_list(variables, a[0], "the inverse X list");
+            auto ys = resolve_variable_list(variables, b[0], "the inverse Y list");
+            if (op == "inverse" && xs.size() != ys.size())
+                throw ScpReadError{"inverse takes two lists of the same length"};
+            if (op == "inverse_injective" && xs.size() >= ys.size())
+                throw ScpReadError{"inverse_injective takes an X list shorter than its Y list"};
+            post_constraint(problem, Inverse{move(xs), move(ys), as_integer(a[1]), as_integer(b[1])}, label);
         }
         else if (op == "and" || op == "or" || op == "and_if" || op == "or_if") {
             // (label and/or ((Z op v) ...) (Y op v)): the reification (the final
