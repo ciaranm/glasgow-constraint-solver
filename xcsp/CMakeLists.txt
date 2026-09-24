@@ -131,3 +131,8 @@ add_xcsp_test(precedence)
 add_xcsp_test(regular)
 add_xcsp_test(slide)
 add_xcsp_test(sum_not_equals)
+# <sum> with ne against a nonzero constant and against a variable. Both used to
+# lose solutions (#1032): ne went through an auxiliary for operand - sum whose
+# range was sized from the list alone, so it could not hold every difference.
+add_xcsp_test(sum_not_equals_negative)
+add_xcsp_test(sum_not_equals_var)

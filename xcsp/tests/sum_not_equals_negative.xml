@@ -1,0 +1,11 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="x"> -5..5 </var>
+    </variables>
+    <constraints>
+        <sum>
+            <list> x </list>
+            <condition> (ne,-3) </condition>
+        </sum>
+    </constraints>
+</instance>

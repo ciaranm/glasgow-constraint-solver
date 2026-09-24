@@ -1242,13 +1242,10 @@ namespace
         auto build_sum_common(vector<XVariable *> & x_vars, const optional<vector<int>> & coeffs, XCondition & cond) -> void
         {
             WeightedSum cvs;
-            Integer range = 0_i;
             for (const auto & [idx, x] : enumerate(x_vars)) {
-                auto & mv = find_variable(x->id);
                 auto var = need_variable(x->id);
                 auto coeff = coeffs ? Integer{coeffs->at(idx)} : 1_i;
                 cvs += coeff * var;
-                range += abs(coeff) * max(abs(mv.lower), abs(mv.upper));
             }
 
             Integer bound = 0_i;
@@ -1267,12 +1264,7 @@ namespace
             case EQ: _problem.post(std::move(cvs) == bound); break;
             case GT: _problem.post(std::move(cvs) >= bound + 1_i); break;
             case GE: _problem.post(std::move(cvs) >= bound); break;
-            case NE: {
-                auto diff = create_aux_variable(-range, range, "ne");
-                cvs += 1_i * diff;
-                _problem.post(std::move(cvs) == bound);
-                _problem.post(NotEquals{diff, 0_c});
-            } break;
+            case NE: _problem.post(LinearNotEquals{std::move(cvs), bound}); break;
             case IN:
             case NOTIN: report_unsupported("sum", "set membership condition");
             }
