@@ -103,13 +103,32 @@ namespace gcs::innards
         struct TimeTableEdgeFindingDropPins
         {
         };
+        /// The cumulative projection's capacity row: claim one unit less
+        /// capacity than the network derives.
+        struct ProjectionRowTooStrong
+        {
+        };
+        /// The cumulative projection's capacity row: leave out the lines
+        /// bridging each activity flag, which speaks about a position's bits,
+        /// to the order literals the pair refutations speak about.
+        struct ProjectionSkipBridge
+        {
+        };
+        /// The cumulative projection's capacity row: refute neither of a
+        /// pair's time-axis disjuncts before claiming that both active
+        /// separates them on the other axis.
+        struct ProjectionSkipRefutations
+        {
+        };
     }
 
     using Disjunctive2DProofMutation = std::variant<disjunctive_2d_proof_mutation::None, disjunctive_2d_proof_mutation::EmitNothing,
         disjunctive_2d_proof_mutation::SkipOneRefutation, disjunctive_2d_proof_mutation::SkipGuardWeakening,
         disjunctive_2d_proof_mutation::SkipEscapePins, disjunctive_2d_proof_mutation::OverloadSkipEnergy,
         disjunctive_2d_proof_mutation::OverloadSkipRow, disjunctive_2d_proof_mutation::EdgeFindingOneTooFar,
-        disjunctive_2d_proof_mutation::EdgeFindingDropPushed, disjunctive_2d_proof_mutation::TimeTableEdgeFindingDropPins>;
+        disjunctive_2d_proof_mutation::EdgeFindingDropPushed, disjunctive_2d_proof_mutation::TimeTableEdgeFindingDropPins,
+        disjunctive_2d_proof_mutation::ProjectionRowTooStrong, disjunctive_2d_proof_mutation::ProjectionSkipBridge,
+        disjunctive_2d_proof_mutation::ProjectionSkipRefutations>;
 }
 
 #endif
