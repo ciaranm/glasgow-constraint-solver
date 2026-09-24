@@ -99,10 +99,17 @@ auto run_dup_abs_test(bool proofs, pair<int, int> x_range) -> void
 // do reach that one. The *image* loop wants v1's image under abs to skip a run
 // that v2 contains, which takes a hole in v1 -- and before this existed, no test
 // in the suite reached it at all.
-auto run_abs_hole_test(
-    bool proofs, const ViewWrapConfig & view_cfg, const string & label, const vector<int> & v1_values, const vector<int> & v2_values) -> void
+//
+// v2 can also be a constant (#1058), which a one-value list is not: under a
+// view wrap that list becomes a view of a variable.
+auto run_abs_hole_test(bool proofs, const ViewWrapConfig & view_cfg, const string & label, const vector<int> & v1_values,
+    const variant<vector<int>, int> & v2_spec) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 2);
+    auto v2_values = visit(overloaded{                                            //
+                               [](const vector<int> & values) { return values; }, //
+                               [](int value) { return vector<int>{value}; }},
+        v2_spec);
 
     // Sizes and extremes rather than the lists: preimage_far's v1 is 101 values
     // wide and dumping it buries every other line of the run.
@@ -119,7 +126,7 @@ auto run_abs_hole_test(
 
     Problem p;
     auto v1 = create_integer_variable_or_constant_with_view(p, v1_values, wraps.at(0));
-    auto v2 = create_integer_variable_or_constant_with_view(p, v2_values, wraps.at(1));
+    auto v2 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(1)); }, v2_spec);
     p.post(Abs{v1, v2});
 
     auto proof_name = proofs ? make_optional("abs_test_holes_" + label + "_" + view_wrap_config_label(view_cfg)) : nullopt;
@@ -197,8 +204,16 @@ auto main(int argc, char * argv[]) -> int
         {pair{-4, -4}, pair{4, 4}}, // tautology
         {pair{-4, -4}, pair{5, 5}}, // contradiction
         // Mixed: one genuine constant, one real singleton-domain variable.
-        {-6, pair{6, 6}},   // tautology
-        {pair{-6, -6}, 7}}; // contradiction
+        {-6, pair{6, 6}},  // tautology
+        {pair{-6, -6}, 7}, // contradiction
+        // A wide constant v2 (#1058), for the preimage loop's plain-RUP arm:
+        // the bound rules put v1 inside [-c, c], and what is left strictly
+        // between goes as one run either side of zero. Straddling zero,
+        // asymmetric so that only -c survives, and wholly on each side.
+        {pair{-60, 60}, 45}, //
+        {pair{-60, 30}, 45}, //
+        {pair{5, 60}, 45},   //
+        {pair{-60, -5}, 45}};
 
     mt19937 rand(*get_seed());
     for (int x = 0; x < 10; ++x)
@@ -250,7 +265,8 @@ auto main(int argc, char * argv[]) -> int
             result.push_back(v);
         return result;
     };
-    vector<tuple<string, vector<int>, vector<int>>> hole_data = {// Image loop. v1's image is {0, 1} u [8, 10], so [2, 7] has no preimage
+    vector<tuple<string, vector<int>, variant<vector<int>, int>>> hole_data = {
+        // Image loop. v1's image is {0, 1} u [8, 10], so [2, 7] has no preimage
         // and is removed as one run of six. Nothing clips it first: v1 spans
         // zero, so neither lower bound moves, and the two upper bounds coincide.
         {"image_gap", {-1, 0, 1, 8, 9, 10}, contiguous(0, 10)},
@@ -265,7 +281,22 @@ auto main(int argc, char * argv[]) -> int
         // sign the justification needs is 31 order atoms away from the bound the
         // conclusion's negation gives it. The random rows all leave runs
         // adjacent to zero, where that step is free.
-        {"preimage_far", contiguous(-50, 50), {30, 40}}};
+        {"preimage_far", contiguous(-50, 50), vector{30, 40}},
+        // A constant v2 with runs away from zero (#1058). The constant's
+        // plain-RUP arm needs the run's own bound to settle v1's sign, and with
+        // a contiguous v1 every run it sees starts or ends at zero, where the
+        // sign atom is the run's own cut. The holes leave [30, 44] and
+        // [-44, -30] to be removed, neither adjacent to zero.
+        {"preimage_far_constant",
+            [&] {
+                auto values = contiguous(-50, -30);
+                for (auto v : contiguous(-10, 10))
+                    values.push_back(v);
+                for (auto v : contiguous(30, 50))
+                    values.push_back(v);
+                return values;
+            }(),
+            45}};
 
     // Bare-handle dup ranges. Skipped under the view-wrap sweep.
     vector<pair<int, int>> dup_data = {

@@ -260,12 +260,18 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             //
             // A *constant* operand is the one case that is not like a bare
             // variable: it pins every bit, so it has no order-encoding atom for a
-            // resolution to name at all. The two directions were checked
-            // separately rather than assumed to mirror -- the image lemmas
-            // resolve an order atom of each operand against each half, and the
-            // preimage ones additionally resolve v1's two sign atoms -- and both
-            // want both operands, so one test serves them.
-            auto neither_constant = ! holds_alternative<ConstantIntegerVariableID>(v1) && ! v2_is_constant;
+            // resolution to name at all. The two directions differ here. The
+            // image lemmas resolve an order atom of each operand against each
+            // half, so they want both operands to be variables; they lose
+            // nothing by it, because a constant v2 is one value and a constant
+            // v1 has a one-value image that the bound rules have already fixed
+            // v2 to. The preimage direction needs v1's atoms but none of v2's,
+            // and a constant v2 is folded into each half's constant, which
+            // makes its range removal plain RUP (#1058): before that, a
+            // constant c walked [-c + 1, c - 1] a value at a time. A constant
+            // v1 is one value and never forms a run.
+            auto v1_is_constant = holds_alternative<ConstantIntegerVariableID>(v1);
+            auto neither_constant = ! v1_is_constant && ! v2_is_constant;
 
             auto [post_v2_lb, post_v2_ub] = state.bounds(v2);
             for (auto [lo, hi] : v2_set.each_interval_minus(image_set)) {
@@ -323,7 +329,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 if (clipped_lo > clipped_hi)
                     continue;
 
-                if (neither_constant) {
+                if (! v1_is_constant) {
                     // Split at zero. A run that straddles it does have a single
                     // image to name -- abs([lo, hi]) is [0, max(-lo, hi)] -- but
                     // its own negation then decides nothing about v1's sign, and
@@ -337,6 +343,30 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         if (piece_lo < piece_hi) {
                             auto image_lo = piece_lo >= 0_i ? piece_lo : -piece_hi;
                             auto image_hi = piece_lo >= 0_i ? piece_hi : -piece_lo;
+
+                            // With v2 a constant c, each half is a bound on v1
+                            // alone -- v1 >= c under v1 >= 0, v1 <= -c under
+                            // v1 < 0 -- and plain RUP removes the run. Its
+                            // negation gives v1 >= lo and v1 < hi + 1, and the run
+                            // lies on one side of zero, so one of those two
+                            // atoms' definitions fixes v1's sign bit by unit
+                            // propagation, and the order chain or the sign atom's
+                            // own definition then sets v1 >= 0 either way. That
+                            // enables one half, a bound on v1 contradicting the
+                            // run's on the same bits, which unit propagates to a
+                            // contradiction: Theorem 2.7 via Lemma 3.2 in
+                            // McIlree's thesis. A run straddling zero fixes no
+                            // sign, which is why the split above is load-bearing.
+                            //
+                            // The reason is always true here, because the run
+                            // excludes +-c by construction, so the line is an
+                            // unconditional removal.
+                            if (v2_is_constant) {
+                                inference.infer_not_in_range(logger, v1, piece_lo, piece_hi, JustifyUsingRUP{hints::Abs{originator}},
+                                    ExplicitReason{ReasonLiterals{not_in_range(v2, image_lo, image_hi)}});
+                                continue;
+                            }
+
                             inference.infer_not_in_range(logger, v1, piece_lo, piece_hi,
                                 JustifyExplicitly{[logger, v1, v2, piece_lo = piece_lo, piece_hi = piece_hi, abs_nonneg_le, abs_nonneg_ge, abs_neg_le,
                                                       abs_neg_ge](const ReasonLiterals &) {
