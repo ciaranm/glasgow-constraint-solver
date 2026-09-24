@@ -512,14 +512,35 @@ LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value) : ReifiedL
 
 namespace
 {
+    // A constant condition leaves nothing to reify on, so each form resolves it
+    // to what that form means. For Iff, true enforces the equality and false its
+    // negation. For the half-reified forms, true enforces the form's own relation
+    // (equality for If, disequality for NotIf) and false releases the constraint
+    // altogether; that is written as the same form over a condition that can never
+    // hold, so the propagator sees it deactivated, its OPB rows are vacuous, and
+    // the .scp still records what was posted (as the condition (0 = 1)).
+    auto never_holds() -> IntegerVariableCondition
+    {
+        return IntegerVariableID{0_c} == 1_i;
+    }
+
     template <typename T_>
     auto literal_to_reif(const Literal & cond) -> ReificationCondition
     {
-        return overloaded{
-            [&](const TrueLiteral &) -> ReificationCondition { return reif::MustHold{}; },          //
-            [&](const FalseLiteral &) -> ReificationCondition { return reif::MustNotHold{}; },      //
-            [&](const IntegerVariableCondition & cond) -> ReificationCondition { return T_{cond}; } //
-        }
+        return overloaded{//
+            [&](const TrueLiteral &) -> ReificationCondition {
+                if constexpr (is_same_v<T_, reif::NotIf>)
+                    return reif::MustNotHold{};
+                else
+                    return reif::MustHold{};
+            },
+            [&](const FalseLiteral &) -> ReificationCondition {
+                if constexpr (is_same_v<T_, reif::Iff>)
+                    return reif::MustNotHold{};
+                else
+                    return T_{never_holds()};
+            },
+            [&](const IntegerVariableCondition & cond) -> ReificationCondition { return T_{cond}; }}
             .visit(cond);
     }
 }

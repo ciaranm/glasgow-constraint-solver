@@ -1,5 +1,6 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/linear.hh>
+#include <gcs/innards/literal.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -9,10 +10,12 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <utility>
 
 using std::cerr;
 using std::flush;
 using std::make_optional;
+using std::move;
 using std::nullopt;
 using std::set;
 using std::string;
@@ -66,6 +69,45 @@ namespace
         set<tuple<int>> actual;
         auto proof_name = proofs ? make_optional("linear_constant_test" + threshold_proof_suffix()) : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{x});
+        check_results(proof_name, expected, actual);
+    }
+
+    // A reified equality or disequality whose condition is a constant literal
+    // (issue #1033), over x, y in 0..2 against x + y == 3: the solutions are all
+    // nine pairs, the two where the sum is 3, or the seven where it is not. What a
+    // constant condition means depends on the form: true enforces If's equality
+    // and NotIf's disequality, false releases either half-reified form, and an
+    // Iff enforces the negated relation when false.
+    enum class Expect
+    {
+        All,
+        SumIs3,
+        SumIsNot3
+    };
+
+    template <typename Constraint_>
+    auto run_constant_condition_test(bool proofs, const string & label, innards::Literal cond, Expect expect, bool tabulated) -> void
+    {
+        println(cerr, "linear constant condition: {}{}{}", label, tabulated ? " tabulated" : "", proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        set<tuple<int, int>> expected;
+        for (int x = 0; x <= 2; ++x)
+            for (int y = 0; y <= 2; ++y)
+                if (expect == Expect::All || (expect == Expect::SumIs3) == (x + y == 3))
+                    expected.emplace(x, y);
+
+        Problem p;
+        auto x = p.create_integer_variable(0_i, 2_i);
+        auto y = p.create_integer_variable(0_i, 2_i);
+        auto c = Constraint_{WeightedSum{} + 1_i * x + 1_i * y, 3_i, cond};
+        if (tabulated)
+            c.with_consistency(consistency::Tabulated{});
+        p.post(move(c));
+
+        set<tuple<int, int>> actual;
+        auto proof_name = proofs ? make_optional("linear_constant_test" + threshold_proof_suffix()) : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{x, y});
         check_results(proof_name, expected, actual);
     }
 }
@@ -124,6 +166,17 @@ auto main(int argc, char * argv[]) -> int
             auto y = p.create_integer_variable(-5_i, -5_i, "y");
             p.post(LinearEquality{WeightedSum{} + 1_i * y + -1_i * 3_c, -8_i});
         });
+
+        for (bool tabulated : {false, true}) {
+            run_constant_condition_test<LinearEqualityIf>(proofs, "x + y == 3 if true", innards::TrueLiteral{}, Expect::SumIs3, tabulated);
+            run_constant_condition_test<LinearEqualityIf>(proofs, "x + y == 3 if false", innards::FalseLiteral{}, Expect::All, tabulated);
+            run_constant_condition_test<LinearEqualityIff>(proofs, "x + y == 3 iff true", innards::TrueLiteral{}, Expect::SumIs3, tabulated);
+            run_constant_condition_test<LinearEqualityIff>(proofs, "x + y == 3 iff false", innards::FalseLiteral{}, Expect::SumIsNot3, tabulated);
+            run_constant_condition_test<LinearNotEqualsIf>(proofs, "x + y != 3 if true", innards::TrueLiteral{}, Expect::SumIsNot3, tabulated);
+            run_constant_condition_test<LinearNotEqualsIf>(proofs, "x + y != 3 if false", innards::FalseLiteral{}, Expect::All, tabulated);
+            run_constant_condition_test<LinearNotEqualsIff>(proofs, "x + y != 3 iff true", innards::TrueLiteral{}, Expect::SumIsNot3, tabulated);
+            run_constant_condition_test<LinearNotEqualsIff>(proofs, "x + y != 3 iff false", innards::FalseLiteral{}, Expect::SumIs3, tabulated);
+        }
     }
 
     return EXIT_SUCCESS;
