@@ -454,8 +454,8 @@ struct NamesAndIDsTracker::Imp
 
     map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
     // The PB-file rendering of every allocated XLiteral, indexed 2 * id +
-    // negated (ids are allocated sequentially from 1). Populated in both
-    // naming modes, so rendering a literal is an index, not a lookup.
+    // negated (ids are allocated sequentially from 1), so rendering a
+    // literal is an index, not a lookup.
     vector<string> xlit_names;
     map<ProofFlag, string> flag_names;
 
@@ -469,14 +469,12 @@ struct NamesAndIDsTracker::Imp
     string variables_map_file_name;
     bool first_varmap_entry = true;
     bool finalised = false;
-    bool verbose_names;
     bool use_compact_boolean_encoding = false;
     AssertionLevel assertion_level = AssertionLevel::Off;
 };
 
 NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) : _imp(make_unique<Imp>())
 {
-    _imp->verbose_names = proof_options.verbose_names;
     _imp->use_compact_boolean_encoding = proof_options.use_compact_boolean_encoding;
     _imp->assertion_level = proof_options.assertion_level;
 
@@ -2318,7 +2316,7 @@ auto NamesAndIDsTracker::make_proof_flag_named(const string & full_name) -> Proo
 {
     // The supplied name is used verbatim as the PB-file variable name (rather
     // than wrapped in `f[index][...]`), so the same string is both the tracked
-    // name and the verbose rendering. See the header for why.
+    // name and the PB-file rendering. See the header for why.
     ProofFlag result{allocate_flag_index(), true};
     track_variable_name(result, full_name);
     auto flagvar = allocate_flag_xliteral(result, full_name);
@@ -2467,25 +2465,21 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
-    if (_imp->verbose_names) {
-        // Negative values render as `-N` (matching cake); '-' is legal in both
-        // VeriPB variable names and @labels (VeriPB-dev #191).
-        string value_name = value.to_string();
+    // Negative values render as `-N` (matching cake); '-' is legal in both
+    // VeriPB variable names and @labels (VeriPB-dev #191).
+    string value_name = value.to_string();
 
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][{}{}]", name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
-                store_xlit_names(result, name);
-            }, //
-            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = format("p[{}_{}][{}{}]", id.index, name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
-                store_xlit_names(result, name);
-            } //
-        }
-            .visit(id);
+    overloaded{
+        [&](const SimpleIntegerVariableID & id) -> void {
+            string name = format("i[{}][{}{}]", name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
+            store_xlit_names(result, name);
+        }, //
+        [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+            string name = format("p[{}_{}][{}{}]", id.index, name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
+            store_xlit_names(result, name);
+        } //
     }
-    else
-        store_xlit_names(result, "x" + to_string(result.id));
+        .visit(id);
 
     if (_imp->variables_map_file) {
         try {
@@ -2521,25 +2515,21 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
-    if (_imp->verbose_names) {
-        // Negative values render as `-N` (matching cake); '-' is legal in both
-        // VeriPB variable names and @labels (VeriPB-dev #191).
-        auto value_name = [](Integer v) { return v.to_string(); };
+    // Negative values render as `-N` (matching cake); '-' is legal in both
+    // VeriPB variable names and @labels (VeriPB-dev #191).
+    auto value_name = [](Integer v) { return v.to_string(); };
 
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][in{}_{}]", name_of(id), value_name(lo), value_name(hi));
-                store_xlit_names(result, name);
-            }, //
-            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = format("p[{}_{}][in{}_{}]", id.index, name_of(id), value_name(lo), value_name(hi));
-                store_xlit_names(result, name);
-            } //
-        }
-            .visit(id);
+    overloaded{
+        [&](const SimpleIntegerVariableID & id) -> void {
+            string name = format("i[{}][in{}_{}]", name_of(id), value_name(lo), value_name(hi));
+            store_xlit_names(result, name);
+        }, //
+        [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+            string name = format("p[{}_{}][in{}_{}]", id.index, name_of(id), value_name(lo), value_name(hi));
+            store_xlit_names(result, name);
+        } //
     }
-    else
-        store_xlit_names(result, "x" + to_string(result.id));
+        .visit(id);
 
     if (_imp->variables_map_file) {
         try {
@@ -2572,15 +2562,11 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     return result;
 }
 
-auto NamesAndIDsTracker::allocate_flag_xliteral(ProofFlag flag, const string & verbose_name) -> XLiteral
+auto NamesAndIDsTracker::allocate_flag_xliteral(ProofFlag flag, const string & name) -> XLiteral
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
-    if (_imp->verbose_names) {
-        store_xlit_names(result, verbose_name);
-    }
-    else
-        store_xlit_names(result, "x" + to_string(result.id));
+    store_xlit_names(result, name);
 
     if (_imp->variables_map_file) {
         try {
@@ -2608,17 +2594,13 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
-    if (_imp->verbose_names) {
-        string name = name_override
-            ? *name_override
-            : visit(overloaded{                                                                                 //
-                        [&](const SimpleIntegerVariableID & id) { return format("i[{}][sign]", name_of(id)); }, //
-                        [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][sign]", id.index, name_of(id)); }},
-                  id);
-        store_xlit_names(result, name);
-    }
-    else
-        store_xlit_names(result, "x" + to_string(result.id));
+    string name = name_override
+        ? *name_override
+        : visit(overloaded{                                                                                 //
+                    [&](const SimpleIntegerVariableID & id) { return format("i[{}][sign]", name_of(id)); }, //
+                    [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][sign]", id.index, name_of(id)); }},
+              id);
+    store_xlit_names(result, name);
 
     if (_imp->variables_map_file) {
         try {
@@ -2653,20 +2635,16 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
-    if (_imp->verbose_names) {
-        // name_override lets a proof-only variable's bits be named in a caller-chosen
-        // scheme (cake_pb_cp's value flags) rather than the default p[index_name][b];
-        // the literal is still the variable's bit, only named.
-        string name = name_override
-            ? *name_override
-            : visit(overloaded{                                                                                       //
-                        [&](const SimpleIntegerVariableID & id) { return format("i[{}][b{}]", name_of(id), power); }, //
-                        [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][b{}]", id.index, name_of(id), power); }},
-                  id);
-        store_xlit_names(result, name);
-    }
-    else
-        store_xlit_names(result, "x" + to_string(result.id));
+    // name_override lets a proof-only variable's bits be named in a caller-chosen
+    // scheme (cake_pb_cp's value flags) rather than the default p[index_name][b];
+    // the literal is still the variable's bit, only named.
+    string name = name_override
+        ? *name_override
+        : visit(overloaded{                                                                                       //
+                    [&](const SimpleIntegerVariableID & id) { return format("i[{}][b{}]", name_of(id), power); }, //
+                    [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][b{}]", id.index, name_of(id), power); }},
+              id);
+    store_xlit_names(result, name);
 
     if (_imp->variables_map_file) {
         try {

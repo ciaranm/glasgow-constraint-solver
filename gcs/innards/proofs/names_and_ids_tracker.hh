@@ -74,14 +74,14 @@ namespace gcs::innards
 
         // Record the PB-file rendering of a freshly-allocated XLiteral (and its
         // negation, as `~name`). Every allocate_* path calls this exactly once,
-        // in both naming modes, so pb_file_string_for is a plain index.
+        // so pb_file_string_for is a plain index.
         auto store_xlit_names(const XLiteral &, std::string name) -> void;
 
-        // Allocate the XLiteral backing a flag, registering `verbose_name` (and
+        // Allocate the XLiteral backing a flag, registering `name` (and
         // its negation) as the PB-file rendering. Shared by create_proof_flag
         // (which passes the `f[index][stem]` form) and make_proof_flag_named
         // (which passes a fully-formed two-level name verbatim).
-        [[nodiscard]] auto allocate_flag_xliteral(ProofFlag flag, const std::string & verbose_name) -> XLiteral;
+        [[nodiscard]] auto allocate_flag_xliteral(ProofFlag flag, const std::string & name) -> XLiteral;
 
         // Create a flag whose PB-file variable name is `full_name` verbatim
         // (rather than wrapped in `f[index][...]`). The cake-conforming
