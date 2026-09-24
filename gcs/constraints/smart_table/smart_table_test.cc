@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <set>
@@ -24,6 +25,7 @@
 using std::cerr;
 using std::cout;
 using std::flush;
+using std::function;
 using std::make_optional;
 using std::nullopt;
 using std::optional;
@@ -500,9 +502,71 @@ auto run_degenerate_test(bool proofs, const string & mode) -> void
     }
 }
 
+// A three-variable table whose scope comes wrapped as the view sweep says,
+// checked against the exact solution set and for GAC: the other modes check
+// only that each solution found is lex or at-most-one, so none of them would
+// notice a table that prunes too much (issue #238).
+auto run_view_test(bool proofs, const ViewWrapConfig & view_cfg, const string & label, pair<int, int> r1, pair<int, int> r2, pair<int, int> r3,
+    const function<SmartTuples(IntegerVariableID, IntegerVariableID, IntegerVariableID)> & make_tuples,
+    const function<bool(int, int, int)> & is_satisfying) -> void
+{
+    auto wraps = wraps_for_positions(view_cfg, 3);
+    print(cerr, "smart table views {} [{}] [{},{}] [{},{}] [{},{}]{}", label, view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first,
+        r2.second, r3.first, r3.second, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int, int, int>> expected, actual;
+    build_expected(expected, is_satisfying, r1, r2, r3);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto a = create_integer_variable_or_constant_with_view(p, r1, wraps.at(0));
+    auto b = create_integer_variable_or_constant_with_view(p, r2, wraps.at(1));
+    auto c = create_integer_variable_or_constant_with_view(p, r3, wraps.at(2));
+    p.post(SmartTable{{a, b, c}, make_tuples(a, b, c)});
+
+    auto proof_name = proofs ? make_optional("smart_table_test_views_" + view_wrap_config_label(view_cfg)) : nullopt;
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{a, b, c});
+    check_results(proof_name, expected, actual);
+}
+
+auto run_view_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
+{
+    // Every binary relation, and both kinds of unary entry.
+    auto mixed_entries = [](IntegerVariableID a, IntegerVariableID b, IntegerVariableID c) {
+        return SmartTuples{{SmartTable::less_than(a, b), SmartTable::in_set(a, {1_i, 2_i}), SmartTable::equals(c, 3_i)},
+            {SmartTable::equals(a, b), SmartTable::not_equals(a, 1_i), SmartTable::greater_than_equal(b, c)},
+            {SmartTable::less_than_equal(a, b), SmartTable::greater_than(b, c), SmartTable::not_in_set(c, {2_i})},
+            {SmartTable::equals(b, 2_i), SmartTable::not_equals(a, b), SmartTable::equals(c, 1_i)}};
+    };
+    auto mixed_entries_satisfied = [](int a, int b, int c) {
+        return (a < b && (a == 1 || a == 2) && c == 3) || (a == b && a != 1 && b >= c) || (a <= b && b > c && c != 2) || (b == 2 && a != b && c == 1);
+    };
+    run_view_test(proofs, view_cfg, "mixed_entries", {1, 3}, {1, 3}, {1, 3}, mixed_entries, mixed_entries_satisfied);
+    run_view_test(proofs, view_cfg, "mixed_entries", {0, 3}, {-1, 3}, {1, 4}, mixed_entries, mixed_entries_satisfied);
+    // A fixed middle variable, which is a constant under the bare wrap.
+    run_view_test(proofs, view_cfg, "mixed_entries", {1, 3}, {2, 2}, {1, 3}, mixed_entries, mixed_entries_satisfied);
+
+    // Entries that name a view of a scope variable rather than the variable
+    // itself, including a tuple that names both a and a + 1: whatever view
+    // an entry uses, it must support and narrow the same underlying values.
+    auto entries_over_views = [](IntegerVariableID a, IntegerVariableID b, IntegerVariableID c) {
+        return SmartTuples{{SmartTable::less_than(a + 1_i, b), SmartTable::not_in_set(-c, {-1_i})},
+            {SmartTable::equals(-a + 4_i, b), SmartTable::greater_than(c + 2_i, 4_i)},
+            {SmartTable::greater_than_equal(a, 2_i), SmartTable::less_than_equal(a + 1_i, b), SmartTable::equals(c, 1_i)}};
+    };
+    auto entries_over_views_satisfied = [](int a, int b, int c) {
+        return (a + 1 < b && -c != -1) || (-a + 4 == b && c + 2 > 4) || (a >= 2 && a + 1 <= b && c == 1);
+    };
+    run_view_test(proofs, view_cfg, "entries_over_views", {1, 3}, {1, 4}, {1, 3}, entries_over_views, entries_over_views_satisfied);
+    run_view_test(proofs, view_cfg, "entries_over_views", {-1, 3}, {0, 5}, {0, 3}, entries_over_views, entries_over_views_satisfied);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
+
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Mode is the first non-flag positional. With no mode given (a manual run
     // rather than the ctest harness) run every mode.
@@ -517,7 +581,8 @@ auto main(int argc, char * argv[]) -> int
     // Keep in sync with the mode dispatch below and the matching foreach(mode ...)
     // in gcs/CMakeLists.txt.
     const vector<string> all_modes = {"lex_gt", "lex_ge", "lex_lt", "lex_le", "lex_gt_fixed", "lex_ge_fixed", "lex_lt_fixed", "lex_le_fixed",
-        "am1_eq", "am1_in_set", "al1_eq", "al1_in_set", "mixed_same_var", "stacked_unary", "wide_constants", "degenerate", "dead_tuple", "deep_tree"};
+        "am1_eq", "am1_in_set", "al1_eq", "al1_in_set", "mixed_same_var", "stacked_unary", "wide_constants", "degenerate", "dead_tuple", "deep_tree",
+        "views"};
     const vector<string> modes = requested_mode.empty() ? all_modes : vector<string>{requested_mode};
 
     vector<pair<int, vector<pair<int, int>>>> data = {
@@ -531,6 +596,22 @@ auto main(int argc, char * argv[]) -> int
     };
 
     for (const auto & mode : modes) {
+        // The only mode that takes the view sweep's wraps.
+        if (mode == "views") {
+            constexpr int n_positions = 3;
+            if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+                println(
+                    cerr, "smart_table view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
+                continue;
+            }
+            for (bool proofs : {false, true}) {
+                if (proofs && ! can_run_veripb())
+                    continue;
+                run_view_tests(proofs, view_cfg);
+            }
+            continue;
+        }
+
         // These modes carry their own instances rather than using the
         // length/ranges table below.
         if (mode == "mixed_same_var" || mode == "stacked_unary" || mode == "wide_constants" || mode == "degenerate" || mode == "dead_tuple" ||

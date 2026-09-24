@@ -123,8 +123,7 @@ option(GCS_BUILD_TESTS "Build GCS tests" ${PROJECT_IS_TOP_LEVEL})
 # The view-wrap proof-verification sweep: every wrap x every argument position,
 # for each constraint that threads a ViewWrapConfig through its test. That is
 # around 7200 extra tests, which is why it is opt-in -- not because they fail.
-# Every constraint registered in the sweep verifies under every wrap; SmartTable
-# is the one deliberate omission, because it over-prunes under views (#238).
+# Every constraint registered in the sweep verifies under every wrap.
 # This gates only the per-wrap registrations: the one --view-position=mixed test
 # per constraint is registered either way and is part of the ordinary suite, as
 # are the --view-wrap / --view-position flags on each test binary. Turn this on
