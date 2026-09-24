@@ -254,6 +254,61 @@ namespace
         p.post(Disjunctive2D{xs, ys, widths, heights}.with_strict(false).with_rules(rules).with_proof_mutation(mutation));
     }
 
+    /// One instance of a random sweep's family; see run_random_sweep for what
+    /// each shape is for.
+    auto random_instance(mt19937 & rand, int shape) -> Instance
+    {
+        // The overload check is conflict-only and fires on area, and a
+        // narrow domain gives a rectangle a mandatory part the pairwise rule
+        // then refutes just as well. So its sweep packs four or five
+        // rectangles, mostly two by two, into a box four by four, each
+        // free to go anywhere in it --- which gives none of them a
+        // mandatory part on either axis, and often more area than the box.
+        // shape 2 is edge-finding's: the same, but six wide with each x
+        // range at its own offset, since a rule about a rectangle with one
+        // end inside a window needs windows that do not contain everything.
+        auto dense = shape != 0;
+        auto n = dense ? uniform_int_distribution<int>{4, 5}(rand) : uniform_int_distribution<int>{2, 4}(rand);
+        Instance inst;
+        for (auto i = 0; i < n; ++i) {
+            if (dense) {
+                auto size = [&]() { return uniform_int_distribution<int>{0, 3}(rand) == 0 ? 1 : 2; };
+                auto w = size(), h = size();
+                inst.widths.push_back(w);
+                inst.heights.push_back(h);
+                if (shape == 2)
+                    inst.x_ranges.emplace_back(0, 6 - w);
+                else
+                    inst.x_ranges.emplace_back(0, 4 - w);
+                inst.y_ranges.emplace_back(0, 4 - h);
+            }
+            else {
+                inst.widths.push_back(uniform_int_distribution<int>{1, 3}(rand));
+                inst.heights.push_back(uniform_int_distribution<int>{1, 3}(rand));
+                inst.x_ranges.emplace_back(0, uniform_int_distribution<int>{0, 3}(rand));
+                inst.y_ranges.emplace_back(0, uniform_int_distribution<int>{0, 3}(rand));
+            }
+        }
+        // Edge-finding's shape: all but one or two of the rectangles are
+        // confined, two wide, to a four-wide window at a random offset in a
+        // box six wide, and the rest are free across it --- the fixtures'
+        // family, since a push needs a window its contents nearly fill and
+        // a rectangle with one end inside it.
+        if (shape == 2) {
+            auto free = uniform_int_distribution<int>{1, 2}(rand);
+            auto offset = uniform_int_distribution<int>{0, 2}(rand);
+            for (auto i = 0; i + free < n; ++i) {
+                inst.widths[i] = 2;
+                inst.x_ranges[i] = {offset, offset + 2};
+            }
+            for (auto i = n - free; i < n; ++i) {
+                inst.heights[i] = uniform_int_distribution<int>{2, 4}(rand);
+                inst.y_ranges[i] = {0, 4 - inst.heights[i]};
+            }
+        }
+        return inst;
+    }
+
     /// Random instances, which is where a certificate bug that a hand-built
     /// fixture is too symmetric to expose shows up. Each one enumerates every
     /// solution and verifies its own proof; the sweep as a whole has to have
@@ -272,54 +327,7 @@ namespace
         auto total_markers = 0;
         auto pruned_somewhere = false;
         for (auto instance = 0; instance < search_instances; ++instance) {
-            // The overload check is conflict-only and fires on area, and a
-            // narrow domain gives a rectangle a mandatory part the pairwise rule
-            // then refutes just as well. So its sweep packs four or five
-            // rectangles, mostly two by two, into a box four by four, each
-            // free to go anywhere in it --- which gives none of them a
-            // mandatory part on either axis, and often more area than the box.
-            // shape 2 is edge-finding's: the same, but six wide with each x
-            // range at its own offset, since a rule about a rectangle with one
-            // end inside a window needs windows that do not contain everything.
-            auto dense = shape != 0;
-            auto n = dense ? uniform_int_distribution<int>{4, 5}(rand) : uniform_int_distribution<int>{2, 4}(rand);
-            Instance inst;
-            for (auto i = 0; i < n; ++i) {
-                if (dense) {
-                    auto size = [&]() { return uniform_int_distribution<int>{0, 3}(rand) == 0 ? 1 : 2; };
-                    auto w = size(), h = size();
-                    inst.widths.push_back(w);
-                    inst.heights.push_back(h);
-                    if (shape == 2)
-                        inst.x_ranges.emplace_back(0, 6 - w);
-                    else
-                        inst.x_ranges.emplace_back(0, 4 - w);
-                    inst.y_ranges.emplace_back(0, 4 - h);
-                }
-                else {
-                    inst.widths.push_back(uniform_int_distribution<int>{1, 3}(rand));
-                    inst.heights.push_back(uniform_int_distribution<int>{1, 3}(rand));
-                    inst.x_ranges.emplace_back(0, uniform_int_distribution<int>{0, 3}(rand));
-                    inst.y_ranges.emplace_back(0, uniform_int_distribution<int>{0, 3}(rand));
-                }
-            }
-            // Edge-finding's shape: all but one or two of the rectangles are
-            // confined, two wide, to a four-wide window at a random offset in a
-            // box six wide, and the rest are free across it --- the fixtures'
-            // family, since a push needs a window its contents nearly fill and
-            // a rectangle with one end inside it.
-            if (shape == 2) {
-                auto free = uniform_int_distribution<int>{1, 2}(rand);
-                auto offset = uniform_int_distribution<int>{0, 2}(rand);
-                for (auto i = 0; i + free < n; ++i) {
-                    inst.widths[i] = 2;
-                    inst.x_ranges[i] = {offset, offset + 2};
-                }
-                for (auto i = n - free; i < n; ++i) {
-                    inst.heights[i] = uniform_int_distribution<int>{2, 4}(rand);
-                    inst.y_ranges[i] = {0, 4 - inst.heights[i]};
-                }
-            }
+            auto inst = random_instance(rand, shape);
             auto name = stem + to_string(instance);
             println(
                 cerr, "disjunctive2d relaxation random {}: xr={} yr={} w={} h={}", instance, inst.x_ranges, inst.y_ranges, inst.widths, inst.heights);
@@ -352,6 +360,12 @@ auto main(int argc, char * argv[]) -> int
     auto overload = false;
     // And edge-finding on the relaxation, likewise.
     auto edge_finding = false;
+    // And time-table edge-finding on the relaxation.
+    auto ttef = false;
+    // With a mutation: run it over this many instances of the sweep's family
+    // and report which ones VeriPB rejects, to find a fixture on which it is
+    // load-bearing. A development tool, not a lane.
+    auto survey = 0;
     string mutation_basename = "disjunctive_2d_relaxation_mutation";
     for (auto a = 1; a < argc; ++a) {
         string arg = argv[a];
@@ -389,13 +403,30 @@ auto main(int argc, char * argv[]) -> int
             overload = true;
         else if (arg == "--edge-finding")
             edge_finding = true;
+        else if (arg == "--ttef")
+            ttef = true;
+        else if (arg == "--survey" && a + 1 < argc)
+            survey = std::stoi(argv[++a]);
+        else if (arg == "--mutate=ttef_one_too_far") {
+            mutation = disjunctive_2d_proof_mutation::EdgeFindingOneTooFar{};
+            ttef = true;
+        }
+        else if (arg == "--mutate=ttef_drop_pushed") {
+            mutation = disjunctive_2d_proof_mutation::EdgeFindingDropPushed{};
+            ttef = true;
+        }
+        else if (arg == "--mutate=ttef_drop_pins") {
+            mutation = disjunctive_2d_proof_mutation::TimeTableEdgeFindingDropPins{};
+            ttef = true;
+        }
         else if (arg == "--proof-files-basename" && a + 1 < argc)
             mutation_basename = argv[++a];
     }
 
-    const Disjunctive2DRules with = edge_finding ? Disjunctive2DRules{.relaxation_edge_finding = true}
-        : overload                               ? Disjunctive2DRules{.relaxation_overload = true}
-                                                 : Disjunctive2DRules{.cumulative_relaxation = true};
+    const Disjunctive2DRules with = ttef ? Disjunctive2DRules{.relaxation_time_table_edge_finding = true}
+        : edge_finding                   ? Disjunctive2DRules{.relaxation_edge_finding = true}
+        : overload                       ? Disjunctive2DRules{.relaxation_overload = true}
+                                         : Disjunctive2DRules{.cumulative_relaxation = true};
 
     // The edge-finding fixtures. Three squares of two confined to x in [0, 2]
     // fill 12 of the 16 units of area the window [0, 4) has under a y extent
@@ -406,6 +437,23 @@ auto main(int argc, char * argv[]) -> int
     // The mirror: the three squares in [4, 8) and the tall one ending inside
     // it, so it cannot start after 3.
     const Instance ef_ub{{{4, 6}, {4, 6}, {4, 6}, {0, 6}}, {{0, 2}, {0, 2}, {0, 2}, {0, 0}}, {2, 2, 2, 2}, {2, 2, 2, 4}};
+
+    // The TTEF fixtures. As `ef_lb` with the third square replaced by a
+    // rectangle three wide over x in [1, 3]: no window edge-finding looks at
+    // both contains it and gives a push, but its mandatory part [3, 4) is
+    // inside [0, 4). That is 8 units contained plus 2 of profile, so the tall
+    // one cannot start before 3 --- and edge-finding alone, seeing only the
+    // 8, cannot push at all. (See check_push below for where it ends up.)
+    const Instance ttef_lb{{{0, 2}, {0, 2}, {1, 3}, {0, 6}}, {{0, 2}, {0, 2}, {0, 2}, {0, 0}}, {2, 2, 3, 2}, {2, 2, 2, 4}};
+    // Its mirror in x, in a box eight wide.
+    const Instance ttef_ub{{{4, 6}, {4, 6}, {2, 4}, {0, 6}}, {{0, 2}, {0, 2}, {0, 2}, {0, 0}}, {2, 2, 3, 2}, {2, 2, 2, 4}};
+    // Found by `--mutate=ttef_drop_pushed --survey 200`: an instance on which
+    // the pushed rectangle's own energy is load-bearing. On `ttef_lb` it is
+    // not --- unit propagation closes the push without it --- so that lane
+    // runs here instead. (Dropping the pins is rejected on none of the 199
+    // instances the survey fired on: propagation derives every pin from the
+    // reason's bounds through the flag's reverse row, so no lane pins them.)
+    const Instance ttef_pushed_matters{{{2, 4}, {2, 4}, {2, 4}, {0, 4}}, {{0, 3}, {0, 2}, {0, 2}, {0, 0}}, {2, 2, 2, 2}, {1, 2, 2, 4}};
     const Disjunctive2DRules without{};
 
     // The overload fixture: seven squares of two in a box five by five, 28
@@ -418,12 +466,13 @@ auto main(int argc, char * argv[]) -> int
         // A stem per rule: the two sweep lanes run concurrently from one
         // directory, and a shared proof name is the race #961 was.
         run_random_sweep(search_instances, proofs, with, without,
-            edge_finding   ? "disjunctive_2d_relaxation_edge_finding_search_"
-                : overload ? "disjunctive_2d_relaxation_overload_search_"
-                           : "disjunctive_2d_relaxation_search_",
-            edge_finding   ? 2
-                : overload ? 1
-                           : 0);
+            ttef               ? "disjunctive_2d_relaxation_ttef_search_"
+                : edge_finding ? "disjunctive_2d_relaxation_edge_finding_search_"
+                : overload     ? "disjunctive_2d_relaxation_overload_search_"
+                               : "disjunctive_2d_relaxation_search_",
+            (ttef || edge_finding) ? 2
+                : overload         ? 1
+                                   : 0);
         return EXIT_SUCCESS;
     }
 
@@ -444,10 +493,35 @@ auto main(int argc, char * argv[]) -> int
     // on a non-strict instance with *two* of them instead: one escape the
     // closing RUP can still reach by bit arithmetic, and a lane on one would
     // pass with the pins gone.
+    if (mutation && survey > 0) {
+        mt19937 rand;
+        rand.seed(1234);
+        auto rejected = 0, fired = 0;
+        for (auto k = 0; k < survey; ++k) {
+            auto inst = random_instance(rand, (edge_finding || ttef) ? 2 : overload ? 1 : 0);
+            auto name = mutation_basename + "_survey";
+            Problem p;
+            post(p, inst, with, *mutation);
+            solve_with(p, SolveCallbacks{}, make_optional<ProofOptions>(ProofFileNames{name}));
+            if (count_markers(name, "disjunctive2d cumulative relaxation ") == 0)
+                continue;
+            ++fired;
+            if (! verify(name)) {
+                ++rejected;
+                println(cerr, "survey: rejected on xr={} yr={} w={} h={}", inst.x_ranges, inst.y_ranges, inst.widths, inst.heights);
+            }
+        }
+        println(cerr, "survey: {} of {} instances where the rule fired rejected the mutation", rejected, fired);
+        return EXIT_SUCCESS;
+    }
+
     if (mutation) {
         Problem p;
         if (std::holds_alternative<disjunctive_2d_proof_mutation::SkipEscapePins>(*mutation))
             post_two_escapes(p, with, *mutation);
+        else if (ttef)
+            post(p, std::holds_alternative<disjunctive_2d_proof_mutation::EdgeFindingDropPushed>(*mutation) ? ttef_pushed_matters : ttef_lb, with,
+                *mutation);
         else if (edge_finding)
             post(p, ef_lb, with, *mutation);
         else if (overload)
@@ -835,7 +909,7 @@ auto main(int argc, char * argv[]) -> int
     //
     // Everything below is about Disjunctive2DRules::relaxation_overload alone,
     // so the controls are "that rule off" and not "the time-table rung off".
-    if (! overload && ! edge_finding) {
+    if (! overload && ! edge_finding && ! ttef) {
         const Disjunctive2DRules overload_on{.relaxation_overload = true};
         auto closes = [&](const Instance & inst, Disjunctive2DRules rules, const optional<string> & name) -> pair<bool, int> {
             auto result = probe(inst, rules, name);
@@ -908,7 +982,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     // --- edge-finding on the relaxation (#984) ---------------------------
-    if (! overload && ! edge_finding) {
+    if (! overload && ! edge_finding && ! ttef) {
         const Disjunctive2DRules ef_on{.relaxation_edge_finding = true};
         const Disjunctive2DRules ef_off{.cumulative_relaxation = true, .relaxation_overload = true};
         auto check_push = [&](const Instance & inst, const string & name, bool lower, Integer expected) {
@@ -938,6 +1012,43 @@ auto main(int argc, char * argv[]) -> int
                 enumerate_and_check(ef_lb, ef_on, proofs ? make_optional(string{"disjunctive_2d_relaxation_edge_finding_enumerate"}) : nullopt);
             if (proofs && markers == 0)
                 fail("edge_finding_enumerate: the rule never fired");
+        }
+    }
+
+    // --- time-table edge-finding on the relaxation (#984) ----------------
+    if (! overload && ! edge_finding && ! ttef) {
+        const Disjunctive2DRules ttef_on{.relaxation_time_table_edge_finding = true};
+        const Disjunctive2DRules ttef_off{.cumulative_relaxation = true, .relaxation_overload = true, .relaxation_edge_finding = true};
+        auto check_push = [&](const Instance & inst, const string & name, bool lower, Integer expected) {
+            auto result = probe(inst, ttef_on, proofs ? make_optional(name) : nullopt);
+            if (result.root_x.size() != 4)
+                fail(name + ": no root node was traced");
+            auto got = lower ? result.root_x[3].first : result.root_x[3].second;
+            if (got != expected)
+                fail(name + ": the tall rectangle's " + (lower ? "lower" : "upper") + " bound is " + to_string(got.raw_value) + ", expected " +
+                    to_string(expected.raw_value));
+            if (proofs && count_markers(name, "disjunctive2d cumulative relaxation time-table edge-finding") < 1)
+                fail(name + ": no TTEF marker, so something else made the push");
+            if (proofs && ! verify(name))
+                fail(name + ": veripb rejected the TTEF certificate");
+            if (! result.satisfiable)
+                fail(name + ": the fixture is satisfiable, but no solution was found");
+            auto control = probe(inst, ttef_off, nullopt);
+            auto control_bound = lower ? control.root_x[3].first : control.root_x[3].second;
+            if (control_bound == expected)
+                fail(name + ": the bound moved with TTEF off, so the fixture says nothing about the profile");
+        };
+        // TTEF takes it to 3 over [0, 4), and then to 4 over [3, 4) with
+        // nothing contained --- the profile alone, which is time-tabling as a
+        // case of TTEF. 4 is tight: the tall one fits at 4 and not at 3.
+        check_push(ttef_lb, "disjunctive_2d_relaxation_ttef_lb", true, 4_i);
+        check_push(ttef_ub, "disjunctive_2d_relaxation_ttef_ub", false, 2_i);
+
+        {
+            auto markers =
+                enumerate_and_check(ttef_lb, ttef_on, proofs ? make_optional(string{"disjunctive_2d_relaxation_ttef_enumerate"}) : nullopt);
+            if (proofs && markers == 0)
+                fail("ttef_enumerate: the rule never fired");
         }
     }
 

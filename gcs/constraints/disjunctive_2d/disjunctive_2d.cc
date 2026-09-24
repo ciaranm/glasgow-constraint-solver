@@ -1173,7 +1173,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // the flagged capacity row sum_i h_i * active_{i,t} <= H, which
             // ComparatorNetwork's optional tasks derive, and with every energy
             // multiplied by its rectangle's height.
-            if (rules.relaxation_overload || rules.relaxation_edge_finding) {
+            if (rules.relaxation_overload || rules.relaxation_edge_finding || rules.relaxation_time_table_edge_finding) {
                 for (auto time_axis : {0, 1}) {
                     const auto & tpos = 0 == time_axis ? xs : ys;
                     const auto & tsize = 0 == time_axis ? width_var : height_var;
@@ -1391,8 +1391,29 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                 return PropagatorState::DisableUntilBacktrack;
                             }
 
-                            if (! rules.relaxation_edge_finding || inside.empty())
+                            auto ttef = rules.relaxation_time_table_edge_finding;
+                            if (! (rules.relaxation_edge_finding || ttef) || (inside.empty() && ! ttef))
                                 continue;
+
+                            // TTEF's profile: the load the rectangles the window
+                            // does not contain still put into it through their
+                            // mandatory parts. Snapshotted with the bounds that
+                            // make those parts mandatory, which go in the reason.
+                            struct Contributor
+                            {
+                                size_t rect;
+                                Integer lo, hi, from, to;
+                            };
+                            vector<Contributor> contributors;
+                            if (ttef)
+                                for (auto i : tasks) {
+                                    if (est(i) >= a && lct(i) <= b)
+                                        continue;
+                                    auto [lo, hi] = state.bounds(tpos[i]);
+                                    auto from = max(hi, a), to = min(lo + len(i), b);
+                                    if (from < to)
+                                        contributors.push_back(Contributor{i, lo, hi, from, to});
+                                }
 
                             // Edge-finding: a task with exactly one end inside
                             // the window, which the contained set leaves too
@@ -1416,17 +1437,34 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     continue;
                                 auto p_j = len(j), h_j = height(j);
                                 auto width = static_cast<size_t>((b - a).raw_value);
+
+                                // The pushed rectangle's own mandatory load is
+                                // left out: its clipped energy below covers
+                                // those time points, and each has one capacity
+                                // row to cancel against.
+                                vector<Contributor> profile;
+                                Integer profile_load{0};
+                                for (const auto & c : contributors)
+                                    if (c.rect != j) {
+                                        profile.push_back(c);
+                                        profile_load += height(c.rect) * (c.to - c.from);
+                                    }
+                                // A window its contents and profile overload is
+                                // a conflict rather than a push, and not this
+                                // rule's to certify.
+                                if (energy + profile_load > supply)
+                                    continue;
+
                                 auto overflows_with = [&](Integer low_guard, Integer high_guard) {
                                     auto clipped = window_energy::window_energy_bound(p_j, a, width, a, b, pair{low_guard, high_guard - 1_i});
-                                    return clipped > 0_i && energy + h_j * clipped > supply;
+                                    return clipped > 0_i && energy + profile_load + h_j * clipped > supply;
                                 };
 
                                 // The fewest units of j's clipped energy that
-                                // overflow the window. The window itself is not
-                                // overloaded here (that returned above, or left
-                                // this window to the overload rule), so this is
-                                // at least one.
-                                auto need = (supply - energy) / h_j + 1_i;
+                                // overflow the window. Its contents and profile
+                                // do not overload it here (that returned or
+                                // skipped above), so this is at least one.
+                                auto need = (supply - energy - profile_load) / h_j + 1_i;
                                 // What the lemma establishes over [a, b) for
                                 // j's start in [lg, hg - 1] (window_energy's
                                 // shape_of): the units lg keeps, clamp(lg - a +
@@ -1478,19 +1516,40 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     literals.push_back(ProofLiteral{tpos[j] >= a});
                                 else
                                     literals.push_back(ProofLiteral{tpos[j] < b - p_j + 1_i});
+                                for (const auto & c : profile) {
+                                    literals.push_back(ProofLiteral{tpos[c.rect] >= c.lo});
+                                    literals.push_back(ProofLiteral{tpos[c.rect] < c.hi + 1_i});
+                                }
 
-                                auto justify = [&, a, b, inside, j, low_guard, high_guard, starts_inside](const ReasonLiterals & reason) -> void {
+                                auto justify = [&, a, b, inside, j, low_guard, high_guard, starts_inside, profile](
+                                                   const ReasonLiterals & reason) -> void {
                                     if (! logger)
                                         return;
-                                    logger->emit_proof_comment("disjunctive2d cumulative relaxation edge-finding axis=" + std::to_string(time_axis) +
-                                        " window=[" + std::to_string(a.raw_value) + "," + std::to_string(b.raw_value) +
-                                        ") w=" + std::to_string(inside.size()) + (starts_inside ? " lb" : " ub"));
+                                    logger->emit_proof_comment("disjunctive2d cumulative relaxation " +
+                                        std::string{profile.empty() ? "edge-finding" : "time-table edge-finding"} +
+                                        " axis=" + std::to_string(time_axis) + " window=[" + std::to_string(a.raw_value) + "," +
+                                        std::to_string(b.raw_value) + ") w=" + std::to_string(inside.size()) +
+                                        " profile=" + std::to_string(profile.size()) + (starts_inside ? " lb" : " ub"));
                                     if (std::holds_alternative<disjunctive_2d_proof_mutation::EmitNothing>(mutation))
                                         return;
 
                                     PolBuilder total;
                                     for (auto row : window_rows(a, b))
                                         total.add(row);
+
+                                    // TTEF's pins: each profile rectangle is
+                                    // active at each time point of its mandatory
+                                    // part, which the reason's two bounds on it
+                                    // say --- `Cumulative`'s pin_contributor, over
+                                    // the flags minted here.
+                                    if (! std::holds_alternative<disjunctive_2d_proof_mutation::TimeTableEdgeFindingDropPins>(mutation))
+                                        for (const auto & c : profile)
+                                            for (auto t = c.from; t < c.to; ++t) {
+                                                auto flag = activity_flag(c.rect, t).flag;
+                                                total.add(logger->emit_rup_proof_line_under_reason(
+                                                              reason, WPBSum{} + 1_i * flag >= 1_i, ProofLevel::Temporary),
+                                                    height(c.rect));
+                                            }
 
                                     // Each cited row carries low_coeff copies of
                                     // ~[s >= low_guard] and `bound` copies of
