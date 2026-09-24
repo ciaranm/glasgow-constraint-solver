@@ -1,5 +1,6 @@
 #include <gcs/constraints/innards/arithmetic_utils.hh>
 #include <gcs/constraints/innards/linear_stages.hh>
+#include <gcs/constraints/innards/product_bounds.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/multiply/signed_multiply.hh>
@@ -47,16 +48,17 @@ namespace
 {
     // Above this exponent, no base of magnitude two or more has a
     // representable power, so the constraint collapses to a case analysis on
-    // base in {-1, 0, 1}.
+    // base in {-1, 0, 1}. The one exception is (-2)^63 = INT64_MIN, which no
+    // declared variable can hold; a constant or view result that does makes
+    // the constraint throw IntegerOverflow rather than admit base -2 (issue
+    // #1064).
     constexpr long long largest_meaningful_exponent = 62;
 
-    // A corner of a product-bound computation, saturating at +-m rather than
+    // A corner of a product-bound computation, clamped to +-m rather than
     // overflowing: the auxiliary chain variables are clamped anyway.
-    auto saturating_product(Integer a, Integer b, Integer m) -> Integer
+    auto clamped_product(Integer a, Integer b, Integer m) -> Integer
     {
-        if (auto p = product_if_representable(a, b))
-            return clamp(*p, -m, m);
-        return ((a > 0_i) == (b > 0_i)) ? m : -m;
+        return clamp(saturating_product(a, b), -m, m);
     }
 }
 
@@ -178,10 +180,10 @@ auto Power::prepare(Propagators & propagators, State & initial_state, ProofModel
             else {
                 auto [plo, phi] = initial_state.bounds(prev);
                 auto [xlo, xhi] = initial_state.bounds(_base);
-                auto lo = min({saturating_product(plo, xlo, m), saturating_product(plo, xhi, m), saturating_product(phi, xlo, m),
-                    saturating_product(phi, xhi, m)});
-                auto hi = max({saturating_product(plo, xlo, m), saturating_product(plo, xhi, m), saturating_product(phi, xlo, m),
-                    saturating_product(phi, xhi, m)});
+                auto lo =
+                    min({clamped_product(plo, xlo, m), clamped_product(plo, xhi, m), clamped_product(phi, xlo, m), clamped_product(phi, xhi, m)});
+                auto hi =
+                    max({clamped_product(plo, xlo, m), clamped_product(plo, xhi, m), clamped_product(phi, xlo, m), clamped_product(phi, xhi, m)});
                 auto aux = initial_state.allocate_integer_variable_with_state(lo, hi);
                 _aux_chain.emplace_back(aux, lo, hi);
                 t = aux;

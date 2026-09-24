@@ -2,9 +2,11 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_INNARDS_PRODUCT_BOUNDS_HH
 
 #include <gcs/exception.hh>
+#include <gcs/innards/integer_overflow.hh>
 #include <gcs/integer.hh>
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace gcs::innards
@@ -62,29 +64,55 @@ namespace gcs::innards
     }
 
     /**
+     * \brief a * b, saturating at the ends of Integer's range rather than
+     * throwing: an overflowing product becomes the largest or smallest
+     * representable value, according to its sign.
+     *
+     * Only for bounds, and only where a bound is compared with representable
+     * values: an upper bound saturated at the top, or a lower bound at the
+     * bottom, then excludes nothing, and a bound saturated on the far side is
+     * weaker than the true one. Arithmetic on a saturated bound (dividing it,
+     * adding to it) has no such guarantee, and a caller doing that has to
+     * handle the saturated case itself.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] constexpr auto saturating_product(Integer a, Integer b) -> Integer
+    {
+        long long result;
+        if (! mul_overflows(a.raw_value, b.raw_value, &result))
+            return Integer{result};
+        return ((a > 0_i) == (b > 0_i)) ? Integer{std::numeric_limits<long long>::max()} : Integer{std::numeric_limits<long long>::min()};
+    }
+
+    /**
      * \brief Bounds of x * y over the box [x_min, x_max] * [y_min, y_max]:
      * the smallest and largest corner products.
+     *
+     * The corners saturate (saturating_product) rather than throw, so a box
+     * whose products leave Integer's range still has bounds (issue #1064).
      *
      * \ingroup Innards
      */
     [[nodiscard]] constexpr auto product_bounds(Integer x_min, Integer x_max, Integer y_min, Integer y_max) -> std::pair<Integer, Integer>
     {
-        auto x1y1 = x_min * y_min;
-        auto x2y1 = x_max * y_min;
-        auto x1y2 = x_min * y_max;
-        auto x2y2 = x_max * y_max;
+        auto x1y1 = saturating_product(x_min, y_min);
+        auto x2y1 = saturating_product(x_max, y_min);
+        auto x1y2 = saturating_product(x_min, y_max);
+        auto x2y2 = saturating_product(x_max, y_max);
         return {std::min({x1y1, x1y2, x2y1, x2y2}), std::max({x1y1, x1y2, x2y1, x2y2})};
     }
 
     /**
      * \brief Exact bounds of x * x for x in [lo, hi]. Unlike product_bounds
-     * on the same interval twice, the result is never negative.
+     * on the same interval twice, the result is never negative. Saturates at
+     * the top of Integer's range, as product_bounds does.
      *
      * \ingroup Innards
      */
     [[nodiscard]] constexpr auto square_bounds(Integer lo, Integer hi) -> std::pair<Integer, Integer>
     {
-        auto lo2 = lo * lo, hi2 = hi * hi;
+        auto lo2 = saturating_product(lo, lo), hi2 = saturating_product(hi, hi);
         if (lo <= 0_i && 0_i <= hi)
             return {0_i, std::max(lo2, hi2)};
         return {std::min(lo2, hi2), std::max(lo2, hi2)};

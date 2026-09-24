@@ -300,6 +300,30 @@ namespace
             auto v = wide(p, 3);
             p.post(Modulus{v[0], v[1], v[2]});
         });
+        // The four rows below make the operands' corner products pass 2^63 at
+        // the audit's width, which threw IntegerOverflow from product_bounds
+        // before #1064. The operands are scaled from the probe width rather
+        // than fixed, so the proof survey's narrow widths still write a proof.
+        add("Multiply/wide-product", Expect::Clean, [](Problem & p) {
+            auto x = p.create_integer_variable(0_i, probe_width * 4_i), y = p.create_integer_variable(0_i, probe_width * 4_i);
+            p.post(Multiply{x, y, wide_var(p)});
+        });
+        add("Divide/wide-product", Expect::Clean, [](Problem & p) {
+            // The quotient's magnitude times the divisor's: 40 + 24 bits.
+            auto x = p.create_integer_variable(0_i, probe_width * 1000_i), y = p.create_integer_variable(1_i, probe_width / 100_i);
+            p.post(Divide{x, y, p.create_integer_variable(0_i, probe_width * 1000_i)});
+        });
+        add("Modulus/wide-product", Expect::Clean, [](Problem & p) {
+            // The quotient's magnitude is sized by the dividend's bits.
+            auto x = p.create_integer_variable(0_i, probe_width * 1000_i), y = p.create_integer_variable(1_i, probe_width / 100_i);
+            p.post(Modulus{x, y, p.create_integer_variable(0_i, probe_width / 100_i)});
+        });
+        add("Power/wide-product", Expect::Clean, [](Problem & p) {
+            // A cube: the chain's second link multiplies a result-sized
+            // auxiliary by the base.
+            auto x = p.create_integer_variable(0_i, probe_width * 2_i);
+            p.post(Power{x, 3_c, p.create_integer_variable(0_i, probe_width * probe_width * 2_i)});
+        });
         add("Power", Expect::KnownTrip, [](Problem & p) { // H2: reaches PowerTable's product enumeration
             auto v = wide(p, 3);
             p.post(Power{v[0], p.create_integer_variable(0_i, 3_i), v[2]});
