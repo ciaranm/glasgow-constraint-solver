@@ -597,7 +597,7 @@ auto Python::post_linear_greater_equal_iff(
 #ifdef WRITE_API_CALLS
     api_calls << "post_linear_greater_equal_iff" << endl;
 #endif
-    p.post(LinearLessThanEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
+    p.post(LinearGreaterThanEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
 
 auto Python::post_linear_not_equal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void
@@ -805,6 +805,7 @@ PYBIND11_MODULE(gcspy, m)
         .def("post_linear_equality", &Python::post_linear_equality)
         .def("post_linear_equality_iff", &Python::post_linear_equality_iff)
         .def("post_linear_less_equal", &Python::post_linear_less_equal)
+        .def("post_linear_less_equal_iff", &Python::post_linear_less_equal_iff)
         .def("post_linear_greater_equal", &Python::post_linear_greater_equal)
         .def("post_linear_greater_equal_iff", &Python::post_linear_greater_equal_iff)
         .def("post_linear_not_equal", &Python::post_linear_not_equal)

@@ -204,6 +204,33 @@ class TestGlasgowConstraintSolver(unittest.TestCase):
         self.assertEqual(self.gcs.get_solution_value(self.y), 3)
         self.assertEqual(self.gcs.get_solution_value(self.z), 3)
 
+    # Posts reif <-> 2x + y (op) 7 through the given binding, enumerates every
+    # solution, and checks reif against the relation in each one. Unequal
+    # coefficients and a bound inside the sum's range make <=, >= and = give
+    # different counts, so posting the wrong relation fails the count as well.
+    def check_linear_iff(self, post, holds, expected_true):
+        reif = self.gcs.create_integer_variable(0, 1, "r")
+        post([self.x, self.y], [2, 1], 7, reif)
+        stats = self.gcs.solve(True)
+        self.assertEqual(stats["solutions"], 27)
+        n_true = 0
+        for i in range(stats["solutions"]):
+            x = self.gcs.get_solution_value(self.x, i)
+            y = self.gcs.get_solution_value(self.y, i)
+            r = self.gcs.get_solution_value(reif, i)
+            self.assertEqual(r, 1 if holds(2 * x + y, 7) else 0)
+            n_true += r
+        self.assertEqual(n_true, expected_true)
+
+    def test_linear_equality_iff(self):
+        self.check_linear_iff(self.gcs.post_linear_equality_iff, lambda s, v: s == v, 6)
+
+    def test_linear_less_equal_iff(self):
+        self.check_linear_iff(self.gcs.post_linear_less_equal_iff, lambda s, v: s <= v, 21)
+
+    def test_linear_greater_equal_iff(self):
+        self.check_linear_iff(self.gcs.post_linear_greater_equal_iff, lambda s, v: s >= v, 12)
+
     def test_and(self):
         b1 = self.gcs.create_integer_variable(0, 1, "b1")
         b2 = self.gcs.create_integer_variable(0, 1, "b2")
