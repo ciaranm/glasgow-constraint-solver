@@ -197,8 +197,16 @@ auto main(int argc, char * argv[]) -> int
         {pair{-4, -4}, pair{4, 4}}, // tautology
         {pair{-4, -4}, pair{5, 5}}, // contradiction
         // Mixed: one genuine constant, one real singleton-domain variable.
-        {-6, pair{6, 6}},   // tautology
-        {pair{-6, -6}, 7}}; // contradiction
+        {-6, pair{6, 6}},  // tautology
+        {pair{-6, -6}, 7}, // contradiction
+        // A wide constant v2 (#1058), for the preimage loop's plain-RUP arm:
+        // the bound rules put v1 inside [-c, c], and what is left strictly
+        // between goes as one run either side of zero. Straddling zero,
+        // asymmetric so that only -c survives, and wholly on each side.
+        {pair{-60, 60}, 45}, //
+        {pair{-60, 30}, 45}, //
+        {pair{5, 60}, 45},   //
+        {pair{-60, -5}, 45}};
 
     mt19937 rand(*get_seed());
     for (int x = 0; x < 10; ++x)

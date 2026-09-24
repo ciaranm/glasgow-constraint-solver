@@ -223,9 +223,8 @@ namespace
             // changed. They trip before #931, which is the same finding as
             // Element/view-result one family down: the rule asked "can I say a
             // range about these?" with a *type* test, so a view on either
-            // operand sent both hole loops down a per-value walk. The one
-            // genuine exemption left is a constant, which has no order-encoding
-            // atom for the lemmas to resolve against.
+            // operand sent both hole loops down a per-value walk. A constant
+            // was the one exemption left, until #1058: see Abs/constant.
             auto v1 = p.create_integer_variable(vector<Integer>{-probe_width, 0_i, probe_width});
             auto v2 = wide_var(p);
             p.post(Abs{v1, v2 + 1_i});
@@ -234,6 +233,16 @@ namespace
             auto v2 = p.create_integer_variable(vector<Integer>{0_i, probe_width});
             auto v1 = p.create_integer_variable(-probe_width, probe_width);
             p.post(Abs{v1 + 1_i, v2});
+        });
+        add("Abs/constant", Expect::Clean, [](Problem & p) {
+            // A constant v2 = c, which has no order-encoding atom, so the
+            // preimage loop's range lemmas cannot name it. The bound rules put
+            // v1 inside [-c, c], and everything strictly between is removed as
+            // one run either side of zero, by plain RUP. Before #1058 this took
+            // the per-value arm and walked 2c - 1 values; MiniZinc's celar
+            // reaches the same shape from an ordinary model.
+            auto v1 = p.create_integer_variable(-probe_width, probe_width);
+            p.post(Abs{v1, constant_variable(probe_width)});
         });
         add("Plus", Expect::Clean, [](Problem & p) {
             auto v = wide(p, 3);
