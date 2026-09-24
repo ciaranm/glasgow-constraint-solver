@@ -1070,6 +1070,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .per_task_t_hi = move(_per_task_t_hi),
         .end_ge_lines = end_ge_lines,
         .capacity_lines = move(_capacity_lines),
+        .capacity_row_family = nullopt,
+        .flag_key_positions = {},
         .checkpoint_recovery = recovery_cache,
         .pair_contribution_bits_are_conjunctions = _height_bits_citable,
         .per_time_contribution_bits_are_conjunctions = _per_time_flags_in_proof,
