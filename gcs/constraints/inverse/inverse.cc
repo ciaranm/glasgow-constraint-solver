@@ -1,6 +1,5 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/constraints/all_different/justify.hh>
-#include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/constraints/inverse/hints.hh>
 #include <gcs/constraints/inverse/inverse.hh>
 #include <gcs/exception.hh>
@@ -123,11 +122,6 @@ auto Inverse::define_proof_model(ProofModel & model, const State &) -> void
             if (! is_injection())
                 model.add_constraint(WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
         }
-
-    // Set up the AM1 map only when proof logging is on; the propagator captures it
-    // by value, so it must always be non-null but stays empty when define_proof_model
-    // wasn't called.
-    _x_value_am1s = make_shared<map<Integer, ProofLine>>();
 }
 
 namespace
@@ -331,42 +325,6 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
     triggers.on_change.insert(triggers.on_change.end(), _x.begin(), _x.end());
     triggers.on_change.insert(triggers.on_change.end(), _y.begin(), _y.end());
 
-    if (_x_value_am1s) {
-        // x's values are y's indices, so there is an at-most-one for each of y's
-        // entries, which is more than one per entry of x in the injection form.
-        auto build_am1s = [](const vector<IntegerVariableID> & x, Integer y_start, size_t y_size, const State &, auto &, ProofLogger * const logger,
-                              const auto & map) {
-            // recover_am1 requires at least two atoms; with one variable
-            // the at-most-one is trivially true and the map is never read
-            // (gac_all_different's hall-set/scc paths do not fire on a
-            // single variable).
-            if (x.size() < 2)
-                return;
-            for (Integer v = y_start; v < y_start + Integer(y_size); ++v) {
-                // make an am1 for x[i] = v
-                vector<IntegerVariableCondition> xieqvs;
-                for (const auto & var : x)
-                    xieqvs.push_back(var != v);
-                map->emplace(v,
-                    recover_am1<IntegerVariableCondition>(
-                        *logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
-                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
-                        }));
-            }
-        };
-
-        propagators.install_initialiser([x = _x, y_start = _y_start, y_size = _y.size(), x_value_am1s = _x_value_am1s, build_am1s = build_am1s](
-                                            const State & state, auto & inference, ProofLogger * const logger) -> void {
-            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
-                return;
-            build_am1s(x, y_start, y_size, state, inference, logger, x_value_am1s);
-        });
-    }
-    else {
-        // No proof model: propagator still captures this map (must be non-null), but it stays empty.
-        _x_value_am1s = make_shared<map<Integer, ProofLine>>();
-    }
-
     // The values x takes are y's indices, so they start at y_start, not
     // x_start; the two only coincide when both arrays start at the same index.
     vector<Integer> x_values;
@@ -375,9 +333,13 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [x = _x, y = _y, x_start = _x_start, y_start = _y_start, x_values = move(x_values), x_value_am1s = _x_value_am1s,
-            scratch = make_gac_all_different_scratch(), in_every_matching = make_shared<vector<uint8_t>>(), injection = is_injection(),
-            constraint_id = constraint_id(),
+        [x = _x, y = _y, x_start = _x_start, y_start = _y_start, x_values = move(x_values),
+            // Each value's at-most-one over x, built on first use at Top and cached
+            // for the life of the propagator, as AllDifferent's are: a Hall
+            // justification asks for the ones it needs. Each pairwise clause is
+            // RUP through the two rows from x to y and y's equality literals.
+            x_value_am1s = make_shared<map<Integer, ProofLine>>(), scratch = make_gac_all_different_scratch(),
+            in_every_matching = make_shared<vector<uint8_t>>(), injection = is_injection(), constraint_id = constraint_id(),
             owner = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
             // Channel x<->y and GAC-alldifferent on x feed each other: a GAC
             // removal on x can leave a y value with no back-support (more
