@@ -947,7 +947,11 @@ namespace
     // #1065): for q<=0, sgn_x0 (x = 0 -> q<=0) closes the x = 0 case by RUP
     // too, but for q>=0 nothing in the sign clauses does, and the refutation
     // goes through the grid, where a negative quotient and a nonzero divisor
-    // give Sum >= 1, against the x = 0 remainder rows' Sum <= 0.
+    // give Sum >= 1, against the x = 0 remainder rows' Sum <= 0. The closing
+    // RUP needs no case split on x = 0: under the negated claim, sgn_pp (or
+    // sgn_nn) forces x out of the strict sign case, and x >= 0 together with
+    // x < 1 pins x's bits by unit propagation, sign bit first, which is what
+    // activates the remainder rows.
     template <typename Hint_>
     auto propagate_quotient_sign(DefaultProductData & d, const IntegerVariableID & x, const IntegerVariableID & y, const IntegerVariableID & q,
         const State & state, auto & inference, ProofLogger * const logger, const ConstraintID & owner) -> void
@@ -992,7 +996,12 @@ namespace
 
         // q >= 0 when x and y have the same sign. The divisor's magnitude
         // bound is in the reason because the grid line is over it; y's
-        // channel stage establishes it from y's sign.
+        // channel stage establishes it from y's sign. The cached line carries
+        // its guards, [q < 0] and [|y| >= 1], as terms of the line itself
+        // (both operand bounds come back with no cases), so narrow must be
+        // exactly those two, and |y| >= 1 must stay in the reason even where
+        // dropping it happens to verify: unit propagation cannot reliably
+        // reach it from y's sign through the channel.
         bool same_sign = x_nonneg ? y_lo >= 1_i : y_hi < 0_i;
         if (same_sign && q_lo < 0_i && state.lower_bound(d.mag_b) >= 1_i) {
             auto justf = [&](const ReasonLiterals &) {
