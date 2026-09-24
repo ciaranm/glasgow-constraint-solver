@@ -84,6 +84,33 @@ namespace gcs
          * apart.
          */
         bool cumulative_relaxation = false;
+
+        /**
+         * \brief The overload check on each axis's cumulative relaxation:
+         * rectangles lying wholly inside a time-axis window `[a, b)` whose
+         * total area exceeds `H * (b - a)` cannot all be there, `H` being the
+         * resource-axis extent the model confines them to.
+         *
+         * This is the first *energetic* rung over the relaxation, and it is
+         * one \ref cumulative_relaxation's certificate cannot reach: that one
+         * speaks about the rectangles whose mandatory parts cover a time,
+         * where this one sums a capacity row over every rectangle that *may*
+         * be active at each time in the window. So the row is the flagged one,
+         * `sum_i h_i * active_{i,t} <= H`, and it is derived once per time
+         * point, at `ProofLevel::Top`, by an innards::ComparatorNetwork over
+         * optional tasks (ComparatorNetwork::add_optional_task): an inactive
+         * rectangle is a zero-height dummy parked at the top of the window.
+         * The activity flags are minted by redundance over the time-axis
+         * order literals, as 1D Disjunctive's time-indexed overload
+         * certificate does, and the per-rectangle window energies are the
+         * same telescope. See #984.
+         *
+         * Uses the members \ref cumulative_relaxation does, restricted to a
+         * constant time-axis size, and `H` is the model's resource-axis
+         * extent over them rather than the current one, since the row is
+         * cached. Off by default; independent of \ref cumulative_relaxation.
+         */
+        bool relaxation_overload = false;
     };
 
     /**
@@ -123,9 +150,10 @@ namespace gcs
      * dimension their positions are pushed apart in the other. On top of that,
      * and off by default, the *cumulative relaxation* time-tables the
      * `Cumulative` each axis projection implies --- see
-     * Disjunctive2DRules::cumulative_relaxation. The energetic rules over that
-     * relaxation (overload, edge-finding, TTEF), a 2D sweep, and k dimensions
-     * are left for future work; see #976.
+     * Disjunctive2DRules::cumulative_relaxation --- and, also off by default,
+     * checks it for overload (Disjunctive2DRules::relaxation_overload). The
+     * energetic rules above that (edge-finding, TTEF), a 2D sweep, and k
+     * dimensions are left for future work; see #976.
      *
      * A rectangle whose presence is still undecided blocks nothing and is
      * pushed nowhere, in either role: a prune that is only valid when the
@@ -211,6 +239,13 @@ namespace gcs
         // from the model alone, so that the rule makes the same inferences
         // whether or not proofs are on.
         std::array<std::vector<std::size_t>, 2> _relaxation_members;
+
+        // For the relaxation's overload check: per axis, the resource-axis
+        // window the model confines the members to, and each member's declared
+        // time-axis position bounds. Both are model facts, which is what lets
+        // the capacity row the check cites be cached at Top.
+        std::array<std::pair<Integer, Integer>, 2> _relaxation_window{{{Integer{0}, Integer{0}}, {Integer{0}, Integer{0}}}};
+        std::array<std::map<std::size_t, std::pair<Integer, Integer>>, 2> _relaxation_declared_time;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;

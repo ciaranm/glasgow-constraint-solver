@@ -1430,12 +1430,65 @@ on a constant-present model.
 for time-tabling and no more. Every energetic rung — overload,
 edge-finding, TTEF — sums a capacity row across a window over tasks
 that are only *possibly* active at each time, so it needs the flagged
-row `Σ h_i·active_{i,t} ≤ H`. That is route A of #972, and it needs a
-construction muxing the position as well as the duration (an inactive
-rectangle becomes a zero-duration dummy parked at `window_hi`), which
-in turn needs `ComparatorNetwork`'s pinned-positive duration lifted.
-See the comment on #972 for the construction and for three invalid
-variants of it.
+row `Σ h_i·active_{i,t} ≤ H`. That is route A, below.
+
+### The flagged row, and the overload check over it (#984)
+
+`Disjunctive2DRules::relaxation_overload`, off by default and independent
+of the time-table rung: rectangles lying wholly inside a time-axis
+window `[a, b)` with more area than `H·(b − a)` are a conflict, `H` being
+the resource-axis extent the *model* confines them to. The certificate is
+1D's time-indexed overload one (#737) with the at-most-one per time
+point replaced by the flagged row: activity flags minted by `red` over
+the order literals, one flagged row per time point, `h_i` times each
+rectangle's telescoped window energy, one sum.
+
+The row comes from `ComparatorNetwork`'s **optional tasks**
+(`add_optional_task`, `add_optional_separation`). A task's position is
+muxed on its activity literal, `active ? y : window_hi`, and its duration
+is `h · active` (whose bits are the literal or a constant zero, so no
+flags are needed). An inactive rectangle is then a zero-duration dummy
+parked at the top of the window, every pair is separated under *every*
+assignment, and `sum_up` lands on the flagged row with no guard left.
+
+Zero durations cost the network its positivity lemma, which the gap
+lemma used to refute "the later-starting task went first". A zero-length
+task level with the other really can go first, so that case is now
+*derived* rather than refuted, via a **parking row**,
+`wire + K·duration ≥ window_hi` with `K` the window's width: a
+zero-duration wire sits at `window_hi`, so the tie is with a task
+ending there too and the gap holds anyway. Parking is carried through
+every comparator by the same case split positivity was, so the issue's
+expected extra muxed flag per output is not needed. The gap lemma is
+then four halves (selector polarity × separation direction) in one `red`
+subproof. The pinned-duration mode is unchanged and byte-identical.
+
+Three things that went wrong on the way, so they are not rediscovered:
+
+- **Parking by bare RUP only holds for a window starting at zero.** The
+  negation can afford `active` once `K·h < window_hi`, and then nothing
+  propagates. It is a case split on the activity literal instead.
+- **The row is knapsack-shaped, so RUP will not re-derive it** even as
+  a copy of the line above; a test claiming it checks by implication
+  (`ImpliesProofRule`) against the endgame's line.
+- **The row is for the model window only.** Its start bounds are model
+  facts and the network takes no guard, so it cannot stand in for route
+  B's per-firing certificate at a node with a tighter window. The two
+  coexist.
+
+Cost is `O(n³)` per time point, cached at Top: about `1.4 KB·n³` of
+proof at narrow widths (`route_a_probe_test`). On `examples/squares`
+(`--relaxation-overload`, the `area` instance and two larger ones) the
+root closes in one recursion where time-tabling alone takes 53, 637 and
+71, and the proofs shrink from 12.9, 328 and 45.7 MB to 2.3, 4.6 and
+6.5 MB. Tested by fixtures (including a y-axis-only one), three mutation
+lanes, an enumeration against brute force, and a dense random sweep
+(`disjunctive_2d_relaxation_overload_search`) drawing boxes with no
+mandatory parts, since otherwise the pairwise rule refutes the same
+roots and the sweep proves nothing about this rule.
+
+Not yet: variable sizes, optional rectangles, and the rungs above
+overload (edge-finding, TTEF), which would cite the same row.
 
 ## Reusable ideas
 

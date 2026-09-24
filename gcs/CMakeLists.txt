@@ -816,7 +816,11 @@ if(GCS_BUILD_TESTS)
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_relaxation_test>)
     add_test(NAME disjunctive_2d_relaxation_search
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_relaxation_test> --search 24)
-    foreach(mutation emit_nothing skip_refutation skip_guard_weakening skip_escape_pins)
+    # The overload check on the relaxation (#984) gets a sweep of its own, for
+    # the same reason as the time-table rung's.
+    add_test(NAME disjunctive_2d_relaxation_overload_search
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_relaxation_test> --overload --search 16)
+    foreach(mutation emit_nothing skip_refutation skip_guard_weakening skip_escape_pins overload_emit_nothing overload_skip_energy overload_skip_row)
         add_test(NAME disjunctive_2d_relaxation_mutation_${mutation}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename disjunctive_2d_relaxation_mutation_${mutation} $<TARGET_FILE:disjunctive_2d_relaxation_test> --mutate=${mutation})
@@ -1208,6 +1212,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(route_b_probe_test PRIVATE glasgow_constraint_solver)
     add_test(NAME route_b_probe_test COMMAND $<TARGET_FILE:route_b_probe_test>)
 
+    add_executable(route_a_probe_test constraints/disjunctive_2d/route_a_probe_test.cc)
+    target_link_libraries(route_a_probe_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME route_a_probe_test COMMAND $<TARGET_FILE:route_a_probe_test>)
+
     add_executable(am1_from_row_test innards/proofs/am1_from_row_test.cc)
     target_link_libraries(am1_from_row_test PRIVATE glasgow_constraint_solver)
     # Verifies (and deliberately fails to verify) its own proofs internally, so
@@ -1411,7 +1419,7 @@ if(GCS_BUILD_TESTS)
     # enumeration is bounded by construction, and both lanes together run in
     # under two seconds with VeriPB checking every proof. The test fails loudly
     # if a cap ever does fire, rather than quietly comparing prefixes.
-    foreach(lane disjunctive_2d_relaxation disjunctive_2d_relaxation_search)
+    foreach(lane disjunctive_2d_relaxation disjunctive_2d_relaxation_search disjunctive_2d_relaxation_overload_search)
         set_property(TEST ${lane} APPEND PROPERTY ENVIRONMENT "GCS_TEST_MAX_SOLUTIONS=;GCS_TEST_MAX_RECURSIONS=")
     endforeach()
 
