@@ -5,7 +5,7 @@
 
 namespace gcs::innards
 {
-    // Hole removal: justifies v2 != val by case-splitting on v1's sign.
+    // Hole removal: justifies v2 != val, with one lemma settling v1's sign.
     // Used in the v1 -> v2 direction when both val and -val are absent
     // from dom(v1).
     auto justify_abs_hole(ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v1, IntegerVariableID v2, Integer val) -> void;
@@ -13,7 +13,7 @@ namespace gcs::innards
     // The range form of the same removal: justifies `~[v2 in lo..hi]` from a
     // reason saying v1 holds nothing in [lo, hi] and nothing in [-hi, -lo].
     //
-    // The per-value form gets away with two RUP lines because `v2 == val` pins
+    // The per-value form gets away with one RUP lemma because `v2 == val` pins
     // every bit of v2, which pins v1's through whichever half-reified row is
     // active. A range pins no bit, so it needs the bound lemmas min_max.cc and
     // element.cc use -- and those are Theorem 2.9, which wants a lower bound on

@@ -365,7 +365,16 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 }
             }
 
-            return PropagatorState::Enable;
+            // One call reaches this propagator's own fixpoint. A value w of v2 is
+            // supported by w or -w in v1, and a value u of v1 by |u| in v2; every
+            // rule above removes only values with no support on the other side,
+            // judged against the domains this call started from. A removed value
+            // therefore never supported anything that is left, so every
+            // remaining value keeps its support and a second call infers
+            // nothing. That needs v1 and v2 to be different variables, and the
+            // engine already ignores the claim when two positions alias one
+            // underlying variable (Abs(x, x), or two views of x).
+            return PropagatorState::EnableButIdempotent;
         },
         triggers);
 }
