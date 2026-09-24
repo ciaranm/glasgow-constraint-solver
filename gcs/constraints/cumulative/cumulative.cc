@@ -1576,7 +1576,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 // part in edge-finding (prepare_cumulative_overload_check).
                 auto pushed_var = std::get<SimpleIntegerVariableID>(starts[pushed]);
                 auto bounds_as_the_reason_has_them = [&](const IntegerVariableID & v) -> std::pair<Integer, Integer> {
-                    return overloaded{[&](const SimpleIntegerVariableID & x) { return x == pushed_var ? pushed_start_bounds : state.bounds(v); },
+                    return overloaded{//
+                        [&](const SimpleIntegerVariableID & x) { return x == pushed_var ? pushed_start_bounds : state.bounds(v); },
                         [&](const ViewOfIntegerVariableID & view) {
                             if (view.actual_variable != pushed_var)
                                 return state.bounds(v);
