@@ -1379,11 +1379,12 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // variable height it is "contrib >= lb(h_i)" with coefficient 1
     // (contrib is the proof-only product h_i·active in C_t). The
     // before/after RUPs give VeriPB the units to chase active's AND-gate.
-    auto pin_contributor = [&](const ReasonLiterals & reason, size_t i, Integer t) -> std::pair<ProofLine, Integer> {
+    auto pin_contributor = [&](const ReasonLiterals & reason, size_t i, Integer t,
+                               optional<Integer> start_lo = nullopt) -> std::pair<ProofLine, Integer> {
         auto fi = (t - per_task_t_lo[i]).raw_value;
         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flag(i, fi) >= 1_i, ProofLevel::Temporary);
         // A mandatory task has s_i + l_i ≥ lb(s_i) + lb(l_i) > t.
-        materialise_after_sum(i, state.lower_bound(starts[i]));
+        materialise_after_sum(i, start_lo ? *start_lo : state.lower_bound(starts[i]));
         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flag(i, fi) >= 1_i, ProofLevel::Temporary);
         auto active_line = logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * active_flag(i, fi) >= 1_i, ProofLevel::Temporary);
         if (! h_is_var(i))
@@ -1611,7 +1612,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                             skip_pin = false;
                             continue;
                         }
-                        auto [line, coeff] = pin_contributor(reason, i, t);
+                        auto [line, coeff] = pin_contributor(reason, i, t, s_lo);
                         pol.add(line, coeff);
                     }
                 }
