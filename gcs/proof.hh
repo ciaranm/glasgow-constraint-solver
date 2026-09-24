@@ -64,7 +64,6 @@ namespace gcs
         auto operator=(const ProofOptions &) -> ProofOptions & = default;
 
         ProofFileNames proof_file_names;           ///< Filenames for OPB, proof, and mapping files
-        bool verbose_names = true;                 ///< Use verbose names in proofs?
         bool always_use_full_encoding = false;     ///< Always write the full variable encoding to the OPB file
         bool use_compact_boolean_encoding = false; ///< Drop the trivial constant boundary literals (ge_lower, ge_ub+1) from eq-atom definitions
         AssertionLevel assertion_level = AssertionLevel::Off;
@@ -101,12 +100,6 @@ namespace gcs
         ProofOptions & set_compact_boolean_encoding(bool c = true)
         {
             use_compact_boolean_encoding = c;
-            return *this;
-        }
-        /// Set whether to use verbose names in proofs.
-        ProofOptions & set_verbose_names(bool v)
-        {
-            verbose_names = v;
             return *this;
         }
     };
