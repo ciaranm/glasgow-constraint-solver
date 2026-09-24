@@ -370,6 +370,23 @@ auto main(int argc, char * argv[]) -> int
     // charges a window energy its certificate cannot carry would show up ---
     // the guards on a non-contained task's row come from bounds that move,
     // which no hand-built fixture exercises many of.
+    //
+    // `--everything` runs the same with every rule Cumulative has switched on
+    // at once, which is where rules that share one sweep meet: edge-finding and
+    // not-first / not-last move bounds part-way through it, and anything later
+    // in the same sweep that certifies from the state rather than from what the
+    // sweep read has to cope. The elastic rungs did not, and threw.
+    auto everything = false;
+    for (int a = 1; a < argc; ++a)
+        if (string{argv[a]} == "--everything")
+            everything = true;
+    const CumulativeRules every_rule{.elastic_overload = true,
+        .knapsack_overload = true,
+        .edge_finding = true,
+        .time_table_edge_finding = true,
+        .energetic_edge_finding = true,
+        .not_first_not_last = true,
+        .not_first_not_last_published = true};
     for (int a = 1; a < argc; ++a)
         if (string{argv[a]} == "--random") {
             std::mt19937 rand(a + 1 < argc ? static_cast<unsigned>(std::stoul(argv[a + 1])) : 1u);
@@ -383,8 +400,10 @@ auto main(int argc, char * argv[]) -> int
                     inst.start_ranges.emplace_back(lo, lo + static_cast<int>(rand() % 7));
                     inst.heights.push_back(1 + static_cast<int>(rand() % capacity));
                 }
-                check_enumeration("random " + std::to_string(attempt), inst, energetic,
-                    proofs ? make_optional("cumulative_energetic_random_" + std::to_string(attempt)) : nullopt);
+                check_enumeration("random " + std::to_string(attempt), inst, everything ? every_rule : energetic,
+                    proofs ? make_optional(
+                                 (everything ? "cumulative_energetic_random_everything_" : "cumulative_energetic_random_") + std::to_string(attempt))
+                           : nullopt);
             }
             return EXIT_SUCCESS;
         }

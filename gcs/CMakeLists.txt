@@ -554,6 +554,8 @@ if(GCS_BUILD_TESTS)
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test>)
     add_cumulative_test_with_recovery(cumulative_energetic_random
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test> --random 17)
+    add_cumulative_test_with_recovery(cumulative_energetic_random_everything
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test> --random 17 --everything)
     foreach(mutation drop_energetic drop toofar capacity mirror_toofar)
         add_cumulative_test(cumulative_energetic_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
