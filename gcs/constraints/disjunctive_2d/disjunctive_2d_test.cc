@@ -2,6 +2,8 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
+#include <gcs/restarts.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
@@ -384,6 +386,61 @@ auto main(int argc, char * argv[]) -> int
             // issue #553 analog). "neg" is tight; "neg_wide" forces bound-pushes.
             run_disjunctive_2d_var_test(proofs, mode, strict, "neg", {{-2, 1}, {-2, 1}}, {{-2, 1}, {-2, 1}}, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
             run_disjunctive_2d_var_test(proofs, mode, strict, "neg_wide", {{-4, 0}, {-4, 0}}, {{-3, 0}, {-3, 0}}, {{2, 4}, {1, 3}}, {{1, 3}, {2, 4}});
+
+            // A rectangle whose origin is a constant, found by a random fuzz
+            // campaign. The pairwise push was attempted on it, and a constant
+            // has no order literal for the certificate to cite: it threw with
+            // proofs on. The third rectangle cannot avoid both of the others,
+            // so this is unsatisfiable.
+            {
+                Problem p;
+                auto one = [&]() -> IntegerVariableID { return p.create_integer_variable(1_i, 1_i); };
+                vector<IntegerVariableID> xs{one(), one(), one()}, ys{one(), constant_variable(4_i), p.create_integer_variable(1_i, 2_i)};
+                vector<IntegerVariableID> widths{constant_variable(3_i), constant_variable(1_i), constant_variable(1_i)};
+                vector<IntegerVariableID> heights{constant_variable(1_i), constant_variable(1_i), p.create_integer_variable(3_i, 3_i)};
+                p.post(Disjunctive2D{xs, ys, widths, heights}.with_strict(strict));
+                auto name = "disjunctive_2d_" + mode + "_constant_origin";
+                auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }},
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
+                if (stats.solutions != 0) {
+                    println(cerr, "constant origin: the instance is unsatisfiable but solutions were reported");
+                    return EXIT_FAILURE;
+                }
+                if (proofs && ! run_veripb(name + ".opb", name + ".pbp")) {
+                    println(cerr, "constant origin: veripb rejected the proof");
+                    return EXIT_FAILURE;
+                }
+            }
+
+            // Two rectangles sharing an x origin, found by a random fuzz
+            // campaign under AddressSanitizer. A push's justification runs after
+            // the push has landed, and it read the blocker's bounds from the
+            // state: sharing the pushed variable, they were the pushed bounds,
+            // and after a push that wiped the domain out they were the bounds of
+            // an empty interval set. The search settings are the ones that reach
+            // that push, and the check that bites is the sanitizer's, so this
+            // only pins the fix in the Sanitize build.
+            if (strict) {
+                Problem p;
+                vector<pair<int, int>> domains{{1, 6}, {0, 4}, {1, 4}, {1, 4}, {0, 5}, {0, 3}, {1, 6}, {1, 2}, {0, 5}, {2, 4}, {0, 2}};
+                vector<IntegerVariableID> v;
+                for (auto [lo, hi] : domains)
+                    v.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+                auto c = [](int k) -> IntegerVariableID { return constant_variable(Integer{k}); };
+                p.post(Disjunctive2D{{v[0], v[2], v[4], v[6], v[8], v[4]}, {v[1], v[3], v[5], v[7], c(2), v[10]},
+                    {c(1), c(3), c(2), c(1), c(2), v[9]}, {c(1), c(1), c(2), c(3), c(1), c(3)}}
+                        .with_strict(true)
+                        .with_rules(Disjunctive2DRules{.cumulative_relaxation = true}));
+                auto name = "disjunctive_2d_" + mode + "_shared_origin";
+                SolveCallbacks callbacks{.solution = [](const CurrentState &) -> bool { return true; },
+                    .branch = branch_with(variable_order::random(p, 672642), value_order::random(672642)),
+                    .restarts = RestartSchedule::luby(50)};
+                solve_with(p, callbacks, proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
+                if (proofs && ! run_veripb(name + ".opb", name + ".pbp")) {
+                    println(cerr, "shared origin: veripb rejected the proof");
+                    return EXIT_FAILURE;
+                }
+            }
         }
     }
 
