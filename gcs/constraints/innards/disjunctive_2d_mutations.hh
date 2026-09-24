@@ -86,12 +86,25 @@ namespace gcs::innards
         struct OverloadSkipRow
         {
         };
+
+        /// The relaxation edge-finding push: conclude one unit further than
+        /// the certificate reaches.
+        struct EdgeFindingOneTooFar
+        {
+        };
+
+        /// The relaxation edge-finding push: leave the pushed task's own
+        /// window energy out, so only the contained set is summed.
+        struct EdgeFindingDropPushed
+        {
+        };
     }
 
     using Disjunctive2DProofMutation = std::variant<disjunctive_2d_proof_mutation::None, disjunctive_2d_proof_mutation::EmitNothing,
         disjunctive_2d_proof_mutation::SkipOneRefutation, disjunctive_2d_proof_mutation::SkipGuardWeakening,
         disjunctive_2d_proof_mutation::SkipEscapePins, disjunctive_2d_proof_mutation::OverloadSkipEnergy,
-        disjunctive_2d_proof_mutation::OverloadSkipRow>;
+        disjunctive_2d_proof_mutation::OverloadSkipRow, disjunctive_2d_proof_mutation::EdgeFindingOneTooFar,
+        disjunctive_2d_proof_mutation::EdgeFindingDropPushed>;
 }
 
 #endif

@@ -264,7 +264,7 @@ namespace
     /// concurrently under a parallel ctest from one directory, so a sweep that
     /// also ran the fixtures would race the fixture lane over their proof files
     /// (issue #562, and #961 for what that looks like).
-    auto run_random_sweep(int search_instances, bool proofs, Disjunctive2DRules with, Disjunctive2DRules without, const string & stem, bool dense)
+    auto run_random_sweep(int search_instances, bool proofs, Disjunctive2DRules with, Disjunctive2DRules without, const string & stem, int shape)
         -> void
     {
         mt19937 rand;
@@ -278,6 +278,10 @@ namespace
             // rectangles, mostly two by two, into a box four by four, each
             // free to go anywhere in it --- which gives none of them a
             // mandatory part on either axis, and often more area than the box.
+            // shape 2 is edge-finding's: the same, but six wide with each x
+            // range at its own offset, since a rule about a rectangle with one
+            // end inside a window needs windows that do not contain everything.
+            auto dense = shape != 0;
             auto n = dense ? uniform_int_distribution<int>{4, 5}(rand) : uniform_int_distribution<int>{2, 4}(rand);
             Instance inst;
             for (auto i = 0; i < n; ++i) {
@@ -286,7 +290,10 @@ namespace
                     auto w = size(), h = size();
                     inst.widths.push_back(w);
                     inst.heights.push_back(h);
-                    inst.x_ranges.emplace_back(0, 4 - w);
+                    if (shape == 2)
+                        inst.x_ranges.emplace_back(0, 6 - w);
+                    else
+                        inst.x_ranges.emplace_back(0, 4 - w);
                     inst.y_ranges.emplace_back(0, 4 - h);
                 }
                 else {
@@ -294,6 +301,23 @@ namespace
                     inst.heights.push_back(uniform_int_distribution<int>{1, 3}(rand));
                     inst.x_ranges.emplace_back(0, uniform_int_distribution<int>{0, 3}(rand));
                     inst.y_ranges.emplace_back(0, uniform_int_distribution<int>{0, 3}(rand));
+                }
+            }
+            // Edge-finding's shape: all but one or two of the rectangles are
+            // confined, two wide, to a four-wide window at a random offset in a
+            // box six wide, and the rest are free across it --- the fixtures'
+            // family, since a push needs a window its contents nearly fill and
+            // a rectangle with one end inside it.
+            if (shape == 2) {
+                auto free = uniform_int_distribution<int>{1, 2}(rand);
+                auto offset = uniform_int_distribution<int>{0, 2}(rand);
+                for (auto i = 0; i + free < n; ++i) {
+                    inst.widths[i] = 2;
+                    inst.x_ranges[i] = {offset, offset + 2};
+                }
+                for (auto i = n - free; i < n; ++i) {
+                    inst.heights[i] = uniform_int_distribution<int>{2, 4}(rand);
+                    inst.y_ranges[i] = {0, 4 - inst.heights[i]};
                 }
             }
             auto name = stem + to_string(instance);
@@ -326,6 +350,8 @@ auto main(int argc, char * argv[]) -> int
     // The overload check on the relaxation (#984) rather than its time-table
     // rung: selects the rule the sweep and the mutation lanes run.
     auto overload = false;
+    // And edge-finding on the relaxation, likewise.
+    auto edge_finding = false;
     string mutation_basename = "disjunctive_2d_relaxation_mutation";
     for (auto a = 1; a < argc; ++a) {
         string arg = argv[a];
@@ -351,13 +377,35 @@ auto main(int argc, char * argv[]) -> int
             mutation = disjunctive_2d_proof_mutation::OverloadSkipRow{};
             overload = true;
         }
+        else if (arg == "--mutate=edge_finding_one_too_far") {
+            mutation = disjunctive_2d_proof_mutation::EdgeFindingOneTooFar{};
+            edge_finding = true;
+        }
+        else if (arg == "--mutate=edge_finding_drop_pushed") {
+            mutation = disjunctive_2d_proof_mutation::EdgeFindingDropPushed{};
+            edge_finding = true;
+        }
         else if (arg == "--overload")
             overload = true;
+        else if (arg == "--edge-finding")
+            edge_finding = true;
         else if (arg == "--proof-files-basename" && a + 1 < argc)
             mutation_basename = argv[++a];
     }
 
-    const Disjunctive2DRules with = overload ? Disjunctive2DRules{.relaxation_overload = true} : Disjunctive2DRules{.cumulative_relaxation = true};
+    const Disjunctive2DRules with = edge_finding ? Disjunctive2DRules{.relaxation_edge_finding = true}
+        : overload                               ? Disjunctive2DRules{.relaxation_overload = true}
+                                                 : Disjunctive2DRules{.cumulative_relaxation = true};
+
+    // The edge-finding fixtures. Three squares of two confined to x in [0, 2]
+    // fill 12 of the 16 units of area the window [0, 4) has under a y extent
+    // of four; a fourth rectangle, two wide and four tall and free in x over
+    // [0, 6], would add 4 per column it overlaps, so it cannot start before
+    // 3. Nothing has a mandatory x part, so time-tabling is silent.
+    const Instance ef_lb{{{0, 2}, {0, 2}, {0, 2}, {0, 6}}, {{0, 2}, {0, 2}, {0, 2}, {0, 0}}, {2, 2, 2, 2}, {2, 2, 2, 4}};
+    // The mirror: the three squares in [4, 8) and the tall one ending inside
+    // it, so it cannot start after 3.
+    const Instance ef_ub{{{4, 6}, {4, 6}, {4, 6}, {0, 6}}, {{0, 2}, {0, 2}, {0, 2}, {0, 0}}, {2, 2, 2, 2}, {2, 2, 2, 4}};
     const Disjunctive2DRules without{};
 
     // The overload fixture: seven squares of two in a box five by five, 28
@@ -370,7 +418,12 @@ auto main(int argc, char * argv[]) -> int
         // A stem per rule: the two sweep lanes run concurrently from one
         // directory, and a shared proof name is the race #961 was.
         run_random_sweep(search_instances, proofs, with, without,
-            overload ? "disjunctive_2d_relaxation_overload_search_" : "disjunctive_2d_relaxation_search_", overload);
+            edge_finding   ? "disjunctive_2d_relaxation_edge_finding_search_"
+                : overload ? "disjunctive_2d_relaxation_overload_search_"
+                           : "disjunctive_2d_relaxation_search_",
+            edge_finding   ? 2
+                : overload ? 1
+                           : 0);
         return EXIT_SUCCESS;
     }
 
@@ -395,6 +448,8 @@ auto main(int argc, char * argv[]) -> int
         Problem p;
         if (std::holds_alternative<disjunctive_2d_proof_mutation::SkipEscapePins>(*mutation))
             post_two_escapes(p, with, *mutation);
+        else if (edge_finding)
+            post(p, ef_lb, with, *mutation);
         else if (overload)
             post(p, area, with, *mutation);
         else
@@ -780,7 +835,7 @@ auto main(int argc, char * argv[]) -> int
     //
     // Everything below is about Disjunctive2DRules::relaxation_overload alone,
     // so the controls are "that rule off" and not "the time-table rung off".
-    if (! overload) {
+    if (! overload && ! edge_finding) {
         const Disjunctive2DRules overload_on{.relaxation_overload = true};
         auto closes = [&](const Instance & inst, Disjunctive2DRules rules, const optional<string> & name) -> pair<bool, int> {
             auto result = probe(inst, rules, name);
@@ -849,6 +904,40 @@ auto main(int argc, char * argv[]) -> int
                 enumerate_and_check(small, overload_on, proofs ? make_optional(string{"disjunctive_2d_relaxation_overload_enumerate"}) : nullopt);
             if (proofs && markers == 0)
                 fail("overload_enumerate: the rule never fired, so agreeing with brute force says nothing about it");
+        }
+    }
+
+    // --- edge-finding on the relaxation (#984) ---------------------------
+    if (! overload && ! edge_finding) {
+        const Disjunctive2DRules ef_on{.relaxation_edge_finding = true};
+        const Disjunctive2DRules ef_off{.cumulative_relaxation = true, .relaxation_overload = true};
+        auto check_push = [&](const Instance & inst, const string & name, bool lower, Integer expected) {
+            auto result = probe(inst, ef_on, proofs ? make_optional(name) : nullopt);
+            if (result.root_x.size() != 4)
+                fail(name + ": no root node was traced");
+            auto got = lower ? result.root_x[3].first : result.root_x[3].second;
+            if (got != expected)
+                fail(name + ": the tall rectangle's " + (lower ? "lower" : "upper") + " bound is " + to_string(got.raw_value) + ", expected " +
+                    to_string(expected.raw_value));
+            if (proofs && count_markers(name, "disjunctive2d cumulative relaxation edge-finding") < 1)
+                fail(name + ": no edge-finding marker, so something else made the push");
+            if (proofs && ! verify(name))
+                fail(name + ": veripb rejected the edge-finding certificate");
+            if (! result.satisfiable)
+                fail(name + ": the fixture is satisfiable, but no solution was found");
+            auto control = probe(inst, ef_off, nullopt);
+            auto control_bound = lower ? control.root_x[3].first : control.root_x[3].second;
+            if (control_bound == expected)
+                fail(name + ": the bound moved with edge-finding off, so the fixture says nothing about it");
+        };
+        check_push(ef_lb, "disjunctive_2d_relaxation_edge_finding_lb", true, 3_i);
+        check_push(ef_ub, "disjunctive_2d_relaxation_edge_finding_ub", false, 3_i);
+
+        {
+            auto markers =
+                enumerate_and_check(ef_lb, ef_on, proofs ? make_optional(string{"disjunctive_2d_relaxation_edge_finding_enumerate"}) : nullopt);
+            if (proofs && markers == 0)
+                fail("edge_finding_enumerate: the rule never fired");
         }
     }
 

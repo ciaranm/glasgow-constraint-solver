@@ -111,6 +111,23 @@ namespace gcs
          * cached. Off by default; independent of \ref cumulative_relaxation.
          */
         bool relaxation_overload = false;
+
+        /**
+         * \brief Edge-finding on each axis's cumulative relaxation: a
+         * rectangle with exactly one time-axis end inside a window `[a, b)`,
+         * which the rectangles the window contains leave too little room for,
+         * is pushed away from it --- `Cumulative`'s edge-finding with the
+         * capacity `H` of \ref relaxation_overload.
+         *
+         * The certificate is that rule's, emitted under the negated
+         * conclusion: the same flagged row per time point, plus each
+         * rectangle's guarded window energy (the row 1D Disjunctive's
+         * edge-finding cites, `window_energy::derive_guarded_window_energy`)
+         * times its height, with the pushed rectangle's conclusion guard left
+         * standing so the sum derives the push. Constant sizes, as for \ref
+         * relaxation_overload. Off by default.
+         */
+        bool relaxation_edge_finding = false;
     };
 
     /**
