@@ -106,8 +106,9 @@ auto run_abs_hole_test(bool proofs, const ViewWrapConfig & view_cfg, const strin
     const variant<vector<int>, int> & v2_spec) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 2);
-    auto v2_values = visit(overloaded{//
-                               [](const vector<int> & values) { return values; }, [](int value) { return vector<int>{value}; }},
+    auto v2_values = visit(overloaded{                                            //
+                               [](const vector<int> & values) { return values; }, //
+                               [](int value) { return vector<int>{value}; }},
         v2_spec);
 
     // Sizes and extremes rather than the lists: preimage_far's v1 is 101 values
