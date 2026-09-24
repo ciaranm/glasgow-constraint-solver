@@ -308,10 +308,12 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
 
                 if (min_possible > value + modifier) {
                     // cannot possibly hold. The witness cites proof_lines.first, the
-                    // `sum <= value` row: only Iff and NotIf get here undecided, and of
-                    // those only Iff licenses an inference for this verdict (NotIf learns
-                    // nothing from the constraint failing), so the justification is only
-                    // ever emitted for a form that has that row.
+                    // `cond -> sum <= value` row. If, NotIf and Iff all get here
+                    // undecided, but only If and Iff license an inference (not cond)
+                    // for this verdict, and NotIf learns nothing from the constraint
+                    // failing. If and Iff are exactly the forms that fill .first, so
+                    // the justification is only ever emitted for a form that has
+                    // that row.
                     return reification_verdict::MustNotHold<LinearCondJustification>{
                         .justification =
                             JustifyExplicitly{hints::LinearInequalityCond<CV>{{owner}, &state, sanitised_cv, proof_lines}, ThenRUP::Yes}, //
