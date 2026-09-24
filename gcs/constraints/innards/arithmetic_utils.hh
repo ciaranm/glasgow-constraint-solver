@@ -47,6 +47,21 @@ namespace gcs::innards
             return std::nullopt;
         return Integer{result};
     }
+
+    /**
+     * \brief a + b without the overflow throw, for a bound whose sum may
+     * pass the end of the range: there it excludes nothing, so a caller can
+     * skip it.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] inline auto sum_if_representable(Integer a, Integer b) -> std::optional<Integer>
+    {
+        long long result;
+        if (add_overflows(a.raw_value, b.raw_value, &result))
+            return std::nullopt;
+        return Integer{result};
+    }
 }
 
 #endif

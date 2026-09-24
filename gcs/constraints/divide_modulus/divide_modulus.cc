@@ -371,8 +371,19 @@ namespace
 
         bool x_pos = x_lo >= 0_i, x_neg = x_hi < 1_i;
 
-        // The local product interval, with provenance per side.
+        // The local product interval, with provenance per side. Its corners
+        // saturate rather than throw (issue #1064). That is safe here because
+        // w <= |x| in every solution and |x| is representable (prepare()
+        // negates x's bounds, so x is never INT64_MIN): a saturated upper
+        // corner is still a true bound on w, and a saturated lower corner
+        // means there is no solution at all. It only arises without proofs,
+        // because the proof model sizes the grid's rows by the grid's largest
+        // sum, which bounds every corner and must fit in an Integer, so no
+        // justification below ever sees a saturated value. Sums on w's bounds
+        // go through sum_if_representable for the same reason: one past the
+        // end of the range is no bound at all.
         auto [pw_lo, pw_hi] = product_bounds(a_lo, a_hi, b_lo, b_hi);
+        bool pw_lo_saturated = ! product_if_representable(a_lo, b_lo);
         WInterval w{max(pw_lo, 0_i), pw_hi, WSide::Mag, WSide::Mag};
         if (x_pos) {
             auto row_hi = modulus_r ? x_hi - r_bounds->first : x_hi;
@@ -473,7 +484,7 @@ namespace
         };
 
         // An inconsistent interval refutes the node: both chains together.
-        if (w.lo > w.hi) {
+        if (pw_lo_saturated || w.lo > w.hi) {
             auto justf = [&](const ReasonLiterals &) {
                 // RUP cannot combine two opposing linear bounds on the grid
                 // sum (a cutting-planes step), so add them explicitly.
@@ -548,24 +559,26 @@ namespace
 
             // |x| <= Sum + |y| - 1 holds for either sign of x (the negation of
             // the claimed bound pins the sign, activating the matching row).
-            infer_bound(
-                d.x, false, pw_hi + b_hi - 1_i,
-                [&](PolBuilder & builder, const ReasonLiterals &) {
-                    builder.add(grid_upper_line(*logger, chain_reason(WSide::Mag, false), d, pass, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag},
-                        a_hi, b_hi, x_lo, x_hi, r_for_lines));
-                    builder.add(*d.rem_pos_hi);
-                    builder.add(cached_operand_bound(*logger, d, d.mag_b, false, b_hi).line);
-                },
-                side_reason(WSide::Mag, false));
-            infer_bound(
-                d.x, true, -(pw_hi + b_hi - 1_i),
-                [&](PolBuilder & builder, const ReasonLiterals &) {
-                    builder.add(grid_upper_line(*logger, chain_reason(WSide::Mag, false), d, pass, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag},
-                        a_hi, b_hi, x_lo, x_hi, r_for_lines));
-                    builder.add(*d.rem_neg_lo);
-                    builder.add(cached_operand_bound(*logger, d, d.mag_b, false, b_hi).line);
-                },
-                side_reason(WSide::Mag, false));
+            if (auto x_mag_hi = sum_if_representable(pw_hi, b_hi - 1_i)) {
+                infer_bound(
+                    d.x, false, *x_mag_hi,
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
+                        builder.add(grid_upper_line(*logger, chain_reason(WSide::Mag, false), d, pass,
+                            WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                        builder.add(*d.rem_pos_hi);
+                        builder.add(cached_operand_bound(*logger, d, d.mag_b, false, b_hi).line);
+                    },
+                    side_reason(WSide::Mag, false));
+                infer_bound(
+                    d.x, true, -*x_mag_hi,
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
+                        builder.add(grid_upper_line(*logger, chain_reason(WSide::Mag, false), d, pass,
+                            WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                        builder.add(*d.rem_neg_lo);
+                        builder.add(cached_operand_bound(*logger, d, d.mag_b, false, b_hi).line);
+                    },
+                    side_reason(WSide::Mag, false));
+            }
 
             // |y| >= |x| - Sum + 1 through whichever rem row's sign is decided.
             if (x_pos)
@@ -613,14 +626,15 @@ namespace
                     builder.add(cached_operand_bound(*logger, d, *modulus_r, true, r_bounds->first).line);
                 },
                 merge_lits(side_reason(w.lo_side, true), {*modulus_r >= r_bounds->first, d.x >= 0_i}));
-            infer_bound(
-                d.x, false, r_bounds->second + w.hi,
-                [&](PolBuilder & builder, const ReasonLiterals &) {
-                    builder.add(*d.id_pos_le);
-                    builder.add(grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
-                    builder.add(cached_operand_bound(*logger, d, *modulus_r, false, r_bounds->second).line);
-                },
-                merge_lits(side_reason(w.hi_side, false), {*modulus_r <= r_bounds->second, d.x >= 0_i}));
+            if (auto bound = sum_if_representable(r_bounds->second, w.hi))
+                infer_bound(
+                    d.x, false, *bound,
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
+                        builder.add(*d.id_pos_le);
+                        builder.add(grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                        builder.add(cached_operand_bound(*logger, d, *modulus_r, false, r_bounds->second).line);
+                    },
+                    merge_lits(side_reason(w.hi_side, false), {*modulus_r <= r_bounds->second, d.x >= 0_i}));
         }
         else if (x_neg && modulus_r) {
             // r = x + Sum
@@ -640,14 +654,15 @@ namespace
                     builder.add(cached_operand_bound(*logger, d, d.x, false, x_hi).line);
                 },
                 merge_lits(side_reason(w.hi_side, false), {d.x <= x_hi, d.x < 1_i}));
-            infer_bound(
-                d.x, true, r_bounds->first - w.hi,
-                [&](PolBuilder & builder, const ReasonLiterals &) {
-                    builder.add(*d.id_neg_le);
-                    builder.add(grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
-                    builder.add(cached_operand_bound(*logger, d, *modulus_r, true, r_bounds->first).line);
-                },
-                merge_lits(side_reason(w.hi_side, false), {*modulus_r >= r_bounds->first, d.x < 1_i}));
+            if (auto bound = sum_if_representable(r_bounds->first, -w.hi))
+                infer_bound(
+                    d.x, true, *bound,
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
+                        builder.add(*d.id_neg_le);
+                        builder.add(grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                        builder.add(cached_operand_bound(*logger, d, *modulus_r, true, r_bounds->first).line);
+                    },
+                    merge_lits(side_reason(w.hi_side, false), {*modulus_r >= r_bounds->first, d.x < 1_i}));
             infer_bound(
                 d.x, false, r_bounds->second - w.lo,
                 [&](PolBuilder & builder, const ReasonLiterals &) {

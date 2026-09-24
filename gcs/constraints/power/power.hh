@@ -32,7 +32,10 @@ namespace gcs
      * solvers): 0 ^ 0 = 1; a negative exponent gives 1 div base^|exponent|
      * truncated, so 2 ^ -5 = 0, 1 ^ -n = 1, (-1) ^ -n is 1 or -1 by parity,
      * and 0 ^ -n has no support. A result too big for the solver's integers
-     * likewise has no support.
+     * likewise has no support. With a constant exponent, the one
+     * representable power this misses is (-2) ^ 63 = INT64_MIN, outside every
+     * declared variable's domain: a constant (or view) result of that value
+     * makes the constraint throw.
      *
      * A constant exponent dispatches structurally: 0 and 1 are linear
      * equalities, k >= 2 becomes a chain of Multiply constraints over
@@ -43,6 +46,9 @@ namespace gcs
      * relation is additionally tabulated in-proof. A variable exponent falls
      * back on innards::PowerTable, the one remaining table-in-the-OPB
      * encoding.
+     *
+     * Each link of a chain is a multiplication, so propagation works
+     * whatever the widths, and proof logging has Multiply's limit per link.
      *
      * \ingroup Constraints
      * \sa Multiply

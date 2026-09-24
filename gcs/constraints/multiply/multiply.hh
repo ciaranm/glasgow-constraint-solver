@@ -43,10 +43,12 @@ namespace gcs
      * bounds consistency on the quadratic itself; tabulation recovers full
      * strength for small domains.
      *
-     * Note that install-time bound computations on very large domains can
-     * overflow, and this is an error, unlike the old table-based constraint
-     * which would instead attempt to enumerate the cross product of the
-     * domains.
+     * Propagation works whatever the operands' widths: a product of their
+     * bounds that does not fit in an Integer saturates rather than
+     * overflowing. Proof logging has a narrower limit. The encoding's
+     * bit-product grid must fit in an Integer, which allows the operands'
+     * magnitudes 62 bits between them (31 + 31 or 32 + 30, but not
+     * 32 + 31); past that, posting with proofs enabled throws a ProofError.
      *
      * \ingroup Constraints
      * \sa LinearEquality

@@ -47,6 +47,12 @@ namespace gcs
      * with respect to the decomposition, which can be weaker than bounds
      * consistency on the division itself.
      *
+     * Propagation works whatever the operands' widths. Proof logging needs
+     * the decomposition's bit-product grid to fit in an Integer, which allows
+     * the quotient's and divisor's magnitudes 63 bits between them (32 + 31,
+     * but not 32 + 32); past that, posting with proofs enabled throws a
+     * ProofError.
+     *
      * \ingroup Constraints
      * \sa Modulus
      * \sa Multiply
@@ -84,7 +90,8 @@ namespace gcs
      *
      * Division by zero is relational, exactly as for Divide, and the
      * decomposition is the same one with the remainder exposed instead of the
-     * quotient.
+     * quotient. So is the limit on proof logging, with the quotient's
+     * magnitude sized by the dividend's bits.
      *
      * \ingroup Constraints
      * \sa Divide

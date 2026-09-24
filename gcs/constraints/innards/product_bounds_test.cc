@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -67,6 +68,22 @@ auto main(int, char *[]) -> int
                     check(lo.raw_value == expect_lo && hi.raw_value == expect_hi, "product_bounds([", x_lo, ",", x_hi, "], [", y_lo, ",", y_hi,
                         "]) = [", lo.raw_value, ",", hi.raw_value, "] but enumeration gives [", expect_lo, ",", expect_hi, "]");
                 }
+
+    // Corners past Integer's range saturate rather than throw (issue #1064).
+    const auto max = Integer{std::numeric_limits<long long>::max()}, min = Integer{std::numeric_limits<long long>::min()};
+    const auto two_to_the_32 = 4294967296_i;
+    check(saturating_product(two_to_the_32, two_to_the_32) == max, "saturating_product(2^32, 2^32) should saturate at the top");
+    check(saturating_product(-two_to_the_32, two_to_the_32) == min, "saturating_product(-2^32, 2^32) should saturate at the bottom");
+    check(saturating_product(-two_to_the_32, -two_to_the_32) == max, "saturating_product(-2^32, -2^32) should saturate at the top");
+    check(saturating_product(max, 1_i) == max && saturating_product(min, 1_i) == min && saturating_product(max, -1_i) == -max,
+        "saturating_product should be exact at the ends of the range");
+    check(saturating_product(min, -1_i) == max, "saturating_product(INT64_MIN, -1) should saturate at the top");
+    check(saturating_product(max, 0_i) == 0_i, "saturating_product(INT64_MAX, 0) should be zero");
+    check(product_bounds(1_i, two_to_the_32, 1_i, two_to_the_32) == pair{1_i, max}, "product_bounds should saturate only the top corner");
+    check(product_bounds(-two_to_the_32, two_to_the_32, 3_i, two_to_the_32) == pair{min, max}, "product_bounds should saturate both ends");
+    check(product_bounds(two_to_the_32, two_to_the_32 + 1_i, two_to_the_32, two_to_the_32) == pair{max, max},
+        "product_bounds should saturate every corner at the top");
+    check(square_bounds(-two_to_the_32, 2_i) == pair{0_i, max}, "square_bounds should saturate the top");
 
     // square_bounds is exact
     for (long long lo = -20; lo <= 20; ++lo)

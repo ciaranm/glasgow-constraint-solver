@@ -327,6 +327,13 @@ auto gcs::innards::signed_multiply::propagate(Data & d, const State & state, aut
     auto [x_lo, x_hi] = state.bounds(d.x);
     auto [y_lo, y_hi] = state.bounds(d.y);
     bool square = d.x == d.y;
+    // The corners saturate rather than throw (issue #1064). Against z's
+    // bounds, which are representable, an upper corner saturated at the top
+    // or a lower one at the bottom moves nothing, and one saturated on the
+    // far side is a weaker bound than the true one. It only arises without
+    // proofs: the proof model sizes the grid's rows by the grid's largest
+    // sum, which bounds every corner and must fit in an Integer, so
+    // justify_z_bounds never sees a saturated value.
     auto [prod_lo, prod_hi] = square ? square_bounds(x_lo, x_hi) : product_bounds(x_lo, x_hi, y_lo, y_hi);
 
     // Only ask for the bounds that will actually move, and tell the
