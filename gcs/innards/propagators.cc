@@ -932,12 +932,18 @@ auto Propagators::initialise(State & state, ProofLogger * const logger) -> bool
     return true;
 }
 
+auto gcs::innards::idempotent_claim_checker_enabled() -> bool
+{
+    static const bool enabled = nullptr != std::getenv("GCS_CHECK_IDEMPOTENT_CLAIMS");
+    return enabled;
+}
+
 auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger * const logger, atomic<bool> * optional_abort_flag) const -> bool
 {
     // Test-mode net for EnableButIdempotent (see propagators-fwd.hh): re-run
     // every honoured claim immediately and abort if it infers anything or
-    // contradicts. Read once: the constraint test harness sets this before the
-    // first solve in the process.
+    // contradicts. Read once per process, by the first propagate(); see
+    // idempotent_claim_checker_enabled().
     // GCC 15 false positive: this is read below, but only from inside the
     // generic lambda `run`. A static local is not captured, so the read is not
     // a capture; and the read that is there lives in a lambda body that is
@@ -950,7 +956,7 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #endif
-    static const bool check_idempotent_claims = nullptr != std::getenv("GCS_CHECK_IDEMPOTENT_CLAIMS");
+    static const bool check_idempotent_claims = idempotent_claim_checker_enabled();
 #if defined(__GNUC__) && ! defined(__clang__)
 #pragma GCC diagnostic pop
 #endif

@@ -360,6 +360,8 @@ namespace
 
 auto main(int argc, char * argv[]) -> int
 {
+    gcs::test_innards::establish_and_announce_seed(argc, argv);
+
     auto proofs = gcs::test_innards::can_run_veripb();
     auto search_instances = 0;
     optional<Disjunctive2DProofMutation> mutation;

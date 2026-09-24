@@ -359,8 +359,12 @@ propagators, which relies on claiming propagators registering triggers
 1:1 with their scope positions. A wrong claim silently under-propagates
 or is unsound, so every adoption needs an audit note, and the test
 harness sets `GCS_CHECK_IDEMPOTENT_CLAIMS` to re-run every honoured
-claim and abort if it infers anything. When in doubt, return `Enable`:
-the only cost is a possible wasted no-op run.
+claim and abort if it infers anything. The engine reads that variable
+once per process, at the first propagation, so the harness sets it in
+`establish_and_announce_seed` (see [Pinning the random
+seed](#pinning-the-random-seed)) rather than at the first solve, which
+left it silently off in a hundred lanes (issue #1056). When in doubt,
+return `Enable`: the only cost is a possible wasted no-op run.
 
 ### Triggers
 
@@ -1074,6 +1078,15 @@ when no seed was stored. Every test that solves needs the call. The diagnostic
 order that settles this quickly is to run the same binary twice (which rules out
 the change under test), then `setarch -R` (which rules out ASLR), then grep the
 test for `establish_and_announce_seed`.
+
+The call also switches on the idempotence claim checker (see
+`EnableButIdempotent` above), and it has to come before anything
+propagates: the engine reads the switch once, at the first propagation in
+the process, so a `check_initialisation_only_for_tests()` or bare
+`solve_with()` ahead of it would leave the checker off for the whole run.
+Both ways of getting this wrong now fail loudly: the call throws if
+something has already propagated, and every `solve_for_tests*` throws if
+the checker is off.
 
 ### Mutation testing: showing a derivation is tight
 
