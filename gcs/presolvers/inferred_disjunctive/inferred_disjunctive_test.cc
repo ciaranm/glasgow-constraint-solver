@@ -1115,5 +1115,27 @@ auto main(int argc, char * argv[]) -> int
         dispose_of_proof_files(name);
     }
 
+    // A task two resources share, whose flags the recipe cites on its home
+    // resource. Under the start-checkpoint encoding a donor's per-(task, time)
+    // flags are named with the model but defined only when asked for, and the
+    // recipe cited the reification halves without asking: the proof named a
+    // label no line carried. Found by a random fuzz campaign and cut down by a
+    // minimiser; everything is fixed at zero, and the second resource cannot
+    // hold what is on it.
+    if (proofs) {
+        const string name = "inferred_disjunctive_undefined_flags";
+        Problem p;
+        auto a = p.create_integer_variable(0_i, 0_i), b = p.create_integer_variable(0_i, 0_i), c = p.create_integer_variable(0_i, 0_i);
+        p.post(Cumulative{{a}, {1_i}, {2_i}, 3_i});
+        p.post(Cumulative{{a, b, c}, {1_i, 4_i, 3_i}, {2_i, 1_i, 2_i}, 2_i});
+        p.add_presolver(InferredDisjunctive{});
+        auto stats = solve_with(
+            p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(ProofFileNames{name}));
+        if (stats.solutions != 0)
+            fail("undefined flags: the instance is unsatisfiable but solutions were reported");
+        verify_proof_and_clean_up(name);
+        println(cerr, "inferred disjunctive undefined flags: refuted, proof verified");
+    }
+
     return EXIT_SUCCESS;
 }
