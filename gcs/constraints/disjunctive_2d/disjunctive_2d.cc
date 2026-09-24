@@ -1379,12 +1379,16 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             // Edge-finding: a task with exactly one end inside
                             // the window, which the contained set leaves too
                             // little room for, is pushed away from it. The
-                            // threshold is found by asking the window-energy
-                            // lemma for exactly what the row the certificate
-                            // will cite establishes at each candidate, rather
-                            // than by the closed form over the state's bounds:
-                            // the row is a model fact, and firing on energy it
-                            // does not carry is a rejected proof.
+                            // threshold is the strongest one the row the
+                            // certificate will cite establishes: the row is a
+                            // model fact, and firing on energy it does not
+                            // carry is a rejected proof. That is not the
+                            // textbook a + ceil(rest / h_j), which can fall
+                            // short of it. It is read off the window-energy
+                            // lemma's own shape in closed form, since walking
+                            // the candidates costs the width of the time axis
+                            // on every call, and the lemma is then asked once,
+                            // at the answer, before anything fires.
                             for (auto j : tasks) {
                                 if (est(j) >= a && lct(j) <= b)
                                     continue;
@@ -1399,29 +1403,51 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     return clipped > 0_i && energy + h_j * clipped > supply;
                                 };
 
+                                // The fewest units of j's clipped energy that
+                                // overflow the window. The window itself is not
+                                // overloaded here (that returned above, or left
+                                // this window to the overload rule), so this is
+                                // at least one.
+                                auto need = (supply - energy) / h_j + 1_i;
+                                // What the lemma establishes over [a, b) for
+                                // j's start in [lg, hg - 1] (window_energy's
+                                // shape_of): the units lg keeps, clamp(lg - a +
+                                // p_j), less those hg loses, clamp(hg - 1 -
+                                // max(a, b - p_j)), each clamped to [0, count].
+                                auto count = min(p_j, b - a);
+                                if (need > count)
+                                    continue;
+
                                 auto [j_lo, j_hi] = state.bounds(tpos[j]);
                                 optional<Integer> threshold;
                                 if (starts_inside) {
-                                    // s_j < T is refuted: the largest such T.
-                                    for (auto t = min(b, j_hi + 1_i); t > j_lo; --t)
-                                        if (overflows_with(a, t)) {
-                                            threshold = t;
-                                            break;
-                                        }
+                                    // s_j < T is refuted, for the largest such T.
+                                    // With lg = a every unit is kept, so the
+                                    // bound is count - clamp(T - 1 - max(a, b -
+                                    // p_j)), falling in T: the answer is the last
+                                    // T it still reaches need at, capped at b and
+                                    // at one past j's upper bound.
+                                    auto t = min({max(a, b - p_j) + count - need + 1_i, b, j_hi + 1_i});
+                                    if (t > j_lo)
+                                        threshold = t;
                                 }
                                 else {
-                                    // s_j >= L is refuted: the smallest such L.
-                                    for (auto l = max(a - p_j + 1_i, j_lo); l <= j_hi; ++l)
-                                        if (overflows_with(l, b - p_j + 1_i)) {
-                                            threshold = l;
-                                            break;
-                                        }
+                                    // s_j >= L is refuted, for the smallest such
+                                    // L. With hg - 1 = b - p_j nothing is lost, so
+                                    // the bound is clamp(L - a + p_j), rising in
+                                    // L: the answer is the first L it reaches
+                                    // need at, and no lower than j's lower bound.
+                                    auto l = max(a - p_j + need, j_lo);
+                                    if (l <= j_hi)
+                                        threshold = l;
                                 }
                                 if (! threshold)
                                     continue;
 
                                 auto low_guard = starts_inside ? a : *threshold;
                                 auto high_guard = starts_inside ? *threshold : b - p_j + 1_i;
+                                if (! overflows_with(low_guard, high_guard))
+                                    continue;
 
                                 ReasonLiterals literals;
                                 for (auto i : inside) {

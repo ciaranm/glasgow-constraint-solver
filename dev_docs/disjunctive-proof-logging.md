@@ -1497,9 +1497,13 @@ The certificate is 1D edge-finding's (above) with heights: the flagged
 row per time point, plus `h_i ×` each contained rectangle's guarded
 window-energy row (`derive_guarded_window_energy` over `WindowRows`,
 cached at Top), plus `h_j ×` the pushed rectangle's row with its
-conclusion guard left standing, so the sum derives the push. As in 1D,
-the threshold is found by asking `window_energy_bound` at exactly the
-guards the cited row will carry, never from the state's bounds.
+conclusion guard left standing, so the sum derives the push. The
+threshold is the strongest push that row supports, which can go past the
+textbook `a + ⌈rest / h_j⌉`. It is read off `window_energy_bound`'s shape
+in closed form, at exactly the guards the cited row will carry, and only
+the pushed rectangle's own bounds cap it. `window_energy_bound` is then
+asked once, at the answer, before it fires. Walking the candidates
+instead costs the width of the time axis on every call, proofs or not.
 
 Fixtures push both ways by exactly the amount a unit of slack allows,
 with controls (every other relaxation rule on) that do not reach it. Two
