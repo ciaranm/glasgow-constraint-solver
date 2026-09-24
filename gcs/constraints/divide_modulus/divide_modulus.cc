@@ -76,9 +76,19 @@ namespace gcs::innards::divide_modulus
         SimpleIntegerVariableID mag_a{0}, mag_b{0}; // |q| (or the free quotient magnitude) and |y|
         IntegerVariableID x = 0_c;
         IntegerVariableID y = 0_c; // the signed divisor mag_b channels to
+        // Divide's exposed quotient, which mag_a channels to; Modulus's
+        // quotient is the free magnitude mag_a itself, so it has none.
+        optional<IntegerVariableID> q;
         // The divisor channel halves needed to push a magnitude lower bound
         // back through the hole: [y>=0] => y >= |y| and [y<0] => -y >= |y|.
         optional<ProofLine> ychan_pos_ge, ychan_neg_le;
+        // The rest of the channel halves, which bound a sign-open operand and
+        // its magnitude by each other: the divisor's other two, and all four
+        // of (Divide only) the quotient's.
+        optional<ProofLine> ychan_pos_le, ychan_neg_ge, qchan_pos_ge, qchan_pos_le, qchan_neg_ge, qchan_neg_le;
+        // Divide's [q<0] /\ [|y|>=1] => Sum >= 1, which refutes a negative
+        // quotient at x = 0; derived once, at ProofLevel::Top, on first use.
+        optional<ProofLine> q_neg_grid_lower;
         product_enc::BitProductGrid grid{}; // cells empty when proofs are off
         // Divide's remainder rows: 0 <= x - Sum < |y| gated [x>=0], and the
         // mirror 0 <= -x - Sum < |y| gated [x<1].
@@ -864,6 +874,176 @@ namespace
             inference.infer(
                 logger, d.y >= b_lo_now, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}}, as_reason({d.mag_b >= b_lo_now, d.y >= y_lo_now}));
         }
+
+        // Clamp a sign-open operand by its magnitude's upper bound: |v| <= u
+        // gives -u <= v <= u whatever v's sign. The channel stages are gated
+        // on the sign, so without this a magnitude bound never reaches an
+        // operand that could still be either sign (issue #1065). Each side
+        // is one channel row under its own sign case; the other case holds
+        // outright, since there v's sign already puts it inside the clamp.
+        auto clamp_by_magnitude = [&](const IntegerVariableID & v, SimpleIntegerVariableID mag, const optional<ProofLine> & pos_ge,
+                                      const optional<ProofLine> & pos_le, const optional<ProofLine> & neg_ge, const optional<ProofLine> & neg_le,
+                                      Integer pos_threshold) -> void {
+            auto [v_lo, v_hi] = state.bounds(v);
+
+            // And the other way: a sign-open operand without 0 has a
+            // magnitude of at least 1. In either sign case, [v != 0] and the
+            // channel row give it by RUP.
+            if (v_lo < pos_threshold && v_hi >= 0_i && state.lower_bound(mag) < 1_i && ! state.in_domain(v, 0_i)) {
+                auto justf = [&](const ReasonLiterals & reason) {
+                    auto dims = vector<pj::SignCaseDimension>{{v >= 0_i, v < 0_i}};
+                    pj::conclude_by_sign_cases(*logger, reason, WPBSum{} + 1_i * mag >= 1_i, dims, {nullopt, nullopt});
+                };
+                inference.infer(logger, mag >= 1_i, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}}, as_reason({v != 0_i}));
+            }
+
+            // v's bounds cap its magnitude: |v| <= max(-v_lo, v_hi).
+            auto cap = max(-v_lo, v_hi);
+            if (v_lo < pos_threshold && v_hi >= 0_i && state.upper_bound(mag) > cap) {
+                auto justf = [&](const ReasonLiterals & reason) {
+                    auto v_ub = cached_operand_bound(*logger, d, v, false, v_hi);
+                    auto v_lb = cached_operand_bound(*logger, d, v, true, v_lo);
+                    PolBuilder pos_bound;
+                    pos_bound.add(*pos_ge).add(v_ub.line);
+                    auto pos_line = pos_bound.emit(*logger, ProofLevel::Temporary);
+                    PolBuilder neg_bound;
+                    neg_bound.add(*neg_le).add(v_lb.line);
+                    auto neg_line = neg_bound.emit(*logger, ProofLevel::Temporary);
+                    auto dims = vector<pj::SignCaseDimension>{{v >= 0_i, v < 0_i}};
+                    auto premises = vector<optional<pj::ConditionalBound>>{
+                        pj::ConditionalBound{WPBSum{} + -1_i * mag, -v_hi, HalfReifyOnConjunctionOf{v >= 0_i}, pos_line},
+                        pj::ConditionalBound{WPBSum{} + -1_i * mag, v_lo, HalfReifyOnConjunctionOf{v < 0_i}, neg_line}};
+                    pj::conclude_by_sign_cases(*logger, reason, WPBSum{} + -1_i * mag >= -cap, dims, premises);
+                };
+                inference.infer(logger, mag < cap + 1_i, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}}, as_reason({v >= v_lo, v <= v_hi}));
+            }
+
+            auto u = state.upper_bound(mag);
+            // A decided sign leaves the clamp to that sign's channel stage.
+            if (v_hi > u && v_lo < pos_threshold) {
+                auto justf = [&](const ReasonLiterals & reason) {
+                    auto mag_ub = cached_operand_bound(*logger, d, mag, false, u);
+                    PolBuilder pos_bound;
+                    pos_bound.add(*pos_le).add(mag_ub.line);
+                    auto pos_line = pos_bound.emit(*logger, ProofLevel::Temporary);
+                    auto dims = vector<pj::SignCaseDimension>{{v >= 0_i, v < 0_i}};
+                    auto premises = vector<optional<pj::ConditionalBound>>{
+                        pj::ConditionalBound{WPBSum{} + -1_i * v, -u, HalfReifyOnConjunctionOf{v >= 0_i}, pos_line}, nullopt};
+                    pj::conclude_by_sign_cases(*logger, reason, WPBSum{} + -1_i * v >= -u, dims, premises);
+                };
+                inference.infer(logger, v < u + 1_i, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}}, as_reason({mag <= u}));
+            }
+            if (v_lo < -u && v_hi >= 0_i) {
+                auto justf = [&](const ReasonLiterals & reason) {
+                    auto mag_ub = cached_operand_bound(*logger, d, mag, false, u);
+                    PolBuilder neg_bound;
+                    neg_bound.add(*neg_ge).add(mag_ub.line);
+                    auto neg_line = neg_bound.emit(*logger, ProofLevel::Temporary);
+                    auto dims = vector<pj::SignCaseDimension>{{v >= 0_i, v < 0_i}};
+                    auto premises = vector<optional<pj::ConditionalBound>>{
+                        nullopt, pj::ConditionalBound{WPBSum{} + 1_i * v, -u, HalfReifyOnConjunctionOf{v < 0_i}, neg_line}};
+                    pj::conclude_by_sign_cases(*logger, reason, WPBSum{} + 1_i * v >= -u, dims, premises);
+                };
+                inference.infer(logger, v >= -u, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}}, as_reason({mag <= u}));
+            }
+        };
+
+        clamp_by_magnitude(d.y, d.mag_b, d.ychan_pos_ge, d.ychan_pos_le, d.ychan_neg_ge, d.ychan_neg_le, 1_i);
+        if (d.q)
+            clamp_by_magnitude(*d.q, d.mag_a, d.qchan_pos_ge, d.qchan_pos_le, d.qchan_neg_ge, d.qchan_neg_le, 0_i);
+    }
+
+    // Divide's quotient sign. The grid carries no signed reasoning, so the
+    // exposed quotient's sign is pinned off the sgn_* clauses once the signs
+    // of x and y are both established. sgn_pp: x>0 & y>0 -> q>=0; sgn_pn:
+    // x>0 & y<0 -> q<=0; sgn_nn: x<0 & y<0 -> q>=0; sgn_np: x<0 & y>0 ->
+    // q<=0. Each is also true for x = 0, where the quotient is 0, so a
+    // dividend whose sign is decided only weakly still pins it (issue
+    // #1065): for q<=0, sgn_x0 (x = 0 -> q<=0) closes the x = 0 case by RUP
+    // too, but for q>=0 nothing in the sign clauses does, and the refutation
+    // goes through the grid, where a negative quotient and a nonzero divisor
+    // give Sum >= 1, against the x = 0 remainder rows' Sum <= 0. The closing
+    // RUP needs no case split on x = 0: under the negated claim, sgn_pp (or
+    // sgn_nn) forces x out of the strict sign case, and x >= 0 together with
+    // x < 1 pins x's bits by unit propagation, sign bit first, which is what
+    // activates the remainder rows.
+    template <typename Hint_>
+    auto propagate_quotient_sign(DefaultProductData & d, const IntegerVariableID & x, const IntegerVariableID & y, const IntegerVariableID & q,
+        const State & state, auto & inference, ProofLogger * const logger, const ConstraintID & owner) -> void
+    {
+        auto [x_lo, x_hi] = state.bounds(x);
+        auto [y_lo, y_hi] = state.bounds(y);
+        auto [q_lo, q_hi] = state.bounds(q);
+
+        // The same clauses read the other way decide the divisor's sign from
+        // strictly signed x and q, the zero divisor going by the nonzero row:
+        // sgn_pn and sgn_nn give y >= 0, sgn_pp and sgn_np give y <= 0.
+        if ((x_lo >= 1_i || x_hi < 0_i) && (q_lo >= 1_i || q_hi < 0_i) && y_lo < 0_i && y_hi > 0_i) {
+            auto x_sign = x_lo >= 1_i ? Literal{x >= 1_i} : Literal{x < 0_i};
+            auto q_sign = q_lo >= 1_i ? Literal{q >= 1_i} : Literal{q < 0_i};
+            if ((x_lo >= 1_i) == (q_lo >= 1_i))
+                inference.infer(logger, y >= 1_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x_sign, q_sign}});
+            else
+                inference.infer(logger, y < 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x_sign, q_sign}});
+        }
+
+        if (x_lo >= 1_i) {
+            if (y_lo >= 1_i && q_lo < 0_i)
+                inference.infer(logger, q >= 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x >= 1_i, y >= 1_i}});
+            else if (y_hi < 0_i && q_hi > 0_i)
+                inference.infer(logger, q < 1_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x >= 1_i, y < 0_i}});
+            return;
+        }
+        if (x_hi < 0_i) {
+            if (y_hi < 0_i && q_lo < 0_i)
+                inference.infer(logger, q >= 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x < 0_i, y < 0_i}});
+            else if (y_lo >= 1_i && q_hi > 0_i)
+                inference.infer(logger, q < 1_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x < 0_i, y >= 1_i}});
+            return;
+        }
+
+        // x's sign is decided only weakly (x >= 0 or x <= 0, with 0 still in
+        // play), or not at all.
+        bool x_nonneg = x_lo >= 0_i, x_nonpos = x_hi < 1_i;
+        if (! x_nonneg && ! x_nonpos)
+            return;
+        auto x_sign = x_nonneg ? Literal{x >= 0_i} : Literal{x < 1_i};
+
+        // q >= 0 when x and y have the same sign. The divisor's magnitude
+        // bound is in the reason because the grid line is over it; y's
+        // channel stage establishes it from y's sign. The cached line carries
+        // its guards, [q < 0] and [|y| >= 1], as terms of the line itself
+        // (both operand bounds come back with no cases), so narrow must be
+        // exactly those two, and |y| >= 1 must stay in the reason even where
+        // dropping it happens to verify: unit propagation cannot reliably
+        // reach it from y's sign through the channel.
+        bool same_sign = x_nonneg ? y_lo >= 1_i : y_hi < 0_i;
+        if (same_sign && q_lo < 0_i && state.lower_bound(d.mag_b) >= 1_i) {
+            auto justf = [&](const ReasonLiterals &) {
+                if (! d.q_neg_grid_lower) {
+                    ReasonLiterals narrow;
+                    narrow.emplace_back(Literal{q < 0_i});
+                    narrow.emplace_back(Literal{d.mag_b >= 1_i});
+                    // [q<0] => |q| >= 1, off the quotient's channel.
+                    auto q_ub = cached_operand_bound(*logger, d, q, false, -1_i);
+                    PolBuilder q_mag;
+                    q_mag.add(*d.qchan_neg_ge).add(q_ub.line);
+                    auto a =
+                        pj::ConditionalBound{WPBSum{} + 1_i * d.mag_a, 1_i, HalfReifyOnConjunctionOf{q < 0_i}, q_mag.emit(*logger, ProofLevel::Top)};
+                    auto b = cached_operand_bound(*logger, d, d.mag_b, true, 1_i);
+                    d.q_neg_grid_lower = pj::grid_sum_lower_bound(*logger, narrow, d.grid, d.mag_a, a, b, ProofLevel::Top).line;
+                }
+            };
+            inference.infer(logger, q >= 0_i, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}},
+                ExplicitReason{ReasonLiterals{x_sign, x_nonneg ? Literal{y >= 1_i} : Literal{y < 0_i}, d.mag_b >= 1_i}});
+            return;
+        }
+
+        // q <= 0 when they have opposite signs.
+        bool opposite_sign = x_nonneg ? y_hi < 0_i : y_lo >= 1_i;
+        if (opposite_sign && q_hi > 0_i)
+            inference.infer(logger, q < 1_i, JustifyUsingRUP{Hint_{owner}},
+                ExplicitReason{ReasonLiterals{x_sign, x_nonneg ? Literal{y < 0_i} : Literal{y >= 1_i}}});
     }
 
     // cake's sign atoms for one operand slot, in the two shapes the encoding
@@ -985,6 +1165,8 @@ namespace
         st.data = make_shared<DefaultProductData>();
         st.data->x = x;
         st.data->y = y;
+        if (expose_quotient)
+            st.data->q = out;
 
         if (expose_quotient) {
             // magq = |q| (Z channel to the exposed quotient) and absy = |y| (channelled by
@@ -1120,6 +1302,12 @@ namespace
             auto magq = st.quotient_mag.var, absy = st.divisor_mag.var;
             st.data->ychan_pos_ge = st.divisor_mag.pos_ge;
             st.data->ychan_neg_le = st.divisor_mag.neg_le;
+            st.data->ychan_pos_le = st.divisor_mag.pos_le;
+            st.data->ychan_neg_ge = st.divisor_mag.neg_ge;
+            st.data->qchan_pos_ge = st.quotient_mag.pos_ge;
+            st.data->qchan_pos_le = st.quotient_mag.pos_le;
+            st.data->qchan_neg_ge = st.quotient_mag.neg_ge;
+            st.data->qchan_neg_le = st.quotient_mag.neg_le;
 
             st.data->grid = product_enc::emit_bit_product_grid(model, owner, magq, absy, product_enc::LinkNaming{});
             const auto & product_sum = st.data->grid.sum;
@@ -1168,6 +1356,8 @@ namespace
             auto absy = st.divisor_mag.var;
             st.data->ychan_pos_ge = st.divisor_mag.pos_ge;
             st.data->ychan_neg_le = st.divisor_mag.neg_le;
+            st.data->ychan_pos_le = st.divisor_mag.pos_le;
+            st.data->ychan_neg_ge = st.divisor_mag.neg_ge;
 
             st.data->grid = product_enc::emit_bit_product_grid(model, owner, q_eff, absy, product_enc::LinkNaming{});
             const auto & product_sum = st.data->grid.sum;
@@ -1266,25 +1456,8 @@ namespace
                     if (state.in_domain(y, 0_i))
                         inference.infer(logger, y != 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
 
-                    if (pin_q_sign) {
-                        // The grid carries no signed reasoning, so the exposed quotient's
-                        // sign is pinned off the sgn_* clauses by RUP once the signs of x
-                        // and y are both established. sgn_pp: x>0 & y>0 -> q>=0; sgn_pn:
-                        // x>0 & y<0 -> q<=0; sgn_nn: x<0 & y<0 -> q>=0; sgn_np: x<0 & y>0
-                        // -> q<=0.
-                        if (state.lower_bound(x) >= 1_i) {
-                            if (state.lower_bound(y) >= 1_i && state.lower_bound(q) < 0_i)
-                                inference.infer(logger, q >= 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x >= 1_i, y >= 1_i}});
-                            else if (state.upper_bound(y) < 0_i && state.upper_bound(q) > 0_i)
-                                inference.infer(logger, q < 1_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x >= 1_i, y < 0_i}});
-                        }
-                        else if (state.upper_bound(x) < 0_i) {
-                            if (state.upper_bound(y) < 0_i && state.lower_bound(q) < 0_i)
-                                inference.infer(logger, q >= 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x < 0_i, y < 0_i}});
-                            else if (state.lower_bound(y) >= 1_i && state.upper_bound(q) > 0_i)
-                                inference.infer(logger, q < 1_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x < 0_i, y >= 1_i}});
-                        }
-                    }
+                    if (pin_q_sign)
+                        propagate_quotient_sign<Hint_>(*data, x, y, q, state, inference, logger, owner);
 
                     if (! propagate_stages(*stg, state, inference, logger, owner))
                         return PropagatorState::Enable;

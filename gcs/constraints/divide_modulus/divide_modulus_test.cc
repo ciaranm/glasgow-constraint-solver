@@ -14,6 +14,7 @@
 #include <fmt/ostream.h>
 #endif
 #include <iostream>
+#include <limits>
 #include <random>
 #include <set>
 #include <string>
@@ -148,6 +149,75 @@ auto run_divmod_alias_test(bool proofs, bool is_div, const DivideConsistency & l
     else
         solve_for_tests(p, proof_name, actual, tuple{x, y});
 
+    check_results(proof_name, expected, actual);
+}
+
+// Strength on operands whose sign is open, or decided only weakly (issue
+// #1065), forced BC. First the root: after the first propagation every
+// slot's bounds must be the hull of the relation over the declared domains.
+auto run_divmod_root_hull_test(bool proofs, bool is_div, pair<int, int> x_range, pair<int, int> y_range, pair<int, int> out_range) -> void
+{
+    print(cerr, "{} bc root hull {} {} {}{}", is_div ? "divide" : "modulus", x_range, y_range, out_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int, int, int>> expected;
+    build_expected(expected, [&](int a, int b, int c) { return is_div ? div_ok(a, b, c) : mod_ok(a, b, c); }, x_range, y_range, out_range);
+    if (expected.empty())
+        throw UnexpectedException{"a root hull fixture needs a solution"};
+    vector<pair<int, int>> hull(3, pair{std::numeric_limits<int>::max(), std::numeric_limits<int>::min()});
+    for (const auto & [a, b, c] : expected)
+        for (auto [i, v] : vector<pair<int, int>>{{0, a}, {1, b}, {2, c}})
+            hull[i] = pair{std::min(hull[i].first, v), std::max(hull[i].second, v)};
+    println(cerr, " expecting {}", hull);
+
+    Problem p;
+    auto x = p.create_integer_variable(Integer(x_range.first), Integer(x_range.second), "x");
+    auto y = p.create_integer_variable(Integer(y_range.first), Integer(y_range.second), "y");
+    auto out = p.create_integer_variable(Integer(out_range.first), Integer(out_range.second), "out");
+    post_divmod(p, is_div, x, y, out, consistency::BC{});
+
+    auto proof_name = proofs ? make_optional("divide_modulus_test" + test_proof_suffix) : nullopt;
+    vector<pair<int, int>> root;
+    solve_with(p, SolveCallbacks{.trace = [&](const CurrentState & s) -> bool {
+        for (auto & v : {x, y, out})
+            root.emplace_back(s.lower_bound(v).raw_value, s.upper_bound(v).raw_value);
+        return false;
+    }},
+        proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+    if (proof_name)
+        verify_proof_and_clean_up(*proof_name);
+
+    if (root != hull) {
+        println(cerr, "root bounds are {}", root);
+        throw UnexpectedException{"root bounds are not the hull"};
+    }
+}
+
+// Then under search: the result's bounds are checked at every node, on
+// fixtures where the decomposition does reach them. That needs a constant
+// divisor: a variable one's own bounds need not be exact (x in [-9, -7], y in
+// [1, 3] and q in [-6, -3] leave y = 1 unpruned, and with it q = -6), and a
+// dividend whose sign is open needs a case split on it that the propagator
+// does not make (x in [-5, 20], y in [3, 4] leaves q in [-6, 6], not [-1, 6]). A
+// dividend whose sign is decided only weakly is what is left, and it is the
+// shape the quotient-sign rule used to miss.
+auto run_divmod_bc_result_test(bool proofs, bool is_div, pair<int, int> x_range, pair<int, int> y_range, pair<int, int> out_range) -> void
+{
+    print(cerr, "{} bc result-checked {} {} {}{}", is_div ? "divide" : "modulus", x_range, y_range, out_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+    set<tuple<int, int, int>> expected, actual;
+    build_expected(expected, [&](int a, int b, int c) { return is_div ? div_ok(a, b, c) : mod_ok(a, b, c); }, x_range, y_range, out_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto x = p.create_integer_variable(Integer(x_range.first), Integer(x_range.second), "x");
+    auto y = create_integer_variable_or_constant(p, y_range, "y");
+    auto out = p.create_integer_variable(Integer(out_range.first), Integer(out_range.second), "out");
+    post_divmod(p, is_div, x, y, out, consistency::BC{});
+
+    auto proof_name = proofs ? make_optional("divide_modulus_test" + test_proof_suffix) : nullopt;
+    solve_for_tests_checking_consistency(
+        p, proof_name, expected, actual, tuple{pair{x, CheckConsistency::None}, pair{y, CheckConsistency::None}, pair{out, CheckConsistency::BC}});
     check_results(proof_name, expected, actual);
 }
 
@@ -333,6 +403,24 @@ auto main(int argc, char * argv[]) -> int
             // Random instances, forced BC.
             for (const auto & [r1, r2, r3] : random_bc_data)
                 run_divmod_test(proofs, is_div, consistency::BC{}, false, r1, r2, r3);
+
+            // Sign-open or weakly signed operands (issue #1065): the root
+            // reaches the hull, and with a weakly signed dividend and a
+            // constant divisor the result stays bounds consistent at every
+            // node.
+            run_divmod_root_hull_test(proofs, is_div, {0, 20}, {3, 4}, {-1, 50});
+            run_divmod_root_hull_test(proofs, is_div, {-20, 20}, {3, 4}, {-50, 50});
+            run_divmod_root_hull_test(proofs, is_div, {-20, 0}, {3, 4}, {-50, 50});
+            run_divmod_root_hull_test(proofs, is_div, {0, 20}, {-4, -3}, {-50, 50});
+            run_divmod_root_hull_test(proofs, is_div, {-20, 0}, {-4, -3}, {-50, 50});
+            run_divmod_root_hull_test(proofs, is_div, {0, 20}, {-4, 4}, {-50, 50});
+            run_divmod_root_hull_test(proofs, is_div, {0, 20}, {-7, 9}, {-50, 50});
+            if (is_div)
+                run_divmod_root_hull_test(proofs, is_div, {0, 6}, {-10, 10}, {5, 6});
+            run_divmod_bc_result_test(proofs, is_div, {0, 20}, {3, 3}, {-20, 20});
+            run_divmod_bc_result_test(proofs, is_div, {-20, 0}, {3, 3}, {-20, 20});
+            run_divmod_bc_result_test(proofs, is_div, {0, 20}, {-3, -3}, {-20, 20});
+            run_divmod_bc_result_test(proofs, is_div, {-20, 0}, {-3, -3}, {-20, 20});
 
             // Wider domains: Auto falls back on the bounds consistent
             // decomposition; soundness and completeness still checked.
