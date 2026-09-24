@@ -993,6 +993,20 @@ namespace gcs::innards
 
         ///@}
     };
+
+    /**
+     * Whether the GCS_CHECK_IDEMPOTENT_CLAIMS re-run checker is on in this
+     * process (see PropagatorState::EnableButIdempotent).
+     *
+     * The environment is read once, by the first call, and Propagators::propagate()
+     * makes that call the first time it runs. So the variable has to be set before
+     * anything in the process propagates, not merely before the solve it is meant
+     * to cover; setting it any later leaves the checker off for the whole process,
+     * silently. The constraint test harness calls this to check that it did.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto idempotent_claim_checker_enabled() -> bool;
 }
 
 #endif

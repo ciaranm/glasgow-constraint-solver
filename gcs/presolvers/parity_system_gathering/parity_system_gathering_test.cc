@@ -317,8 +317,10 @@ namespace
     }
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     const vector<pair<int, int>> four_bits{{0, 1}, {0, 1}, {0, 1}, {0, 1}};
     const vector<pair<int, int>> three_bits{{0, 1}, {0, 1}, {0, 1}};
     const vector<pair<int, int>> six_bits{{0, 1}, {0, 1}, {0, 1}, {0, 1}, {0, 1}, {0, 1}};

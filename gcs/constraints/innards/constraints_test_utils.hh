@@ -11,6 +11,7 @@
 
 #include <gcs/constraints/innards/cake_probe.hh>
 
+#include <gcs/innards/propagators.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
 #include <util/enumerate.hh>
@@ -716,6 +717,37 @@ namespace gcs::test_innards
     }
 
     /**
+     * Switch on the GCS_CHECK_IDEMPOTENT_CLAIMS checker for this process: every
+     * honoured PropagatorState::EnableButIdempotent claim is then verified by an
+     * immediate re-run, which aborts the solve if it infers anything. It is
+     * deterministic, at most doubles the cost of claiming runs, and a passing
+     * re-run emits nothing, so the proof lanes are unaffected.
+     *
+     * The engine reads the variable once per process, at the first propagation
+     * unless something asks sooner (see innards::idempotent_claim_checker_enabled()),
+     * so this must run before anything propagates: before
+     * check_initialisation_only_for_tests() or a bare solve_with() as much as
+     * before the first harness solve. It asks straight away, which fixes the
+     * engine's reading at "on", and throws if an earlier propagation had already
+     * fixed it at "off". establish_and_announce_seed() calls it, and
+     * solve_for_tests_with_callbacks() refuses to run if the checker is off.
+     */
+    inline auto enable_idempotent_claim_checker() -> void
+    {
+        // MSVC has no POSIX setenv; _putenv_s always overwrites, so mirror the
+        // don't-overwrite (overwrite == 0) semantics with a getenv check.
+#ifdef _WIN32
+        if (! std::getenv("GCS_CHECK_IDEMPOTENT_CLAIMS"))
+            _putenv_s("GCS_CHECK_IDEMPOTENT_CLAIMS", "1");
+#else
+        setenv("GCS_CHECK_IDEMPOTENT_CLAIMS", "1", 0);
+#endif
+        if (! innards::idempotent_claim_checker_enabled())
+            throw UnexpectedException{"the idempotence claim checker could not be switched on: something in this process "
+                                      "propagated before enable_idempotent_claim_checker() was called"};
+    }
+
+    /**
      * Like set_seed_from_argv(), but when no `--seed=N` is given, draws a
      * seed from random_device, stores it as if it had been passed, and
      * announces it on stderr. Every source of randomness in the run (data
@@ -725,9 +757,15 @@ namespace gcs::test_innards
      * reproduced by re-running the same command line with `--seed=N`
      * appended. ctest echoes the output of failing tests, so the seed is in
      * the CI log exactly when it is most needed.
+     *
+     * Because every test main() calls this first, it is also where the
+     * idempotence claim checker is switched on (enable_idempotent_claim_checker()),
+     * which has to happen before anything propagates.
      */
     inline auto establish_and_announce_seed(int argc, char * argv[]) -> void
     {
+        enable_idempotent_claim_checker();
+
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
         using std::println;
 #else
@@ -758,19 +796,13 @@ namespace gcs::test_innards
     auto solve_for_tests_with_callbacks(
         Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
     {
-        // Every constraint test runs with the idempotence claim checker on:
-        // each honoured PropagatorState::EnableButIdempotent claim is verified
-        // by an immediate re-run, which aborts the solve if it infers anything.
-        // Deterministic, at most doubles the cost of claiming runs, and a
-        // passing re-run emits nothing, so the proof lanes are unaffected.
-        // MSVC has no POSIX setenv; _putenv_s always overwrites, so mirror the
-        // don't-overwrite (overwrite == 0) semantics with a getenv check.
-#ifdef _WIN32
-        if (! std::getenv("GCS_CHECK_IDEMPOTENT_CLAIMS"))
-            _putenv_s("GCS_CHECK_IDEMPOTENT_CLAIMS", "1");
-#else
-        setenv("GCS_CHECK_IDEMPOTENT_CLAIMS", "1", 0);
-#endif
+        // Every constraint test runs with the idempotence claim checker on (see
+        // enable_idempotent_claim_checker). Switching it on here would be too
+        // late if anything in the process had already propagated, and it would
+        // then stay off without a word (issue #1056), so insist instead.
+        if (! innards::idempotent_claim_checker_enabled())
+            throw UnexpectedException{"the idempotence claim checker is off: call establish_and_announce_seed() "
+                                      "(or enable_idempotent_claim_checker()) at the top of main(), before anything propagates"};
 
         // Apply the optional runtime caps (see env_cap). The wrappers count
         // solutions / internal search nodes and return false to stop the solve
