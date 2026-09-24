@@ -289,6 +289,20 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
         // the encoding can express and so at most what a bit vector holds.
         auto atom_coefficient = (highest_bit - 1_i - view.capacity) + highest_bit;
 
+        // A capacity at the most its encoding can express has no order literal
+        // above it to resolve: `capacity < bound + 1` names a value past the
+        // top bit, and its "definition" does not bring the bits over. Nor does
+        // it need to, since the bits cannot sum to more than the bound anyway:
+        // each one's literal axiom, at its own weight, cancels it outright and
+        // leaves exactly the bound behind.
+        if (0_i == atom_coefficient) {
+            for (const auto & [coeff, bit] : tracker.each_bit(std::get<SimpleIntegerVariableID>(*view.capacity_bounded_by)))
+                reduced.add(! bit, coeff, tracker);
+            for (const auto & flag : weaken_out)
+                reduced.weaken(flag, tracker);
+            return reduced.emit(logger, level);
+        }
+
         // The definition, which is what brings the capacity's bits over to
         // cancel against the row's, and what leaves the atom behind.
         auto capacity_at_most = *view.capacity_bounded_by < view.capacity + 1_i;

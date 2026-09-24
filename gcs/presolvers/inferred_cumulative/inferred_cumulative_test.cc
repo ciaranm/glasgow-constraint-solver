@@ -1371,6 +1371,38 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
+    // A variable capacity whose upper bound is the most its bit encoding can
+    // express (#1040). recover_constant_argument_row replaces the capacity by
+    // that bound through the order literal one past it, which does not exist
+    // there, and so left the capacity's bits in the row. 3, 7 and 15 are at the
+    // top of their encodings; 4, 8 and 16 are the controls just past it. Each
+    // is tried infeasible (the two tasks overlap and together exceed the bound)
+    // and feasible (they fit exactly), through both presolvers that reduce a
+    // donor's rows this way. Found by a random fuzz campaign.
+    if (proofs)
+        for (auto bound : {3, 4, 7, 8, 15, 16})
+            for (auto fits : {false, true})
+                for (auto disjunctive : {false, true}) {
+                    auto name = "inferred_cumulative_capacity_top_" + to_string(bound) + (fits ? "_fits" : "_over") + (disjunctive ? "_d" : "_c");
+                    Problem p;
+                    auto capacity = p.create_integer_variable(Integer{bound}, Integer{bound});
+                    auto a = p.create_integer_variable(1_i, 1_i), b = p.create_integer_variable(3_i, 3_i);
+                    auto first = Integer{bound / 2 + 1}, second = fits ? Integer{bound} - first : Integer{bound} - first + 1_i;
+                    p.post(Cumulative{
+                        {a, b}, {constant_variable(3_i), constant_variable(4_i)}, {constant_variable(first), constant_variable(second)}, capacity});
+                    if (disjunctive)
+                        p.add_presolver(InferredDisjunctive{});
+                    else
+                        p.add_presolver(InferredCumulative{});
+                    auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }},
+                        make_optional<ProofOptions>(ProofFileNames{name}));
+                    if ((stats.solutions > 0) != fits)
+                        fail(name + ": wrong number of solutions");
+                    if (! run_veripb(name + ".opb", name + ".pbp"))
+                        fail(name + ": veripb rejected the proof");
+                    dispose_of_proof_files(name);
+                }
+
     // And the markers say the derivation actually ran.
     {
         const string name = "inferred_cumulative_markers";
