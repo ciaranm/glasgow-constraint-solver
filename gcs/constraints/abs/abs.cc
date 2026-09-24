@@ -347,12 +347,20 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                             // With v2 a constant c, each half is a bound on v1
                             // alone -- v1 >= c under v1 >= 0, v1 <= -c under
                             // v1 < 0 -- and plain RUP removes the run. Its
-                            // negation holds v1 to one side of zero, which settles
-                            // the sign, and then puts a bound on v1 against that
-                            // half's, on the same bits. Two contradictory bounds
-                            // on one two's-complement sum always unit propagate to
-                            // a contradiction: Theorem 2.9 (see large-domains.md)
-                            // with no second operand.
+                            // negation gives v1 >= lo and v1 < hi + 1, and the run
+                            // lies on one side of zero, so one of those two
+                            // atoms' definitions fixes v1's sign bit by unit
+                            // propagation, and the order chain or the sign atom's
+                            // own definition then sets v1 >= 0 either way. That
+                            // enables one half, a bound on v1 contradicting the
+                            // run's on the same bits, which unit propagates to a
+                            // contradiction: Theorem 2.7 via Lemma 3.2 in
+                            // McIlree's thesis. A run straddling zero fixes no
+                            // sign, which is why the split above is load-bearing.
+                            //
+                            // The reason is always true here, because the run
+                            // excludes +-c by construction, so the line is an
+                            // unconditional removal.
                             if (v2_is_constant) {
                                 inference.infer_not_in_range(logger, v1, piece_lo, piece_hi, JustifyUsingRUP{hints::Abs{originator}},
                                     ExplicitReason{ReasonLiterals{not_in_range(v2, image_lo, image_hi)}});
