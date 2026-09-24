@@ -1385,11 +1385,12 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // variable height it is "contrib >= lb(h_i)" with coefficient 1
     // (contrib is the proof-only product h_i·active in C_t). The
     // before/after RUPs give VeriPB the units to chase active's AND-gate.
-    auto pin_contributor = [&](const ReasonLiterals & reason, size_t i, Integer t) -> std::pair<ProofLine, Integer> {
+    auto pin_contributor = [&](const ReasonLiterals & reason, size_t i, Integer t,
+                               optional<Integer> start_lo = nullopt) -> std::pair<ProofLine, Integer> {
         auto fi = (t - per_task_t_lo[i]).raw_value;
         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flag(i, fi) >= 1_i, ProofLevel::Temporary);
         // A mandatory task has s_i + l_i ≥ lb(s_i) + lb(l_i) > t.
-        materialise_after_sum(i, state.lower_bound(starts[i]));
+        materialise_after_sum(i, start_lo ? *start_lo : state.lower_bound(starts[i]));
         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flag(i, fi) >= 1_i, ProofLevel::Temporary);
         auto active_line = logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * active_flag(i, fi) >= 1_i, ProofLevel::Temporary);
         if (! h_is_var(i))
@@ -1482,7 +1483,12 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     auto edge_finding_justification = [&](Integer a, Integer b, const vector<size_t> & inside_tasks, size_t pushed, Integer pushed_low_guard,
                                           Integer pushed_high_guard, GuardToDischarge discharge,
                                           const vector<EnergeticContributor> & energetic = {}) {
-        return [&, a, b, inside_tasks, pushed, pushed_low_guard, pushed_high_guard, discharge, energetic](const ReasonLiterals & reason) -> void {
+        // The pushed task's start bounds as the reason sees them, taken now,
+        // before the push lands: the justification runs after it has, and
+        // reads the live state. See the TTEF pins below.
+        auto pushed_start_bounds = state.bounds(starts[pushed]);
+        return [&, a, b, inside_tasks, pushed, pushed_low_guard, pushed_high_guard, discharge, energetic, pushed_start_bounds](
+                   const ReasonLiterals & reason) -> void {
             if (! logger)
                 return;
 
@@ -1572,6 +1578,23 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             // the firing's arithmetic counted, and a pol carrying more energy
             // than it needs closes just the same.
             if (rules.time_table_edge_finding && energetic.empty()) {
+                // The pushed task's start is a plain variable: only those take
+                // part in edge-finding (prepare_cumulative_overload_check).
+                auto pushed_var = std::get<SimpleIntegerVariableID>(starts[pushed]);
+                auto bounds_as_the_reason_has_them = [&](const IntegerVariableID & v) -> std::pair<Integer, Integer> {
+                    return overloaded{//
+                        [&](const SimpleIntegerVariableID & x) { return x == pushed_var ? pushed_start_bounds : state.bounds(v); },
+                        [&](const ViewOfIntegerVariableID & view) {
+                            if (view.actual_variable != pushed_var)
+                                return state.bounds(v);
+                            auto [lo, hi] = pushed_start_bounds;
+                            if (view.negate_first)
+                                std::tie(lo, hi) = std::pair{-hi, -lo};
+                            return std::pair{lo + view.then_add, hi + view.then_add};
+                        },
+                        [&](const ConstantIntegerVariableID &) { return state.bounds(v); }}
+                        .visit(v);
+                };
                 vector<bool> contained(starts.size(), false);
                 for (auto i : inside_tasks)
                     contained[i] = true;
@@ -1580,8 +1603,15 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 for (auto i : active_tasks) {
                     if (i == pushed || contained[i] || ! is_present(i))
                         continue;
-                    auto lst = state.upper_bound(starts[i]);
-                    auto eet = state.lower_bound(starts[i]) + llb(i);
+                    // Except for a task whose start is the pushed task's start
+                    // variable, or a view of it, whose live bounds include the
+                    // push itself: the reason was taken before it, so such a
+                    // task's mandatory part has to be read off the bounds the
+                    // reason holds, or the pins claim load the reason cannot
+                    // support.
+                    auto [s_lo, s_hi] = bounds_as_the_reason_has_them(starts[i]);
+                    auto lst = s_hi;
+                    auto eet = s_lo + llb(i);
                     for (Integer t = max(lst, a); t < min(eet, b); ++t) {
                         if (skip_all_pins)
                             continue;
@@ -1589,7 +1619,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                             skip_pin = false;
                             continue;
                         }
-                        auto [line, coeff] = pin_contributor(reason, i, t);
+                        auto [line, coeff] = pin_contributor(reason, i, t, s_lo);
                         pol.add(line, coeff);
                     }
                 }

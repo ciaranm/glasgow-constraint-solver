@@ -422,6 +422,51 @@ auto main(int argc, char * argv[]) -> int
             verify_proof_and_clean_up("cumulative_ttef_" + name);
     }
 
+    // Two tasks sharing one start variable, which a random fuzz campaign found.
+    // The certificate pins the profile from the live bounds, and the
+    // justification runs after the push has landed, so a task whose start is
+    // the pushed task's own variable read the pushed bound: its mandatory part
+    // was claimed over times the reason could not support. The two full-height
+    // tasks at 3 and 9 leave the pair nowhere to go, so this is unsatisfiable.
+    {
+        const string name = "cumulative_ttef_shared_start";
+        Problem p;
+        auto x = p.create_integer_variable(1_i, 8_i), y = p.create_integer_variable(3_i, 3_i), z = p.create_integer_variable(9_i, 9_i);
+        p.post(Cumulative{{x, x, y, z}, {4_i, 4_i, 4_i, 3_i}, {3_i, 1_i, 5_i, 5_i}, 5_i}.with_rules(ttef));
+        auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
+        if (stats.solutions != 0)
+            fail("shared start: the instance is unsatisfiable but solutions were reported");
+        if (proofs)
+            verify_proof_and_clean_up(name);
+        println(cerr, "cumulative ttef shared start: refuted{}", proofs ? ", proof verified" : "");
+    }
+
+    // The same bug's second symptom, also from the campaign. Where the task
+    // sharing the pushed start has a variable length, its pin first derives
+    // `end >= s_lo + lb(length)` for some s_lo, and that s_lo was the live
+    // lower bound, so the push itself. The reason does not support it, and
+    // the RUP that the task has not yet finished failed. Satisfiable: the
+    // search enumerates 4 solutions and has to write TTEF pins along the way.
+    {
+        const string name = "cumulative_ttef_shared_start_variable_length";
+        Problem p;
+        auto x = p.create_integer_variable(2_i, 8_i), y = p.create_integer_variable(4_i, 9_i);
+        auto l0 = p.create_integer_variable(3_i, 4_i), l1 = p.create_integer_variable(1_i, 2_i), l2 = p.create_integer_variable(3_i, 4_i),
+             l3 = p.create_integer_variable(4_i, 5_i);
+        auto h3 = p.create_integer_variable(4_i, 5_i);
+        p.post(Cumulative{{x, y, constant_variable(4_i), x}, {l0, l1, l2, l3},
+            {constant_variable(1_i), constant_variable(3_i), constant_variable(5_i), h3}, constant_variable(5_i)}
+                .with_rules(ttef));
+        auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
+        if (stats.solutions != 4)
+            fail("shared start, variable length: expected 4 solutions");
+        if (proofs)
+            verify_proof_and_clean_up(name);
+        println(cerr, "cumulative ttef shared start, variable length: 4 solutions{}", proofs ? ", proof verified" : "");
+    }
+
     // Soundness, over instances small enough to enumerate: the rule may not
     // lose a solution, with or without a proof being written.
     for (const auto & [name, inst] : vector<pair<string, Instance>>{{"profile_push", profile_push}, {"profile_push_mirror", profile_push_mirror},
