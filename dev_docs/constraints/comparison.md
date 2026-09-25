@@ -8,7 +8,7 @@
 > (`MustNotHold` and `NotIf` throw from `s_expr()`) in #915. #868 is the
 > audit-wide cross-solver prerequisite; #598 would close a deliberate presolver
 > gap that is half about this family; #310, from outside, means a range-literal
-> reification condition cannot be written to the proof. Tracked under #871.
+> reification condition cannot be written into the model. Tracked under #871.
 
 Twelve posted classes over one implementation and one propagator: an
 inequality between two operands, optionally reified, in either direction, with
@@ -1222,7 +1222,7 @@ and cake both agree on.
 inference and no lemmas, and there is no interval degradation anywhere ([Variable kinds and views](#variable-kinds-and-views)).
 
 **One model-writing gap, not this family's own**: a range-literal reification
-condition cannot be written to the proof at all, so a proving run throws
+condition cannot be written into the OPB model at all, so a proving run throws
 before search (#310; see [Reification](#reification)).
 
 The cost gap used to run the other way — the propagator paid a *proof-shaped*
