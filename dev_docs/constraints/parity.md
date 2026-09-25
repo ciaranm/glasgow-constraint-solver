@@ -7,8 +7,9 @@
 > **Open issues** filed by this audit: none; its measurement of the gathered
 > system on `parity-learning` is posted on #983. Already open and touching
 > this family: #983 (the system and its presolver are reachable from no
-> front end), #649 (implied equivalences have nowhere to live), #868
-> (cross-solver). Tracked under #871.
+> front end), #310 (range literals cannot be written into the model, so a
+> range literal in either class throws with proofs on), #649 (implied
+> equivalences have nowhere to live), #868 (cross-solver). Tracked under #871.
 
 `ParityOdd(lits)` says that an odd number of the literals hold: an XOR. It is
 one class with one propagator, and it is generalised arc consistent on one XOR
@@ -106,14 +107,22 @@ system subsumes them, by comparing trees node for node.
 
 ### Variable kinds and views
 
-Any literal over any `IntegerVariableID`. The proof names each literal's atom,
-and a view's literals are its own. `parity_constraint_view_mixed` and
-`parity_system_constraint_view_mixed` wrap positions in views. The system's
-columns are canonicalised syntactically, by `canonical_atom` (`≠` to `=`, `<` to
-`≥` and so on, the negation moving to the row's parity), so two spellings of
-one literal get two columns. The literal axioms in its proofs go through the
-names-and-IDs tracker (`simplify_literal`), so that a view or a lazily named
-atom resolves to the literal its OPB row carries and the `pol` cancels.
+Any literal over any `IntegerVariableID`, with one exception when proofs are
+on. **A range literal throws with proofs on**, in both classes: the model cannot
+yet write one (#310), and nothing here avoids it. `ParityOdd{{in_range(x, 1,
+3)}}` and `ParitySystem` over the same one-literal row, with `x ∈ 0..4`, each
+enumerate `x = 1, 2, 3` with proofs off, and with proofs on each throws
+`range literals during model writing are not yet supported` from
+`NamesAndIDsTracker::need_invar` (checked at `61112ed0`). No front end posts
+one; the C++ API can, as `logical.md` records for its own classes. Otherwise,
+the proof names each literal's atom, and a view's literals are its own.
+`parity_constraint_view_mixed` and `parity_system_constraint_view_mixed` wrap
+positions in views. The system's columns are canonicalised syntactically, by
+`canonical_atom` (`≠` to `=`, `<` to `≥` and so on, the negation moving to the
+row's parity), so two spellings of one literal get two columns. The literal
+axioms in its proofs go through the names-and-IDs tracker (`simplify_literal`),
+so that a view or a lazily named atom resolves to the literal its OPB row
+carries and the `pol` cancels.
 `parity-system.md`'s "canonicalisation must go through the tracker" is about
 those axioms; its columns do not. The presolver takes a Boolean `Equals` or
 `NotEquals` as a row only when it is unconditional (the rest count as
@@ -326,13 +335,19 @@ inference, and is described under [Proof-time state](#proof-time-state).
 posted system by the `.scp` term. A presolver-installed system's propagator is
 installed under `CurrentlyUnnamedConstraint`, so a `parity` assertion naming no
 constraint can only come from one; what it cannot tell is which rows were
-gathered (see rule 5).
+gathered, and it does not need to (see rule 5).
 
 **What licenses them.** `ParityOdd`'s rules are RUP through its own chain: with
 all but one literal decided, unit propagation walks the accumulators from both
 pins and meets at the last literal. The system's rules are Gocht and
 Nordström's §4.3 (*Certifying Parity Reasoning Efficiently Using Pseudo-Boolean
-Proofs*, AAAI 2022): a sum of slack rows, literal axioms for the support, a
+Proofs*: AAAI 2021, and the extended version, arXiv:2209.12185, 2022). **Every
+section and equation number in this document is the extended version's.** The
+two number their top-level sections alike (§4 is proof logging for XOR
+constraints in both), but the AAAI paper has no numbered subsections and
+numbers its equations sequentially, so the slack form this document calls
+(4.4) is its (16a–c). The
+procedure is a sum of slack rows, literal axioms for the support, a
 division and a multiplication by two, which is one `pol`, then RUP. The
 derivation of the slack rows from the chain is **ours**; their §4.4 recovers the
 same rows from a CNF by brute force. `parity-system.md` has every step.
@@ -398,7 +413,7 @@ term the OPB pins anyway.
 - **Why it is true** — the parity is even.
 - **Proof technique** — `RUP`, as rule 1.
 - **Reason** — every literal, as it is.
-- **Assertion** — `¬reason`.
+- **Assertion** — `¬reason`, from an explicit `contradiction()`.
 - **Hint** — `hints::Parity`.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line.
@@ -445,15 +460,96 @@ term the OPB pins anyway.
   on it. One `pol` whatever the size of the combination.
 - **Reason** — the assigned atoms of the row's support before substitution:
   Gocht and Nordström's `ρ`. Per atom.
-- **Assertion** — the literal `∨ ¬reason`.
+- **Assertion** — the literal `∨ ¬reason`. **This rule can also be a
+  conflict.** One call infers every unit row in turn from the assignment it
+  read at the start, so when two atoms share a variable an earlier unit can
+  already have falsified a later one's literal. The later inference then fails,
+  and its line is the same shape, the attempted literal `∨ ¬reason`, with the
+  conflict closed by the backtrack. Checked at `61112ed0` with `x ∈ {0, 3}` and
+  the rows `{x = 3}` and `{x = 0}`: at `AssertionLevel::Inferences` the second
+  `parity` line is `a 1 i[x][eq0] >= 1`, and a `backtrack` follows it. The
+  `Off` proof verifies `UNSATISFIABLE`.
 - **Hint** — `hints::Parity`, with the system's id. For a presolver-installed
   system, that id is `CurrentlyUnnamedConstraint`, so the assertion names no
-  posted constraint.
+  posted constraint: the wire form is `parity:((constraint_id unnamed))`. That
+  still tells a reconstructor which procedure to run, since only a gathered
+  system emits a `parity` line naming no constraint.
 - **Offline reconstructibility** — `hinted` for a posted `ParitySystem`: the
   hint names the system, and a GF(2) solve over its rows, restricted to the
   assertion's atoms, recovers a combination that works, which need not be the
-  solver's. `solver-side` for a presolver-installed system: the hint names no
-  constraint, and which donors were gathered into it is not recoverable.
+  solver's.
+  **`search` for a presolver-installed system.** The hint names no
+  constraint, so a reconstructor does not know which donors were gathered. It
+  does not need to, because the donors are all posted constraints and are all
+  in the model. The procedure is as follows:
+  - Collect the **eligible** rows from the `.scp`: a superset of what the
+    presolver read, since a row the model implies does no harm. The rows are:
+    - each non-empty `parity` term;
+    - each unconditional `equals`, **whatever its operands' domains**, as
+      `[x ≠ 0] ⊕ [y ≠ 0] = 0`, which `x = y` implies over any domains;
+    - each unconditional `not_equals` whose operands both lie within `{0, 1}`,
+      as `[x ≠ 0] ⊕ [y ≠ 0] = 1`, where the domains are the `.scp`'s narrowed
+      by every unit clause earlier in the proof.
+
+    An operand may be a constant or a view: the presolver checks only each
+    operand's bounds, so `Equals{x, 1}` is gathered, and the `.scp` writes it
+    as `(_1 equals x 1)`. A reconstructor that takes only two variables in
+    `{0, 1}` misses rows the solver used.
+  - Canonicalise each literal to an atom syntactically, as `canonical_atom`
+    does.
+  - Substitute the assertion's reason and the negation of its inferred literal.
+  - Eliminate. Because the solver's own combination is a subset of these rows,
+    elimination reaches `0 = 1`, and the rows it summed are a sufficient origin
+    set. They need not be the solver's.
+  - Derive the slack rows of just those donors, by the chain derivation under
+    [Proof-time state](#proof-time-state), or by two RUPs for an `equals` or a
+    `not_equals`. These are definitions the reconstructor introduces itself.
+  - Finish with the rule's `pol` and RUP.
+
+  **Cost:** one elimination per assertion, over `R` eligible rows and `A`
+  atoms. That is `O(R · A · min(R, A) / 64)` word operations with bitset rows,
+  plus `R` bits of origin per row, which is the solver's own per-call cost but
+  over every eligible row rather than one component. Restricting to the
+  assertion's component is cheaper and needs nothing extra: the presolver's
+  components are the connected components of the eligible rows over their
+  atoms, which the reconstructor can rebuild in near-linear time. An assertion
+  with no literals (`a >= 1` under `parity:((constraint_id unnamed))`, a
+  conflict with an empty reason) names no component, and there the fallback is
+  the whole elimination. Each donor's
+  slack rows are derived once, about ten lines per literal, and reused.
+
+  **Assumptions:**
+  - The presolver's eligibility test reads the domains **at presolve time**,
+    after the root initialisers have run. So an operand that some other
+    constraint narrowed into `{0, 1}` before then looks wider in the `.scp`.
+    For example, `Abs` narrows `x ∈ −3..1` to `x ≥ 0`, and the `.scp` still
+    says `(x -3 1)`. For an `equals` this is why the procedure admits every
+    width. For a `not_equals`, whose 2-XOR does not follow over wider domains,
+    the narrowing is in the proof so far, as a unit clause such as `a 1
+    i[x][ge0] >= 1` under `abs`, so reading the domains through the earlier
+    unit clauses recovers the row. Using the `.scp`'s domains alone does not:
+    in a probe with those shapes, only 2 of 6 unnamed assertions reconstructed
+    from the `.scp`'s domains with `equals` restricted to `{0, 1}`, and all 6
+    with the procedure as written.
+  - Two spellings of one fact (`x ≥ 1` and `x ≠ 0`) get separate columns in
+    the solver. A reconstructor that canonicalises the same way is exactly as
+    strong, and one that merges them is stronger.
+  - Only the GF(2) part is tested, and only by a script outside the tree. It
+    reads the `.scp`, `.varmap` and `.pbp`, and for every unnamed `parity`
+    assertion checks that elimination over the eligible rows, after
+    substitution, reaches `0 = 1`. It succeeded on every assertion of a
+    3,187-assertion random sweep and of the constant-operand and narrowed-domain
+    probes, at `61112ed0`. There is no external justifier to test the full
+    procedure against yet.
+
+  Codex's example: with `a ⊕ b ⊕ c = 1` and `b ⊕ c = 1` gathered, the system
+  asserts `a 1 ~i[a][b0] >= 1` under `parity:((constraint_id unnamed))`, with an
+  empty reason. The sum of the two rows is `a = 0`, whichever component the
+  solver built. That was checked at `61112ed0`, and the `Off` proof verifies.
+
+  Carrying the origin rows in the hint would make this `hinted`, and would
+  replace the elimination with a sum. Whether that is worth its size is a
+  question for the justifier as it develops.
 - **Proof size** — one `pol` over (donors in the origin) × 2 slack rows plus one
   axiom per support atom, and one RUP; plus the root scaffolding it cites.
 - **Gaps** — `None.`
@@ -472,9 +568,11 @@ term the OPB pins anyway.
 - **Proof technique** — as rule 5, with no pretended atom: the clause that comes
   out is falsified by `ρ` outright.
 - **Reason** — as rule 5.
-- **Assertion** — `¬reason`.
+- **Assertion** — `¬reason`, from an explicit `contradiction()`. Rule 5's
+  failed inference is the system's other conflict.
 - **Hint** — `hints::Parity`, as rule 5.
-- **Offline reconstructibility** — as rule 5.
+- **Offline reconstructibility** — as rule 5, `search` for a gathered system;
+  the substitution has no negated inference to add.
 - **Proof size** — as rule 5.
 - **Gaps** — `None.`
 - **Tightness** — see the catalogue preamble.
@@ -490,7 +588,7 @@ term the OPB pins anyway.
 - **Why it is true** — as rule 3.
 - **Proof technique** — `RUP` through the row's chain, as rule 3.
 - **Reason** — the row's literals.
-- **Assertion** — `¬reason`.
+- **Assertion** — `¬reason`, from an explicit `contradiction()`.
 - **Hint** — `hints::Parity`.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line.
@@ -538,6 +636,11 @@ derives 38 slack rows; and in the presolver test, 50 slack rows, 121 units and
 - **Consistency on the repeated-literal rows**, which use plain enumeration.
 - **XCSP3's `xor` inside an expression**, and the `gcspy` path (`test_xor` in
   `python_test.py` is commented out of `python/CMakeLists.txt`).
+- **Range literals**, in either class. No row draws one, so nothing shows that
+  they throw with proofs on (#310).
+- **A system unit whose inference fails** because an earlier unit in the same
+  call decided a shared variable (rule 5's conflict case). This review's probe
+  reached it; no fixture does.
 - **Two spellings of one literal in a system**, such as `x ≥ 1` and `x ≠ 0` over
   `{0, 1}`, or two views of one variable. The system gives them separate
   columns, since `canonical_atom` works on syntax, and nothing tests the
@@ -618,11 +721,19 @@ scale.
 
 ### Proof-logging gaps
 
-`None.` Every inference is justified, and nothing is asserted at
-`AssertionLevel::Off`. For a presolver-installed system, the hints name
-`CurrentlyUnnamedConstraint` and the reconstruction needs the elimination's
-origin rows, which no hint carries (rules 5 and 6): a gap for the external
-justifier, not for the proof.
+**One, already filed: #310.** A range literal (`x ∈ [l, u]` or its negation)
+in `ParityOdd` or `ParitySystem` throws `UnimplementedException` from model
+writing when proofs are on, because the names-and-IDs tracker cannot yet state
+one in the OPB. With proofs off the answers are right. No front end posts a
+range literal here; the C++ API can. Otherwise every inference is justified,
+and nothing is asserted at `AssertionLevel::Off`.
+
+For a presolver-installed system, the hints name `CurrentlyUnnamedConstraint`
+and carry no origin rows (rules 5 and 6). That is **not** an information gap:
+the eligible donors are all in the model, and a GF(2) elimination over them
+finds a sufficient combination, which rule 5 describes with its cost and
+assumptions. What the missing origin costs an external justifier is that
+elimination, per assertion.
 
 ### Known limitations
 
@@ -634,6 +745,7 @@ justifier, not for the proof.
   `parity-learning`.
 - **Root scaffolding is never deleted**: `2n + 2` lines per chain row stay at
   `Top`.
+- **A range literal throws with proofs on** (#310).
 
 ### Next steps
 
@@ -658,16 +770,19 @@ Ranked by what they buy for what they cost.
 4. **Run `CheckOnly` somewhere, or delete it.** It cannot share the `GAC`-checking
    lane, since it is weaker by design; a plain-enumeration pass over the same
    fixtures would make it the regression test it is meant to be. Unfiled.
-5. **Hints for the system's rules**: the origin rows, if a hints-only mode is
-   ever wanted for a gathered system. Deliberately unfiled, as for other
-   families: the justifier work will show whether it is needed.
+5. **Origin rows in the gathered system's hint**: an engineering option, not a
+   missing piece. Without them, a reconstructor re-runs one elimination per
+   assertion over the eligible rows (rule 5); with them, it sums the named
+   donors. Whether that saving is worth the hint's size is for the justifier
+   work to show, and it is deliberately unfiled, as for other families.
 
 ## Prior art
 
 Parity reasoning is well developed in SAT: CryptoMiniSat runs Gauss-Jordan during
 search. In CP, Rouquette and Solnon's `abstractXOR` (CP 2020) is a Choco
 prototype, and CP-SAT has a TODO for it (`parity-system.md` and #647 survey
-this). The certification is Gocht and Nordström (AAAI 2022). What is ours is
+this). The certification is Gocht and Nordström (AAAI 2021; extended version
+arXiv:2209.12185, 2022, whose numbering this document uses). What is ours is
 the bridge: deriving the slack form from the accumulator chain `cake_pb_cp`
 writes, in a linear number of steps, where their §4.4 recovers it from a CNF it
 did not write by enumeration. `ParityOdd`'s own propagation and proof are the
