@@ -146,6 +146,20 @@ constraints and do not restate it.
   dominates, `parity-learning`, gathering prunes nothing and costs four times as
   much: at every node, unit propagation has already done all elimination could.
   `ParityOdd` alone matches Gecode's node count and is 7.4 times slower.
+- [`arithmetic.md`](arithmetic.md) — `Plus`, `Minus`, `Multiply`, `Power`,
+  `Divide` and `Modulus`: six classes over four directories. `Plus` / `Minus`
+  are GAC over interval lists by default; the other four are cake's
+  bit-product encoding, every bound justified through the grid by McIlree's
+  Chapter 7. `Multiply` costs under a microsecond a call and is rarely the
+  bottleneck, but its derivations are over half of a proof's lines. Four
+  findings: `Modulus`'s hints-only proofs fail the solution check (#1067),
+  `Divide` could not prune a sign-open quotient (#1065, fixed by #1081), an
+  aliased `Plus` converges one value per pass (#1068), and large operands
+  overflowed rather than saturating (#1064, fixed by #1079; with proofs on,
+  the encoding still stops at 62 bits). Re-audited 2026-09-25, which also
+  corrected the product's strength on `z` from `bounds(Z)` to `bounds(R)`.
+  Its audit also found the engine's per-node state copy costing 58% of
+  `stable-goods` in page faults (#1063).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
