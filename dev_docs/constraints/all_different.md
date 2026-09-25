@@ -11,10 +11,14 @@
 > a front end gets wrong), whose pilot on this family's globals merged as #1011
 > and fixed two more `arg_sort` bugs, one of them #1010; and #1008 (the
 > single-value reason cache sized by the span of variable IDs, not the scope),
-> fixed by #1020. Already open and touching this family: #522 (SCC
-> incrementality), #944 (Hall proofs cost values × vars²), #833 (the
-> large-domain policy; the GAC arm is a `KnownTrip`), #868 (cross-solver).
-> Tracked under #871.
+> fixed by #1020. On 2026-09-25 #1088 changed code here for `Inverse`'s sake
+> only; this family's own `.opb` and `.pbp` are byte-identical either side of
+> it (`f28fdef8` against `61112ed0`) on a GAC, BC and VC enumeration probe.
+> The shared-helper table records the change, and the note on `Inverse`'s
+> root at-most-one initialiser records #1089, which made it lazy. Already open
+> and touching this family: #522 (SCC incrementality), #944 (Hall proofs cost
+> values × vars²), #833 (the large-domain policy; the GAC arm is a
+> `KnownTrip`), #868 (cross-solver). Tracked under #871.
 
 Four posted classes over three propagation algorithms: `AllDifferent` with a
 choice of generalised arc consistency, bounds consistency or value consistency,
@@ -287,7 +291,8 @@ them:
 
 | Helper | Also used by |
 |---|---|
-| `propagate_gac_all_different` | `Inverse`, `ArgSort` |
+| `propagate_gac_all_different` | `Inverse`, `ArgSort`; since #1088 it can also report the values every matching takes (an optional out-parameter, `nullptr` for every caller but `Inverse`'s injection form) |
+| `justify_all_different_hall_set_needs_value` (since #1088, beside `justify_all_different_hall_set_or_violator` in `justify.cc`) | `Inverse` only: the Hall-set sum without the needed value's own at-most-one |
 | `propagate_non_gac_alldifferent` (the value consistent pass) | `Circuit` (both algorithms), `SubCircuit` |
 | `define_clique_not_equals_encoding` | `Circuit`, `SubCircuit` |
 
@@ -604,9 +609,12 @@ Over whole searches, `BC`'s trees against `GAC`'s: ×1.23 nodes on
 16, 25 and 36 that `GAC` solves at the root and `BC`, `VC` and the disequality
 clique time out on in 53 of 54 runs. Only on Golomb rulers, where nothing but
 the all-different makes a hole and the search branches smallest-first on
-variables it does not constrain, are the trees identical. That is the shape
-under which the pair's promise would hold, and it is rare enough that an opt-in
-tag is the right answer.
+variables it does not constrain, do the two arms agree on the shape of the
+search: the same recursions at every size measured, and at `n = 9` and
+`n = 10` also the same solutions in the same order, failures and depth. They
+still differ in propagator calls (see [CPU performance](#cpu-performance)).
+That is the shape under which the pair's promise would hold, and it is rare
+enough that an opt-in tag is the right answer.
 
 The contrast with `Element` is exact and worth stating as such. Over a
 **constant** array, `Element`'s range at a fixpoint *is* the union's range: a
@@ -1524,7 +1532,7 @@ is its own first commit, the fixed-at-post fix, which changes nothing on this
 model: every count at size 5 is identical to `main`'s at `5397a50b`, because
 no `ortho_latin` scope holds a variable fixed when it is posted.
 
-**Identical-tree comparison of `GAC` and `BC`, on Golomb rulers**, the one shape
+**Same-search comparison of `GAC` and `BC`, on Golomb rulers**, the one shape
 where #970 found the trees agree. Same build as the main table, on one core of
 the other socket (`numactl --cpunodebind=1 --membind=1 taskset -c 60`), min of
 three:
@@ -1536,15 +1544,19 @@ three:
 | 11 | `gac` | 56.16 s | 56.16–56.23 s | 1,666,426 | 52,141,766 |
 | 11 | `bc` | **31.49 s** | 31.49–31.72 s | 1,666,426 | 68,670,724 |
 
-Identical trees, and `BC` **1.75× and 1.78× faster**. It makes *more* propagator
-calls — 20% and 32% more — each far cheaper, since the matching and its
-components are gone. This is the whole case for having the arm, and it is
+The same recursion counts, and `BC` **1.75× and 1.78× faster**. What was
+compared is counts, not a node-by-node trace. Re-checked at `61112ed0` for
+this document, at `n = 9` and `n = 10`: the two arms print the same ten
+solutions in the same order, with the same recursions (13,104 and 92,093),
+failures (13,070 and 92,053) and maximum depth (8 and 9). `BC` makes *more*
+propagator calls, 20% and 32% more at `n = 10` and `n = 11`, each far cheaper,
+since the matching and its components are gone. This is the whole case for having the arm, and it is
 narrow: a model where nothing else makes holes and the search never reads an
 interior.
 
 *Measured elsewhere — #970's own figures, at n = 12 on another sitting, not to be
 put beside the table above:* 29.2 µs per call for `GAC` against 5.85 µs for `BC`,
-1.64× faster overall on an identical tree.
+1.64× faster overall on what #970 reports as an identical tree.
 
 **What this benchmark does not exercise.** Read off the proof's assertions (see
 [Proof performance](#proof-performance)): of the nine rules, `ortho_latin`
@@ -1671,9 +1683,9 @@ a repair writes `n · C(n, 2)` root lines that the lazy path makes unnecessary �
 verifying — and the deletion leaves every one of those tests' 64 proof
 artefacts byte-identical, which is the check that it really never ran.
 
-`Inverse` has the same initialiser, and there it is **live** (`> Off`), so it
-pays the root cost this one avoids. Whether it should go lazy too is a
-proof-size question for another family, and not filed.
+`Inverse` had the same initialiser, and there it was **live** (`> Off`), so it
+paid the root cost this one avoids. That was filed as #1049, and #1089 deleted
+it the same way: `Inverse` now builds each value's at-most-one on first use.
 
 **One invariant exception, safe today.** The Hall justifications read `state`
 rather than the reason; see the catalogue's preamble.
