@@ -2,7 +2,9 @@
 
 > **Maturity** production ·
 > **Audited** 2026-09-23 at `347e2f8c`; #1030 merged the same day, and the
-> document describes the code it leaves ·
+> document describes the code it leaves. Checked again 2026-09-25 at
+> `61112ed0`: since #1030 nothing in the family has changed but
+> `recover_am1`'s comments (#1089) ·
 > **Open issues** filed by this audit: #1028 (`GlobalCardinality`'s default
 > arm), #1029 (`Count` on a constant value of interest). Its wrong answer,
 > #1026 (at `GAC` on an unsorted open cover), is fixed by #1030. Filed since:
@@ -192,6 +194,8 @@ is how the audit missed it; see [Tests](#tests).
 `None.` There is no reified form of any of the four. MiniZinc's `*_reif` forms
 fall through to the standard library's decompositions, and none of the four is
 listed with a reified binding in `minizinc/mznlib/`. Nobody has asked for one.
+No constructor takes a literal either, so the range-literal limitation that
+other families' conditions hit with proofs on (#310) cannot reach this one.
 
 ### Relation to other families
 
@@ -204,11 +208,15 @@ all land here.
 variable for the closed restriction; since `76c8eeab` it emits the rows and runs
 the propagator itself.
 
-**Shared code.** `recover_am1` (`constraints/innards/`) is called by `Among`'s
-root initialiser and by both `GlobalCardinality` arms' demand pols, and also by
-`all_different`, `disjunctive`, `inverse`, `min_distance`, `sort` and
-`subcircuit`. Its complementary-pair derivation exists because of this family
-(#557). `NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value_over_cover`
+**Shared code.** `recover_am1` (`constraints/innards/`) is called only by this
+family: `Among`'s root initialiser and both `GlobalCardinality` arms' demand
+pols. At the audit `Inverse` called it too; #1089 made `Inverse`'s at-most-ones
+lazy, and it no longer does. `all_different`, `disjunctive`, `min_distance`,
+`sort` and `subcircuit` fold their at-most-ones with a different helper,
+`recover_am1_from_pairs` (`innards/proofs/am1_from_pairs.hh`). `recover_am1`'s
+complementary-pair derivation exists because of this family (#557), and both
+of its callers can reach it: GCC with several values of one variable, and
+`Among` with one variable's `x ≠ v` over the values of interest. `NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value_over_cover`
 is used by `Among` and both GCC arms, as well as by `all_different`,
 `bin_packing` and `min_distance`. `global_cardinality/justify.{hh,cc}` is shared
 between the two GCC arms only.
@@ -777,8 +785,30 @@ constant's bound is no condition. So a cover value with a constant count can be
 in the cut without appearing in the reason. A reconstructor has the constants
 from the constraint's definition, and combines them with the reason and the
 asserted literal. Where that does not single out the original cut, any cut that
-suffices will do: it does not have to recover the one the solver used. Each
-GCC entry's reconstructibility is read with that in mind.
+suffices will do: it does not have to recover the one the solver used. **And a
+sufficient one can be read off directly, so no GCC rule needs a search** in the
+sense of the template's Appendix C, and the verdicts stay `hinted`:
+
+- **Capacity side** (rules 20, 22, 23, 26, 28). Take the values whose count
+  bounds the reason names, the asserted literal's value, and every value a
+  confined variable's reason literals still leave it: its bounds minus the
+  `not_in_range` gaps, which are all cut values. That set is inside the
+  solver's cut, so its capacity is no larger. The confined variables are still
+  confined to it, so the same `pol` goes through, at least as strongly.
+- **Demand side** (rules 21, 24, 25, 27, 29, 30). If any variable is excluded
+  from the cut, its `X ≠ v` literals name every cut value. Otherwise every
+  variable is potential. Take the named values, the asserted count's value `j`
+  for rule 21 (its own `C_j ≥ lb_j` is not in the reason), and every
+  constant-count cover value **except a pruned value `w`** (rules 25 and 29,
+  whose `w` lies outside the solver's cut). Adding constant-count values can
+  only raise the demand the `pol` sums, which strengthens its conclusion.
+  Adding `w` would not: its count row cancels the pruned variable's `x = w`
+  term, and the `pol` would conclude `0 ≥ demand − n` instead of `x ≠ w`.
+  That case is still reconstructible (a contradiction when `w`'s count is at
+  least 1, and `X ≠ w` by RUP from `w`'s own count row when it is 0), but it is
+  a different derivation.
+
+This is an argument from the `pol`'s shape. No reconstructor exercises it yet.
 
 **No mutation lane exists in this family**, so every rule's **Tightness** is
 `Not shown.`. Per the template's policy that is an ordinary state.
@@ -1295,8 +1325,11 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   whose bounds the reason names, and the run is `j` plus the cover values whose
   count bounds it names, plus those inside the run with a constant count, which
   it omits. When such a value sits at an end of the run, the reason does not
-  say where the run ends, and a sufficient run will do (see the catalogue
-  preamble).
+  say where the run ends. A sufficient set can be read off without a search:
+  the confined variables' reason-domains, the named values and `j` (see the
+  catalogue preamble). It need not be contiguous, since it drops constant-count
+  values outside every confined variable's bounds, and the `pol` does not need
+  it to be.
 - **Proof size** — one `pol` over `(b − a + 1)` count rows, a bound resolution
   for each of the `b − a` others whose count is not a constant, and one
   at-least-one per confined variable (cached); one RUP.
@@ -1316,10 +1349,14 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Algorithm** — as rule 20.
 - **Why it is true** — the other run values need at least `demand − lb_j` of
   the potential variables, and each variable is one occurrence at most.
-- **Proof technique** — `pol` then `RUP`, ours, JP 3.16's dual. Per potential
-  variable an at-most-one over the run's values, **recovered afresh by
-  `recover_am1` at `Temporary`**, which is `C(b − a + 1, 2)` pairwise RUPs; the
-  `<v>_ge` rows resolved against `C_v ≥ lb_v` for `v ≠ j`; and `<j>_ge`.
+- **Proof technique** — `RUP sequence` and `pol`, ours, JP 3.16's dual. Per
+  potential variable an at-most-one over the run's values, **recovered afresh by
+  `recover_am1` at `Temporary`**: generically `C(b − a + 1, 2)` pairwise RUP
+  lemmas, which `recover_am1` folds with one `pol`; `2(b − a − 1)` pair lemmas for
+  the complementary-pair block scheme (#557), and a bare `0 ≥ 1` RUP with no fold
+  when two or more atoms are `FalseLiteral` (see Gaps, #1046). Then the summing `pol` over those, the
+  `<v>_ge` rows resolved against `C_v ≥ lb_v` for `v ≠ j`, and `<j>_ge`, and the
+  closing RUP.
 - **Reason** — `LazyReasonOver`: `X ≠ v` for every run value and every variable
   that cannot meet the run, and `C_v ≥ lb_v` for the others.
 - **Assertion** — `C_j ≤ upper ∨ ¬reason`.
@@ -1397,7 +1434,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Strength** — `partial`.
 - **Algorithm** — as rule 21.
 - **Why it is true** — pigeonhole, the dual of rule 22.
-- **Proof technique** — `pol` then `RUP`, as rule 25 without a removal.
+- **Proof technique** — `RUP sequence` and `pol`, as rule 25 without a
+  removal.
 - **Reason** — as rule 25.
 - **Assertion** — `¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
@@ -1419,10 +1457,11 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   whole domain**, and one inference per non-run value. This is the
   `GlobalCardinality/hall` row's `KnownTrip`.
 - **Why it is true** — the run's demand uses every potential variable.
-- **Proof technique** — `pol` then `RUP`, ours, the dual of rule 23. It uses the
-  `<v>_ge` rows resolved against `C_v ≥ lb_v`, and per potential variable an
-  at-most-one over the run's values, **plus `w` for the variable being pruned**,
-  recovered afresh.
+- **Proof technique** — `RUP sequence` and `pol`, ours, the dual of rule 23. It
+  uses the `<v>_ge` rows resolved against `C_v ≥ lb_v`, and per potential
+  variable an at-most-one over the run's values, **plus `w` for the variable
+  being pruned**, recovered afresh as in rule 21: pairwise RUP lemmas, a fold
+  `pol`, then the summing `pol` and the closing RUP.
 - **Reason** — the demand reason; lazy, re-materialised per removal.
 - **Assertion** — `X_i ≠ w ∨ ¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
@@ -1459,7 +1498,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Hint** — `hints::GlobalCardinality`.
 - **Offline reconstructibility** — `hinted`: the confined variables and the cut
   values with variable counts are named by the reason; cut values with constant
-  counts are not (see the catalogue preamble).
+  counts are not, but a sufficient cut can be read off without a search (see
+  the catalogue preamble).
 - **Proof size** — one `pol` and one RUP, plus cached at-least-ones.
 - **Gaps** — a constant among the confined variables aborts the proof (#1046),
   here and in rule 28, which shares `emit_gcc_capacity_pol`. If neither
@@ -1482,9 +1522,11 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Strength** — as rule 26.
 - **Algorithm** — as rule 26, from the value side.
 - **Why it is true** — as rule 24, for the set found.
-- **Proof technique** — `pol` then `RUP`, by `emit_gcc_demand_pol`: the cut
-  values' `<v>_ge` rows and count lower bounds, and an at-most-one over the cut
-  values per supplier, recovered afresh.
+- **Proof technique** — `RUP sequence` and `pol`, by `emit_gcc_demand_pol`: the
+  cut values' `<v>_ge` rows and count lower bounds, and an at-most-one over the
+  cut values per supplier, recovered afresh by `recover_am1` as in rule 21
+  (pairwise RUP lemmas and a fold `pol`; a supplier with one atom gets a single
+  vacuous RUP line instead). Then the summing `pol` and the closing RUP.
 - **Reason** — `gcc_demand_reason`: `X ≠ v` for every cut value on every
   variable that cannot meet the cut, and the cut values' count lower bounds.
 - **Assertion** — `¬reason`.
@@ -1520,7 +1562,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Assertion** — `X_i ≠ V_j ∨ ¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
 - **Offline reconstructibility** — `hinted`. The reason names the cut, apart
-  from any cut values with constant counts (see the catalogue preamble), so a
+  from any cut values with constant counts, and a sufficient cut including
+  `V_j` can be read off without a search (see the catalogue preamble). So a
   reconstructor need not rebuild the residual graph to find it.
 - **Proof size** — one `pol` and one RUP per pruning. The cut is rebuilt per
   pruning and not shared across the edges it would explain.
@@ -1540,8 +1583,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   variable.
 - **Why it is true** — the cover values in the cut are at their lower bounds and
   need every variable that can supply them, this one included.
-- **Proof technique** — `pol` then `RUP`, by `emit_gcc_demand_pol`, with the
-  pruned variable's at-most-one extended by the pruned value.
+- **Proof technique** — `RUP sequence` and `pol`, by `emit_gcc_demand_pol` as
+  rule 27, with the pruned variable's at-most-one extended by the pruned value.
 - **Reason** — `gcc_demand_reason`, lazy.
 - **Assertion** — `X_i ≠ V_j ∨ ¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
@@ -1569,8 +1612,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   under `BC`, so a cover value could be taken for a non-cover one and removed.
 - **Why it is true** — the cut's cover values need this variable, so it cannot
   take a value outside the cover.
-- **Proof technique** — `pol` then `RUP` per value, by `emit_gcc_demand_pol`
-  with the pruned value added.
+- **Proof technique** — `RUP sequence` and `pol` per value, by
+  `emit_gcc_demand_pol` as rule 29, with the pruned value added.
 - **Reason** — `gcc_demand_reason`, lazy.
 - **Assertion** — `X_i ≠ w ∨ ¬reason`, per value.
 - **Hint** — `hints::GlobalCardinality`.
