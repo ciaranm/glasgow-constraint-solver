@@ -4,7 +4,7 @@
 > **Audited** 2026-09-23 at `f28fdef8`; re-audited 2026-09-25 at `61112ed0` ·
 > **Open issues** filed by this audit: none left open. #1057, #1058 and #1056
 > are fixed; see [Re-audit, 2026-09-25](#re-audit-2026-09-25). Already open and
-> touching this family: #868 (cross-solver). One finding is unfiled: with a
+> touching this family: #868 (cross-solver). Filed from this re-audit: #1101. With a
 > constant operand, either one, our four rows are not `cake_pb_cp`'s, so the
 > strict `opbdiff` oracle fails although cake verifies the proof ([Cake
 > conformity](#cake-conformity)). Tracked under #871.
@@ -224,7 +224,7 @@ oracle, so the script exits 1.
 
 Cake accepts our proof against its own rows in both cases. The `f28fdef8`
 build gives the same differences in both, so neither is new; #1080's
-description first noted the constant-`v2` one. Both are unfiled, and no
+description first noted the constant-`v2` one. Both are #1101, and no
 `scp_cases` case posts a constant. See [Next steps](#next-steps).
 
 ### Proof-time state
@@ -961,7 +961,7 @@ run, and 148 per step of `k` in the preimage direction, which is two runs. The
 - **A constant operand fails the strict `opbdiff` oracle**, although cake
   verifies the proof. For a constant `v2`, the `posle` and `negle` rows' big-M
   differs. For a constant `v1`, we write all four rows folded and unguarded,
-  where cake keeps a guard on a fixed atom. Unfiled; see [Cake
+  where cake keeps a guard on a fixed atom. #1101; see [Cake
   conformity](#cake-conformity).
 - **No reified form.**
 
@@ -987,7 +987,7 @@ What is left:
    For a constant `v1`, we fold and drop the guard, where cake keeps a guard
    and defines the fixed atom. Then either match cake, or document the
    differences and use a non-strict oracle mode. Then add a chain case for
-   each. Unfiled. (#1080 recorded the constant-`v2` difference and left it.)
+   each. #1101. (#1080 recorded the constant-`v2` difference and left it.)
 2. **Per-call allocation.** Two domain copies, two piece vectors and two
    `IntervalSet`s per call. `Abs` is still 51% and 45% of `celar`'s propagation
    time with the claim in place, at about 0.5 µs a call, so this is now the
