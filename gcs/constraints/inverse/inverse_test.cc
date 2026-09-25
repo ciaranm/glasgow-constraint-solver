@@ -54,6 +54,37 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
+namespace
+{
+    // x[i] = j -> y[j] = i, and when the arrays are the same length, y[j] = i ->
+    // x[i] = j too. The shorter-first injection form says nothing about an entry
+    // of y that no entry of x names, not even that its value is one of x's
+    // indices.
+    //
+    // Random sweeps may pick domains that include out-of-range values; the
+    // propagator's prepare() trims them but the brute-force predicate runs over
+    // raw enumerated values, so we need explicit bounds checks before the .at()
+    // calls. x's values are y's indices, numbered from y_start, and the other
+    // way around.
+    auto inverse_holds(const vector<int> & x, const vector<int> & y, int x_start, int y_start) -> bool
+    {
+        for (const auto & [i, _] : enumerate(x)) {
+            if (x.at(i) - y_start < 0 || std::cmp_greater_equal(x.at(i) - y_start, y.size()))
+                return false;
+            if (cmp_not_equal(y.at(x.at(i) - y_start) - x_start, i))
+                return false;
+        }
+        if (x.size() == y.size())
+            for (const auto & [i, _] : enumerate(y)) {
+                if (y.at(i) - x_start < 0 || std::cmp_greater_equal(y.at(i) - x_start, x.size()))
+                    return false;
+                if (cmp_not_equal(x.at(y.at(i) - x_start) - y_start, i))
+                    return false;
+            }
+        return true;
+    }
+}
+
 auto run_inverse_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<variant<int, pair<int, int>>> & x_range,
     const vector<variant<int, pair<int, int>>> & y_range, int x_start, int y_start) -> void
 {
@@ -63,30 +94,7 @@ auto run_inverse_test(bool proofs, const ViewWrapConfig & view_cfg, const vector
     cerr << flush;
 
     set<tuple<vector<int>, vector<int>>> expected, actual;
-    build_expected(
-        expected,
-        [&](const vector<int> & x, const vector<int> & y) {
-            // Random sweeps may pick domains that include out-of-range
-            // values; the propagator's prepare() trims them but the
-            // brute-force predicate runs over raw enumerated values, so
-            // we need explicit bounds checks before the .at() calls. x's
-            // values are y's indices, numbered from y_start, and the other
-            // way around.
-            for (const auto & [i, _] : enumerate(x)) {
-                if (x.at(i) - y_start < 0 || std::cmp_greater_equal(x.at(i) - y_start, y.size()))
-                    return false;
-                if (cmp_not_equal(y.at(x.at(i) - y_start) - x_start, i))
-                    return false;
-            }
-            for (const auto & [i, _] : enumerate(y)) {
-                if (y.at(i) - x_start < 0 || std::cmp_greater_equal(y.at(i) - x_start, x.size()))
-                    return false;
-                if (cmp_not_equal(x.at(y.at(i) - x_start) - y_start, i))
-                    return false;
-            }
-            return true;
-        },
-        x_range, y_range);
+    build_expected(expected, [&](const vector<int> & x, const vector<int> & y) { return inverse_holds(x, y, x_start, y_start); }, x_range, y_range);
 
     println(cerr, " expecting {} solutions", expected.size());
 
@@ -106,6 +114,54 @@ auto run_inverse_test(bool proofs, const ViewWrapConfig & view_cfg, const vector
     auto proof_name = proofs ? make_optional("inverse_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y});
 
+    check_results(proof_name, expected, actual);
+}
+
+// The same variable in more than one entry. Each entry of x and of y names one
+// of the unique variables, and the brute force runs over those, so it sees the
+// aliasing. A repeat within x, or within y when the arrays are the same length,
+// is unsatisfiable and gets a root contradiction; within y in the injection
+// form it is satisfiable, as long as at most one of the two entries is named.
+//
+// An entry of x can also be a view, the unique variable plus an offset, so that
+// two entries can be views of one variable.
+auto run_inverse_aliased_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & x_positions,
+    const vector<int> & y_positions, const vector<int> & x_offsets = {}) -> void
+{
+    print(cerr, "inverse aliased {} x {} offsets {} y {}{}", unique_domains, x_positions, x_offsets, y_positions, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto offset_of = [&](size_t i) { return i < x_offsets.size() ? x_offsets[i] : 0; };
+    auto pick = [](const vector<int> & u, const vector<int> & positions, const auto & offset) {
+        vector<int> result;
+        for (const auto & [i, p] : enumerate(positions))
+            result.push_back(u.at(p) + offset(i));
+        return result;
+    };
+    auto no_offset = [](size_t) { return 0; };
+
+    vector<variant<int, pair<int, int>>> ranges;
+    for (const auto & d : unique_domains)
+        ranges.emplace_back(d);
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & u) { return inverse_holds(pick(u, x_positions, offset_of), pick(u, y_positions, no_offset), 0, 0); },
+        ranges);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & [lo, hi] : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
+    vector<IntegerVariableID> x, y;
+    for (const auto & [i, pos] : enumerate(x_positions))
+        x.push_back(unique_vars.at(pos) + Integer(offset_of(i)));
+    for (auto pos : y_positions)
+        y.push_back(unique_vars.at(pos));
+    p.post(Inverse{x, y});
+
+    auto proof_name = proofs ? make_optional("inverse_test_aliased") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
     check_results(proof_name, expected, actual);
 }
 
@@ -147,9 +203,31 @@ auto main(int argc, char * argv[]) -> int
         {{3, 2, 3, pair{0, 3}}, {pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}},          //
         {{pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, {1, pair{0, 3}, 1, pair{0, 3}}}, //
         // issue #254: fully all-constant arguments, both directions.
-        {{0, 1}, {0, 1}},  // identity permutation, consistent (tautology)
-        {{1, 0}, {1, 0}},  // swap: x[0]=1<->y[1]=0, x[1]=0<->y[0]=1, consistent (tautology)
-        {{1, 0}, {0, 1}}}; // x swapped but y identity: inconsistent (contradiction)
+        {{0, 1}, {0, 1}}, // identity permutation, consistent (tautology)
+        {{1, 0}, {1, 0}}, // swap: x[0]=1<->y[1]=0, x[1]=0<->y[0]=1, consistent (tautology)
+        {{1, 0}, {0, 1}}, // x swapped but y identity: inconsistent (contradiction)
+        // Injection form: x shorter than y, and only x[i] = j -> y[j] = i. The
+        // issue #1047 instance, which ACE gives 12 solutions: y's third entry is
+        // free whenever nothing names it.
+        {{pair{0, 2}, pair{0, 2}}, {pair{0, 1}, pair{0, 1}, pair{0, 1}}}, //
+        // An entry of y that nothing names can take a value outside x's indices
+        // (36 solutions, as ACE says), and one that must be named cannot.
+        {{pair{0, 2}, pair{0, 2}}, {pair{0, 5}, pair{0, 5}, pair{0, 5}}}, //
+        {{pair{0, 1}, pair{0, 1}, pair{0, 3}}, {pair{-1, 3}, pair{-1, 3}, pair{-1, 3}, pair{-1, 3}}},
+        {{pair{0, 3}}, {pair{0, 1}, pair{0, 1}, pair{0, 1}, pair{0, 1}}}, //
+        {{}, {pair{0, 1}, pair{0, 1}}},                                   //
+        {{1, pair{0, 3}}, {pair{0, 2}, pair{0, 2}, pair{0, 2}, pair{-1, 2}}},
+        // Three entries of x share three values, so y's first three entries
+        // cannot name the fourth index, which no entry of x has. Seeing that
+        // takes a pigeonhole, not unit propagation, so these are the cases that
+        // the Hall sum is load-bearing for: first alone, then beside an entry
+        // that takes none of those values, then beside a constant, whose value
+        // is a Hall set of its own.
+        {{pair{0, 2}, pair{0, 2}, pair{0, 2}}, {pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}},
+        {{pair{0, 2}, pair{0, 2}, pair{0, 2}, pair{3, 4}}, {pair{0, 4}, pair{0, 4}, pair{0, 4}, pair{0, 4}, pair{0, 4}}},
+        {{3, pair{0, 2}, pair{0, 2}, pair{0, 2}}, {pair{0, 4}, pair{0, 4}, pair{0, 4}, pair{0, 4}, pair{0, 4}}},
+        // Two components, {0, 1} and {2, 3, 4}, which each prune y by themselves.
+        {{pair{0, 1}, pair{0, 1}, pair{2, 4}, pair{2, 4}, pair{2, 4}}, {pair{0, 2}, pair{0, 2}, pair{0, 5}, pair{0, 5}, pair{0, 5}, pair{0, 1}}}};
 
     mt19937 rand(*get_seed());
 
@@ -166,6 +244,20 @@ auto main(int argc, char * argv[]) -> int
             x_doms.emplace_back(generate_random_data_item(rand, random_bounds_or_constant(0, 0, n - 1, n - 1)));
             y_doms.emplace_back(generate_random_data_item(rand, random_bounds_or_constant(0, 0, n - 1, n - 1)));
         }
+        var_data.emplace_back(x_doms, y_doms);
+    }
+
+    // And the injection form: x of length 1..3 into y's indices, with y one or
+    // two longer. y's domains stray a little outside x's indices, which an entry
+    // that nothing names may take.
+    uniform_int_distribution m_dist{1, 3}, extra_dist{1, 2};
+    for (int x_count = 0; x_count < 8; ++x_count) {
+        int m = m_dist(rand), n = m + extra_dist(rand);
+        vector<Entry> x_doms, y_doms;
+        for (int i = 0; i < m; ++i)
+            x_doms.emplace_back(generate_random_data_item(rand, random_bounds_or_constant(0, 0, n - 1, n - 1)));
+        for (int j = 0; j < n; ++j)
+            y_doms.emplace_back(generate_random_data_item(rand, random_bounds_or_constant(-1, 0, m, m + 1)));
         var_data.emplace_back(x_doms, y_doms);
     }
 
@@ -200,30 +292,42 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
-    {
-        // Intra-array duplicates make Inverse trivially infeasible: reject
-        // at construction. Cross-array aliasing (e.g. Inverse(x, x) for
-        // involutions) is legitimate and stays accepted.
-        auto expect_throw = [](auto build) {
-            try {
-                build();
-            }
-            catch (const InvalidProblemDefinitionException &) {
-                return true;
-            }
-            return false;
-        };
+    // The aliased cases build their own variables and wrap none of them, so run
+    // them once, in the bare configuration: the view-wrapped runs are separate
+    // ctest cases in the same directory, and would race on the proof files.
+    for (bool proofs : {false, true}) {
+        if (! view_wrap_config_is_effectively_bare(view_cfg, n_positions))
+            break;
+        if (proofs && ! can_run_veripb())
+            continue;
+        // A repeat within x, bijection and injection.
+        run_inverse_aliased_test(proofs, {{0, 2}, {0, 2}, {0, 2}, {0, 2}, {0, 2}}, {0, 1, 0}, {2, 3, 4});
+        run_inverse_aliased_test(proofs, {{0, 2}, {0, 2}, {0, 2}, {0, 2}}, {0, 0}, {1, 2, 3});
+        // A repeat within y: unsatisfiable as a bijection, not as an injection.
+        run_inverse_aliased_test(proofs, {{0, 2}, {0, 2}, {0, 2}, {0, 2}, {0, 2}}, {0, 1, 2}, {3, 4, 4});
+        run_inverse_aliased_test(proofs, {{0, 2}, {0, 2}, {0, 1}, {0, 1}}, {0, 1}, {2, 2, 3});
+        // Across the two arrays, which is legitimate: inverse(x, x) is an
+        // involution.
+        run_inverse_aliased_test(proofs, {{0, 2}, {0, 2}, {0, 2}}, {0, 1, 2}, {0, 1, 2});
+        // Two and three views of one variable in x, in the injection form.
+        run_inverse_aliased_test(proofs, {{0, 1}, {0, 2}, {0, 3}, {0, 3}, {0, 3}, {0, 3}}, {0, 0, 1}, {2, 3, 4, 5}, {0, 1, 0});
+        run_inverse_aliased_test(proofs, {{0, 1}, {0, 4}, {-1, 4}, {-1, 4}, {-1, 4}, {-1, 4}}, {0, 0, 0}, {2, 3, 4, 5}, {0, 1, 2});
+    }
 
+    {
+        // x is all different and valued in y's indices, so it cannot be longer.
         Problem p;
         auto x = p.create_integer_variable_vector(3, 0_i, 2_i);
-        auto y = p.create_integer_variable_vector(3, 0_i, 2_i);
-
-        if (! expect_throw([&] { p.post(Inverse{{x[0], x[1], x[0]}, y}); })) {
-            cerr << "expected Inverse with duplicate in first array to throw\n";
-            return EXIT_FAILURE;
+        auto y = p.create_integer_variable_vector(2, 0_i, 2_i);
+        bool threw = false;
+        try {
+            p.post(Inverse{x, y});
         }
-        if (! expect_throw([&] { p.post(Inverse{x, {y[0], y[2], y[2]}}); })) {
-            cerr << "expected Inverse with duplicate in second array to throw\n";
+        catch (const InvalidProblemDefinitionException &) {
+            threw = true;
+        }
+        if (! threw) {
+            cerr << "expected Inverse with a longer first array to throw\n";
             return EXIT_FAILURE;
         }
     }

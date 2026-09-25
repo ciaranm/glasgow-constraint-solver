@@ -16,6 +16,19 @@ namespace gcs
      * are zero-indexed, but the x_start and y_start arguments can be used
      * to specify a different starting index.
      *
+     * The first array may be shorter than the second, which is XCSP3's
+     * `channel` over lists of different lengths. Then only `x[i] = j -> y[j] = i`
+     * holds: x is an injection into y's indices, and an entry of y that no
+     * entry of x names is unconstrained, whatever its value. With equal lengths
+     * the two readings coincide. A first array longer than the second is
+     * rejected.
+     *
+     * The same variable twice in the first array, or twice in the second when
+     * the lengths are equal, makes the model unsatisfiable, and is answered
+     * with a contradiction at the root. In the injection form, the same
+     * variable twice in the second array is satisfiable, since at most one of
+     * the two entries need be named.
+     *
      * \ingroup Constraints
      */
     class Inverse : public Constraint
@@ -23,7 +36,10 @@ namespace gcs
     private:
         const std::vector<IntegerVariableID> _x, _y;
         const Integer _x_start, _y_start;
+        bool _has_duplicate_vars = false;
         std::shared_ptr<std::map<Integer, innards::ProofLine>> _x_value_am1s;
+
+        [[nodiscard]] auto is_injection() const -> bool;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;

@@ -251,13 +251,17 @@ Two XCSP3-core constraint families have no propagator yet:
 their callbacks with a `report_unsupported` call so the parser's
 default uncaught `runtime_error` doesn't terminate the process.
 `main()` also catches `std::runtime_error` as a safety net for any
-other unhandled callback the parser might throw on.
+other unhandled callback the parser might throw on, and
+`InvalidProblemDefinitionException` for a constraint whose constructor
+rejects what a valid instance posted (#1047): both are reported as
+`s UNSUPPORTED`, since the instance is not at fault.
 
 Constraint forms we *partially* support get the same treatment for
 the unsupported cases — e.g. `noOverlap` outside the 1D / 2D
 (`Disjunctive` / `Disjunctive2D`) shapes (#146), `cumulative` with a
 non-`le` condition (#147), `precedence` with `covered=true`,
-`channel` with the one-to-many shape, `nValues` with `<except>`.
+`channel` with the one-to-many shape or with its first list longer
+than its second, `nValues` with `<except>`.
 
 ## Testing
 

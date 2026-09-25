@@ -98,7 +98,8 @@ namespace gcs
      *   forbid;
      * - the successors are a permutation whether or not a node is on the tour, so
      *   all-different holds over the whole array. A node off the tour takes its own index,
-     *   which is exactly what stops it being anyone else's successor.
+     *   which is exactly what stops it being anyone else's successor. So the same variable
+     *   in two slots is unsatisfiable, and is answered with a contradiction at the root.
      *
      * Circuit is the stricter constraint that additionally requires every node to be on
      * the tour; it is not a special case of this one, nor this one of it.
@@ -120,6 +121,10 @@ namespace gcs
         std::optional<long> _required_node;
         bool _prune_root = false;
         bool _prune_within = false;
+
+        // As Circuit's: a successor array with a repeated variable only gets a
+        // root contradiction.
+        bool _has_duplicate_vars = false;
 
         // The node the position encoding is anchored on, settled by prepare(): what
         // with_required_node() named, or the lowest-numbered node whose declared domain

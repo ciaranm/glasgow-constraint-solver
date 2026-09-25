@@ -468,6 +468,13 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
 
     auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, owner = constraint_id()](const State & state, auto & inference,
                                                 ProofLogger * const logger, const Literal & cond) -> PropagatorState {
+        // Aliased operands, v1 != v1: both halves of the row are 0 >= 1, so this
+        // is a contradiction as soon as it must hold, rather than once search
+        // fixes v1. MiniZinc simplifies this shape away, but XCSP3's intension
+        // (e.g. ne(x,x)) reaches it (#1047).
+        if (v1 == v2 && ! is_constant_variable(v1))
+            inference.contradiction(
+                logger, JustifyUsingRUP{hints::Equals{owner}}, inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{cond}}} : Reason{});
         auto value1 = state.optional_single_value(v1);
         if (value1) {
             // The reason is stated outright -- the value is already in hand, so
@@ -610,10 +617,6 @@ EqualsIff::EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Int
 
 NotEquals::NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) : ReifiedEquals(v1, v2, reif::MustNotHold{}, true)
 {
-    // Two constants that happen to be equal is a valid (if trivially
-    // infeasible) model; only reject true variable aliasing.
-    if (v1 == v2 && ! is_constant_variable(v1))
-        throw InvalidProblemDefinitionException{"NotEquals: both operands are the same variable handle"};
 }
 
 NotEqualsIf::NotEqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :

@@ -1,4 +1,5 @@
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/difference.hh>
 #include <gcs/constraints/divide.hh>
@@ -6,6 +7,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/inverse.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/modulus.hh>
 #include <gcs/constraints/plus.hh>
@@ -1017,7 +1019,7 @@ TEST_CASE("A caller's AutoTable stats block is the one that gets filled in and r
 
 TEST_CASE("A constraint that is trivially unsatisfiable at install time says which one, and why")
 {
-    // Seven sites --- ten constraints --- work out while installing that what
+    // Ten sites --- thirteen constraints --- work out while installing that what
     // they encode is the empty relation, and install a contradiction initialiser
     // instead of a propagator. Each has always passed an explanation of what was
     // wrong with it; the parameter that took it was unnamed and dropped it
@@ -1029,7 +1031,10 @@ TEST_CASE("A constraint that is trivially unsatisfiable at install time says whi
     // AllDifferent-family constraints share
     // install_clique_duplicate_contradiction_initialiser, which is why they were
     // not in #722's census -- that was a grep for install_initial_contradiction,
-    // and this one goes through the same wrapper only since #767.
+    // and this one goes through the same wrapper only since #767. Circuit,
+    // SubCircuit and Inverse joined with #1047, when a repeated variable stopped
+    // being rejected at construction; Inverse reports its own note, since its
+    // contradiction needs a justification written with the proof logger to hand.
     struct Case
     {
         string component;
@@ -1058,7 +1063,16 @@ TEST_CASE("A constraint that is trivially unsatisfiable at install time says whi
                 p.post(AllDifferentExcept{vector<IntegerVariableID>{x, x}, vector<Integer>{}});
             }},
         {"symmetric_all_different", "same variable more than once",
-            [](Problem & p, IntegerVariableID x, IntegerVariableID) { p.post(SymmetricAllDifferent{vector<IntegerVariableID>{x, x}}); }}};
+            [](Problem & p, IntegerVariableID x, IntegerVariableID) { p.post(SymmetricAllDifferent{vector<IntegerVariableID>{x, x}}); }},
+        // Rejected at construction until #1047, which MiniZinc reached by giving
+        // two equated entries one variable.
+        {"circuit", "same variable more than once",
+            [](Problem & p, IntegerVariableID x, IntegerVariableID) { p.post(Circuit{vector<IntegerVariableID>{x, x}}); }},
+        {"subcircuit", "same variable more than once",
+            [](Problem & p, IntegerVariableID x, IntegerVariableID) { p.post(SubCircuit{vector<IntegerVariableID>{x, x}}); }},
+        {"inverse", "same variable more than once", [](Problem & p, IntegerVariableID x, IntegerVariableID y) {
+             p.post(Inverse{vector<IntegerVariableID>{x, x}, vector<IntegerVariableID>{y, 0_c}});
+         }}};
 
     for (const auto & c : cases) {
         INFO("constraint type " << c.component);

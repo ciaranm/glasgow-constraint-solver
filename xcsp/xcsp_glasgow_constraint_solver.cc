@@ -972,6 +972,11 @@ namespace
         auto buildConstraintChannel(string, vector<XVariable *> & list1, int startIndex1, vector<XVariable *> & list2, int startIndex2)
             -> void override
         {
+            // Lists of equal length are inverse to each other. With the first
+            // shorter, only list1[i] = j -> list2[j] = i holds, which Inverse
+            // also takes. The spec has no meaning for the first being longer.
+            if (list1.size() > list2.size())
+                report_unsupported("channel", "first list longer than the second");
             _problem.post(Inverse{need_variables(list1), need_variables(list2), Integer{startIndex1}, Integer{startIndex2}});
         }
 
@@ -1969,6 +1974,14 @@ auto main(int argc, char * argv[]) -> int
         parser.parse(options_vars["file"].as<string>().c_str());
     }
     catch (const UnimplementedException & e) {
+        cout << "s UNSUPPORTED" << endl;
+        cout << "c " << e.what() << endl;
+        return EXIT_FAILURE;
+    }
+    catch (const InvalidProblemDefinitionException & e) {
+        // A constraint's constructor rejected what the instance posted. The
+        // instance is valid XCSP3, so this is a shape we fail to support, not a
+        // bad input, and it must not escape as an abort (#1047).
         cout << "s UNSUPPORTED" << endl;
         cout << "c " << e.what() << endl;
         return EXIT_FAILURE;

@@ -60,6 +60,9 @@ namespace gcs
      * are no-ops under circuit::Prevent. None of these choices change the constraint's meaning
      * or the OPB encoding written for proof logging.
      *
+     * The same variable in two slots can never be all different, and is answered with a
+     * contradiction at the root.
+     *
      * \ingroup Constraints
      */
     class Circuit : public Constraint
@@ -69,6 +72,10 @@ namespace gcs
         CircuitAlgorithm _algorithm = circuit::SCC{};
         bool _gac_all_different = false;
         SCCOptions _scc_options{};
+
+        // Two slots hold the same variable, so the successors cannot be all
+        // different: the only thing installed is a root contradiction.
+        bool _has_duplicate_vars = false;
 
         // Backtrackable state allocated by prepare(), consumed by install_propagators().
         innards::circuit::CircuitStateHandles _state_handles;

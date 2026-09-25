@@ -4,7 +4,6 @@
 #include <gcs/constraints/circuit/circuit_prevent.hh>
 #include <gcs/constraints/circuit/circuit_scc.hh>
 #include <gcs/constraints/circuit/hints.hh>
-#include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -48,14 +47,17 @@ using std::vector;
 
 Circuit::Circuit(vector<IntegerVariableID> succ) : _succ(std::move(succ))
 {
-    // Two slots pinned to the same constant are a valid (if trivially
-    // infeasible) model; only reject true variable aliasing.
-    for (size_t i = 0; i < _succ.size(); ++i) {
+    // The same variable in two slots cannot be all different, so the model is
+    // unsatisfiable. That is a legal post, not a misuse: MiniZinc gives two
+    // entries one variable whenever a model equates them (#1047), so it is
+    // answered with a root contradiction, as AllDifferent does. Two slots
+    // pinned to the same constant are left to the propagators.
+    for (size_t i = 0; i < _succ.size() && ! _has_duplicate_vars; ++i) {
         if (is_constant_variable(_succ[i]))
             continue;
         for (size_t j = i + 1; j < _succ.size(); ++j)
             if (_succ[i] == _succ[j])
-                throw InvalidProblemDefinitionException{"Circuit: successor array contains the same variable handle twice"};
+                _has_duplicate_vars = true;
     }
 }
 
@@ -133,7 +135,9 @@ auto Circuit::prepare(Propagators & propagators, State & initial_state, ProofMod
     // model together, so it can only be installed from here. The non-GAC alternative
     // is pure encoding and lives in define_proof_model(); either way the rows land
     // before the position encoding, as they did before.
-    if (_gac_all_different) {
+    // With a repeated variable nothing propagates, so there is no child: the rows it
+    // would have written come from define_proof_model() instead.
+    if (_gac_all_different && ! _has_duplicate_vars) {
         AllDifferent all_diff{_succ};
         // The child must carry this constraint's identity, as SeqPrecedeChain's does:
         // AllDifferent keys its labelled OPB lines and its pair selectors on its id, so
@@ -161,8 +165,10 @@ auto Circuit::prepare(Propagators & propagators, State & initial_state, ProofMod
 auto Circuit::define_proof_model(ProofModel & model, const State &) -> void
 {
     // The all-different encoding. Under the GAC option the child AllDifferent that
-    // prepare() installed has already emitted it.
-    if (! _gac_all_different)
+    // prepare() installed has already emitted it. With a repeated variable, the
+    // pair rows for the two slots collapse to a unit and its negation, which is
+    // what the root contradiction cites.
+    if (! _gac_all_different || _has_duplicate_vars)
         define_clique_not_equals_encoding(model, _constraint_id, _succ);
 
     // Define encoding to eliminate sub-cycles
@@ -216,6 +222,12 @@ auto Circuit::define_proof_model(ProofModel & model, const State &) -> void
 
 auto Circuit::install_propagators(Propagators & propagators) -> void
 {
+    if (_has_duplicate_vars) {
+        propagators.install_initial_contradiction(constraint_id(), constraint_type(),
+            "A Circuit constraint was posted with the same variable more than once", JustifyUsingRUP{hints::Circuit{constraint_id()}});
+        return;
+    }
+
     // Infer succ[i] != i at top of search, but no other propagation defined here: use circuit::Prevent or circuit::SCC
     if (_succ.size() > 1) {
         propagators.install(

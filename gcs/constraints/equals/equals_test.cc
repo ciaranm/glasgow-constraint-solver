@@ -954,21 +954,10 @@ auto main(int argc, char * argv[]) -> int
                 // (propagator silent on alias) — fixed by alias check in
                 // ReifiedEquals' infer_cond_when_undecided.
                 run_dup_equals_test<NotEqualsIf>("notequals_if", proofs, x_range, [](int, int c) { return c == 0; });
+                // NotEquals(x, x) is unsatisfiable, and gets a contradiction as
+                // soon as it must hold (#1047: XCSP3's intension reaches it).
+                run_dup_equals_test<NotEquals>("notequals", proofs, x_range, [](int, int) { return false; });
             }
-    }
-
-    {
-        // NotEquals on aliased operands is trivially unsat; reject at
-        // construction rather than discovering after search.
-        Problem p;
-        auto x = p.create_integer_variable(Integer{0}, Integer{3});
-        try {
-            p.post(NotEquals{x, x});
-            cerr << "expected NotEquals(x,x) to throw InvalidProblemDefinitionException" << '\n';
-            return EXIT_FAILURE;
-        }
-        catch (const InvalidProblemDefinitionException &) {
-        }
     }
 
     return EXIT_SUCCESS;

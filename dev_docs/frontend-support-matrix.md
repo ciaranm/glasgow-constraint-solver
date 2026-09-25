@@ -46,7 +46,7 @@ equivalent for that frontend's vocabulary).
 | cardinality (GCC) | decompose to `Count` | ? | ✓ via decompose (constant values + constant occurs; closed flag) | ? |
 | maximum / minimum (constraint) | `ArrayMax` / `ArrayMin` | ✓ | ✓ (basic with `XCondition`; indexed form pending) | ? |
 | element | `Element` / `Element2D` | ✓ | ✓ (1D vector and constant-list; 2D matrix variable + constant) | ? |
-| channel (inverse) | `Inverse` | ✓ | ✓ (1- and 2-list inverse; one-to-many form `s UNSUPPORTED`) | ? |
+| channel (inverse) | `Inverse` | ✓ | ✓ (1- and 2-list inverse, and 2 lists with the first shorter, which is one-directional: `list1[i] = j -> list2[j] = i` only ([#1047](https://github.com/ciaranm/glasgow-constraint-solver/issues/1047)); a longer first list, which the spec does not define, and the one-to-many form `s UNSUPPORTED`) | ? |
 | noOverlap (Disjunctive) | `Disjunctive` (1D, var durations, optional tasks) / `Disjunctive2D` (2D, var sizes)[^disj] | ✓ (1D + 2D `diffn`, var durations/sizes; `fzn_disjunctive_opt` and `fzn_disjunctive_strict_opt`) | ✓ (1D + 2D, var durations/sizes) | ? |
 | cumulative | `Cumulative`[^cum] | ✓ (var s/d/r/b) | ✓ (var s/d/r/b) | ? |
 | cumulative, optional tasks | `Cumulative` presence form[^cumopt] | ✓ (`fzn_cumulative_opt`) | n/a — no such form in XCSP3 | ? |

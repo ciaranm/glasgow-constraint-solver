@@ -2,7 +2,6 @@
 #include <gcs/constraints/comparison/hints.hh>
 #include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/constraints/innards/reified_state.hh>
-#include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -75,17 +74,11 @@ ReifiedCompareLessThanOrMaybeEqual::ReifiedCompareLessThanOrMaybeEqual(
 
 LessThan::LessThan(const IntegerVariableID v1, const IntegerVariableID v2) : ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::MustHold{}, false)
 {
-    // Two constants that happen to be equal is a valid (if trivially
-    // infeasible) model; only reject true variable aliasing.
-    if (v1 == v2 && ! is_constant_variable(v1))
-        throw InvalidProblemDefinitionException{"LessThan: both operands are the same variable handle"};
 }
 
 GreaterThan::GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2) :
     ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::MustHold{}, false, true)
 {
-    if (v1 == v2 && ! is_constant_variable(v1))
-        throw InvalidProblemDefinitionException{"GreaterThan: both operands are the same variable handle"};
 }
 
 auto ReifiedCompareLessThanOrMaybeEqual::clone() const -> unique_ptr<Constraint>
@@ -217,6 +210,13 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
     else {
         auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2, or_equal = _or_equal, owner = constraint_id()](const State & state, auto & inference,
                                                 ProofLogger * const logger, const Literal & cond) -> PropagatorState {
+            // Aliased operands, v1 < v1: the row is 0 <= -1, so this is a
+            // contradiction as soon as it must hold. The bounds below would get
+            // there too, but one value per call. MiniZinc simplifies this shape
+            // away, but XCSP3's intension (e.g. lt(x,x)) reaches it (#1047).
+            if (! or_equal && v1 == v2 && ! is_constant_variable(v1))
+                inference.contradiction(logger, JustifyUsingRUP{hints::Comparison{owner}},
+                    inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{cond}}} : Reason{});
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
             if (! inference.infer_less_than_or_stop(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{hints::Comparison{owner}},
                     inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{{cond, v2 <= v2_bounds.second}}}} : Reason{}))
@@ -230,6 +230,10 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
 
         auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, or_equal = _or_equal, owner = constraint_id()](const State & state,
                                                     auto & inference, ProofLogger * const logger, const Literal & cond) -> PropagatorState {
+            // The mirror of the must-hold case: not (v1 <= v1).
+            if (or_equal && v1 == v2 && ! is_constant_variable(v1))
+                inference.contradiction(logger, JustifyUsingRUP{hints::Comparison{owner}},
+                    inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{cond}}} : Reason{});
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
             if (! inference.infer_less_than_or_stop(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i),
                     JustifyUsingRUP{hints::Comparison{owner}},
