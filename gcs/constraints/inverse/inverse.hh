@@ -2,10 +2,8 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_INVERSE_INVERSE_HH
 
 #include <gcs/constraint.hh>
-#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/variable_id.hh>
 
-#include <map>
 #include <memory>
 #include <vector>
 
@@ -37,7 +35,6 @@ namespace gcs
         const std::vector<IntegerVariableID> _x, _y;
         const Integer _x_start, _y_start;
         bool _has_duplicate_vars = false;
-        std::shared_ptr<std::map<Integer, innards::ProofLine>> _x_value_am1s;
 
         [[nodiscard]] auto is_injection() const -> bool;
 

@@ -74,11 +74,12 @@ template <typename Literal_>
     // tautological pair line (b0 + ~b0 >= 1) normalises to a constant
     // mid-derivation, and the ceiling-division renormalisation then discards a
     // unit, yielding a loose at-most-one that leaves a residual literal in any pol
-    // that sums it (issue #557; a sibling of the #554 gevar-aliasing bug). Only
-    // GlobalCardinality passes several value-conditions on the *same* variable, so
-    // it is the only caller that can hit this; every other caller passes
-    // conditions over distinct variables, finds no pair, and takes the generic
-    // path with byte-identical output. A "not found" lookup means the literal is
+    // that sums it (issue #557; a sibling of the #554 gevar-aliasing bug). Only a
+    // caller that passes several value-conditions on the *same* variable can hit
+    // this: GlobalCardinality, and Among, whose atoms are one variable's x != v
+    // over the values of interest. A caller whose conditions are over distinct
+    // variables finds no pair, and takes the generic path with byte-identical
+    // output. A "not found" lookup means the literal is
     // unaliased/fresh and so cannot be half of a pair, which is the safe default.
     auto atom_xliteral = [&](const Literal_ & atom) -> optional<XLiteral> {
         if constexpr (is_same_v<Literal_, ProofFlag>)
