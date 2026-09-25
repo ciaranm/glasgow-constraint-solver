@@ -4,10 +4,10 @@
 > **Audited** 2026-09-08 at `76bfd836` plus #897, since merged as `977532a6`;
 > re-audited 2026-09-21 at `6b220c79` ·
 > **Open issues** #901, the one this audit filed that is still open — and it is
-> open on its *second* item only, since a level can now be asked for. #966
-> (three constraints that read interiors they only watch for bounds) is the
-> follow-up #902 left behind, and it is not about this family. #868 is the
-> audit-wide cross-solver prerequisite. Tracked under #871.
+> open on its *second* item only, since a level can now be asked for. #868 is the
+> audit-wide cross-solver prerequisite. Tracked under #871. (#966, the
+> follow-up #902 left behind, was never about this family, and #998 closed it
+> on 2026-09-22.)
 
 Four posted classes over one templated implementation and **four** propagators:
 `result = array[index]`, in one or two dimensions, over an array of variables or
@@ -132,8 +132,8 @@ three and nothing else; asking for `Tabulated` or `VC` is a compile-time error.
 #901 measured why: over a **constant** array, generalised arc consistency on
 the result is observable only outside the constraint, and in both benchmarks
 that reach one the only outside consumer is a bounds-consistent linear sum — so
-`GAC` made 62% more effectful inferences on `qap` over a bit-identical search
-tree, and cost 1.2–2x. Over a **variable** array the selected-entry equality
+`GAC` made 62% more effectful inferences on `qap` at the same recursion and
+solution counts, and cost 1.2–2x. Over a **variable** array the selected-entry equality
 rule *is* installed, so a tighter result propagates into the entries, which are
 ordinary variables something may well branch on. Nothing argues `GAC` is wasted
 there.
@@ -862,9 +862,17 @@ the constraint family**, and on this family's own benchmark the
   Under `consistency::BC`, or as the **fallback** member of `Auto`'s pair once
   the analysis has decided nothing could observe the interior values rules 3 and
   4 would remove.
-- **Strength** — `BC`. Interior values with no support survive, deliberately.
-  Under `Auto` that is the whole point: they survive because nothing in the
-  model can tell they are there.
+- **Strength** — `bounds(Z)` on `result`, and `bounds(D)` over a constant
+  array. Over a variable array it is not `bounds(D)`: a bound can survive that
+  only a hole in an entry refutes. With a 0-based `index ∈ {0, 1}` over entries
+  `{4, 5, 6}` and `{6, 7, 8, 10}`, `result ∈ 4..9` is a fixed point, although no entry can
+  take 9. A brute-force check of random small instances at `61112ed0` (three
+  entries, some with a hole, some indices with a hole) found no `bounds(Z)`
+  failure in about 20,900 roots over variable arrays or 13,000 over constant
+  ones, no `bounds(D)` failure over constant arrays, and 438 over variable ones.
+  Interior values with no support survive, deliberately. Under `Auto` that is
+  the whole point: they survive because nothing in the model can tell they are
+  there.
 - **Algorithm** — one pass over the index domains collecting the min lower and
   max upper bound of the entries still in range, short-circuiting once the found
   range already covers `result`'s bounds. O(cells) bounds reads.
@@ -1216,9 +1224,9 @@ narrow trigger sets are doing real work.
 | `tsp` | `BC` (default) | **11.19 s** | 4,285,745 | 83,372,056 | 41,243,802 |
 | `tsp` | `GAC` | 13.67 s | 4,285,745 | 57,702,481 | 38,036,662 |
 
-**The search trees are bit-identical** — 123,333 and 4,285,745 recursions, and
-the same solution counts, both ways — while `GAC` makes **62% more effectful
-inferences** on `qap`. Every one of those extra prunings was unobserved. `tsp`
+**The recursion and solution counts are the same both ways** — 123,333 and
+4,285,745 recursions — while `GAC` makes **62% more effectful inferences** on
+`qap`. That is what was compared; the two trees were not traced node by node. Every one of those extra prunings was unobserved. `tsp`
 shows the same thing from the other side: `GAC` does **fewer** propagations
 (57.7M against 83.4M) and is still slower, because it prunes harder per call and
 none of it pays.
@@ -1277,8 +1285,8 @@ direction. Auditing every install site for hole sensitivity turned up four
 propagators whose triggers *understate* what they read — `Count`, `SubCircuit`
 under `Prevent`, `BinPacking`'s upfront sweep, and the learned-nogood store —
 and the first three are also **missing wakes**, which is a propagation question
-rather than a pruning-analysis one. That is **#966**, and it is not about this
-family.
+rather than a pruning-analysis one. That was **#966**, which was not about this
+family; #998 fixed the three wakes and closed it on 2026-09-22.
 
 **Cross-solver comparison: `Not measured.`** #868's harness exists and the
 method is in `dev_docs/cross-solver-benchmarking.md`, but it has been pointed at
