@@ -95,6 +95,13 @@ namespace gcs::innards::window_energy
      * length in the flag's own definition, so it has already chosen one; if
      * that choice is to be reason-free it must be the declared lower bound,
      * exactly as it must be for \ref Task.
+     *
+     * A row may carry one more literal, provided it is the same one in every
+     * row: an optional task's <code>~present</code>, where the flag has the
+     * presence as a conjunct. The lemma only sums rows, so the literal comes
+     * out on the line at one copy per row summed, and the citer disposes of it
+     * from its reason. \ref Task's form does the same for Cumulative's
+     * optional tasks, whose <code>active</code> carries the presence too.
      */
     struct WindowRows
     {

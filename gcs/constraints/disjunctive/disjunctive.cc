@@ -150,9 +150,9 @@ namespace
 
     /**
      * One (task, time) flag of the overload certificate's re-encoding, and the
-     * two rows defining it: `forward` is the flag implying both of its order
-     * literals, `backward` the clause the two of them imply it by. The bridge
-     * consumes the first and the energy telescope the second.
+     * rows defining it: the flag implying each of its conjuncts, and
+     * `backward` the clause the conjuncts imply it by. The bridge consumes the
+     * first and the energy telescope the second.
      */
     struct ActivityFlag
     {
@@ -162,7 +162,12 @@ namespace
         /// cancels exactly one literal per operand, so a row carrying both
         /// would leave the other behind and the pol would not close.
         ProofLine implies_starts_by, implies_started;
-        /// The two of them implying the flag: what the energy sum telescopes.
+        /// For an optional task, the flag implying its presence: what cancels
+        /// the presence disjunct the pair's separation clause carries.
+        std::optional<ProofLine> implies_present;
+        /// The conjuncts implying the flag: what the energy sum telescopes.
+        /// For an optional task it carries `~present` as well, which the
+        /// closing RUP disposes of (see `activity_flag`).
         ProofLine backward;
     };
 }
@@ -597,19 +602,47 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 return logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ! *zero[i] >= 1_i, ProofLevel::Temporary);
             };
 
+            // An optional task's flag has its presence as a third conjunct, as
+            // Cumulative's `active` does (#1039). The pair's separation clause
+            // carries both presences as disjuncts, and without the conjunct
+            // nothing in the bridge below cancels them: each per-time
+            // at-most-one would keep two stray literals, and the fold's pin,
+            // which states the at-most-one without them, is rejected. With
+            // it, the bridge cancels them against the flags' own forward rows
+            // and stays reason-free, so it can still be kept.
+            //
+            // What the conjunct costs instead is a `~present` in every backward
+            // row, which is exactly the statement that an absent task does no
+            // work. An energy row telescoped from them carries one copy per
+            // time point, and nothing pays it off: it rides through the
+            // consuming pol, and the framework's closing RUP disposes of it,
+            // because every energy rule counts only tasks known present and
+            // the reason carries their presences. Under the reason the term is
+            // false, so the line reads as it would for a mandatory task. That
+            // is Cumulative's treatment of the same term, and paying it off
+            // explicitly instead was tried and is not load-bearing.
             auto activity_flag = [&](size_t i, Integer t) -> const ActivityFlag & {
                 auto key = make_tuple(i, t.raw_value, energy_len(i).raw_value);
                 if (auto found = activity->find(key); found != activity->end())
                     return found->second;
                 auto started = starts[i] >= t - energy_len(i) + 1_i, starts_by = starts[i] < t + 1_i;
-                auto both = WPBSum{} + 1_i * started + 1_i * starts_by >= 2_i;
+                auto conjuncts = WPBSum{} + 1_i * started + 1_i * starts_by;
+                auto degree = 2_i;
+                if (presence[i]) {
+                    conjuncts += 1_i * (*presence[i] == 1_i);
+                    ++degree;
+                }
                 auto flag = logger->create_proof_flag("dovl");
                 auto implies_started =
                     logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * started >= 1_i, flag, rules.overload_vocabulary_at);
                 auto implies_starts_by =
                     logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * starts_by >= 1_i, flag, rules.overload_vocabulary_at);
-                auto backward = logger->emit_red_proof_lines_reverse_reifying(both, flag, rules.overload_vocabulary_at);
-                return activity->emplace(key, ActivityFlag{flag, implies_starts_by, implies_started, backward}).first->second;
+                optional<ProofLine> implies_present;
+                if (presence[i])
+                    implies_present = logger->emit_red_proof_lines_forward_reifying(
+                        WPBSum{} + 1_i * (*presence[i] == 1_i) >= 1_i, flag, rules.overload_vocabulary_at);
+                auto backward = logger->emit_red_proof_lines_reverse_reifying(move(conjuncts) >= degree, flag, rules.overload_vocabulary_at);
+                return activity->emplace(key, ActivityFlag{flag, implies_starts_by, implies_started, implies_present, backward}).first->second;
             };
 
             // Two tasks cannot both occupy time t. This is the step
@@ -657,12 +690,35 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 for (auto r : {i, j})
                     if (auto row = escape_is_false(r))
                         pol.add(*row);
+                pol.divide_by(2_i);
+                // And one carrying presences leaves `~present` for each
+                // optional task, at a coefficient of one after the halving.
+                // The flag's own forward row says the flag implies the
+                // presence, so adding it trades that literal for another copy
+                // of `~flag`, and saturating puts the doubled flag back at one:
+                // the same two-literal clause a mandatory pair lands on.
+                //
+                // Once per presence *variable*, not per task. Two tasks posted
+                // with the same presence put `2 ~present` in the clause, which
+                // the halving takes to one copy, and a second forward row would
+                // then leave a `present` behind that saturation cannot remove.
+                auto optional_pair = false;
+                for (auto r : {i, j}) {
+                    if (r == j && presence[i] && presence[j] == presence[i])
+                        continue;
+                    if (const auto & row = activity_flag(r, t).implies_present) {
+                        pol.add(*row);
+                        optional_pair = true;
+                    }
+                }
+                if (optional_pair)
+                    pol.saturate();
                 // Kept at the vocabulary's level rather than Temporary when it
                 // is to be reused. The rows it was derived from may be deleted
                 // out from under it; a derivation that has already happened
                 // does not need its premises to stay.
                 ++overload_instrumentation.bridge_derived;
-                auto line = pol.divide_by(2_i).emit(*logger, rules.overload_cache_bridge ? rules.overload_vocabulary_at : ProofLevel::Temporary);
+                auto line = pol.emit(*logger, rules.overload_cache_bridge ? rules.overload_vocabulary_at : ProofLevel::Temporary);
                 if (rules.overload_cache_bridge)
                     bridge->emplace(key, line);
                 return line;
@@ -774,6 +830,16 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // as an unsigned magnitude, and the durations have to be constants
             // for the separation rows to be duration-relative. A window failing
             // any of that falls back rather than declining the conflict.
+            //
+            // Nor can it take a window with an optional task in it (#1039),
+            // which sorting_certificate_width refuses. The network is handed
+            // each pair's separation clause as the model states it, and for an
+            // optional pair that carries both presences as disjuncts. They
+            // reach the comparators' case splits as a term the halves carry
+            // and the goal does not, which is the split that
+            // ComparatorNetwork::assume says cannot close, and VeriPB rejects
+            // the subproof. The time-indexed certificate cancels them inside
+            // its activity flags instead, and costs a presence nothing else.
             auto sorting_network_bits = [&](size_t i) -> optional<vector<ProofLiteralOrFlag>> {
                 if (is_var_len(i))
                     return nullopt;
@@ -796,6 +862,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             auto sorting_certificate_width = [&](const vector<size_t> & tasks, Integer hi) -> optional<int> {
                 auto width = static_cast<int>(std::bit_width(static_cast<unsigned long long>(hi.raw_value)));
                 for (auto i : tasks) {
+                    if (presence[i])
+                        return nullopt;
                     auto bits = sorting_network_bits(i);
                     if (! bits)
                         return nullopt;

@@ -7,6 +7,7 @@
 #include <gcs/solve.hh>
 
 #include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -71,11 +72,21 @@ namespace
         pair<int, int> start_range;
         pair<int, int> length;
         pair<int, int> presence;
+        /// Posted with an earlier task's presence variable rather than one of
+        /// its own, as one optional job's two operations on a machine would be.
+        /// `presence` must then say {0, 1} too.
+        optional<size_t> shares_presence_with = nullopt;
     };
 
     [[nodiscard]] auto is_var(pair<int, int> spec) -> bool
     {
         return spec.first != spec.second;
+    }
+
+    /// Whether the task has a presence variable of its own to enumerate.
+    [[nodiscard]] auto owns_presence(const TaskSpec & t) -> bool
+    {
+        return is_var(t.presence) && ! t.shares_presence_with;
     }
 
     // Solutions are (every start, then every *variable* length, then every
@@ -89,7 +100,10 @@ namespace
             for (size_t i = 0; i < n; ++i)
                 length[i] = is_var(tasks[i].length) ? vals.at(k++) : tasks[i].length.first;
             for (size_t i = 0; i < n; ++i)
-                present[i] = is_var(tasks[i].presence) ? vals.at(k++) : tasks[i].presence.first;
+                present[i] = owns_presence(tasks[i]) ? vals.at(k++) : tasks[i].presence.first;
+            for (size_t i = 0; i < n; ++i)
+                if (tasks[i].shares_presence_with)
+                    present[i] = present[*tasks[i].shares_presence_with];
 
             for (size_t i = 0; i < n; ++i)
                 for (size_t j = i + 1; j < n; ++j) {
@@ -116,7 +130,7 @@ namespace
             if (is_var(t.length))
                 ranges.push_back(t.length);
         for (const auto & t : tasks)
-            if (is_var(t.presence))
+            if (owns_presence(t))
                 ranges.push_back(t.presence);
         return ranges;
     }
@@ -138,8 +152,8 @@ namespace
     }
 
     // Post the instance, returning the variables in enumeration order.
-    auto post_optional_disjunctive(Problem & p, const vector<TaskSpec> & tasks, bool strict, DisjunctivePresenceMutation mutation)
-        -> vector<IntegerVariableID>
+    auto post_optional_disjunctive(Problem & p, const vector<TaskSpec> & tasks, bool strict, DisjunctivePresenceMutation mutation,
+        const DisjunctiveRules & rules = {}) -> vector<IntegerVariableID>
     {
         vector<IntegerVariableID> starts, lengths, presences, all_vars;
         for (const auto & t : tasks) {
@@ -157,7 +171,9 @@ namespace
                 lengths.push_back(constant_variable(Integer{t.length.first}));
         }
         for (const auto & t : tasks) {
-            if (is_var(t.presence)) {
+            if (t.shares_presence_with)
+                presences.push_back(presences.at(*t.shares_presence_with));
+            else if (is_var(t.presence)) {
                 auto v = p.create_integer_variable(Integer{t.presence.first}, Integer{t.presence.second});
                 presences.push_back(v);
                 all_vars.push_back(v);
@@ -165,7 +181,7 @@ namespace
             else
                 presences.push_back(constant_variable(Integer{t.presence.first}));
         }
-        p.post(Disjunctive{starts, lengths, presences}.with_strict(strict).with_presence_mutation(mutation));
+        p.post(Disjunctive{starts, lengths, presences}.with_strict(strict).with_rules(rules).with_presence_mutation(mutation));
         return all_vars;
     }
 
@@ -184,6 +200,94 @@ namespace
         auto proof_name = proofs ? make_optional("disjunctive_optional_test_" + tag) : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{all_vars});
         check_results(proof_name, expected, actual);
+    }
+
+    // The energy rules over optional tasks. Each argues over a window's
+    // per-time at-most-ones, and those are folded from the pairwise separation
+    // clauses, which for an optional pair carry both presences as disjuncts
+    // (#1039).
+    struct EnergyRules
+    {
+        string tag;
+        DisjunctiveRules rules;
+    };
+
+    [[nodiscard]] auto energy_rule_sets() -> vector<EnergyRules>
+    {
+        vector<EnergyRules> result;
+        auto add = [&](const string & tag, auto && configure) {
+            DisjunctiveRules r;
+            configure(r);
+            result.push_back(EnergyRules{tag, r});
+        };
+        using enum DisjunctiveOverloadCertificate;
+        add("overload", [](DisjunctiveRules & r) {
+            r.overload = true;
+            r.overload_certificate = TimeIndexed;
+        });
+        add("overload_temporary", [](DisjunctiveRules & r) {
+            r.overload = true;
+            r.overload_certificate = TimeIndexed;
+            r.overload_vocabulary_at = ProofLevel::Temporary;
+        });
+        add("overload_sorting", [](DisjunctiveRules & r) {
+            r.overload = true;
+            r.overload_certificate = SortingNetwork;
+        });
+        add("edge_finding", [](DisjunctiveRules & r) { r.edge_finding = true; });
+        add("nfnl", [](DisjunctiveRules & r) { r.not_first_not_last = true; });
+        add("set_precedences", [](DisjunctiveRules & r) { r.detectable_precedences_set = true; });
+        // The published detection runs inside the not-first / not-last sweep.
+        add("published_nfnl", [](DisjunctiveRules & r) {
+            r.not_first_not_last = true;
+            r.not_first_not_last_published = true;
+        });
+        add("all_temporary", [](DisjunctiveRules & r) {
+            r.detectable_precedences_set = true;
+            r.overload = true;
+            r.edge_finding = true;
+            r.not_first_not_last = true;
+            r.not_first_not_last_published = true;
+            r.overload_vocabulary_at = ProofLevel::Temporary;
+        });
+        // With time-tabling off, the energy rules do most of the propagating,
+        // so they fire far more often. The pairwise precedences stay on, since
+        // the set-based one is run from their sweep.
+        add("all_alone", [](DisjunctiveRules & r) {
+            r.time_table = false;
+            r.detectable_precedences_set = true;
+            r.overload = true;
+            r.edge_finding = true;
+            r.not_first_not_last = true;
+            r.not_first_not_last_published = true;
+        });
+        return result;
+    }
+
+    auto run_energy_test(bool proofs, const string & tag, const vector<TaskSpec> & tasks, bool strict, const DisjunctiveRules & rules) -> bool
+    {
+        print(cerr, "disjunctive{} optional energy {} n={}{}", strict ? "_strict" : "", tag, tasks.size(), proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        set<vector<int>> expected, actual;
+        build_expected(expected, make_is_satisfying(tasks, strict), enumerated_ranges(tasks));
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        auto all_vars = post_optional_disjunctive(p, tasks, strict, disjunctive_presence_mutation::None{}, rules);
+
+        // Every configuration runs whatever an earlier one did, so that a
+        // failure reports the whole pattern rather than the first instance.
+        auto proof_name = proofs ? make_optional("disjunctive_optional_energy_" + tag) : nullopt;
+        try {
+            solve_for_tests(p, proof_name, actual, tuple{all_vars});
+            check_results(proof_name, expected, actual);
+        }
+        catch (const std::exception & e) {
+            println(cerr, "FAILED: disjunctive optional energy {}: {}", tag, e.what());
+            return false;
+        }
+        return true;
     }
 }
 
@@ -239,7 +343,7 @@ namespace
             if (is_var(t.length))
                 ++at;
         for (size_t i = 0; i < task; ++i)
-            if (is_var(tasks[i].presence))
+            if (owns_presence(tasks[i]))
                 ++at;
         return at;
     }
@@ -916,6 +1020,46 @@ auto main(int argc, char * argv[]) -> int
             for (bool strict : {true, false})
                 for (const auto & [tag, tasks] : data)
                     run_optional_test(proofs, tag + (strict ? "_strict" : "_nonstrict"), tasks, strict);
+        }
+    }
+    else if (mode == "energy") {
+        vector<pair<string, vector<TaskSpec>>> data{
+            // #1039's instance: three optional tasks that cannot all fit.
+            {"three", {{{0, 3}, {2, 2}, {0, 1}}, {{0, 3}, {2, 2}, {0, 1}}, {{0, 3}, {2, 2}, {0, 1}}}},
+            // Four, over a horizon with room for three.
+            {"four", {{{0, 4}, {2, 2}, {0, 1}}, {{0, 4}, {2, 2}, {0, 1}}, {{0, 4}, {2, 2}, {0, 1}}, {{0, 4}, {2, 2}, {0, 1}}}},
+            // Optional and mandatory tasks in one window.
+            {"mixed", {{{0, 4}, {2, 2}, {1, 1}}, {{0, 4}, {2, 2}, {0, 1}}, {{0, 4}, {1, 1}, {0, 1}}, {{0, 4}, {2, 2}, {0, 1}}}},
+            // Variable durations, one of them from zero.
+            {"var_length", {{{0, 3}, {1, 2}, {0, 1}}, {{0, 3}, {0, 2}, {0, 1}}, {{0, 3}, {2, 2}, {0, 1}}, {{1, 3}, {1, 1}, {0, 1}}}},
+            // Two tasks sharing one presence variable, whose separation clause
+            // then carries it twice.
+            {"shared", {{{0, 4}, {2, 2}, {0, 1}}, {{0, 4}, {2, 2}, {0, 1}, 0}, {{0, 4}, {2, 2}, {0, 1}}, {{0, 4}, {1, 1}, {0, 1}}}},
+        };
+
+        mt19937 rand(*get_seed());
+        for (int k = 0; k < 4; ++k) {
+            uniform_int_distribution<> n_dist(3, 4), lo_dist(0, 2), span_dist(1, 3), len_dist(1, 3), pres_dist(0, 3), var_len_dist(0, 3);
+            vector<TaskSpec> tasks;
+            auto n = n_dist(rand);
+            for (int i = 0; i < n; ++i) {
+                auto lo = lo_dist(rand);
+                auto len = len_dist(rand);
+                // Mostly optional: the case is a window of several present ones.
+                auto p = pres_dist(rand);
+                auto length = var_len_dist(rand) == 0 ? pair{len - 1, len} : pair{len, len};
+                tasks.push_back(TaskSpec{{lo, lo + span_dist(rand)}, length, p == 0 ? pair{1, 1} : pair{0, 1}});
+            }
+            data.emplace_back("random" + std::to_string(k), tasks);
+        }
+
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                continue;
+            for (const auto & [rules_tag, rules] : energy_rule_sets())
+                for (bool strict : {true, false})
+                    for (const auto & [tag, tasks] : data)
+                        ok &= run_energy_test(proofs, rules_tag + "_" + tag + (strict ? "_strict" : "_nonstrict"), tasks, strict, rules);
         }
     }
     else if (mode == "falsify") {

@@ -308,6 +308,16 @@ shared with `Cumulative`), so a non-optional model's OPB is unchanged
 byte for byte, and a constant 0 drops the task from the constraint
 entirely.
 
+That holds for every *pairwise* rule, and the energy rules are the
+exception (#1039). Their per-time at-most-ones are derived *from* the
+separation clause inside a `pol` (the overload check's bridge, below),
+so an optional pair's presence disjuncts land in each at-most-one, and
+the fold's pin, which states the at-most-one without them, is rejected.
+The answer is `Cumulative`'s: an optional task's
+activity flag carries its presence as a conjunct, and the bridge cancels
+the clause's disjuncts against it. See the time-indexed certificate's
+vocabulary and bridge steps.
+
 Propagation follows `Cumulative`'s rules and for its reasons: an
 absent task is dropped; an **undecided** task contributes no mandatory
 part, is in nobody's blocker set, is not a detected predecessor or
@@ -403,6 +413,16 @@ per operand, so the other survives and the `pol` never closes. Two
 forward-reifying `red`s, one per conjunct, and one reverse-reifying
 `red` on the conjunction for the backward clause.
 
+An **optional** task's flag has its presence as a third conjunct, and a
+third forward `red` (#1039):
+
+```
+act_{i,t}  <->  s_i ≥ t − p_i + 1  AND  s_i < t + 1  AND  presences[i] = 1
+```
+
+which is `Cumulative`'s `active` exactly, and for the same reason: it
+is what lets a statement about activity say nothing about presence.
+
 **(2) The bridge.** Two tasks cannot both occupy time `t`:
 
 ```
@@ -415,6 +435,21 @@ two operands' order-literal definitions; the starts cancel and the
 degree lands on `p_x + (t − p_x + 1) − t = 1`. The two directions plus
 the separation clause pair the `before` literals off into a constant,
 and halving is exact.
+
+For an optional pair the clause also carries `¬present_i ∨ ¬present_j`,
+and those survive the halving at a coefficient of one. Adding each
+optional task's flag-implies-presence row trades the literal for a
+second copy of `¬act`, and saturating puts the doubled flag back at
+one: the same two-literal clause a mandatory pair lands on, still
+reason-free and so still cacheable. The row is added once per presence
+*variable*: two tasks posted with the same presence (one optional job's
+two operations on a machine) put it in the clause twice, the halving
+leaves one copy, and a second row would leave a `present` behind that
+saturation cannot remove. Without the third conjunct nothing
+cancels them, and VeriPB rejects the fold's pin, which states the
+at-most-one without them. That is so for a fold over two members as
+well as over more: the issue met it only on instances of three optional
+tasks or more, but its test lane rejects two-member folds too.
 
 **Getting from the pairwise encoding to a statement about a time point
 is arithmetic, not propagation.** The `RupOverloadBridge` mutation lane
@@ -434,6 +469,18 @@ the task starts inside it) and above (which fail because it finishes
 inside), one reason-wrapped RUP each. The folds say the window holds at
 most one task per time, the energies say the tasks need more than that,
 and the framework's closing RUP has nothing left to do.
+
+An optional task's backward rows each carry `¬present` as well, so its
+energy row carries one copy per time point summed, as `Cumulative`'s
+does. Nothing pays it off. It rides through the consuming `pol` to the
+closing RUP, which disposes of it, because every energy rule counts only
+tasks known present and the reason carries their presences. Under the
+reason the term is false, and the line reads as it would for a mandatory
+task. The same goes for the guarded rows edge-finding and the rules after
+it cite, which are sums of the same backward rows. Paying the term off
+explicitly, one reason-wrapped RUP per task per firing, was tried and
+ablated at each of the four sites that cite an energy row, and it is not
+load-bearing.
 
 Per firing that is `O(w²)` bridges per time point, so `O(w²H)` in the
 window's span — or `O(wH)` once the pairs have been seen, which is what
@@ -479,10 +526,19 @@ Three things are worth carrying away from it:
   no better than two rows guarded by different reasons.
 
 Not every window can take it: a variable duration, a view or signed
-start, or a width past 40 bits all refuse, and **a refused window falls
-back to the time-indexed certificate rather than declining the
-conflict** — a certificate that is merely more expensive is not a reason
-to lose an inference.
+start, an optional task, or a width past 40 bits all refuse, and **a
+refused window falls back to the time-indexed certificate rather than
+declining the conflict** — a certificate that is merely more expensive
+is not a reason to lose an inference.
+
+The optional task is #1039's. The network takes each pair's separation
+clause as the model states it, and an optional pair's carries both
+presences. They reach the comparators' case splits as a term the halves
+carry and the goal does not, which is the split `assume` exists to
+avoid, and VeriPB rejects the subproof. `ComparatorNetwork` has optional
+tasks of its own (`add_optional_task`, which 2D's relaxation uses), but
+they park an absent task at the top of a window the model fixes, which a
+propagator's reason-guarded window is not.
 
 ### Where the time index lives, and what caches
 

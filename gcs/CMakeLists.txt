@@ -716,7 +716,7 @@ if(GCS_BUILD_TESTS)
         add_test(NAME disjunctive_constraint_${mode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_test> ${mode})
     endforeach()
-    foreach(mode enumerate falsify bijection cumulative objective)
+    foreach(mode enumerate falsify bijection cumulative objective energy)
         add_test(NAME disjunctive_optional_constraint_${mode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_optional_test> ${mode})
     endforeach()
