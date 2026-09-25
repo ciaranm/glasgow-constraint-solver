@@ -36,8 +36,9 @@ the speed**: first CP solver with *certified* system-level parity reasoning.
 "Fastest" is not the claim and should not be made.
 
 The proof technique is Gocht and Nordström, *Certifying Parity Reasoning
-Efficiently Using Pseudo-Boolean Proofs* (AAAI 2022, arXiv:2209.12185); section
-numbers below are theirs. What is new here is not the technique but the bridge:
+Efficiently Using Pseudo-Boolean Proofs* (AAAI 2021; the extended version is
+arXiv:2209.12185, 2022); section numbers below are the extended version's, since
+the AAAI paper has no numbered subsections. What is new here is not the technique but the bridge:
 their §4.4 recovers the pseudo-Boolean form of an XOR from a *CNF* encoding it
 did not write, by brute force over all assignments. We wrote our encoding, and
 it is already the split-into-3-XORs shape their (4.15) describes, so we get the
