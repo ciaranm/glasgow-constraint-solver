@@ -58,8 +58,11 @@ namespace gcs
      */
     struct DisjunctiveRules
     {
-        /// Time-table: the mandatory-part load profile, its overflow
-        /// contradiction and the bound pushes away from blocked times.
+        /// Time-table: the bound pushes away from times the mandatory-part
+        /// load profile blocks, and the presence falsification built on the
+        /// same profile. Not the mandatory-overlap contradiction, which runs
+        /// whatever this says: at an all-fixed leaf it is what checks the
+        /// assignment, so turning time-tabling off cannot admit an overlap.
         bool time_table = true;
 
         /// Detectable precedences: a pair whose ordering is forced by bounds
