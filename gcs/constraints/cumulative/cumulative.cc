@@ -1978,9 +1978,16 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 mand_load[(t - t_lo).raw_value] += hlb(i);
     }
 
-    if (rules.time_table)
-        ++cumulative_counters[rule_time_table_overflow].calls;
-    for (auto idx = 0; rules.time_table && idx < range; ++idx)
+    // The overflow contradiction runs whatever the rule selection is, as
+    // Disjunctive's mandatory-overlap contradiction does: at an all-fixed leaf
+    // every present task's mandatory part is its whole active interval, so this
+    // scan is what makes the propagator a *checker*. Nothing else is: the
+    // overload check speaks only about eligible tasks against a constant
+    // capacity, and with this scan gated on `rules.time_table` an overloaded
+    // assignment was accepted (#1037). Only the bound pushes below are
+    // time-tabling's to switch off.
+    ++cumulative_counters[rule_time_table_overflow].calls;
+    for (auto idx = 0; idx < range; ++idx)
         if (mand_load[idx] > capacity) {
             auto violating_t = t_lo + Integer{idx};
 

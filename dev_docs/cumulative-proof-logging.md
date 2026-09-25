@@ -118,6 +118,17 @@ unit propagation from the bound literals `s_i ≥ lb(s_i)` and
 If `mand_load[t] = Σ_{i mandatory at t} h_i > capacity`, then `C_t`
 can't be satisfied: the mandatory tasks alone already overflow.
 
+This contradiction runs whatever the rule selection is, and
+`CumulativeRules::time_table = false` switches off only the bound pushes
+of inferences 2 and 3. At an all-fixed leaf every present task's
+mandatory part is its whole active interval, so this scan is what makes
+the propagator a checker. Nothing else is: the overload check only
+speaks about eligible tasks against a constant capacity. When it was
+gated on the rule, two unit tasks of length 2 on capacity 1 with starts
+in `{0, 1}` (direct-only encoded, so outside the overload check) had
+all four overlapping assignments accepted (#1037). `Disjunctive`'s
+mandatory-overlap contradiction is unswitchable for the same reason.
+
 ### Proof emission
 
 In the `JustifyExplicitly{

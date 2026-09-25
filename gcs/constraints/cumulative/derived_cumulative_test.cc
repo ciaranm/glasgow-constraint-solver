@@ -37,6 +37,7 @@
 
 using std::cerr;
 using std::flush;
+using std::get;
 using std::getline;
 using std::ifstream;
 using std::make_optional;
@@ -625,9 +626,10 @@ auto main(int argc, char * argv[]) -> int
 
     // The derived propagator has to be the one doing the work, not a
     // bystander watching the donor do it. With the donor's own rules turned off
-    // it infers nothing at all, so every inference in this solve --- and every
-    // justification --- comes from the derived constraint, over the donor's
-    // flags and its own derived rows.
+    // it pushes no bound at all, so every inference in this solve comes from
+    // the derived constraint, over the donor's flags and its own derived rows.
+    // (The donor still checks: its profile overflow contradiction runs whatever
+    // the rules say, #1037, so some conflicts may be its own.)
     {
         const CumulativeRules silent{.time_table = false, .overload = false, .profile_overload = false};
 
@@ -642,8 +644,8 @@ auto main(int argc, char * argv[]) -> int
             fail("carrying demo: solutions do not match brute force with the donor silent");
         if (derived_working.recursions >= donor_silent.recursions)
             fail("carrying demo: the derived constraint pruned nothing (" + std::to_string(derived_working.recursions) + " nodes against " +
-                std::to_string(donor_silent.recursions) + " with nothing propagating), so its proof path is untested");
-        println(cerr, "derived propagator carrying alone: {} nodes against {} with nothing propagating", derived_working.recursions,
+                std::to_string(donor_silent.recursions) + " with the donor only checking), so its proof path is untested");
+        println(cerr, "derived propagator carrying alone: {} nodes against {} with the donor only checking", derived_working.recursions,
             donor_silent.recursions);
     }
 
@@ -931,7 +933,7 @@ auto main(int argc, char * argv[]) -> int
                 p.add_presolver(presolver);
 
             set<vector<int>> solutions;
-            solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+            auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
                 vector<int> solution;
                 for (const auto & v : starts)
                     solution.push_back(s(v).raw_value);
@@ -941,19 +943,19 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             }},
                 proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
-            return pair{move(solutions), installed};
+            return tuple{move(solutions), installed, stats.recursions};
         };
 
-        auto [with_derived, installed] = solve_variable_lengths(true, proofs ? make_optional("derived_cumulative_variable_lengths") : nullopt);
+        auto [with_derived, installed, with_recursions] =
+            solve_variable_lengths(true, proofs ? make_optional("derived_cumulative_variable_lengths") : nullopt);
         if (proofs) {
             if (! *installed)
                 fail("a derived constraint over a variable-duration donor was not installed");
             verify_proof_and_clean_up("derived_cumulative_variable_lengths");
         }
 
-        // Against brute force rather than against the donor: with every rule
-        // off the donor is not even a checker, so what the derived constraint
-        // has to agree with is the model, not it.
+        // Against brute force rather than against the donor: what the derived
+        // constraint has to agree with is the model.
         set<vector<int>> expected;
         vector<pair<int, int>> ranges{{0, 6}, {0, 6}};
         ranges.insert(ranges.end(), length_ranges.begin(), length_ranges.end());
@@ -974,12 +976,14 @@ auto main(int argc, char * argv[]) -> int
         if (with_derived != expected)
             fail("a derived constraint over a variable-duration donor does not agree with brute force");
 
-        // Not a no-op: with every rule off the donor prunes nothing, so every
-        // node the search did not have to visit is the derived constraint's
-        // doing, and its pins are what wrote the proof above.
-        auto without_derived = solve_variable_lengths(false, nullopt).first;
-        if (without_derived.size() <= with_derived.size())
-            fail("the donor rejected as much as the derived constraint did, so the fixture proves nothing");
+        // Not a no-op: with every rule off the donor pushes no bound, and only
+        // rejects an overlap once both tasks are fixed enough for it to be
+        // mandatory (#1037), so every node the search did not have to visit is
+        // the derived constraint's doing, and its pins are what wrote the proof
+        // above.
+        auto without_recursions = get<2>(solve_variable_lengths(false, nullopt));
+        if (without_recursions <= with_recursions)
+            fail("the donor pruned as much as the derived constraint did, so the fixture proves nothing");
     }
 
     /* The same donor, with one task whose start and length are both variables
@@ -1020,7 +1024,7 @@ auto main(int argc, char * argv[]) -> int
                 p.add_presolver(presolver);
 
             set<vector<int>> solutions;
-            solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+            auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
                 vector<int> solution;
                 for (const auto & v : starts)
                     solution.push_back(s(v).raw_value);
@@ -1030,10 +1034,11 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             }},
                 proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
-            return pair{move(solutions), installed};
+            return tuple{move(solutions), installed, stats.recursions};
         };
 
-        auto [with_derived, installed] = solve_zero_width_end(true, proofs ? make_optional("derived_cumulative_zero_width_end") : nullopt);
+        auto [with_derived, installed, with_recursions] =
+            solve_zero_width_end(true, proofs ? make_optional("derived_cumulative_zero_width_end") : nullopt);
         if (proofs) {
             if (! *installed)
                 fail("a derived constraint over a donor with a zero-width end proxy was not installed");
@@ -1060,12 +1065,13 @@ auto main(int argc, char * argv[]) -> int
         if (with_derived != expected)
             fail("a derived constraint over a zero-width end proxy does not agree with brute force");
 
-        // Not a no-op: with every donor rule off nothing else rejects the
-        // overlap at time -1, so the solutions the derived constraint removes
-        // are exactly the ones its pins had to justify.
-        auto without_derived = solve_zero_width_end(false, nullopt).first;
-        if (without_derived.size() <= with_derived.size())
-            fail("the donor rejected as much as the derived constraint did, so the fixture proves nothing");
+        // Not a no-op: with every donor rule off the donor pushes nothing away
+        // from the overlap at time -1, and only rejects it at a node where it
+        // has become mandatory (#1037), so the nodes the derived constraint
+        // saves are the ones its pins had to justify.
+        auto without_recursions = get<2>(solve_zero_width_end(false, nullopt));
+        if (without_recursions <= with_recursions)
+            fail("the donor pruned as much as the derived constraint did, so the fixture proves nothing");
     }
 
     /* And the caller error the publication makes catchable: a derived task that

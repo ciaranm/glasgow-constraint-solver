@@ -97,8 +97,15 @@ namespace gcs
      */
     struct CumulativeRules
     {
-        /// Time-table: the mandatory-part load profile, its overflow
-        /// contradiction and the bound pushes away from blocked times.
+        /// Time-table: the bound pushes away from times the mandatory-part
+        /// load profile blocks.
+        ///
+        /// The profile's overflow contradiction is *not* switched off with it:
+        /// that scan is what checks a fully assigned state, so it runs whatever
+        /// this says, as Disjunctive's mandatory-overlap contradiction does.
+        /// Turning this off is only useful for isolating another rule in a
+        /// test, or for a derived constraint whose donor already draws every
+        /// time-table inference it could.
         bool time_table = true;
 
         /// The overload check: a window whose fully-contained tasks carry more

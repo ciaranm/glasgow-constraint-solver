@@ -31,6 +31,7 @@ using std::max;
 using std::min;
 using std::mt19937;
 using std::nullopt;
+using std::optional;
 using std::pair;
 using std::set;
 using std::tuple;
@@ -51,11 +52,11 @@ using namespace gcs::test_innards;
 namespace
 {
     auto run_cumulative_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<pair<int, int>> & start_ranges, const vector<int> & lengths,
-        const vector<int> & heights, int capacity) -> void
+        const vector<int> & heights, int capacity, const optional<CumulativeRules> & rules = nullopt) -> void
     {
         auto wraps = wraps_for_positions(view_cfg, static_cast<int>(start_ranges.size()));
-        print(cerr, "cumulative [{}] {} {} {} c={}{}", view_wrap_config_label(view_cfg), start_ranges, lengths, heights, capacity,
-            proofs ? " with proofs:" : ":");
+        print(cerr, "cumulative [{}] {} {} {} c={}{}{}", view_wrap_config_label(view_cfg), start_ranges, lengths, heights, capacity,
+            rules ? " (time-table pushes off)" : "", proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = start_ranges.size();
@@ -94,7 +95,10 @@ namespace
         for (auto h : heights)
             heights_i.push_back(Integer{h});
 
-        p.post(Cumulative{starts, lengths_i, heights_i, Integer{capacity}});
+        auto cumulative = Cumulative{starts, lengths_i, heights_i, Integer{capacity}};
+        if (rules)
+            cumulative.with_rules(*rules);
+        p.post(std::move(cumulative));
 
         auto proof_name = proofs ? make_optional("cumulative_test_" + view_wrap_config_label(view_cfg)) : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{starts});
@@ -335,7 +339,7 @@ namespace
     // this the shapes issue #969 is about cannot be expressed here at all.
     auto run_cumulative_full_test(bool proofs, const std::string & tag, const vector<pair<int, int>> & start_ranges,
         const vector<pair<int, int>> & length_specs, const vector<pair<int, int>> & height_specs, pair<int, int> cap_spec,
-        const vector<size_t> & force_length_var = {}) -> void
+        const vector<size_t> & force_length_var = {}, const optional<CumulativeRules> & rules = nullopt) -> void
     {
         auto n = start_ranges.size();
         vector<bool> lvar(n), hvar(n);
@@ -347,8 +351,8 @@ namespace
             lvar.at(i) = true;
         bool cvar = cap_spec.first != cap_spec.second;
 
-        print(cerr, "cumulative full {} starts={} lspecs={} hspecs={} cap=[{},{}] forced_lvar={}{}", tag, start_ranges, length_specs, height_specs,
-            cap_spec.first, cap_spec.second, force_length_var, proofs ? " with proofs:" : ":");
+        print(cerr, "cumulative full {} starts={} lspecs={} hspecs={} cap=[{},{}] forced_lvar={}{}{}", tag, start_ranges, length_specs, height_specs,
+            cap_spec.first, cap_spec.second, force_length_var, rules ? " (time-table pushes off)" : "", proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto is_satisfying = [&](const vector<int> & vals) {
@@ -412,7 +416,10 @@ namespace
             heights_v.push_back(make(height_specs[i], hvar[i]));
         IntegerVariableID cap = make(cap_spec, cvar);
 
-        p.post(Cumulative{starts, lengths_v, heights_v, cap});
+        auto cumulative = Cumulative{starts, lengths_v, heights_v, cap};
+        if (rules)
+            cumulative.with_rules(*rules);
+        p.post(std::move(cumulative));
 
         auto proof_name = proofs ? make_optional("cumulative_test_full_" + tag) : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{all_vars});
@@ -613,6 +620,19 @@ auto main(int argc, char * argv[]) -> int
         for (auto & [sr, lens, hts, cap] : data)
             run_cumulative_test(proofs, view_cfg, sr, lens, hts, cap);
 
+        // Issue #1037: with every rule off, the time-table overflow
+        // contradiction still has to run, because it is the only thing that
+        // checks an assignment. Two unit tasks of length two on capacity one,
+        // with starts in {0, 1}, overlap under every assignment; the starts are
+        // direct-only encoded, so the overload check cannot see them either.
+        // Gated on the rule, this accepted all four assignments. Then the whole
+        // corpus again, which must enumerate the same solutions.
+        const CumulativeRules no_rules{.time_table = false, .overload = false, .profile_overload = false};
+        run_cumulative_test(proofs, view_cfg, {{0, 1}, {0, 1}}, {2, 2}, {1, 1}, 1, CumulativeRules{.time_table = false});
+        run_cumulative_test(proofs, view_cfg, {{0, 1}, {0, 1}}, {2, 2}, {1, 1}, 1, no_rules);
+        for (auto & [sr, lens, hts, cap] : data)
+            run_cumulative_test(proofs, view_cfg, sr, lens, hts, cap, no_rules);
+
         // Dup tests use bare variables (the harness duplicates a handle into
         // several task positions); only run them when no wrapping is in
         // effect, to avoid duplicating the bare coverage under every wrap.
@@ -705,6 +725,13 @@ auto main(int argc, char * argv[]) -> int
             // One degenerate task alongside a healthy one, which is how this
             // was found: the degenerate task poisoned the whole constraint.
             run_cumulative_full_test(proofs, "zero_width_end_mixed", {{-1, -1}, {0, 3}}, {{1, 1}, {1, 2}}, {{1, 1}, {1, 1}}, {1, 1}, {0});
+
+            // Issue #1037 again, over variable durations, heights and
+            // capacities: at a leaf the overflow check reads each task at its
+            // fixed length and height against the fixed capacity.
+            run_cumulative_full_test(proofs, "len_wide_no_rules", {{0, 6}, {0, 6}}, {{3, 5}, {3, 5}}, {{1, 1}, {1, 1}}, {1, 1}, {}, no_rules);
+            run_cumulative_full_test(proofs, "mrcpsp_no_rules", {{0, 4}, {0, 4}}, {{1, 3}, {2, 3}}, {{1, 2}, {1, 2}}, {2, 2}, {}, no_rules);
+            run_cumulative_full_test(proofs, "full_no_rules", {{0, 3}, {0, 3}}, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}}, {2, 3}, {}, no_rules);
         }
     }
 
