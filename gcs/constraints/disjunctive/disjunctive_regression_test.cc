@@ -196,6 +196,18 @@ namespace
         r.not_last = not_last;
         return r;
     }
+
+    /// The published not-first / not-last rule over a Temporary vocabulary,
+    /// as `examples/rcpsp` runs it.
+    auto published_temporary_rules() -> DisjunctiveRules
+    {
+        DisjunctiveRules r;
+        r.overload = true;
+        r.not_first_not_last = true;
+        r.not_first_not_last_published = true;
+        r.overload_vocabulary_at = innards::ProofLevel::Temporary;
+        return r;
+    }
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -268,6 +280,17 @@ auto main(int argc, char * argv[]) -> int
             .strict = false,
             .rules = rules(true, true, true, false, false, true, false, false, true, true),
             .branching = Branching::InOrderSmallestFirst},
+
+        // The published not-first / not-last rule's shortcut, for a contained
+        // task with no room in the derived window, cited the cached escape
+        // row. Under a Temporary vocabulary that row belonged to an earlier
+        // firing and had been deleted (issue #1084).
+        Fixture{.name = "published_shortcut_temporary_escape",
+            .domains = {{4, 8}, {4, 8}, {3, 7}, {1, 2}, {1, 3}},
+            .tasks = {Task{var(0), constant(2)}, Task{var(1), var(3)}, Task{var(2), var(4)}},
+            .strict = false,
+            .rules = published_temporary_rules(),
+            .branching = Branching::Default},
     };
 
     for (const auto & f : fixtures) {

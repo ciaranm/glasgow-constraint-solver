@@ -1245,6 +1245,20 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     if (std::holds_alternative<disjunctive_proof_mutation::PublishedEmitNothing>(mutation))
                         return;
 
+                    // As edge-finding: a Temporary vocabulary does not outlive
+                    // the firing that made it, so what the caches hold has been
+                    // deleted and citing it would be citing a dead row. This
+                    // comes before the shortcut below, not just before the
+                    // energy path: the shortcut's clause cites the cached
+                    // escape row too (issue #1084).
+                    if (ProofLevel::Top != rules.overload_vocabulary_at) {
+                        activity->clear();
+                        bridge->clear();
+                        floors->clear();
+                        escapes->clear();
+                        guarded->clear();
+                    }
+
                     // A contained task with no room for itself in the derived
                     // window needs no energy argument: its two guards are
                     // already contradictory, so the clause taken at the task's
@@ -1271,17 +1285,6 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     auto tasks = members;
                     tasks.push_back(j);
                     pin_escapes(reason, tasks);
-
-                    // As edge-finding: a Temporary vocabulary does not outlive
-                    // the firing that made it, so what the caches hold has been
-                    // deleted and citing it would be citing a dead row.
-                    if (ProofLevel::Top != rules.overload_vocabulary_at) {
-                        activity->clear();
-                        bridge->clear();
-                        floors->clear();
-                        escapes->clear();
-                        guarded->clear();
-                    }
 
                     for (auto i : members)
                         for (Integer t = lo; t < hi; ++t)
