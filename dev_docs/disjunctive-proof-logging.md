@@ -1475,6 +1475,19 @@ Three things that went wrong on the way, so they are not rediscovered:
   facts and the network takes no guard, so it cannot stand in for route
   B's per-firing certificate at a node with a tighter window. The two
   coexist.
+- **Parking makes the constants quadratic in the window (#1082).** The
+  parking rows carry `K` on every duration bit, and their case splits
+  divide by `(1 + K)·span`, which for a window from zero is about
+  `2^(2·width)`. The members' 40-bit gate, which is sized for the
+  pinned-duration network time-tabling uses (linear in `span`), let
+  through windows this overflowed from 2^31 on, and `Integer` threw
+  part-way through a solve with proofs on while the same solve with them
+  off went ahead. So `prepare()` also asks
+  `ComparatorNetwork::fits_optional_tasks` of each axis's window, and an
+  axis that fails it runs none of the rules citing the row (the three
+  energetic rungs and `cumulative_projection`), proofs or not. It is the
+  window that decides and not the width: four units starting at 2^38
+  make a 39-bit network that fits.
 
 Cost is `O(n³)` per time point, cached at Top: about `1.4 KB·n³` of
 proof at narrow widths (`route_a_probe_test`). On `examples/squares`

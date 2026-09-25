@@ -372,6 +372,25 @@ namespace gcs::innards
         explicit ComparatorNetwork(ProofLogger &, int width, Integer window_lo, Integer window_hi, ProofLevel,
             ComparatorNetworkMutation = comparator_network_mutation::None{});
 
+        /**
+         * Whether a network of this width over `[window_lo, window_hi)` can
+         * take \ref add_optional_task without its arithmetic overflowing
+         * Integer.
+         *
+         * Optional tasks are the one mode whose constants are *quadratic* in
+         * the window: the parking rows carry the window's width `K` on every
+         * duration bit, and their case splits divide by `(1 + K) * span`,
+         * which is the largest value the mode computes (the inactive half's
+         * `K * duration + span` is at most it, a duration being at most
+         * `span`). At `window_lo = 0` that is about `2^(2 * width)`, so such a
+         * window fits only up to a width of 31 bits, where a pinned-duration
+         * network is linear in `span` and goes much wider. A caller whose
+         * inferences must not depend on whether proofs are on decides this
+         * from the model, before search, rather than meeting the overflow in
+         * the middle of one.
+         */
+        [[nodiscard]] static auto fits_optional_tasks(int width, Integer window_lo, Integer window_hi) -> bool;
+
         [[nodiscard]] auto width() const -> int;
         [[nodiscard]] auto span() const -> Integer;
         [[nodiscard]] auto big() const -> Integer;
@@ -443,7 +462,8 @@ namespace gcs::innards
          *
          * `start` must fit the window --- `window_lo <= start` and `start +
          * duration <= window_hi` must close by propagation from the model's
-         * bound rows --- and `duration` must be positive.
+         * bound rows --- and `duration` must be positive. The network itself
+         * must pass \ref fits_optional_tasks.
          */
         [[nodiscard]] auto add_optional_task(const ProofLiteralOrFlag & active, const ProofWire & start, Integer duration, const std::string & stem)
             -> ProofWire;
