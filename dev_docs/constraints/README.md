@@ -138,7 +138,8 @@ constraints and do not restate it.
   that each wake rescans the literals from the front, so one 2,774-literal
   clause is three quarters of `network_50_cstr`'s propagation (#1060). Twice as
   fast as Gecode on `grid-colouring`; the half-reified forms reach only CPMpy
-  and the `.scp`, and cannot chain through cake yet (#953).
+  and the `.scp`, and cannot chain through cake yet, which has no rule for
+  them.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
