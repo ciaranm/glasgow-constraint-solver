@@ -79,9 +79,16 @@ auto NValue::define_proof_model(ProofModel & model, const State &) -> void
 
 auto NValue::install_propagators(Propagators & propagators) -> void
 {
+    // Both bounds are computed from the array alone, and the only thing
+    // inferred is a bound on n_values, so once a run has clipped n_values a
+    // change to it alone cannot enable anything: it is in scope (for degree,
+    // and for the aliasing check that guards the idempotence claim below) but
+    // arms no wake, and holes in it affect nothing (issue #1053). If n_values
+    // aliases an array position, that position's own trigger still wakes us.
     Triggers triggers;
-    triggers.on_bounds.emplace_back(_n_values);
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
+    triggers.scope_only.emplace_back(_n_values);
+    triggers.holes_affect_propagation = _vars;
 
     vector<IntegerVariableID> all_vars = _vars;
     all_vars.push_back(_n_values);
@@ -116,7 +123,10 @@ auto NValue::install_propagators(Propagators & propagators) -> void
             inference.infer(
                 logger, n_values >= max(distinct_floor, Integer(all_definite_values.size())), JustifyUsingRUP{hints::NValue{owner}}, reason);
 
-            return PropagatorState::Enable;
+            // Nothing above changes the array, so a second run would compute
+            // the same two bounds. The engine ignores this claim if n_values
+            // aliases an array position.
+            return PropagatorState::EnableButIdempotent;
         },
         triggers);
 }

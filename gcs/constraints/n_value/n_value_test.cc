@@ -105,6 +105,51 @@ auto run_dup_n_value_test(bool proofs, const vector<pair<int, int>> & unique_dom
     check_results(proof_name, expected, actual);
 }
 
+// Aliased-count test: the result is an array entry, or a view of one. The
+// propagator claims idempotence and does not wake on the result, on the
+// grounds that it never reads it; both are only true when the result does not
+// alias an array position, so here the engine must ignore the claim and the
+// entry's own trigger must wake it (issue #1053).
+auto run_aliased_count_test(
+    bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, int result_source, bool negate, int offset) -> void
+{
+    print(cerr, "nvalue aliased count domains={} positions={} result={}x{}{:+}{}", unique_domains, positions, negate ? "-" : "", result_source,
+        offset, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected,
+        [&](const vector<int> & vals) -> bool {
+            set<int> distinct;
+            for (auto pos : positions)
+                distinct.insert(vals.at(pos));
+            auto r = (negate ? -vals.at(result_source) : vals.at(result_source)) + offset;
+            return cmp_equal(r, distinct.size());
+        },
+        unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<SimpleIntegerVariableID> unique_simple_vars;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains) {
+        unique_simple_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+        unique_vars.push_back(unique_simple_vars.back());
+    }
+    IntegerVariableID result = unique_simple_vars.at(result_source);
+    if (negate || 0 != offset)
+        result = ViewOfIntegerVariableID{unique_simple_vars.at(result_source), negate, Integer(offset)};
+    vector<IntegerVariableID> array;
+    for (auto pos : positions)
+        array.push_back(unique_vars.at(pos));
+    p.post(NValue{result, array});
+
+    auto proof_name = proofs ? make_optional("n_value_test_aliased_count") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -171,6 +216,18 @@ auto main(int argc, char * argv[]) -> int
             run_dup_n_value_test(proofs, {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 3});
             // {x, x, y, y} — distinct count is 1 or 2.
             run_dup_n_value_test(proofs, {{1, 3}, {1, 3}}, {0, 0, 1, 1}, {0, 3});
+            // NValue(x, [x]) with x in {2, 3}: the first run clips x to 2,
+            // which shrinks the union to {2}, so only a second run sees that
+            // no solution is left.
+            run_aliased_count_test(proofs, {{2, 3}}, {0}, 0, false, 0);
+            // The same shape through a view: x + 1 and -x + 4 over x in {1, 2}.
+            run_aliased_count_test(proofs, {{1, 2}}, {0}, 0, false, 1);
+            run_aliased_count_test(proofs, {{1, 2}}, {0}, 0, true, 4);
+            run_aliased_count_test(proofs, {{1, 3}}, {0}, 0, false, 0);
+            run_aliased_count_test(proofs, {{1, 3}, {1, 3}, {1, 3}}, {0, 1, 2}, 0, false, 0);
+            run_aliased_count_test(proofs, {{1, 3}, {1, 3}, {1, 3}}, {0, 1, 2}, 0, true, 4);
+            run_aliased_count_test(proofs, {{0, 3}, {0, 3}, {0, 3}}, {0, 1, 2}, 1, false, 1);
+            run_aliased_count_test(proofs, {{1, 4}, {1, 4}, {1, 4}, {1, 4}}, {0, 1, 2, 3}, 2, true, 5);
         }
     }
 
