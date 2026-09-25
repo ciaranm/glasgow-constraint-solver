@@ -33,7 +33,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::make_shared;
 using std::nullopt;
 using std::optional;
 using std::pair;
@@ -204,12 +203,16 @@ namespace
     // watches, and the unit case just infers and leaves the consumed watch to be
     // restored on backtrack. Hoisted into a named template for the MSVC-C1001 reason
     // noted above (a generic-on-inference lambda nesting further lambdas).
-    template <typename Vars_, typename Tuples_, typename SetUp_, typename Owner_, typename Inference_>
-    auto propagate_negative_table_refined(const Vars_ & vars, const Tuples_ & tuples, const SetUp_ & set_up, const Owner_ & owner,
-        const Reason & reason, const State & state, Inference_ & inference, ProofLogger * const logger, const RefinedWatchContext & ctx)
-        -> PropagatorState
+    //
+    // A watch's payload is its tuple's index; its tuple's watch_state key is one
+    // more than that, key 0 holding how many tuples have been armed so far.
+    template <typename Vars_, typename Tuples_, typename Owner_, typename Inference_>
+    auto propagate_negative_table_refined(const Vars_ & vars, const Tuples_ & tuples, const Owner_ & owner, const Reason & reason,
+        const State & state, Inference_ & inference, ProofLogger * const logger, const RefinedWatchContext & ctx) -> PropagatorState
     {
         const auto & tuple_data = depointinate(tuples);
+        constexpr std::uint32_t set_up_key = 0;
+        auto state_key = [](size_t ti) { return static_cast<std::uint32_t>(ti + 1); };
         auto pack = [](size_t a, size_t b) -> std::uint64_t { return (static_cast<std::uint64_t>(a) << 32) | static_cast<std::uint32_t>(b); };
 
         // A not-broken position other than skip1/skip2 to place a watch on. A
@@ -226,11 +229,15 @@ namespace
         };
 
         if (ctx.fired_payloads().empty()) {
-            // First (root) run -- the only time this propagator runs un-fired: arm two
+            // A root run -- the only time this propagator runs un-fired: arm two
             // watches for every tuple not yet set up (all of them, once). This arming
-            // lives in the persistent root epoch, so the non-backtrackable set_up
-            // counter stays in step with the restored watches across restarts.
-            for (size_t ti = *set_up; ti < tuple_data.size(); ++ti) {
+            // lives in the persistent root epoch, so a restart's root re-propagation
+            // finds it still there. The count of tuples armed is in watch_state,
+            // restored with the watches, because the first root run need not be the
+            // real one: the AutoTable presolver propagates at the root of a search of
+            // its own and backtracks out of it, and a count that survived that would
+            // leave the real root arming nothing (issue #1106).
+            for (size_t ti = ctx.watch_state(set_up_key); ti < tuple_data.size(); ++ti) {
                 const auto & t = tuple_data[ti];
                 auto key = static_cast<std::uint32_t>(ti);
                 auto w1 = find_unbroken(t, no_watch, no_watch);
@@ -240,15 +247,16 @@ namespace
                 if (! w2) {
                     inference.infer(logger, vars[*w1] != t[*w1], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
                     ctx.watch(vars[*w1] == t[*w1], key);
-                    ctx.set_watch_state(key, pack(*w1, *w1));
+                    ctx.set_watch_state(state_key(ti), pack(*w1, *w1));
                 }
                 else {
                     ctx.watch(vars[*w1] == t[*w1], key);
                     ctx.watch(vars[*w2] == t[*w2], key);
-                    ctx.set_watch_state(key, pack(*w1, *w2));
+                    ctx.set_watch_state(state_key(ti), pack(*w1, *w2));
                 }
             }
-            *set_up = tuple_data.size();
+            if (ctx.watch_state(set_up_key) != tuple_data.size())
+                ctx.set_watch_state(set_up_key, tuple_data.size());
             return PropagatorState::Enable;
         }
 
@@ -264,7 +272,7 @@ namespace
         for (size_t ti : fired) {
             const auto & t = tuple_data[ti];
             auto key = static_cast<std::uint32_t>(ti);
-            auto packed = ctx.watch_state(key);
+            auto packed = ctx.watch_state(state_key(ti));
             size_t p = static_cast<size_t>(packed >> 32), q = static_cast<size_t>(packed & 0xffffffffu);
 
             bool b1 = is_broken(t, p), b2 = is_broken(t, q);
@@ -285,7 +293,7 @@ namespace
                 else {
                     ctx.watch(vars[*new1] == t[*new1], key);
                     ctx.watch(vars[*new2] == t[*new2], key);
-                    ctx.set_watch_state(key, pack(*new1, *new2));
+                    ctx.set_watch_state(state_key(ti), pack(*new1, *new2));
                 }
             }
             else if (b1) {
@@ -295,7 +303,7 @@ namespace
                     inference.infer(logger, vars[q] != t[q], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
                 else {
                     ctx.watch(vars[*new1] == t[*new1], key);
-                    ctx.set_watch_state(key, pack(*new1, q));
+                    ctx.set_watch_state(state_key(ti), pack(*new1, q));
                 }
             }
             else {
@@ -305,7 +313,7 @@ namespace
                     inference.infer(logger, vars[p] != t[p], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
                 else {
                     ctx.watch(vars[*new2] == t[*new2], key);
-                    ctx.set_watch_state(key, pack(p, *new2));
+                    ctx.set_watch_state(state_key(ti), pack(p, *new2));
                 }
             }
         }
@@ -315,13 +323,6 @@ namespace
 
 auto NegativeTable::install_propagators(Propagators & propagators) -> void
 {
-    // High-water mark of tuples whose two watches have been armed. Advanced once, in
-    // the propagator's first (root) run; non-backtrackable, but the arming lives in
-    // the persistent root epoch, so it stays in step with the restored watches. (For
-    // this static tuple set it just goes 0 -> size once; the counter matters only so
-    // a restart-root re-propagation does not re-arm.)
-    auto set_up = make_shared<size_t>(0);
-
     // The reason ranges over the fixed variable scope, so build it once here and
     // share it between the initialiser and the propagator rather than rebuilding
     // it on every wake (see dev_docs/propagator-performance.md).
@@ -356,9 +357,9 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
 
             propagators.install(
                 constraint_id(),
-                [vars = move(_vars), tuples = move(tuples), set_up = set_up, owner = constraint_id(), reason = std::move(table_reason)](
+                [vars = move(_vars), tuples = move(tuples), owner = constraint_id(), reason = std::move(table_reason)](
                     const State & state, auto & inference, ProofLogger * const logger, const RefinedWatchContext & ctx) -> PropagatorState {
-                    return propagate_negative_table_refined(vars, tuples, set_up, owner, reason, state, inference, logger, ctx);
+                    return propagate_negative_table_refined(vars, tuples, owner, reason, state, inference, logger, ctx);
                 },
                 std::move(scope_triggers));
         },

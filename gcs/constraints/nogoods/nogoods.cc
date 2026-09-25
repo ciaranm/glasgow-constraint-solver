@@ -242,18 +242,16 @@ namespace
                     init_watches_for(ni, *nogoods, *nogood_vars, *initial_scratch, state, inference, logger);
             });
 
-        // High-water mark of nogoods whose two watches have been set up. Catch-up
-        // (below) sets up new clauses only at a root re-propagation -- where the
-        // restart loop re-enters and where the arming/watch_state edits live in the
-        // persistent root epoch (never backtracked between passes) -- so this
-        // non-backtrackable counter stays in step with the restored watches.
-        auto set_up = make_shared<size_t>(0);
-
         propagators.install(
             id,
-            [nogoods, nogood_vars, set_up](
+            [nogoods, nogood_vars](
                 const State & state, auto & inference, ProofLogger * const logger, const RefinedWatchContext & ctx) -> PropagatorState {
                 auto pack = [](size_t a, size_t b) -> std::uint64_t { return (static_cast<std::uint64_t>(a) << 32) | static_cast<std::uint32_t>(b); };
+                // A watch's payload is its nogood's index; its nogood's watch_state
+                // key is one more than that, key 0 holding the high-water mark of
+                // nogoods whose two watches have been set up.
+                constexpr std::uint32_t set_up_key = 0;
+                auto state_key = [](size_t ni) { return static_cast<std::uint32_t>(ni + 1); };
                 // A non-entailed position other than skip1/skip2 to place a watch on.
                 // A DefinitelyFalse position counts as non-entailed -- a satisfied
                 // clause may rest a watch on it.
@@ -275,7 +273,15 @@ namespace
                     // here (e.g. via an initialise-time entailment) is resolved now, as
                     // the firing path never sees those. Thereafter every entailment goes
                     // through requeue and fires a watch, so fired-only suffices.
-                    for (size_t ni = *set_up; ni < nogoods->size(); ++ni) {
+                    //
+                    // The high-water mark lives in watch_state, restored with the
+                    // watches, rather than beside them. Catch-up happens only at a
+                    // root re-propagation, whose edits live in the persistent root
+                    // epoch, but the first such run need not be the real root: the
+                    // AutoTable presolver propagates at the root of a search of its
+                    // own and backtracks out of it, and a mark that survived that
+                    // would leave the real root arming nothing (issue #1106).
+                    for (size_t ni = ctx.watch_state(set_up_key); ni < nogoods->size(); ++ni) {
                         const auto & nogood = (*nogoods)[ni];
                         const auto & vars = (*nogood_vars)[ni];
                         auto w1 = find_unbroken(nogood, no_watch, no_watch);
@@ -288,15 +294,16 @@ namespace
                             // single watch on the satisfied survivor is enough.
                             inference.infer(logger, ! nogood[*w1], JustifyUsingRUP{}, generic_reason(vars));
                             ctx.watch(nogood[*w1], static_cast<std::uint32_t>(ni));
-                            ctx.set_watch_state(static_cast<std::uint32_t>(ni), pack(*w1, *w1));
+                            ctx.set_watch_state(state_key(ni), pack(*w1, *w1));
                         }
                         else {
                             ctx.watch(nogood[*w1], static_cast<std::uint32_t>(ni));
                             ctx.watch(nogood[*w2], static_cast<std::uint32_t>(ni));
-                            ctx.set_watch_state(static_cast<std::uint32_t>(ni), pack(*w1, *w2));
+                            ctx.set_watch_state(state_key(ni), pack(*w1, *w2));
                         }
                     }
-                    *set_up = nogoods->size();
+                    if (ctx.watch_state(set_up_key) != nogoods->size())
+                        ctx.set_watch_state(set_up_key, nogoods->size());
                     return PropagatorState::Enable;
                 }
 
@@ -312,7 +319,7 @@ namespace
                 for (size_t ni : fired) {
                     const auto & nogood = (*nogoods)[ni];
                     const auto & vars = (*nogood_vars)[ni];
-                    auto packed = ctx.watch_state(static_cast<std::uint32_t>(ni));
+                    auto packed = ctx.watch_state(state_key(ni));
                     size_t p = static_cast<size_t>(packed >> 32), q = static_cast<size_t>(packed & 0xffffffffu);
 
                     bool b1 = is_broken(nogood, p), b2 = is_broken(nogood, q);
@@ -334,7 +341,7 @@ namespace
                         else {
                             ctx.watch(nogood[*new1], key);
                             ctx.watch(nogood[*new2], key);
-                            ctx.set_watch_state(key, pack(*new1, *new2));
+                            ctx.set_watch_state(state_key(ni), pack(*new1, *new2));
                         }
                     }
                     else if (b1) {
@@ -344,7 +351,7 @@ namespace
                             inference.infer(logger, ! nogood[q], JustifyUsingRUP{}, generic_reason(vars));
                         else {
                             ctx.watch(nogood[*new1], key);
-                            ctx.set_watch_state(key, pack(*new1, q));
+                            ctx.set_watch_state(state_key(ni), pack(*new1, q));
                         }
                     }
                     else {
@@ -354,7 +361,7 @@ namespace
                             inference.infer(logger, ! nogood[p], JustifyUsingRUP{}, generic_reason(vars));
                         else {
                             ctx.watch(nogood[*new2], key);
-                            ctx.set_watch_state(key, pack(p, *new2));
+                            ctx.set_watch_state(state_key(ni), pack(p, *new2));
                         }
                     }
                 }
