@@ -1,15 +1,49 @@
 # Linear: `Σ cᵢ·xᵢ` against a constant
 
 > **Maturity** production ·
-> **Audited** 2026-09-23 at `00797a97` ·
-> **Open issues** filed by this audit: #1032 (XCSP3 `<sum>` with `ne` gives
-> wrong answers, and its wrong `UNSATISFIABLE` verifies), #1033 (the `If`
-> forms with a constant condition enforce the wrong constraint), #1034 (the
-> incremental propagator's state is a heap allocation per slot per node),
-> #1035 (reasons and justifications name every term's bound, even untouched
-> ones), #1036 (`gcspy`'s `post_linear_greater_equal_iff` posts `≤`), #1042
-> (the reified equality ignores its bounds), #1043 (tidying). Already open and
-> touching this family: #868 (cross-solver). Tracked under #871.
+> **Audited** 2026-09-23 at `00797a97`; re-audited 2026-09-25 at `61112ed0` ·
+> **Open issues** filed by this audit: #1034 (the incremental propagator's
+> state is a heap allocation per slot per node), #1035 (reasons and
+> justifications name every term's bound, even untouched ones; fix open as
+> #1055), #1042 (the reified equality ignores its bounds), #1043 (tidying,
+> items 4 and 5 left). Filed from review: #1091 (an equality's fixpoint can
+> take a number of sweeps linear in the domain width). Already open and
+> touching this family: #868 (cross-solver), #310 (a range-literal reification
+> condition cannot be written to the proof). **Fixed since the audit**: #1032,
+> #1033, #1036, and #1043's first three items; see
+> [Re-audit](#re-audit-2026-09-25). Tracked under #871.
+
+### Re-audit, 2026-09-25
+
+The audit's fixes merged on 2026-09-24. This pass brings the text into line
+with them at `61112ed0`, and also takes in review corrections to claims the
+first pass got wrong.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1032, XCSP3 `<sum>` with `ne` | #1074 | the translation posts `LinearNotEquals` directly, so the frontend cell is ✓ and two new lanes cover the escaping shapes; the known limitation and next step are gone |
+| #1033, constant-condition `If` forms | #1077 | a constant condition is resolved per form, and a false one on `If`/`NotIf` releases the constraint ([Semantics](#semantics)); `linear_constant_test` has a row for each form and constant |
+| #1036, `gcspy`'s `≥` binding | #1073 | it posts `LinearGreaterThanEqualIff`, and `post_linear_less_equal_iff` is registered at last; Python tests exist, but CI does not run them |
+| #1043, tidying | #1075, **items 1–3 only** | the dead `pair<bool, …>` branches are gone, and the two comments are corrected (rule 8, [Options](#options)); item 4 (the idempotence-claim disagreement) and item 5 (folding `linear-slack-waking.md` in) are still open |
+| #1035, trivial reason literals | #1055, **open** | nothing yet: every figure below is from before it, and none of its behaviour is described here as current |
+
+**Corrected from review**, not from a fix:
+
+- the equality's strength is `bounds(R)`, not `bounds(Z)`, and a single
+  inequality's is `GAC` (rules 1 and 2);
+- one call can take a number of sweeps linear in the width (#1091), so "every
+  cost is in terms" holds per sweep, not per call;
+- rule 3's assertion keeps the attempted bound;
+- the inequality's unattributed assertions are `search`, not `solver-side`;
+- a range-literal reification condition throws with proofs on (#310).
+
+**What was measured again.** At `61112ed0`, only the new facts: the strength
+probe and #1091's proof sizes (both in [Interval
+efficiency](#interval-efficiency) and rule 1), rule 3's `a` line, and the
+range-literal condition. The CPU and proof tables were **not** re-run. They
+stay at `00797a97`. Since then two commits have touched the family's source:
+#1077, which changes only how a constant condition is mapped at construction,
+and #1075, whose PR reports byte-identical objects.
 
 The linear family is `LinearEquality`, `LinearNotEquals`,
 `LinearLessThanEqual`, `LinearGreaterThanEqual` and their `If`/`Iff` reified
@@ -27,14 +61,18 @@ Three things to know before touching it.
 
 - **Its whole vocabulary is bounds.** Every inference but two reads and writes
   bounds, the propagators wake on bounds, and the proof is order literals
-  over a bit-sum encoding. So its costs are all proportional to the **number
-  of terms**, never to domain width. That includes the proof: every bound push
-  names every term, which is how a 0.92 s `shortest_path` search writes a
-  15 GB proof (#1035).
-- **The three wrong-answer bugs found here are all at the edges**, not in the
-  propagator: an XCSP3 translation that predates `LinearNotEquals` (#1032), a
+  over a bit-sum encoding. So the cost of **one sweep** is proportional to the
+  **number of terms**, never to domain width. That includes the proof: every
+  bound push names every term, which is how a 0.92 s `shortest_path` search
+  writes a 15 GB proof (#1035). **The number of sweeps is another matter**: an
+  equality alternates two sweeps until one of them moves nothing, and on
+  `2x − 2y = 1` over `0..N` that takes a number linear in `N`, inside one call
+  (#1091). And with coefficients other than ±1 the equality's bounds are only
+  `bounds(R)`: an endpoint can survive with no integer support.
+- **The three wrong-answer bugs found here were all at the edges**, not in the
+  propagator: an XCSP3 translation that predated `LinearNotEquals` (#1032), a
   constant-condition mapping that no front end reaches (#1033), and a Python
-  binding that posts `≤` where its name says `≥` (#1036).
+  binding that posted `≤` where its name says `≥` (#1036). All three are fixed.
 - **The implementation choice matters more than any algorithm.** The stateless
   sweep and the incremental one find the same solutions in the same order, and
   each beats the other by up to 3× on some real model. The default, incremental
@@ -58,11 +96,31 @@ integer `v`:
 | `…Iff(s, v, c)` | `c ↔ (…)` |
 
 The inequality's reified forms take an `IntegerVariableCondition`. **The
-equality's take a full `innards::Literal`**. The `Iff` forms map a
-`TrueLiteral` or `FalseLiteral` correctly; the `If` and `NotIf` forms do not
-(#1033). `LinearNotEqualsIff(s, v, c)` is stored as
-`ReifiedLinearEquality` with `Iff(¬c)` and a `flipped_cond` flag, which only
-changes its `.scp` spelling.
+equality's take a full `innards::Literal`**, and a constant one is resolved per
+form (`literal_to_reif`, since #1077; before that `If` and `NotIf` got it wrong,
+#1033):
+
+| Form | `TrueLiteral` | `FalseLiteral` |
+|---|---|---|
+| `EqualityIf` | `MustHold` | released |
+| `NotEqualsIf` (stored as `NotIf`) | `MustNotHold` | released |
+| `EqualityIff` | `MustHold` | `MustNotHold` |
+| `NotEqualsIff` (stored as `Iff(¬c)`) | `MustNotHold` | `MustHold` |
+
+The columns are the literal the **user** passed. `NotEqualsIff` negates it
+before resolving, so its row is `Iff`'s with the columns swapped: a true
+condition means the equality must *not* hold, as the name says.
+
+`ReificationCondition` has no "no constraint" alternative, so a released form
+is the same form over a condition that never holds, `0_c = 1`. It is written to
+the `.scp` and the OPB as such, and its rows are vacuous. Under the default
+`BC`, no propagator runs (zero propagations on `x + y = 3` over `0..2`). **Under
+`Tabulated` a table is still installed**: the tabulation arm hands the
+never-holding condition to `reify_tabulation` without checking that it is
+decided, so the same probe makes 13 propagations. The answers are the same
+(all 9 assignments) either way. Measured at `61112ed0`.
+`LinearNotEqualsIff(s, v, c)` is stored as `ReifiedLinearEquality` with
+`Iff(¬c)` and a `flipped_cond` flag, which only changes its `.scp` spelling.
 
 `tidy_up_linear` normalises the terms before anything else. It moves constants
 and a view's offset into the right-hand side, resolves a view's negation into
@@ -78,7 +136,7 @@ condition, not their C++ type.
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
 | `LinearEquality` | ✓ `int_lin_eq`, `bool_lin_eq`[^mznvar]; a two-term unit-coefficient one becomes `Equals`[^mzntwo] | ✓ `sum` with `eq`; `decompose` for `dist`[^xdist] | ? | ✓ `lin_equals` | also `Problem::post(s == v)` |
-| `LinearNotEquals` | ✓ `int_lin_ne`; two-term becomes `NotEquals`[^mzntwo] | **wrong** for `sum` with `ne` (#1032)[^xne] | ? | ✓ `lin_not_equals` | |
+| `LinearNotEquals` | ✓ `int_lin_ne`; two-term becomes `NotEquals`[^mzntwo] | ✓ `sum` with `ne`, since #1074[^xne] | ? | ✓ `lin_not_equals` | |
 | `LinearLessThanEqual` | ✓ `int_lin_le`, `bool_lin_le`; two-term becomes `LessThanEqual`[^mzntwo] | ✓ `sum` with `le`, `lt` | ? | ✓ `lin_less_equal` | also `Problem::post(s <= v)` |
 | `LinearGreaterThanEqual` | `n/a`: MiniZinc normalises to `int_lin_le`, which posts `≤` | `n/a`: `sum` with `ge`/`gt` builds `s >= v`, which `Problem::post` turns into a negated `LinearLessThanEqual` | ? | ✓ `lin_less_equal`, negated | |
 | `LinearEqualityIff` | ✓ `int_lin_eq_reif`, **and `int_lin_ne_reif`** as `Iff(r ≠ 1)` | `n/a`: reified intensions go to the comparison family | ? | ✓ `lin_equals_iff` | |
@@ -102,19 +160,26 @@ condition, not their C++ type.
     `Abs{diff, r}`, with `diff` bounded by the operands' spans. Checked:
     correctly bounded.
 
-[^xne]: `sum` with `ne` posts `sum + diff = bound` and `diff ≠ 0` over an
-    auxiliary `diff ∈ [−range, range]`. But `bound − sum` can exceed `range`,
-    and a variable operand is not counted in `range` at all. So `x ∈ 0..5`,
-    `x ≠ −3` finds 3 solutions of 6, and `x ∈ 0..2`, `x ≠ y` with
-    `y ∈ 10..12` is reported `UNSATISFIABLE`, which the proof verifies. The
-    workaround is from 2022; `LinearNotEquals`, which is exactly the
-    constraint, arrived in 2024. #1032.
+[^xne]: `sum` with `ne` posts `LinearNotEquals` directly, with a variable
+    operand moved onto the left as `Σ cᵢxᵢ − y ≠ 0`. Until #1074 it posted
+    `sum + diff = bound` and `diff ≠ 0` over an auxiliary
+    `diff ∈ [−range, range]`, a workaround from 2022 that predated
+    `LinearNotEquals`. But `bound − sum` could exceed `range`, and a variable
+    operand was not counted in `range` at all. So `x ∈ 0..5`, `x ≠ −3` found 3
+    solutions of 6, and `x ∈ 0..2`, `x ≠ y` with `y ∈ 10..12` was reported
+    `UNSATISFIABLE`, which the proof verified, since the mistranslation is
+    upstream of the model the proof sees (#1032). Lanes
+    `xcsp_sum_not_equals_negative` and `xcsp_sum_not_equals_var` cover both
+    shapes now.
 
 `gcspy` binds `LinearEquality`, `LinearNotEquals`, `LinearLessThanEqual`,
-`LinearGreaterThanEqual`, `LinearEqualityIff` and `LinearLessThanEqualIff`,
-and its `post_linear_greater_equal_iff` **posts `LinearLessThanEqualIff`**
-(#1036). CPMpy's upstream GCS interface, checked 2026-09-23, calls none of the
-`_iff` bindings and posts every linear constraint through the four plain ones.
+`LinearGreaterThanEqual`, `LinearEqualityIff`, `LinearLessThanEqualIff` and
+`LinearGreaterThanEqualIff`. Until #1073 its `post_linear_greater_equal_iff`
+posted `LinearLessThanEqualIff` (#1036), and `post_linear_less_equal_iff` had
+no Python registration at all. `python/python_test.py` now tests all three
+`_iff` bindings, but **no CI workflow runs that file**. CPMpy's upstream GCS
+interface, checked 2026-09-23, calls none of the `_iff` bindings and posts
+every linear constraint through the four plain ones.
 
 ### Options
 
@@ -129,9 +194,10 @@ default `consistency::Auto` that equality is `Tabulated` when the product of
 the domain sizes is under the tabulation threshold (`multiply.cc`). The
 `knapsack`, `odd_even_sum`, `sudoku` and `skyscrapers` examples post it
 directly, `crystal_maze` behind an option, and
-`benchmarks/tabulated_linear_random` measures it. The header's comment on the variant says "bounds consistency (the
-default), or generalised arc consistency", which is right about the level and
-not the tag.
+`benchmarks/tabulated_linear_random` measures it. The header's comment on the
+variant named a level where the variant has a tag until #1075; it now names
+`consistency::Tabulated` and its cost. `BC` here is the tag: what the default
+**achieves** is `bounds(R)` on an equality in general (rules 1 and 2).
 
 `ReifiedLinearInequality` has no `with_consistency()`.
 
@@ -140,15 +206,17 @@ and a constructor argument on the inequality, defaulting to
 `GCS_LINEAR_INCREMENTAL_THRESHOLD` or 8. At or above it, a direction the
 dispatcher can reach gets a backtrackable fold state and the incremental
 propagator, which folds fixed terms out of the sum. Below it, the stateless
-sweep runs. The two make identical inferences, so this picks a strategy and
-never a model. What it costs either way is under [CPU
+sweep runs. The two are designed to make identical inferences, so this picks
+a strategy and never a model. What has been checked is weaker: identical
+solution sequences on 23 corpus models ([CPU performance](#cpu-performance)). What it costs either way is under [CPU
 performance](#cpu-performance) and #1034.
 
 **Slack-based waking**, `GCS_LINEAR_SLACK_WATCH_THRESHOLD` (default: off) and
 `GCS_LINEAR_SLACK_WATCH_COVER_PERCENT` (default 15). This is for an inequality
 whose direction is decided at install, is long enough, and has a small
 covering set. It wakes only when a covering term's contributing bound moves,
-through refined watches, instead of on every bound. Identical inferences again.
+through refined watches, instead of on every bound. It is designed to make
+identical inferences again, and the lanes that force it on pass and verify.
 The design and measurements are in [Developer
 commentary](#developer-commentary). On the corpus, turning it on at the
 recommended 128 terms changed nothing measurable.
@@ -162,8 +230,9 @@ removes views before propagation. The proof handles them through `PolBuilder`'s
 **deview mode**, which substitutes the framework's line over the underlying
 variable's bits for the view's, so the justification's order literals are over
 the underlying variables. Fourteen `…_view_mixed` lanes, one per posted form,
-wrap the terms in views. Because the family's facts are all bounds, it is
-outside #882's range-literal problem by construction.
+wrap the terms in views. Because the family's facts about its **terms** are all
+bounds, it is outside #882's range-literal problem by construction. Its
+**reification condition** is not: see [Reification](#reification).
 
 ### Reification
 
@@ -186,6 +255,16 @@ That asymmetry is a strength gap: the equality never asks whether its bounds
 already exclude `v`. `c ↔ (Σ xᵢ = 100)` over `xᵢ ∈ 0..3` fails once on `c = 1`,
 where the `≥` form infers `¬c` at the root. It costs nothing measurable on the
 corpus (#1042).
+
+**A range-literal condition works without proofs and throws with them.** Both
+classes accept an `in_range(b, lo, hi)` condition: an `IntegerVariableCondition`
+for the inequality, and inside an `innards::Literal` for the equality. With
+proofs off, `LinearEqualityIff(x + y, 2, in_range(b, 1, 3))` over
+`x, y ∈ 0..2`, `b ∈ 0..4` enumerates the right 21 solutions, and
+`LinearLessThanEqualIff` the right 24. With proofs on, both throw `range
+literals during model writing are not yet supported` from
+`NamesAndIDsTracker::need_invar` when the model is written (#310). Measured at
+`61112ed0`. No front end posts one.
 
 ### Relation to other families
 
@@ -339,10 +418,14 @@ positive-coefficient terms and lower bounds of negative ones, and reads only
 the other side. So reads and writes are disjoint per variable, and a single
 pass is the `≤` fixpoint, even across a write that snaps past a hole. The
 equality alternates the forward and inverse sweeps until one is clean, which
-reaches its own fixpoint in one call. The test harness sets
-`GCS_CHECK_IDEMPOTENT_CLAIMS`, which re-runs every honoured claim and aborts
-if it infers anything. The slack-watched form cannot claim it, since a coarse
-re-wake would defeat the watches.
+reaches its own fixpoint in one call, **however many sweeps that takes**: on
+`2x − 2y = 1` it is a number linear in the width (#1091). The test harness
+turns on `GCS_CHECK_IDEMPOTENT_CLAIMS`, which re-runs every honoured claim and
+aborts if it infers anything. Since #1086 that holds in every harness binary.
+Before it, 100 lanes ran with the checker silently off (#1056), but
+`linear_test` was not among them. #1086's forced-on sweeps over the suite, 1,821
+MiniZinc and 6,178 XCSP3 instances found no false claim. The slack-watched form
+cannot claim it, since a coarse re-wake would defeat the watches.
 
 **The two reified classes disagree about passing the claim on.** When the
 condition is undecided at install, the shared dispatcher strips an enforced
@@ -350,17 +433,24 @@ sweep's `EnableButIdempotent`, because a re-run also re-tests the condition and
 "nobody has audited that interplay yet". The equality's hand-written undecided
 branch returns the sweep's claim unchanged once the condition is decided true.
 The harness's re-run check has not caught a problem in the `eq_if` and
-`eq_iff` lanes, but the two classes should agree; see [Next steps](#next-steps).
+`eq_iff` lanes, but the two classes should agree (#1043, item 4); see [Next
+steps](#next-steps).
 
-**Holes affect.** Only one propagator in the family observes holes: the
-undecided reified equality, which asks, once one term is left, whether the
-value that would satisfy the equality is in its domain (rule 11). Its
-`on_change` triggers are the truth. The sweeps read only bounds and are
-triggered `on_bounds`. **This family's whole vocabulary is bounds**, apart from
-that one rule and the not-equals, which acts only on fixed values. So a
-linear constraint is never a reason for another constraint's interior pruning
-to stay on. The slack-watched form declares that explicitly, because
-`scope_only` would otherwise read as "holes affect everything".
+**Holes affect.** Two arms observe holes. The undecided reified equality asks,
+once one term is left, whether the value that would satisfy the equality is in
+its domain (rule 11), and its `on_change` triggers are the truth. The
+`Tabulated` arm is the extensional family's propagator, which is GAC and so
+reads every value. The not-equals acts only on fixed values. The enforced
+sweeps read only bounds and are triggered `on_bounds`, and the undecided
+reified inequality decides its condition from the minimum and maximum sums
+(rules 8 and 9), which are bounds too. So **an enforced inequality or `BC`
+equality, and a reified inequality whether decided or not,** is never a reason
+for another constraint's interior pruning to stay on, and nor is a
+not-equals. An undecided reified
+equality or a `Tabulated` one can be: an interior removal can decide the first's
+condition, and can cost the second a support. The slack-watched form declares
+its bounds-only reading explicitly, because `scope_only` would otherwise read as
+"holes affect everything".
 
 ### Mutable state and incrementality
 
@@ -379,8 +469,12 @@ assignment still reaches a check.
 
 **Recomputed per call.** The stateless sweep re-reads every term's bounds into
 a `small_vector` (inline up to 8 terms) and recomputes the minimum sum. That is
-`O(n)` per call. The incremental sweep does the same over the active terms
-only. The slack form re-sorts the potentials after every clean wake, which is
+`O(n)` per **sweep**, and one sweep per call for an inequality. An equality's
+call runs sweeps until one is clean. How many that usually is has not been
+measured. It can be a number linear in the width (#1091), so its per-call cost
+is `O(n)` times that.
+The incremental sweep does the same over the active terms only, and has the
+same loop. The slack form re-sorts the potentials after every clean wake, which is
 `O(n log n)`. The design note records why an incremental cover does not help.
 
 ### Interior values and optional pruning
@@ -388,10 +482,13 @@ only. The slack form re-sorts the potentials after every clean wake, which is
 **What this family offers:** `None.` No class installs a pair, or accepts
 `consistency::Auto`.
 
-**What this family observes:** bounds, stated in those words, except for the
-undecided reified equality's last-value rule and the not-equals, which acts on
-fixed values only. A variable that appears only in linear constraints lets any
-neighbour's optional interior pruning be dropped.
+**What this family observes:** bounds, stated in those words, for the enforced
+sweeps and the undecided reified inequality; fixed values only, for the
+not-equals. The exceptions are the undecided reified equality, whose last-value
+rule reads a hole, and the `Tabulated` arm, which reads every value. A variable
+that appears only in enforced sweeps, reified inequalities and not-equals lets
+any neighbour's optional interior pruning be dropped. One in an
+undecided reified equality or a `Tabulated` equality does not.
 
 ### Robustness and limits
 
@@ -416,33 +513,72 @@ neighbour's optional interior pruning be dropped.
   repeated variable is merged, so `x − x ≤ 3` is empty. A constant term moves
   to the right-hand side. A two-term `±1` constraint from MiniZinc never
   arrives here (it becomes `Equals`, `NotEquals` or `LessThanEqual`).
-- **A constant condition** on the equality's reified forms: wrong answers for
-  `If` and `NotIf` (#1033).
+- **A constant condition** on the equality's reified forms: resolved per form
+  since #1077 ([Semantics](#semantics)); before that, `If` and `NotIf` gave
+  wrong answers (#1033).
+- **A range-literal condition**: right without proofs, throws with them
+  (#310; [Reification](#reification)).
 
 ### Interval efficiency
 
-`Fine at any width`, on all four questions, for the default arms.
+`Fine at any width` **per sweep**, on all four questions, for the default
+arms, and fine per call for the inequality and the not-equals. **Not per call
+for the equality**: its fixpoint loop can run a number of sweeps linear in the
+width (#1091).
 
 1. **Propagation.** The sweeps read and write bounds only. The not-equals asks
    `in_domain` for one value, once. The undecided equality asks `in_domain` for
    one value on its last unset term. Nothing in `propagate.cc`,
    `linear_equality.cc` or `linear_inequality.cc` walks a domain's values.
    That can be checked by reading. The `Tabulated` arm enumerates tuples, which
-   is the product of the domain sizes and is what its tag means.
+   is the product of the domain sizes and is what its tag means. **But width
+   can still set the number of sweeps.** The equality alternates the forward
+   and inverse sweeps until one is clean. On `2x − 2y = 1` over distinct
+   `x, y ∈ 0..N`, each sweep moves each bound by one step, and the loop runs
+   until a domain empties: one propagator call, one recursion, a number of
+   sweeps linear in `N`, in both the stateless and incremental arms. The
+   answer is right; the time is width's. What decides it is **the terms still
+   unfixed when the call runs**, and their domains, not the constraint as
+   posted. At `61112ed0`, proof lines grow tenfold from `N = 100` to
+   `N = 1000`, each in one propagation, on:
+   - `2x − 2y = 1`, `3x − 3y = 1`, `2x − 4y = 1` and `6x − 4y = 1`, over
+     `x, y ∈ 0..N`;
+   - `2x + 2y = 1` with `x ∈ 0..N` and `y ∈ −N..0`, so it is not about the
+     signs of the coefficients either.
+
+   It also happens partway through search, on a constraint whose gcd is fine
+   at install. `2x − 2y + 3z = 1` with `z ∈ 0..1` has overall gcd 1. Branching
+   on `z` first, the call after `z = 0` faces `2x − 2y = 1`: 2,473 lines at
+   `N = 100` and 24,073 at `N = 1000`, to the first solution, in four
+   propagations. Lines do not grow on `2x + 4y = 1` over `0..N`, where the
+   first inverse sweep empties a domain. Nor do they grow to the **first
+   solution** of `3x − 2y = 0` or `3x − 2y = 1`. A full enumeration of
+   `3x − 2y = 0` grows 2,633 → 26,033 lines, but with 34 → 334 solutions, so
+   that growth is the solutions', not the sweeps'. Normalising a call's unfixed
+   terms by their gcd would settle every slow shape above. It would not show
+   that every equality converges in a width-independent number of sweeps, and
+   nobody has argued that one does.
 2. **Reasons.** One bound literal per term, never per value, and assembly is
    guarded on `want_reasons()`, so plain search pays nothing. What is wrong
    with them is not width but **triviality**: every term's bound goes in,
    including terms still at their initial bound (#1035).
 3. **Proofs.** Order literals over `BinEnc`, one `pol` per bound push with one
-   term per variable. Width only enters through the logarithmic bit count.
-   There is no per-value form, so no width gate.
+   term per variable. Width enters each push only through the logarithmic bit
+   count, and there is no per-value form, so no width gate. **The number of
+   pushes is where width gets in**, through the sweep count above: at
+   `61112ed0`, `2x − 2y = 1` writes 2,420 proof lines at `N = 100` and 24,020
+   at `N = 1000`, in one propagation. The `N = 100` proof verifies
+   (`veripb --force-checked-deletion`).
 4. **The audit lane**: `LinearEquality`, `ReifiedLinearEquality` and
    `ReifiedLinearInequality` are all `Clean`, and there is no proof-size row.
    **Axes they do not vary**: coefficients other than ±1 (so no overflow and
    no rounding), holes (irrelevant to the sweeps, but rule 11 reads them), the
    not-equals, the `Tabulated` arm, and the incremental versus stateless
-   choice. None of those is a width hazard. The `Tabulated` arm is the only one
-   that would trip, by design.
+   choice. The `Tabulated` arm would trip, by design. **So would an equality
+   whose unfixed terms' gcd does not divide what is left of `v`**, over wide
+   variables, such as `2x − 2y = 1`, or `2x − 2y + 3z = 1` once `z` is fixed
+   (#1091). No row has that shape, and it is the one that shows the sweep
+   count growing with width.
 
 ## Inference catalogue
 
@@ -470,7 +606,10 @@ lines: 174 of them in `linear_constraint_le`'s proofs at seed 1, and 203 in
 `ge`'s. `hints::LinearInequality` exists, and is used only as the base of the
 `cond` hint. **None of the five earlier family documents records an
 unattributed assertion.** An external justifier has to find the row that licenses one by
-searching every inequality's scope for the clause's literals.
+searching the model's inequalities for one whose scope covers the clause's
+variables and whose JP 3.15 step yields the clause. The row is in the model, so
+this is a search, not missing information: the verdict is `search`, not
+`solver-side`.
 
 **What licenses them.** Rules 1–3 are **JP 3.15 (linear inequality
 propagation)** and its infeasibility case, from McIlree's thesis. The rest are
@@ -504,11 +643,30 @@ the same instances, the same verified proofs.
   `LinearGreaterThanEqual` (negated), an equality's forward half, a negated
   inequality (`−S ≤ −v − 1`), and the arithmetic stages. Only when the new bound
   is tighter.
-- **Strength** — `bounds(Z)` on every term, with rule 2 for an equality.
+- **Strength** — for an **inequality**, `GAC`: for `cⱼ > 0`, every value
+  `w ≤ ubⱼ` left in `D(xⱼ)` has `cⱼw ≤ cⱼ·ubⱼ ≤ v − L₋ⱼ`, so it is supported by
+  every other term taking its contributing bound, which is a value in its
+  domain (the mirror for `cⱼ < 0`). For an **equality**, with
+  rule 2, **`bounds(R)`** on every term, and `bounds(Z)` on a term whenever
+  every *other* term's coefficient is ±1, since a sum of unit-coefficient
+  integer intervals takes every integer in its range. That condition is
+  sufficient, not necessary. With other coefficients an endpoint can have a
+  real support and no integer one: `2x + 3y + 3z = 4` over `x ∈ 0..2`,
+  `y, z ∈ 0..1` is a fixed point, and its one solution is `(2, 0, 0)`, so
+  `x = 0`, `y = 1` and `z = 1` survive unsupported. Checked at `61112ed0` by
+  brute force at the root fixpoint of random three-term instances, holes
+  included: no value left in an inequality's domains lacked a support (38,881
+  values at 3,644 root fixpoints). An equality's never lacked a `bounds(R)` one (1,972 with
+  coefficients up to ±4, 2,164 all ±1), nor a `bounds(Z)` one when the other
+  coefficients were ±1 (13,644 endpoints). Without holes, 491 of 1,290 general
+  instances had an endpoint with no integer support.
 - **Algorithm** — one pass: the minimum sum from each term's contributing
   bound, then each term's slack against it. `O(n)` in **terms**. The forward
   sweep's writes never touch what it reads, so one pass is its fixpoint. The
-  incremental form does the same over the unfixed terms only.
+  incremental form does the same over the unfixed terms only. **An equality
+  repeats** rules 1 and 2 until one sweep is clean, and the number of repeats
+  can be linear in the domain width (#1091; see [Interval
+  efficiency](#interval-efficiency)).
 - **Why it is true** — the others contribute at least `L₋ⱼ` whatever they
   take, so `cⱼxⱼ ≤ v − L₋ⱼ`; divide, rounding towards the feasible side.
 - **Proof technique** — `pol` then `RUP`, by **JP 3.15**, with the departures
@@ -522,12 +680,17 @@ the same instances, the same verified proofs.
 - **Hint** — `hints::LinearEquality` for an equality, none for an inequality.
 - **Offline reconstructibility** — `hinted` for an equality: the constraint id
   names the row, and the reason gives every bound JP 3.15 needs.
-  **`solver-side` for an inequality**: nothing names the constraint, so the
-  reconstructor needs the identity of the row, which the assertion does not
-  carry.
+  **`search` for an inequality.** Nothing names the constraint, but the row is
+  in the model. A reconstructor finds it by searching the inequalities whose
+  scope covers the clause's variables, and runs JP 3.15 against each candidate
+  until one yields the clause. It does not have to find the row the solver
+  used: any row that licenses the clause will do. The cost is the candidates
+  tried. A hint (Next step 3) would make it `hinted` and save that search. It
+  would not supply anything that is missing.
 - **Proof size** — one `pol` over `n` rows and `n − 1` bound definitions, one
   RUP, and a definition for each bound literal not yet introduced. In
-  **terms**, never width. On `2008_shortest_path`, whose objective sum has
+  **terms**, never width, **per push**. The number of pushes an equality's
+  call makes can grow with width (#1091). On `2008_shortest_path`, whose objective sum has
   about 215 terms, the `pol`s average 656 fields.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
@@ -539,8 +702,10 @@ the same instances, the same verified proofs.
 - **Infers** — the mirror of rule 1 from the `≥` half of an equality.
 - **Fires when** — an equality's inverse sweep, alternated with the forward one
   until either is clean.
-- **Strength** — `bounds(Z)`, with rule 1.
-- **Algorithm** — as rule 1, on the negated sum.
+- **Strength** — `bounds(R)` with rule 1, and `bounds(Z)` under rule 1's
+  unit-coefficient condition.
+- **Algorithm** — as rule 1, on the negated sum, alternated with it until one
+  is clean: a number of rounds that can be linear in the width (#1091).
 - **Why it is true** — as rule 1.
 - **Proof technique** — as rule 1, citing the `ge` row.
 - **Reason, Assertion, Hint, Proof size** — as rule 1. The hint is always
@@ -553,17 +718,29 @@ the same instances, the same verified proofs.
 
 (Rule 3.)
 
-- **Infers** — a contradiction, when rule 1 or 2 would empty a domain.
+- **Infers** — rule 1's or rule 2's bound, when that bound is already false,
+  so the domain would empty. Not an explicit `contradiction()`: an ordinary
+  inference whose literal is already false.
 - **Fires when** — the tracker's `_or_stop` inference fails. The propagator
   stops reading `state` and returns.
 - **Strength** — as rules 1 and 2.
 - **Algorithm** — none beyond rules 1 and 2.
 - **Why it is true** — the other terms' minimum already exceeds what this
   term's remaining values allow: the thesis's infeasibility argument (JP 3.14).
-- **Proof technique** — as rule 1: the same `pol`, and the tracker's RUP
-  closes the conflict with the failing literal.
-- **Reason, Hint** — as rule 1.
-- **Assertion** — `¬reason`.
+- **Proof technique** — as rule 1: the same `pol`, and the same RUP of the
+  attempted bound under the reason. The conflict itself is closed afterwards,
+  by the backtrack's own line, and is not part of this rule.
+- **Reason, Hint** — as rule 1. The reason names the *other* terms' bounds
+  only, as rule 1's does, so on its own it does not contradict the constraint.
+  The attempted bound is what meets the changed term's opposing bound.
+- **Assertion** — `attempted bound ∨ ¬reason`, the same shape as rule 1's, **not**
+  `¬reason`. With `x, y ∈ 0..10`, `x = 3` and `y = 1` posted by `Equals`, and
+  `x + y = 3`, the assertion at `AssertionLevel::Inferences` is
+  `a 1 ~i[x][ge3] 1 ~i[y][ge1] >= 1`, that is `x < 3 ∨ y < 1`, and a separate
+  backtrack assertion follows (measured at `61112ed0`; the `Off` proof verifies
+  `UNSATISFIABLE`). Compare rules 4, 5 and 7, which really do assert
+  `¬reason`: rule 4 calls `contradiction()`, rule 7 `contradiction_or_stop()`,
+  and rule 5 infers `FalseLiteral`.
 - **Offline reconstructibility** — as rule 1.
 - **Proof size** — as rule 1.
 - **Gaps** — `None.`
@@ -596,7 +773,8 @@ the same instances, the same verified proofs.
 
 - **Infers** — false, at install, for an equality whose condition is decided
   and whose sum is empty, when the constant makes it false: `MustHold` with
-  `v + modifier ≠ 0`, or `MustNotHold` with `v + modifier = 0`.
+  `v + modifier ≠ 0`, or `MustNotHold` with `v + modifier = 0`. A form released
+  by a false constant condition (#1077) is neither, and never reaches it.
 - **Fires when** — an initialiser, once.
 - **Strength** — `checker`.
 - **Algorithm** — one comparison, at install.
@@ -667,12 +845,11 @@ the same instances, the same verified proofs.
   condition that demands it is false.
 - **Proof technique** — `pol` then `RUP`, ours (`justify_cond`): the `c → S ≤ v`
   row plus every term's contributing bound. It is JP 3.15's shape with the
-  condition left over. It reads `state`. The comment above the verdict says
-  "only Iff and NotIf get here undecided, and of those only Iff licenses an
-  inference". **That is out of date**: `If` gets here too (`linear_constraint_le_if`
-  reaches this rule 22 times at seed 1), and it licenses `¬c`
-  (`set_not_cond_if_must_not_hold`). The code is right, and the row `If`
-  cites is its own.
+  condition left over. It reads `state`. `If` reaches this rule as well as
+  `Iff` (`linear_constraint_le_if` does 22 times at seed 1), and it licenses
+  `¬c` (`set_not_cond_if_must_not_hold`), citing its own row. The comment
+  above the verdict said otherwise until #1075 corrected it; the code was
+  always right.
 - **Reason** — `generic_reason` over the scope, built once at install.
 - **Assertion** — `¬c ∨ ¬reason`.
 - **Hint** — `hints::LinearInequalityCond`: `originator`, plus the sanitised
@@ -787,10 +964,11 @@ the same instances, the same verified proofs.
 
 | Lane | What it checks |
 |---|---|
-| `linear_constraint_{eq,ne,le,ge,le_not}` × `{incremental,stateless}` and their `_if`/`_iff`/`_notif` forms | `linear_test`, random instances of three terms, enumeration against brute force. Consistency is checked only for single-constraint instances: `bounds(Z)` on each term for the inequalities (`GAC` for not-equals), **never for `LinearEquality`**, and never for the reified equality and not-equals forms; `GAC` for the `Tabulated` rows |
+| `linear_constraint_{eq,ne,le,ge,le_not}` × `{incremental,stateless}` and their `_if`/`_iff`/`_notif` forms | `linear_test`, random instances of three terms, enumeration against brute force. Consistency is checked only for single-constraint instances: `bounds(Z)` on each term for the inequalities, weaker than the `GAC` they reach (`GAC` for not-equals), **never for `LinearEquality`**, whose `bounds(R)` would not pass a `bounds(Z)` check, and never for the reified equality and not-equals forms; `GAC` for the `Tabulated` rows |
 | `linear_constraint_*_view_mixed` (14) | the same with the terms wrapped in views |
 | `linear_constraint_*_slack` (8) | the inequality forms with slack waking forced on at any length and any cover |
-| `linear_constant_constraint_{incremental,stateless}` | constant and empty sums |
+| `linear_constant_constraint_{incremental,stateless}` | constant and empty sums, and since #1077 every equality form (`If`, `Iff`, `NotEqualsIf`, `NotEqualsIff`) with a `TrueLiteral` and a `FalseLiteral` condition, checking the exact solution set under `BC` and `Tabulated`, with proofs |
+| `xcsp_sum_not_equals`, `…_negative`, `…_var` | XCSP3 `<sum>` with `ne`, the last two added by #1074 for a negative bound and a variable operand |
 | `mini_linear_constraint` | a private refined-watch test harness (`MiniLinearGreaterEqual`); posts nothing from this family |
 | `linear_utils_test` | `tidy_up_linear` |
 | `scp_chain_lin_*` (14) | see [Cake conformity](#cake-conformity) |
@@ -801,7 +979,7 @@ VeriPB runs in every data-driven lane when it is on the path. Every lane is
 seeded. The incremental/stateless split is by `GCS_LINEAR_INCREMENTAL_THRESHOLD`
 in the lane's environment, and the slack lanes set
 `GCS_LINEAR_SLACK_WATCH_THRESHOLD=0` and `…_COVER_PERCENT=100`. All 74 pass at
-`00797a97`.
+`00797a97`; the lane list above is as of `61112ed0`, and was not re-counted.
 
 **Runtime caps.** No lane sets or clears one, and **the default caps fire on
 almost every lane**. Measured with a local print over three reseeded runs: 108
@@ -819,11 +997,20 @@ slack-watched wake were not counted; the slack lanes force that path on.
 
 **What the tests do not cover**, which is the point of this section:
 
-- **A constant condition** on the equality's reified forms. The `_if` lanes
-  use variable conditions only, which is how #1033 survived.
-- **An XCSP3 `<sum>` with `ne` whose bound or operand escapes the
-  auxiliary's range**. `xcsp/tests/sum_not_equals.xml` stays inside it (#1032).
-- **The `gcspy` linear `_iff` bindings**. No Python test calls either (#1036).
+- **The equality's strength.** Nothing checks what it achieves, so nothing
+  would notice a change in either direction. The counterexample under rule 1
+  (`2x + 3y + 3z = 4`, `x ∈ 0..2`, `y, z ∈ 0..1`, a fixed point with one
+  solution) would pin `bounds(R)` as a regression row. Unfiled.
+- **An equality whose unfixed terms' gcd does not divide what is left of
+  `v`**, on wide domains, where the sweep count grows with width (#1091),
+  including one that reaches that state only after a branch fixes a term.
+- **A range-literal reification condition**, which throws with proofs on
+  (#310). No lane posts one.
+- **The `gcspy` linear `_iff` bindings in CI.** `python/python_test.py` tests
+  all three since #1073, but no workflow runs it, and its `add_test` in
+  `python/CMakeLists.txt` is commented out.
+- (No longer uncovered: a constant condition, since #1077, and an XCSP3 `<sum>`
+  with `ne` that escapes the old auxiliary's range, since #1074.)
 - **Coefficients other than small ones**: every random instance uses
   coefficients within a few units, so nothing exercises overflow, the rounding
   of rule 1's division by a large coefficient, or rule 12's divisibility.
@@ -958,20 +1145,26 @@ lanes, and is not this family's.
 
 **One attribution gap**: the inequality's bound pushes (rules 1, 3 and 4 for an
 inequality) carry no hint, so in hints-only mode nothing names the constraint
-that licenses them. Every inference is justified, nothing is asserted, and
-no propagator changes strength when proofs are on.
+that licenses them. That costs a reconstructor a search over the model's
+inequalities (verdict `search`), not information it cannot get. Every
+inference is justified, nothing is asserted, and no propagator changes
+strength when proofs are on. **One model-writing gap**: a range-literal
+reification condition cannot be written at all (#310).
 
 ### Known limitations
 
-- **XCSP3 `<sum>` with `ne` gives wrong answers** when the bound or a variable
-  operand escapes the auxiliary's range, and a wrong `UNSATISFIABLE` verifies
-  (#1032).
-- **`LinearEqualityIf` and `LinearNotEqualsIf` with a constant condition
-  enforce the wrong constraint** (#1033). No front end reaches them.
-- **`gcspy`'s `post_linear_greater_equal_iff` posts `≤`** (#1036). CPMpy does not
-  call it.
+- **An equality can take a number of sweeps linear in the width** to reach its
+  fixpoint, in time and in proof lines (#1091). See [Interval
+  efficiency](#interval-efficiency) for the shapes tried.
+- **The equality is `bounds(R)`, not `bounds(Z)`**, with coefficients other
+  than ±1: an endpoint can survive with no integer support. That is the
+  standard behaviour of interval reasoning on a linear equality, not a bug;
+  `Tabulated` is the way to get more.
+- **A range-literal reification condition throws with proofs on** (#310). It
+  propagates correctly without them.
 - **Proofs on long sums are very large.** Every bound push names every term, so
-  a 0.92 s `shortest_path` search writes 15 GB (#1035).
+  a 0.92 s `shortest_path` search writes 15 GB (#1035). #1055, open, drops the
+  always-true bounds from the reasons and the `pol`s.
 - **The default incremental threshold can be slower than stateless** by 2.2×
   on a model with many long reified inequalities (#1034). It is 1.6–3×
   faster where there are a few long sums.
@@ -984,41 +1177,48 @@ no propagator changes strength when proofs are on.
 
 ### Next steps
 
-Ranked by what they buy for what they cost.
+Ranked by what they buy for what they cost. The audit's first three (#1032,
+#1036, #1033) are done; see [Re-audit](#re-audit-2026-09-25).
 
-1. **#1032** — post `LinearNotEquals` for XCSP3's `sum ≠`, and add lanes for a
-   negative bound and a variable operand. A wrong answer, a one-line fix.
-2. **#1036** — post `LinearGreaterThanEqualIff`, and add Python tests for both
-   linear `_iff` bindings. Trivial.
-3. **#1033** — map constant conditions per form, or take an
-   `IntegerVariableCondition` as every other family does. Small.
-4. **#1035** — drop untouched bounds from the reason, and decide with a
+1. **#1035** — drop untouched bounds from the reason, and decide with a
    proofs consultant whether the `pol` can drop them too. The largest proof-size
-   lever in the family, and on 0/1 sums likely an order of magnitude.
-5. **Hint the inequality's bound pushes** with `hints::LinearInequality{owner}`,
-   which already exists. It is the only thing standing between rule 1 and
-   `hinted` for an inequality. Deliberately not filed (Ciaran, 2026-09-23): it
-   will show up clearly when the justifier work reaches it.
-6. **#1034** — make the fold state fit in `std::any`, make slot copies cheap
+   lever in the family, and on 0/1 sums likely an order of magnitude. **Open as
+   #1055**, which does both halves for this family only.
+2. **#1091** — an equality whose unfixed terms' gcd does not divide what is
+   left of `v` takes a number of sweeps linear in the width, at the root or
+   after a branch. Checking that gcd per call, before the loop and with its
+   proof, would settle those shapes; a check at install would not catch the
+   ones that arise in search. It would not settle
+   the general question of how many sweeps an equality can take, which wants
+   its own look.
+3. **Hint the inequality's bound pushes** with `hints::LinearInequality{owner}`,
+   which already exists. It would turn rule 1's `search` into `hinted` for an
+   inequality, saving the reconstructor a row search; it supplies nothing that
+   is missing. Deliberately not filed (Ciaran, 2026-09-23): whether it is worth
+   carrying will show up when the justifier work reaches it.
+4. **#1034** — make the fold state fit in `std::any`, make slot copies cheap
    engine-wide, or allocate an `Iff`'s second direction lazily. Then re-measure
    `pattern-set-mining-k2`, `unit-commitment` and `vrp` together.
-7. **Tests**: long sums (tens of terms, so folding and reasons have something to
-   do), large coefficients, and a constant condition on every form. Unfiled.
-8. **Tidying**, #1043:
-   - delete `propagate_linear`'s dead `pair<bool, SimpleIntegerVariableID>`
-     branches, which never match `PositiveOrNegative`;
-   - correct `infer_cond_when_undecided`'s comment about which forms reach it;
-   - correct `LinearEqualityConsistency`'s comment, which names a level where
-     the variant has a tag;
+5. **Tests**, unfiled:
+   - long sums, tens of terms, so folding and reasons have something to do;
+   - large coefficients;
+   - a strength regression row for the equality: the `2x + 3y + 3z = 4`
+     fixed point, asserting it stays `bounds(R)`, so that the description
+     cannot drift back to `bounds(Z)` unnoticed;
+   - a #1091-shaped equality at several widths, in both arms, with proofs on
+     and off.
+6. **Tidying**, the rest of #1043 (#1075 did items 1–3):
    - decide whether the equality's undecided branch should strip the sweep's
-     idempotence claim, as the dispatcher does for the inequality;
-   - fold `linear-slack-waking.md` into this document's commentary. That also
-     means updating the comment in `propagate.cc` that cites it, so it waits for
-     a non-docs change.
-9. **#1042 — a bounds check in the undecided reified equality.** Cheap, and it
+     idempotence claim, as the dispatcher does for the inequality (item 4);
+   - fold `linear-slack-waking.md` into this document's commentary (item 5).
+     That also means updating the comment in `propagate.cc` that cites it, so
+     it waits for a non-docs change.
+7. **#1042 — a bounds check in the undecided reified equality.** Cheap, and it
    would remove the one-failure probe case, but the corpus shows no benefit.
-10. **#868** — cross-solver, against Gecode's `linear` on the linear-only corpus
-    models, which is the family's natural benchmark.
+8. **#310**, for the range-literal condition. It is the solver-wide gap, not
+   this family's.
+9. **#868** — cross-solver, against Gecode's `linear` on the linear-only corpus
+   models, which is the family's natural benchmark.
 
 ## Prior art
 
@@ -1049,20 +1249,31 @@ by the changed variable's coefficient to close by RUP.
 ## Developer commentary
 
 **The bugs were all outside the propagator.** The sweep has been heavily used
-and heavily tuned, and the audit found nothing wrong in it. It found three
-wrong answers in the code around it: a translation that predates the
-constraint it should have used, a constant-literal mapping nobody posts, and
-a binding nobody calls. Each survived because the tests post exactly the
-shapes the propagator expects: variable conditions, small bounds, three
-terms. A family this central is worth auditing at its edges more than at its
-core.
+and heavily tuned, and the audit found no wrong answer in it. It found three
+in the code around it: a translation that predated the constraint it should
+have used, a constant-literal mapping nobody posts, and a binding nobody
+calls. Each survived because the tests post exactly the shapes the propagator
+expects: variable conditions, small bounds, three terms. A family this central
+is worth auditing at its edges more than at its core. All three were fixed the
+next day.
 
-**"Identical inferences" is a claim the tree can test cheaply.** The
-stateless, incremental and slack-watched forms are all documented as making
-the same inferences, and running them side by side on 23 corpus models,
-comparing solution sequences, confirmed it in minutes. That made the CPU
-comparison trustworthy. Without it, a 2× difference could have been a
-different tree.
+**But the audit's own description of the core was wrong twice**, and review
+caught both. It called the equality `bounds(Z)` because the algorithm is a
+bounds algorithm, and it called every cost width-independent because one sweep
+is. A brute-force check of small instances refutes the first in seconds, and
+a two-term equality refutes the second. So check a strength claim against
+enumeration, and state a cost per call, not only per pass.
+
+**Equal solution sequences are a cheap check, and a weaker one than it
+looks.** The stateless, incremental and slack-watched forms are all
+documented as making the same inferences. Running them side by side on 23
+corpus models gave identical solution sequences in every row, and on the one
+model that finished under all four configurations (`shortest_path` 2008), the
+same 42,437 nodes. That is what was checked. It rules out a different set or
+order of solutions, but not a different tree: two searches can fail in
+different subtrees and still produce the same sequence, and the trees were not
+compared node by node. So the CPU table compares configurations known to
+produce the same solutions, not ones known to search the same tree.
 
 **The proof cost of a long linear constraint is its reasons.** At
 `AssertionLevel::Inferences` there is no justification at all, and
