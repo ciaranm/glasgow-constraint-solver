@@ -328,9 +328,13 @@ say which shape.*
 needs to see them side by side. `Rule` names the entry in the inference
 catalogue.*
 
-| Propagator | Triggers | Holes affect | Priority | Rule(s) | Enabled by | Idempotent? | Self-disables? |
-|---|---|---|---|---|---|---|---|
-| | | derived | | | always | | |
+| Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
+|---|---|---|---|---|---|---|
+| | | derived | | always | | |
+
+*Propagators have no priority, so there is no column for one. An initialiser
+does (`InitialiserPriority`); give an initialiser a row too, and say its
+priority in* Enabled by *when it is not the default.*
 
 *Then a sentence per propagator on when it disables itself
 (`DisableUntilBacktrack`, or permanently), and on the idempotence claim —
@@ -954,7 +958,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 
 | Document | Covers | Notes |
 |---|---|---|
-| `all_different.md` | `all_different/` | GAC and VC variants, `AllDifferentExcept`, `ExceptZero` |
+| `all_different.md` | `all_different/` | **written**. GAC, BC and VC arms, `AllDifferentExcept`, `ExceptZero`, and `SymmetricAllDifferent`, which lives here and shares the encoding and the GAC propagator |
 | `all_equal.md` | `all_equal/` | |
 | `among.md` | `among/` | *candidate merge* with `count`, `global_cardinality`, `n_value` as one counting family |
 | `arithmetic.md` | `multiply/`, `divide_modulus/`, `plus_minus/`, `power/`, and the `plus.hh` / `minus.hh` / `divide.hh` / `modulus.hh` headers | one family over several directories; existing note is `arithmetic-proofs.md` |

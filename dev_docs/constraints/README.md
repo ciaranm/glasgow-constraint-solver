@@ -57,6 +57,17 @@ constraints and do not restate it.
   the solver decides, once and per model, whether anything could observe the
   interior values the generalised arc consistent arm removes. Read it for the
   two promises a pair makes and for the shapes where they do not hold.
+- [`all_different.md`](all_different.md) — `AllDifferent` at three consistency
+  levels, `AllDifferentExcept` and `SymmetricAllDifferent`: one clique encoding,
+  nine rules, and the thesis's own Hall set procedures (JP 3.16, 3.17) behind the
+  generalised arc consistent arm. The first family whose code is not only its
+  own — `Inverse`, `ArgSort`, `Circuit` and `SubCircuit` run its propagators —
+  and the counterexample for `consistency::Auto`: a bounds consistent arm that
+  cannot be paired, because a hole in one variable moves another's bound. The
+  audit's headline is in the front end: MiniZinc's `symmetric_all_different`,
+  and by the same sweep `inverse` and `arg_sort`, give wrong answers on arrays
+  not indexed from 1, and the wrong `UNSATISFIABLE` verifies through the whole
+  `cake_pb_cp` chain.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
