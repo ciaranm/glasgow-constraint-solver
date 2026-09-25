@@ -130,7 +130,7 @@ constraints and do not restate it.
   lines for any constant. Its audit also found the test harness's
   idempotence-claim checker off in 100 lanes (#1056, fixed by #1086). A
   constant operand, `v1` or `v2`, still fails the strict `opbdiff` oracle, in
-  two different ways; unfiled. Not merged into `arithmetic`: no shared code.
+  two different ways (#1101). Not merged into `arithmetic`: no shared code.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
