@@ -110,6 +110,32 @@ namespace
         solve_for_tests(p, proof_name, actual, tuple{x, y});
         check_results(proof_name, expected, actual);
     }
+
+    // A half-reified form released by a false constant condition installs
+    // nothing, whatever the consistency level: under Tabulated it used to build
+    // and run a table over every tuple (issue #1103). The answers were right
+    // either way, so only the propagator count can see it.
+    template <typename Constraint_>
+    auto run_released_installs_nothing_test(const string & label, bool tabulated) -> void
+    {
+        println(cerr, "linear released form installs nothing: {}{}", label, tabulated ? " tabulated" : "");
+        cerr << flush;
+
+        Problem p;
+        auto x = p.create_integer_variable(0_i, 2_i);
+        auto y = p.create_integer_variable(0_i, 2_i);
+        auto c = Constraint_{WeightedSum{} + 1_i * x + 1_i * y, 3_i, innards::FalseLiteral{}};
+        if (tabulated)
+            c.with_consistency(consistency::Tabulated{});
+        p.post(move(c));
+
+        auto stats = solve(p, [](const CurrentState &) -> bool { return true; });
+        if (stats.solutions != 9 || stats.n_propagators != 0 || stats.propagations != 0) {
+            println(cerr, "expected 9 solutions from no propagators, got {} solutions, {} propagators, {} propagations", stats.solutions,
+                stats.n_propagators, stats.propagations);
+            std::exit(EXIT_FAILURE);
+        }
+    }
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -177,6 +203,11 @@ auto main(int argc, char * argv[]) -> int
             run_constant_condition_test<LinearNotEqualsIff>(proofs, "x + y != 3 iff true", innards::TrueLiteral{}, Expect::SumIsNot3, tabulated);
             run_constant_condition_test<LinearNotEqualsIff>(proofs, "x + y != 3 iff false", innards::FalseLiteral{}, Expect::SumIs3, tabulated);
         }
+    }
+
+    for (bool tabulated : {false, true}) {
+        run_released_installs_nothing_test<LinearEqualityIf>("x + y == 3 if false", tabulated);
+        run_released_installs_nothing_test<LinearNotEqualsIf>("x + y != 3 if false", tabulated);
     }
 
     return EXIT_SUCCESS;

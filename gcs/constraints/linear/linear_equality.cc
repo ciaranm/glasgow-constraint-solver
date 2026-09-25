@@ -243,6 +243,12 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model, const State &
 
 auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> void
 {
+    // condition is definitely false, but on a half reification, so there is
+    // nothing to propagate whichever arm we would pick; in particular the
+    // tabulation arm would otherwise build a table over every tuple (#1103)
+    if (holds_alternative<evaluated_reif::Deactivated>(_evaluated_cond))
+        return;
+
     const auto & sanitised_cv = _sanitised;
     const auto modifier = _modifier;
 
@@ -405,7 +411,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                     sanitised_cv);
             }, //
             [&](const evaluated_reif::Deactivated &) {
-                // condition is definitely false, but on a half reification, so we do nothing
+                // returned early above
             }, //
             [&](const evaluated_reif::Undecided & reif) {
                 // we care when the condition changes, or once we're down to a single unassigned variable
