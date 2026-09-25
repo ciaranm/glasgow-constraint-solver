@@ -231,8 +231,12 @@ the scheduling constraints (disjunctive, cumulative), the logical/lex/ordering
 constraints, and the arithmetic/counting core. Only the Abs/AllDifferent
 framework work required any constraint-side change; everything brought in
 afterwards verified untouched, including circuit's 1200-line hand-rolled
-SCC proof. `SmartTable` is the one deliberate exception: it over-prunes
-under views, tracked in issue #238.
+SCC proof. `SmartTable` was the last to join, and it did need a change on
+its own side (issue #238): its propagator kept private per-tuple domains
+that it did not key consistently through views, and it built its proof
+literals from the underlying variable with a bound in the view's space.
+That was a propagator bug rather than a gap in the framework; once the
+literals were stated over the view, they verified as-is.
 
 `gcs/CMakeLists.txt` is the source of truth for which tests participate.
 Circuit is wired two ways: its five bespoke scenario tests (disconnected,

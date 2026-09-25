@@ -37,6 +37,7 @@ using std::make_tuple;
 using std::make_unique;
 using std::map;
 using std::move;
+using std::pair;
 using std::set;
 using std::string;
 using std::stringstream;
@@ -137,42 +138,6 @@ namespace
     using TreeEdges = vector<vector<SmartEntry>>;
     using Forest = vector<TreeEdges>;
 
-    // Annoying workaround access functions to make sure this all works with views
-    auto get_for_actual_var(VariableDomainMap & vdom, const IntegerVariableID & v) -> vector<Integer>
-    {
-        return overloaded{
-            [&](ConstantIntegerVariableID) -> vector<Integer> { throw UnimplementedException{}; }, //
-            [&](ViewOfIntegerVariableID v) -> vector<Integer> {
-                auto vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
-                for (unsigned i = 0; i < vec.size(); i++) {
-                    vec[i] = (v.negate_first ? -1_i : 1_i) * vdom[v.actual_variable][i] + v.then_add;
-                }
-                return vec;
-            }, //
-            [&](SimpleIntegerVariableID s) -> vector<Integer> {
-                vector<Integer> vec = vdom.at(s);
-                return vec;
-            } //
-        }
-            .visit(v);
-    }
-
-    auto set_for_actual_var(VariableDomainMap & vdom, const IntegerVariableID & v, vector<Integer> & vec) -> void
-    {
-        overloaded{
-            [&](ConstantIntegerVariableID) -> void { throw UnimplementedException{}; }, //
-            [&](ViewOfIntegerVariableID v) -> void {
-                auto mod_vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
-                for (unsigned i = 0; i < vec.size(); i++) {
-                    mod_vec[i] = (v.negate_first ? -1_i : 1_i) * (vec[i] - v.then_add);
-                }
-                vdom.at(v.actual_variable) = move(mod_vec);
-            },                                                                 //
-            [&](SimpleIntegerVariableID s) -> void { vdom.at(s) = move(vec); } //
-        }
-            .visit(v);
-    }
-
     auto deview(IntegerVariableID v) -> IntegerVariableID
     {
         return overloaded{
@@ -181,6 +146,40 @@ namespace
             [&](ConstantIntegerVariableID & c) -> IntegerVariableID { return c; }                //
         }
             .visit(v);
+    }
+
+    // A VariableDomainMap is keyed by the underlying variable and holds values
+    // in the underlying variable's space, so that every view of one variable in
+    // a tuple reads and narrows the same set. These convert through a view on
+    // the way in and out; for anything that is not a view they are the identity.
+    auto to_view_value(const IntegerVariableID & v, Integer actual_value) -> Integer
+    {
+        if (auto * view = std::get_if<ViewOfIntegerVariableID>(&v))
+            return (view->negate_first ? -actual_value : actual_value) + view->then_add;
+        return actual_value;
+    }
+
+    auto to_actual_value(const IntegerVariableID & v, Integer view_value) -> Integer
+    {
+        if (auto * view = std::get_if<ViewOfIntegerVariableID>(&v))
+            return view->negate_first ? -(view_value - view->then_add) : view_value - view->then_add;
+        return view_value;
+    }
+
+    auto get_for_actual_var(const VariableDomainMap & vdom, const IntegerVariableID & v) -> vector<Integer>
+    {
+        vector<Integer> result;
+        for (const auto & value : vdom.at(deview(v)))
+            result.emplace_back(to_view_value(v, value));
+        return result;
+    }
+
+    auto set_for_actual_var(VariableDomainMap & vdom, const IntegerVariableID & v, const vector<Integer> & vec) -> void
+    {
+        vector<Integer> result;
+        for (const auto & value : vec)
+            result.emplace_back(to_actual_value(v, value));
+        vdom.at(deview(v)) = move(result);
     }
 
     auto log_filtering_inference(
@@ -216,10 +215,10 @@ namespace
                     copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
                     if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i), state, inference,
+                            log_filtering_inference(logger, tuple_selector, binary_entry.var_2 >= (dom_1[0] + 1_i), state, inference,
                                 singleton_reason(binary_entry.var_1 >= dom_1[0]));
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1], state, inference,
+                            log_filtering_inference(logger, tuple_selector, binary_entry.var_1 < dom_2[dom_2.size() - 1], state, inference,
                                 singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
                     }
                     break;
@@ -228,11 +227,11 @@ namespace
                     copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
                     if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, inference,
+                            log_filtering_inference(logger, tuple_selector, binary_entry.var_2 >= (dom_1[0]), state, inference,
                                 singleton_reason(binary_entry.var_1 >= dom_1[0]));
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state,
-                                inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
+                            log_filtering_inference(logger, tuple_selector, binary_entry.var_1 < (dom_2[dom_2.size() - 1] + 1_i), state, inference,
+                                singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
                     }
                     break;
                 case Equal:
@@ -245,8 +244,8 @@ namespace
                             vector<Integer> discarded_dom1;
                             set_difference(dom_1, dom_2, back_inserter(discarded_dom1));
                             for (const auto & val : discarded_dom1) {
-                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != val, state, inference,
-                                    singleton_reason(binary_entry.var_2 != val));
+                                log_filtering_inference(
+                                    logger, tuple_selector, binary_entry.var_1 != val, state, inference, singleton_reason(binary_entry.var_2 != val));
                             }
                         }
 
@@ -254,8 +253,8 @@ namespace
                             vector<Integer> discarded_dom2;
                             set_difference(dom_2, dom_1, back_inserter(discarded_dom2));
                             for (const auto & val : discarded_dom2) {
-                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != val, state, inference,
-                                    singleton_reason(binary_entry.var_1 != val));
+                                log_filtering_inference(
+                                    logger, tuple_selector, binary_entry.var_2 != val, state, inference, singleton_reason(binary_entry.var_1 != val));
                             }
                         }
                     }
@@ -265,7 +264,7 @@ namespace
                         new_dom_1 = dom_1;
                         set_difference(dom_2, dom_1, back_inserter(new_dom_2));
                         if (logger && new_dom_2.size() < dom_2.size() && logger->get_assertion_level() == AssertionLevel::Off) {
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, inference,
+                            log_filtering_inference(logger, tuple_selector, binary_entry.var_2 != (dom_1[0]), state, inference,
                                 singleton_reason(binary_entry.var_1 == dom_1[0]));
                         }
                     }
@@ -273,7 +272,7 @@ namespace
                         new_dom_2 = dom_2;
                         set_difference(dom_1, dom_2, back_inserter(new_dom_1));
                         if (logger && new_dom_1.size() < dom_1.size() && logger->get_assertion_level() == AssertionLevel::Off) {
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, inference,
+                            log_filtering_inference(logger, tuple_selector, binary_entry.var_1 != (dom_2[0]), state, inference,
                                 singleton_reason(binary_entry.var_2 == dom_2[0]));
                         }
                     }
@@ -287,10 +286,10 @@ namespace
                     copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
                     if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, inference,
+                            log_filtering_inference(logger, tuple_selector, binary_entry.var_1 >= (dom_2[0] + 1_i), state, inference,
                                 singleton_reason(binary_entry.var_2 >= dom_2[0]));
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state, inference,
+                            log_filtering_inference(logger, tuple_selector, binary_entry.var_2 < dom_1[dom_1.size() - 1], state, inference,
                                 singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
                     }
                     break;
@@ -299,11 +298,11 @@ namespace
                     copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
                     if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, inference,
+                            log_filtering_inference(logger, tuple_selector, binary_entry.var_1 >= (dom_2[0]), state, inference,
                                 singleton_reason(binary_entry.var_2 >= dom_2[0]));
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state,
-                                inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
+                            log_filtering_inference(logger, tuple_selector, binary_entry.var_2 < (dom_1[dom_1.size() - 1] + 1_i), state, inference,
+                                singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
                     }
                     break;
                 default: throw UnexpectedException{"Unexpected SmartEntry type encountered."};
@@ -385,14 +384,17 @@ namespace
         return true;
     }
 
-    auto remove_supported(VariableDomainMap & unsupported, IntegerVariableID var, vector<Integer> & to_remove) -> void
+    // Both maps are keyed by the underlying variable, in its value space, so no
+    // conversion through a view is needed here.
+    auto remove_supported(VariableDomainMap & unsupported, const VariableDomainMap & supported_by_tree, const IntegerVariableID & var) -> void
     {
+        auto actual_var = deview(var);
         vector<Integer> new_unsupported{};
-        auto unsupported_set = set(unsupported[var].begin(), unsupported[var].end());
-        auto to_remove_set = set(to_remove.begin(), to_remove.end());
+        auto unsupported_set = set(unsupported.at(actual_var).begin(), unsupported.at(actual_var).end());
+        auto to_remove_set = set(supported_by_tree.at(actual_var).begin(), supported_by_tree.at(actual_var).end());
         set_difference(unsupported_set, to_remove_set, back_inserter(new_unsupported));
 
-        unsupported[var] = new_unsupported;
+        unsupported.at(actual_var) = move(new_unsupported);
     }
 
     auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree, VariableDomainMap & unsupported,
@@ -413,19 +415,11 @@ namespace
             for (const auto & edge : level) {
                 overloaded{
                     [&](const BinaryEntry & binary_entry) {
-                        auto supported_var_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
-                        auto supported_var_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
-                        remove_supported(unsupported, binary_entry.var_1, supported_var_1);
-                        remove_supported(unsupported, binary_entry.var_2, supported_var_2);
-                    }, //
-                    [&](const UnarySetEntry & unary_set_entry) {
-                        auto supported = get_for_actual_var(supported_by_tree, unary_set_entry.var);
-                        remove_supported(unsupported, unary_set_entry.var, supported);
-                    }, //
-                    [&](const UnaryValueEntry & unary_val_entry) {
-                        auto supported = get_for_actual_var(supported_by_tree, unary_val_entry.var);
-                        remove_supported(unsupported, unary_val_entry.var, supported);
-                    } //
+                        remove_supported(unsupported, supported_by_tree, binary_entry.var_1);
+                        remove_supported(unsupported, supported_by_tree, binary_entry.var_2);
+                    },                                                                                                                      //
+                    [&](const UnarySetEntry & unary_set_entry) { remove_supported(unsupported, supported_by_tree, unary_set_entry.var); },  //
+                    [&](const UnaryValueEntry & unary_val_entry) { remove_supported(unsupported, supported_by_tree, unary_val_entry.var); } //
                 }
                     .visit(edge);
             }
@@ -439,16 +433,18 @@ namespace
         for (const auto & entry : tuple) {
             overloaded{
                 [&](const BinaryEntry & binary_entry) {
-                    vars_in_tuple.emplace_back(binary_entry.var_1);
-                    vars_in_tuple.emplace_back(binary_entry.var_2);
-                },                                                                                                //
-                [&](const UnarySetEntry & unary_set_entry) { vars_in_tuple.emplace_back(unary_set_entry.var); },  //
-                [&](const UnaryValueEntry & unary_val_entry) { vars_in_tuple.emplace_back(unary_val_entry.var); } //
+                    vars_in_tuple.emplace_back(deview(binary_entry.var_1));
+                    vars_in_tuple.emplace_back(deview(binary_entry.var_2));
+                },                                                                                                        //
+                [&](const UnarySetEntry & unary_set_entry) { vars_in_tuple.emplace_back(deview(unary_set_entry.var)); },  //
+                [&](const UnaryValueEntry & unary_val_entry) { vars_in_tuple.emplace_back(deview(unary_val_entry.var)); } //
             }
                 .visit(entry);
         }
 
-        auto vars_set = set(vars.begin(), vars.end());
+        set<IntegerVariableID> vars_set;
+        for (const auto & var : vars)
+            vars_set.emplace(deview(var));
         auto vars_in_tuple_set = set(vars_in_tuple.begin(), vars_in_tuple.end());
 
         set_difference(vars_set, vars_in_tuple_set, back_inserter(unrestricted));
@@ -459,13 +455,19 @@ namespace
         const vector<Forest> & forests, const State & state, auto & inference, const ReasonLiterals & reason, vector<ProofFlag> pb_selectors,
         ProofLogger * const logger, bool short_reasons, const ConstraintID & owner) -> void
     {
-        VariableDomainMap unsupported{};
-        // Initialise unsupported values to everything in each variable's current domain.
+        // Everything in each underlying variable's current domain, keyed and valued
+        // as a VariableDomainMap is. The same variable may appear more than once
+        // in vars, possibly through different views, so seed each only once.
+        VariableDomainMap current_domains{};
         for (const auto & var : vars) {
-            for (auto value : state.each_value_immutable(var)) {
-                unsupported[var].emplace_back(value);
-            }
+            auto actual_var = deview(var);
+            if (! current_domains.contains(actual_var))
+                for (auto value : state.each_value_immutable(actual_var))
+                    current_domains[actual_var].emplace_back(value);
         }
+
+        // Initialise unsupported values to everything in each variable's current domain.
+        VariableDomainMap unsupported = current_domains;
 
         // Check that feasible tuples are still feasible
         // and also have them remove values from "unsupported" that they support
@@ -492,11 +494,7 @@ namespace
             bool tuple_feasible = true;
             for (const auto & tree : forest) {
                 // Initialise supported by tree to current variable domains
-                auto & supported_by_tree = supported_by_trees.emplace_back();
-
-                for (const auto & var : vars)
-                    for (auto value : state.each_value_immutable(var))
-                        supported_by_tree[var].emplace_back(value);
+                auto & supported_by_tree = supported_by_trees.emplace_back(current_domains);
 
                 // First pass of filtering supported_by_tree and check of validity
                 if (! filter_and_check_valid(tree, supported_by_tree, pb_selector, state, inference, reason, logger)) {
@@ -516,7 +514,7 @@ namespace
 
             const auto unrestricted = get_unrestricted(vars, tuples[tuple_idx]);
             for (const auto & var : unrestricted) {
-                unsupported[var] = vector<Integer>{};
+                unsupported.at(var) = vector<Integer>{};
             }
         }
 
@@ -566,29 +564,32 @@ namespace
             }
             return;
         }
-        if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+        // Infer each removal on the variable as vars names it, converting the value
+        // back through the view, and only once per underlying variable.
+        vector<pair<IntegerVariableID, Integer>> removals;
+        set<IntegerVariableID> removed_from;
+        for (const auto & var : vars)
+            if (removed_from.emplace(deview(var)).second)
+                for (const auto & value : unsupported.at(deview(var)))
+                    removals.emplace_back(var, to_view_value(var, value));
 
-            for (const auto & var : vars) {
-                for (const auto & value : unsupported[var]) {
-                    auto justf = [&](const ReasonLiterals & reason) -> void {
-                        for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                            logger->emit_rup_proof_line_under_reason(
-                                reason, WPBSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i, ProofLevel::Temporary);
-                        }
-                    };
-                    inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, reason_to_use);
-                }
+        if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+            for (const auto & [var, value] : removals) {
+                auto justf = [&](const ReasonLiterals & reason) -> void {
+                    for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
+                        logger->emit_rup_proof_line_under_reason(
+                            reason, WPBSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i, ProofLevel::Temporary);
+                    }
+                };
+                inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, reason_to_use);
             }
             // if (short_reasons) {
             //     logger->delete_range(reason_definition_1, reason_definition_2 + 1);
             // }
         }
         else {
-            for (const auto & var : vars) {
-                for (const auto & value : unsupported[var]) {
-                    inference.infer_not_equal(logger, var, value, JustifyUsingRUP{hints::SmartTable{owner}}, NoReason{});
-                }
-            }
+            for (const auto & [var, value] : removals)
+                inference.infer_not_equal(logger, var, value, JustifyUsingRUP{hints::SmartTable{owner}}, NoReason{});
         }
     }
 

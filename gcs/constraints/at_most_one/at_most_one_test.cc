@@ -184,15 +184,6 @@ auto main(int argc, char * argv[]) -> int
     bool run_dup = effectively_bare;
 
     for (auto variant : {Variant::Native, Variant::SmartTable}) {
-        // The AtMostOneSmartTable variant is kept only for benchmarking and
-        // routes through SmartTable, which does not support views (its own
-        // test refuses --view-wrap argv, and the view path over-prunes; see
-        // issue #238). Exercise it for the bare config
-        // only; the native AtMostOne propagator is the one that must hold up
-        // under the view sweep.
-        if (variant == Variant::SmartTable && ! effectively_bare)
-            continue;
-
         for (bool proofs : {false, true}) {
             if (proofs && ! can_run_veripb())
                 continue;
