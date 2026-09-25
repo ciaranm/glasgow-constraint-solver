@@ -1284,6 +1284,82 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
+    // --- the flagged row's arithmetic, settled from the model (#1082) -----
+    //
+    // The row's network has constants quadratic in the resource-axis window,
+    // so a window from zero overflows Integer once it ends at 2^31. The rules
+    // citing the row are then off on that axis, proofs or not; before, they
+    // fired with proofs off and threw part-way through the solve with them on.
+    //
+    // Three rectangles of height h in the column x = 0, each at y = lo or lo +
+    // h: two stack, and three overload the column. The holes keep the search
+    // small once the rule is off. A fourth, unit square at (2, lo) widens the
+    // x extent to three, which keeps the y projection from firing (area 3h + 1
+    // in 6h); that matters because its proof would name a row per time point
+    // across a y axis this wide.
+    if (! overload && ! edge_finding && ! ttef && ! projection) {
+        const Disjunctive2DRules overload_on{.relaxation_overload = true};
+        const Disjunctive2DRules projection_on{.cumulative_projection = CumulativeRules{}};
+
+        struct Column
+        {
+            bool satisfiable = false;
+            int x_rows = 0;
+        };
+        auto column = [&](Integer lo, Integer h, Disjunctive2DRules rules, const optional<string> & name) -> Column {
+            Problem p;
+            vector<IntegerVariableID> xs, ys;
+            for (auto i = 0; i < 3; ++i) {
+                xs.push_back(p.create_integer_variable(0_i, 0_i));
+                ys.push_back(p.create_integer_variable(vector<Integer>{lo, lo + h}));
+            }
+            xs.push_back(p.create_integer_variable(2_i, 2_i));
+            ys.push_back(p.create_integer_variable(lo, lo));
+            p.post(Disjunctive2D{xs, ys, vector<Integer>(4, 1_i), vector<Integer>{h, h, h, 1_i}}.with_rules(rules));
+            Column result;
+            solve_with(p, SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                result.satisfiable = true;
+                return false;
+            }},
+                name ? make_optional<ProofOptions>(ProofFileNames{*name}) : nullopt);
+            if (name)
+                result.x_rows = count_markers(*name, "disjunctive2d cumulative relaxation overload axis=0") +
+                    count_markers(*name, "disjunctive2d cumulative projection row axis=0");
+            return result;
+        };
+
+        auto check = [&](const string & name, Integer lo, Integer h, Disjunctive2DRules rules, bool row_expected) {
+            if (column(lo, h, rules, nullopt).satisfiable)
+                fail(name + ": three rectangles of height h fit in a column 2h tall, with proofs off");
+            if (! proofs)
+                return;
+            auto result = column(lo, h, rules, name);
+            if (result.satisfiable)
+                fail(name + ": three rectangles of height h fit in a column 2h tall, with proofs on");
+            if (row_expected && result.x_rows < 1)
+                fail(name + ": no row on the x projection, so the fixture does not reach the network");
+            if (! row_expected && result.x_rows != 0)
+                fail(name + ": a row on the x projection, over a window its network cannot write");
+            if (! verify(name))
+                fail(name + ": veripb rejected the proof");
+        };
+
+        // A window from zero ending at 2^31 - 2: 31 bits, the widest that fits,
+        // with `(1 + K) * span` just under 2^62.
+        check("disjunctive_2d_relaxation_row_fits", 0_i, Integer{(1LL << 30) - 1}, overload_on, true);
+        // Ending at 2^31: 32 bits, and `(1 + K) * span` is past 2^63.
+        check("disjunctive_2d_relaxation_row_too_wide", 0_i, Integer{1LL << 30}, overload_on, false);
+        // It is the window that decides, not the width: four units high up
+        // the axis make a 39-bit network whose constants are small.
+        check("disjunctive_2d_relaxation_row_high_narrow", Integer{1LL << 38}, 2_i, overload_on, true);
+
+        // The projection cites the same row, and is gated with it, but only
+        // the narrow window can be a fixture: the y axis is the others' wide
+        // window, and the projection's Cumulative on it works per time point
+        // across its horizon, proofs or not.
+        check("disjunctive_2d_projection_row_high_narrow", Integer{1LL << 38}, 2_i, projection_on, true);
+    }
+
     println(cerr, "disjunctive2d cumulative relaxation: all fixtures pass");
     return EXIT_SUCCESS;
 }

@@ -41,6 +41,25 @@ ComparatorNetwork::ComparatorNetwork(
 {
 }
 
+auto ComparatorNetwork::fits_optional_tasks(int width, Integer window_lo, Integer window_hi) -> bool
+{
+    // What add_optional_task already insists on, and a span that exists.
+    if (width < 1 || width > 62 || window_lo < 0_i || window_hi < window_lo)
+        return false;
+    auto span = (1LL << width) - 1;
+    if (window_hi.raw_value > span)
+        return false;
+
+    // The constructor's divisor, `4 * big + 4 * span`, which is `12 * span`
+    // with the window ending inside the span; and the parking divisor, `(1 +
+    // K) * span`. Every other constant the mode computes is at most one of
+    // these: `K * duration + span` because a duration is at most `span`, and
+    // `K * 2^t` because `2^t` is.
+    long long divisor, one_plus_k, parking;
+    return ! mul_overflows(12LL, span, &divisor) && ! add_overflows(1LL, (window_hi - window_lo).raw_value, &one_plus_k) &&
+        ! mul_overflows(one_plus_k, span, &parking);
+}
+
 auto ComparatorNetwork::width() const -> int
 {
     return _width;
@@ -142,8 +161,8 @@ auto ComparatorNetwork::add_optional_task(const ProofLiteralOrFlag & active, con
         throw ProofError{"a comparator network's tasks are all optional or none are"};
     if (! _guard.terms.empty())
         throw ProofError{"optional tasks derive an unconditional row, so take no guard"};
-    if (duration < 1_i || duration > _span || _window_hi > _span || _window_lo < 0_i)
-        throw ProofError{"optional task or window does not fit the comparator network's width"};
+    if (duration < 1_i || duration > _span || ! fits_optional_tasks(_width, _window_lo, _window_hi))
+        throw ProofError{"optional task or window does not fit the comparator network's width and arithmetic"};
     _optional = true;
 
     // The duration is `duration * active`, which needs no flags of its own:

@@ -115,7 +115,12 @@ namespace gcs
          * Uses the members \ref cumulative_relaxation does, restricted to a
          * constant time-axis size, and `H` is the model's resource-axis
          * extent over them rather than the current one, since the row is
-         * cached. Off by default; independent of \ref cumulative_relaxation.
+         * cached. The network's constants are quadratic in that extent, so an
+         * axis whose members' resource-axis window does not pass
+         * innards::ComparatorNetwork::fits_optional_tasks --- from zero, one
+         * ending at 2^31 or later --- runs none of the rules citing the row,
+         * whether or not proofs are on. Off by default; independent of \ref
+         * cumulative_relaxation.
          */
         bool relaxation_overload = false;
 
@@ -169,7 +174,8 @@ namespace gcs
          * cites it and cached at `ProofLevel::Top`. Past that the propagator
          * and every certificate it writes are `Cumulative`'s, unchanged.
          *
-         * Uses the members \ref relaxation_overload does. nullopt, the
+         * Uses the members \ref relaxation_overload does, and is off on an
+         * axis where that rule is for the width of its window. nullopt, the
          * default, runs nothing.
          */
         std::optional<CumulativeRules> cumulative_projection = std::nullopt;
@@ -310,6 +316,13 @@ namespace gcs
         // the capacity row the check cites be cached at Top.
         std::array<std::pair<Integer, Integer>, 2> _relaxation_window{{{Integer{0}, Integer{0}}, {Integer{0}, Integer{0}}}};
         std::array<std::map<std::size_t, std::pair<Integer, Integer>>, 2> _relaxation_declared_time;
+
+        // Per axis, whether that window is narrow enough for the flagged
+        // capacity row's network, whose optional tasks have constants
+        // quadratic in it (innards::ComparatorNetwork::fits_optional_tasks).
+        // Where it is not, the rules citing the row --- the energetic rungs
+        // and the projection --- are off on that axis, proofs or not.
+        std::array<bool, 2> _relaxation_row_fits{{false, false}};
 
         // Disjunctive2DRules::cumulative_projection, per axis: the rectangles
         // projected, in the order the projected Cumulative numbers its tasks,

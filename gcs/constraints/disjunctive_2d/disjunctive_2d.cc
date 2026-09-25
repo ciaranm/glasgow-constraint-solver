@@ -326,6 +326,17 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
             first = false;
             declared.emplace(i, initial_state.bounds(time_pos[i]));
         }
+
+        // The flagged row's network is as wide as the window's end, every
+        // member's position being narrower (a non-negative declared domain
+        // encodes to the bit width of its upper bound), and its constants are
+        // quadratic in the window: the members' own gate above admits a
+        // window the row cannot be derived over. So the rules citing the row
+        // are settled here too, from the model, rather than meeting the
+        // overflow with proofs on and not off (#1082).
+        _relaxation_row_fits[time_axis] = ! _relaxation_members[time_axis].empty() &&
+            ComparatorNetwork::fits_optional_tasks(
+                static_cast<int>(std::bit_width(static_cast<unsigned long long>(window.second.raw_value))), window.first, window.second);
     }
 
     // Disjunctive2DRules::cumulative_projection: the Cumulative each axis
@@ -338,7 +349,7 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         auto & rects = _projection_rects[time_axis];
         rects.clear();
         _projection[time_axis] = nullptr;
-        if (! _rules.cumulative_projection)
+        if (! _rules.cumulative_projection || ! _relaxation_row_fits[time_axis])
             continue;
 
         const auto & time_pos = time_axis == 0 ? _xs : _ys;
@@ -720,7 +731,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             before_x = move(_before_x), before_y = move(_before_y), clause_lines = move(_clause_lines), zero_w = move(_zero_w),
             zero_h = move(_zero_h), presence = move(_presence), strict = _strict, rules = _rules, relaxation_members = move(_relaxation_members),
             relaxation_window = _relaxation_window, relaxation_declared_time = move(_relaxation_declared_time),
-            overload_cache = std::make_shared<RelaxationOverloadCache>(), mutation = _mutation,
+            relaxation_row_fits = _relaxation_row_fits, overload_cache = std::make_shared<RelaxationOverloadCache>(), mutation = _mutation,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Pairwise 2D time-table. The mandatory box of rectangle i is
             //   [ub(x_i), lb(x_i)+lb(w_i)) x [ub(y_i), lb(y_i)+lb(h_i))
@@ -1452,6 +1463,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // multiplied by its rectangle's height.
             if (rules.relaxation_overload || rules.relaxation_edge_finding || rules.relaxation_time_table_edge_finding) {
                 for (auto time_axis : {0, 1}) {
+                    if (! relaxation_row_fits[time_axis])
+                        continue;
                     const auto & tpos = 0 == time_axis ? xs : ys;
                     const auto & tsize = 0 == time_axis ? width_var : height_var;
                     const auto & rpos = 0 == time_axis ? ys : xs;

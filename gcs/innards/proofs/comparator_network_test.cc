@@ -293,6 +293,21 @@ namespace
 
 auto main(int, char *[]) -> int
 {
+    // Where optional tasks' arithmetic stops fitting (#1082): from zero, a
+    // window ending at 2^31 - 1 is the last whose `(1 + K) * span` is below
+    // 2^63, and a narrow window fits at any width short of the span's own
+    // limit. Pure arithmetic, so it runs whether or not veripb is there.
+    if (! ComparatorNetwork::fits_optional_tasks(31, 0_i, Integer{(1LL << 31) - 1}))
+        fail("fits_optional_tasks: a 31-bit window from zero should fit");
+    if (ComparatorNetwork::fits_optional_tasks(32, 0_i, Integer{1LL << 31}))
+        fail("fits_optional_tasks: a 32-bit window from zero should not fit");
+    if (! ComparatorNetwork::fits_optional_tasks(58, Integer{1LL << 57}, Integer{(1LL << 57) + 4}))
+        fail("fits_optional_tasks: a narrow window should fit at 58 bits");
+    if (ComparatorNetwork::fits_optional_tasks(60, Integer{1LL << 59}, Integer{(1LL << 59) + 4}))
+        fail("fits_optional_tasks: the constructor's 12 * span overflows at 60 bits");
+    if (ComparatorNetwork::fits_optional_tasks(3, 0_i, 8_i))
+        fail("fits_optional_tasks: a window ending past the span should not fit");
+
     if (! can_run_veripb()) {
         println(cerr, "veripb not found, skipping");
         return EXIT_SUCCESS;
