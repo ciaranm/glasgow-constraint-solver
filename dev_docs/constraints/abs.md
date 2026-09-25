@@ -1,15 +1,41 @@
 # Abs: one variable is the absolute value of another
 
 > **Maturity** production ·
-> **Audited** 2026-09-23 at `f28fdef8` ·
-> **Open issues** filed by this audit: #1058 (a constant `v2` removes `v1`'s
-> values one at a time, in time and proof lines linear in the constant),
-> #1057 (the propagator reaches its own fixpoint but does not claim
-> idempotence; claiming it is 18–20% on `celar`). Found here but not this
-> family's: #1056 (the test harness's idempotence-claim checker is silently
-> off in 100 of the 317 lanes that use it, `abs_constraint` among them).
-> Already open and touching this family: #868 (cross-solver). Tracked under
-> #871.
+> **Audited** 2026-09-23 at `f28fdef8`; re-audited 2026-09-25 at `61112ed0` ·
+> **Open issues** filed by this audit: none left open. #1057, #1058 and #1056
+> are fixed; see [Re-audit, 2026-09-25](#re-audit-2026-09-25). Already open and
+> touching this family: #868 (cross-solver). One finding is unfiled: with a
+> constant operand, either one, our four rows are not `cake_pb_cp`'s, so the
+> strict `opbdiff` oracle fails although cake verifies the proof ([Cake
+> conformity](#cake-conformity)). Tracked under #871.
+
+## Re-audit, 2026-09-25
+
+All three issues the first pass filed were fixed and merged on 2026-09-24.
+
+| issue | PR | what it changed here |
+|---|---|---|
+| #1057 | #1076 | The propagator returns `EnableButIdempotent`, with the argument in a comment at the `return`. `justify_abs_hole` (rule 7) lost its second lemma, which its own reason implied. Changes the inventory, the idempotence text, rule 7, and the CPU figures. |
+| #1058 | #1080 | With a constant `v2`, the preimage loop removes each run of `v1` at once, by plain RUP, rather than a value at a time. The loop's range arm is now gated on `v1` alone being a variable. New `abs_test` rows (one hole row, four wide-constant rows), and an `Abs/constant` audit-lane row. Changes rules 8 and 9, interval efficiency, the proof figures, and the limitations. |
+| #1056 | #1086 | Not this family's code. The test harness now switches the idempotence-claim checker on before anything propagates, and throws if it is off. So both `abs_constraint` lanes now check the claim that #1076 makes. Changes Tests. |
+
+**Re-measured at `61112ed0`**, on the same machine and pinned the same way
+(on core 20, where the first pass used core 8), alongside a re-run of the
+`f28fdef8` build in the same sitting:
+
+- the `celar` CPU runs;
+- the Gecode baseline;
+- the `celar` proof runs at both assertion levels, with VeriPB;
+- the constant-`v2` probe;
+- the hole-run probe;
+- the `celar` propagation share;
+- the nine lanes.
+
+**Not re-measured**, and still `f28fdef8`'s: the `perf` profile, the per-rule
+firing counters, the runtime-cap check, and the aliased-view differential. The
+counters came from local instrumentation that is not in any build now.
+Everything below that is not marked otherwise was re-checked against the code
+at `61112ed0`. A figure from the first pass is labelled with its commit.
 
 `Abs(v1, v2)` says `v2 = |v1|`. It is one class, with one initialiser and one
 propagator, and the propagator is generalised arc consistent: bounds both ways,
@@ -17,28 +43,31 @@ then the values of `v2` with no preimage and the values of `v1` whose absolute
 value `v2` has lost. Its bound and range proofs resolve the model's two
 half-reified rows by `pol`, because unit propagation can neither split on
 `v1`'s sign nor cross the negative branch's row, which is a sum rather than a
-difference. Its single-value removals are plain RUP.
+difference. Its single-value removals are RUP: plain for `v1`'s, and after one
+lemma for `v2`'s. Its range removals against a constant `v2` are plain RUP.
 
 Three things to know before touching it.
 
-- **It is generalised arc consistent in a single call, and does not say so.**
-  Removing a value from one side never removes a support on the other, so one
-  call reaches the fixpoint. It returns `PropagatorState::Enable`, so the engine
-  requeues it after its own inferences. Returning `EnableButIdempotent` instead
-  passes 212 runs with the claim checked, over every view wrap, and cuts
-  `celar`'s time by 18–20% at the same node count (#1057).
-- **A constant `v2` falls off the interval path.** The range justifications
-  resolve against order atoms of both operands, and a constant has none. So with
-  `v2` a constant `c`, `v1`'s interior `[−c + 1, c − 1]` is removed one value at
-  a time, about 13 proof lines each: 3.1 s at `c = 10⁷`, and 260,030 lines at
-  `c = 10⁴`, where a one-value **variable** takes 0.1 ms and 137 lines at any
-  `c`. MiniZinc's `celar` reaches it, and pays 30% of its proof lines and 43% of
-  its checking time for it (#1058).
-- **It is most of the propagation on `celar`, where we are about five times
-  slower than Gecode.** `Abs` is 55–64% of propagation time on both `celar`
-  instances. The whole solver takes 4.8 and 5.6 times as long as Gecode to the
-  same solution, at node counts within 4% either way. How much of that gap is
-  `Abs`'s was not isolated.
+- **It is generalised arc consistent in a single call, and says so.** Removing
+  a value from one side never removes a support on the other, so one call
+  reaches the fixpoint, and since #1076 the propagator returns
+  `EnableButIdempotent`. On `celar` that is 19% and 15% fewer propagator calls
+  at the same node counts, and 21% and 18% less time. Re-measured at
+  `61112ed0`: 5.61–5.66 s → 4.43–4.46 s on 2013, and 0.215 → 0.177 s on 2016.
+- **A constant `v2` is the one operand the range proofs cannot name, and it
+  needs none.** A constant has no order atom, so rule 8's `pol` derivation does
+  not apply. But with the constant folded into the model's rows, each half is
+  a bound on `v1` alone, and a run on one side of zero is plain RUP (#1080).
+  Before that, `v1`'s interior `[−c + 1, c − 1]` went a value at a time, at
+  about 13 lines each. That took 3.1 s at `c = 10⁷`, and 260,030 lines at
+  `c = 10⁴` (`f28fdef8`). Now it is 86 lines and under 0.2 ms at every `c` up
+  to `10⁹`. On `celar` it had been 30% of the proof's lines.
+- **It is the largest share of the propagation on `celar`, where we are about
+  four times slower than Gecode.** `Abs` is 51% and 45% of propagation time on the two
+  `celar` instances over 10 s. The whole solver takes 3.8 and 4.6 times as long
+  as Gecode to the same solution, at node counts within 4% either way. Before
+  #1076 those figures were 63% and 55%, and 4.8 and 5.6 times. How much of the
+  gap is `Abs`'s was not isolated.
 
 ## What it is
 
@@ -85,10 +114,16 @@ the hole rows run under the wrap too.
 
 **A constant is the one kind the proof treats differently.** The range
 justifications (rules 6 and 8) resolve against an order atom of each operand,
-and a constant has none, so a constant operand sends both interior loops down
-their per-value arm. With `v1` constant that costs nothing, because the bounds
-rules fix `v2` first. With `v2` constant it is the hazard in [Interval
-efficiency](#interval-efficiency).
+and a constant has none. What happens instead depends on which operand it is:
+
+- **A constant `v1`** is one value. The bounds rules fix `v2` first, so each
+  interior loop has at most that one value to consider.
+- **A constant `v2`**, in the image loop, is also one value.
+- **A constant `v2`**, in the preimage loop, takes rule 8's second form. With
+  the constant folded into the model's rows, a run of `v1` on one side of zero
+  is removed by plain RUP (#1080). Before #1080 it took the per-value arm, which
+  was the hazard the first pass reported in [Interval
+  efficiency](#interval-efficiency).
 
 **Aliased views** are not in the tests. This audit's differential posted
 `Abs(a₁·x + c₁, a₂·x + c₂)` for `a` in `{1, −1}`, `c₁` in `{−3, 0, 2}`, `c₂` in
@@ -162,12 +197,35 @@ The propagator reaches them by line number, captured in `define_proof_model`.
 | `scp_chain_abs_sat` (`x ∈ −3..3`, `y ∈ 0..3`, enumerate) | full workflow 2 | `strict` |
 | `scp_chain_abs_unsat` (`y ∈ 4..7`) | full workflow 2 | `strict` |
 
-Both report `OK: full workflow-2 chain passed` at `f28fdef8`, with
-`cake_pb_cp` and `opbdiff` on the path, so the OPB matches cake's label for
-label. Neither case starts with a hole, a view or a constant. Search makes
-holes, so the chain does see the preimage rules: `abs_sat`'s proof has rule 9's
-single-value RUPs and a rule 8 `pol` triple. The image rules (6 and 7) were
-not looked for in it.
+Both report `OK: full workflow-2 chain passed` at `f28fdef8`, and again at
+`61112ed0`, with `cake_pb_cp` and `opbdiff` on the path. So the OPB matches
+cake's label for label. Neither case starts with a hole, a view or a constant.
+Search makes holes, so the chain does see the preimage rules: `abs_sat`'s proof
+has rule 9's single-value RUPs and a rule 8 `pol` triple. The image rules (6
+and 7) were not looked for in it.
+
+**A constant operand is not label-for-label cake's, in two different ways.**
+The re-audit checked two uncommitted cases with `run_scp_chain.bash` in
+`strict` mode. Each one verifies through cake and then fails the `opbdiff`
+oracle, so the script exits 1.
+
+- **A constant `v2`**: `(X −50 50) (Y −3 3)`, `abs X 45`, `abs Y 2`,
+  enumerated. `s VERIFIED COMPLETE ENUMERATION OF 4 SOLUTIONS`. The oracle
+  differs on all four `posle`/`negle` rows, in the big-M coefficient on the
+  sign atom's literal: for `X`'s `posle`, ours is 63 and cake's 18. Why the two
+  differ was not traced. Posting the constant as a one-value variable makes
+  that constraint's rows match.
+- **A constant `v1`**: `(Y 0 50)`, `abs −45 Y`, enumerated. `s VERIFIED
+  COMPLETE ENUMERATION OF 1 SOLUTIONS`. The oracle differs on **all four**
+  rows, `posge` and `negge` too. We write each half folded and unreified, with
+  no guard literal: our `negle` is `… >= 45`. Cake keeps a guard,
+  `… 45 n[-45][ge0] >= 45`, and adds two rows of its own that define that
+  fixed atom.
+
+Cake accepts our proof against its own rows in both cases. The `f28fdef8`
+build gives the same differences in both, so neither is new; #1080's
+description first noted the constant-`v2` one. Both are unfiled, and no
+`scp_cases` case posts a constant. See [Next steps](#next-steps).
 
 ### Proof-time state
 
@@ -182,6 +240,11 @@ not looked for in it.
 - **Constant `v1`**: the five bound helpers return at once, and the inference
   is a plain RUP, because the relevant half is then unreified in `v1` and closes
   by itself. The range helpers are never reached with a constant operand.
+- **Constant `v2`**: the preimage range removal (rule 8's second form) calls no
+  helper and is a plain RUP. Its reason is a range literal on the constant,
+  which is true by construction, so the logged line is an unconditional unit:
+  `a 1 ~i[v1][in-4_-1] >= 1::abs:…` at `AssertionLevel::Inferences`, for
+  `v1 ∈ [−10, 10]`, `v2 = 5`.
 - **The captured line numbers are optional**, and empty with proofs off, because
   `define_proof_model` does not run then. Every capture dereferences inside the
   justification, which does not run either; a comment at the range rule says so.
@@ -202,25 +265,33 @@ case directly.
 | Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
 |---|---|---|---|---|---|---|
 | consequence-bound initialiser | initialiser | — | 1–4 | always, unless `v2` is a constant | n/a | one shot |
-| the `Abs` propagator | `on_change`: `v1`, `v2` | derived: both, truthfully | 2–9 | always | **is, and does not claim it** (#1057) | never |
+| the `Abs` propagator | `on_change`: `v1`, `v2` | derived: both, truthfully | 2–9 | always | **yes, claimed** (`EnableButIdempotent`, #1076) | never |
 
 **Idempotence.** One call reaches the propagator's fixpoint when `v1` and `v2`
 are different variables. A value of `v2` is supported by `±w` in `v1`, and a
 value of `v1` by `|u|` in `v2`. A value removed from either side has no support
 on the other, so it never was a support, and removing it cannot remove support
 from anything left. The bound rules remove only values outside the image or
-preimage. So a second call infers nothing. The propagator returns `Enable`
-anyway.
+preimage. So a second call infers nothing. Since #1076 the propagator returns
+`EnableButIdempotent`, and the argument is a comment at the `return`. At
+`f28fdef8` it returned `Enable`.
 
-This audit checked the claim by making it, behind a local switch, and forcing
-the checker on: 25 seeds bare and 25 mixed-view, and all 18 view wraps at every
-position choice (both, `v1` only, `v2` only) over three seeds, 212 runs with no
-failure. A control confirms the checker would catch it: a variant that
-skips the interior loops on a call where a bound rule fired, while claiming
-idempotence, is rejected with "claimed idempotence, but re-running it did more".
-The engine ignores a claim when positions alias (`positions_alias`), so
-`Abs(x, x)` and the aliased views stay requeued. The measured effect is under
-[CPU performance](#cpu-performance).
+The first pass checked the claim by making it, behind a local switch, and
+forcing the checker on. That was 212 runs with no failure:
+
+- 25 seeds bare and 25 mixed-view;
+- all 18 view wraps at every position choice (both, `v1` only, `v2` only),
+  over three seeds.
+
+Then #1076 repeated that with the claim committed, over 221 runs, and #1080 did
+so over 471 after its own change. A control confirms the checker would catch a
+false claim: a variant that skips the interior loops on a call where a bound
+rule fired, while claiming idempotence, is rejected with "claimed
+idempotence, but re-running it did more". The engine ignores a claim when
+positions alias (`positions_alias`), so `Abs(x, x)` and the aliased views stay
+requeued. Since #1086 both `abs_constraint` lanes run with the checker on, so
+the ordinary suite checks the claim too. The measured effect is under [CPU
+performance](#cpu-performance).
 
 **It never disables itself**, even with both operands fixed.
 
@@ -236,14 +307,16 @@ of pieces, sorts and merges each into an `IntervalSet`, and walks
 `each_interval_minus` against them. That is proportional to the domains'
 interval counts, not their widths, but it allocates every call.
 
-**What maintaining it would buy.** On `celar` 2013, the propagator's own code is
-12.5% of the profile. The interval generators, `pieces_to_set` and
-`copy_of_values` are at least another 15.1%, most of it presumably `Abs`'s,
-though the generators are shared and callers were not separated. Allocation,
-shared with everything else, is another 10%. So no saving is claimed. The
-cheaper win is not recomputing at all: #1057's claim removes about 3.0
-million of `Abs`'s 6.8 million calls on `celar` 2013, 44%, which is 19% of all
-propagator calls there.
+**What maintaining it would buy.** On `celar` 2013 at `f28fdef8`, the
+propagator's own code was 12.5% of the profile. The interval generators,
+`pieces_to_set` and `copy_of_values` were at least another 15.1%, most of it
+presumably `Abs`'s, though the generators are shared and callers were not
+separated. Allocation, shared with everything else, was another 10%. So no
+saving is claimed. The cheaper win was not recomputing at all, and it has been
+taken. The first pass's counters estimated that #1057's claim would remove
+about 3.0 million of `Abs`'s 6.8 million calls on `celar` 2013, 44%. With #1076
+merged, the whole run's propagator calls fall by exactly 3,003,161, from
+15,759,399 to 12,756,238. The profile was not re-taken at `61112ed0`.
 
 ### Interior values and optional pruning
 
@@ -260,9 +333,10 @@ was not isolated: on one instance we explore 4% fewer nodes, and on the other
 
 - **Unbounded domains.** The bound rules and both range rules are constant work
   and constant proof per inference. A probe removing `k` runs of width `w − 1`
-  wrote proofs with identical line counts at `w = 10`, `10³` and `10⁶`; the
-  bytes grow with the numbers' digits. The exception is a
-  constant `v2`; see [Interval efficiency](#interval-efficiency).
+  wrote proofs with identical line counts at `w = 10`, `10³` and `10⁶`, and
+  again at `61112ed0`; the bytes grow with the numbers' digits. At `f28fdef8`,
+  a constant `v2` was the exception. Since #1080 it is not; see [Interval
+  efficiency](#interval-efficiency).
 - **Negative values and zero.** A run of `v1` that straddles zero is split
   there before the preimage rule proves it, because its negation would decide
   nothing about `v1`'s sign. An image piece that straddles zero is `[0,
@@ -275,38 +349,54 @@ was not isolated: on one instance we explore 4% fewer nodes, and on the other
 
 ### Interval efficiency
 
+`Fine at any width` since #1080, on all four questions. At `f28fdef8` a constant
+`v2` was the exception, on propagation and proofs both.
+
 1. **Propagation.** `State`'s per-value iterators are used nowhere. The bounds
    are `O(1)`. The image and preimage are built from `each_interval`, and the
    removals found by `each_interval_minus`, so the work is in intervals. Two
    hand-written per-value loops remain, one per direction, each counted by a
-   `LargeDomainIterationCounter`. They run over a removal of width 1, which is
-   one step, and over **any** removal when an operand is a constant. With `v1`
-   constant that is nothing, because `v2` is already fixed. **With `v2`
-   constant it is `2c − 1` steps**, which is the #1058 hazard: 0.033 s at
-   `c = 10⁵`, 0.33 s at `10⁶`, 3.1 s at `10⁷`, against 0.1 ms for a one-value
-   variable at every `c`.
+   `LargeDomainIterationCounter`. Each now only ever walks **one value**:
+   - a removal of width 1;
+   - in the image loop, a run in a constant `v2`, which is one value; under a
+     constant `v1` the bound rules have already fixed `v2`, and the clip to its
+     new bounds leaves nothing;
+   - in the preimage loop, a constant `v1`'s one value.
+
+   A constant `v2`'s preimage runs go by rule 8's plain-RUP form, one inference
+   per run. Re-measured at `61112ed0` with the first pass's probe (`v1 ∈ [−c,
+   c]`, `v2 = c` a constant): 0.06–0.14 ms at every `c` from `10²` to `10⁹`. At
+   `f28fdef8` the same probe walked `2c − 1` values: 0.033 s at `c = 10⁵`, 0.33 s
+   at `10⁶`, 3.1 s at `10⁷` (#1058).
 2. **Reasons.** One or two literals per inference, each a range or a bound:
    `{v1 ∉ [lo, hi], v1 ∉ [−hi, −lo]}` for an image removal, and for a preimage
    one `{v2 ∉ [lo, hi]}` when the piece is non-negative, `{v2 ∉ [−hi, −lo]}` when
    it is negative. Built unconditionally, but constant-sized, so an
    unguarded build costs nothing that matters.
 3. **Proofs.** Per run, not per value, and the form is chosen by width: a run of
-   two or more values takes the range rule, a single value the value rule. **And
-   by kind**: a constant operand takes the value rule for every value. That is
-   the shape #924 fixed in `Element` and #931 fixed for views here (the choice
-   depending on the kind of a variable rather than on width). For a constant it
-   is a real limitation of the helper, not an oversight: the range lemmas name
-   order atoms of both operands.
-   A constant `v2` costs about 13 lines per removed value, so 260,030 lines at
-   `c = 10⁴` against 137 for a one-value variable. #1058 suggests the range
-   derivation with the constant folded into the row, which needs no atom of
-   `v2`.
-4. **The audit lane.** Five rows, all `Clean`: `Abs` (two wide variables, which
-   reach neither interior loop), `Abs/hole` and `Abs/hole-preimage` (one per
-   loop), and `Abs/view-hole` and `Abs/view-hole-preimage` (the same with one
-   operand wrapped, which tripped before #931). **None has a constant operand**,
-   so the one path that still walks values is unprobed, though the comment on
-   `Abs/view-hole` names it: "the one genuine exemption left is a constant".
+   two or more values takes a range rule, a single value a value rule. The
+   **kind** of an operand still matters in two places, and neither makes a
+   proof per value. In the preimage loop, two variables take rule 8's `pol`
+   derivation, and a constant `v2` takes its plain RUP form, because the `pol`
+   names an order atom of `v2` and a constant has none. The image loop keeps
+   its range rule for two variables, and a constant operand sends it to the
+   value rule. That is at most one value there: a constant `v2` is one value,
+   and under a constant `v1` the bound rules have already fixed `v2`. At `f28fdef8` a constant operand took the value
+   rule for every value, the shape #924 fixed in `Element` and #931 fixed for
+   views here: 13 lines per removed value, so 260,030 lines at `c = 10⁴`,
+   against 137 for a one-value variable. Re-measured at `61112ed0` on the same
+   probe, the constant gives **86 lines at every `c`**, all verified with
+   `--force-checked-deletion`. The one-value variable still gives 137, so the
+   constant is now the cheaper spelling.
+4. **The audit lane.** Six rows, all `Clean`:
+   - `Abs`: two wide variables, which reach neither interior loop;
+   - `Abs/hole` and `Abs/hole-preimage`: one per loop;
+   - `Abs/view-hole` and `Abs/view-hole-preimage`: the same with one operand
+     wrapped, which tripped before #931;
+   - `Abs/constant` (#1080): `v1 ∈ [−10⁹, 10⁹]`, `v2 = 10⁹` a constant.
+
+   #1080 reports that `Abs/constant` trips with the old gate put back, so it
+   discriminates. That was not re-run here, since this build has the guard off.
    There is no `Abs` row in the pinned `"Large domain proof sizes"` case. The
    unpinned survey in `large-domains.md` has `Abs/hole` flat at 30 OPB rows and
    78 proof steps from `10³` to `10⁴`, and `Abs/hole-preimage` at 26 and 113.
@@ -336,11 +426,13 @@ apart by the bound: rule 1's is always 0, rule 5's always at least 1.
 
 **What licenses them.** The thesis gives the encoding (Encoding Procedure 3.3)
 and no justification procedure, so every derivation here is **ours**. Rules
-1–6 and 8 share one shape: a `pol` that adds a model row to the defining items
-of the order atoms whose arithmetic it uses, and saturates. The operands' bit
-sums cancel, and what is left is a clause over order atoms, conditioned on
-`v1`'s sign; then the conclusion is RUP. Rules 7 and 9 are plain RUP, because a
-single value pins every bit. Two reasons keep the others off RUP. For the bound
+1–6, and rule 8 over two variables, share one shape. It is a `pol` that adds a
+model row to the defining items of the order atoms whose arithmetic it uses,
+and saturates. The operands' bit sums cancel, and what is left is a clause over
+order atoms, conditioned on `v1`'s sign; then the conclusion is RUP. Rules 7
+and 9 are RUP, rule 7 after one lemma, because a single value pins every bit.
+So is rule 8 against a constant `v2`, whose rows are then bounds on `v1` alone
+(Theorem 2.7 via Lemma 3.2). Two reasons keep the others off RUP. For the bound
 rules, `abs.cc` says that RUP cannot case-split on `v1 ≥ 0 ∨ v1 < 0`. For the
 range rule 6, `large-domains.md` records why the two-lemma RUP shape of
 **Theorem 2.9** fails. The non-negative row is a difference and would take it.
@@ -513,25 +605,27 @@ it as the reason to sabotage whole justifications rather than lines.
 - **Strength** — `partial`; see rule 6.
 - **Algorithm** — one `in_domain` per value of the run.
 - **Why it is true** — as rule 6.
-- **Proof technique** — `RUP sequence`, ours: two lemmas under the reason,
-  `v1 < 0 ∨ v1 = w ∨ v2 ≠ w` and `v1 ≥ 0 ∨ v1 ≠ −w ∨ v2 ≠ w`, then RUP. A
-  single value pins every bit of `v2`, and through the active row every bit of
-  `v1`, so RUP works here where a range needs rule 6's `pol`s. **The second
-  lemma does nothing.** The reason contains `v1 ≠ −w`, so the lemma holds under
-  it trivially. The comment above it describes a different line,
-  `(v2 = w ∧ v1 < 0) → v1 = −w`. Removing the lemma leaves `abs_test` verifying
-  at ten of ten seeds, and so does writing it as the comment says. Removing both
-  lemmas fails at nine of ten, which is the control that the mutation was
-  built in.
+- **Proof technique** — `RUP sequence`, ours: one lemma under the reason,
+  `v1 < 0 ∨ v1 = w ∨ v2 ≠ w`, then RUP. From `v2 = w` the lemma and the
+  reason's `v1 ≠ w` give `v1 < 0`, which activates the negative row, and that
+  pins `v1` to `−w` against the reason's `v1 ≠ −w`. A single value pins every
+  bit of `v2`, and through the active row every bit of `v1`, so RUP works here
+  where a range needs rule 6's `pol`s. **At `f28fdef8` there was a second
+  lemma**, `v1 ≥ 0 ∨ v1 ≠ −w ∨ v2 ≠ w`, which the reason implied, and whose
+  comment described a different line. The first pass showed it droppable at ten
+  seeds of ten, and #1076 dropped it.
 - **Reason** — `{v1 ≠ w, v1 ≠ −w}`.
 - **Assertion** — `v2 ≠ w ∨ ¬reason`.
 - **Hint** — `hints::Abs`.
-- **Offline reconstructibility** — `offline`: each lemma is a RUP whichever rows
-  it goes through.
-- **Proof size** — three lines.
+- **Offline reconstructibility** — `offline`: the lemma and the conclusion are
+  each a RUP, whichever rows they go through.
+- **Proof size** — two lines, the lemma and the conclusion; three at
+  `f28fdef8`.
 - **Gaps** — `None.`
-- **Tightness** — shown by hand for the pair, not the lemmas: without both
-  lemmas VeriPB rejects the conclusion, at nine seeds of ten.
+- **Tightness** — shown by hand, not by a lane. Without the remaining lemma,
+  VeriPB rejects the proof at nine of seeds 1–10. That was measured at
+  `f28fdef8` with both lemmas dropped, and by #1076 with its one lemma dropped;
+  it was not re-run here.
 
 ### Rule: preimage-range
 
@@ -539,25 +633,47 @@ it as the reason to sabotage whole justifications rather than lines.
 
 - **Infers** — `v1 ∉ [lo, hi]`, for a run of `v1` on one side of zero, of two
   or more values, whose absolute values are not in `v2`.
-- **Fires when** — the propagator's preimage loop, when neither operand is a
-  constant. `each_interval_minus` of `v1` against `v2`'s preimage, clipped to
-  `v1`'s new bounds, and split at zero.
+- **Fires when** — the propagator's preimage loop, when `v1` is not a constant:
+  `each_interval_minus` of `v1` against `v2`'s preimage, clipped to `v1`'s new
+  bounds, and split at zero. **Two forms**, picked by whether `v2` is a
+  constant. The gate was "neither is a constant" at `f28fdef8`, which sent a
+  constant `v2` to rule 9 (#1058, fixed by #1080). A constant `v1` is one value
+  and never forms a run.
 - **Strength** — `partial`; with rule 9, `GAC` on `v1`.
 - **Algorithm** — the preimage of each interval of `v2` is its mirror and
   itself, merged. In **intervals**.
 - **Why it is true** — `v1 = u` needs `|u|` in `v2`.
-- **Proof technique** — `pol`, then `RUP`, ours. The run lies on one side of
-  zero, so the conclusion's own negation decides `v1`'s sign, and only the
-  active row is needed. Three `pol`s: the sign (`v1 ≥ lo` against `v1 < 0`, or
-  the mirror), and the two bounds the row licenses on `v2`. None is stated under
-  the reason: all three are consequences of the model alone. Then RUP.
+- **Proof technique** — two forms.
+  - **Variable `v2`**: `pol`, then `RUP`, ours. The run lies on one side of
+    zero, so the conclusion's own negation decides `v1`'s sign, and only the
+    active row is needed. Three `pol`s: the sign (`v1 ≥ lo` against `v1 < 0`,
+    or the mirror), and the two bounds the row licenses on `v2`. None is stated
+    under the reason: all three are consequences of the model alone. Then RUP.
+  - **Constant `v2 = c`**: `RUP`, ours, licensed by **Theorem 2.7 via Lemma
+    3.2** (#1080). With `c` folded in, each half is a bound on `v1` alone:
+    `v1 ≥ c` under `v1 ≥ 0`, and `v1 ≤ −c` under `v1 < 0`. The negated
+    conclusion gives `v1 ≥ lo` and `v1 < hi + 1`. The run is on one side of
+    zero, so one of those atoms' definitions fixes `v1`'s sign bit by unit
+    propagation. The halves are guarded on the atom `v1 ≥ 0`, not on the bit,
+    so it takes one more step: the order chain, or that atom's own definition,
+    then sets `v1 ≥ 0` one way or the other. That enables one half. The half is a bound on `v1`'s own bits that contradicts
+    the run's, and contradictory bounds on one binary sum unit propagate.
+    **The split at zero is load-bearing.** #1080's mutation, which removes a
+    run straddling zero in one go, is rejected by VeriPB.
 - **Reason** — `{v2 ∉ [lo, hi]}` for a non-negative piece, `{v2 ∉ [−hi, −lo]}`
-  for a negative one: one range literal. Minimal.
-- **Assertion** — `v1 ∉ [lo, hi] ∨ ¬reason`.
+  for a negative one: one range literal. Minimal. With `v2` a constant, it is
+  true by construction.
+- **Assertion** — `v1 ∉ [lo, hi] ∨ ¬reason`. With `v2` a constant, the
+  reason's literal is true and drops out, so the assertion is the unit
+  `v1 ∉ [lo, hi]`. Checked on an `a` line at `AssertionLevel::Inferences`.
 - **Hint** — `hints::Abs`.
-- **Offline reconstructibility** — `hinted`.
-- **Proof size** — three `pol`s and a RUP per piece, independent of width.
-  Cheaper than rule 6, because there is no sign case to close.
+- **Offline reconstructibility** — `hinted` for the `pol` form: the hint's
+  constraint id finds the rows. `offline` for the constant form: it is one RUP
+  against the database, so there is nothing to choose, as for rule 9.
+- **Proof size** — independent of width in both forms. The `pol` form is three
+  `pol`s and a RUP per piece, cheaper than rule 6 because there is no sign case
+  to close. The constant form is one RUP per piece, plus the atom definitions it
+  needs.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.` by a lane; see the catalogue preamble.
 
@@ -566,22 +682,24 @@ it as the reason to sabotage whole justifications rather than lines.
 (Rule 9.)
 
 - **Infers** — `v1 ≠ u`.
-- **Fires when** — the preimage loop, for a piece of one value, and **for every
-  value of every run when either operand is a constant**. With `v2` a constant
-  `c` that is every value of `[−c + 1, c − 1]`, once, at the root.
+- **Fires when** — the preimage loop, for a piece of one value, including
+  under a constant `v2`, and for a constant `v1`'s one value. At `f28fdef8` it
+  also took **every value of every run when either operand was a constant**.
+  With `v2` a constant `c` that was every value of `[−c + 1, c − 1]`, once, at
+  the root (#1058). Since #1080 those runs go to rule 8.
 - **Strength** — `partial`; see rule 8.
-- **Algorithm** — one `in_domain` per value, counted by the large-domain guard.
-  Linear in `c` in the constant case (#1058).
+- **Algorithm** — one `in_domain`, counted by the large-domain guard.
 - **Why it is true** — as rule 8.
 - **Proof technique** — `RUP`: `v1 = u` pins `v1`'s bits, and the active row
   pins `v2`'s to `|u|`, which the reason excludes.
-- **Reason** — `{v2 ≠ |u|}`. With `v2` a constant, empty, and the assertion is
-  a unit.
+- **Reason** — `{v2 ≠ |u|}`. With `v2` a constant, true by construction, so
+  the assertion is a unit.
 - **Assertion** — `v1 ≠ u ∨ ¬reason`.
 - **Hint** — `hints::Abs`.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line, plus the literal definitions it needs: about 13
-  lines per value in total, measured over the constant case.
+  lines per value in total, measured over the constant case at `f28fdef8`,
+  when that case still came here.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
 
@@ -591,60 +709,69 @@ it as the reason to sabotage whole justifications rather than lines.
 
 | Lane | What it checks |
 |---|---|
-| `abs_constraint` | `abs_test`: 26 fixed rows (ranges, #446's tight domains, #254's constants, one-value variables) and 30 random ones (both operands ranges, `v1` constant, `v2` constant), each with and without proofs, under `solve_for_tests_checking_gac`, so `GAC` at every node; four hole rows, three for the image loop and one for the preimage loop; five `Abs(x, x)` rows under plain enumeration; nine initialiser-only proof checks (its `bound1` to `bound4` are rules 1, 3, 4 and 2 here) and five over wider domains |
+| `abs_constraint` | `abs_test`: 30 fixed rows (ranges, #446's tight domains, #254's constants, one-value variables, and since #1080 four with a wide constant `v2 = 45`) and 30 random ones (both operands ranges, `v1` constant, `v2` constant), each with and without proofs, under `solve_for_tests_checking_gac`, so `GAC` at every node; five hole rows, three for the image loop and two for the preimage loop (`preimage_far_constant`, from #1080, has a constant `v2` and runs away from zero); five `Abs(x, x)` rows under plain enumeration; nine initialiser-only proof checks: four (`bound1` to `bound4`, which are rules 1, 3, 4 and 2 here) and five over wider domains, nine in all |
 | `abs_constraint_view_mixed` | the same with positions wrapped in views, minus the initialiser and dup rows |
 | `scp_chain_abs_sat`, `scp_chain_abs_unsat` | see [Cake conformity](#cake-conformity) |
 | `xcsp_intension_arithmetic`, `xcsp_intension_basic` | `eq(abs(x), y)` and `eq(dist(x, y), 1)` |
 | `minizinc-abs` | `int_abs` against MiniZinc's default solver |
 | `crystal_maze-abs`, `crystal_maze-abs-gac` | the example with `--abs`, proof verified |
-| `large_domain_audit_test` | five `Clean` rows; registered only in a build with `GCS_LARGE_DOMAIN_GUARD=ON` |
+| `large_domain_audit_test` | six `Clean` rows, `Abs/constant` among them; registered only in a build with `GCS_LARGE_DOMAIN_GUARD=ON` |
 
-The nine lanes above that post `Abs` pass at `f28fdef8`, caps off, with
-MiniZinc 2.9.7, `cake_pb_cp` and `opbdiff` on the path.
-`large_domain_audit_test` was not re-run: this audit's builds have the guard
-off, and its rows' outcomes are the ones pinned in the source. At `--seed=1`,
-`abs_test` verifies 74 proofs. The data-driven lanes are seeded, and reproduce
-with `--seed=N`.
+The nine lanes above that post `Abs` pass at `f28fdef8`, caps off, and again
+at `61112ed0` with the default caps, with MiniZinc 2.9.7, `cake_pb_cp` and
+`opbdiff` on the path. `large_domain_audit_test` was not re-run: neither
+audit's build has the guard on, and its rows' outcomes are the ones pinned in
+the source. At `--seed=1`, `abs_test` verifies 74 proofs at `f28fdef8` and 79
+at `61112ed0`, where the new rows account for the difference. The data-driven
+lanes are seeded, and reproduce with `--seed=N`.
 
-**Runtime caps.** No lane sets or clears one, and **the defaults never fire
-here**: three unseeded runs of each data-driven lane with the 300-solution and
-1,500-node caps passed in the environment printed no truncation from a
-local-only print; a two-solution control fires 44 times. The largest domain in
-the random rows is 16 values, so the capped run checks completeness too.
+**Runtime caps.** No lane sets or clears one, and at `f28fdef8` **the
+defaults never fired here**. Three unseeded runs of each data-driven lane, with
+the 300-solution and 1,500-node caps passed in the environment, printed no
+truncation from a local-only print, and a two-solution control fired 44 times.
+The largest domain in the random rows is 16 values, so the capped run checks
+completeness too. Not re-measured at `61112ed0`. #1080's new rows have at most
+121 values in `v1` and a constant `v2`, so a handful of solutions each.
 
-**The idempotence-claim checker is off in `abs_constraint`** (#1056). The
+**The idempotence-claim checker is on in both lanes, since #1086.** It checks
+the claim #1076 makes. `establish_and_announce_seed`, which every test main
+calls first, switches the checker on and reads it back, and it throws if an
+earlier propagation had already fixed it off.
+`solve_for_tests_with_callbacks` throws if it is off. So a passing lane is one
+that ran with it on.
+
+At `f28fdef8` it was **off** in the bare `abs_constraint` lane (#1056). The
 engine reads `GCS_CHECK_IDEMPOTENT_CLAIMS` once, at the first propagation in the
-process, and the harness sets it in `solve_for_tests_with_callbacks`. With
-VeriPB on the path, `abs_test` runs its initialiser checks first, through
-`check_initialisation_only_for_tests`, which propagates before that. So the
-checker does not run in the bare lane. `abs_constraint_view_mixed` skips the
-initialiser checks and has the checker on, so a claim would be checked there,
-over every data and hole row with both positions wrapped. It does not matter
-today, since `Abs` claims nothing. Across the suite the checker is off in 100 of
-the 317 lanes whose binary uses the harness, over 17 binaries. Every lane tried
-with it forced on passes: the 86 lanes whose names match `abs`, `circuit`,
-`subcircuit`, `smart_table`, `knapsack_upfront`, `nogoods` or `equals`, and 21
-non-mutation scheduling, `dag`, `reachable` and control lanes. Most of the 69
-mutation lanes among the 100 were not tried (#1056).
+process, and the harness set it in `solve_for_tests_with_callbacks`. `abs_test`
+runs its initialiser checks first, through
+`check_initialisation_only_for_tests`, which propagated before that. Across
+the suite the checker was off in 100 of the 317 lanes whose binary uses the
+harness, over 17 binaries. #1086's sweeps, with the checker forced on
+everywhere, found no false claim.
 
-**Rules the tests reach**, from local counters at `--seed=1`: all nine, both
-branches of rule 5, and the constant arm of rule 7. **The constant arm of rule
-9 is not reached at seed 1**, where all ten constant-`v2` rows are
-unsatisfiable: nine fail on the bounds, and one in rule 7's constant arm. Over
-seeds 1 to 20 it is reached at 18, 8 to 50 times each, and not at seeds 1 and
-19.
+**Rules the tests reach**, from local counters at `--seed=1` at `f28fdef8`:
+all nine, both branches of rule 5, and the constant arm of rule 7. At the time
+**the constant arm of rule 9 was not reached at seed 1**, where all ten
+constant-`v2` rows are unsatisfiable: nine fail on the bounds, and one in rule
+7's constant arm. Over seeds 1 to 20 it was reached at 18, 8 to 50 times each,
+and not at seeds 1 and 19. The counters were not re-run at `61112ed0`.
+
+Rule 8's constant form is reached by construction, at every seed, by #1080's
+fixed rows. On `{−60..60}` with `v2 = 45`, for example, the bound rules leave
+`[−45, 45]`, and then `[−44, −1]` and `[0, 44]` go as one run each. The
+`preimage_far_constant` row is there so that both its runs, `[30, 44]` and
+`[−44, −30]`, lie away from zero.
 
 **What the tests do not cover:**
 
-- **A constant `v2` of any size.** The random constants are in `[−10, 10]`, so
-  the per-value arm is at most 19 values, and no row, lane or audit-lane probe
-  pins its cost (#1058).
 - **Aliased views.** Only `Abs(x, x)`, whose consistency is not checked. This
   audit's 144-case differential is not in the tree.
-- **A claimed idempotence**, because nothing claims one; and in the bare lane
-  the checker would not see one anyway.
 - **A chain case that starts with a hole, a view or a constant**, as [Cake
-  conformity](#cake-conformity) says.
+  conformity](#cake-conformity) says. A constant would currently fail the
+  strict oracle.
+- **The cost of a constant `v2`** is pinned only by the guarded
+  `Abs/constant` row, which no default build registers. The first pass's gap
+  here, that no row had a constant wider than 10, is closed by #1080's rows.
 
 ### Benchmarks and examples
 
@@ -659,21 +786,48 @@ seeds 1 to 20 it is reached at 18, 8 to 50 times each, and not at seeds 1 and
   constant
   `v1`, which is harmless.
 - **Where it is the cost** (share of propagation time, 10 s each,
-  `GCS_PROPAGATOR_STATS=time`, at `00797a97`, from `linear.md`'s survey; `abs/`
-  is unchanged since): `celar` 2013 63.8%, 2016 55.0%; `roster-sickness` 14.3%;
+  `GCS_PROPAGATOR_STATS=time`, at `00797a97`, from `linear.md`'s survey). That
+  was before #1076, #1080 and `87c88f2e` changed `abs/`, and only `celar` has
+  been re-run since: `celar` 2013 63.8%, 2016 55.0%; `roster-sickness` 14.3%;
   `on-call-rostering` 2013 9.3%, `city-position` 8.7%, `fast-food` 8.1% and
   6.4%, `on-call-rostering` 2018 5.8%, `cable_tree_wiring` 5.1%, and under 3% in
   the other five. 0.5–0.9 µs per call, and 2.1 µs on `roster-sickness`.
-- **For CPU**: `celar` 2013 (`CELAR6-SUB2`) to its 200th solution, 5.6 s;
-  `celar` 2016 (`CELAR6-SUB0`) to its 300th, 0.2 s.
-- **For proofs**: `celar` 2013 to its 20th solution, 163 nodes, a 318,150-line
-  proof that checks in 29 s.
+  **Re-measured for `celar` only**, the same way (10 s, all solutions, pinned),
+  in one sitting. The `f28fdef8` build gives 63.0% and 54.6% of propagation
+  time, and 42.2% and 28.6% of calls. The `61112ed0` build gives **50.9% and
+  45.1%** of time, and 27.5% and 19.3% of calls, at 0.51–0.52 µs per call. The
+  other models were not re-run.
+- **For CPU**: `celar` 2013 (`CELAR6-SUB2`) to its 200th solution, 5.6 s at
+  `f28fdef8`, 4.4 s at `61112ed0`; `celar` 2016 (`CELAR6-SUB0`) to its 300th,
+  0.2 s.
+- **For proofs**: `celar` 2013 to its 20th solution, 163 nodes. At `f28fdef8`
+  the proof is 318,150 lines and checks in 29 s; at `61112ed0` it is 216,100
+  lines and checks in 19 s.
 
 ### CPU performance
 
-All at `f28fdef8`, Release, GCC 15.2.0, fataepyc-09 (EPYC 7643, boost off),
-pinned with `numactl --cpunodebind=0 --membind=0 taskset -c 8 setarch -R`,
-2026-09-23, on an unmodified build except where a switch is named.
+**Re-measured at `61112ed0`**, 2026-09-25, on the same machine and FlatZinc
+files, pinned the same way, on core 20 where the first pass used core 8. The
+`f28fdef8` build was re-run in
+the same sitting. There were four runs per build, interleaved, and the first is
+dropped as warm-up. Gecode is the same binary and files, re-run alongside.
+
+| instance | N | nodes | propagations | `f28fdef8` s | `61112ed0` s | Gecode s | ratio to Gecode |
+|---|---|---|---|---|---|---|---|
+| `celar` 2013 | 200 | 68,754 both | 15,759,399 → 12,756,238 | 5.655 / 5.639 / 5.609 | 4.462 / 4.425 / 4.452 | 1.169 / 1.179 / 1.180 | 4.8× → **3.8×** |
+| `celar` 2016 | 300 | 3,075 both | 685,521 → 580,205 | 0.215 / 0.215 / 0.216 | 0.177 / 0.176 / 0.177 | 0.0387 / 0.0383 / 0.0382 | 5.6× → **4.6×** |
+
+Same last objectives as before (15,071 and 21,036). The two builds differ by
+every commit on `main` in between, not only #1076 and #1080. But the change in
+propagator calls is exactly the one the first pass measured for #1057's claim
+behind a switch, at the same node counts. That is the evidence that the saving
+is the claim's. #1080's change runs only at the root on these instances, where
+the constants' interior is removed once.
+
+The rest of this section is the first pass's. All of it is at `f28fdef8`,
+Release, GCC 15.2.0, fataepyc-09 (EPYC 7643, boost off), pinned with
+`numactl --cpunodebind=0 --membind=0 taskset -c 8 setarch -R`, 2026-09-23, on
+an unmodified build except where a switch is named.
 
 **Against Gecode 6.3.0**, each flattened with its own library and run by its own
 FlatZinc binary with `-n N`, three runs each. `celar` writes plain `abs`, so
@@ -698,7 +852,8 @@ generators' `begin` 1.1%; the linear propagators about 13%;
 about 10%.
 
 **The idempotence claim** (#1057), as a local switch in an otherwise
-unmodified build, with the counters compiled out:
+unmodified build, with the counters compiled out. This is what #1076 then
+merged, and the re-measurement above reproduces its counts exactly:
 
 | instance | N | nodes (both) | propagations | as today | claiming | unmodified build |
 |---|---|---|---|---|---|---|
@@ -716,18 +871,48 @@ bounds on `v2`, over 6.8 million calls); rule 8 fires 43,925 times, rule 9
 each, all at the root. **Rules 6 and 7, the image direction, never fire**, and
 neither does rule 1, since every `v2` is declared non-negative. So a
 per-inference cost quoted from `celar` is a cost of bounds and preimage
-removals.
+removals. Since #1080 the 7,600 root removals are 32 of rule 8's constant form,
+two per constraint. That count is from the `61112ed0` proof's `a` lines, at
+`AssertionLevel::Inferences`: 7,600 unit value removals before, and 32 unit
+range removals and no value removals after. The counters were not re-run.
 
 ### Proof performance
 
-**`celar` 2013 to its 20th solution** (163 nodes; the 20 objectives are the same
-in every row):
+**Re-measured at `61112ed0`.** `celar` 2013 to its 20th solution, both builds
+in one sitting, pinned. MB here is 10⁶ bytes. The four VeriPB 3.0.2 runs were concurrent, on separate
+cores, with `--force-checked-deletion`. Same 163 nodes and last objective 33,692
+throughout.
+
+| | `f28fdef8` | `61112ed0` |
+|---|---|---|
+| `Off`: solve | 0.459 s | 0.348 s |
+| `Off`: proof | 318,150 lines, 36.6 MB | **216,100 lines, 26.6 MB** (−32%) |
+| `Off`: VeriPB | 30.4 s, `VERIFIED BOUNDS` | **18.6 s**, `VERIFIED BOUNDS` (−39%) |
+| `Inferences`: proof | 33,322 lines, 11.0 MB | 24,945 lines, 10.4 MB |
+| `Inferences`: VeriPB | 0.42 s, `UNDER ASSERTIONS` | 0.31 s, `UNDER ASSERTIONS` |
+
+The line counts are exact and match the first pass, and #1080's own figure
+(216,100). The checking time falls by about as much as the first pass's
+one-value-variable workaround saved, and the constant's proof is now
+**smaller** than that workaround's 221,752 lines. At `Inferences`, `abs`'s
+assertions fall from 16,675 to 8,664. The difference is the 7,600 unit
+removals becoming 32 range removals, plus 443 fewer elsewhere in `Abs`. Of all
+24,558 assertions, 10,027 are `linear_equality`, 2,936 `comparison`, 2,698
+`equals`, 114 `backtrack`, 99 `or` and 20 `soli_improve`. Where the other 443
+went was not traced; the search is the same.
+
+**The first pass's figures, at `f28fdef8`.** `celar` 2013 to its 20th solution
+(163 nodes; the 20 objectives are the same in every row):
 
 | | solve | proof | VeriPB |
 |---|---|---|---|
 | `AssertionLevel::Off` | 0.511 s | 318,150 lines, 35 MB | 28.7 s, `VERIFIED BOUNDS` |
 | `Off`, the 16 constants replaced by one-value variables | 0.385 s | 221,752 lines, 26 MB | 16.4 s, `VERIFIED BOUNDS` |
 | `AssertionLevel::Inferences` | 0.300 s | 33,322 lines, 11 MB | 0.35 s, `UNDER ASSERTIONS` |
+
+The sizes in this table are rounded and do not share one unit. The `Off`
+proof is 36,587,380 bytes, which is the "35 MB" above in MiB, and 36.6 MB in
+the re-measured table. The `Inferences` proof is 10,956,305 bytes.
 
 Checking the justified proof takes 82 times as long as the asserted one. **The
 constant path is 30% of its lines and 43% of its checking time**, as the second
@@ -753,6 +938,9 @@ verified.
 | 8 | 804 | 119 / 131 / 160 | 1,194 | 161 / 243 / 208 |
 
 Identical at `w = 10`, `10³` and `10⁶`, which is the width independence.
+**Re-measured at `61112ed0`: every cell is unchanged**, and every proof
+verifies. Rule 7's dropped lemma does not reach this probe, whose runs are all
+at least nine values wide.
 The growth in `k` mixes this family's lines with the enumeration of the extra
 solutions, so it is an upper bound on the per-run cost: about 99 lines per image
 run, and 148 per step of `k` in the preimage direction, which is two runs. The
@@ -767,36 +955,44 @@ run, and 148 per step of `k` in the preimage direction, which is two runs. The
 
 ### Known limitations
 
-- **A constant `v2` is slow and proof-heavy in proportion to its value**
-  (#1058). Posting it as a one-value variable is the workaround, and front
-  ends do not do it.
-- **Slower than Gecode** by about five times where `Abs` dominates, at node
-  counts within 4% either way.
+- **Slower than Gecode**, by 3.8 and 4.6 times on the two `celar` instances,
+  where `Abs` is the largest share of propagation, at node counts within 4% either way. It was 4.8 and 5.6
+  times before #1076.
+- **A constant operand fails the strict `opbdiff` oracle**, although cake
+  verifies the proof. For a constant `v2`, the `posle` and `negle` rows' big-M
+  differs. For a constant `v1`, we write all four rows folded and unguarded,
+  where cake keeps a guard on a fixed atom. Unfiled; see [Cake
+  conformity](#cake-conformity).
 - **No reified form.**
+
+A constant `v2` was slow and proof-heavy in proportion to its value at
+`f28fdef8` (#1058). It is no longer, since #1080.
 
 ### Next steps
 
 Ranked by what they buy for what they cost.
 
-1. **#1057** — return `EnableButIdempotent`. One line, 18–20% on `celar`,
-   at the same node counts (only nodes and propagation counts were compared).
-   #1056 first is better, so that the bare lane checks the claim as well as
-   the view lane.
-2. **#1058** — give the range rules a form for a constant `v2`: the row with
-   the constant folded in needs no atom of `v2`, so the preimage derivation
-   should survive with that resolution dropped. Then add a constant-operand row
-   to the audit lane, and a wide constant to `abs_test`. Small; 30% of `celar`'s
-   proof.
-3. **#1056** — set `GCS_CHECK_IDEMPOTENT_CLAIMS` where every data-driven test
-   starts, for example in `establish_and_announce_seed`, not in the first
-   harness solve. Not this family's, but found here.
-4. **Rule 7's second lemma**, which its own reason implies: drop it, or write
-   it as its comment says. Either verifies; the comment and the code should at
-   least agree. In #1057's issue, as a while-there item.
-5. **Per-call allocation.** Two domain copies, two piece vectors and two
-   `IntervalSet`s per call. Worth measuring after #1057, which removes 44% of
-   `Abs`'s calls on `celar` anyway. Unfiled.
-6. **Tests.** The aliased-view differential as a lane; a chain case with a
+**Done since the first pass**, all merged 2026-09-24:
+
+- **#1057 → #1076.** Claim idempotence. Rule 7's second lemma was dropped as a
+  while-there item.
+- **#1058 → #1080.** A constant `v2`'s preimage runs, by plain RUP. It needed
+  no lemma at all, where the issue expected a folded-row derivation.
+- **#1056 → #1086.** The checker is on before anything propagates.
+
+What is left:
+
+1. **Constant operands against cake's encoding.** There are two shapes. For a
+   constant `v2`, find out why our `posle`/`negle` big-M differs from cake's.
+   For a constant `v1`, we fold and drop the guard, where cake keeps a guard
+   and defines the fixed atom. Then either match cake, or document the
+   differences and use a non-strict oracle mode. Then add a chain case for
+   each. Unfiled. (#1080 recorded the constant-`v2` difference and left it.)
+2. **Per-call allocation.** Two domain copies, two piece vectors and two
+   `IntervalSet`s per call. `Abs` is still 51% and 45% of `celar`'s propagation
+   time with the claim in place, at about 0.5 µs a call, so this is now the
+   lever. Profile first; the `f28fdef8` profile predates the claim. Unfiled.
+3. **Tests.** The aliased-view differential as a lane; a chain case with a
    hole. Unfiled.
 
 ## Prior art
@@ -804,7 +1000,7 @@ Ranked by what they buy for what they cost.
 The encoding is Encoding Procedure 3.3 of McIlree's thesis, and `cake_pb_cp`'s.
 The thesis gives no justification procedure for `Abs`; the ones here are ours:
 one `pol` shape over the two half-reified rows for the bounds and ranges, and
-plain RUP for single values. Why the obvious alternative,
+RUP for single values and for a constant `v2`'s ranges. Why the obvious alternative,
 Theorem 2.9's two-lemma RUP, does not work on the negative branch is in
 `large-domains.md`. Gecode has bounds and domain consistent `abs`
 propagators (`AbsBnd`, `AbsDom`) and picks by the propagation level, bounds by
@@ -827,9 +1023,18 @@ default. Whether any other certifying solver covers `abs` was not surveyed.
 #931 removed every "is this a view?" test from the choice between a range and a
 value proof, and left the constant, correctly, because a constant has no order
 atom to resolve against. But the per-value arm it left is proportional to the
-constant, not to anything the policy measures, and no audit-lane row posts a
-constant operand. A real model found it: `celar` pays 30% of its proof for 16
+constant, not to anything the policy measures, and no audit-lane row posted a
+constant operand. A real model found it: `celar` paid 30% of its proof for 16
 constraints of the form `|a − b| = 238`.
+
+**The fix needed less than the issue asked for.** #1058 proposed a range
+derivation with the constant folded into the row. Building one, #1080 found
+that no lemma at all was needed: with the constant folded in, each half is a
+bound on `v1` alone, and plain RUP closes the run. It found this because
+mutations dropping each line still verified. The same trap, a derivation that
+verifies with parts missing, is what #875 recorded for rules 6 and 8. It is
+worth expecting whenever a constant turns a two-variable row into a
+one-variable one.
 
 **A lane can run with a checker that was never switched on.** The harness turns
 the idempotence checker on in the solve helper, and the engine reads the switch
