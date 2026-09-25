@@ -1,12 +1,14 @@
 # `Comparison`: one operand is ordered against another
 
 > **Maturity** production ·
-> **Audited** 2026-09-08 at `76bfd836`; re-audited 2026-09-21 at `6b220c79` ·
+> **Audited** 2026-09-08 at `76bfd836`; re-audited 2026-09-21 at `6b220c79`;
+> re-audited 2026-09-25 at `61112ed0` ·
 > **Open issues** `None.` own to this family — **both the issues this audit
 > filed are fixed**: #907 (every reason built unguarded) in #916, and #908
 > (`MustNotHold` and `NotIf` throw from `s_expr()`) in #915. #868 is the
 > audit-wide cross-solver prerequisite; #598 would close a deliberate presolver
-> gap that is half about this family. Tracked under #871.
+> gap that is half about this family; #310, from outside, means a range-literal
+> reification condition cannot be written to the proof. Tracked under #871.
 
 Twelve posted classes over one implementation and one propagator: an
 inequality between two operands, optionally reified, in either direction, with
@@ -28,6 +30,16 @@ optional pruning](#interior-values-and-optional-pruning).
 And its propagator used to assemble a reason on every call without asking
 whether anything would read it, which this audit measured at **43% of the
 cycles** on a family-dominated benchmark. #916 guarded all nine.
+
+**What the third pass changed.** One fix from outside the audit, and one
+existing limitation recorded for the first time. Nothing else touching
+`gcs/constraints/comparison/` has merged since `6b220c79`, and no table below
+was re-measured.
+
+| Landed | What it changed here |
+|---|---|
+| #1047 → #1088 | `LessThan(x, x)` and `GreaterThan(x, x)` on a non-constant `x` are **accepted** rather than rejected at construction, and an enforce pass on aliased operands whose comparison cannot hold contradicts at once. That is a new rule, [rule 8](#rule-contradiction-from-aliased-operands), and an eleventh cake chain case, `less_than_aliased_unsat`. XCSP3's `lt(x,x)` reaches it; MiniZinc simplifies the shape away. The Known-limitations entry on the throw-versus-reified asymmetry is now history, since the asymmetry is gone |
+| #310, not a fix | a reified form whose condition is a range literal is right with proofs off and throws with proofs on, when the model is written. Measured at `61112ed0`; see [Reification](#reification) |
 
 **What the second pass changed.** A narrow pass, against `6b220c79`. Both of
 the audit's own findings are fixed, and the two new template sections are
@@ -80,12 +92,14 @@ families](#relation-to-other-families).
 
 Degenerate cases:
 
-- **Aliased operands.** `LessThan(x, x)` and `GreaterThan(x, x)` on a
-  non-constant `x` throw `InvalidProblemDefinitionException` at construction —
-  they are unsatisfiable. The `<=` and `>=` forms accept aliasing, because
-  `x ≤ x` holds, and the reified forms accept it in all four directions: the
-  undecided pass's alias check resolves the verdict at the root rather than
-  waiting for search to narrow the bounds.
+- **Aliased operands.** Accepted by all twelve. `LessThan(x, x)` and
+  `GreaterThan(x, x)` are unsatisfiable and contradict on their first call;
+  the `<=` and `>=` forms hold everywhere. The reified forms accept aliasing in
+  all four directions: the undecided pass's alias check resolves the verdict at
+  the root rather than waiting for search to narrow the bounds, and a condition
+  already decided the unsatisfiable way contradicts (rule 8). Until #1088 the
+  two strict unreified forms threw `InvalidProblemDefinitionException` at
+  construction instead, which aborted XCSP3's `lt(x,x)`.
 - **Constant operands.** Two constants are a valid model, including a pair that
   makes the comparison false. That case installs no propagator at all, only an
   initialiser — see [Propagator
@@ -133,8 +147,9 @@ two this table replaces.
     two-term linear inequality and a `LessThanEqual` are both bounds-consistent,
     so the strength argument that justifies the `equals` recovery has no
     analogue. This audit adds a second reason: on `difference_chain` the
-    comparison spelling is **2.7x slower** than the two-term linear one at an
-    identical search tree. See [CPU performance](#cpu-performance).
+    comparison spelling is **2.7x slower** than the two-term linear one, at
+    the same recursion count (503) with propagation counts 0.4% apart. See
+    [CPU performance](#cpu-performance).
 
 [^intaff]: XCSP3's `post_intension_top_level` tries an affine peephole first for
     `le`, `lt`, `ge` and `gt`, folding operands built from variables, integers,
@@ -223,6 +238,16 @@ are specific to this family:
 - **A condition already decided at install time** takes a propagator that runs
   one enforce pass directly, with no per-call `test_reification_condition`.
   That is the path all four unconditional classes always take.
+
+**A range-literal condition works only with proofs off** (#310). The condition
+is an `IntegerVariableCondition`, which includes `in_range` and `not_in_range`.
+With `x, y ∈ 0..3`, `z ∈ 0..4` and the condition `z ∈ 1..3`, `LessThanIff` and
+`LessThanEqualIf` find the right 38 and 62 solutions. With proofs on, both
+throw `range literals during model writing are not yet supported` from
+`NamesAndIDsTracker::need_invar` when the model is written. Measured at
+`61112ed0`. No front end posts one: MiniZinc and XCSP3 pass `b = 1`, `gcspy`
+passes `b ≠ 0`, and the `.scp` reader's conditions are `=`, `!=`, `>=` and `<`
+against one value.
 
 ### Relation to other families
 
@@ -370,14 +395,18 @@ and cake rejects it until its maintainers add a rule: here the negation stayed
 inside the family, which is the same fact that keeps the whole family inside
 one theorem (see [Inference catalogue](#inference-catalogue)).
 
-**Ten SCP chain cases, and all ten are unconditional:**
+**Eleven SCP chain cases, and all eleven are unconditional:**
 
 ```
-less_than_sat  less_than_unsat  less_equal_sat  less_equal_unsat
+less_than_sat  less_than_unsat  less_than_aliased_unsat
+less_equal_sat  less_equal_unsat
 binary_less_equal_sat  greater_than_unsat
 greater_equal_sat  greater_equal_unsat  greater_equal_neg_unsat
 multi_comparison_unsat
 ```
+
+`less_than_aliased_unsat` is `LessThan(X, X)`, added by #1088: its row reads
+`0 ≥ 1`, and the propagator's contradiction is RUP against it.
 
 So **four of the twelve variants have a chain case** and the eight reified ones
 have none, even though the writer emits their keywords and `scp_reader.cc`
@@ -420,9 +449,9 @@ constant (`optional_single_value`), and the reification condition evaluated
 against the initial state. No auxiliary variables, no backtrackable state, no
 precomputation, no root cost worth measuring.
 
-Argument validation is in the *constructors*, not in `prepare()`: `LessThan`
-and `GreaterThan` reject genuine variable aliasing, and nothing else validates
-anything. So a bad model throws at `post` rather than at solve.
+No constructor validates anything. `LessThan` and `GreaterThan` used to reject
+aliased operands; since #1088 they accept them and the propagator contradicts
+instead (rule 8).
 
 ### Propagator inventory
 
@@ -432,9 +461,9 @@ both operands are constants.**
 | Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
 |---|---|---|---|---|---|---|
 | initialiser, both operands constant | — (runs once at root) | derived: **nothing** | 6, 7 | any variant over two constants, where there is something to say | n/a | n/a — one shot |
-| dispatcher, decided must-hold | `on_bounds` both operands | derived: **nothing** | 1 | the four unconditional `Less*`/`Greater*`, and `If`/`Iff` fixed true at install | never claims | yes, once the bounds are separated |
-| dispatcher, decided must-not-hold | `on_bounds` both operands | derived: **nothing** | 2 | `NotIf`/`Iff` fixed false at install | never claims | yes, likewise |
-| dispatcher, undecided | `on_bounds` both operands **and** the condition | derived: **the condition variable only** | 1–5 | the four reified forms while `cond` is open | claims stripped | yes, on any verdict |
+| dispatcher, decided must-hold | `on_bounds` both operands | derived: **nothing** | 1, 8 | the four unconditional `Less*`/`Greater*`, and `If`/`Iff` fixed true at install | never claims | yes, once the bounds are separated |
+| dispatcher, decided must-not-hold | `on_bounds` both operands | derived: **nothing** | 2, 8 | a `MustNotHold` condition, a `NotIf` fixed true, or an `Iff` fixed false, at install | never claims | yes, likewise |
+| dispatcher, undecided | `on_bounds` both operands **and** the condition | derived: **the condition variable only** | 1–5, 8 | the four reified forms while `cond` is open | claims stripped | yes, on any verdict |
 
 **`on_bounds` is the whole trigger story, and it is the right answer rather
 than a compromise.** Every pass reads `state.bounds()` and nothing else — no
@@ -512,8 +541,8 @@ two-term case of it.
 
 The consequence is worth stating in the concrete. Issue #901 measured it on
 `qap`: generalised arc consistency on a constant-array `Element`'s result made
-62% more effectful inferences than bounds consistency, over a bit-identical
-search tree, because the only thing looking at the result was a
+62% more effectful inferences than bounds consistency, at the same recursion
+and solution counts, because the only thing looking at the result was a
 bounds-consistent sum. Put a `Comparison` there instead of an `Element` and the
 same thing happens for the same reason. **A family whose whole vocabulary is
 bounds is not merely cheap; it is what lets its neighbours be cheap**, and that
@@ -545,10 +574,11 @@ pass is two bounds reads and at most two inferences, whatever those bounds are.
 
 **Degenerate shapes.** Two constant operands take a different code path
 entirely — an initialiser rather than a propagator — and when there is nothing
-to say, the constraint installs nothing at all. Aliased operands under a strict
-comparison throw at construction rather than being reported as infeasible; see
-[Known limitations](#known-limitations), where the asymmetry with the reified
-forms is recorded.
+to say, the constraint installs nothing at all. Aliased operands are accepted
+by every form since #1088. `LessThan(x, x)` and `GreaterThan(x, x)` contradict
+on the first call (rule 8), with one recursion and an empty `a` line, whatever
+the domain: measured over `x ∈ 0..10⁶`. Before #1088 they threw at
+construction.
 
 **Overflow.** The `+ 1_i` in every pass (`v2_bounds.second + (or_equal ? 1_i :
 0_i)` and its three siblings) goes through `Integer::operator+`, which throws
@@ -570,7 +600,7 @@ here is about a set.
 
 **2. The reason side.** Two literals per inference, both of them bounds, so
 there is nothing that could be per value — a reason here names order atoms and
-never a run. Since #916 every one of the nine reasons is also guarded on
+never a run. Since #916 every reason is also guarded on
 `inference.want_reasons()`, which was this audit's own finding as #907. That
 guard is about cost with proofs off rather than about width, but it belongs in
 this half of the section for the reason `equals` learned in #864: **a reason is
@@ -609,25 +639,28 @@ is [the merge question](#relation-to-other-families) settled a second way.
 
 ## Inference catalogue
 
-Seven rules. Two are the enforce passes, three are the undecided pass's
-verdicts, and two belong to the both-constant initialiser.
+Eight rules. Two are the enforce passes' bound pushes, three are the undecided
+pass's verdicts, and two belong to the both-constant initialiser. The eighth,
+added by #1088, is the enforce passes' contradiction on aliased operands; it is
+numbered last rather than renumbering five others.
 
-Three facts hold for all seven and are not repeated in each entry.
+Three facts hold for all eight and are not repeated in each entry.
 
 **Every rule is a bare RUP.** The family contains no `JustifyExplicitly`, emits
 no lemma, and writes nothing at `ProofLevel::Temporary`. So the **Proof size**
-is one line for all seven, and the **Offline reconstructibility** verdict is
-`offline` for all seven — the assertion alone determines the derivation,
+is one line for all eight, and the **Offline reconstructibility** verdict is
+`offline` for all eight — the assertion alone determines the derivation,
 against one or two rows whose labels the OPB carries. Each rule's **Proof
 technique** field says `RUP` and then which procedure licenses it, which is
-where the seven differ.
+where the eight differ.
 
 **And every rule is licensed by the same published procedure.** The four bound
 transfers are instances of **JP 3.2 (comparison)**, whose correctness proof is
 **Theorem 2.9**: the negated conclusion supplies a lower bound on one operand,
 this family's single row, and an upper bound on the other, which is exactly
 2.9's contradictory triple. The three condition rules reduce to the same thing
-or to nothing, and every one of the seven carries its reification condition by
+or to nothing, rule 8 reduces to nothing, and every one of the eight carries
+its reification condition by
 **Theorem 2.6**.
 [`justification-techniques.md`](../justification-techniques.md) states the
 facts; nothing in this family departs from a published procedure, which is
@@ -659,7 +692,8 @@ plain binary.
 **There is one wire form.** `hints::Comparison`, wire form
 `(constraint_id <id>)`, with no subhint and no payload beyond the owning
 constraint. Measured across four proofs covering every rule: 13 annotations,
-all of them that form. This is the simplest hint inventory of any family, and
+all of them that form. Rule 8, which came later, wears the same form (`a >=
+1::comparison:((constraint_id _1));` for `LessThan{x, x}`). This is the simplest hint inventory of any family, and
 it is simple for a reason worth stating — a subhint exists to tell a
 reconstructor which procedure to run, and any witness it needs, and every rule
 here is reconstructed the same way: one RUP against the row, with no witness.
@@ -852,14 +886,57 @@ aliasing for exactly this reason.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
 
+### Rule: contradiction-from-aliased-operands
+
+(Rule 8, added by #1088.)
+
+- **Infers** — a contradiction.
+- **Fires when** — an enforce pass runs with the two operands the same
+  non-constant variable handle and a comparison that cannot hold: the
+  must-hold pass of a strict form (`x < x`), or the must-not-hold pass of an
+  or-equal one (`¬(x ≤ x)`). That is `LessThan(x, x)` and `GreaterThan(x, x)`
+  on their first call, and any reified form whose condition is decided the
+  unsatisfiable way when the pass runs: at install, or by another constraint
+  before this propagator's first call. An undecided condition never gets here,
+  because rule 5 decides it the satisfiable way first.
+- **Strength** — n/a; the constraint is unsatisfiable under its condition.
+- **Algorithm** — one handle comparison, before the bound reads. O(1), and
+  independent of the domain: without it, rule 1 would shrink the bounds two
+  values per call, one from each end.
+- **Why it is true** — never `x < x`.
+- **Proof technique** — `RUP`, and, as for rule 5, no procedure applies: with
+  both operands the same handle the row's left side is identically zero, so
+  under the condition it reads `0 ≤ −1`. **Theorem 2.6** carries the condition.
+- **Reason** — `{cond}`, guarded on `want_reasons()`. Minimal.
+- **Assertion** — `¬cond`, which for an unreified form is the empty clause. It
+  is an explicit `contradiction()`, so it asserts no attempted literal.
+  Measured at `AssertionLevel::Inferences`, `x ∈ 0..3`:
+  ```
+  a >= 1::comparison:((constraint_id _1));                LessThan{x, x}
+  a 1 ~i[b][eq1] >= 1::comparison:((constraint_id _1));   LessThanIf{x, x, b == 1}, b ∈ {1}
+  a 1 i[b][eq1] >= 1::comparison:((constraint_id _1));    LessThanEqualIff{x, x, b == 1}, b ∈ {0}
+  ```
+- **Gaps** — `None.` The `Off` proofs verify `UNSATISFIABLE` (VeriPB,
+  `--force-checked-deletion`) for `LessThan{x, x}`, `GreaterThan{x, x}`,
+  `LessThanIf` with its condition fixed true, and `LessThanEqualIff` with its
+  condition fixed false.
+- **Tightness** — `Not shown.` The reason is one literal and the assertion its
+  negation, so the only corruption available is to drop the condition.
+
+`comparison_test` runs `LessThan(x, x)` and `GreaterThan(x, x)` as dup cases
+expecting no solutions, and `less_than_aliased_unsat` takes the first through
+cake.
+
 ## Evidence
 
 ### Tests
 
-One binary, `gcs/constraints/comparison/comparison_test.cc`, run as **twelve
+One binary, `gcs/constraints/comparison/comparison_test.cc`, run as **fourteen
 ctest lanes** — one per variant, selected by an argv mode
-(`ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff`) — plus
-twelve view-sweep lanes, for 24 of the 27 lanes matching `comparison`. The
+(`ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff le_notif lt lt_if lt_iff
+lt_not`, the last two being `LessThanEqualNotIf` and `LessThanNot`) — plus
+fourteen view-sweep lanes, for 28 of the 31 lanes matching `comparison` at
+`61112ed0`. The
 other three are `scp_chain_multi_comparison_unsat` and the two
 `difference_chain-presolved-comparison-*` lanes.
 
@@ -874,9 +951,12 @@ other three are `scp_chain_multi_comparison_unsat` and the two
   modes.
 - **A view sweep in both positions**, `add_view_tests(comparison_constraint_
   ${mode} comparison_test 2 ${mode})`, one per mode.
-- **Aliasing for all eight reified forms plus the two `<=`/`>=` unreified
-  ones**, via the dup helpers, with the expected verdict pinned per form
-  (`c == 0` for the strict forms, `c == 1` for the or-equal ones).
+- **Aliasing for all twelve forms**, via the dup helpers, with the expected
+  verdict pinned per form: no solutions for `LessThan` and `GreaterThan`,
+  every `x` for `LessThanEqual` and `GreaterThanEqual`, `c == 0` for the four
+  strict reified forms, `c == 1` for `le_iff` and `ge_iff`, and every `(x, c)`
+  for `le_if` and `ge_if`, since `c → x ≤ x` always holds. The last
+  two were construction-time rejection checks until #1088.
 - **Both operand orders** for every mode, via `build_expected`.
 - **Seeded**, reproducible with `--seed=N`.
 - **`.scp` round-trip**, in `scp_reader_test.cc`: three variants
@@ -911,6 +991,13 @@ What the tests do **not** cover:
   forms are round-tripped nowhere: `scp_reader_test` covers `_iff` but not
   `_if`. The keywords are written and parsed, so this is untested rather than
   broken.
+- **Two of rule 8's three arms.** The reified dup helper leaves `c ∈ {0, 1}`
+  open, so rule 5 fixes `c` at the root and the enforce pass never runs. So only
+  the unreified must-hold arm (`LessThan(x, x)`, `GreaterThan(x, x)`, and
+  `less_than_aliased_unsat`) is tested. The reified must-hold arm (a `*ThanIf`
+  or `*ThanIff` whose condition is already true) and the must-not-hold arm (a
+  `*EqualIff` whose condition is already false, `¬(x ≤ x)`) are reached by no
+  test. Both were probed for this re-audit and verify.
 - **The `.scp` round-trip is a write→read→write fixpoint, not a semantic
   check.** It catches a reader that loses information, which is the failure the
   `equals` audit's `_neq` bug was; it would not catch a writer and reader
@@ -924,7 +1011,9 @@ What the tests do **not** cover:
   but not for anything that writes an `.scp`** — `constraint_row_test.cc`
   disables the `.scp` deliberately. See [Known
   limitations](#known-limitations).
-- **`difference_chain`, the family's own benchmark, exercises one of the seven
+- **A range-literal reification condition.** No lane posts one, which is how
+  #310's reach into this family went unrecorded.
+- **`difference_chain`, the family's own benchmark, exercises one of the eight
   rules.** See [Proof performance](#proof-performance).
 
 ### Benchmarks and examples
@@ -939,8 +1028,8 @@ the caveat that matters for anything arriving from MiniZinc.
   art](#prior-art)) — a system of difference constraints whose fixpoint costs
   Θ(n³) with one propagator per constraint — so it is propagation-bound by
   construction, and `--donor` selects between spelling each edge as a
-  comparison or as a two-term linear inequality **over an identical search
-  tree**. At n=500 that is 63.0M propagator calls of which
+  comparison or as a two-term linear inequality **over the same search**: 503
+  recursions both ways at n=500, with propagation counts 0.4% apart. At n=500 that is 63.0M propagator calls of which
   **99% of propagation time is this family**, which is far more
   family-dominated than `ortho_latin` is for `equals` (71% of calls, 18% of
   time).
@@ -1007,7 +1096,7 @@ and measured here first:
 | unguarded, as the first audit found it | 4.01 s | 503 | 63,004,752 | 375,751 |
 | four reasons guarded | **2.30 s** | 503 | 63,004,752 | 375,751 |
 
-**1.74x, at a byte-identical search tree**, with 63 of 63 `comparison` and
+**1.74x, at identical recursion, propagation and effectful counts**, with 63 of 63 `comparison` and
 `difference` ctest lanes green. The guard cannot affect proofs, because reasons
 are materialised whenever one is being written.
 
@@ -1017,11 +1106,12 @@ rather than as a current figure, which matters because the numbers that went
 into #916 are not these ones and must not be quoted beside them. *Measured
 elsewhere, on a different machine — one core of an otherwise idle EPYC 7643,
 boost off, min of three, same instance at n=500:* 12.91 s against 8.56 s,
-**1.51x**, again at a byte-identical search tree. `perf stat` at n=300 puts it
+**1.51x**, again with recursions, propagations and effectful counts
+unchanged (#916's check). `perf stat` at n=300 puts it
 at −30% of instructions and −27% of cycles, and `perf record` has
 `__memmove_avx_unaligned_erms` going from 4.4% of cycles to 0.1% — which
 identifies the memcpy above as the thing the guard removes. Against the linear
-spelling of the same edge, over the same tree, the comparison spelling goes
+spelling of the same edge, at the same recursion count, the comparison spelling goes
 from 3.0x to 2.0x.
 
 Two things about how #916 was checked are worth carrying here, because they
@@ -1112,9 +1202,11 @@ of them a two-literal clause with one literal negated and 81 a single negated
 literal (where the reason literal was a root-level unit and resolved away).
 That is **rule 1 alone** — no must-not-hold pass, no reified verdict, no
 constant pair. `difference_chain` posts `LessThanEqual`, so it reaches one of
-the family's seven rules. Anyone quoting a per-inference proof cost from this
-table should know it is an average over one rule, and the other six are covered
-by `comparison_test`'s 1,356 proofs instead.
+the family's eight rules. Anyone quoting a per-inference proof cost from this
+table should know it is an average over one rule. Six of the others are covered
+by `comparison_test`'s 1,356 proofs instead, and rule 8, which postdates that
+count, by its dup cases and `less_than_aliased_unsat` — but only its
+unreified must-hold arm (see [Tests](#tests)).
 
 ## Status, gaps, and next steps
 
@@ -1122,12 +1214,16 @@ by `comparison_test`'s 1,356 proofs instead.
 
 **Nothing is left unjustified, and no rule is weakened when proofs are
 enabled.** There is no `a`-oracle use, no unlogged inference, and no strength
-difference between a proving and a non-proving run. Every one of the seven
+difference between a proving and a non-proving run. Every one of the eight
 rules is a bare RUP against a row the OPB carries under a label the presolver
 and cake both agree on.
 
 `None.` on cost gaps in the proof direction, too: the family emits one line per
 inference and no lemmas, and there is no interval degradation anywhere ([Variable kinds and views](#variable-kinds-and-views)).
+
+**One model-writing gap, not this family's own**: a range-literal reification
+condition cannot be written to the proof at all, so a proving run throws
+before search (#310; see [Reification](#reification)).
 
 The cost gap used to run the other way — the propagator paid a *proof-shaped*
 cost when proofs were off, by assembling reasons nothing would read. That was a
@@ -1190,12 +1286,13 @@ for closing them together rather than one at a time is the right one. Note the
 strictness flip is the risk there: an off-by-one inverting an edge is
 *unsound*, not merely incomplete.
 
-**Aliased operands under a strict comparison throw at construction rather than
-being reported as infeasible.** `LessThan(x, x)` is a modelling error and
-`InvalidProblemDefinitionException` says so, but a model generator that can
-emit one has to catch it rather than getting an unsatisfiable problem. The
-reified forms behave the other way — `LessThanIff(x, x, c)` cheerfully forces
-`¬c`. Deliberate, and worth knowing.
+**A range-literal condition throws with proofs on** (#310). It gives the right
+answers without proofs. No front end posts one.
+
+*Aliased operands under a strict comparison used to throw at construction*,
+where the reified forms decided the condition. XCSP3's `lt(x,x)` reached the
+throw and aborted (#1047), so #1088 made both answer with a contradiction
+instead (rule 8). The asymmetry is gone.
 
 ### Next steps
 
@@ -1205,7 +1302,7 @@ audit-wide prerequisite.
 
 1. **Find out what the rest of the comparison-versus-linear gap is.** Not
    filed. Guarded, the comparison spelling is still 1.55x the two-term linear
-   one on an identical tree, and the difference is IPC-shaped rather than
+   one at the same recursion count, and the difference is IPC-shaped rather than
    instruction-shaped — consistent with the offset view's indirection on every
    bounds read, but not isolated. It matters beyond this family: if a view
    costs that much on a bounds read, it is a fact about the view layer, not
@@ -1269,7 +1366,7 @@ separate. There is nothing here of the kind #819 and #889 found in `equals`.
 ## Further reading
 
 - [`dev_docs/justification-techniques.md`](../justification-techniques.md) —
-  what licenses the `RUP` in all seven rules. For this family it is one
+  what licenses the `RUP` in every rule. For this family it is one
   procedure (JP 3.2) and one theorem (2.9), and the theorem's `B ∈ {0,1}`
   precondition happens to be exactly the family's two row shapes, so this is
   the cheapest family in the arc to read alongside it.
@@ -1312,12 +1409,12 @@ the header — and this document does not duplicate them.
 without modification, which is the first time that has happened; the pilot
 reshaped it and the pilot's re-audit added four fields. Two things are worth
 recording as evidence *for* the current shape rather than against it. The
-per-rule `Tightness` field, added by the re-audit, answers `Not shown.` seven
-times here, and reads as a fact about the family rather than a to-do list —
+per-rule `Tightness` field, added by the re-audit, answered `Not shown.` seven
+times here at the audit (eight since #1088), and reads as a fact about the family rather than a to-do list —
 which is what the policy note in [`TEMPLATE.md`](TEMPLATE.md) intended. And the
 "say what the benchmark does not exercise" requirement, also from the
 re-audit, caught the same shape of thing it caught for `equals`: one rule of
-seven, found by the same `awk` over assertion polarities.
+the seven there were then, found by the same `awk` over assertion polarities.
 
 The one place the template's shape did real work was [Relation to other
 families](#relation-to-other-families). Its fifth direction, **shared code**,
