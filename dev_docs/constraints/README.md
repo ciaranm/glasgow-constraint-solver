@@ -13,17 +13,19 @@ constraints and do not restate it.
 
 - [`equals.md`](equals.md) — `Equals`, `NotEquals` and the four reified forms:
   one class and one propagator behind six posted constraints, a definitional
-  bit-sum OPB encoding that stays logarithmic in domain width, eight inference
+  bit-sum OPB encoding that stays logarithmic in domain width, nine inference
   rules under three wire hints, and the busiest propagator in the solver on
   clique-encoded models (71% of calls, 18% of propagation time). The pilot for
-  this template, and the only family so far with **three** audit dates: the
+  this template, and the only family so far with **four** audit dates: the
   first pass filed seven issues, six are fixed, and four of the fixes changed
   what the document says rather than only what the code does. The third pass is
   where a rule was **deleted** — #904 gave views their own range literals and
   the per-value fallback rule had nothing left to cover for — and it is the
   family whose interesting answer to `consistency::Auto` is about `NotEquals`:
   a disequality clique keeps nobody's interior pruning alive, where a real
-  `AllDifferent` over the same variables does.
+  `AllDifferent` over the same variables does. The fourth pass records #1088,
+  which made `NotEquals(x, x)` a root contradiction rather than a
+  construction-time throw.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871

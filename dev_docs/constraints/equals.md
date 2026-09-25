@@ -2,9 +2,11 @@
 
 > **Maturity** production ·
 > **Audited** 2026-09-07 at `7d014207`; re-audited 2026-09-08 at `76bfd836`;
-> re-audited 2026-09-21 at `6b220c79` ·
+> re-audited 2026-09-21 at `6b220c79`; re-audited 2026-09-25 at `61112ed0` ·
 > **Open issues** `None.` own to this family. #868, an audit-wide
-> cross-solver prerequisite, is still open and still half done. The first pass
+> cross-solver prerequisite, is still open and still half done. #310, already
+> open, reaches in from outside: a range-literal reification condition cannot
+> be written into the model. The first pass
 > filed #864–#870 and six of those seven are fixed; the two that reached in
 > from outside — #882 and #895 — have both closed since the second pass. What
 > this audit would file, it has instead put in [Next
@@ -16,6 +18,16 @@ optionally reified, optionally negated. It is the smallest interesting
 constraint in the solver and one of the busiest — 71% of all propagator calls
 on `ortho_latin --all 6`, and 44% of the assertions in its proof — so its cost
 per call and its trigger set matter more than its algorithm does.
+
+**What the fourth pass changed.** One fix from outside the audit, and one
+existing limitation recorded for the first time. Nothing else touching
+`gcs/constraints/equals/` has merged since `6b220c79`, and no table below was
+re-measured.
+
+| Landed | What it changed here |
+|---|---|
+| #1047 → #1088 | `NotEquals(x, x)` on a non-constant `x` is **accepted** rather than rejected at construction, and the must-not-hold pass contradicts as soon as it runs on aliased operands. That is a new rule, [rule 9](#rule-not-equals-aliased-operands), and a tenth cake chain case, `not_equals_aliased_unsat`. XCSP3's `ne(x,x)` reaches it; MiniZinc simplifies the shape away |
+| #310, not a fix | a reified form whose condition is a range literal (`in_range`, `not_in_range`) is right with proofs off and throws with proofs on, when the model is written. Measured at `61112ed0`; see [Reification](#reification) |
 
 **What the third pass changed.** A narrower pass than the second: two solver
 mechanisms arrived that every family document now has to answer for, and two
@@ -96,13 +108,19 @@ because `clone()` dropped it (see [Cake conformity](#cake-conformity)).
 
 Degenerate cases:
 
-- **Aliased operands.** `NotEquals(x, x)` on a non-constant `x` throws
-  `InvalidProblemDefinitionException` at construction. The other five accept
-  aliasing; `EqualsIff(x, x, c)` correctly forces `c`, and `NotEqualsIf(x, x,
-  c)` correctly forces `¬c`, via the alias check in the undecided pass.
+- **Aliased operands.** All six variants accept them. Where the aliased
+  relation decides an undecided condition, the undecided pass's alias check
+  does so at the root: `EqualsIff(x, x, c)` forces `c`, and `NotEqualsIf(x, x,
+  c)` and `NotEqualsIff(x, x, c)` force `¬c`. `EqualsIf(x, x, c)` leaves `c`
+  free, since `x = x` holds whatever `c` is. A form that must not
+  hold, meaning `NotEquals(x, x)` or a condition already decided that way,
+  contradicts as soon as its pass runs ([rule
+  9](#rule-not-equals-aliased-operands)). Until #1088, `NotEquals(x, x)` threw
+  `InvalidProblemDefinitionException` at construction instead, which aborted
+  XCSP3's `ne(x,x)`.
 - **Constant operands.** Two constants are a valid model, including two equal
-  constants under `NotEquals` — trivially infeasible, but a model, so it is not
-  rejected. Only genuine variable aliasing is.
+  constants under `NotEquals`, which is trivially infeasible. Nothing is
+  rejected.
 - **Views.** Accepted in either position, at a cost — see [Variable kinds and
   views](#variable-kinds-and-views).
 
@@ -126,7 +144,9 @@ Degenerate cases:
     `Equals` / `NotEquals` instead of `LinearEquality` / `LinearNotEquals`.
     Without that recovery this family would be almost unreachable from
     MiniZinc. For `_eq` the recovery is a strength gain as well as a speed one:
-    the generic linear equality is bounds(Z) and cannot carry a hole across,
+    the generic linear equality is `bounds(Z)` here, since both coefficients
+    are unit (a general linear equality is only `bounds(R)`; see
+    [linear.md](linear.md)), and cannot carry a hole across,
     where `Equals` intersects the domains. For `_ne` both are GAC, so it is
     purely the cheaper propagator.
 
@@ -217,6 +237,17 @@ Two things are specific to this family:
   `test_reification_condition`. That is the path `Equals` and `NotEquals`
   always take, and it is also what a FlatZinc-generated constraint with an
   already-fixed reification literal takes.
+
+**A range-literal condition works only with proofs off** (#310). The condition
+is an `IntegerVariableCondition`, which includes `in_range` and `not_in_range`.
+With `x, y ∈ 0..3`, `z ∈ 0..4` and the condition `z ∈ 1..3`, `EqualsIff`,
+`EqualsIf` and `NotEqualsIff` (the last over `not_in_range`) find the right 36,
+44 and 36 solutions. With proofs on, each throws `range literals during model
+writing are not yet supported` from `NamesAndIDsTracker::need_invar` when the
+model is written. Measured at `61112ed0`. No front end posts one: MiniZinc
+passes `b = 1` or `b ≠ 1`, XCSP3 `b = 1` or `b = 0`, `gcspy` `b ≠ 0`, and the
+`.scp` reader's conditions are `=`, `!=`, `>=` and `<` against one value.
+Every one is a single-value condition.
 
 ### Relation to other families
 
@@ -347,12 +378,18 @@ failure: a proof citing a label cake never assigns will not load.
 ### Cake conformity
 
 Conformant, and the best-covered family in the SCP chain suite: all six
-variants have a case, five of them `_sat` and three `_unsat`.
+variants have a case, ten cases in all, six `_sat` and four `_unsat`. (The
+first three passes said five `_sat`; there were six before #1088 too.)
 
 ```
 equals_sat  equals_unsat  equals_if_sat  equals_iff_sat  binary_equals_unsat
 not_equals_sat  not_equals_unsat  not_equals_if_sat  not_equals_iff_sat
+not_equals_aliased_unsat
 ```
+
+`not_equals_aliased_unsat` is `NotEquals(X, X)`, added by #1088: both halves of
+the row read `0 ≥ 1`, one on each polarity of the `ne` flag, and the
+propagator's contradiction is RUP against them.
 
 Each comment in `define_proof_model` names the cake function it conforms to
 (`encode_equal`, `cencode_equal_1`, the `nev` / `gtv` / `ltv` selectors).
@@ -410,9 +447,9 @@ machinery rather than by anything here.
 and stores the result; that is all. No auxiliary variables, no backtrackable
 state, no precomputation, and no root cost worth measuring.
 
-Argument validation is in the *constructors*, not in `prepare`: only
-`NotEquals` validates anything, rejecting genuine variable aliasing. That
-placement means a bad model throws at `post` rather than at solve.
+No constructor validates anything. `NotEquals` used to reject aliased
+operands; since #1088 it accepts them and the propagator contradicts instead
+(rule 9).
 
 ### Propagator inventory
 
@@ -422,8 +459,8 @@ and it is the only tuned thing in the family.
 | Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
 |---|---|---|---|---|---|---|
 | dispatcher, decided must-hold | `on_change` both operands | derived: **both operands** | 1–3 | `Equals`, and `If`/`Iff` fixed true at install | never claims | yes, once an operand is fixed |
-| dispatcher, decided must-not-hold | `on_instantiated` both operands | derived: **nothing** | 4 | `NotEquals`, and `NotIf`/`Iff` fixed false at install | never claims | yes, once it has acted |
-| dispatcher, undecided | `on_change` both operands **and** the condition | derived: **both operands** and the condition | 1–8 | the four reified forms while `cond` is open | claims stripped | yes, on any verdict |
+| dispatcher, decided must-not-hold | `on_instantiated` both operands | derived: **nothing** | 4, 9 | `NotEquals`, and `NotIf`/`Iff` fixed false at install | never claims | yes, once it has acted |
+| dispatcher, undecided | `on_change` both operands **and** the condition | derived: **both operands** and the condition | 1–9 | the four reified forms while `cond` is open | claims stripped | yes, on any verdict |
 | — with **one constant operand** | `on_instantiated` both **and** a refined watch on `other != c`, plus the condition | derived: **the non-constant operand**, and the condition variable | 1, 4, 6, 7 | any variant with exactly one constant operand | as above | as above |
 
 Every row is derived from the triggers; the family sets
@@ -465,7 +502,9 @@ The cost is not free and the accounting is subtle: narrowing a trigger
 it early, which fragments the changes a co-registered propagator sees into
 more, smaller instalments — and an O(n·d) propagator pays per *run*, not per
 change. So `ortho_latin` gained 16.5% while `colour` lost 3.6–5.2% on two of
-three instances, at an identical search tree.
+three instances, with recursion, failure, contradiction and solution counts
+identical before and after (#822's check; trees were not compared node by
+node).
 
 *Finer than any coarse trigger can express, for a constant operand* (#889).
 With `v2` pinned at `c`, everything the propagator reads collapses: the
@@ -577,10 +616,12 @@ efficiency](#interval-efficiency) for the width question proper.
 `[-10, 10]` ranges, negative constants, and the `{-2,-2}`/`{-3,-3}` fixtures.
 
 **Degenerate shapes.** Two operands that are the same variable handle are
-rejected by `NotEquals`'s constructor with `InvalidProblemDefinitionException`,
-but two *constants* that happen to be equal are accepted — a valid if trivially
-infeasible model, and the distinction is deliberate. An `Equals` on an aliased
-handle is fine and decides immediately. Two constant operands need no special
+accepted by every variant since #1088. `NotEquals(x, x)` contradicts on the
+first call (rule 9), with one recursion and an empty `a` line, whatever the
+domain: measured over `x ∈ 0..10⁶`. Before #1088 its constructor threw
+`InvalidProblemDefinitionException`. Two *constants* that happen to be equal
+are accepted too. An `Equals` on an aliased handle holds everywhere and never
+prunes. Two constant operands need no special
 case anywhere: `on_change` registers no wake for a constant, and every pass
 decides outright on the one call every propagator gets when search starts.
 
@@ -718,11 +759,14 @@ for its family. Both are in [Next steps](#next-steps).
 
 ## Inference catalogue
 
-Eight rules. The first three are the must-hold pass (`enforce_equality`), the
-fourth is the must-not-hold pass, and the last four are the reified verdicts of
-the undecided pass.
+Nine rules. The first three are the must-hold pass (`enforce_equality`), the
+fourth is the must-not-hold pass, and the next four are the reified verdicts of
+the undecided pass. The ninth also belongs to the must-not-hold pass. It came
+with #1088, and is numbered last rather than renumbering the four rules after rule 4.
 
-There were nine until #904. The ninth was `symmetric-difference-values`, a
+There were nine before #904 as well, but not these nine: #904 deleted
+`symmetric-difference-values`, which was rule 3 then, and every later rule
+moved up one, so today's rule 8 was rule 9. The deleted rule was a
 per-value spelling of rule 2 taken whenever an operand was a view or a
 constant, and it is gone rather than deprecated: giving views their own range
 literals removed the reason the fallback existed, so the rule it covered for is
@@ -731,10 +775,12 @@ reader of the first two passes of this document will look for it, and because
 "a rule was deleted" and "a rule was never written down" should not read the
 same.
 
-Four facts hold for all eight and are not repeated in each entry.
+Four facts hold for all nine and are not repeated in each entry.
 
 **What licenses the RUP.** Every rule here is an instance of a published
-justification procedure, except rule 8, which is ours. The chain is always the
+justification procedure, except rule 8, which is ours, and rules 5 and 9, which
+need none: with the operands aliased, each row's bit sums cancel and the row is
+a constant. The chain is always the
 same: our encoding gives each operand atomic bound and equality literals over a
 binary backbone, `Inv1` plus **Theorem 3.3** make unit propagation complete for
 the implied atomic literals *within* one variable, and one of
@@ -763,7 +809,7 @@ which is not the same thing as a different derivation length:
 
 | Wire form | Hint type | Means | Rules |
 |---|---|---|---|
-| `equals:((constraint_id N))` | `hints::Equals` | one RUP against the equality rows | 1, 3, 4, 5, 6, 7 |
+| `equals:((constraint_id N))` | `hints::Equals` | one RUP against the equality rows | 1, 3, 4, 5, 6, 7, 9 |
 | `equals:((constraint_id N) (subhint not_in_range))` | `hints::EqualsNotInRange` | two bound lemmas, then the conclusion | 2 |
 | `equals:((constraint_id N) (subhint no_overlap))` | `hints::EqualsNoOverlap` | the disjointness walk, then the conclusion | 8 |
 
@@ -1177,6 +1223,47 @@ alias" bug the dup tests were added for.
   The lane's instance had to be built with care, and the reason generalises:
   see [Tests](#tests).
 
+### Rule: not-equals-aliased-operands
+
+(Rule 9, added by #1088.)
+
+- **Infers** — a contradiction.
+- **Fires when** — the must-not-hold pass runs with the two operands the same
+  non-constant variable handle. That is `NotEquals(x, x)` on its first call,
+  and any reified form whose condition says the equality must not hold when the
+  pass runs: decided at install, or decided by another constraint before this
+  propagator's first call. An undecided condition never gets here, because
+  rule 5 decides it the satisfiable way first.
+- **Strength** — n/a: the constraint is unsatisfiable under its condition.
+- **Algorithm** — one handle comparison, before anything else in the pass.
+  O(1), and independent of the domain: without it, rule 4 would wait for
+  search to fix `x`.
+- **Why it is true** — `x ≠ x` is false.
+- **Proof technique** — `RUP`. No procedure is needed: with the operands
+  aliased, both of `MustNotHold`'s rows read `0 ≥ 1`, one under each polarity
+  of `ne`. For `NotIf` and `Iff`, the `gt` and `lt` rows force their flags
+  false, so the `al1` row falsifies under the condition. **Theorem
+  2.6** carries the condition.
+- **Reason** — `{cond}`, guarded on `want_reasons()`. Minimal.
+- **Assertion** — `¬cond`, which for `NotEquals` is the empty clause. It is an
+  explicit `contradiction()`, so it asserts no attempted literal. Measured at
+  `AssertionLevel::Inferences`, `x ∈ 0..3`:
+  ```
+  a >= 1::equals:((constraint_id _1));                  NotEquals{x, x}
+  a 1 ~i[b][eq1] >= 1::equals:((constraint_id _1));     NotEqualsIf{x, x, b == 1}, b ∈ {1}
+  ```
+- **Hint** — `hints::Equals{owner}`.
+- **Offline reconstructibility** — `offline`.
+- **Proof size** — one line.
+- **Gaps** — `None.` The `Off` proofs verify `UNSATISFIABLE` (VeriPB,
+  `--force-checked-deletion`) for `NotEquals{x, x}`, for `NotEqualsIf` with its
+  condition fixed true, and for `EqualsIff` with its condition fixed false.
+- **Tightness** — `Not shown.` The reason is one literal and the assertion its
+  negation, so the only corruption available is to drop the condition.
+
+`equals_test` runs `NotEquals(x, x)` as a dup case alongside the other five,
+expecting no solutions, and `not_equals_aliased_unsat` takes it through cake.
+
 ## Evidence
 
 ### Tests
@@ -1208,7 +1295,9 @@ the evidence that an interval of `infer_not_equal` really does collapse into one
 - **Seeded.** `establish_and_announce_seed`, reproducible with `--seed=N`.
 - **Coverage of the awkward cases**: all-constant operands in both directions
   (issue #254), aliasing for all six variants, negative domains, disjoint
-  domains, singleton domains, and the `NotEquals(x, x)` rejection.
+  domains, and singleton domains. `NotEquals(x, x)` was a construction-time
+  rejection test until #1088; it is now a dup case like the other five,
+  expecting no solutions.
 - **Runtime caps: the defaults fire here, so the complete check is the
   uncapped one.** No lane sets or clears a cap of its own, so under a default
   `ctest` every lane runs with the suite-wide caps (300 solutions and 1,500
@@ -1291,6 +1380,8 @@ What the tests do **not** cover:
   per-value witness in a proving run; with proofs off, the guard added in #873
   means the reason is not built at all, so a regression to a per-value reason
   would be caught by the large-domain audit lane rather than by this file.
+- **A range-literal reification condition.** No lane posts one, which is how
+  #310's reach into this family went unrecorded.
 - **`ortho_latin`, the family's own benchmark, exercises two of the nine
   rules.** See [Proof performance](#proof-performance) — worth knowing before
   reading any conclusion off it.
@@ -1312,7 +1403,7 @@ with a two-variable `=` or `!=` reaches it via the two-term linear recovery.
 - **For proof benchmarking: `ortho_latin --all 5`.** Size 6 must be capped
   (`dev_docs/proof-benchmarks.md`); size 5 is 5.7 MB and there is nothing in
   between. Know what it does *not* cover before reading a per-inference cost
-  off it: two of the family's eight rules, and neither subhint — see [Proof
+  off it: two of the family's nine rules, and neither subhint — see [Proof
   performance](#proof-performance).
 - **For the reified arm: `magic_series 300`** (in `minicp_benchmarks/`, and
   the size is positional — it takes no `--size` and no `--stats`).
@@ -1365,9 +1456,11 @@ which matters: the natural gcs benchmark for this family is a disequality
 clique, and no other solver would be given one.
 
 *Measured elsewhere — gcs `238c7836` against Gecode 6.3.0 via the MiniZinc
-2.9.7 bundle, 2026-09-07, on this machine but not in this table's build.
-`gcs-benchmarks` holds the authoritative tables. Identical trees throughout,
-verified on `nodes`.*
+2.9.7 bundle, 2026-09-07, on a Ryzen 9950X3D (per
+`cross-solver-benchmarking.md`), not this table's machine or build.
+`gcs-benchmarks` holds the authoritative tables. Node counts identical both
+ways throughout, which is the method's check; the trees were not compared node
+by node.*
 
 | Model | Arm | Instance | nodes (both) | gcs / gecode |
 |---|---|---|---|---|
@@ -1388,13 +1481,15 @@ table beside the figures above.
 
 *Issue #819, pre-merge:* `ortho_latin --all 6` 24.29 s → 20.28 s (−16.5%),
 321.7M → 55.4M `not_equals` calls; `colour` +3.6% and +5.2% on two instances
-and neutral on a third; identical search trees throughout.
+and neutral on a third. Recursion, failure, contradiction and solution counts
+were identical throughout, per #822.
 
-*Issue #889, in PR #894:* upstream `nmseq`, same binary, same tree, min of
+*Issue #889, in PR #894:* upstream `nmseq`, same binary, same node and failure counts, min of
 three — `Equals` calls 100.3M → 4.43M at n=100 (22.6x) and 1.594G → 35.4M at
 n=200 (45.0x), effectful share 4.4% → 98.6% and 2.2% → 99.3%, `solveTime`
 4.455 s → 2.097 s and 80.881 s → 32.847 s. `magic_series 300` from
-`minicp_benchmarks/` is the same shape in C++: identical search, propagations
+`minicp_benchmarks/` is the same shape in C++: the same recursion and failure
+counts (1,193 and 1,181, per #894), propagations
 41.9M → 15.9M, 10.5% fewer instructions. The rest of the `benchmarking.md` set
 is unchanged by it.
 
@@ -1432,7 +1527,7 @@ here. Reading the asserted clauses back: every literal in all 13,323 is an
 the same value and 14 of them a single positive literal. That is **rule 4**
 (13,309, the not-equal-to-fixed-operand pruning of the clique) and **rule 1
 against a constant** (14, the puzzle's fixed cells), and nothing else.
-`ortho_latin` exercises two of the family's eight rules in its proof — no bound
+`ortho_latin` exercises two of the family's nine rules in its proof — no bound
 push, no interval bridge, no disjointness walk — so the interesting
 derivations are covered by `equals_test` and the hint-inventory lane, not by
 the family's own proof benchmark. Anyone reading a per-inference cost off this
@@ -1461,6 +1556,10 @@ does and does not establish.
 `None.` on cost gaps, too, which was not true at either of the first two
 audits, and the two that were are now both closed.
 
+**One model-writing gap, not this family's own**: a range-literal reification
+condition cannot be written into the OPB model at all, so a proving run throws
+before search (#310; see [Reification](#reification)).
+
 Rule 8 assembled a `2 + width` reason unconditionally, so that with proofs off
 it was built, never read and thrown away. Fixed twice over: #873 guarded the
 assembly on `want_reasons()`, and #881 made the witness interval-wise so the
@@ -1475,6 +1574,9 @@ family now carries no view detour at all, and the fallback rule that existed
 only to cover for one is deleted.
 
 ### Known limitations
+
+**A range-literal condition throws with proofs on** (#310). It gives the right
+answers without proofs. No front end posts one.
 
 **Aliased operands are not GAC**, deliberately: a GAC algorithm for distinct
 variables does not generally give GAC under aliasing, and the dup tests check
@@ -1658,7 +1760,8 @@ Two things are worth citing:
   this family's arms are measured on. Written for #868; read it before quoting
   any cross-solver ratio.
 - `dev_docs/large-domains.md` — the `GCS_LARGE_DOMAIN_GUARD` audit lane, this
-  family's row in it, and the two generalisable findings the rule-9 blow-up
+  family's row in it, and the two generalisable findings the blow-up in the
+  rule then numbered 9 (now rule 8, #864)
   produced: that a `Clean` row nothing instruments is only as strong as the
   box it ran on, and that a *reason* is a place a search for pruning loops
   will not reach.
