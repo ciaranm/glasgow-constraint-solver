@@ -7,8 +7,8 @@
 > `network_50_cstr`'s propagation). Already open and touching this family: #310
 > (range literals cannot be written into the model, so a range literal here
 > throws with proofs on), #868 (cross-solver). `cake_pb_cp` has no rule for
-> `and_if` / `or_if`, and **no open issue tracks that**: #953, which asked for
-> `AndIf` and `OrIf`, closed on 2026-09-18 when #958 added them. Tracked under #871.
+> `and_if` / `or_if` (#1100; #953, which asked for `AndIf` and `OrIf`, closed
+> on 2026-09-18 when #958 added them). Tracked under #871.
 
 Four classes over one propagator. `And(lits, r)` says `r ⇔ ∧ lits`, and
 `Or(lits, r)` says `r ⇔ ∨ lits`. `AndIf` and `OrIf` are their half-reified
@@ -35,8 +35,8 @@ Three things to know before touching it.
   `cake_pb_cp`'s: a `pos` row saying the reification implies the conjunction
   (or disjunction), and a `neg` row for the converse, each linear in the number
   of literals. The half forms have the `pos` row only, and they cannot chain
-  through cake yet: `cake_pb_cp` rejects `and_if` and `or_if` outright (see
-  [Cake conformity](#cake-conformity)). No open issue tracks that.
+  through cake yet: `cake_pb_cp` rejects `and_if` and `or_if` outright (#1100;
+  see [Cake conformity](#cake-conformity)).
 - **The half-reified forms are reachable only from CPMpy and the `.scp`.**
   MiniZinc turns a half-reified Boolean into plain clauses for this library,
   and XCSP3 has no such form. The `.scp` path is tested; the Python tests of the
@@ -103,8 +103,8 @@ Degenerate shapes:
     converse, `And{{a, 1 − b}, 1 − x}`.
 
 [^cakeif]: The `.scp` keeps its own `and_if` / `or_if` keywords, so the chain
-    can start once `cake_pb_cp` gains a rule for them. It has none today; see
-    [Cake conformity](#cake-conformity).
+    can start once `cake_pb_cp` gains a rule for them. It has none today
+    (#1100); see [Cake conformity](#cake-conformity).
 
 [^mznimp]: MiniZinc emits the half-reified `_imp` builtins only for a solver
     library that declares them, and ours declares none. With our library,
@@ -199,8 +199,8 @@ write one, the binary-encoding case of #358. The rows themselves are cake's.
 with its keyword changed to `and_if`, or `or_sat.scp` to `or_if`, prints
 `unsupported constraint: and_if` (resp. `or_if`). What cake would need is the
 `pos` row alone, under the same label; #958, which added the classes and
-closed #953 on 2026-09-18, says so under "What to ask cake for". No open GCS
-issue tracks the cake side, and this review did not find one upstream.
+closed #953 on 2026-09-18, says so under "What to ask cake for". #1100 now
+tracks the cake side; this review did not find an upstream issue.
 
 ### Proof-time state
 
@@ -603,8 +603,8 @@ with proofs on and off.
   is the shape MiniZinc's `set_in` glue posts.
 - **A range literal throws with proofs on** (#310).
 - **`AndIf` and `OrIf` do not chain through `cake_pb_cp`**, which has no rule
-  for either keyword, and no open issue tracks it (#953, which asked for them,
-  is closed; #958 added them). No front end but CPMpy posts them.
+  for either keyword (#1100; #953, which asked for them, is closed, and #958
+  added them). No front end but CPMpy posts them.
 
 ### Next steps
 

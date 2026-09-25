@@ -139,7 +139,7 @@ constraints and do not restate it.
   clause is three quarters of `network_50_cstr`'s propagation (#1060). Twice as
   fast as Gecode on `grid-colouring`; the half-reified forms reach only CPMpy
   and the `.scp`, and cannot chain through cake yet, which has no rule for
-  them.
+  them (#1100).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
