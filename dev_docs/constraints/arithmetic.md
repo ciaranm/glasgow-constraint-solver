@@ -12,7 +12,8 @@
 > unpruned; #1081). Found here but not this family's: #1063 (the engine's
 > per-node state copy goes back to the kernel on every backtrack, 58% of
 > `stable-goods`' run), and #1056 (the harness's idempotence checker was off
-> in 100 lanes; #1086). Already open and touching this family: #540, #724,
+> in 100 lanes; #1086). Filed from this re-audit: #1102 (a hole at 0 in
+> `Divide`'s quotient does not wake it). Already open and touching this family: #540, #724,
 > #845, #880, #960, #846, #833, #868; #1038, listed here at the first pass, was
 > closed by removing the short-names option (#1087). Tracked under #871.
 
@@ -613,7 +614,7 @@ optional-interior-pruning pair. `Auto` means "tabulate when small" (for
   derived **Holes affect** omits `q`. That under-reports in the safe direction:
   never unsound, but another family's optional interior pruning on `q` can be
   switched off although `Divide` would use the removal of 0, and the inference
-  waits for the next bounds wake. Found in this re-audit, by reading; unfiled.
+  waits for the next bounds wake. Found in this re-audit, by reading; #1102.
   Apart from that one value, **on their default arm over large domains, this
   is a family whose whole vocabulary is bounds.**
 - **`Plus` and `Minus` observe holes on all three variables by default.** Their
@@ -2118,7 +2119,7 @@ asserted there. Three gaps sit around that:
   is fixed (#1081).
 - **`Divide`'s quotient under-reports its holes**: a hole at 0 made by another
   constraint does not wake it, and its derived **Holes affect** omits `q`
-  (see [Interior values](#interior-values-and-optional-pruning)). Unfiled.
+  (see [Interior values](#interior-values-and-optional-pruning)); #1102.
 - **An aliased `Plus` or `Minus` can take time linear in a domain's width**:
   `Plus{x, y, x}` with `y ≥ 1` takes 2.8 s to fail at the root with `x` over
   `[0, 10^7]`, under every tag (#1068).
@@ -2160,7 +2161,7 @@ Ranked by what they buy for what they cost.
 5. **Declare `Divide`'s quotient in `holes_affect_propagation`**, or wake on
    `q`'s interior, since [sign-open-magnitude-nonzero](#rule-sign-open-magnitude-nonzero)
    reads whether 0 is in `q`'s domain. Tiny, and it only restores what another
-   family's `consistency::Auto` may lose; unfiled.
+   family's `consistency::Auto` may lose; #1102.
 6. **Tests that would have caught this audit's findings.** Run the
    arithmetic chain cases at `Inferences` (#1067). Add a `BC`-forced
    `multiply` chain case, so the bounds proofs are chain-verified at all. Add
