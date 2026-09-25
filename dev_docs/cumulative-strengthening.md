@@ -116,6 +116,10 @@ a say.
 The same theorem, used the other way round, is why the derived constraints ship
 with **time-tabling off**: every time-table inference a derived constraint could
 draw is one the donor draws already, at every node, so running it is pure cost.
+(What that switches off is the bound pushes. The profile's overflow
+contradiction runs whatever the rule selection says, because it is what checks an
+assignment (#1037). For a derived constraint it can only find a conflict the
+donor's own overflow check also finds at that node.)
 `with_rules` turns it back on, and the neutrality test has to, because with it off
 the comparison would pass without `kappa` having been used for anything. (This is
 the issue's "measure propagation redundancy" question, answered by proof rather

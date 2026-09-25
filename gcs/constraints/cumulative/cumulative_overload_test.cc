@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <random>
 #include <set>
@@ -30,6 +31,7 @@ using std::cerr;
 using std::flush;
 using std::ifstream;
 using std::make_optional;
+using std::map;
 using std::max;
 using std::min;
 using std::nullopt;
@@ -395,6 +397,27 @@ namespace
         return false;
     }
 
+    // Whether the mandatory parts alone already overload some time point: the
+    // time-table overflow contradiction, which runs whatever the rules say
+    // (#1037) and before the overload check, so a root refutation of such an
+    // instance is never the overload check's.
+    auto oracle_says_profile_overflows(const Instance & inst) -> bool
+    {
+        auto n = inst.start_ranges.size();
+        map<int, long long> load;
+        for (size_t i = 0; i < n; ++i) {
+            if (! is_active(inst, i))
+                continue;
+            auto lst = inst.start_ranges[i].second, eet = inst.start_ranges[i].first + inst.lengths[i].first;
+            for (auto t = lst; t < eet; ++t)
+                load[t] += inst.heights[i].first;
+        }
+        for (const auto & [t, l] : load)
+            if (l > inst.capacity)
+                return true;
+        return false;
+    }
+
     // Sharp-margin instances: n tasks whose durations and heights are distinct
     // primes, all free to start anywhere inside one window [0, H), with the
     // capacity set so that the window's energy exceeds its supply by between
@@ -704,7 +727,9 @@ auto main(int argc, char * argv[]) -> int
             for (int attempt = 0; attempt < 4000 && found < 3; ++attempt) {
                 std::uniform_int_distribution<> horizon_dist(120, 240);
                 auto inst = sharp_margin_instance(rand, 3, horizon_dist(rand), data);
-                if (! inst)
+                // A task longer than half the horizon has a mandatory part, and
+                // when those overflow the time table refutes first.
+                if (! inst || oracle_says_profile_overflows(*inst))
                     continue;
                 ++found;
 
@@ -722,10 +747,12 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
-    // Oracle cross-check. Over a random corpus, with time-tabling off so that
-    // an overload conflict is the only conflict available, the propagator must
-    // refute at the root exactly when the from-the-definition oracle says a
-    // window is overloaded --- which catches both under- and over-firing.
+    // Oracle cross-check. Over a random corpus, with time-tabling's bound
+    // pushes off, the only conflicts available are the profile overflow (which
+    // always runs, #1037) and an overload one, so the propagator must refute at
+    // the root exactly when the from-the-definition oracles say one of the two
+    // happens --- which catches both under- and over-firing. The overflow runs
+    // first, so where it fires the overload check leaves no marker.
     {
         std::mt19937 rand(*get_seed());
         // Start domains reach below zero: a window then runs over negative
@@ -759,7 +786,8 @@ auto main(int argc, char * argv[]) -> int
             if (height_spread > 0)
                 ++with_var_height;
 
-            auto oracle = oracle_says_overloaded(inst, true);
+            auto overflow = oracle_says_profile_overflows(inst);
+            auto oracle = overflow || oracle_says_overloaded(inst, true);
             // Verify a proof for the first few conflicts, rather than all of
             // them: the cross-check is about which instances fire, and the
             // fixtures above are where the derivation itself is scrutinised.
@@ -772,11 +800,13 @@ auto main(int argc, char * argv[]) -> int
                 fail("oracle cross-check");
             }
             if (probe.refuted) {
-                ++fired;
+                if (! overflow)
+                    ++fired;
                 if (name)
                     ++verified;
-                if (proofs && name && probe.markers.total() != 1)
-                    fail("oracle cross-check: a refutation left no overload marker");
+                if (proofs && name && probe.markers.total() != (overflow ? 0 : 1))
+                    fail(overflow ? "oracle cross-check: an overflow refutation left an overload marker"
+                                  : "oracle cross-check: a refutation left no overload marker");
             }
 
             // The rule must not cost solutions, whatever the oracle says.
