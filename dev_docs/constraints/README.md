@@ -111,11 +111,14 @@ constraints and do not restate it.
   at-most-one through two channelling rows rather than reading it from a clique.
   Where it is the cost (`black-hole`) it searches the same number of nodes as
   Gecode, to the same first solution, and is 8–10 times slower, because every
-  call rescans every pair (#1048); with proofs on it writes every value's
-  at-most-one at the root, a cubic cost the lazy path avoids (#1049). Two legal
-  inputs error or abort (#1047). Checking how it calls a shared helper found a
-  proof bug in `GlobalCardinality`: a constant in the array can make its proofs
-  abort or fail (#1046).
+  call rescans every pair (#1048). Re-audited 2026-09-25 after its two other
+  issues were fixed. It builds its at-most-ones lazily now, where it used to
+  write every value's at the root (#1049 → #1089). It answers a repeated
+  variable with a root contradiction instead of an error, and it takes XCSP3's
+  one-directional `channel` as an injection form with a Hall-set rule of its own,
+  which `cake_pb_cp` cannot check (#1047 → #1088). Checking how it called a
+  shared helper found a proof bug in `GlobalCardinality`: a constant in the
+  array can make its proofs abort or fail (#1046, still open).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
