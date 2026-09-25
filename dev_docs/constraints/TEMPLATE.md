@@ -538,7 +538,14 @@ between rules stays in the entries, even when most of them agree.*
   the rule's data. This is what an `a` line would contain in hints-only mode.
   Where the rule has **two forms** — a range assertion and a per-value one —
   give both and say what picks between them, which should be a width test and
-  not a test on the kind of a variable.*
+  not a test on the kind of a variable. **A conflict has two shapes, and they
+  are not the same line.** An explicit `contradiction()` asserts `¬reason`,
+  since the tracker passes it `FalseLiteral`. An ordinary inference whose
+  literal is already false, which is how most conflicts arise, asserts
+  `attempted literal ∨ ¬reason`, exactly as if it had succeeded; the conflict is
+  closed afterwards, by the backtrack. Say which one the rule takes, and check it
+  against an `a` line at `AssertionLevel::Inferences` rather than the code
+  path's name.*
 - **Hint** — *the `gcs::innards::hints` type, and one line per field giving its
   type and meaning. This is the **reconstruction annotation** on the `a` line:
   its subhint tells an external justifier which procedure to run, and its
@@ -546,9 +553,11 @@ between rules stays in the entries, even when most of them agree.*
   technique, and it is not VeriPB's own RUP antecedent list. If the hint does
   not exist yet, say so — that is a work item, and it belongs in [Next
   steps](#next-steps).*
-- **Offline reconstructibility** — *one of the three verdicts in [Appendix
-  C](#appendix-c-reconstructibility-verdicts). If `solver-side`, name the
-  information that is not recoverable.*
+- **Offline reconstructibility** — *one of the four verdicts in [Appendix
+  C](#appendix-c-reconstructibility-verdicts), judged against its baseline
+  context. If `search`, name the search and its cost; if `solver-side`, name the
+  information that is missing and argue that no other sufficient derivation
+  exists.*
 - **Proof size** — *per firing, asymptotically, and **in what**: values, runs,
   bits, or tasks. The distinction is the whole point of the field for a family
   whose domains can be wide, and "linear" without it is the line this arc has
@@ -755,15 +764,34 @@ is what a model may **request**, and is what [Options](#options) takes.
 | Name | Meaning |
 |---|---|
 | `GAC` | generalised arc consistency on the whole constraint |
-| `bounds(Z)` | bounds consistency over the integers |
-| `bounds(D)` | bounds consistency over the domains |
-| `range` | range consistency |
+| `bounds(D)` | each variable's two bounds have a support in which every other variable takes a value **from its domain** |
+| `bounds(Z)` | each variable's two bounds have a support in which every other variable takes an **integer between its bounds**, holes ignored |
+| `bounds(R)` | each variable's two bounds have a support in which every other variable takes a **real number between its bounds** |
+| `range` | range consistency: every value has a support of the `bounds(Z)` kind |
 | `partial` | a named subset of the above — say which, and on which variables |
 | `checker` | detects violation of a full assignment only |
 | `decomposition` | whatever the posted children achieve, which is weaker than GAC on the conjunction |
 
 GAC on two constraints separately is not GAC on their conjunction; a family
 implemented by decomposition says `decomposition`, not `GAC`.
+
+**The three bounds levels are Choi, Harvey, Lee and Stuckey's** (*Finite
+Domain Bounds Consistency Revisited*, arXiv cs/0412021, Definitions 3 to 5), and each
+implies the next: `bounds(D)` ⇒ `bounds(Z)` ⇒ `bounds(R)`. The difference
+between the last two is the one that is easy to get wrong. Interval arithmetic
+on a linear sum or a single product, over distinct variables, reaches
+`bounds(R)`, and it reaches `bounds(Z)` only when the relation happens to take
+every integer in between. A general linear equality
+does not: `2x + 3y + 3z = 4` with `x ∈ 0..2` and `y, z ∈ 0..1` is a fixed point
+of the bounds sweep, but its one solution is `(2, 0, 0)`, so `x = 0`, `y = 1`
+and `z = 1` have real supports and no integer ones. A product does not either:
+with `x, y ∈ 2..4` and `z ∈ 5..15`, the box is a fixed point of `x·y = z`, but
+the integer products in it are 6, 8, 9 and 12, so neither 5 nor 15 has an
+integer support. So **check a `bounds(Z)` claim against a brute-force enumeration** of
+small instances before making it, not against the algorithm's description.
+
+None of the three is `consistency::BC`. That tag, below, names what a model
+asks for, and a rule under it still says which of these it achieves.
 
 ### Levels requestable
 
@@ -797,15 +825,41 @@ alternative is an API change, where adding a row to the first table is not.
 For the **Offline reconstructibility** field. This is the field Matthew's tool
 is read off, so it is worth being strict about.
 
+**What a reconstructor starts with.** Every verdict is relative to one baseline:
+
+- the original model, meaning the `.opb` and the `.scp` it came from;
+- the proof so far, including every derived line the trimmed proof keeps;
+- the assertion's clause and its hint;
+- any definitions the reconstructor introduces itself: extension variables,
+  reified bounds, flags.
+
+The question is whether a **sufficient** derivation of the asserted clause can
+be built from that context. Any sufficient derivation will do. The solver's own
+derivation is one sufficient derivation, and a reconstructor does not have to
+reproduce it.
+
 | Verdict | Meaning |
 |---|---|
-| `offline` | the assertion alone determines the derivation; the tool needs nothing else |
-| `hinted` | the assertion plus the hint payload determines it |
-| `solver-side` | it needs information not recoverable from assertion and hint — the exact Hall set, the traversal order of a DP, which of several equally-valid explanation subsets was chosen. **Name the information.** |
+| `offline` | the assertion and the baseline context lead directly to a sufficient derivation; the procedure is fixed by the rule and needs nothing chosen |
+| `hinted` | as `offline`, once the hint payload is read: the hint names the row, or carries a witness, that makes the procedure direct |
+| `search` | a sufficient derivation exists in the baseline context, but nothing in the assertion or hint points at it, so the reconstructor has to search: which model row licenses an unattributed clause, or which combination of rows eliminates to the conclusion. **Name the search, its cost and its assumptions.** A hint would turn it into `hinted`; whether that is worth carrying is an engineering question, not an information one |
+| `solver-side` | a sufficient derivation needs information that is **not in the baseline context at all**. **Name the information, and argue that it is needed** |
+
+**Failing to recover what the solver chose is not, by itself, `solver-side`.**
+The exact Hall set, the order a DP visited its states, which of several
+equally valid explanation subsets was taken, which rows a presolver gathered:
+if the baseline context supports a different sufficient derivation, the rule is
+`search` (or better). Say what that derivation is. A rule is `solver-side` only
+when no derivation from the context will do; the argument for that is part of
+the entry. A derivation that exists but is expensive to find, even one whose
+only known route is to re-run the solver's own search, is `search`, with that
+cost named. Hard-to-find is `search`; impossible-without-help is `solver-side`.
 
 The `solver-side` rules are exactly the list of things the external tool cannot
-rebuild, and therefore exactly what a hints-only GCS mode has to carry. Getting
-this field wrong is more expensive than leaving it blank.
+rebuild, and therefore exactly what a hints-only GCS mode has to carry. The
+`search` rules are the list of places where a hint would save work, and are
+candidates for one on cost grounds, to be settled against the justifier as it
+develops. Getting this field wrong is more expensive than leaving it blank.
 
 ## Appendix D: frontend coverage cells
 
