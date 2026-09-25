@@ -1,21 +1,48 @@
 # Arithmetic: one variable is the sum, difference, product, power, quotient or remainder of two others
 
 > **Maturity** production ·
-> **Audited** 2026-09-24 at `f28fdef8` ·
-> **Open issues** filed by this audit: #1064 (`Multiply`, `Power`, `Divide`
-> and `Modulus` throw `IntegerOverflow` once a corner product passes 2^63,
-> even when the result's domain is small; for `Divide` and `Modulus` this is
-> the case `db5a9276` fixed), #1065 (`Divide` leaves a sign-open quotient
-> unpruned, so a dividend in `[0, n]` fails `n` times; an XCSP3 `div` whose
-> dividend's domain contains 0 is that shape), #1068 (an aliased `Plus` or
-> `Minus` converges one value per pass, under every tag), #1067 (`Modulus`'s quotient magnitude is not pinned by unit
-> propagation on a solution, so its hints-only proofs fail VeriPB's solution
-> check), #1066 (tidying: draft thesis numbering, headers describing the
-> pre-rewrite design, dead fields). Found here but not this family's: #1063
-> (the engine's per-node state copy goes back to the kernel on every
-> backtrack, 58% of `stable-goods`' run). Already open and touching this
-> family: #540, #724, #845, #880, #960, #1038, #846, #833, #868. Tracked
-> under #871.
+> **Audited** 2026-09-24 at `f28fdef8`; re-audited 2026-09-25 at `61112ed0` ·
+> **Open issues** filed by this audit and still open: #1067 (`Modulus`'s
+> quotient magnitude is not determined by unit propagation on a solution, so
+> its hints-only proofs fail VeriPB's solution check), #1068 (an aliased `Plus`
+> or `Minus` converges one value per pass, under every tag), #1066 (tidying:
+> draft thesis numbering, headers describing the pre-rewrite design, dead
+> fields). Filed by this audit and since fixed: #1064 (corner products threw
+> `IntegerOverflow`; #1079) and #1065 (`Divide` left a sign-open quotient
+> unpruned; #1081). Found here but not this family's: #1063 (the engine's
+> per-node state copy goes back to the kernel on every backtrack, 58% of
+> `stable-goods`' run), and #1056 (the harness's idempotence checker was off
+> in 100 lanes; #1086). Already open and touching this family: #540, #724,
+> #845, #880, #960, #846, #833, #868; #1038, listed here at the first pass, was
+> closed by removing the short-names option (#1087). Tracked under #871.
+
+**Re-audit, 2026-09-25.** Three fixes for this audit's issues merged after the
+first pass, and a review of the document found four claims that were wrong
+from the start. What each changed here:
+
+| Issue | Fixed by | What changed in this document |
+|---|---|---|
+| #1064: corner products threw past 2^63 | #1079: `product_bounds` and `square_bounds` saturate each corner; `Divide` / `Modulus` refute a saturated lower corner and skip a bound whose sum would overflow | [Robustness and limits](#robustness-and-limits), [Known limitations](#known-limitations), [Next steps](#next-steps), [Proof-logging gaps](#proof-logging-gaps); four `wide-product` rows in the [audit lane](#interval-efficiency). Propagation now works at any width; **proof logging still stops at 62 bits of combined operand magnitude for `Multiply`, 63 of dividend and divisor for `Modulus`, and for `Divide` 63 of quotient and divisor with the dividend also counting** (see [Robustness and limits](#robustness-and-limits)) |
+| #1065: `Divide` left a sign-open quotient unpruned | #1081: [quotient-sign](#rule-quotient-sign) fires on a weakly signed dividend; three new rules bound a sign-open divisor or quotient and its magnitude against each other; the divisor's sign follows from `x`'s and `q`'s | [quotient-sign](#rule-quotient-sign), and new [divisor-sign](#rule-divisor-sign), [sign-open-clamp](#rule-sign-open-clamp), [sign-open-magnitude-cap](#rule-sign-open-magnitude-cap), [sign-open-magnitude-nonzero](#rule-sign-open-magnitude-nonzero); [stage-bound](#rule-stage-bound), [divisor-hole-pushthrough](#rule-divisor-hole-pushthrough), the inventory, [Interior values](#interior-values-and-optional-pruning), [Tests](#tests). `arithmetic-proofs.md` gained a paragraph on the same |
+| #1056: the idempotence checker was off in 100 harness lanes | #1086: the harness switches it on before anything propagates, and throws if it is off | the inventory's idempotence paragraph, [Tests](#tests) |
+| — (review) | — | [product-bounds](#rule-product-bounds) claimed `bounds(Z)` on `z`; it is `bounds(R)`. [sum-interval-prune](#rule-sum-interval-prune)'s technique field hid its `pol` lemmas. [Interval efficiency](#interval-efficiency)'s headline left out `PowerTable`. [Proof-time state](#proof-time-state) gave the wrong mechanism for #1067 |
+
+**Re-measured at `61112ed0`**, on the review build (release, unmodified): the
+overflow shapes of [Robustness and limits](#robustness-and-limits), with and
+without proofs, against the same probe on the `f28fdef8` build; `Divide`'s
+sign-open shapes, root domains and failures, on both builds; all 12 `modulus`,
+11 `divide` and 7 `multiply` chain cases at `Off` and `Inferences`; the 17
+constraint, mutation and helper lanes (the four constraint tests and their
+`view_mixed` twins, `plus_minus_constraint_dynamic_fallback`, the four
+`plus_mutation` lanes, `product_bounds`, `wide_product`, `product_justify` and
+`tabulation_test`), with the default caps and VeriPB on the `PATH`, all
+passing; and the counterexamples under
+[product-bounds](#rule-product-bounds). **Everything else is the first pass's,
+at `f28fdef8`**: the corpus firing counts, both performance sections, the
+per-firing proof sizes, the cap measurements and the uncapped lane run. None of
+them was taken again, and #1081's new rules also run for `Modulus` (on the
+divisor), so the `harmony` figures may have moved. `file:line` citations are to
+`f28fdef8` unless they say otherwise.
 
 Six classes over four directories, in two groups that share almost nothing
 but the tabulation machinery. `Plus` and `Minus` are a unit-coefficient
@@ -42,14 +69,17 @@ Three things to know before touching it.
   writes a 3.65 GB proof there. The derivations are per bit, never per value,
   so width is not the problem; the number of inferences is.
 - **The weak and fragile spots are in `Divide` / `Modulus`, and at the
-  edges.** `Divide` cannot move a bound onto a quotient whose sign is open
-  (#1065). `Modulus`'s proofs verify fully justified, but not in the
+  edges.** `Modulus`'s proofs verify fully justified, but not in the
   hints-only modes, because nothing in the encoding pins its quotient
-  magnitude on a solution (#1067). `Multiply`, `Power`, `Divide` and `Modulus`
-  all throw an uncaught `IntegerOverflow` once their operands' corner products
-  pass 2^63, rather than saturating (#1064). And an aliased `Plus` or `Minus`
-  can converge one value per pass, in time linear in a domain's width (#1068).
-  Nothing in the suite reaches any of these.
+  magnitude on a solution (#1067). An aliased `Plus` or `Minus` can converge
+  one value per pass, in time linear in a domain's width (#1068). Nothing in
+  the suite reaches either. Two more were fixed after the first pass: `Divide`
+  now prunes a sign-open quotient (#1065, #1081), and the product group's
+  corner products saturate rather than throw (#1064, #1079), so propagation
+  works at any width; **with proofs on, building the proof model still fails
+  past about 62 bits of combined operand magnitude** (63 for `Modulus`'s
+  dividend and divisor), because the encoding's rows have to fit in an
+  `Integer`.
 
 ## What it is
 
@@ -128,7 +158,10 @@ Degenerate shapes, per class:
     `div` and of the divisor's for `mod`
     (`xcsp_glasgow_constraint_solver.cc:1526-1541`). So an XCSP3 `div`'s
     quotient always spans zero, and a `div` whose dividend's domain contains 0
-    is the shape of #1065.
+    is the shape of #1065. Since #1081 a dividend in `[0, n]` (or `[−n, 0]`)
+    pins the quotient's sign once the divisor's is decided; one that spans
+    zero can still leave the
+    quotient short of its hull (see [quotient-sign](#rule-quotient-sign)).
 
 `frontend-support-matrix.md` has no rows for this family; its XCSP3 side sits
 under the matrix's `intension (algebraic exprs)` row.
@@ -353,13 +386,15 @@ nothing grows with a domain's width except `PowerTable` (#845).
 | `@c[id][mag_Z*]` | [product-bounds](#rule-product-bounds), [factor-bound](#rule-factor-bound) and the square rules, through JSP 7.4 |
 | `@c[id][sgn_*]` (`Multiply`) | nothing by name; only as RUP hints |
 | `@c[id][rem_*]`, `@c[id][id_*]` | every `Divide` / `Modulus` rule that pushes a bound through the dividend, by line handle |
-| `@c[id][rng_*]`, `@c[id][sgn_pos]`, `sgn_neg` (`Modulus`), and the `Y` and `Z` channel rows (`Divide`, `Modulus`) | [stage-bound](#rule-stage-bound) and [stage-gate-refutation](#rule-stage-gate-refutation) |
-| `@c[id][nonzero]`, `Divide`'s `sgn_*` | nothing by name; reached by RUP in [divisor-nonzero](#rule-divisor-nonzero), [quotient-sign](#rule-quotient-sign) and [power-zero-base](#rule-power-zero-base) |
+| `@c[id][rng_*]`, `@c[id][sgn_pos]`, `sgn_neg` (`Modulus`), and the `Y` and `Z` channel rows (`Divide`, `Modulus`) | [stage-bound](#rule-stage-bound) and [stage-gate-refutation](#rule-stage-gate-refutation); the channel rows also by [sign-open-clamp](#rule-sign-open-clamp) and [sign-open-magnitude-cap](#rule-sign-open-magnitude-cap), and only through RUP by [sign-open-magnitude-nonzero](#rule-sign-open-magnitude-nonzero) and, for `Divide`'s quotient, by [quotient-sign](#rule-quotient-sign)'s grid case, by line handle |
+| `@c[id][nonzero]`, `Divide`'s `sgn_*` | nothing by name; reached by RUP in [divisor-nonzero](#rule-divisor-nonzero), [quotient-sign](#rule-quotient-sign), [divisor-sign](#rule-divisor-sign) and [power-zero-base](#rule-power-zero-base) |
 | `Power`'s stage rows | [stage-bound](#rule-stage-bound) and [stage-gate-refutation](#rule-stage-gate-refutation), by line |
 
 The grid's `[r]` and `[f]` labels are rebuilt from a string
 (`product_encoding.cc:85-86`) rather than returned by the model. They agree
-today; #1038 names this site as one that has to change if keyed labels move.
+today. #1038 named this site as one that would have to change if keyed labels
+moved; it was closed by removing the short-names option (#1087), so the labels
+are always the verbose ones and the two cannot drift apart that way.
 
 ### Cake conformity
 
@@ -403,12 +438,25 @@ today; #1038 names this site as one that has to change if keyed labels move.
   equality, and the grid flags follow from their `[r]` and `[f]` halves.
   `Power`'s auxiliaries are real variables, pinned forwards through their
   links. **`Modulus`'s quotient magnitude is not pinned** (#1067). It has no
-  channel, so on a solution the identity rows fix `S` and its bits would have
-  to follow backwards through the grid. But `S`'s weights in those bits are
-  `2^i·|y|`, which unit propagation cannot decide in general. At `Off` the
-  proof's earlier lines pin its bounds, and its atoms' definitions carry them
-  to the bits. At `Inferences` and `Backtracking` nothing does, and 3 of the
-  12 `modulus` chain cases are rejected at a solution step.
+  channel, so on a solution the identity rows fix the grid sum `S`, and `|q|`'s
+  bits would have to follow backwards through the grid. They do not, and the
+  obstacle is the grid's **shape**, not the size of its weights. Each flag is
+  `a_i ∧ b_j`, so once `|y|`'s bits are fixed, bit `a_i` of `|q|` stands behind
+  one flag per set bit of `|y|`, each tied to `a_i` by its own equivalence and
+  carrying its own coefficient `2^(i+j)`. Unit propagation reads those
+  coefficients one at a time and never adds up equivalent flags. For `|y| = 3`
+  and `S = 9` over three bits, the row is `p00 + 2p01 + 2p10 + 4p11 + 4p20 +
+  8p21 = 9`: total weight 21, so the slacks are 12 and 9, and no single
+  coefficient (at most 8) exceeds either, so nothing propagates. The same sum
+  over the bits themselves, `3a0 + 6a1 + 12a2 = 9`, propagates completely:
+  `a2` is false, then `a0` and `a1` are true. VeriPB 3.0.2 accepts a bare
+  `soli` against that combined form and rejects it against the six-flag grid
+  (Codex's miniature on #1067, re-run for the re-audit). At `Off` the proof's
+  earlier lines pin `|q|`'s bounds, and its atoms' definitions carry them to
+  the bits. At `Inferences` and `Backtracking` nothing does, and 3 of the 12
+  `modulus` chain cases are rejected at a solution step (at `61112ed0` as at
+  `f28fdef8`: `modulus_big_sat` fails at the `solx` for `x = 9`, `y = 3`,
+  `r = 0`).
 - **The product group, lazily at `ProofLevel::Top`**, never deleted:
   - **W-lines**, `2·a·b` hinted RUPs per grid, emitted the first time
     JSP 7.2 runs on that grid and cached in its cells: 1,352 lines for a 26 ×
@@ -477,7 +525,7 @@ ordinary call.
 | `Plus` / `Minus` interval | `on_change`, all three | derived: all three | [sum-interval-prune](#rule-sum-interval-prune), [sum-hull-fallback](#rule-sum-hull-fallback) | `GAC`; `Dynamic`; `Auto` when not tabulating (the default, and an aliased post over budget) | claims it | never |
 | `Multiply` bounds | `on_bounds`, the distinct non-constant handles | derived: none | [product-bounds](#rule-product-bounds), [factor-bound](#rule-factor-bound), [zero-cofactor-contradiction](#rule-zero-cofactor-contradiction), [square-root-outer](#rule-square-root-outer), [square-root-inner](#rule-square-root-inner) | always, with two variable operands | claims it | never |
 | `Power` | `on_bounds`, base, result and every link's operands, deduplicated | derived: none | [power-zero-base](#rule-power-zero-base), [stage-bound](#rule-stage-bound), [stage-gate-refutation](#rule-stage-gate-refutation), and every link's product rules | a constant exponent | claims it | never |
-| `Divide` / `Modulus` | `on_bounds`, `x`, `y`, the result, `Modulus`'s `|q|` and both magnitudes | derived: none | [divisor-nonzero](#rule-divisor-nonzero) to [divisor-hole-pushthrough](#rule-divisor-hole-pushthrough), and the stage rules | a divisor that is not a constant zero | claims it | never |
+| `Divide` / `Modulus` | `on_bounds`, `x`, `y`, the result, `Modulus`'s `|q|` and both magnitudes | derived: none, **which under-reports `Divide`'s quotient**: [sign-open-magnitude-nonzero](#rule-sign-open-magnitude-nonzero) reads whether 0 is in `q`'s domain (see [Interior values](#interior-values-and-optional-pruning)) | [divisor-nonzero](#rule-divisor-nonzero) to [sign-open-magnitude-nonzero](#rule-sign-open-magnitude-nonzero), and the stage rules | a divisor that is not a constant zero | claims it | never |
 | tabulation initialiser | — | — | [tabulate-relation](#rule-tabulate-relation), [tabulate-empty](#rule-tabulate-empty) | `Tabulated`, or `Auto` within budget (for `Plus` / `Minus`, only when aliased); `InitialiserPriority::Expensive` | n/a | n/a |
 | tabulation, extensional | `on_change`, the enumerated underlying variables | derived: all of them | [table-prune](#rule-table-prune) | as the initialiser | claims it | `DisableUntilBacktrack` when no table was built |
 | `Power`'s empty relation | initial contradiction | — | [power-empty-relation](#rule-power-empty-relation) | a constant base and exponent with no representable power | n/a | n/a |
@@ -509,9 +557,13 @@ variable (`propagators.cc:776-779`), which here includes `x · −x` and a
 **Checked by this audit:** all four test binaries (`plus_minus_test`,
 `multiply_test`, `power_test`, `divide_modulus_test`) at `--seed=1`, with
 `GCS_CHECK_IDEMPOTENT_CLAIMS=1` in the environment and a local print
-confirming the checker was on (it is off in the harness's own lanes, #1056).
-All four pass, uncapped. The checker's ability to catch a false claim was
-shown by a control in the `abs` audit; no arithmetic control was run.
+confirming the checker was on. At `f28fdef8` the harness's own lanes could
+run with it silently off (#1056). All four pass, uncapped. The checker's
+ability to catch a false claim was shown by a control in the `abs` audit; no
+arithmetic control was run. **Since #1086** the harness switches the checker
+on before anything propagates and throws if a harness solve finds it off, so
+every harness solve now checks the claims; the family's four constraint tests
+and their `view_mixed` twins pass that way at `61112ed0`, capped.
 
 ### Mutable state and incrementality
 
@@ -547,11 +599,23 @@ optional-interior-pruning pair. `Auto` means "tabulate when small" (for
 
 **What this family observes** depends on the arm:
 
-- **The product group's bounds propagators observe no holes.** `Multiply`,
-  `Power`, `Divide` and `Modulus` read only `state.bounds`, plus two `O(1)`
-  `in_domain` guards whose inference is unconditional (a zero base or divisor,
-  removed once). **On their default arm over large domains, this is a family
-  whose whole vocabulary is bounds.**
+- **The product group's bounds propagators observe holes in one place only.**
+  `Multiply`, `Power`, `Divide` and `Modulus` read `state.bounds`, plus two
+  `O(1)` `in_domain` guards whose inference is unconditional (a zero base or
+  divisor, removed once). **Since #1081, `Divide` / `Modulus` also read one
+  interior value**: [sign-open-magnitude-nonzero](#rule-sign-open-magnitude-nonzero)
+  infers `|v| ≥ 1` when 0 is missing from a sign-open `v`'s domain, for the
+  divisor and for `Divide`'s quotient. For the divisor that read is always
+  of the propagator's own removal: [divisor-nonzero](#rule-divisor-nonzero)
+  takes 0 out at the top of the same pass. For the quotient it is not: a
+  hole at 0 that another constraint makes is something this propagator can
+  use, but its triggers are `on_bounds`, so the hole does not wake it, and its
+  derived **Holes affect** omits `q`. That under-reports in the safe direction:
+  never unsound, but another family's optional interior pruning on `q` can be
+  switched off although `Divide` would use the removal of 0, and the inference
+  waits for the next bounds wake. Found in this re-audit, by reading; unfiled.
+  Apart from that one value, **on their default arm over large domains, this
+  is a family whose whole vocabulary is bounds.**
 - **`Plus` and `Minus` observe holes on all three variables by default.** Their
   default is `Auto`, which is the interval propagator unless tabulating, and
   it reads interior values. Since `ef717662` made `Auto` mean `Dynamic` over
@@ -562,9 +626,10 @@ optional-interior-pruning pair. `Auto` means "tabulate when small" (for
 - **Tabulation observes holes** on every enumerated variable, through the
   table family's extensional propagator.
 
-The triggers tell the truth in every case: no propagator here declares
-`holes_affect_propagation`, and none needs to. The bounds propagators'
-`on_bounds` triggers match what they read. The `Plus` bounds propagator's
+The triggers tell the truth everywhere but `Divide`'s quotient, above: no
+propagator here declares `holes_affect_propagation`, and only `Divide` would
+need to, for `q` alone. Otherwise the bounds propagators' `on_bounds`
+triggers match what they read. The `Plus` bounds propagator's
 hole-snap loop reacts only to its own writes, which `propagators.hh` counts
 as unaffected.
 
@@ -572,54 +637,98 @@ as unaffected.
 
 - **Unbounded domains.** Nothing walks a domain on any bounds path; see
   [Interval efficiency](#interval-efficiency). The limits are overflow's.
-- **Negative values and zero.** Fully signed throughout. `Divide`'s strength
-  drops sharply when an operand's sign is open (#1065); see
-  [quotient-sign](#rule-quotient-sign).
+- **Negative values and zero.** Fully signed throughout. At `f28fdef8`
+  `Divide`'s strength dropped sharply when an operand's sign was open (#1065);
+  since #1081 it reaches the hull on every root fixture its test lists, and
+  what remains short of that is under [quotient-sign](#rule-quotient-sign).
 - **Degenerate shapes.** See [Semantics](#semantics). Untested: `Multiply{c1,
   c2, r}`; `Power` with `4 ≤ k ≤ 62` over a base that is not a singleton; `k =
   62` and `63`; `Power{x, k, x}` beyond `k = 2`; an all-constant, constant-zero
   or aliased `Divide` / `Modulus` in the chain.
-- **Overflow** (#1064).
-  - **`Plus` / `Minus`**: `Integer`'s checked arithmetic throws on overflow,
-    and nothing in either propagator catches it. The tabulation's acceptance
-    test uses `add_overflows` / `sub_overflows`, so an overflowing tuple is
-    rejected, not thrown.
-  - **`Multiply`**: the corner products throw once `|x|·|y|` can pass 2^63,
-    **whatever `z`'s domain**. `x, y ∈ [0, 2^31 − 1]` with `z ∈ [0, 2^60]`
-    solves; at `2^32 − 1` it throws `Integer overflow: 4294967295 *
-    4294967295`, during propagation, where the header says install time.
-    **With proofs the limit is lower**: two 31-bit operands solve, but at
-    `2^31`, two 32-bit operands, a `ProofError` sizes a half-reified row,
-    where the same post solves without proofs. At `2^32`, `power2` overflows
-    on the grid's weights. So the encoding stops somewhere between 62 and 64
-    bits of total operand width.
-  - **`Divide` / `Modulus`**: the magnitude corners throw in the same way, at
-    the same 31- / 32-bit threshold (checked for both). `Modulus` with `x ∈
-    [0, 10^12]`, `y ∈ [1, 10^7]` throws `1099511627775 * 10000000`, whose first
-    factor is the quotient magnitude's starting bound, `2^40 − 1`. This is the
-    shape `db5a9276` fixed before the S3 rewrite reintroduced corner products.
-  - **`Power`**: its auxiliaries' *ranges* saturate at posting time
-    (`power.cc:55-60, 179-184`), but each link propagates through the same
-    unguarded corner products: `Power(x ∈ [0, 2^31], 3, r ∈ [0, 2^61 − 1])`
-    throws `2305843009213693951 * 1518500249`. One contrived edge besides: the
-    `k > 62` shortcut assumes no base of magnitude two has a representable
-    power, but `(−2)^63 = INT64_MIN` is one. `Power(x ∈ [−2, 2], 63, constant
-    INT64_MIN)` throws, where the variable-exponent path finds `x = −2`.
+- **Overflow.** Re-measured at `61112ed0` with one probe, against the same
+  probe on the `f28fdef8` build; the first pass's figures are kept below it.
+  - **Since #1079, propagation works at any width.** `product_bounds` and
+    `square_bounds` saturate each corner at the end of `Integer`'s range. A
+    saturated corner compared with `z`'s representable bounds either excludes
+    nothing or is weaker than the true bound, so `Multiply` stays sound.
+    `Divide` / `Modulus` do arithmetic on the product, so there a saturated
+    lower corner refutes the node outright (`w ≤ |x|`, which is
+    representable), and a bound whose sum would overflow is skipped
+    (`sum_if_representable`), since past the end of the range it bounds
+    nothing. Without proofs, every shape below now solves: `Multiply` with
+    `x, y ∈ [0, 2^32 − 1]` and `[0, 2^40]` against `z ∈ [0, 2^60]`, `Modulus`
+    and `Divide` with `x ∈ [0, 10^12]` and `y ∈ [1, 10^7]`, and `Power(x ∈ [0,
+    2^31], 3, r ∈ [0, 2^61 − 1])`. At `f28fdef8` each of those threw
+    `IntegerOverflow` during propagation.
+  - **With proofs, the proof model still fails first, unchanged by #1079.**
+    It sizes the grid's rows by the grid's largest sum, which has to fit in an
+    `Integer`. The failure comes out of `solve_with`, when the proof model is
+    built, not out of `Problem::post`. The headers now give the limit as 62
+    bits of combined operand magnitude for `Multiply` (and so per `Power`
+    link), and 63 bits of quotient and divisor magnitude for `Divide` /
+    `Modulus`. Measured:
+    - `Multiply`: two operands of `2^31 − 1` solve with proofs; at `2^31` and
+      `2^32 − 1` it throws a `ProofError` ("cannot size the reification
+      constant for a half-reified row").
+    - `Modulus`, whose quotient magnitude is sized by the dividend: 33-bit
+      `x` with 30-bit `y` solves; 32 + 32 and 34 + 30 throw `ProofError`. So
+      63 bits of **dividend** and divisor.
+    - `Divide`: the dividend counts too, because its remainder rows add `x`
+      to the grid sum. With a 31-bit quotient and 31-bit divisor, dividends of
+      10, 40 and 60 bits all solve. With a 32-bit quotient and 31-bit divisor,
+      a dividend of up to 32 bits solves, and 33, 36, 40 and 60 bits throw
+      `ProofError`. So the header's 63 holds only for a narrow dividend; in
+      practice about 62.
+    - When the grid would need more than about 64 bits, the error is an
+      `UnimplementedException` from `power2` instead (`Multiply` at `2^40`
+      per operand; `Modulus` with a 40-bit `x` and 31-bit `y`), not the
+      `ProofError` the headers name.
+    The `Divide`, `Modulus` and `Power` shapes above throw `ProofError` with
+    proofs on, identically at `f28fdef8`. The fact-check of this re-audit
+    measured the `Divide` / `Modulus` widths. **This is now the family's only
+    width limit, and it is the proof's, not the propagator's.**
+  - **`Plus` / `Minus`** are unchanged: `Integer`'s checked arithmetic throws
+    on overflow, and nothing in either propagator catches it. The
+    tabulation's acceptance test uses `add_overflows` / `sub_overflows`, so an
+    overflowing tuple is rejected, not thrown.
+  - **One `Power` edge survives, now documented** (`power.hh`): the
+    constant-exponent path treats no base of magnitude two as having a
+    representable power above `k = 62`, but `(−2)^63 = INT64_MIN` is one.
+    `Power(x ∈ [−2, 2], 63, constant INT64_MIN)` still throws `IntegerOverflow`
+    at `61112ed0`, as at `f28fdef8`; and, unchanged too, the variable-exponent
+    path (`k ∈ [62, 63]`) finds `x = −2`.
+  - **At `f28fdef8`**, before #1079: `Multiply`'s corner products threw once
+    `|x|·|y|` could pass 2^63, whatever `z`'s domain (`Integer overflow:
+    4294967295 * 4294967295` at `2^32 − 1`, during propagation, where the
+    header said install time). `Divide` / `Modulus`'s magnitude corners threw
+    in the same way; `Modulus` with `x ∈ [0, 10^12]`, `y ∈ [1, 10^7]` threw
+    `1099511627775 * 10000000`, whose first factor is the quotient magnitude's
+    starting bound, `2^40 − 1`, the shape `db5a9276` had fixed before the S3
+    rewrite reintroduced corner products. `Power`'s auxiliaries' ranges
+    saturated at posting time, but each link propagated through the same
+    unguarded corners (`2305843009213693951 * 1518500249`).
 
-  All of these fail loudly, never unsoundly. The large-domain audit lane's
-  rows are `[0, 10^9]`, 30 bits per operand, which reaches none of them.
+  Every failure left fails loudly, never unsoundly. The large-domain audit
+  lane now has a `wide-product` row per class whose corner products pass 2^63
+  at the audit's width; its proof survey scales the operands down so that a
+  proof can still be written.
 
 ### Interval efficiency
 
-`Fine at any width` on every default arm **over distinct variables**. The
-exception is aliasing: an aliased `Plus` or `Minus` can converge one value
-per pass under every tag, 2.8 s at a width of 10^7 (#1068). The per-value
-sites besides are the tabulation's and `PowerTable`'s, both behind a budget
-or an explicit request.
+`Fine at any width` on every default arm **over distinct variables, with two
+exceptions**. An aliased `Plus` or `Minus` can converge one value per pass
+under every tag, 2.8 s at a width of 10^7 (#1068). And a `Power` with a
+*variable* exponent always installs `PowerTable`, whatever consistency was
+asked for, which walks `D(base) × D(exponent)` with **no budget** (#845): that
+is a default dispatch, not an explicit request. The only other per-value site
+is the tabulation's, which runs behind the 100-leaf budget under `Auto`, or
+under an explicit `Tabulated`.
 
 1. **Propagation.**
    - **Bounds propagators**: no value walks. The product group's only
-     domain reads beyond bounds are two `O(1)` `in_domain` guards. `Plus` /
+     domain reads beyond bounds are three `O(1)` `in_domain` checks: the two
+     zero guards and, since #1081, whether 0 is in a sign-open divisor's or
+     quotient's domain. `Plus` /
      `Minus`'s loop repeats once per hole crossed by its own write over
      distinct variables, but under aliasing once per value (#1068), and it is
      not under `LargeDomainIterationCounter`.
@@ -637,7 +746,8 @@ or an explicit request.
      `power_table.cc:38` re-checks the exponent's membership for a value just
      drawn from its domain (#1066).
 2. **Reasons.**
-   - **The product group**: two to six bound literals, never per value or per
+   - **The product group**: zero to six literals (divisor-nonzero and
+     power-zero-base have empty reasons), never per value or per
      run, and unguarded by `want_reasons()` because they are constant size.
    - **`Plus` / `Minus` bounds**: two literals.
    - **`Plus` / `Minus` interval**: one literal per interval of two domains,
@@ -655,7 +765,9 @@ or an explicit request.
      needed.
    - Tabulation: per node of the enumeration tree, by construction.
 4. **The audit lane** (`gcs/large_domain_audit_test.cc`), root only, proofs
-   off, over `[0, 10^9]`:
+   off, over `[0, 10^9]`. The outcomes are the rows' declared expectations,
+   read at `61112ed0`; the lane was not run for the re-audit, since it is
+   registered only in a `GCS_LARGE_DOMAIN_GUARD` build:
 
    | Row | Arm reached | Outcome |
    |---|---|---|
@@ -665,6 +777,7 @@ or an explicit request.
    | `Plus/many-intervals-gac` | `GAC` | `KnownTrip` |
    | `Multiply` | `Auto`, the bounds propagator | `Clean` |
    | `Divide`, `Modulus` | `Auto`, the bounds propagator | `Clean` |
+   | `Multiply/wide-product`, `Divide/wide-product`, `Modulus/wide-product`, `Power/wide-product` (#1079) | the bounds propagators, with operands scaled from the probe width so that corner products pass 2^63; `Power` is a cube, so the link chain | `Clean` |
    | `Power` | a *variable* exponent, so `PowerTable` | `KnownTrip` |
    | `PowerTable` | `PowerTable` | `KnownTrip` |
 
@@ -673,13 +786,14 @@ or an explicit request.
    - no `BC` row for `Plus` / `Minus`, since `Auto` became `Dynamic`;
    - no `Tabulated` row for any class;
    - no view, no square, and no aliasing, which is where #1068 lives;
-   - no negative or zero-spanning domain, which is where `Divide`'s weakness
-     and the magnitudes' bit-maximum overflow live;
-   - no **constant-exponent** `Power`: its only row takes the variable-exponent
-     path, so the link chain has no row at all;
-   - no proofs, where the encoding's own 64-bit limit bites;
-   - and no operand pair wide enough for a corner product to pass 2^63,
-     where #1064 starts.
+   - no negative or zero-spanning domain, which is where `Divide`'s
+     sign-open rules and the magnitudes' bit-maximum overflow live;
+   - no **constant-exponent** `Power` at the plain width: until #1079 its only
+     row took the variable-exponent path; `Power/wide-product`, a cube, is now
+     the link chain's one row;
+   - and no proofs, where the encoding's own 62- or 63-bit limit bites. (The
+     first pass also listed no operand pair wide enough for a corner product
+     to pass 2^63; the `wide-product` rows are that, since #1079.)
 
 ## Inference catalogue
 
@@ -758,7 +872,11 @@ Facts that hold across the family:
   change, under `BC`, `Tabulated` and a tabulating `Auto`. Not under the
   default arm. No MiniZinc corpus model posts either class.
 - **Strength** — `bounds(Z)` on all three over distinct variables, at the
-  fixpoint the loop reaches; conclusions snap into the domains. Under
+  fixpoint the loop reaches; conclusions snap into the domains. A
+  unit-coefficient sum of integer intervals takes every integer in between,
+  so here `bounds(R)` and `bounds(Z)` coincide; a brute-force check of 3,000
+  random `BC` posts at `61112ed0` found no unsupported bound in the 1,837
+  roots that did not fail. Under
   aliasing, `partial`: `x + x = r` with `x ∈ [0, 10]`, `r ∈ [0, 5]` leaves `x
   ≤ 5`, where `bounds(Z)` gives `x ≤ 2`.
 - **Algorithm** — interval arithmetic on a unit-coefficient equality,
@@ -805,10 +923,12 @@ Facts that hold across the family:
   a merge, `O(k_X + k_supported)`.
 - **Why it is true** — `X = −c_X(c_1·o_1 + c_2·o_2)`, so a value of `X`
   outside that set of sums has no support.
-- **Proof technique** — `RUP sequence`, ours (no published procedure;
-  `large-domains.md` states it). Saturated `pol` lemmas at `Temporary`, each
-  "one of the bounds propagator's six rules, stated at an interval's
-  endpoints". For a removed run of `X`, each interval of `Y` defines a window
+- **Proof technique** — `pol` then `RUP`, ours (no published procedure;
+  `large-domains.md` states it). The lemmas are `pol`s, each saturated into a
+  clause, at `Temporary`, each "one of the bounds propagator's six rules,
+  stated at an interval's endpoints" (`gac.cc:214-232`); one RUP then closes
+  the conclusion. Not a `RUP sequence`: the lemmas are cutting-planes lines,
+  not RUP steps. For a removed run of `X`, each interval of `Y` defines a window
   of `Z`, the third variable. Then there is an optional prefix lemma, in which
   `Z`'s near bound pushes `Y` past every window below it. Each interior
   interval of `Y` gets a pair: `Y` pushes `Z` into the hole holding its
@@ -862,7 +982,8 @@ Facts that hold across the family:
 - **Algorithm** — `O(k_1 + k_2)` interval sums per sub-step.
 - **Why it is true** — a hull is a superset of its domain, so a value
   unsupported against it is unsupported against the domain.
-- **Proof technique** — as sum-interval-prune. The hull is the shorter list,
+- **Proof technique** — `pol` then `RUP`, as sum-interval-prune: saturated
+  `pol` lemmas and one closing RUP. The hull is the shorter list,
   so it is the walked operand `Y`, and the windows still fall against `Z`'s
   holes: interior lemma pairs occur here too.
 - **Reason** — as sum-interval-prune, with the hull operand stated by its
@@ -886,10 +1007,22 @@ Facts that hold across the family:
   propagator is always installed. **The most common inference in the
   family**: on `train` 2014 `instance.1` over 20 s, 8,592,614 firings, 859,127 of them
   moving both bounds; on `opd` 2017 to its 17th solution, 553,230.
-- **Strength** — `bounds(Z)` on `z` with respect to the box, for distinct
-  operands: a bilinear function's extremes over an integer box are at its
-  corners. For a square, also `bounds(Z)` on `z`: `square_bounds` returns
-  `lo²`, `hi²` or 0, each attained over `x`'s interval.
+- **Strength** — `bounds(R)` on `z`, for distinct operands and for a
+  square: the corners (or `lo²`, `hi²` and 0 for a square) give the **exact**
+  image of the box, so every value between them, `z`'s surviving bounds
+  included, is `x·y` for some real `x` and `y` in their bounds. **Not
+  `bounds(Z)`**, which the first pass claimed: intersecting the exact hull
+  with `z`'s domain can leave an endpoint no integer product reaches. Under
+  `BC`, `x·y = z` with `x, y ∈ 2..4` and `z ∈ 5..15` is a fixed point, and
+  none of the seven solutions has `z` equal to 5 or 15 (they take `z ∈ {6, 8,
+  9, 12}`). The square is the same: `x·x = z` with `x ∈ −3..3` and `z ∈ 2..8`
+  reaches `x ∈ −2..2`, `z ∈ 2..4`, and both solutions have `z = 4`. On 3,000
+  random boxes under `BC`, each domain an interval of up to 9 values within
+  `−6..14`, 131 of the 1,692 roots that did not fail (7.7%) left an
+  integer-unsupported bound on `z`, 5 of them at both ends; for squares, 50 of 1,243 (4%), and never
+  on `x`. All checked at `61112ed0` by brute-force probe. Under the default
+  `Auto`, both examples are within the tabulation budget, and the square's
+  root then reaches `z = 4`.
 - **Algorithm** — four corner products, or two squares, in constant time. The
   propagation rule is the standard one (Apt and Zoeteweij; Schulte and
   Stuckey).
@@ -941,7 +1074,9 @@ Facts that hold across the family:
 - **Strength** — `partial`. The quotient filter is JaCoP's `IntDomain` case
   split, "sound but not exact" (`product_bounds.hh:142-144`): corner quotients
   can leave an unsupported endpoint, and a zero-spanning cofactor gives only
-  `[−max|z|, max|z|]`. `product_bounds_test` pins the known inexactness, and
+  `[−max|z|, max|z|]`. On the random boxes under
+  [product-bounds](#rule-product-bounds), 37 of the 1,692 roots that did not
+  fail left an integer-unsupported bound on `x`, and 36 on `y`. `product_bounds_test` pins the known inexactness, and
   `multiply.hh`'s "bounds consistent multiplication" overstates it (#1066).
 - **Algorithm** — no filter when 0 lies in both the cofactor's and `z`'s
   bounds; otherwise drop a zero endpoint and take floor and ceiling corner
@@ -1009,10 +1144,14 @@ Facts that hold across the family:
   2017.
 - **Strength** — with square-root-inner, `bounds(Z)` on `x`: the two give the
   exact hull of `{x : x² ∈ [z_lo, z_hi]}` (`product_bounds_test` checks
-  `square_filter`, which the propagator inlines rather than calls).
+  `square_filter`, which the propagator inlines rather than calls). An integer
+  `x` at either end of that hull has `x²` in `[z_lo, z_hi]` by construction;
+  the brute-force check under [product-bounds](#rule-product-bounds) found no
+  counterexample on `x` in 1,243 roots. `z` is only `bounds(R)`.
 - **Algorithm** — integer Newton `isqrt`, `O(log z)` iterations.
 - **Why it is true** — `x² ≤ z_hi ⇔ |x| ≤ ⌊√z_hi⌋`.
-- **Proof technique** — as [factor-bound](#rule-factor-bound), with the
+- **Proof technique** — `ia`, `pol`, `hinted RUP`, `RUP` and `proof by
+  contradiction`, as [factor-bound](#rule-factor-bound), with the
   cofactor sharing the target's excluded range, so that the refuted product is
   `(t ± 1)²`. The outer clamp runs before the inner lift, so that every refuted
   branch is uniformly too big or too small, which is when the box-shaped case
@@ -1037,7 +1176,8 @@ Facts that hold across the family:
 - **Strength** — `bounds(Z)` on `x`, together with square-root-outer.
 - **Algorithm** — `ceil_isqrt`, `O(log z)`.
 - **Why it is true** — `x² ≥ z_lo > 0 ⇔ |x| ≥ m`.
-- **Proof technique** — as square-root-outer. The excluded middle `(−m, m)`
+- **Proof technique** — `ia`, `pol`, `hinted RUP`, `RUP` and `proof by
+  contradiction`, as square-root-outer. The excluded middle `(−m, m)`
   contains 0, so the zero case is refuted through the grid against `z`'s
   positive range, as a `[x ≠ 0]` unit.
 - **Reason** — as square-root-outer.
@@ -1095,9 +1235,14 @@ Facts that hold across the family:
   - **`Divide`**: the channels of `|q|` and `|y|` as eight gated stages.
   - **`Modulus`**: `r − |y| ≤ −1` and `−r − |y| ≤ −1`, ungated; `r ≥ 0` gated
     on `x ≥ 0` and `r ≤ 0` gated on `x < 1`; the four `|y|` stages.
-- **Strength** — `partial`: `bounds(Z)` on each stage's own row. The stages
-  are gated on an operand's sign, so a magnitude bound never reaches an
-  operand whose sign is open; that is half of #1065.
+- **Strength** — `partial`: `bounds(Z)` on each stage's own row. Every
+  stage has at most two terms, all with coefficient ±1, where the sweep's
+  `bounds(R)` is also `bounds(Z)`. The stages are gated on an operand's sign,
+  so a stage never carries a magnitude bound to an operand whose sign is
+  open. At `f28fdef8` nothing else did either, which was half of #1065; since
+  #1081, [sign-open-clamp](#rule-sign-open-clamp) and
+  [sign-open-magnitude-cap](#rule-sign-open-magnitude-cap) do it for the
+  divisor and for `Divide`'s quotient.
 - **Algorithm** — `propagate_linear` over stages of at most two terms. The
   linear family's rule: see [linear.md](linear.md).
 - **Why it is true** — each stage is a row of the encoding, or the half of one
@@ -1157,21 +1302,74 @@ Facts that hold across the family:
 ### Rule: quotient-sign
 
 - **Infers** — `q ≥ 0` or `q ≤ 0`, for `Divide` only.
-- **Fires when** — both `x` and `y` have **strictly** decided signs: `x ≥ 1 ∧
-  y ≥ 1 ⇒ q ≥ 0`, `x ≥ 1 ∧ y ≤ −1 ⇒ q ≤ 0`, and the two mirrors. Never on the
-  corpus runs counted here.
-- **Strength** — `partial`, and **weaker than it could be**: `x ≥ 0 ∧ y ≥ 1 ⇒
-  q ≥ 0` also holds, since `x = 0` gives `q = 0`, but `x ∈ [0, n]` never
-  triggers it. With the sign-gated stages this leaves a sign-open quotient
-  unpruned: `x ∈ [0, 20]`, `y ∈ [3, 4]`, `q ∈ [−1, 50]` leaves `q` at `[−1, 50]`
-  at the root, where the hull is `[0, 6]` (#1065).
-- **Algorithm** — four bound reads.
+- **Fires when** — `x`'s sign is decided, strictly or weakly, and `y`'s
+  strictly: `x ≥ 1 ∧ y ≥ 1 ⇒ q ≥ 0`, `x ≥ 1 ∧ y ≤ −1 ⇒ q ≤ 0`, the two
+  mirrors, and, **since #1081**, the same four with `x ≥ 0` or `x ≤ 0` in
+  place of the strict sign, since `x = 0` gives `q = 0`; the weak case
+  concluding `q ≥ 0` also needs `|y|`'s lower bound at least 1, since its grid
+  derivation uses it. At `f28fdef8` it fired
+  only on strictly signed operands, and never on the corpus runs counted
+  there; the new cases have not been counted on the corpus.
+- **Strength** — `partial`. With [divisor-sign](#rule-divisor-sign) and the
+  three sign-open rules, `Divide` now reaches the
+  hull at the root on every fixture `divide_modulus_test` lists, including
+  `x ∈ [0, 20]`, `y ∈ [3, 4]`, `q ∈ [−1, 50]`, where the first pass measured
+  `q` left at `[−1, 50]` against a hull of `[0, 6]`. Re-measured under `BC`
+  and branching on `x`, `y`, `q` in order, enumerating all solutions: that
+  fixture goes from 102 failures to none, and `x ∈ [0, 100]`, `y ∈ [1, 10]`,
+  `q ∈ [−100, 100]` from 2,000 to none. **What remains short of the hull**, per the test's own
+  comment: an operand whose sign is open needs a case split the propagator
+  does not make (`x ∈ [−5, 20]`, `y ∈ [3, 4]` leaves `q ∈ [−6, 6]`, not `[−1,
+  6]`), and a variable divisor's own bounds need not be exact (`x ∈ [−9,
+  −7]`, `y ∈ [1, 3]`, `q ∈ [−6, −3]` leaves `y = 1`, and with it `q = −6`).
+- **Algorithm** — a handful of bound reads.
 - **Why it is true** — a truncated quotient of same-sign operands is at least
-  0, and of opposite-sign operands at most 0.
+  0, and of opposite-sign operands at most 0; a zero dividend gives 0.
 - **Proof technique** — `RUP` against the sign clauses `sgn_pp`, `sgn_pn`,
-  `sgn_nn` or `sgn_np`.
+  `sgn_nn` or `sgn_np`, for the strict cases and for `q ≤ 0` from a weak
+  sign, where `sgn_x0` (`x = 0 ⇒ q ≤ 0`) closes the zero case. **`q ≥ 0` from a
+  weak sign has no sign clause for `x = 0`**, so it goes through the grid:
+  once per constraint, at `ProofLevel::Top`, a `pol` gives `[q < 0] ⇒ |q| ≥ 1`
+  off the quotient's channel, and a JSP 7.1 chain (`ia`, `pol`) gives `[q <
+  0] ∧ [|y| ≥ 1] ⇒ S ≥ 1`; the inference then closes by a hint-free `RUP`
+  against the remainder rows' `S ≤ 0` at `x = 0`. No case split on `x = 0` is
+  needed: under the negated claim the sign clause forces `x` out of the
+  strict case, and `x ≥ 0` with `x < 1` pins `x`'s bits by unit propagation
+  (`31fe23b8`'s comment).
+- **Reason** — the two sign literals, minimal, except for `q ≥ 0` from a
+  weak sign, which adds `|y| ≥ 1`. That literal must stay: the cached grid
+  line carries `[q < 0]` and `[|y| ≥ 1]` as its own terms, and unit
+  propagation does not reliably reach `|y| ≥ 1` from `y`'s sign through the
+  channel (`divide_modulus.cc`, at `61112ed0`).
+- **Assertion** — `[x ⋯] ∧ [y ⋯] ⇒ [q ≥ 0]` / `[q < 1]`, and `[x ≥ 0] ∧ [y ≥ 1]
+  ∧ [|y| ≥ 1] ⇒ [q ≥ 0]` (or the mirror) for the grid case. For example, `x <
+  1 ∧ y ≥ 1 ⇒ q < 1` is `a 1 ~i[q][ge1] 1 i[x][ge1] 1 ~i[y][ge1] >= 1`.
+- **Hint** — `hints::Divide`: `originator` (`ConstraintID`).
+- **Offline reconstructibility** — `offline`, except `q ≥ 0` from a weak
+  sign, which is `hinted`: the id locates the grid and the channel, and the
+  reason gives the bound the JSP 7.1 chain needs.
+- **Proof size** — one line; the grid case adds its `Top` lines once, a JSP
+  7.1 chain of `O(n_a)` lines.
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.` The root-hull fixtures fail on the old
+  propagator (`78f22dee`'s message), which shows the rule matters to
+  strength, not that its derivation is tight.
+
+### Rule: divisor-sign
+
+- **Infers** — `y ≥ 1` or `y ≤ −1`, for `Divide` only. New in #1081.
+- **Fires when** — `x` and `q` both have strictly decided signs and `y`'s
+  sign is open: same signs give `y ≥ 1`, opposite signs give `y ≤ −1`.
+- **Strength** — `partial`.
+- **Algorithm** — six bound reads.
+- **Why it is true** — the sign clauses read backwards: a strictly signed
+  quotient of a strictly signed dividend fixes the divisor's sign, and `y = 0`
+  is outside the relation.
+- **Proof technique** — `RUP` against `sgn_pp`, `sgn_pn`, `sgn_nn` or `sgn_np`,
+  with `@c[id][nonzero]` excluding `y = 0`.
 - **Reason** — the two sign literals. Minimal.
-- **Assertion** — `[x ⋯] ∧ [y ⋯] ⇒ [q ≥ 0]` / `[q < 1]`.
+- **Assertion** — `[x ⋯] ∧ [q ⋯] ⇒ [y ≥ 1]` / `[y < 0]`. For `x ∈ [5, 20]`,
+  `q ∈ [2, 50]`, `y ∈ [−4, 4]`: `a 1 i[y][ge1] 1 ~i[x][ge1] 1 ~i[q][ge1] >= 1`.
 - **Hint** — `hints::Divide`: `originator` (`ConstraintID`).
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line.
@@ -1242,7 +1440,8 @@ Facts that hold across the family:
 - **Algorithm** — as dividend-from-product.
 - **Why it is true** — under `x ≥ 0`, `x ≥ S ≥ |q|_lo·|y|_lo > x_hi` is
   impossible; mirror under `x ≤ 0`.
-- **Proof technique** — as dividend-from-product.
+- **Proof technique** — `ia` (inside the chain), `pol` then `RUP`, as
+  dividend-from-product.
 - **Reason** — `{|q| ≥ a_lo, |y| ≥ b_lo}` and `x ≤ x_hi` (or `x ≥ x_lo`).
 - **Assertion** — `reason ⇒ [x ≤ −1]` / `reason ⇒ [x ≥ 1]`.
 - **Hint** — `hints::Divide`: `originator` (`ConstraintID`).
@@ -1421,9 +1620,11 @@ Facts that hold across the family:
 - **Infers** — `y ≤ −b_lo` when `|y| ≥ b_lo > y_hi`, and `y ≥ b_lo` when `b_lo`
   exceeds both `−y_lo` and `y_lo`.
 - **Fires when** — the `Divide` / `Modulus` propagator, after the filters,
-  reading `|y|`'s lower bound afresh. **The only rule that moves a magnitude
-  bound back onto a sign-open operand**, and it moves only `|y|`'s lower
-  bound; nothing does the same for `|q|`, or for an upper bound (#1065). The
+  reading `|y|`'s lower bound afresh. At `f28fdef8` it was **the only rule
+  that moved a magnitude bound back onto a sign-open operand**, and it moves
+  only `|y|`'s lower bound. Since #1081, [sign-open-clamp](#rule-sign-open-clamp)
+  moves an upper bound, for `y` and for `Divide`'s `q`; nothing yet pushes
+  `|q|`'s lower bound through the hole the way this rule does for `|y|`. The
   first branch's condition admits `y_hi = −b_lo`, a no-op inference. Never on
   the corpus runs counted here.
 - **Strength** — `partial`.
@@ -1438,6 +1639,89 @@ Facts that hold across the family:
 - **Hint** — `hints::Divide` / `hints::Modulus`: `originator` (`ConstraintID`).
 - **Offline reconstructibility** — `hinted`.
 - **Proof size** — about seven lines.
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
+
+### Rule: sign-open-clamp
+
+- **Infers** — `v ≤ u` and `v ≥ −u` from `|v| ≤ u`, for `v` the divisor `y`
+  (both classes) or `Divide`'s quotient `q`, when `v`'s sign is open. New in
+  #1081.
+- **Fires when** — the `Divide` / `Modulus` propagator, after
+  divisor-hole-pushthrough, when `v`'s bound lies beyond `±u` and the
+  matching sign is not decided: for the upper bound, `v_lo < 1` for the
+  divisor and `v_lo < 0` for the quotient; for the lower bound, `v_hi ≥ 0`.
+  A decided sign leaves the clamp to that sign's channel stage.
+- **Strength** — `partial`.
+- **Algorithm** — three reads: `v`'s two bounds and `|v|`'s upper bound.
+- **Why it is true** — `|v| ≤ u` puts `v` in `[−u, u]` whatever its sign.
+- **Proof technique** — `ia`, `pol`, `proof by contradiction` and `RUP`: a
+  cached `|v| ≤ u` line (`ia`), one `pol` adding it to the channel row for the
+  case that can violate the bound (`[v ≥ 0] ⇒ v ≤ |v|` for the upper bound,
+  `[v < 0] ⇒ −v ≤ |v|` for the lower), at `Temporary`, then
+  `conclude_by_sign_cases` over `[v ≥ 0]` / `[v < 0]`, the other case holding
+  outright, and a hint-free closing RUP.
+- **Reason** — `{|v| ≤ u}`. Minimal.
+- **Assertion** — `[|v| ≤ u] ⇒ [v ≤ u]` / `⇒ [v ≥ −u]`. For `x ∈ [−20, 20]`,
+  `y ∈ [3, 4]`, `q ∈ [−50, 50]`: `a 1 ~i[q][ge7] 1 i[aux_divide_qmag4][ge7] >=
+  1`, which is `|q| ≤ 6 ⇒ q ≤ 6`.
+- **Hint** — `hints::Divide` / `hints::Modulus`: `originator` (`ConstraintID`).
+- **Offline reconstructibility** — `hinted`: the id locates the channel rows,
+  and the reason is the one bound the derivation uses.
+- **Proof size** — a constant number of lines, independent of width; not
+  measured.
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
+
+### Rule: sign-open-magnitude-cap
+
+- **Infers** — `|v| ≤ max(−v_lo, v_hi)` for a sign-open `v`, the divisor or
+  `Divide`'s quotient. New in #1081.
+- **Fires when** — as sign-open-clamp, when `|v|`'s upper bound exceeds that
+  cap and neither sign is decided: `v_hi ≥ 0`, and `v_lo < 1` for the divisor
+  or `v_lo < 0` for the quotient.
+- **Strength** — `partial`.
+- **Algorithm** — constant time.
+- **Why it is true** — a value in `[v_lo, v_hi]` has magnitude at most the
+  larger of `−v_lo` and `v_hi`.
+- **Proof technique** — `ia`, `pol`, `proof by contradiction` and `RUP`: two
+  cached bound lines on `v` (`ia`), two `pol`s adding each to the channel row
+  of its sign case, at `Temporary`, then `conclude_by_sign_cases` over `[v ≥
+  0]` / `[v < 0]` and a hint-free closing RUP.
+- **Reason** — `{v ≥ v_lo, v ≤ v_hi}`. Minimal.
+- **Assertion** — `[v ≥ v_lo] ∧ [v ≤ v_hi] ⇒ [|v| ≤ cap]`. For `q ∈ [−5, 5]`:
+  `a 1 ~i[aux_divide_qmag4][ge6] 1 ~i[q][ge-5] 1 i[q][ge6] >= 1`.
+- **Hint** — `hints::Divide` / `hints::Modulus`: `originator` (`ConstraintID`).
+- **Offline reconstructibility** — `hinted`, as sign-open-clamp.
+- **Proof size** — a constant number of lines, independent of width; not
+  measured.
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
+
+### Rule: sign-open-magnitude-nonzero
+
+- **Infers** — `|v| ≥ 1` when 0 is not in a sign-open `v`'s domain, for the
+  divisor or `Divide`'s quotient. New in #1081.
+- **Fires when** — the same pass, while `|v|`'s lower bound is still 0 and
+  neither sign is decided, as for sign-open-magnitude-cap.
+  **It reads an interior value**: whether 0 is in `v`'s domain. For the
+  divisor, 0 is always gone by then, removed by
+  [divisor-nonzero](#rule-divisor-nonzero) earlier in the same pass. For the
+  quotient, a hole at 0 comes from another constraint, and does not wake this
+  propagator; see [Interior values](#interior-values-and-optional-pruning).
+- **Strength** — `partial`.
+- **Algorithm** — one `in_domain` check.
+- **Why it is true** — a non-zero integer has magnitude at least 1.
+- **Proof technique** — `proof by contradiction` and `RUP`:
+  `conclude_by_sign_cases` over `[v ≥ 0]` / `[v < 0]` with no premises, since
+  in each case `[v ≠ 0]` and the channel row give `|v| ≥ 1` by unit
+  propagation, then a hint-free closing RUP.
+- **Reason** — `{v ≠ 0}`. Minimal.
+- **Assertion** — `[v ≠ 0] ⇒ [|v| ≥ 1]`. For `q ∈ [−5, 5]` with `q ≠ 0` posted:
+  `a 1 i[aux_divide_qmag4][ge1] 1 i[q][eq0] >= 1`.
+- **Hint** — `hints::Divide` / `hints::Modulus`: `originator` (`ConstraintID`).
+- **Offline reconstructibility** — `hinted`.
+- **Proof size** — one sign-case subproof and one RUP; not measured.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
 
@@ -1547,8 +1831,9 @@ Facts that hold across the family:
 | `plus_mutation_control`, `plus_mutation_{lemmas,hole_lemmas,window_holes}` | the interval propagator's derivation; see [sum-interval-prune](#rule-sum-interval-prune) |
 | `multiply_constraint` (`multiply_test`), `…_view_mixed` | `Auto`, `BC` and `Tabulated` over small boxes, views, negatives and zero; six aliasing shapes; constant operands and a constant result; wide `Auto` rows; eight random forced-`BC` boxes, four with random view wraps; one forced `Tabulated` box. GAC checked at every node except under `BC`, on the wide rows, on the constant-operand rows and on `x · x = x`, which use plain `solve_for_tests` under every tag |
 | `power_constraint` (`power_test`), `…_view_mixed` | a variable exponent, including negative exponents; `k ∈ {0, 1, 2, 3, −2, 100, −3}` under each tag; views at `k = 2, 3`; `x^2 = x`; pinned `9^19`, `10^20`, `0^0` and `0^−2` |
-| `divide_modulus_constraint` (`divide_modulus_test`), `…_view_mixed` | both classes over signs and aliasing shapes (`x op x = y`, `x op y = x`, `y op x = x`), seeded random rows, and constant-slot, zero-divisor and two-constant rows; GAC checked where tabulation promises it, solutions only on the bounds propagator |
-| `product_bounds` | every `product_bounds.hh` function, exhaustively over small ranges, with the quotient filter's known inexactness pinned |
+| `divide_modulus_constraint` (`divide_modulus_test`), `…_view_mixed` | both classes over signs and aliasing shapes (`x op x = y`, `x op y = x`, `y op x = x`), seeded random rows, and constant-slot, zero-divisor and two-constant rows; GAC checked where tabulation promises it, solutions only on the bounds propagator. **Since #1081**, for both classes under `BC`: seven root-hull fixtures over sign-open or weakly signed operands (eight for `Divide`), each checking that the root bounds are exactly the relation's hull; and four fixtures with a weakly signed dividend and a constant divisor, checking the result's bounds (the harness's `BC`, which is `bounds(Z)`) at every node |
+| `product_bounds` | every `product_bounds.hh` function, exhaustively over small ranges, with the quotient filter's known inexactness pinned; since #1079, the saturating corners too |
+| `wide_product` (since #1079) | #1064's shapes for all four product classes, without proofs, each solution checked against a direct listing |
 | `product_justify` | 20 justification-fragment runs over 16 small boxes, each helper's claimed bound restated as a checked `ia` (except the trivial-RUP fragment): the harness for testing one helper at a time |
 | `tabulation_test` | the in-proof table derivation, over `Multiply`'s encoding, with seeded random rows: the only direct test of the tabulation machinery |
 | `scp_chain_*` | 4 `plus` / `minus` cases in `strict` mode; 7 `multiply`, 11 `divide` and 12 `modulus` cases in `none` mode |
@@ -1573,16 +1858,21 @@ Facts that hold across the family:
 - **Tightness.** Only `Plus`'s interval propagator has mutation lanes, with a
   control. The fixture and why it took work are under
   [sum-interval-prune](#rule-sum-interval-prune).
-- **Idempotence claims** were checked by this audit, not by the suite; see
-  the [Propagator inventory](#propagator-inventory).
+- **Idempotence claims** were checked by this audit at `f28fdef8`, and since
+  #1086 by every harness solve in the suite; see the [Propagator
+  inventory](#propagator-inventory).
 
 **What the tests do not cover:**
 
-- **Any per-node strength of the product group's bounds propagators.**
-  `multiply_test` and `divide_modulus_test` deliberately claim none under
-  `BC`. So `Divide`'s sign-open weakness (#1065) is invisible to the suite.
-- **Operand widths that overflow** (#1064): nothing passes 30 bits per
-  operand.
+- **Per-node strength of the product group's bounds propagators**, except
+  on `Divide` / `Modulus`'s four weakly-signed, constant-divisor fixtures
+  (#1081). `multiply_test` claims none under `BC`, which is as well: its `z`
+  is only `bounds(R)` (see [product-bounds](#rule-product-bounds)). At
+  `f28fdef8` this is how `Divide`'s sign-open weakness (#1065) went unseen.
+- **Operand widths that overflow with proofs on.** `wide_product` and the
+  audit lane's `wide-product` rows run without proofs; nothing tests that
+  solving past the proof limit fails cleanly. (At `f28fdef8` nothing passed
+  30 bits per operand at all; #1079 added both.)
 - **The assertion levels.** No arithmetic lane runs above `AssertionLevel::Off`,
   which is why `Modulus`'s solution-step failure (#1067) went unseen.
 - **`Multiply`'s bounds proofs in the verified chain**: every `multiply` chain
@@ -1595,8 +1885,8 @@ Facts that hold across the family:
 - **Front ends:** no MiniZinc `int_mod` lane, no XCSP3 `div` or `mod` lane,
   and one fixed-value Python test for each class except `Minus`, which has
   none.
-- **`GCS_TABULATION_THRESHOLD`** and **`verbose_names = false`** (#1038): no
-  test sets either.
+- **`GCS_TABULATION_THRESHOLD`**: no test sets it. (`verbose_names = false`,
+  listed here at the first pass, no longer exists: #1087.)
 - **No real instance** has been ported into a data-driven test.
 
 ### Benchmarks and examples
@@ -1637,6 +1927,11 @@ of modulus-identity-bounds. **Never fired** on those runs:
 - the negative branch of modulus-identity-bounds, and
   modulus-dividend-sign-refutation;
 - divisor-nonzero, magnitude-filter-empty and divisor-hole-pushthrough.
+
+The four rules #1081 added, [divisor-sign](#rule-divisor-sign) and the three
+sign-open rules, did not exist at `f28fdef8` and have not been counted. Since
+every corpus `int_div` and `int_mod` post is non-negative in every argument,
+and they fire only on a sign-open operand, they are unlikely to fire there.
 
 The stage rules were not counted.
 
@@ -1784,11 +2079,21 @@ asserted there. Three gaps sit around that:
   `Inferences` and `Backtracking`, 3 of the 12 `modulus` chain cases and
   `harmony` 2024 are rejected at a `solx` / `soli`. At `Inferences`, those
   three are the only failures among all 104 SAT chain cases in the
-  repository, of every family.
-- **Proofs narrow the operand range `Multiply` can take.** Without proofs it
-  propagates until a corner product passes 2^63. With proofs, the encoding
-  itself fails once the operands' bit widths sum past about 64, which is
-  earlier (#1064). The strength of the propagation never changes with proofs.
+  repository, of every family (at `f28fdef8`; the three `modulus` failures,
+  and the `divide` and `multiply` cases passing, re-checked at `61112ed0`).
+  **Why unit propagation stalls** is the grid's shape: see [Proof-time
+  state](#proof-time-state). And a reconstructor does not have to reproduce
+  whatever happened to pin `|q|` in the `Off` proof: any sufficient
+  derivation, definition or auxiliary witness that fixes `|q|` before the
+  solution step will do (Appendix C's baseline context).
+- **Proofs narrow the operand range the product group can take.** Without
+  proofs, since #1079, propagation works at any width. With proofs, building
+  the proof model fails past 62 bits of combined operand magnitude for
+  `Multiply` (and each `Power` link), 63 of dividend and divisor for
+  `Modulus`, and for `Divide` 63 of quotient and divisor only while the
+  dividend is narrow (about 62 in practice), because the rows' largest sums
+  must fit in an `Integer`; see [Robustness and limits](#robustness-and-limits). The
+  strength of the propagation never changes with proofs.
 - **Hints name the wrong class** for `Power`'s links (`hints::Multiply`) and
   for every stage (`hints::LinearEquality`); see the [catalogue's
   preamble](#inference-catalogue). That is a gap for an external justifier,
@@ -1797,13 +2102,23 @@ asserted there. Three gaps sit around that:
 
 ### Known limitations
 
-- **Very large operands crash the solver** with an uncaught
-  `IntegerOverflow`, once a corner product of `Multiply`'s operands, a
-  `Power` link's, or `Divide` / `Modulus`'s magnitudes passes 2^63, whatever
-  the result's domain (#1064).
-- **`Divide` with a sign-open quotient searches where it should propagate**:
-  `x ∈ [0, n]` against `q ∈ [−n, n]` fails `n` times. An XCSP3 `div` whose
-  dividend's domain contains 0 has that shape (#1065).
+- **With proofs on, very wide operands cannot be solved**: past 62 bits of
+  combined operand magnitude for `Multiply`, 63 of dividend and divisor for
+  `Modulus`, and about 62 for `Divide`, whose dividend counts as well as its
+  quotient and divisor. `solve_with` throws when it builds the proof model: a
+  `ProofError`, or an `UnimplementedException` from `power2` once the grid
+  would need more than about 64 bits. Without proofs, the corner products
+  saturate (#1079; #1064 is fixed).
+- **`Power(x, 63, INT64_MIN)` with a constant result throws
+  `IntegerOverflow`**, the one representable power the constant-exponent path
+  misses; now documented in `power.hh`.
+- **`Divide` stops short of the hull** on an operand whose sign is fully
+  open, which needs a case split, and on a variable divisor's own bounds; see
+  [quotient-sign](#rule-quotient-sign). The weakly signed dividend of #1065
+  is fixed (#1081).
+- **`Divide`'s quotient under-reports its holes**: a hole at 0 made by another
+  constraint does not wake it, and its derived **Holes affect** omits `q`
+  (see [Interior values](#interior-values-and-optional-pruning)). Unfiled.
 - **An aliased `Plus` or `Minus` can take time linear in a domain's width**:
   `Plus{x, y, x}` with `y ≥ 1` takes 2.8 s to fail at the root with `x` over
   `[0, 10^7]`, under every tag (#1068).
@@ -1811,7 +2126,7 @@ asserted there. Three gaps sit around that:
   check** on some instances (#1067).
 - **An explicit `consistency::Tabulated` on wide domains runs out of memory**
   rather than refusing (#880), and so does a variable-exponent `Power`, which
-  tabulates whatever was asked for (#845).
+  tabulates whatever was asked for, by default (#845).
 - **`Multiply`'s proofs are large**: about 30 to 70 lines per inference, and
   55% of the proof's lines on `train` 2014, where a 1.5 s search writes
   3.65 GB.
@@ -1830,32 +2145,40 @@ Ranked by what they buy for what they cost.
    makes the hints-only proofs valid, and removes the dependence of the
    `Off` proof's solution steps on earlier lines. Check that an extra,
    non-preserved variable in `solx` is sound for projected enumeration.
-2. **#1064: saturate the corner products.** Small; `Power`'s posting-time
-   range computation already saturates. Add a large-domain audit row whose
-   corner products pass 2^63 for each of the four classes.
-3. **#1068: collapse aliased `Plus` / `Minus` to their net form.** Small:
+2. **#1068: collapse aliased `Plus` / `Minus` to their net form.** Small:
    `prepare()` already computes the net coefficients, and `x + y = x` is `y =
-   0`. It removes the only width-proportional path on a default arm.
-4. **#1065: strengthen `Divide` on sign-open operands.** Moderate: an
-   ungated magnitude clamp, `|v| ≤ u ⇒ −u ≤ v ≤ u`, by the same sign-case
-   resolution divisor-hole-pushthrough already uses, and a quotient-sign gate
-   at `x ≥ 0`. Add a per-node bounds check on sign-open fixtures, so the
-   strength is tested at all.
-5. **#1063 (the engine's, not this family's):** the largest CPU lever on the
+   0`. It removes the one width-proportional path on a default arm that is
+   not `PowerTable`'s (#845).
+3. **#1063 (the engine's, not this family's):** the largest CPU lever on the
    largest `Multiply` models, 3.4 times the nodes on `stable-goods` from the
    allocator alone.
-6. **Shrink `Multiply`'s derivations.** First measure factor-bound's
+4. **Shrink `Multiply`'s derivations.** First measure factor-bound's
    unused direction: each firing derives both grid bounds and both result
    channellings and uses one, and the same waste was worth removing from
    product-bounds (`0eaeaa48`). Unfiled until measured. #540 covers the case
    of a factor fixed during search.
-7. **Tests that would have caught this audit's findings.** Run the
+5. **Declare `Divide`'s quotient in `holes_affect_propagation`**, or wake on
+   `q`'s interior, since [sign-open-magnitude-nonzero](#rule-sign-open-magnitude-nonzero)
+   reads whether 0 is in `q`'s domain. Tiny, and it only restores what another
+   family's `consistency::Auto` may lose; unfiled.
+6. **Tests that would have caught this audit's findings.** Run the
    arithmetic chain cases at `Inferences` (#1067). Add a `BC`-forced
    `multiply` chain case, so the bounds proofs are chain-verified at all. Add
-   an `int_mod` MiniZinc lane, and large-domain rows for a constant-exponent
-   `Power`, a square, a view, an aliased post and a signed domain.
-8. **#1066: the tidying**, including the draft thesis numbering in code
-   comments and the `none` chain modes' stale reason.
+   an `int_mod` MiniZinc lane, and large-domain rows for a square, a view, an
+   aliased post and a signed domain.
+7. **#1066: the tidying**, including the draft thesis numbering in code
+   comments and the `none` chain modes' stale reason. Add to it the headers'
+   account of the proof limit (`multiply.hh`, `divide_modulus.hh`): they say
+   posting throws a `ProofError`, where the throw comes from `solve_with` as
+   the proof model is built, is an `UnimplementedException` from `power2` once
+   the grid needs more than about 64 bits, and, for `Divide`, depends on the
+   dividend's width too.
+
+Done since the first pass: **#1064** (saturate the corner products; #1079,
+which also added the large-domain rows the first pass asked for, including the
+constant-exponent `Power`) and **#1065** (the ungated magnitude clamp and the
+weak-sign quotient gate, by sign-case resolution as the first pass proposed,
+with a per-node bounds check on weakly signed fixtures; #1081).
 
 ## Prior art
 
