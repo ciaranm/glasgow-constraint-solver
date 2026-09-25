@@ -73,6 +73,11 @@ namespace
     {
         vector<pair<int, int>> x_ranges, y_ranges;
         vector<int> widths, heights;
+        /// Unit squares free across the whole bounded range in x, each with
+        /// the y range given, posted after the rest: a time axis wider than
+        /// an int (#1083). Brute force cannot enumerate them, so only `probe`
+        /// takes an instance that has any.
+        vector<pair<int, int>> wide_y_ranges = {};
     };
 
     /// What every rule under test writes into the proof when it fires: the
@@ -99,6 +104,12 @@ namespace
             widths.push_back(Integer{w});
         for (auto h : inst.heights)
             heights.push_back(Integer{h});
+        for (const auto & [lo, hi] : inst.wide_y_ranges) {
+            xs.push_back(p.create_integer_variable(Integer::min_bounded_value(), Integer::max_bounded_value()));
+            ys.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+            widths.push_back(1_i);
+            heights.push_back(1_i);
+        }
         p.post(Disjunctive2D{xs, ys, widths, heights}.with_rules(rules).with_proof_mutation(mutation));
         return {xs, ys};
     }
@@ -201,6 +212,8 @@ namespace
     /// solutions it agreed on.
     auto enumerate_and_check(const Instance & inst, Disjunctive2DRules rules, const optional<string> & proof_name) -> int
     {
+        if (! inst.wide_y_ranges.empty())
+            fail("an instance with a wide rectangle cannot be enumerated by brute force");
         auto n = inst.x_ranges.size();
         auto is_satisfying = [&](const vector<int> & vals) {
             for (size_t i = 0; i < n; ++i)
@@ -1091,6 +1104,84 @@ auto main(int argc, char * argv[]) -> int
             if (proofs && markers == 0)
                 fail("ttef_enumerate: the rule never fired");
         }
+    }
+
+    // --- a time axis as wide as the bounded range (#1083) ----------------
+    //
+    // Only the resource axis is gated by width, so a rectangle free across the
+    // whole bounded range in x puts windows into the energetic rungs' sweep
+    // whose supply, H * (b - a), is past the end of Integer. That threw, with
+    // proofs off as well. Each fixture here is one from above with such
+    // rectangles added, and has to come out as the fixture did, with proofs
+    // off and on: the wide windows are left alone, and the narrow ones still
+    // fire.
+    if (! overload && ! edge_finding && ! ttef && ! projection) {
+        const Disjunctive2DRules overload_on{.relaxation_overload = true};
+        const Disjunctive2DRules ef_on{.relaxation_edge_finding = true};
+        const Disjunctive2DRules ttef_on{.relaxation_time_table_edge_finding = true};
+        const Disjunctive2DRules all_on{
+            .cumulative_relaxation = true, .relaxation_overload = true, .relaxation_edge_finding = true, .relaxation_time_table_edge_finding = true};
+        auto with_wide = [](Instance inst, int y_hi) {
+            inst.wide_y_ranges.emplace_back(0, y_hi);
+            return inst;
+        };
+        auto names = [&](const string & name) {
+            vector<optional<string>> result{nullopt};
+            if (proofs)
+                result.emplace_back(name);
+            return result;
+        };
+
+        // The issue's instance: three unit squares, free in x, in a y window of
+        // four. Nothing overloads anything, so every rule has a solution to
+        // find.
+        {
+            Instance free_squares{};
+            for (auto k = 0; k < 3; ++k)
+                free_squares.wide_y_ranges.emplace_back(0, 3);
+            for (const auto & [rules, rule] :
+                {pair{overload_on, "overload"}, pair{ef_on, "edge_finding"}, pair{ttef_on, "ttef"}, pair{all_on, "all"}})
+                for (const auto & name : names(string{"disjunctive_2d_relaxation_wide_free_"} + rule)) {
+                    auto result = probe(free_squares, rules, name);
+                    if (! result.satisfiable)
+                        fail(string{"wide_free_"} + rule + ": three unit squares fit in any x, but no solution was found");
+                    if (name && ! verify(*name))
+                        fail(string{"wide_free_"} + rule + ": veripb rejected the proof");
+                }
+        }
+
+        // The overload fixture, with a unit square free in x alongside: the
+        // window [0, 5) still holds 28 units of area in 25.
+        for (const auto & name : names("disjunctive_2d_relaxation_wide_overload_area")) {
+            auto result = probe(with_wide(area, 4), overload_on, name);
+            if (! result.refuted_at_root)
+                fail("wide_overload_area: the root did not close, so a wide window stopped the sweep before the narrow one");
+            if (name && count_markers(*name, "disjunctive2d cumulative relaxation overload") < 1)
+                fail("wide_overload_area: no overload marker, so something else closed the root");
+            if (name && ! verify(*name))
+                fail("wide_overload_area: veripb rejected the certificate");
+        }
+
+        // The push fixtures, likewise: the pushed rectangle is the fourth, and
+        // the wide square, fifth, is in no window the push comes from.
+        auto check_push = [&](const Instance & inst, Disjunctive2DRules rules, const string & stem, const string & marker, Integer expected) {
+            for (const auto & name : names(stem)) {
+                auto result = probe(with_wide(inst, 3), rules, name);
+                if (result.root_x.size() != 5)
+                    fail(stem + ": no root node was traced");
+                if (result.root_x[3].first != expected)
+                    fail(stem + ": the tall rectangle's lower bound is " + to_string(result.root_x[3].first.raw_value) + ", expected " +
+                        to_string(expected.raw_value));
+                if (! result.satisfiable)
+                    fail(stem + ": the fixture is satisfiable, but no solution was found");
+                if (name && count_markers(*name, marker) < 1)
+                    fail(stem + ": no marker, so something else made the push");
+                if (name && ! verify(*name))
+                    fail(stem + ": veripb rejected the proof");
+            }
+        };
+        check_push(ef_lb, ef_on, "disjunctive_2d_relaxation_wide_edge_finding_lb", "disjunctive2d cumulative relaxation edge-finding", 3_i);
+        check_push(ttef_lb, ttef_on, "disjunctive_2d_relaxation_wide_ttef_lb", "disjunctive2d cumulative relaxation time-table edge-finding", 4_i);
     }
 
     // --- Cumulative's own propagator on each projection (#973) -----------

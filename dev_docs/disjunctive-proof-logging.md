@@ -1487,6 +1487,16 @@ lanes, an enumeration against brute force, and a dense random sweep
 mandatory parts, since otherwise the pairwise rule refutes the same
 roots and the sweep proves nothing about this rule.
 
+**The time axis is not gated**, only the resource one is, so a window
+can be as wide as the bounded range and its supply `H·(b − a)` past the
+end of `Integer` (#1083, which threw with proofs off too). The sweep
+leaves such a window alone for all three rungs. Past that gate every
+product it forms is at most the supply, since a length, a mandatory
+part or a clipped energy inside the window is at most `b − a` and a
+height at most `H`, so only the sums are checked, and a sum past
+`Integer` is past the supply. The `wide_*` fixtures are the rungs' own
+with a unit square free across the whole range added.
+
 ### Edge-finding over the same row
 
 `Disjunctive2DRules::relaxation_edge_finding`, off by default:

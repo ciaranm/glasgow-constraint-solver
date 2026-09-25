@@ -1,6 +1,7 @@
 #include <gcs/constraints/cumulative/propagate.hh>
 #include <gcs/constraints/disjunctive_2d/disjunctive_2d.hh>
 #include <gcs/constraints/disjunctive_2d/hints.hh>
+#include <gcs/constraints/innards/arithmetic_utils.hh>
 #include <gcs/constraints/innards/task_presence.hh>
 #include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/exception.hh>
@@ -1627,16 +1628,33 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         for (auto b : ends) {
                             if (b <= a)
                                 continue;
+
+                            // Only the resource axis is gated by width (#1083),
+                            // so a window on the time axis can be as wide as the
+                            // bounded range, and H * (b - a) past the end of
+                            // Integer. Such a window is left alone, which only
+                            // weakens the rules and is decided the same way with
+                            // proofs on or off. Past this, every product below is
+                            // at most the supply --- a length, a mandatory part
+                            // or a clipped energy inside the window is at most
+                            // b - a, and a height at most H --- so only sums can
+                            // leave Integer, and one that does is past the
+                            // supply.
+                            auto supply_if_representable = product_if_representable(capacity, b - a);
+                            if (! supply_if_representable)
+                                continue;
+                            auto supply = *supply_if_representable;
+
                             vector<size_t> inside;
-                            Integer energy{0};
+                            optional<Integer> energy = 0_i;
                             for (auto i : tasks)
                                 if (est(i) >= a && lct(i) <= b) {
                                     inside.push_back(i);
-                                    energy += len(i) * height(i);
+                                    if (energy)
+                                        energy = sum_if_representable(*energy, len(i) * height(i));
                                 }
-                            auto supply = capacity * (b - a);
 
-                            if (energy > supply) {
+                            if (! energy || *energy > supply) {
                                 if (! rules.relaxation_overload)
                                     continue;
                                 ReasonLiterals literals;
@@ -1719,28 +1737,32 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                 // those time points, and each has one capacity
                                 // row to cancel against.
                                 vector<Contributor> profile;
-                                Integer profile_load{0};
+                                optional<Integer> load = energy;
                                 for (const auto & c : contributors)
                                     if (c.rect != j) {
                                         profile.push_back(c);
-                                        profile_load += height(c.rect) * (c.to - c.from);
+                                        if (load)
+                                            load = sum_if_representable(*load, height(c.rect) * (c.to - c.from));
                                     }
                                 // A window its contents and profile overload is
                                 // a conflict rather than a push, and not this
                                 // rule's to certify.
-                                if (energy + profile_load > supply)
+                                if (! load || *load > supply)
                                     continue;
 
                                 auto overflows_with = [&](Integer low_guard, Integer high_guard) {
                                     auto clipped = window_energy::window_energy_bound(p_j, a, width, a, b, pair{low_guard, high_guard - 1_i});
-                                    return clipped > 0_i && energy + profile_load + h_j * clipped > supply;
+                                    if (clipped <= 0_i)
+                                        return false;
+                                    auto total = sum_if_representable(*load, h_j * clipped);
+                                    return ! total || *total > supply;
                                 };
 
                                 // The fewest units of j's clipped energy that
                                 // overflow the window. Its contents and profile
                                 // do not overload it here (that returned or
                                 // skipped above), so this is at least one.
-                                auto need = (supply - energy - profile_load) / h_j + 1_i;
+                                auto need = (supply - *load) / h_j + 1_i;
                                 // What the lemma establishes over [a, b) for
                                 // j's start in [lg, hg - 1] (window_energy's
                                 // shape_of): the units lg keeps, clamp(lg - a +
