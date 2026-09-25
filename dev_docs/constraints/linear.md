@@ -9,7 +9,8 @@
 > items 4 and 5 left). Filed from review: #1091 (an equality's fixpoint can
 > take a number of sweeps linear in the domain width). Already open and
 > touching this family: #868 (cross-solver), #310 (a range-literal reification
-> condition cannot be written to the proof). **Fixed since the audit**: #1032,
+> condition cannot be written into the model). Filed from this review: #1103
+> (under `Tabulated`, a released form still builds a table). **Fixed since the audit**: #1032,
 > #1033, #1036, and #1043's first three items; see
 > [Re-audit](#re-audit-2026-09-25). Tracked under #871.
 
@@ -118,7 +119,8 @@ the `.scp` and the OPB as such, and its rows are vacuous. Under the default
 `Tabulated` a table is still installed**: the tabulation arm hands the
 never-holding condition to `reify_tabulation` without checking that it is
 decided, so the same probe makes 13 propagations. The answers are the same
-(all 9 assignments) either way. Measured at `61112ed0`.
+(all 9 assignments) either way. Measured at `61112ed0`; wasted work, not a
+bug (#1103).
 `LinearNotEqualsIff(s, v, c)` is stored as `ReifiedLinearEquality` with
 `Iff(¬c)` and a `flipped_cond` flag, which only changes its `.scp` spelling.
 
