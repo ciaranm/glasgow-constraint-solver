@@ -1,0 +1,3 @@
+add_executable(clause_watch_bench clause_watch_bench.cc)
+target_link_libraries(clause_watch_bench PRIVATE glasgow_constraint_solver)
+target_link_libraries(clause_watch_bench PRIVATE cxxopts)

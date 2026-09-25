@@ -1,5 +1,6 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/logical.hh>
+#include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -7,6 +8,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <random>
 #include <set>
@@ -20,8 +22,10 @@ using std::flush;
 using std::function;
 using std::is_constructible_v;
 using std::make_optional;
+using std::move;
 using std::mt19937;
 using std::nullopt;
+using std::optional;
 using std::pair;
 using std::set;
 using std::string;
@@ -39,6 +43,16 @@ using fmt::println;
 
 using namespace gcs;
 using namespace gcs::test_innards;
+
+// A ctest lane runs this binary with GCS_CLAUSE_WATCH_THRESHOLD set, beside
+// the lane that does not; tag the proof file names with it so the two runs do
+// not clobber each other's .opb/.pbp under parallel ctest.
+auto threshold_proof_suffix() -> string
+{
+    if (const char * e = std::getenv("GCS_CLAUSE_WATCH_THRESHOLD"))
+        return string{"_t"} + e;
+    return {};
+}
 
 // And and Or have an unreified form, which the data asks for with a reif of
 // {-1, -1}; the half-reified AndIf and OrIf do not.
@@ -81,7 +95,7 @@ auto run_logical_test(const string & which, bool proofs, const ViewWrapConfig & 
     auto r = p.create_integer_variable(Integer(full_reif.first), Integer(full_reif.second));
     post_logical<Logical_>(p, vs, r, full_reif);
 
-    auto proof_name = proofs ? make_optional("logical_test_" + view_wrap_config_label(view_cfg)) : nullopt;
+    auto proof_name = proofs ? make_optional("logical_test_" + view_wrap_config_label(view_cfg) + threshold_proof_suffix()) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vs, r});
 
     check_results(proof_name, expected, actual);
@@ -120,7 +134,7 @@ auto run_dup_logical_test(const string & which, bool proofs, const vector<pair<i
     auto r = p.create_integer_variable(Integer(full_reif.first), Integer(full_reif.second));
     post_logical<Logical_>(p, vs, r, full_reif);
 
-    auto proof_name = proofs ? make_optional("logical_test_dup") : nullopt;
+    auto proof_name = proofs ? make_optional("logical_test_dup" + threshold_proof_suffix()) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{unique_vars, r});
     check_results(proof_name, expected, actual);
 }
@@ -160,7 +174,7 @@ auto run_alias_reif_logical_test(const string & which, bool proofs, const vector
 
     p.post(Logical_{vs, r});
 
-    auto proof_name = proofs ? make_optional("logical_test_alias_reif") : nullopt;
+    auto proof_name = proofs ? make_optional("logical_test_alias_reif" + threshold_proof_suffix()) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{unique_vars});
     check_results(proof_name, expected, actual);
 }
@@ -213,7 +227,7 @@ auto run_literal_logical_test(const string & which, bool proofs, const vector<pa
         lits.emplace_back(IntegerVariableCondition{vs.at(i), ops.at(i).first, Integer(ops.at(i).second)});
     p.post(Logical_{move(lits), IntegerVariableCondition{r, reif_op.first, Integer(reif_op.second)}});
 
-    auto proof_name = proofs ? make_optional("logical_test_literals") : nullopt;
+    auto proof_name = proofs ? make_optional("logical_test_literals" + threshold_proof_suffix()) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vs, r});
     check_results(proof_name, expected, actual);
 }
@@ -243,9 +257,172 @@ auto run_static_logical_test(
         lits.emplace_back(innards::FalseLiteral{});
     p.post(Logical_{move(lits), r != 0_i});
 
-    auto proof_name = proofs ? make_optional("logical_test_static") : nullopt;
+    auto proof_name = proofs ? make_optional("logical_test_static" + threshold_proof_suffix()) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, r});
     check_results(proof_name, expected, actual);
+}
+
+// A set of clauses over shared variables, each posted in one of the forms
+// that reach the clause case: an unreified Or, an Or whose reification is a
+// variable fixed at 1, an And over the negated literals with a false
+// reification, and an OrIf with a true condition. Operand j of a clause is
+// `vars[var] <op> value`, and several operands may share a variable, or be
+// the same literal twice, or complementary.
+//
+// The fixture's other tests have at most four literals, which gives two
+// watches nowhere to move. This one has clauses long enough that they do, and
+// enough of them that the search backtracks over the moves. It solves with the
+// watched path forced on, under proofs, and then with the scan forced on, and
+// requires both the brute-force answers and the same search tree: the two
+// reach the same fixpoint at every node, so under a fixed heuristic the
+// recursion counts must agree.
+//
+// With presolve set it runs an AutoTable presolver first, which propagates
+// every constraint at the root of a search of its own and then backtracks
+// out of it. A clause that took that for its first run at the real root, and
+// so did not arm its watches again, lost every wake after it.
+struct ClauseSetOperand
+{
+    int var;
+    VariableConditionOperator op;
+    int value;
+};
+
+auto run_clause_set_test(
+    bool proofs, const vector<pair<int, int>> & domains, const vector<pair<int, vector<ClauseSetOperand>>> & clauses, bool presolve) -> void
+{
+    print(cerr, "logical clause set {} vars {} clauses{}{}", domains.size(), clauses.size(), presolve ? " presolved" : "",
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto holds = [](const ClauseSetOperand & o, int x) -> bool {
+        switch (o.op) {
+            using enum VariableConditionOperator;
+        case Equal: return x == o.value;
+        case NotEqual: return x != o.value;
+        case GreaterEqual: return x >= o.value;
+        case Less: return x < o.value;
+        case InRange:
+        case NotInRange: break;
+        }
+        throw NonExhaustiveSwitch{};
+    };
+
+    set<vector<int>> expected, actual, scanned;
+    build_expected(
+        expected,
+        [&](const vector<int> & v) -> bool {
+            for (const auto & [form, operands] : clauses) {
+                bool any = false;
+                for (const auto & o : operands)
+                    any = any || holds(o, v.at(o.var));
+                if (! any)
+                    return false;
+            }
+            return true;
+        },
+        domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    auto build = [&](Problem & p, optional<std::size_t> watch_threshold) -> vector<IntegerVariableID> {
+        vector<IntegerVariableID> vs;
+        for (const auto & [l, u] : domains)
+            vs.push_back(p.create_integer_variable(Integer(l), Integer(u)));
+        auto one = p.create_integer_variable(1_i, 1_i);
+        for (const auto & [form, operands] : clauses) {
+            innards::Literals lits;
+            for (const auto & o : operands)
+                lits.emplace_back(IntegerVariableCondition{vs.at(o.var), o.op, Integer(o.value)});
+            switch (form) {
+            case 0: p.post(Or{move(lits), innards::TrueLiteral{}}.with_watch_threshold(watch_threshold)); break;
+            case 1: p.post(Or{move(lits), one != 0_i}.with_watch_threshold(watch_threshold)); break;
+            case 2: {
+                for (auto & l : lits)
+                    l = ! l;
+                p.post(And{move(lits), innards::FalseLiteral{}}.with_watch_threshold(watch_threshold));
+                break;
+            }
+            default: p.post(OrIf{move(lits), innards::TrueLiteral{}}.with_watch_threshold(watch_threshold)); break;
+            }
+        }
+        if (presolve)
+            p.add_presolver(AutoTable{{one}});
+        return vs;
+    };
+
+    Problem p_watched;
+    auto vs_watched = build(p_watched, 0);
+    auto proof_name = proofs ? make_optional("logical_test_clause_set" + threshold_proof_suffix()) : nullopt;
+    solve_for_tests(p_watched, proof_name, actual, tuple{vs_watched});
+    bool truncated = last_run_truncated();
+    auto watched_recursions = last_run_recursions();
+    check_results(proof_name, expected, actual);
+
+    Problem p_scanned;
+    auto vs_scanned = build(p_scanned, std::numeric_limits<std::size_t>::max());
+    solve_for_tests(p_scanned, nullopt, scanned, tuple{vs_scanned});
+    truncated = truncated || last_run_truncated();
+    auto scanned_recursions = last_run_recursions();
+    check_results(nullopt, expected, scanned);
+
+    // A cap stops each run after the same number of nodes, not at the same
+    // place, so there is nothing to compare.
+    if (truncated) {
+        println(cerr, "logical clause set: a cap fired, so the watched/scanned cross-check is skipped");
+        return;
+    }
+
+    if (watched_recursions != scanned_recursions) {
+        println(cerr, "logical clause set: watched took {} recursions, scanned took {}", watched_recursions, scanned_recursions);
+        throw UnexpectedException{"watched and scanned clauses searched different trees"};
+    }
+
+    // Again with restarts, which take the watched path somewhere the
+    // enumeration above never does: back to the root, where the watches armed
+    // there persist, to be re-propagated with learned nogoods alongside. Find
+    // one solution each way; then again with every solution blocked by one
+    // more clause, which leaves a search long enough to restart many times
+    // before it proves there are none. Both ways must search alike.
+    auto restart_run = [&](optional<std::size_t> watch_threshold, bool block_solutions, const optional<string> & name) {
+        Problem p;
+        auto vs = build(p, watch_threshold);
+        if (block_solutions)
+            for (const auto & solution : expected) {
+                innards::Literals lits;
+                for (std::size_t i = 0; i < vs.size(); ++i)
+                    lits.emplace_back(vs.at(i) != Integer(solution.at(i)));
+                p.post(Or{move(lits), innards::TrueLiteral{}}.with_watch_threshold(watch_threshold));
+            }
+        optional<vector<int>> found;
+        auto stats = solve_with(p,
+            SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                               found = extract_from_state(s, vs);
+                               return false;
+                           },
+                .branch = branch_with(variable_order::in_order(vs), value_order::smallest_first()),
+                .restarts = RestartSchedule::luby(1)},
+            name ? make_optional<ProofOptions>(ProofFileNames{*name}) : nullopt);
+        if (name)
+            verify_proof_and_clean_up(*name);
+        return tuple{stats.recursions, stats.restarts, found};
+    };
+
+    for (bool block_solutions : {false, true}) {
+        auto restart_proof_name = proofs ? make_optional("logical_test_clause_set_restarts" + threshold_proof_suffix()) : nullopt;
+        auto watched_restarts = restart_run(0, block_solutions, restart_proof_name);
+        auto scanned_restarts = restart_run(std::numeric_limits<std::size_t>::max(), block_solutions, nullopt);
+
+        const auto & found = std::get<2>(watched_restarts);
+        if (block_solutions ? found.has_value() : (found ? ! expected.contains(*found) : ! expected.empty()))
+            throw UnexpectedException{"watched clauses with restarts gave the wrong answer"};
+        if (watched_restarts != scanned_restarts) {
+            println(cerr, "logical clause set: with restarts, watched took {} recursions and {} restarts, scanned took {} and {}",
+                std::get<0>(watched_restarts), std::get<1>(watched_restarts), std::get<0>(scanned_restarts), std::get<1>(scanned_restarts));
+            throw UnexpectedException{"watched and scanned clauses searched different trees with restarts"};
+        }
+        println(cerr, "logical clause set: with restarts{}, {} recursions and {} restarts", block_solutions ? " and every solution blocked" : "",
+            std::get<0>(watched_restarts), std::get<1>(watched_restarts));
+    }
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -316,6 +493,36 @@ auto main(int argc, char * argv[]) -> int
             auto reif_dom = random_domain();
             auto reif_op = random_operator();
             literal_data.emplace_back(vars, ops, reif_dom, reif_op);
+        }
+    }
+
+    // Clause sets: Boolean variables, or three-valued ones with operators
+    // that include bounds. Half the clauses are short, to make the instance
+    // tight enough to force literals and fail, and half run from two literals
+    // up to a few more than there are variables, so that some repeat a
+    // variable.
+    vector<pair<vector<pair<int, int>>, vector<pair<int, vector<ClauseSetOperand>>>>> clause_set_data;
+    {
+        using enum VariableConditionOperator;
+        const vector<VariableConditionOperator> operators{Equal, NotEqual, GreaterEqual, Less};
+        uniform_int_distribution form_dist(0, 3), operator_dist(0, 3), boolean_dist(0, 1), value_dist(0, 2);
+        for (int x = 0; x < 12; ++x) {
+            bool boolean = x % 2 == 0;
+            int n_vars = boolean ? 10 : 6;
+            vector<pair<int, int>> domains(n_vars, boolean ? pair{0, 1} : pair{0, 2});
+            uniform_int_distribution var_dist(0, n_vars - 1), n_clauses_dist(8, 24), short_length_dist(2, 3), long_length_dist(2, n_vars + 2);
+            vector<pair<int, vector<ClauseSetOperand>>> clauses;
+            for (int c = 0, n_clauses = n_clauses_dist(rand); c < n_clauses; ++c) {
+                vector<ClauseSetOperand> operands;
+                for (int j = 0, length = c % 2 == 0 ? short_length_dist(rand) : long_length_dist(rand); j < length; ++j) {
+                    if (boolean)
+                        operands.push_back(ClauseSetOperand{var_dist(rand), Equal, boolean_dist(rand)});
+                    else
+                        operands.push_back(ClauseSetOperand{var_dist(rand), operators.at(operator_dist(rand)), value_dist(rand)});
+                }
+                clauses.emplace_back(form_dist(rand), move(operands));
+            }
+            clause_set_data.emplace_back(move(domains), move(clauses));
         }
     }
 
@@ -470,6 +677,10 @@ auto main(int argc, char * argv[]) -> int
                 run_literal_logical_test<AndIf>("and_if", proofs, vars, ops, reif_dom, reif_op, and_if_connective);
                 run_literal_logical_test<OrIf>("or_if", proofs, vars, ops, reif_dom, reif_op, or_if_connective);
             }
+
+            for (const auto & [domains, clauses] : clause_set_data)
+                for (bool presolve : {false, true})
+                    run_clause_set_test(proofs, domains, clauses, presolve);
 
             for (bool static_value : {false, true}) {
                 run_static_logical_test<And>("and", proofs, static_value, and_connective);

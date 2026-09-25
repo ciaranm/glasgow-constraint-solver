@@ -375,6 +375,10 @@ autotuner) without recompiling. Each is read once, on first use.
   some backtrackable bookkeeping (default: 8). The test suite runs in both modes by setting
   this.
 
+* ``GCS_CLAUSE_WATCH_THRESHOLD``: the number of literals at or above which a clause (an ``Or``, or
+  an ``And`` whose reification is fixed false) watches two of its literals rather than scanning
+  them all on every wake (default: 128). The test suite runs the logical constraints with it at 0.
+
 * ``GCS_PROPAGATOR_STATS``: adds a per-constraint-type propagator breakdown to the statistics ---
   how many constraints of each type there are, how many propagators they installed, and how many
   times those propagators were called, changed a domain and contradicted. ``calls`` (or ``1``) is
