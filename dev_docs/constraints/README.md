@@ -131,6 +131,15 @@ constraints and do not restate it.
   idempotence-claim checker off in 100 lanes (#1056, fixed by #1086). A
   constant operand, `v1` or `v2`, still fails the strict `opbdiff` oracle, in
   two different ways (#1101). Not merged into `arithmetic`: no shared code.
+- [`logical.md`](logical.md) — `And`, `Or`, `AndIf` and `OrIf`: four classes
+  over one propagator, and after `equals` and `linear` the most posted family in
+  the corpus (`bool_clause` alone is 391,679 posts in 155 models). Every
+  inference is one RUP against one of cake's two rows. Cheap per call, except
+  that each wake rescans the literals from the front, so one 2,774-literal
+  clause is three quarters of `network_50_cstr`'s propagation (#1060). Twice as
+  fast as Gecode on `grid-colouring`; the half-reified forms reach only CPMpy
+  and the `.scp`, and cannot chain through cake yet, which has no rule for
+  them (#1100).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
