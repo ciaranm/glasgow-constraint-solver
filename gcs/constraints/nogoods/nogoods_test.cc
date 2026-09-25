@@ -2,6 +2,7 @@
 #include <gcs/constraints/nogoods/nogoods.hh>
 #include <gcs/current_state.hh>
 #include <gcs/exception.hh>
+#include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
@@ -127,10 +128,23 @@ namespace
         return Holds::Undecided;
     }
 
-    auto run_nogoods_test(bool refined, bool proofs, const vector<pair<int, int>> & domains, const vector<TestNogood> & nogoods) -> void
+    // An AutoTable presolver propagates every constraint at the root of a
+    // search of its own, then backtracks out of it, before the real root
+    // propagation. One over a variable of its own, which nothing else
+    // mentions, changes nothing about the problem, but a propagator that took
+    // that propagation for the real root and did not arm its watches again
+    // is dead for the whole search (issue #1106).
+    auto add_pseudo_root_presolver(Problem & p) -> void
     {
-        print(
-            cerr, "nogoods [{}] {} vars, {} nogoods{}", refined ? "refined" : "scan", domains.size(), nogoods.size(), proofs ? " with proofs:" : ":");
+        auto z = p.create_integer_variable(0_i, 0_i);
+        p.add_presolver(AutoTable{{z}});
+    }
+
+    auto run_nogoods_test(bool refined, bool proofs, bool presolve, const vector<pair<int, int>> & domains, const vector<TestNogood> & nogoods)
+        -> void
+    {
+        print(cerr, "nogoods [{}{}] {} vars, {} nogoods{}", refined ? "refined" : "scan", presolve ? ", presolved" : "", domains.size(),
+            nogoods.size(), proofs ? " with proofs:" : ":");
         cerr << flush;
 
         // Oracle: an assignment is a solution iff no nogood is fully satisfied.
@@ -166,6 +180,8 @@ namespace
             posted.push_back(std::move(n));
         }
         p.post(Nogoods{std::move(posted), refined});
+        if (presolve)
+            add_pseudo_root_presolver(p);
 
         auto proof_name = proofs ? make_optional<std::string>("nogoods_test") : nullopt;
 
@@ -235,8 +251,9 @@ namespace
 
     auto run_all_tests(bool refined, bool proofs) -> void
     {
-        for (const auto & [domains, nogoods] : hand_picked_instances())
-            run_nogoods_test(refined, proofs, domains, nogoods);
+        for (bool presolve : {false, true})
+            for (const auto & [domains, nogoods] : hand_picked_instances())
+                run_nogoods_test(refined, proofs, presolve, domains, nogoods);
     }
 
     // Solve one instance in the chosen trigger mode with a deterministic,
@@ -247,8 +264,8 @@ namespace
     // in *propagation* -- a missed inference under-propagates and explores more
     // nodes; an unsound inference prunes a real solution.
     template <typename ValueGen_>
-    auto solve_for_differential(bool refined, const vector<pair<int, int>> & domains, const vector<TestNogood> & nogoods, ValueGen_ value_gen)
-        -> Stats
+    auto solve_for_differential(
+        bool refined, bool presolve, const vector<pair<int, int>> & domains, const vector<TestNogood> & nogoods, ValueGen_ value_gen) -> Stats
     {
         Problem p;
         vector<IntegerVariableID> vars;
@@ -263,18 +280,21 @@ namespace
             posted.push_back(std::move(n));
         }
         p.post(Nogoods{std::move(posted), refined});
+        if (presolve)
+            add_pseudo_root_presolver(p);
 
         return solve_with(p,
             SolveCallbacks{.solution = [](const CurrentState &) { return true; }, .branch = branch_with(variable_order::in_order(vars), value_gen)});
     }
 
-    auto run_differential(const vector<pair<int, int>> & domains, const vector<TestNogood> & nogoods) -> void
+    auto run_differential(const vector<pair<int, int>> & domains, const vector<TestNogood> & nogoods, bool presolve) -> void
     {
         auto check = [&](auto make_value_gen, const char * label) {
-            auto scan = solve_for_differential(false, domains, nogoods, make_value_gen());
-            auto refined = solve_for_differential(true, domains, nogoods, make_value_gen());
-            println(cerr, "nogoods differential [{}] {} vars {} nogoods: scan rec={} sol={} | refined rec={} sol={}", label, domains.size(),
-                nogoods.size(), scan.recursions, scan.solutions, refined.recursions, refined.solutions);
+            auto scan = solve_for_differential(false, presolve, domains, nogoods, make_value_gen());
+            auto refined = solve_for_differential(true, presolve, domains, nogoods, make_value_gen());
+            println(cerr, "nogoods differential [{}{}] {} vars {} nogoods: scan rec={} sol={} | refined rec={} sol={}", label,
+                presolve ? ", presolved" : "", domains.size(), nogoods.size(), scan.recursions, scan.solutions, refined.recursions,
+                refined.solutions);
             if (scan.recursions != refined.recursions || scan.solutions != refined.solutions) {
                 println(cerr, "DIVERGED. instance:");
                 for (size_t vi = 0; vi < domains.size(); ++vi)
@@ -334,14 +354,15 @@ namespace
                 }
                 nogoods.push_back(std::move(ng));
             }
-            run_differential(domains, nogoods);
+            run_differential(domains, nogoods, iter % 2 == 1);
         }
     }
 
     auto run_all_differentials() -> void
     {
-        for (const auto & [domains, nogoods] : hand_picked_instances())
-            run_differential(domains, nogoods);
+        for (bool presolve : {false, true})
+            for (const auto & [domains, nogoods] : hand_picked_instances())
+                run_differential(domains, nogoods, presolve);
         run_random_differentials();
     }
 }

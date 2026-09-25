@@ -1,6 +1,7 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/table/negative_table.hh>
 #include <gcs/extensional.hh>
+#include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -70,12 +71,18 @@ auto run_negative_table_test_2(bool proofs, const ViewWrapConfig & view_cfg, pai
     check_results(proof_name, expected, actual);
 }
 
-auto run_negative_table_test_3(
-    bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> r1, pair<int, int> r2, pair<int, int> r3, SimpleTuples forbidden) -> void
+// With presolve set, an AutoTable presolver over a variable of its own, which
+// nothing else mentions, runs first. It changes nothing about the problem, but
+// it propagates every constraint at the root of a search of its own and then
+// backtracks out of it, before the real root propagation: a propagator that
+// took that for the real root, and did not arm its watches again, is dead for
+// the whole search (issue #1106).
+auto run_negative_table_test_3(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> r1, pair<int, int> r2, pair<int, int> r3,
+    SimpleTuples forbidden, bool presolve = false) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 3);
-    print(cerr, "negative table 3var [{}] [{},{}] [{},{}] [{},{}] {} tuples{}", view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first,
-        r2.second, r3.first, r3.second, forbidden.size(), proofs ? " with proofs:" : ":");
+    print(cerr, "negative table 3var [{}] [{},{}] [{},{}] [{},{}] {} tuples{}{}", view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first,
+        r2.second, r3.first, r3.second, forbidden.size(), presolve ? " presolved" : "", proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, int, int>> expected, actual;
@@ -95,6 +102,10 @@ auto run_negative_table_test_3(
     auto v2 = create_integer_variable_or_constant_with_view(p, r2, wraps.at(1));
     auto v3 = create_integer_variable_or_constant_with_view(p, r3, wraps.at(2));
     p.post(NegativeTable{{v1, v2, v3}, forbidden});
+    if (presolve) {
+        auto z = p.create_integer_variable(0_i, 0_i);
+        p.add_presolver(AutoTable{{z}});
+    }
 
     auto proof_name = proofs ? make_optional("negative_table_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3});
@@ -215,6 +226,15 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
         {{1_i, 1_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 1_i, 4_i}, {2_i, 3_i, 2_i},    //
             {3_i, 4_i, 1_i}, {4_i, 2_i, 3_i}, {4_i, 4_i, 4_i}, {1_i, 3_i, 2_i}, //
             {2_i, 2_i, 2_i}, {3_i, 3_i, 3_i}});
+
+    // Behind a presolver that propagates at a root of its own first.
+    run_negative_table_test_3(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{1_i, 1_i, 1_i}, {2_i, 2_i, 2_i}, {3_i, 3_i, 3_i}}, true);
+    run_negative_table_test_3(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{1_i, 1_i, 1_i}, {1_i, 1_i, 2_i}, {1_i, 1_i, 3_i}}, true);
+    run_negative_table_test_3(proofs, view_cfg, {1, 4}, {1, 4}, {1, 4},
+        {{1_i, 1_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 1_i, 4_i}, {2_i, 3_i, 2_i},    //
+            {3_i, 4_i, 1_i}, {4_i, 2_i, 3_i}, {4_i, 4_i, 4_i}, {1_i, 3_i, 2_i}, //
+            {2_i, 2_i, 2_i}, {3_i, 3_i, 3_i}},
+        true);
 
     // Wildcard cases.
     run_negative_wildcard_table_test(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{{Wildcard{}, 2_i, Wildcard{}}}}); // forbid all tuples with v2=2

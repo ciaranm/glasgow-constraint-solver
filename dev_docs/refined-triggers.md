@@ -240,14 +240,15 @@ paths, selected by a `bool _refined`:
 
 Each clause arms exactly two watches, on two non-entailed literals, both with
 payload = the clause index. The two watched positions are stored in
-`watch_state(ni)`, packed `(pos0 << 32) | pos1`.
+`watch_state(ni + 1)`, packed `(pos0 << 32) | pos1`.
 
 - **Catch-up.** Watches are set up at a *root re-propagation* — the only time the
   propagator runs with an empty fired set (`propagate(nullopt)`, depth 0), which
   the restart loop re-enters once per pass. For the fixed store this happens once;
-  for the growable store it picks up the nogoods learned since the last pass (a
-  non-backtrackable `set_up` high-water marks how far it has got — sound because
-  the arming/`watch_state` edits live in the persistent root epoch). A clause
+  for the growable store it picks up the nogoods learned since the last pass. A
+  high-water mark in `watch_state(0)` says how far it has got; it is kept there
+  rather than beside the watches so that a backtrack that removes the watches
+  also resets it (see the `AutoTable` pitfall below). A clause
   already unit/violated at this point (e.g. via an initialise-time entailment that
   never fires a watch) is resolved here.
 - **On a fire.** Read `(p, q)` from `watch_state`; recompute which is entailed
@@ -318,8 +319,8 @@ It is the `Nogoods` scheme for one clause, with three differences:
   that disabled it restores the watches and re-enables it together. Without this
   a satisfied clause keeps waking until a watch happens to land on its true
   literal, and on the benchmark below the watched path lost at every length.
-- **Whether it has armed at all is in `watch_state`**, not in a
-  non-backtrackable flag or high-water mark. See the pitfall below: the
+- **Whether it has armed at all is in `watch_state`**, as `Nogoods` and
+  `NegativeTable` keep their high-water marks. See the pitfall below: the
   `AutoTable` presolver runs every propagator at the root of a search of its own
   and then backtracks out of it.
 
@@ -411,18 +412,18 @@ For anyone changing this code:
   answer and pays nothing for the question.
 - **Catch-up runs at root re-propagation only**, keyed off an empty fired set.
   That is where new clauses appear (after a restart unwind) and where the edits
-  land in the persistent root epoch, keeping the non-backtrackable `set_up`
-  counter in step.
+  land in the persistent root epoch.
 - **But the first run is not always at the real root.** The `AutoTable`
   presolver opens an epoch, runs `propagate()` with no guesses --- which enqueues
   every propagator, as the root does --- and backtracks out of it, all before
   the search's own root propagation. Watches armed there are removed by that
   backtrack, and so is anything in `watch_state`; a non-backtrackable marker
   saying that they were armed survives it, and the real root then arms nothing,
-  leaving the constraint with no wakes at all. The clause client keeps its marker
-  in `watch_state` for this reason. `NegativeTable`'s `set_up` counter and the
-  fixed-store `Nogoods` constructor's do not, and both accept a solution their
-  constraint forbids when an `AutoTable` is attached.
+  leaving the constraint with no wakes at all. So keep any such marker in
+  `watch_state`, which that backtrack restores along with the watches, as all
+  three clients here do. `NegativeTable` and the fixed-store `Nogoods` once kept
+  theirs in a `shared_ptr<size_t>`, and with an `AutoTable` attached both
+  accepted a solution their constraint forbids (issue #1106).
 - The conversion is **semantics-preserving**: scan and refined must explore the
   identical search tree and learn the identical nogoods.
 
@@ -435,7 +436,9 @@ refined path must behave byte-for-byte like the scan oracle:
   deterministic, degree-independent brancher (`variable_order::in_order`, so the
   trees can only differ through *propagation*), asserting identical recursions and
   solution counts over hand-picked and random backtrack-heavy instances; plus the
-  per-node unit-propagation reference, the brute-force oracle, and VeriPB.
+  per-node unit-propagation reference, the brute-force oracle, and VeriPB. The
+  hand-picked instances, and half the random ones, run again behind an
+  `AutoTable` presolver (#1106), as do some of `negative_table_test`'s.
 - `gcs/solve_test.cc` — a scan-vs-refined differential over restart runs (driven
   by `GCS_LEARNED_NOGOODS_SCAN`), asserting identical recursions / restarts /
   learned-nogood count / solutions.
