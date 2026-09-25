@@ -11,6 +11,7 @@
 # See dev_docs/benchmarking.md for the benchmark set used when evaluating a
 # performance-sensitive change.
 add_subdirectory(bin_packing_bench)
+add_subdirectory(clause_watch_bench)
 add_subdirectory(golomb)
 add_subdirectory(knapsack_bench)
 add_subdirectory(linear_prop_cost)

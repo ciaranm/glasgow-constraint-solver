@@ -1003,6 +1003,12 @@ if(GCS_BUILD_TESTS)
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> ${mode})
     endforeach()
     add_test(NAME logical_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:logical_test>)
+    # The same fixture with every clause watching two literals, whatever its
+    # length: the data is too short to reach the default threshold. Bare and
+    # with views.
+    add_test(NAME logical_constraint_watched COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:logical_test>)
+    add_test(NAME logical_constraint_watched_view_mixed
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:logical_test> --view-position=mixed)
     add_test(NAME mdd_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:mdd_test>)
     add_test(NAME min_distance_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:min_distance_test>)
     add_test(NAME min_distance_matching COMMAND $<TARGET_FILE:min_distance_matching_test>)
@@ -1450,6 +1456,11 @@ if(GCS_BUILD_TESTS)
     endforeach()
     set_property(TEST linear_constant_constraint_incremental APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=0")
     set_property(TEST linear_constant_constraint_stateless APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=1000000")
+    # Every clause in the logical fixture watches two literals (#1060). APPEND,
+    # as above.
+    foreach(lane logical_constraint_watched logical_constraint_watched_view_mixed)
+        set_property(TEST ${lane} APPEND PROPERTY ENVIRONMENT "GCS_CLAUSE_WATCH_THRESHOLD=0")
+    endforeach()
     # Every step of Plus/Minus's Dynamic arm takes the hull fallback (#192).
     set_property(TEST plus_minus_constraint_dynamic_fallback APPEND PROPERTY ENVIRONMENT "GCS_INTERVAL_PAIRS_THRESHOLD=0")
 endif()

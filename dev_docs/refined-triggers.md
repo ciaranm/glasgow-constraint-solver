@@ -286,6 +286,101 @@ recursions, 1966 learned nogoods):
 
 i.e. the learned-nogood machinery goes from a 3.4× tax to essentially free.
 
+## The `And` / `Or` clause client
+
+The logical constraints (`gcs/constraints/logical/logical.cc`) are one
+propagator, `Or` being `And` over the negated literals and reification. When
+the `And` form's reification is decided false at install and the backward half
+is wanted, all that is left is the clause "not every literal of the `And` form holds": an
+unreified `Or` (FlatZinc's `bool_clause`), an `Or` whose reification is fixed
+true, an `And` whose reification is fixed false, and an `OrIf` whose condition
+is fixed true. A clause of at least `innards::default_clause_watch_threshold()`
+literals (128, or `GCS_CLAUSE_WATCH_THRESHOLD`, or per constraint with
+`with_watch_threshold()`) watches two of them, in `propagate_watched_clause`;
+a shorter one keeps the scan (issue #1060).
+
+It is the `Nogoods` scheme for one clause, with three differences:
+
+- **The search for a new watch only goes forwards**, from after both watches,
+  and never wraps. Every position before the later watch, other than the two
+  watched, is entailed: that holds when they are armed, a move passes over only
+  entailed literals, and on backtrack `watch_state` returns to positions that
+  held it at that level, whose literals are still entailed. So there is nothing
+  behind the watches to find, and a search that fixes the literals in order
+  finds the next one at once. `Nogoods` and `NegativeTable` search from the
+  front, which walks the fixed prefix on every move --- the very cost the issue
+  was about.
+- **A satisfied clause disables itself.** When a watched literal, or the one a
+  move lands on, is already false, the propagator returns
+  `DisableUntilBacktrack` without moving anything. Its watches go on firing
+  while it is disabled, and are consumed and restored like any other fire; the
+  inbox is dropped at the end of `propagate()`, and backtracking out of the call
+  that disabled it restores the watches and re-enables it together. Without this
+  a satisfied clause keeps waking until a watch happens to land on its true
+  literal, and on the benchmark below the watched path lost at every length.
+- **Whether it has armed at all is in `watch_state`**, not in a
+  non-backtrackable flag or high-water mark. See the pitfall below: the
+  `AutoTable` presolver runs every propagator at the root of a search of its own
+  and then backtracks out of it.
+
+### Why a threshold
+
+The issue's case was `network_50_cstr` (2024): one `bool_clause` over 2,774
+Booleans, 75% of the model's propagation time. Most of that was not the rescan
+itself but the scan never disabling a clause it had seen was satisfied: it
+stopped at the second undecided literal, and so returned `Enable` whenever two
+undecided literals came before a true one. Stopping at the first false literal
+of the `And` form takes the `Or` calls on 20,443 nodes from 38,555 to 2,543,
+with or without watches.
+
+What is left for the watches is small on the corpus. Instructions at fixed
+nodes, relative to the old scan (fataepyc-09, `GCS_BENCH_NODE_LIMIT` in a local
+build of `fzn-glasgow`; identical nodes, failures and solutions in every arm):
+
+| model                       | fixed scan | watch every clause | watch from 128 |
+|-----------------------------|-----------:|-------------------:|---------------:|
+| `network_50_cstr` 2024      |     1.690x |             1.731x |         1.731x |
+| `sdn-chain` 2020            |     1.042x |             1.071x |         1.072x |
+| `rubik` 2013                |     1.225x |             0.841x |         1.225x |
+| `grid-colouring` 2011       |     1.132x |             1.072x |         1.132x |
+| `valve-network` 2023        |     1.099x |             1.048x |         1.099x |
+| `minimal-decision-sets` 2020 |    1.153x |             1.193x |         1.153x |
+
+In user cycles, median of five, the watched clauses of `network_50_cstr` and
+`sdn-chain` (1,543 literals) are worth another 1.9% each over the fixed scan,
+whose own share is 1.53x and 1.06x. Watching a short clause costs more than it
+saves, because a fire is dear next to a scan of a few literals: the firing loop
+copies the whole watch, `Literal` variant and all, into the inbox and the trail
+(the "watch carrying an `IntegerVariableCondition`" refactor in
+propagator-performance.md is what would cheapen it).
+
+The corpus has few clauses between 17 and 1,000 literals. Most of them are
+`skill-allocation`'s 242 of 66 literals, and watching those saves 2.3% of its
+instructions but nothing outside its run-to-run spread in cycles. So the
+crossover comes from `benchmarks/clause_watch_bench`: a random set cover, each element's clause over
+`--length` of the sets, a budget on the sets chosen, branching in order with
+"leave it out" first, which is the scan's worst case. User cycles, scan over
+watched (above 1 means watching is faster), mean of three seeds at 60,000
+nodes, identical trees throughout:
+
+| length                              |   32 |   48 |   64 |   96 |  128 |  192 |  256 |  384 |  512 |
+|-------------------------------------|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
+| 200 sets, 400 elements, budget 40   | 0.74 | 0.79 | 0.84 | 1.08 | 1.39 | 1.63 |      |      |      |
+| 600 sets, 300 elements, budget 120  | 0.95 | 0.92 | 0.94 | 0.94 | 0.98 | 1.18 | 1.44 | 1.89 | 2.19 |
+
+(The first shape has 200 sets, so its clauses stop at 200 literals.) The
+crossover moves with the instance, from under 96 to over 128; the default of 128
+is where the worse of these two is back to about break-even.
+
+Measuring this needs one precaution beyond benchmarking.md: pin glibc's malloc
+thresholds, for instance
+`GLIBC_TUNABLES=glibc.malloc.mmap_threshold=33554432:glibc.malloc.trim_threshold=4294967295`.
+Without it, a large share of these runs is kernel page-fault handling for state
+copies that malloc maps and unmaps at every node, and how much depends on the
+heap's history. An early version of this change measured 2.06x *faster* on
+`valve-network` with every clause watched, and 2.4x slower on
+`products-and-shelves`, and both disappeared with the thresholds pinned.
+
 ## Correctness invariants and pitfalls
 
 For anyone changing this code:
@@ -318,6 +413,16 @@ For anyone changing this code:
   That is where new clauses appear (after a restart unwind) and where the edits
   land in the persistent root epoch, keeping the non-backtrackable `set_up`
   counter in step.
+- **But the first run is not always at the real root.** The `AutoTable`
+  presolver opens an epoch, runs `propagate()` with no guesses --- which enqueues
+  every propagator, as the root does --- and backtracks out of it, all before
+  the search's own root propagation. Watches armed there are removed by that
+  backtrack, and so is anything in `watch_state`; a non-backtrackable marker
+  saying that they were armed survives it, and the real root then arms nothing,
+  leaving the constraint with no wakes at all. The clause client keeps its marker
+  in `watch_state` for this reason. `NegativeTable`'s `set_up` counter and the
+  fixed-store `Nogoods` constructor's do not, and both accept a solution their
+  constraint forbids when an `AutoTable` is attached.
 - The conversion is **semantics-preserving**: scan and refined must explore the
   identical search tree and learn the identical nogoods.
 
@@ -347,6 +452,14 @@ refined path must behave byte-for-byte like the scan oracle:
   (#895); every other test here arms at install, where the distinction is
   invisible.
 
+- `gcs/constraints/logical/logical_test.cc` (`run_clause_set_test`) — random
+  sets of clauses long enough for watches to move, in all four posted forms,
+  against a brute-force oracle and VeriPB, with a watched-vs-scanned differential
+  on recursions; then find-one with Luby restarts, and again with every solution
+  blocked so that the search restarts many times proving there are none; each
+  both with and without an `AutoTable` presolver. The `logical_constraint_watched`
+  ctest lane runs the whole fixture with the threshold at 0.
+
 Each load-bearing piece has a **mutation test** recorded in the relevant PR:
 inject the bug, confirm a differential catches it, before trusting the check.
 
@@ -357,5 +470,8 @@ inject the bug, confirm a differential catches it, before trusting the check.
 - `gcs/innards/propagators.cc` — the watch index, firing, masks, restore trail,
   `watch_state`.
 - `gcs/constraints/nogoods.cc` — `install_scan_nogoods` / `install_refined_nogoods`.
+- `gcs/constraints/logical/logical.cc` — `propagate_watched_clause`, and the
+  threshold that chooses it over the scan.
+- `benchmarks/clause_watch_bench` — the benchmark behind that threshold.
 - `gcs/solve.cc` — installs the engine-owned learned-nogood `Nogoods` (refined by
   default; `GCS_LEARNED_NOGOODS_SCAN` forces scan).
