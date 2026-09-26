@@ -51,14 +51,11 @@ auto gcs::branch_with(BranchVariableHeuristic var, BranchValueGenerator val) -> 
         auto select_var = var(problem, state, propagators);
         return [select_var = move(select_var), val = val](
                    const CurrentState & s, const innards::Propagators & p) -> generator<IntegerVariableCondition> {
-            return [](const CurrentState & s, const innards::Propagators & p, BranchVariableSelector select_var,
-                       BranchValueGenerator make_val_gen) -> generator<IntegerVariableCondition> {
-                auto branch_var = select_var(s, p);
-                if (branch_var)
-                    return make_val_gen(s, p, *branch_var);
-                else
-                    return []() -> generator<IntegerVariableCondition> { co_return; }();
-            }(s, p, select_var, val);
+            auto branch_var = select_var(s, p);
+            if (branch_var)
+                return val(s, p, *branch_var);
+            else
+                return []() -> generator<IntegerVariableCondition> { co_return; }();
         };
     };
 }
@@ -66,12 +63,18 @@ auto gcs::branch_with(BranchVariableHeuristic var, BranchValueGenerator val) -> 
 auto gcs::branch_sequence(BranchHeuristic a, BranchHeuristic b) -> BranchHeuristic
 {
     return [a = move(a), b = move(b)](const Problem & problem, innards::State & state, innards::Propagators & propagators) -> BranchCallback {
-        auto callback_a = a(problem, state, propagators);
-        auto callback_b = b(problem, state, propagators);
+        // The generator below is a coroutine, so it must own what it calls, but
+        // copying the callbacks into it would copy every selector's variable
+        // list at every search node, and keep that copy alive for the whole
+        // subtree. Share them instead.
+        auto callback_a = make_shared<const BranchCallback>(a(problem, state, propagators));
+        auto callback_b = make_shared<const BranchCallback>(b(problem, state, propagators));
         return [callback_a = move(callback_a), callback_b = move(callback_b)](
                    const CurrentState & s, const innards::Propagators & p) -> generator<IntegerVariableCondition> {
-            return [](const CurrentState & s, const innards::Propagators & p, BranchCallback a,
-                       BranchCallback b) -> generator<IntegerVariableCondition> {
+            return [](const CurrentState & s, const innards::Propagators & p, shared_ptr<const BranchCallback> ptr_a,
+                       shared_ptr<const BranchCallback> ptr_b) -> generator<IntegerVariableCondition> {
+                const auto & a = *ptr_a;
+                const auto & b = *ptr_b;
                 auto gen_a = a(s, p);
                 auto iter_a = gen_a.begin();
                 if (iter_a != gen_a.end()) {
