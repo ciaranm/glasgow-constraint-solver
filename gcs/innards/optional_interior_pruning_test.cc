@@ -13,6 +13,7 @@
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear.hh>
+#include <gcs/constraints/n_value.hh>
 #include <gcs/exception.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -688,6 +689,36 @@ TEST_CASE("An element result's interior is observed only by constraints that can
         auto other = p.create_integer_variable(0_i, 10_i);
         p.post(ElementConstantArray{result, idx, &array}.with_consistency(consistency::Auto{}));
         p.post(AllDifferent{{result, other}});
+        auto [propagators, verdicts] = analyse(p);
+        auto v = verdict_on(verdicts, result);
+        REQUIRE(v);
+        CHECK(v->needed);
+    }
+
+    SECTION("an nvalue whose count it is does not: it never reads the count")
+    {
+        // NValue keeps its count in scope without watching it (issue #1053),
+        // and scope_only on its own would say holes affect it.
+        Problem p;
+        auto idx = p.create_integer_variable(0_i, 2_i);
+        auto result = p.create_integer_variable(0_i, 10_i);
+        auto other = p.create_integer_variable(0_i, 10_i);
+        p.post(ElementConstantArray{result, idx, &array}.with_consistency(consistency::Auto{}));
+        p.post(NValue{result, {other, p.create_integer_variable(0_i, 10_i)}});
+        auto [propagators, verdicts] = analyse(p);
+        auto v = verdict_on(verdicts, result);
+        REQUIRE(v);
+        CHECK_FALSE(v->needed);
+    }
+
+    SECTION("an nvalue whose array it is in does")
+    {
+        Problem p;
+        auto idx = p.create_integer_variable(0_i, 2_i);
+        auto result = p.create_integer_variable(0_i, 10_i);
+        auto other = p.create_integer_variable(0_i, 10_i);
+        p.post(ElementConstantArray{result, idx, &array}.with_consistency(consistency::Auto{}));
+        p.post(NValue{other, {result, p.create_integer_variable(0_i, 10_i)}});
         auto [propagators, verdicts] = analyse(p);
         auto v = verdict_on(verdicts, result);
         REQUIRE(v);
