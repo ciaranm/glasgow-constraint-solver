@@ -4,17 +4,34 @@
 > **Audited** 2026-09-23 at `347e2f8c`; #1030 merged the same day, and the
 > document describes the code it leaves. Checked again 2026-09-25 at
 > `61112ed0`: since #1030 nothing in the family has changed but
-> `recover_am1`'s comments (#1089) ·
+> `recover_am1`'s comments (#1089). Re-audited 2026-09-26 at `c9ceea25` for
+> #1109 ·
 > **Open issues** filed by this audit: #1028 (`GlobalCardinality`'s default
 > arm), #1029 (`Count` on a constant value of interest). Its wrong answer,
 > #1026 (at `GAC` on an unsorted open cover), is fixed by #1030. Filed since:
 > #1046 (`GlobalCardinality` proofs abort or are rejected when its array holds a
-> constant), by the `inverse` audit, and #1053 (`NValue`'s count-only wakes and
-> its idempotence), by review. Already open and touching this family: #843
+> constant), by the `inverse` audit. **Fixed since the audit**: #1053
+> (`NValue`'s count-only wakes and its idempotence), filed by review; see
+> [Re-audit](#re-audit-2026-09-26). Already open and touching this family: #843
 > (`NValue`'s encoding is per value), #876 (the `GAC` arm has no large-domain
 > row), #488 (`NValue`'s occurrence rows disagree with cake's), #944 (Hall
 > proofs cost values × variables²), #868 (cross-solver). More to file from
 > [Next steps](#next-steps). Tracked under #871.
+
+### Re-audit, 2026-09-26
+
+One fix to this family has merged since the audit. This pass brings the text
+into line with it at `c9ceea25`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1053, `NValue`'s count-only wakes and its idempotence | #1109 | `n` moves from `on_bounds` to `scope_only`, with the hole sensitivity declared as the array, and a successful run returns `EnableButIdempotent`; the [propagator inventory](#propagator-inventory), its idempotence and holes paragraphs, [Robustness and limits](#robustness-and-limits), [Tests](#tests), a labelled paragraph of #1109's own figures under [CPU performance](#cpu-performance), and [Next steps](#next-steps) item 4 |
+
+No rule, derivation or encoding changed, though proof line order can move
+between rounds under the claim. `Among` and the other propagators are
+untouched. **No figure was re-measured in this pass**: every figure in the
+document predates this pass, and #1109's own figures are quoted separately,
+labelled as its.
 
 Four constraints that count occurrences of values in an array. `Count` counts one
 value, which may be a variable. `Among` counts membership in a fixed set.
@@ -442,7 +459,7 @@ case posts its cover ascending, so the chain never saw #1026.
 | `Count` | `on_change`: `vars`, `y`, `n` | derived, but `n` overstated when `y` is a constant | 1–8 | always | not claimed | no |
 | `Among` | `on_change`: `vars`; `on_bounds`: `n` | derived | 9–12 | always | not claimed | yes, once every variable is decided |
 | `Among` root initialiser | — | — | scaffolding for 10, 12 | proofs at `AssertionLevel::Off` and `\|S\| > 1` | — | — |
-| `NValue` | `on_change`: `vars`; `on_bounds`: `n` | derived | 13, 14 | always | not claimed | no |
+| `NValue` | `on_change`: `vars`; `scope_only`: `n` | `vars` (declared) | 13, 14 | always | claimed (ignored if two positions share a variable) | no |
 | GCC closed | `on_change`: `vars` | derived | 15 | `with_closed()` | not claimed | no |
 | GCC bounds | `on_change`: `vars`; `on_bounds`: `counts` | derived | 16–25 | `consistency::BC` (the default) | not claimed | no |
 | GCC flow | `on_change`: `vars`; `on_bounds`: `counts` | derived | 16, 17, 26–30 | `consistency::GAC` | not claimed | no |
@@ -453,23 +470,31 @@ loop's `stop`. It never disables itself on success. `Among` disables itself
 until backtrack after rule 11 or rule 12. Either leaves every variable decided
 and the count fixed, so nothing can wake it usefully until something is undone.
 
-**Idempotence.** None of the six propagators claims it, and not claiming it is
-not the same as not being it. Three are idempotent whenever no variable appears
-twice across their scope:
+**Idempotence.** Three of the six propagators are idempotent whenever no
+variable appears twice across their scope, and since #1109 one of them,
+`NValue`, claims it.
 
+- **`NValue`.** Both its rules are computed from the array alone and change only
+  `n`, so a second call recomputes the same bounds. A successful run returns
+  `EnableButIdempotent` (#1053 → #1109). The engine ignores the claim whenever
+  two positions resolve to the same variable, directly or through a view. The
+  case that needs it is `n` aliasing an array position: `NValue(x, [x])` with
+  `x ∈ {2, 3}` clips `x` to 2 and so shrinks the union, and only a second run
+  sees that no solution is left. That position's own `on_change` trigger still
+  wakes the propagator. A variable repeated inside the array also switches the
+  claim off, though there it would have been true. The claim is the one in
+  this family that `GCS_CHECK_IDEMPOTENT_CLAIMS` checks. `n_value_constraint`
+  and `n_value_constraint_view_mixed` run with the checker on; the XCSP3,
+  MiniZinc and `scp_chain_nvalue_*` lanes do not switch it on.
 - **GCC closed.** Its comment says so ("once a domain is inside the cover it
   stays there"), and it is right.
-- **`NValue`.** Both its rules are computed from the array alone and change only
-  `n`, so a second call recomputes the same bounds. #1053, filed by review,
-  proposes declaring it.
 - **`Among`.** Rules 11 and 12 read `n`'s bounds after rules 9 and 10 have
   moved them, in the same call, and either of them disables the propagator
   until backtrack. If neither fires, a second call sees the same partition and
   the same bounds.
 
-All three return `Enable`, not `EnableButIdempotent`, so no claim reaches the
-engine and `GCS_CHECK_IDEMPOTENT_CLAIMS` checks none of them. The other three
-are not idempotent. `Count`'s array pruning (rule 8) can fix variables that rule
+The other two of those return `Enable`, not `EnableButIdempotent`, so no claim
+reaches the engine for them. The last three are not idempotent. `Count`'s array pruning (rule 8) can fix variables that rule
 2 then counts on the next call. Both GCC arms count before they prune: the
 bounds arm runs rules 16–19 value by value and then the Hall rules, and the flow
 arm runs rules 16 and 17 before the flow. So a variable fixed later in the
@@ -487,16 +512,20 @@ already taken, and is counted only on the next call.
   the corpus uses, the column overstates `n`'s sensitivity. That is never
   unsound. It keeps somebody else's optional pruning on `n` alive for no gain,
   and wakes `Count` for nothing (#1029).
-- **`Among`'s and `NValue`'s `n` and GCC's `counts` are `on_bounds`.** For
-  `Among` and GCC that is the truth. `Among` counts membership in a fixed set,
-  so its count's supports are intervals, as for constant `Count`. Both GCC arms
-  read only `state.bounds(counts[j])`: the flow's capacities are the count
-  bounds, and #413 is why that is deliberate. `NValue` does not read `n` at
-  all: both its bounds are computed from the array, and the inference machinery
-  only checks whether they change `n`. So holes in `n` change nothing, which
-  the declaration gets right, but after the first call a change to `n` alone
-  cannot enable anything either, so the bounds wake costs a call for nothing
-  (#1053).
+- **`Among`'s `n` and GCC's `counts` are `on_bounds`**, and that is the
+  truth. `Among` counts membership in a fixed set, so its count's supports are
+  intervals, as for constant `Count`. Both GCC arms read only
+  `state.bounds(counts[j])`: the flow's capacities are the count bounds, and
+  #413 is why that is deliberate.
+- **`NValue`'s `n` is `scope_only`, and the sensitivity is declared** as the
+  array (#1109). `NValue` does not read `n` at all: both its bounds are computed
+  from the array, and the inference machinery only checks whether they change
+  `n`. So holes in `n` change nothing, and after the first call a change to `n`
+  alone cannot enable anything either. `n` stays in scope for degree and for
+  the aliasing check behind the idempotence claim. The declaration is needed
+  because `scope_only` on its own would *derive* that holes in `n` affect
+  `NValue`. `optional_interior_pruning_test` pins it both ways: an element
+  result used as `NValue`'s count is not observed, and one in its array is.
 - **Every propagator's `vars` are `on_change`**, and every one of them reads
   the variables' holes: which values are still there is the whole content of
   counting.
@@ -541,8 +570,9 @@ already taken, and is counted only on the next call.
   runs posted each constant `Count` as `Among` by the local switch; `Among`
   itself is in no corpus model.)
 - **`NValue`** rebuilds a `std::set` of every value of every domain every call,
-  to take its size. On `gfd-schedule` 2015 and 2022 the whole propagator is 31%
-  and 42% of propagation time, from 0.4% and 0.9% of the calls. How much of
+  to take its size. On `gfd-schedule` 2015 and 2022 the whole propagator was 31%
+  and 42% of propagation time, from 0.4% and 0.9% of the calls, measured
+  before #1109. How much of
   that is the `std::set` was not profiled. It is the propagator's only
   per-value work besides the fixed-value set, so it is the obvious candidate.
 
@@ -562,7 +592,8 @@ correctly. The counts are the interesting half:
   **bounds-only**, stated in those words: holes in them change nothing any of
   those propagators infers. They are also declared that way, so a neighbour's
   optional pruning on a count variable can be dropped when nothing else reads
-  its interior.
+  its interior. For `NValue` that is an explicit declaration, since its `n`
+  is `scope_only` (#1109).
 - **`Count`'s `n`** is declared hole-sensitive, and is so only when `y` is a
   variable. For a constant `y` the declaration overstates. The fix is part of
   #1029: watch `n` `on_bounds` when `y` is a constant. It is not a correctness
@@ -586,8 +617,9 @@ correctly. The counts are the interesting half:
   - A single variable, a constant in the array: tested in all four.
   - Aliasing. A repeated variable in the array is tested for `Count`, `Among`
     and `NValue` (`run_dup_*_test`), and the count variable inside the array for
-    `Count` and `Among` (`run_count_result_in_array_test`,
-    `run_self_ref_among_test`), not `NValue`. **The value
+    all three (`run_count_result_in_array_test`, `run_self_ref_among_test`, and
+    since #1109 `run_aliased_count_test`, directly and through `x + c` and
+    `−x + c` views). **The value
     of interest inside `Count`'s own array is not**: a differential for this
     audit (value of interest, an offset view of it, or its negation, among the
     array; 3,000 instances against brute force, 300 with VeriPB) found nothing
@@ -1639,7 +1671,7 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 | `count_constraint_view_mixed` | as above, positions wrapped in views | as above | |
 | `among_constraint` | `solve_for_tests_checking_consistency` | `n` `GAC`, array `GAC` | random `S` in `[−10, 10]`; #254's rows; `run_dup_among_test`, `run_self_ref_among_test` |
 | `among_constraint_view_mixed` | as above | as above | |
-| `n_value_constraint` | plain `solve_for_tests` | **none** | random rows; constant arrays; `run_dup_n_value_test` |
+| `n_value_constraint` | plain `solve_for_tests` | **none** | random rows; constant arrays; `run_dup_n_value_test`; from #1109, `run_aliased_count_test` (`n` an array position or a view of one, three rows needing a second run) |
 | `n_value_constraint_view_mixed` | as above | none | |
 | `bounds_global_cardinality_constraint` | `solve_for_tests_checking_consistency` | array and counts `BC` | fixed rows (Hall sets, holes, spans across zero, #557), #254's rows, 24 random rows |
 | `gac_global_cardinality_constraint` | as above | array `BC`, counts none (#413) | the same shapes at `GAC`; from #1030 also three unsorted-cover rows, and random rows with shuffled covers |
@@ -1755,6 +1787,15 @@ each**; the `frequency_square` runs are the minimum of three.
 | 2019 lot-sizing | GCC bounds | 1.7% | 77.9% |
 | 2022 gfd-schedule | `NValue` | 0.9% | 41.9% |
 | 2015 gfd-schedule | `NValue` | 0.4% | 30.8% |
+
+**Measured in #1109's pull request, not in this audit**, so not to be put in a
+table with the figures here: at a fixed search prefix with identical nodes,
+failures and solutions, #1109's change (no wake on `n`, plus the idempotence
+claim, which also spares a run being re-woken by inferences it had already
+seen) cut `NValue` calls by 26% on
+`gfd-schedule` 2015, 27% on 2022 and 20% on `physician-scheduling` 2021, and
+`instructions:u` by 5.0%, 7.9% and 0.1%. Wall clock was not measured. The two
+`NValue` shares above are from before it.
 
 **The wrapper A/B.** Each constant-valued `Count` posted as itself, as
 `Among({c})`, or as a one-value `GlobalCardinality` at `BC` and at `GAC`.
@@ -1984,11 +2025,11 @@ Ranked by what they buy for what they cost.
 4. **`NValue`, three small fixes, unfiled.** Build `_possible_values` in
    `define_proof_model`, not `prepare()`, which removes all its per-value work
    with proofs off. Take rule 13's count from an interval union rather than a
-   `std::set` of values. The whole propagator is 31–42% of propagation time on
-   `gfd-schedule`; how much of that the `std::set` is was not profiled, so no
+   `std::set` of values. The whole propagator was 31–42% of propagation time on
+   `gfd-schedule` before #1109; how much of that the `std::set` is was not profiled, so no
    speedup is claimed. And say, in the class comment at least, how weak it is.
-   #1053, filed by review, adds two more: stop waking on `n`, and declare
-   idempotence. A real propagator (Bessiere et al.'s bounds, or Beldiceanu's
+   #1053, filed by review, added two more, both done by #1109: it no longer
+   wakes on `n`, and it claims idempotence. A real propagator (Bessiere et al.'s bounds, or Beldiceanu's
    pruning for the at-most side) is a project, not a fix; the encoding is
    #843.
 5. **`Among`, two cheap fixes, unfiled.** Build the per-call reason lazily over
