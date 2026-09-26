@@ -1,7 +1,8 @@
 # Linear: `Σ cᵢ·xᵢ` against a constant
 
 > **Maturity** production ·
-> **Audited** 2026-09-23 at `00797a97`; re-audited 2026-09-25 at `61112ed0` ·
+> **Audited** 2026-09-23 at `00797a97`; re-audited 2026-09-25 at `61112ed0`,
+> and for #1108 on 2026-09-26 at `c9ceea25` ·
 > **Open issues** filed by this audit: #1034 (the incremental propagator's
 > state is a heap allocation per slot per node), #1035 (reasons and
 > justifications name every term's bound, even untouched ones; fix open as
@@ -9,10 +10,11 @@
 > items 4 and 5 left). Filed from review: #1091 (an equality's fixpoint can
 > take a number of sweeps linear in the domain width). Already open and
 > touching this family: #868 (cross-solver), #310 (a range-literal reification
-> condition cannot be written into the model). Filed from this review: #1103
-> (under `Tabulated`, a released form still builds a table). **Fixed since the audit**: #1032,
-> #1033, #1036, and #1043's first three items; see
-> [Re-audit](#re-audit-2026-09-25). Tracked under #871.
+> condition cannot be written into the model). **Fixed since the audit**: #1032,
+> #1033, #1036, #1043's first three items, and #1103 (filed from review: under
+> `Tabulated`, a released form built a table); see
+> [Re-audit, 2026-09-25](#re-audit-2026-09-25) and [Re-audit,
+> 2026-09-26](#re-audit-2026-09-26). Tracked under #871.
 
 ### Re-audit, 2026-09-25
 
@@ -45,6 +47,19 @@ range-literal condition. The CPU and proof tables were **not** re-run. They
 stay at `00797a97`. Since then two commits have touched the family's source:
 #1077, which changes only how a constant condition is mapped at construction,
 and #1075, whose PR reports byte-identical objects.
+
+### Re-audit, 2026-09-26
+
+One more fix to this family has merged, for an issue filed from review of the
+first re-audit. This pass brings the text into line with it at `c9ceea25`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1103, a released form under `Tabulated` | #1108 | a released `If`/`NotIf` installs nothing under either arm: [Semantics](#semantics), the `Tabulated` row of the [propagator inventory](#propagator-inventory), rule 13's **Fires when**, and [Tests](#tests) |
+
+**What was measured again.** Only the [Semantics](#semantics) probe, at
+`c9ceea25`. No rule, encoding or proof line changed, and nothing else was
+re-run.
 
 The linear family is `LinearEquality`, `LinearNotEquals`,
 `LinearLessThanEqual`, `LinearGreaterThanEqual` and their `If`/`Iff` reified
@@ -114,13 +129,19 @@ condition means the equality must *not* hold, as the name says.
 
 `ReificationCondition` has no "no constraint" alternative, so a released form
 is the same form over a condition that never holds, `0_c = 1`. It is written to
-the `.scp` and the OPB as such, and its rows are vacuous. Under the default
-`BC`, no propagator runs (zero propagations on `x + y = 3` over `0..2`). **Under
-`Tabulated` a table is still installed**: the tabulation arm hands the
-never-holding condition to `reify_tabulation` without checking that it is
-decided, so the same probe makes 13 propagations. The answers are the same
-(all 9 assignments) either way. Measured at `61112ed0`; wasted work, not a
-bug (#1103).
+the `.scp` and the OPB as such, and its rows are vacuous. **No propagator is
+installed under either arm**: `install_propagators` returns on a `Deactivated`
+condition before it chooses between `BC` and `Tabulated` (#1108). So on
+`x + y = 3` over `0..2`, both forms under both arms make zero propagations and
+find all 9 assignments, and their proofs verify. The same early return covers
+an `If`/`NotIf` whose condition literal is a variable's but already decided
+false at install (for instance `c = 5` with `c ∈ 0..1`, or `c = 1` with `c`
+fixed at 0): `test_reification_condition` reports it as `Deactivated` too,
+so nothing is installed for it either (the `c ∈ 0..1` probe: 18 solutions,
+zero propagators, proofs verify, both forms and arms). Measured at
+`c9ceea25`. Until #1108 the `Tabulated` arm did not check, and built a table
+over every tuple: 13 propagations on the same probe at `61112ed0`, with the
+same answers, so wasted work rather than a bug (#1103).
 `LinearNotEqualsIff(s, v, c)` is stored as `ReifiedLinearEquality` with
 `Iff(¬c)` and a `flipped_cond` flag, which only changes its `.scp` spelling.
 
@@ -412,7 +433,7 @@ has 8 terms or more, which doubles the slots #1034 is about on
 | reified inequality (dispatcher) | the enforce direction's triggers ∪ `c` | derived | 1, 3, 4, 8, 9 | an undecided inequality | stripped: the dispatcher does not pass the sweep's claim on | on a verdict |
 | reified equality, undecided | `on_change`, every term; `c` | derived: yes | 10–12 undecided; 1–3 once decided true; 6, 7 once decided false | an undecided equality | forwards the sweep's claim when decided true | on acting |
 | equality, constant row | initialiser | — | 5 | a fixed equality with no terms | — | — |
-| `Tabulated` | `install_tabulation`'s | the extensional family's | 13 | `with_consistency(Tabulated{})` | as `table.md` | as `table.md` |
+| `Tabulated` | `install_tabulation`'s | the extensional family's | 13 | `with_consistency(Tabulated{})`, unless the form is released (#1108) | as `table.md` | as `table.md` |
 
 **Idempotence.** The stateless and incremental sweeps claim it, and the claim
 is argued in `propagate_linear`. The forward sweep writes only upper bounds of
@@ -946,7 +967,8 @@ the same instances, the same verified proofs.
 (Rule 13.)
 
 - **Infers** — every value with no supporting tuple.
-- **Fires when** — `with_consistency(consistency::Tabulated{})` on an equality.
+- **Fires when** — `with_consistency(consistency::Tabulated{})` on an equality,
+  unless the form is released (#1108).
 - **Strength** — `GAC`, checked by the tests.
 - **Algorithm** — enumerate the satisfying tuples at install, and hand them to
   the extensional family's propagator. The cost is the product of the domain
@@ -969,7 +991,7 @@ the same instances, the same verified proofs.
 | `linear_constraint_{eq,ne,le,ge,le_not}` × `{incremental,stateless}` and their `_if`/`_iff`/`_notif` forms | `linear_test`, random instances of three terms, enumeration against brute force. Consistency is checked only for single-constraint instances: `bounds(Z)` on each term for the inequalities, weaker than the `GAC` they reach (`GAC` for not-equals), **never for `LinearEquality`**, whose `bounds(R)` would not pass a `bounds(Z)` check, and never for the reified equality and not-equals forms; `GAC` for the `Tabulated` rows |
 | `linear_constraint_*_view_mixed` (14) | the same with the terms wrapped in views |
 | `linear_constraint_*_slack` (8) | the inequality forms with slack waking forced on at any length and any cover |
-| `linear_constant_constraint_{incremental,stateless}` | constant and empty sums, and since #1077 every equality form (`If`, `Iff`, `NotEqualsIf`, `NotEqualsIff`) with a `TrueLiteral` and a `FalseLiteral` condition, checking the exact solution set under `BC` and `Tabulated`, with proofs |
+| `linear_constant_constraint_{incremental,stateless}` | constant and empty sums, and since #1077 every equality form (`If`, `Iff`, `NotEqualsIf`, `NotEqualsIff`) with a `TrueLiteral` and a `FalseLiteral` condition, checking the exact solution set under `BC` and `Tabulated`, with proofs; and since #1108, for a `FalseLiteral` condition only and without proofs, that a released `If`/`NotIf` installs no propagator and makes no propagations under either arm (9 solutions, by `Stats`) |
 | `xcsp_sum_not_equals`, `…_negative`, `…_var` | XCSP3 `<sum>` with `ne`, the last two added by #1074 for a negative bound and a variable operand |
 | `mini_linear_constraint` | a private refined-watch test harness (`MiniLinearGreaterEqual`); posts nothing from this family |
 | `linear_utils_test` | `tidy_up_linear` |
