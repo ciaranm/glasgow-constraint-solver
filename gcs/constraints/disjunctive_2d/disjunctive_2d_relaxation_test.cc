@@ -1360,6 +1360,135 @@ auto main(int argc, char * argv[]) -> int
         check("disjunctive_2d_projection_row_high_narrow", Integer{1LL << 38}, 2_i, projection_on, true);
     }
 
+    // --- a cap on the window's span (#1098) ------------------------------
+    //
+    // The energetic rungs' certificates cost a row per time point of the
+    // window they cite, and Disjunctive2DRules::relaxation_max_span declines a
+    // window wider than it, proofs or not. The cap is on the span, so each
+    // rung's own fixture fires with the cap at its window's span and does not
+    // one below it; and then #1082's column without its fourth square, which
+    // the y projection refutes over a window 2^31 wide, is refuted by search
+    // instead, with a proof small enough to write.
+    if (! overload && ! edge_finding && ! ttef && ! projection) {
+        auto capped = [](Disjunctive2DRules rules, Integer span) {
+            rules.relaxation_max_span = span;
+            return rules;
+        };
+        const Disjunctive2DRules overload_on{.relaxation_overload = true};
+        const Disjunctive2DRules ef_on{.relaxation_edge_finding = true};
+        const Disjunctive2DRules ttef_on{.relaxation_time_table_edge_finding = true};
+        auto names = [&](const string & name) {
+            vector<optional<string>> result{nullopt};
+            if (proofs)
+                result.emplace_back(name);
+            return result;
+        };
+
+        // The widest window a rule's firings name in their markers, which is
+        // what a cap has to bound: the rule can still fire under it, once
+        // search has narrowed some window below it.
+        auto widest_firing = [](const string & basename, const string & marker) -> Integer {
+            ifstream f{basename + ".pbp"};
+            string line;
+            auto widest = 0_i;
+            while (getline(f, line)) {
+                auto at = line.find("window=[");
+                if (line.find(marker) == string::npos || at == string::npos)
+                    continue;
+                auto comma = line.find(',', at), close = line.find(')', at);
+                auto a = std::stoll(line.substr(at + 8, comma - at - 8)), b = std::stoll(line.substr(comma + 1, close - comma - 1));
+                widest = std::max(widest, Integer{b - a});
+            }
+            return widest;
+        };
+
+        // `area`'s one window is [0, 5). Declined, the root stays open and
+        // search has 101,221 nodes to go, so this side is root-only.
+        for (const auto & name : names("disjunctive_2d_relaxation_span_cap_overload")) {
+            auto result = probe(area, capped(overload_on, 5_i), name);
+            if (! result.refuted_at_root)
+                fail("span_cap_overload: a cap of the window's own span stopped the overload");
+            if (name && ! verify(*name))
+                fail("span_cap_overload: veripb rejected the certificate");
+        }
+        if (probe(area, capped(overload_on, 4_i), nullopt, true).refuted_at_root)
+            fail("span_cap_overload: a cap one below the window's span did not stop the overload");
+
+        // The pushes come from [0, 4), and are satisfiable, so both sides
+        // can run to a solution with proofs on.
+        auto check_push = [&](const Instance & inst, Disjunctive2DRules rules, const string & stem, const string & marker, Integer expected) {
+            auto control = probe(inst, Disjunctive2DRules{}, nullopt, true);
+            if (control.root_x.size() != 4 || control.root_x[3].first == expected)
+                fail(stem + ": the push is made without the rule, so the fixture cannot show the cap");
+            for (auto span : {4_i, 3_i})
+                for (const auto & name : names(stem + "_" + to_string(span.raw_value))) {
+                    auto result = probe(inst, capped(rules, span), name);
+                    auto want = span == 4_i ? expected : control.root_x[3].first;
+                    if (result.root_x.size() != 4)
+                        fail(stem + ": no root node was traced");
+                    if (result.root_x[3].first != want)
+                        fail(stem + ": under a cap of " + to_string(span.raw_value) + " the tall rectangle's lower bound is " +
+                            to_string(result.root_x[3].first.raw_value) + ", expected " + to_string(want.raw_value));
+                    if (! result.satisfiable)
+                        fail(stem + ": the fixture is satisfiable, but no solution was found");
+                    if (name && widest_firing(*name, marker) > span)
+                        fail(stem + ": the rule fired on a window wider than the cap of " + to_string(span.raw_value));
+                    if (name && span == 4_i && widest_firing(*name, marker) != span)
+                        fail(stem + ": the rule did not fire on the window the push comes from");
+                    if (name && ! verify(*name))
+                        fail(stem + ": veripb rejected the proof");
+                }
+        };
+        check_push(ef_lb, ef_on, "disjunctive_2d_relaxation_span_cap_edge_finding", "disjunctive2d cumulative relaxation edge-finding", 3_i);
+        check_push(ttef_lb, ttef_on, "disjunctive_2d_relaxation_span_cap_ttef", "disjunctive2d cumulative relaxation time-table edge-finding", 4_i);
+
+        // The wide column. The holes keep the search to eight leaves.
+        struct Column
+        {
+            bool refuted_at_root = false, satisfiable = false;
+        };
+        auto column = [&](Disjunctive2DRules rules, const optional<string> & name) -> Column {
+            Problem p;
+            auto h = Integer{1LL << 30};
+            vector<IntegerVariableID> xs, ys;
+            for (auto i = 0; i < 3; ++i) {
+                xs.push_back(p.create_integer_variable(0_i, 0_i));
+                ys.push_back(p.create_integer_variable(vector<Integer>{0_i, h}));
+            }
+            p.post(Disjunctive2D{xs, ys, vector<Integer>(3, 1_i), vector<Integer>(3, h)}.with_rules(rules));
+            Column result;
+            auto reached_a_node = false;
+            solve_with(p,
+                SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                                   result.satisfiable = true;
+                                   return false;
+                               },
+                    .trace = [&](const CurrentState &) -> bool {
+                        reached_a_node = true;
+                        return true;
+                    }},
+                name ? make_optional<ProofOptions>(ProofFileNames{*name}) : nullopt);
+            result.refuted_at_root = ! reached_a_node && ! result.satisfiable;
+            return result;
+        };
+
+        // Uncapped, and only with proofs off: this is the proof #1098 could not
+        // write.
+        if (! column(overload_on, nullopt).refuted_at_root)
+            fail("span_cap_column: the uncapped overload did not refute the root, so the fixture does not reach the wide window");
+        for (const auto & name : names("disjunctive_2d_relaxation_span_cap_column")) {
+            auto result = column(capped(overload_on, Integer{1LL << 16}), name);
+            if (result.refuted_at_root)
+                fail("span_cap_column: the root was refuted under the cap");
+            if (result.satisfiable)
+                fail("span_cap_column: three rectangles of height h fit in a column 2h tall");
+            if (name && widest_firing(*name, "disjunctive2d cumulative relaxation overload") > Integer{1LL << 16})
+                fail("span_cap_column: an overload fired on a window wider than the cap");
+            if (name && ! verify(*name))
+                fail("span_cap_column: veripb rejected the proof");
+        }
+    }
+
     println(cerr, "disjunctive2d cumulative relaxation: all fixtures pass");
     return EXIT_SUCCESS;
 }

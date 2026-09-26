@@ -155,6 +155,33 @@ namespace gcs
         bool relaxation_time_table_edge_finding = false;
 
         /**
+         * \brief Leave alone any time-axis window wider than this, in the
+         * three rules above: \ref relaxation_overload, \ref
+         * relaxation_edge_finding and \ref relaxation_time_table_edge_finding.
+         * nullopt, the default, takes every window.
+         *
+         * Their certificates cost a flagged row, and so a comparator network,
+         * per time point of the window they cite, so a certificate is linear
+         * in the window's span. A time axis whose positions range over 2^30
+         * gives a window that wide, and a model settled at the root with
+         * proofs off then writes more than a gigabyte of proof before it gets
+         * there (#1098). No certificate flat in the span is known for this
+         * argument. 1D Disjunctive's sorting network escapes the cost only
+         * because its tasks are pairwise separated on the time axis itself,
+         * and two rectangles sharing a time-axis window need not be.
+         *
+         * The cap is decided from the window alone, the same with proofs on
+         * or off, so it changes what the rules infer rather than only what
+         * they write: a declined window can leave a conflict to be found by
+         * search. That is why it is off by default, and a caller who wants a
+         * proof to be writable is the one who sets it. The \ref
+         * cumulative_projection is not covered: its cost over a wide axis is
+         * in naming a flag per task and time point before search starts
+         * (#1111).
+         */
+        std::optional<Integer> relaxation_max_span = std::nullopt;
+
+        /**
          * \brief Run `Cumulative`'s own propagator, with these rules, on each
          * axis's projection: the whole certified cumulative ladder rather
          * than the rungs above one at a time.

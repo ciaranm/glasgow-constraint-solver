@@ -1642,6 +1642,13 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             if (b <= a)
                                 continue;
 
+                            // Every certificate below is linear in the span,
+                            // and the caller may have asked for a proof that
+                            // can be written more than for the inference
+                            // (#1098). Decided the same way with proofs off.
+                            if (rules.relaxation_max_span && b - a > *rules.relaxation_max_span)
+                                continue;
+
                             // Only the resource axis is gated by width (#1083),
                             // so a window on the time axis can be as wide as the
                             // bounded range, and H * (b - a) past the end of

@@ -1566,6 +1566,31 @@ height at most `H`, so only the sums are checked, and a sum past
 `Integer` is past the supply. The `wide_*` fixtures are the rungs' own
 with a unit square free across the whole range added.
 
+**The proof is linear in the window's span (#1098)**, for all three
+rungs: a flagged row, so a network, per time point cited, plus window
+energies and TTEF pins that walk the same points. #1082's column
+without its fourth square (three rectangles `2^30 + 1` tall at `x = 0`)
+shows what that costs. The x axis fails the gate above, so the overload
+fires on the y axis over `[0, 2^31 + 3)`, and a solve that proofs-off
+settles at the root in a fraction of a millisecond writes a gigabyte of
+proof in under 30 seconds. At `2^29 + 1` the x axis fits and the same
+refutation is 330 KB. 1D escapes this with the sorting network, flat in
+the span, but only because its tasks are pairwise separated on the time
+axis itself. No span-flat certificate is known for the area argument.
+
+So `Disjunctive2DRules::relaxation_max_span` declines any window wider
+than it, in all three rungs, the same with proofs on or off.
+**It is off by default**, because it changes the rules' inferences and
+not only what they write: the column above is left to search, and with
+its y domains unholed that search is 2^30 wide. It is for a caller who
+needs the proof written more than the inference made. The `span_cap_*`
+fixtures fire each rung at its fixture's window span and not one below
+it, and check that no firing names a window wider than the cap. They
+also run the column with holed domains, whose proof under a cap of
+2^16 is 6 KB. `cumulative_projection` is not covered: its cost over a
+wide axis is in naming a flag per task and time point before search
+starts, as a start-checkpoint `Cumulative` does (#1111).
+
 ### Edge-finding over the same row
 
 `Disjunctive2DRules::relaxation_edge_finding`, off by default:
@@ -1793,6 +1818,14 @@ would take from *this* encoding:
   cost more than it does on `Cumulative`, since the negation range
   straddles the hump. What the published unary rule detects instead, and
   whether the pairwise encoding can certify *that*, is #757.
+- **A span-flat certificate for the relaxation's energetic rungs.**
+  Their proofs are linear in the window's span, and the only answer
+  so far is to decline wide windows (`relaxation_max_span`, #1098).
+  The one improvement in sight would slice along the resource axis
+  where that is narrower, costing `min(span, H)` rather than `span`. It
+  needs
+  optional tasks over a per-firing window, and the quadratic
+  constants that gate the other axis would still bite.
 - **A frontend route to optional rectangles.** The constraint takes
   them (#974, above) and `.scp` names them, but neither MiniZinc nor
   XCSP3 reaches the optional 2D form: there is no `fzn_diffn_opt` to
