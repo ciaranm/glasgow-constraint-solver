@@ -169,6 +169,21 @@ constraints and do not restate it.
   corrected the product's strength on `z` from `bounds(Z)` to `bounds(R)`)
   and 2026-10-08. Its audit also found the engine's per-node state copy
   costing 58% of `stable-goods` in page faults (#1063), since fixed by #1113.
+- [`table.md`](table.md) — `Table` and `NegativeTable`, and
+  `propagate_extensional`, the helper that also propagates the `AutoTable`
+  presolver's tables and the tabulated arithmetic and linear constraints.
+  `Table` is generalised arc consistent and certified by the thesis's JP 3.3
+  and 3.4. It runs a live set or, when `table::Auto` judges it worth it, a
+  compact table. Its search is 1.1–1.3× Gecode's on Crossword and 1.4–4.2× on
+  a synthetic matrix. End to end it is ahead on six of nine Renault
+  instances, where Gecode's time goes on posting the model. `NegativeTable` watches two literals per forbidden
+  tuple and is not generalised arc consistent. The audit's headline is a proof
+  failure: a table whose rows overlap, which MiniZinc and XCSP3 both allow and
+  `yumi-static` posts, writes proofs VeriPB rejects at the solution line,
+  because GCS only half-reifies each tuple's selector value. The width trim that makes a
+  wide domain cheap runs too late on two paths. A fully justified proof of an
+  arity-5 benchmark takes about 830 times its solve to check. Not merged with
+  `smart_table`: no shared code, different encodings.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
