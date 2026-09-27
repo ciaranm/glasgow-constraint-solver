@@ -68,6 +68,25 @@ constraints and do not restate it.
   and by the same sweep `inverse` and `arg_sort`, give wrong answers on arrays
   not indexed from 1, and the wrong `UNSATISFIABLE` verifies through the whole
   `cake_pb_cp` chain.
+- [`counting.md`](counting.md) — `Count`, `Among`, `NValue` and
+  `GlobalCardinality`, four directories and one document. The family list's
+  candidate merge is settled as four classes with no shared propagation code
+  and four encodings, three of them fixed by `cake_pb_cp`. The one thing to
+  read it for is how they relate. `Count` with a constant value of interest is
+  the counting constraint the MiniZinc Challenge models use: 1,464 of 1,816
+  posts, and `Among` appears in none. It finds the same solutions as a
+  one-value `GlobalCardinality`, which explores 1.4 to 3.7 times as many nodes
+  per second, so the specialised constraint is the slow one (#1029).
+  `GlobalCardinality`'s default bounds arm is likewise slower than its flow arm
+  on covers of several values, by up to 3.6 times on real models at equal node
+  counts and two orders of magnitude on a synthetic large cover, but its proofs
+  have about an eighth as many lines (#1028); on a one-value cover it is the
+  faster. The audit's headline is a
+  wrong answer: the flow arm binary-searched a cover only the bounds arm
+  sorted, so an open constraint with an unsorted cover lost solutions (#1026,
+  fixed by #1030). Thirty rules, all justified, two of them unreachable. The
+  `inverse` audit later found that a constant in `GlobalCardinality`'s array
+  breaks its proofs (#1046).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
