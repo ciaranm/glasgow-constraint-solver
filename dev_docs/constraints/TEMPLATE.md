@@ -984,7 +984,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `min_distance.md` | `min_distance/` | note `min-distance-proofs.md` |
 | `min_max.md` | `min_max/` | |
 | `nogoods.md` | `nogoods/` | search machinery rather than a posted constraint; notes `restarts-nogoods-weighting.md`, `refined-triggers.md` |
-| `parity.md` | `parity/` | `ParityOdd`, and the GF(2) system propagator in `gf2_system.{hh,cc}` that the `parity_system_gathering` presolver installs; note `parity-system.md` |
+| `parity.md` | `parity/` | **written**. `ParityOdd`, and the GF(2) system propagator in `gf2_system.{hh,cc}` that the `parity_system_gathering` presolver installs; note `parity-system.md` |
 | `path.md` | `path/` | |
 | `reachable.md` | `reachable/` | |
 | `regular.md` | `regular/` | existing note `regular.md` |
