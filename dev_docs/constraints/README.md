@@ -181,6 +181,24 @@ constraints and do not restate it.
   while a wildcard row is live. A fully justified proof of an
   arity-5 benchmark takes about 830 times its solve to check. Not merged with
   `smart_table`: no shared code, different encodings.
+- [`smart_table.md`](smart_table.md) — `SmartTable`: Mairy, Deville and
+  Lecoutre's smart table, the engine under `LexSmartTable` and
+  `AtMostOneSmartTable`, with McIlree and McCreesh's proof logging. No front end
+  posts it; the `.scp` is its only way in from a file. It is generalised arc
+  consistent, which a brute-force check over 5,000 random tables with views,
+  holes and repeated variables confirms at every node. Each removal is a RUP
+  per row after a lemma per tree-filtering step, and dropping those lemmas makes
+  VeriPB refuse the thesis's Example 4.3. The audit's headline is the hints-only
+  mode: at the `Definitions`, `Links` and `Inferences` levels every removal is
+  asserted as a bare unit clause with no reason, and on one enumeration 184 of
+  194 are contradicted by later solutions in the same proof. `Circuit` has the
+  same defect from the same change. Also: an entry over a
+  variable outside the scope aborts the solve, and the default short reasons
+  define a flag on every call, taking one enumeration's checking time from
+  0.8 s to 15.9 s. On identical trees it is 8–23 times slower than the native
+  `Lex` and `AtMostOne`, about half of it in allocation, hash lookups and map
+  helpers. Not merged with
+  `table`: no shared code, and a different encoding.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
