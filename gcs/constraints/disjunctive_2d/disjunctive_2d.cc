@@ -73,6 +73,15 @@ namespace
         optional<ProofLine> no_escape;
     };
 
+    /// The declared floors emitted so far, and the separation rows cancelled
+    /// down to them, both by dimension (0 the widths, 1 the heights) and all
+    /// at Top.
+    struct FloorCache
+    {
+        std::array<map<size_t, DeclaredFloor>, 2> floors;
+        std::array<map<pair<size_t, size_t>, ProofLine>, 2> separations;
+    };
+
     auto declared_floor(ProofLogger & logger, map<size_t, DeclaredFloor> & cache, size_t i, const IntegerVariableID & size, Integer floor,
         const optional<ProofFlag> & escape, const Disjunctive2DProofMutation & mutation) -> const DeclaredFloor &
     {
@@ -85,16 +94,61 @@ namespace
         return cache.emplace(i, DeclaredFloor{at_least, no_escape}).first->second;
     }
 
+    /// One direction of a pair's separation on the resource axis, for a
+    /// ComparatorNetwork: `M * ~flag + y - x >= duration(x)`, which is the
+    /// model's forward row as it stands for a constant size. A variable size
+    /// leaves its own term in that row instead, and the network pins the
+    /// duration at the size's declared floor (#984), so the row handed over is
+    /// the model's plus `size >= floor`, with the floor where the constant
+    /// was. Kept at Top, since both halves are.
+    ///
+    /// And saturated. The model's `M` was sized for the size's whole range,
+    /// so it can be past the network's guard coefficient, which is sized for
+    /// the window, and the network refuses such a row. Cancelled down to the
+    /// floor the row needs no more than its own degree: normalising `-x` over
+    /// `x`'s bits puts the degree at `floor` plus their coefficients, which is
+    /// at most twice the largest value the network's width holds, since the
+    /// floor's extent is inside the window. Saturating caps `M` there, and the
+    /// network is told the coefficient the row really carries, because it
+    /// raises every row to its own by adding the difference.
+    auto separation_at_floor(ProofLogger & logger, FloorCache & cache, int dim, size_t x, size_t y, const ProofFlag & flag, ProofLine row,
+        Integer guard_coefficient, const IntegerVariableID & size, Integer floor, const optional<ProofFlag> & escape,
+        const SimpleIntegerVariableID & position, const Disjunctive2DProofMutation & mutation) -> ModelSeparation
+    {
+        if (is_constant_variable(size))
+            return ModelSeparation{flag, row, guard_coefficient};
+        const auto & facts = declared_floor(logger, cache.floors[dim], x, size, floor, escape, mutation);
+        if (std::holds_alternative<disjunctive_2d_proof_mutation::SkipResourceFloor>(mutation))
+            return ModelSeparation{flag, row, guard_coefficient};
+
+        auto & tracker = logger.names_and_ids_tracker();
+        auto degree = floor;
+        for (Integer bit = 0_i; bit < tracker.num_bits(position); ++bit)
+            if (auto coefficient = tracker.get_bit(position, bit).first; coefficient > 0_i)
+                degree += coefficient;
+        auto carried = min(guard_coefficient, degree);
+
+        auto & rows = cache.separations[dim];
+        auto found = rows.find(pair{x, y});
+        if (found == rows.end()) {
+            PolBuilder pol;
+            pol.add(row).add(facts.at_least).saturate();
+            found = rows.emplace(pair{x, y}, pol.emit(logger, ProofLevel::Top)).first;
+        }
+        return ModelSeparation{flag, found->second, carried};
+    }
+
     /// What the relaxation overload check keeps between firings, all of it at
     /// Top and so all of it valid for the rest of the proof: the activity
     /// flags, the flagged capacity row per time point, and the variable
-    /// time-axis sizes' declared floors. Per axis.
+    /// sizes' declared floors. Per axis, but for the floors, which are per
+    /// dimension.
     struct RelaxationOverloadCache
     {
         std::array<map<pair<size_t, long long>, RelaxationActivity>, 2> activity;
         std::array<map<long long, ProofLine>, 2> rows;
         std::array<map<std::tuple<size_t, long long, long long, long long, long long>, window_energy::GuardedWindowEnergy>, 2> guarded;
-        std::array<map<size_t, DeclaredFloor>, 2> floors;
+        FloorCache floors;
     };
 
     /// The widest wire the cumulative relaxation's comparator network will
@@ -309,19 +363,33 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
             ++presence_uses[*_presence[i]];
     }
 
+    for (auto dim : {0, 1}) {
+        const auto & sizes = dim == 0 ? _widths : _heights;
+        auto & floors = _relaxation_size_floor[dim];
+        floors.assign(n, 0_i);
+        for (auto i : _active_rects)
+            floors[i] = max(initial_state.lower_bound(sizes[i]), 0_i);
+    }
+
     for (auto time_axis : {0, 1}) {
         const auto & time_pos = time_axis == 0 ? _xs : _ys;
         const auto & time_size = time_axis == 0 ? _widths : _heights;
         const auto & res_pos = time_axis == 0 ? _ys : _xs;
         const auto & res_size = time_axis == 0 ? _heights : _widths;
+        const auto & res_floor = _relaxation_size_floor[1 - time_axis];
         for (auto i : _active_rects) {
             if (_presence[i] && (! std::holds_alternative<SimpleIntegerVariableID>(*_presence[i]) || presence_uses[*_presence[i]] > 1))
                 continue;
             if (position_uses[_xs[i]] > 1 || position_uses[_ys[i]] > 1)
                 continue;
             // The sorted axis's size is the comparator network's duration,
-            // which it pins to a constant and needs positive.
-            if (! is_constant_variable(res_size[i]) || constant_value_of(res_size[i]) < 1_i)
+            // which it pins to a constant and needs positive: a variable one
+            // is pinned at its declared floor, and its separation rows are
+            // cancelled down to it (#984). Named in those rows, so a plain
+            // variable, as a time-axis size is.
+            if (! is_constant_variable(res_size[i]) && ! std::holds_alternative<SimpleIntegerVariableID>(res_size[i]))
+                continue;
+            if (res_floor[i] < 1_i)
                 continue;
             // A wire reads a variable's own bit encoding, so the position has
             // to be a plain variable reading as an unsigned magnitude.
@@ -342,7 +410,7 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
             // variable declared over half the Integer range --- what an
             // unbounded FlatZinc int gets --- would overflow them long before
             // the proof got expensive enough to care.
-            if (initial_state.upper_bound(res_pos[i]) + constant_value_of(res_size[i]) >= Integer{1ll << relaxation_max_width})
+            if (initial_state.upper_bound(res_pos[i]) + res_floor[i] >= Integer{1ll << relaxation_max_width})
                 continue;
             _relaxation_members[time_axis].push_back(i);
         }
@@ -351,15 +419,14 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         auto & window = _relaxation_window[time_axis];
         auto & declared = _relaxation_declared_time[time_axis];
         declared.clear();
-        auto & floors = _relaxation_time_floor[time_axis];
-        floors.clear();
         auto first = true;
         for (auto i : _relaxation_members[time_axis]) {
-            auto lo = initial_state.lower_bound(res_pos[i]), hi = initial_state.upper_bound(res_pos[i]) + constant_value_of(res_size[i]);
+            // Every member is counted at its resource-axis floor, so its
+            // extent is the floor's: a smaller rectangle inside the real one.
+            auto lo = initial_state.lower_bound(res_pos[i]), hi = initial_state.upper_bound(res_pos[i]) + res_floor[i];
             window = first ? pair{lo, hi} : pair{min(window.first, lo), max(window.second, hi)};
             first = false;
             declared.emplace(i, initial_state.bounds(time_pos[i]));
-            floors.emplace(i, max(initial_state.lower_bound(time_size[i]), 0_i));
         }
 
         // The flagged row's network is as wide as the window's end, every
@@ -376,14 +443,16 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
 
     // Disjunctive2DRules::cumulative_projection: the Cumulative each axis
     // projects to, over the relaxation's members with a guaranteed time-axis
-    // extent. A variable size is projected as a constant, its declared floor
-    // (#984): a projected task with a variable length would need the
-    // proof-only end a Cumulative pins a two-variable `after` through, whereas
-    // at a constant length every flag and row is over the position alone, and
-    // the one place the real size is met, the deriver's pair refutation,
-    // cancels it against a reason-free `size >= floor`. Resolved here, from the
-    // model alone, like the members themselves, so that the projection draws
-    // the same inferences with proofs off.
+    // extent. A variable size on either axis is projected as a constant, its
+    // declared floor (#984): the height because every rung counts it there,
+    // and the length because a projected task with a variable length would
+    // need the proof-only end a Cumulative pins a two-variable `after`
+    // through, whereas at a constant length every flag and row is over the
+    // position alone. The one place the real sizes are met is the deriver's
+    // pair clause, where each is cancelled against a reason-free
+    // `size >= floor`. Resolved here, from the model alone, like the members
+    // themselves, so that the projection draws the same inferences with
+    // proofs off.
     for (auto time_axis : {0, 1}) {
         auto & rects = _projection_rects[time_axis];
         rects.clear();
@@ -392,10 +461,10 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
             continue;
 
         const auto & time_pos = time_axis == 0 ? _xs : _ys;
-        const auto & res_size = time_axis == 0 ? _heights : _widths;
-        const auto & floors = _relaxation_time_floor[time_axis];
+        const auto & floors = _relaxation_size_floor[time_axis];
+        const auto & res_floors = _relaxation_size_floor[1 - time_axis];
         for (auto i : _relaxation_members[time_axis])
-            if (floors.at(i) >= 1_i)
+            if (floors[i] >= 1_i)
                 rects.push_back(i);
         if (rects.size() < 2) {
             rects.clear();
@@ -408,10 +477,10 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         inputs->rules = *_rules.cumulative_projection;
         for (size_t k = 0; k < rects.size(); ++k) {
             auto i = rects[k];
-            auto length = constant_variable(floors.at(i));
+            auto length = constant_variable(floors[i]);
             inputs->starts.push_back(time_pos[i]);
             inputs->lengths.push_back(length);
-            inputs->heights.push_back(res_size[i]);
+            inputs->heights.push_back(constant_variable(res_floors[i]));
             // Cumulative takes optional tasks itself, on the same terms: in the
             // profile and the energy only once present, the presence a
             // conjunct of each activity flag, and its literal in the reason.
@@ -606,7 +675,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                     return;
                 auto & tracker = logger->names_and_ids_tracker();
-                auto floors = std::make_shared<std::array<map<size_t, DeclaredFloor>, 2>>();
+                auto floors = std::make_shared<FloorCache>();
 
                 // Which of a projection's tasks a flag key's position names, if
                 // any: `axis x n + i`, for a rectangle that axis projects.
@@ -657,6 +726,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             const auto & tsize = 0 == time_axis ? widths : heights;
                             const auto & tzero = 0 == time_axis ? zero_w : zero_h;
                             const auto & rpos = 0 == time_axis ? ys : xs;
+                            const auto & rsize = 0 == time_axis ? heights : widths;
+                            const auto & rzero = 0 == time_axis ? zero_h : zero_w;
                             const auto & tbefore = 0 == time_axis ? before_x : before_y;
                             const auto & rbefore = 0 == time_axis ? before_y : before_x;
                             const auto & axis_rects = rects[time_axis];
@@ -746,7 +817,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                         pol.add(tbefore.at(make_pair(x, y)).forward_line);
                                         if (! is_constant_variable(tsize[x])) {
                                             const auto & facts =
-                                                declared_floor(row_logger, (*floors)[time_axis], x, tsize[x], len(kx), tzero[x], mutation);
+                                                declared_floor(row_logger, floors->floors[time_axis], x, tsize[x], len(kx), tzero[x], mutation);
                                             if (! std::holds_alternative<disjunctive_2d_proof_mutation::SkipSizeFloor>(mutation))
                                                 pol.add(facts.at_least);
                                         }
@@ -758,6 +829,16 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                         refute(i, kp, j);
                                         refute(j, kq, i);
                                     }
+                                    // A variable resource-axis size was
+                                    // projected at its declared floor too, and
+                                    // its zero-size escape has to be pinned
+                                    // before the clause below can close.
+                                    auto resource_floor = [&](size_t x, size_t kx) {
+                                        return declared_floor(row_logger, floors->floors[1 - time_axis], x, rsize[x], height(kx), rzero[x], mutation);
+                                    };
+                                    for (auto [x, kx] : {pair{i, kp}, pair{j, kq}})
+                                        if (! is_constant_variable(rsize[x]))
+                                            (void)resource_floor(x, kx);
                                     WPBSum both_active;
                                     both_active += 1_i * ! active(kp);
                                     both_active += 1_i * ! active(kq);
@@ -765,11 +846,13 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     both_active += 1_i * rbefore.at(make_pair(j, i)).flag;
                                     auto clause = row_logger.emit_rup_proof_line(move(both_active) >= 1_i, ProofLevel::Top);
 
-                                    auto direction = [&](size_t x, size_t y) -> ModelSeparation {
+                                    auto direction = [&](size_t x, size_t kx, size_t y) -> ModelSeparation {
                                         const auto & data = rbefore.at(make_pair(x, y));
-                                        return ModelSeparation{data.flag, data.forward_line, data.forward_guard_coefficient};
+                                        return separation_at_floor(row_logger, *floors, 1 - time_axis, x, y, data.flag, data.forward_line,
+                                            data.forward_guard_coefficient, rsize[x], height(kx), rzero[x], get<SimpleIntegerVariableID>(rpos[x]),
+                                            mutation);
                                     };
-                                    network.add_optional_separation(wires[p], direction(i, j), wires[q], direction(j, i), clause);
+                                    network.add_optional_separation(wires[p], direction(i, kp, j), wires[q], direction(j, kq, i), clause);
                                 }
 
                             // Restated as exactly the row a Cumulative's citers
@@ -787,7 +870,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             before_x = move(_before_x), before_y = move(_before_y), clause_lines = move(_clause_lines), zero_w = move(_zero_w),
             zero_h = move(_zero_h), presence = move(_presence), strict = _strict, rules = _rules, relaxation_members = move(_relaxation_members),
             relaxation_window = _relaxation_window, relaxation_declared_time = move(_relaxation_declared_time),
-            relaxation_time_floor = move(_relaxation_time_floor), relaxation_row_fits = _relaxation_row_fits,
+            relaxation_size_floor = move(_relaxation_size_floor), relaxation_row_fits = _relaxation_row_fits,
             overload_cache = std::make_shared<RelaxationOverloadCache>(), mutation = _mutation,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Pairwise 2D time-table. The mandatory box of rectangle i is
@@ -1150,6 +1233,13 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
 
                     const auto & tpos = 0 == time_axis ? xs : ys;
                     const auto & tsize = 0 == time_axis ? width_var : height_var;
+                    // A variable resource-axis size is counted at its declared
+                    // floor, which is what the network's pinned duration is,
+                    // and never at its current lower bound: the separation
+                    // rows the network adopts are model rows, with no room for
+                    // a reason's literal (#984).
+                    const auto & res_floor = relaxation_size_floor[1 - time_axis];
+                    const auto & rzero = 0 == time_axis ? zero_h : zero_w;
                     const auto & rpos = 0 == time_axis ? ys : xs;
                     const auto & rsize = 0 == time_axis ? height_var : width_var;
                     const auto & tbefore = 0 == time_axis ? before_x : before_y;
@@ -1157,11 +1247,11 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     const auto & tzero = 0 == time_axis ? zero_w : zero_h;
 
                     // prepare() has already established, for every member, that
-                    // the resource size is a positive constant and the resource
-                    // position a plain variable a wire can read.
+                    // the resource size has a positive declared floor and the
+                    // resource position is a plain variable a wire can read.
                     auto len = [&](size_t i) { return state.lower_bound(tsize[i]); };
                     auto tsize_is_var = [&](size_t i) { return ! is_constant_variable(tsize[i]); };
-                    auto height = [&](size_t i) { return constant_value_of(rsize[i]); };
+                    auto height = [&](size_t i) { return res_floor[i]; };
                     auto lst = [&](size_t i) { return state.upper_bound(tpos[i]); };
                     auto eet = [&](size_t i) { return state.lower_bound(tpos[i]) + len(i); };
                     auto covers = [&](size_t i, Integer t) { return lst(i) < eet(i) && t >= lst(i) && t < eet(i); };
@@ -1401,11 +1491,24 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     clause.add(! tracker.xliteral_for_ensuring(f.r_lo), 1_i, tracker);
                                     clause.add(! tracker.xliteral_for_ensuring(f.r_hi), 1_i, tracker);
                                 }
+                                // The pair's own resource-axis escapes, which
+                                // are in its clause and in no guard: each is
+                                // false by its size's declared floor, a Top
+                                // unit, and adding that unit cancels it.
+                                for (auto r : {i, j})
+                                    if (! is_constant_variable(rsize[r])) {
+                                        const auto & facts = declared_floor(
+                                            *logger, overload_cache->floors.floors[1 - time_axis], r, rsize[r], height(r), rzero[r], mutation);
+                                        if (facts.no_escape)
+                                            clause.add(*facts.no_escape);
+                                    }
                                 auto separated = clause.emit(*logger, ProofLevel::Temporary);
 
                                 auto direction = [&](size_t p, size_t q) -> ModelSeparation {
                                     const auto & data = rbefore.at(make_pair(p, q));
-                                    return ModelSeparation{data.flag, data.forward_line, data.forward_guard_coefficient};
+                                    return separation_at_floor(*logger, overload_cache->floors, 1 - time_axis, p, q, data.flag, data.forward_line,
+                                        data.forward_guard_coefficient, rsize[p], height(p), rzero[p], get<SimpleIntegerVariableID>(rpos[p]),
+                                        mutation);
                                 };
                                 network.add_separation(wires[a], direction(i, j), wires[b], direction(j, i), separated);
                             }
@@ -1553,8 +1656,10 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     const auto & tbefore = 0 == time_axis ? before_x : before_y;
                     const auto & rbefore = 0 == time_axis ? before_y : before_x;
                     const auto & declared = relaxation_declared_time[time_axis];
-                    const auto & time_floor = relaxation_time_floor[time_axis];
+                    const auto & time_floor = relaxation_size_floor[time_axis];
+                    const auto & res_floor = relaxation_size_floor[1 - time_axis];
                     const auto & tzero = 0 == time_axis ? zero_w : zero_h;
+                    const auto & rzero = 0 == time_axis ? zero_h : zero_w;
                     auto [window_lo, window_hi] = relaxation_window[time_axis];
                     auto capacity = window_hi - window_lo;
 
@@ -1572,7 +1677,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     // rectangle is left alone, as 1D Disjunctive leaves one.
                     vector<size_t> row_tasks, tasks;
                     for (auto i : relaxation_members[time_axis])
-                        if (time_floor.at(i) >= 1_i) {
+                        if (time_floor[i] >= 1_i) {
                             row_tasks.push_back(i);
                             if (is_present(i))
                                 tasks.push_back(i);
@@ -1593,8 +1698,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     // Disjunctive counts a variable duration, rather than at
                     // its current lower bound: that is a state fact, and every
                     // row here is a model fact cached at Top.
-                    auto len = [&](size_t i) { return time_floor.at(i); };
-                    auto height = [&](size_t i) { return constant_value_of(rsize[i]); };
+                    auto len = [&](size_t i) { return time_floor[i]; };
+                    auto height = [&](size_t i) { return res_floor[i]; };
                     auto est = [&](size_t i) { return state.lower_bound(tpos[i]); };
                     auto lct = [&](size_t i) { return state.upper_bound(tpos[i]) + len(i); };
 
@@ -1682,8 +1787,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     PolBuilder pol;
                                     pol.add(tbefore.at(make_pair(x, y)).forward_line);
                                     if (! is_constant_variable(tsize[x])) {
-                                        const auto & facts =
-                                            declared_floor(*logger, overload_cache->floors[time_axis], x, tsize[x], len(x), tzero[x], mutation);
+                                        const auto & facts = declared_floor(
+                                            *logger, overload_cache->floors.floors[time_axis], x, tsize[x], len(x), tzero[x], mutation);
                                         if (! std::holds_alternative<disjunctive_2d_proof_mutation::SkipSizeFloor>(mutation))
                                             pol.add(facts.at_least);
                                     }
@@ -1693,6 +1798,13 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                 };
                                 refute(i, j);
                                 refute(j, i);
+                                // A variable resource-axis size's zero-size
+                                // escape is in the pair's clause too, and is
+                                // pinned before the clause below can close.
+                                for (auto x : {i, j})
+                                    if (! is_constant_variable(rsize[x]))
+                                        (void)declared_floor(
+                                            *logger, overload_cache->floors.floors[1 - time_axis], x, rsize[x], height(x), rzero[x], mutation);
                                 WPBSum both_active;
                                 both_active += 1_i * ! activity_flag(i, t).flag;
                                 both_active += 1_i * ! activity_flag(j, t).flag;
@@ -1702,7 +1814,9 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
 
                                 auto direction = [&](size_t x, size_t y) -> ModelSeparation {
                                     const auto & data = rbefore.at(make_pair(x, y));
-                                    return ModelSeparation{data.flag, data.forward_line, data.forward_guard_coefficient};
+                                    return separation_at_floor(*logger, overload_cache->floors, 1 - time_axis, x, y, data.flag, data.forward_line,
+                                        data.forward_guard_coefficient, rsize[x], height(x), rzero[x], get<SimpleIntegerVariableID>(rpos[x]),
+                                        mutation);
                                 };
                                 network.add_optional_separation(wires[p], direction(i, j), wires[q], direction(j, i), clause);
                             }

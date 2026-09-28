@@ -80,7 +80,8 @@ namespace gcs
          * packing family has not been measured.
          *
          * A rectangle takes part on an axis only if its size *on the other*
-         * axis is a positive constant, its position there is a plain variable
+         * axis is a constant or a plain variable with a positive declared
+         * lower bound, its position there is a plain variable
          * with a non-negative domain, and that domain is narrow enough for the
          * network's guard coefficients --- the conditions
          * innards::ComparatorNetwork::wire_over imposes. Those are all
@@ -99,8 +100,11 @@ namespace gcs
          * bound by this rule, under a reason, and at its *declared* lower bound
          * by the energetic rules below and \ref cumulative_projection, whose
          * rows are model facts (#984); a rectangle declared from zero has no
-         * guaranteed extent and takes no part in those. Either way a rectangle
-         * is only ever counted shorter than it is, which is only weaker.
+         * guaranteed extent and takes no part in those. A variable size on the
+         * *other* axis is counted at its declared lower bound by every rule,
+         * this one included, being the comparator network's pinned duration.
+         * Either way a rectangle is only ever counted smaller than it is,
+         * which is only weaker.
          */
         bool cumulative_relaxation = false;
 
@@ -215,8 +219,9 @@ namespace gcs
          *
          * Uses the members \ref relaxation_overload does, and is off on an
          * axis where that rule is for the width of its window. A variable
-         * time-axis size is projected as a constant length, its declared lower
-         * bound (#984). nullopt, the default, runs nothing.
+         * size on either axis is projected as a constant, its declared lower
+         * bound: a length on the time axis, a height on the other (#984).
+         * nullopt, the default, runs nothing.
          */
         std::optional<CumulativeRules> cumulative_projection = std::nullopt;
     };
@@ -357,13 +362,16 @@ namespace gcs
         std::array<std::pair<Integer, Integer>, 2> _relaxation_window{{{Integer{0}, Integer{0}}, {Integer{0}, Integer{0}}}};
         std::array<std::map<std::size_t, std::pair<Integer, Integer>>, 2> _relaxation_declared_time;
 
-        // And each member's time-axis size as the energetic rungs and the
-        // projection count it: the constant, or a variable size's *declared*
-        // lower bound (#984). A rectangle counted shorter than it is only
-        // weakens what they infer, and the declared bound is a model fact, so
-        // the rows over it stay reason-free and cacheable at Top. Zero means
-        // the rectangle has no guaranteed extent and those rules leave it out.
-        std::array<std::map<std::size_t, Integer>, 2> _relaxation_time_floor;
+        // Each rectangle's size as the relaxation counts it, by dimension (0
+        // the widths, 1 the heights): the constant, or a variable size's
+        // *declared* lower bound (#984). The resource-axis size is counted at
+        // it by every rung, being the comparator network's pinned duration,
+        // and the time-axis size by the energetic rungs and the projection. A
+        // rectangle counted smaller than it is only weakens what they infer,
+        // and the declared bound is a model fact, so the rows over it stay
+        // reason-free and cacheable at Top. Zero means no guaranteed extent,
+        // and a rule that needs one leaves the rectangle out.
+        std::array<std::vector<Integer>, 2> _relaxation_size_floor;
 
         // Per axis, whether that window is narrow enough for the flagged
         // capacity row's network, whose optional tasks have constants
