@@ -685,6 +685,22 @@ is never executed, and the cost does not show up where you would look for it. An
 such change needs the *old* path measured against the *unmodified* build, not
 just the new path measured against the old one.
 
+`propagate_cumulative` hit the same budget from the other side (#550). Adding
+code to it that never ran on RCPSP moved the overload check's window sweep by
+anywhere from +0.8% to +8% in instructions, with the search identical and the
+figure depending on which equivalent spelling of the change was compiled. So its
+overload family and its time-table pushes are now each a lambda compiled out of
+line (`GCS_CUMULATIVE_PHASE`, which is `[[gnu::noinline]]` under GCC and clang),
+and the sweep reads the rule switches it tests into locals once instead of
+through a reference on every window. Together that was 0.94x the instructions
+and 0.95x the cycles, with proofs byte-identical. Even out of line, the phase is
+still sensitive: lifting two certificates out of their justifications, so that a
+second rule could share them, cost it +2% again. Measure with `instructions:u`
+over several instances, serially, with glibc's malloc thresholds pinned
+(`GLIBC_TUNABLES=glibc.malloc.mmap_threshold=33554432:glibc.malloc.trim_threshold=4294967295`,
+since heap history otherwise changes how often per-node state is mapped and
+unmapped). Parallel wall-clock A/Bs at this size are noise.
+
 ### Data derived from a shared input belongs to the input, not to the constraint
 
 A propagator that precomputes something from bulk input holds one copy per
