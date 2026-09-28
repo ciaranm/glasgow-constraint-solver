@@ -56,9 +56,13 @@ namespace gcs::innards::window_energy
         SimpleIntegerVariableID start;
         Integer length;
         Integer flags_t_lo;
-        const std::vector<ProofFlag> & before;
-        const std::vector<ProofFlag> & after;
-        const std::vector<ProofFlag> & active;
+        /// How many time points the flags cover, from `flags_t_lo`.
+        std::size_t flag_count;
+        /// The three flags at `flags_t_lo + idx`. Asked only for the time
+        /// points of the window being derived over, so a caller whose flags are
+        /// named on demand (#1111) names no more of them than the derivation
+        /// cites.
+        std::function<auto(std::size_t idx)->ProofFlag> before, after, active;
         /// Set iff <code>after</code> is reified on the two-variable
         /// <code>start + length_variable</code>, in which case
         /// <code>length</code> is what the lemma counts the task at and

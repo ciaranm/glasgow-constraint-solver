@@ -111,13 +111,13 @@ namespace
             auto idx = static_cast<size_t>((t - task.flags_t_lo).raw_value);
 
             PolBuilder before_bridge;
-            before_bridge.add(reification_half(tracker, task.before[idx], ReificationHalf::ImpliedBy));
+            before_bridge.add(reification_half(tracker, task.before(idx), ReificationHalf::ImpliedBy));
             before_bridge.add_for_literal(tracker, start < t + 1_i);
             before_bridge.saturate();
             auto before_clause = before_bridge.emit(logger, level);
 
             PolBuilder after_bridge;
-            after_bridge.add(reification_half(tracker, task.after[idx], ReificationHalf::ImpliedBy));
+            after_bridge.add(reification_half(tracker, task.after(idx), ReificationHalf::ImpliedBy));
             after_bridge.add_for_literal(tracker, start >= t - shape.p + 1_i);
             if (task.length_variable) {
                 after_bridge.add_for_literal(tracker, *task.length_variable >= shape.p);
@@ -139,7 +139,7 @@ namespace
             auto after_clause = after_bridge.emit(logger, level);
 
             PolBuilder step;
-            step.add(reification_half(tracker, task.active[idx], ReificationHalf::ImpliedBy));
+            step.add(reification_half(tracker, task.active(idx), ReificationHalf::ImpliedBy));
             step.add(before_clause);
             step.add(after_clause);
             per_time.push_back(step.emit(logger, level));
@@ -192,7 +192,7 @@ auto gcs::innards::window_energy::window_energy_bound(
 auto gcs::innards::window_energy::derive_window_energy(ProofLogger & logger, const ReasonLiterals & reason, const Task & task, Integer lo, Integer hi,
     pair<Integer, Integer> start_bounds, ProofLevel level) -> optional<WindowEnergy>
 {
-    auto shape = shape_of(task.length, task.flags_t_lo, task.active.size(), lo, hi, start_bounds);
+    auto shape = shape_of(task.length, task.flags_t_lo, task.flag_count, lo, hi, start_bounds);
     if (shape.empty() || shape.bound <= 0_i)
         return nullopt;
 
@@ -308,7 +308,7 @@ auto gcs::innards::window_energy::derive_guarded_window_energy(ProofLogger & log
 {
     // The guards stand in for the bounds a firing would have had, so the shape,
     // and the bound it predicts, are the reason-backed ones for those bounds.
-    auto shape = shape_of(task.length, task.flags_t_lo, task.active.size(), lo, hi, pair{low_guard, high_guard - 1_i});
+    auto shape = shape_of(task.length, task.flags_t_lo, task.flag_count, lo, hi, pair{low_guard, high_guard - 1_i});
     if (shape.empty() || shape.bound <= 0_i)
         return nullopt;
 
