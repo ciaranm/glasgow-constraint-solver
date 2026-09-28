@@ -131,12 +131,13 @@ namespace
         rule_edge_finding_ub,
         rule_not_first,
         rule_not_last,
+        rule_overload_presence,
         rule_count
     };
 
     RuleInstrumentation cumulative_counters{"cumulative",
         {"time_table_lb", "time_table_ub", "time_table_overflow", "presence", "overload", "edge_finding_lb", "edge_finding_ub", "not_first",
-            "not_last"}};
+            "not_last", "overload_presence"}};
 
     // The variable-height contribution h_i·active is linearised over cake's
     // per-bit contribution flags cc_k (weight 2^k): contrib = Σ 2^k · cc_k.
@@ -2208,6 +2209,25 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 return pair{pair{c.est, c.lct}, pair{c.lct, c.lct}};
             };
 
+            auto join_times = [&](Integer from, Integer to, Integer height) {
+                for (Integer t = from; t < to; ++t) {
+                    auto idx = static_cast<size_t>((t - t_lo).raw_value);
+                    optional_height[idx] += height;
+                    if (knapsack_rule) {
+                        // bitset |= bitset << height, most significant word
+                        // first so a shift reads only bits it has not written.
+                        auto * bits = reachable.data() + idx * knapsack_words;
+                        auto shift = static_cast<size_t>(height.raw_value);
+                        for (size_t k = knapsack_words; k-- > 0;) {
+                            auto word = (shift / 64 > k) ? 0ull : bits[k - shift / 64] << (shift % 64);
+                            if (shift % 64 != 0 && shift / 64 < k)
+                                word |= bits[k - shift / 64 - 1] >> (64 - shift % 64);
+                            bits[k] |= word;
+                        }
+                    }
+                }
+            };
+
             auto join_elastic = [&](const Candidate & c) {
                 auto [before, after] = optional_times(c);
                 for (auto [from, to] : {before, after})
@@ -2229,6 +2249,14 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                     }
             };
 
+            auto reset_elastic = [&]() {
+                fill(optional_height, 0_i);
+                fill(reachable, 0ull);
+                // Every bitset starts with only the empty subset reachable.
+                for (size_t k = 0; k < reachable.size(); k += knapsack_words)
+                    reachable[k] = 1ull;
+            };
+
             // What one time point supplies to the contained set: what the profile
             // leaves of the capacity, capped by what the tasks that could be here
             // are between them able to take — and, for (KAOC), by the largest total
@@ -2246,6 +2274,404 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                     return 0_i;
                 }
                 return cap;
+            };
+
+            // Which conflict, or which presence falsification, a certificate is
+            // for. The conflict's marker is the one the tests count per rung, and
+            // is unchanged; a falsification's names the task it is about.
+            auto overload_marker = [&](Integer a, Integer b, optional<size_t> absent, const std::string & rule) {
+                auto window = "window=[" + std::to_string(a.raw_value) + "," + std::to_string(b.raw_value) + ") rule=" + rule;
+                logger->emit_proof_comment(absent ? "cumulative overload presence task=" + std::to_string(*absent) + " " + window
+                                                  : "cumulative overload conflict " + window);
+            };
+
+            // The reason a falsified task's energy line is derived under: the
+            // inference's own, plus that task's presence. Under the
+            // PresenceByEnergyWrongTask mutation, some other optional task's.
+            auto reason_if_present = [&](const ReasonLiterals & reason, size_t i) -> ReasonLiterals {
+                auto about = i;
+                if (std::holds_alternative<cumulative_proof_mutation::PresenceByEnergyWrongTask>(mutation))
+                    for (auto k : active_tasks)
+                        if (k != i && presence[k]) {
+                            about = k;
+                            break;
+                        }
+                auto result = reason;
+                result.push_back(*presence[about] == 1_i);
+                return result;
+            };
+
+            // Which time points a window's certificate strengthens, and what the
+            // window then supplies: every point's elastic cap, less the knapsack's
+            // gain at the points the comparison cannot do without.
+            auto elastic_plan = [&](Integer a, Integer b, Integer required) -> pair<vector<Integer>, Integer> {
+                // What each time point supplies with and without the
+                // knapsack cap. The gap between them is what strengthening
+                // that point would buy the conflict, and it is worth
+                // knowing separately: the DP costs a layer of proof flags
+                // per reachable partial sum, so the certificate pays for it
+                // only where the contradiction cannot do without.
+                Integer elastic_total = 0_i;
+                vector<pair<Integer, Integer>> gain_at;
+                for (Integer t = a; t < b; ++t) {
+                    auto idx = static_cast<size_t>((t - t_lo).raw_value);
+                    auto uncapped = min(max(0_i, capacity - mand_load[idx]), optional_height[idx]);
+                    elastic_total += uncapped;
+                    if (auto gain = uncapped - elastic_supply_at(t); gain > 0_i)
+                        gain_at.emplace_back(gain, t);
+                }
+
+                // Biggest gains first, and stop as soon as the comparison
+                // tips: `strengthen` is then exactly the set of time points
+                // the conflict rests on, and every other one keeps the
+                // cheap line.
+                sort(gain_at, [](const auto & x, const auto & y) { return x.first > y.first; });
+                vector<Integer> strengthen;
+                auto supplied = elastic_total;
+                for (const auto & [gain, t] : gain_at) {
+                    if (required > supplied)
+                        break;
+                    supplied -= gain;
+                    strengthen.push_back(t);
+                }
+                return {move(strengthen), supplied};
+            };
+
+            // The (TTHE-OC) / (KAOC) certificate over [a, b). With `absent` set it
+            // is the same certificate for presence falsification: that task is
+            // counted as contained, all of its span an item, and its energy line
+            // is derived under the reason plus its presence, so what the pol
+            // refutes is "the reason holds and the task is present".
+            auto elastic_certificate = [&](const ReasonLiterals & reason, Integer a, Integer b, const vector<size_t> & inside_tasks,
+                                           const vector<Integer> & strengthen, Integer required, Integer supplied, optional<size_t> absent) -> void {
+                Integer pol_supply = 0_i, pol_required = 0_i;
+                if (! logger)
+                    return;
+                overload_marker(a, b, absent,
+                    std::string{strengthen.empty() ? "ttheoc" : "kaoc"} + " strengthened=" + std::to_string(strengthen.size()) + "/" +
+                        std::to_string((b - a).raw_value));
+                if (absent && std::holds_alternative<cumulative_proof_mutation::PresenceByEnergyEmitNothing>(mutation))
+                    return;
+                auto reason_j = absent ? reason_if_present(reason, *absent) : reason;
+
+                // Tests only: each of these breaks one step of what
+                // follows in a way that must make VeriPB reject.
+                // See CumulativeProofMutation.
+                auto claim_one_better = std::holds_alternative<cumulative_proof_mutation::ClaimOneBetterAvailability>(mutation);
+                auto strengthen_one_fewer = std::holds_alternative<cumulative_proof_mutation::StrengthenOneFewer>(mutation);
+                auto omit_capacity_line = std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation);
+
+                vector<bool> is_inside(starts.size(), false);
+                for (auto i : inside_tasks)
+                    is_inside[i] = true;
+
+                PolBuilder pol;
+
+                // One availability line per time point: the
+                // capacity row, with every compulsory contribution
+                // pinned off it and every term that is not a
+                // contained task's optional one weakened away, so
+                // that what is left is a statement about exactly
+                // the heights the knapsack reasons over.
+                for (Integer t = a; t < b; ++t) {
+                    if (omit_capacity_line && t == b - 1_i)
+                        continue;
+                    // Asked here rather than below the elastic
+                    // branch, which does not use the row: this is
+                    // also the test for whether the encoding says
+                    // anything about `t` at all, and moving it down
+                    // would let a time point with no row take that
+                    // branch where today it is skipped outright.
+                    // The cost of keeping it here is that a point
+                    // which then takes the elastic branch has paid
+                    // for a recovery it does not cite --- bounded,
+                    // since rows are cached per time point for the
+                    // whole constraint, and worth it against
+                    // changing behaviour on a branch no fixture
+                    // currently reaches.
+                    auto capacity_line = capacity_row(t);
+                    if (! capacity_line)
+                        continue;
+
+                    auto idx = static_cast<size_t>((t - t_lo).raw_value);
+                    auto left = max(0_i, capacity - mand_load[idx]);
+
+                    // Which of the contained tasks could be running
+                    // here without being obliged to. These are the
+                    // heights the cap is stated over, whichever way
+                    // it is derived.
+                    vector<SubsetSumItem> items;
+                    for (auto j : active_tasks) {
+                        if (t < per_task_t_lo[j] || t > per_task_t_hi[j] || ! is_inside[j])
+                            continue;
+                        auto lst = state.upper_bound(starts[j]), eet = state.lower_bound(starts[j]) + llb(j);
+                        if (is_present(j) && lst <= t && t < eet)
+                            continue;
+                        if (state.lower_bound(starts[j]) <= t && t < state.upper_bound(starts[j]) + llb(j))
+                            items.push_back(SubsetSumItem{hlb(j), active_flag(j, static_cast<size_t>((t - per_task_t_lo[j]).raw_value))});
+                    }
+
+                    // Where those heights do not add up to what the
+                    // profile leaves, the capacity row is not the
+                    // binding fact and citing it would supply the
+                    // window with resource nobody can take. The
+                    // binding fact is then each task's own literal
+                    // axiom, and their sum is the whole cap --- no
+                    // capacity row, no pins, and nothing for the
+                    // knapsack to improve on, since the entire set
+                    // already fits.
+                    //
+                    // This is the horizontally elastic cap, and
+                    // deriving it rather than only computing it is
+                    // what the first version got wrong: a fixture
+                    // where every task can be at every time point
+                    // never takes this branch, and every published
+                    // one is like that.
+                    if (optional_height[idx] <= left) {
+                        pol_supply += optional_height[idx];
+                        for (const auto & item : items)
+                            pol.add(! logger->names_and_ids_tracker().xliteral_for(std::get<ProofFlag>(item.term)), item.coefficient,
+                                logger->names_and_ids_tracker());
+                        continue;
+                    }
+
+                    // A variable height is in the row as the bits
+                    // of its contribution, not as `h·active`, so
+                    // what is done to a task's term here is done to
+                    // those bits. A pin already speaks about them
+                    // (pin_contributor). An item is converted back
+                    // to `lb(h)·active` by the same line the
+                    // energy set converts with, which is the
+                    // coefficient the item list states and the
+                    // energy lines are scaled by; and everything
+                    // else is weakened away a bit at a time.
+                    PolBuilder avail;
+                    avail.add(*capacity_line);
+                    for (auto j : active_tasks) {
+                        if (t < per_task_t_lo[j] || t > per_task_t_hi[j])
+                            continue;
+                        auto fi = static_cast<size_t>((t - per_task_t_lo[j]).raw_value);
+                        auto lst = state.upper_bound(starts[j]), eet = state.lower_bound(starts[j]) + llb(j);
+                        if (is_present(j) && lst <= t && t < eet) {
+                            auto [line, coeff] = pin_contributor(reason, j, t);
+                            avail.add(line, coeff);
+                        }
+                        else if (is_inside[j] && state.lower_bound(starts[j]) <= t && t < state.upper_bound(starts[j]) + llb(j)) {
+                            if (h_is_var(j))
+                                avail.add(guaranteed_contribution(reason, j, t));
+                        }
+                        else if (h_is_var(j))
+                            for (const auto & bit : contrib_bits(j, fi))
+                                avail.weaken(bit, logger->names_and_ids_tracker());
+                        else
+                            avail.weaken(active_flag(j, fi), logger->names_and_ids_tracker());
+                    }
+
+                    auto line = avail.emit(*logger, ProofLevel::Temporary);
+                    auto strengthen_here = find(strengthen, t) != strengthen.end();
+                    if (strengthen_one_fewer && ! strengthen.empty() && t == strengthen.front())
+                        strengthen_here = false;
+                    if (strengthen_here) {
+                        // The reason goes in: the availability
+                        // line was derived under it (its pins
+                        // carry the negated reason's literals
+                        // alongside their own terms), so a dead
+                        // state's "this prefix cannot be
+                        // completed" only holds where the reason
+                        // does, and every RUP inside the
+                        // strengthening has to say so too.
+                        auto strengthened = derive_subset_sum_strengthening(*logger, items, line, left, ProofLevel::Temporary, reason,
+                            claim_one_better ? SubsetSumMutation{subset_sum_mutation::ClaimOneBetter{}}
+                                             : SubsetSumMutation{subset_sum_mutation::None{}});
+                        if (! claim_one_better && strengthened.bound != elastic_supply_at(t))
+                            throw ProofError{"cumulative knapsack overload: the strengthening at time " + std::to_string(t.raw_value) + " reached " +
+                                std::to_string(strengthened.bound.raw_value) + ", not the " + std::to_string(elastic_supply_at(t).raw_value) +
+                                " the check counted on"};
+                        line = strengthened.line;
+                        pol_supply += strengthened.bound;
+                    }
+                    else
+                        pol_supply += left;
+                    pol.add(line);
+                }
+
+                // ... against each contained task's energy, with
+                // its compulsory times weakened back out of the
+                // sum: those time points charged the availability
+                // side instead, and counting them twice would leave
+                // the pol open.
+                //
+                // That weakening is what makes the pol *itself*
+                // contradictory, and it is deliberately kept even
+                // though it is not load-bearing: leaving it out
+                // still verifies, because the terms it would have
+                // cancelled are ones unit propagation assigns from
+                // the reason's own bound literals --- the same
+                // reason (TTOC)'s pins are usually droppable. So
+                // there is no mutation lane for this step; a
+                // corruption of it is accepted, and rightly.
+                for (auto i : inside_tasks) {
+                    // Over the task's *own* [est, lct), not over
+                    // the whole window. A contained task's span
+                    // sits inside the window either way, so the
+                    // bound is the same p_i --- but the sum's time
+                    // points then line up exactly with the ones the
+                    // availability lines charged for.
+                    //
+                    // Take the window instead and the pol is left
+                    // with a negative coefficient on every
+                    // (task, time) the task cannot reach: the
+                    // availability lines never mention those, and
+                    // nothing cancels them. Unit propagation
+                    // usually finishes it from the reason's bound
+                    // literals, which is why every fixture where
+                    // the tasks all span the window verifies
+                    // anyway, and why this only showed up on
+                    // generated instances.
+                    auto [i_est, i_lst] = state.bounds(starts[i]);
+                    auto energy_line = window_energy::derive_window_energy(*logger, absent == i ? reason_j : reason, lemma_task(i), i_est,
+                        i_lst + llb(i), state.bounds(starts[i]), ProofLevel::Temporary);
+                    if (! energy_line || energy_line->bound != llb(i))
+                        throw ProofError{"cumulative elastic overload: a contained task's window energy is not its whole length"};
+                    pol.add(energy_line->line, hlb(i));
+                    pol_required += hlb(i) * energy_line->bound;
+
+                    // A task being argued absent has no compulsory
+                    // part: nothing pinned it, and its whole span
+                    // was an item.
+                    if (absent == i)
+                        continue;
+                    auto lst = state.upper_bound(starts[i]), eet = state.lower_bound(starts[i]) + llb(i);
+                    for (Integer t = max(lst, a); t < min(eet, b); ++t) {
+                        pol.add(! logger->names_and_ids_tracker().xliteral_for(active_flag(i, static_cast<size_t>((t - per_task_t_lo[i]).raw_value))),
+                            hlb(i), logger->names_and_ids_tracker());
+                        pol_required -= hlb(i);
+                    }
+                }
+
+                // What the pol actually adds up to, against what
+                // the rule decided to fire on. The two are computed
+                // on opposite sides of the propagator --- one from
+                // the incremental per-time-point arrays, the other
+                // from the lines as they are emitted --- so they
+                // agree only if the certificate is charging the
+                // window for what the check counted. A mismatch is
+                // a proof VeriPB will reject, and it reads far
+                // better here than there. Off under a mutation,
+                // whose whole purpose is to make the two disagree.
+                if (std::holds_alternative<cumulative_proof_mutation::None>(mutation) && (pol_supply != supplied || pol_required != required))
+                    throw ProofError{"cumulative elastic overload: the pol says " + std::to_string(pol_required.raw_value) + " > " +
+                        std::to_string(pol_supply.raw_value) + " but the check said " + std::to_string(required.raw_value) + " > " +
+                        std::to_string(supplied.raw_value) + " over [" + std::to_string(a.raw_value) + "," + std::to_string(b.raw_value) + ")"};
+
+                pol.emit(*logger, ProofLevel::Temporary);
+            };
+
+            // The (i, t) pairs whose compulsory load (TTOC)'s proof pins: exactly
+            // what the window's outside profile counted.
+            auto profile_pins = [&](Integer a, Integer b, const vector<size_t> & inside_tasks) -> vector<pair<size_t, Integer>> {
+                vector<pair<size_t, Integer>> pins;
+                vector<bool> inside(starts.size(), false);
+                for (auto i : inside_tasks)
+                    inside[i] = true;
+                for (auto j : active_tasks) {
+                    // Exactly the tasks profile_within counted: mand_load
+                    // holds only those known present. Pinning any other
+                    // would claim load the arithmetic never used --- which
+                    // VeriPB would *accept*, since by this point the reason
+                    // context is contradictory and every RUP under it is
+                    // vacuously valid, so nothing downstream would notice.
+                    // That is exactly why it is written down here rather
+                    // than left to a test to catch.
+                    if (inside[j] || ! is_present(j))
+                        continue;
+                    auto lst = state.upper_bound(starts[j]);
+                    auto eet = state.lower_bound(starts[j]) + llb(j);
+                    for (Integer t = max(lst, a); t < min(eet, b); ++t)
+                        pins.emplace_back(j, t);
+                }
+                return pins;
+            };
+
+            // The (OC') / (TTOC) certificate over [a, b), and with `absent` set
+            // the same certificate for presence falsification, as for
+            // elastic_certificate above.
+            auto overload_certificate = [&](const ReasonLiterals & reason, Integer a, Integer b, const vector<size_t> & inside_tasks,
+                                            const vector<pair<size_t, Integer>> & pins, bool uses_profile, optional<size_t> absent) -> void {
+                if (! logger)
+                    return;
+                overload_marker(a, b, absent, uses_profile ? "ttoc" : "oc");
+                if (absent && std::holds_alternative<cumulative_proof_mutation::PresenceByEnergyEmitNothing>(mutation))
+                    return;
+                auto reason_j = absent ? reason_if_present(reason, *absent) : reason;
+
+                // Tests only: each of these breaks one step of what
+                // follows, and each must make VeriPB reject the
+                // proof. See CumulativeProofMutation.
+                auto omit_capacity_line = std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation);
+                auto shrink_lemma_window = std::holds_alternative<cumulative_proof_mutation::ShrinkLemmaWindow>(mutation);
+                auto overstate_energy = std::holds_alternative<cumulative_proof_mutation::OverstateWindowEnergy>(mutation);
+
+                // The capacity available across the window, plus
+                // each contained task's window energy scaled by its
+                // height, plus (for (TTOC)) the pinned compulsory
+                // load of the tasks outside it. Each contained
+                // task's activity terms cancel exactly against its
+                // terms in the capacity lines, leaving a constraint
+                // with nothing but negative coefficients on the
+                // left and a positive right hand side.
+                //
+                // The rows come from `capacity_row`, so under #780's
+                // recovering encoding the whole window is supplied from the
+                // start-checkpoint block. The cancellation is unaffected
+                // either way: a recovered row is the *same inequality* as
+                // the model's, over the same candidates at `t` and the same
+                // activity flags, so what a contained task cancels against
+                // does not depend on which of the two produced it. This is
+                // the first citer to want a row at every point of a window
+                // rather than at one, so it is where the recovery's
+                // per-point cost is first paid many times over --- but each
+                // row is derived once for the constraint and cached, so a
+                // second window overlapping the first pays nothing.
+                PolBuilder pol;
+                for (Integer t = a; t < b; ++t) {
+                    if (omit_capacity_line && t == b - 1_i)
+                        continue;
+                    if (auto line = capacity_row(t))
+                        pol.add(*line);
+                }
+
+                for (auto i : inside_tasks) {
+                    auto energy_line = window_energy::derive_window_energy(*logger, absent == i ? reason_j : reason, lemma_task(i), a,
+                        shrink_lemma_window ? b - 1_i : b, state.bounds(starts[i]), ProofLevel::Temporary);
+                    if (! energy_line) {
+                        // Only reachable under the shrunk-window
+                        // mutation, where a task can be left with
+                        // nothing derivable at all.
+                        if (shrink_lemma_window)
+                            continue;
+                        throw ProofError{"cumulative overload: a task in the window has no derivable energy"};
+                    }
+                    if (! shrink_lemma_window && energy_line->bound != llb(i))
+                        throw ProofError{"cumulative overload: window energy derivation is weaker than the check assumed"};
+
+                    auto line = energy_line->line;
+                    if (overstate_energy && i == inside_tasks.front()) {
+                        WPBSum activity;
+                        for (Integer t = energy_line->lo; t < energy_line->hi; ++t)
+                            activity += 1_i * active_flag(i, static_cast<size_t>((t - per_task_t_lo[i]).raw_value));
+                        line = logger->emit_rup_proof_line_under_reason(reason, move(activity) >= energy_line->bound + 1_i, ProofLevel::Temporary);
+                    }
+                    auto [contribution_line, coeff] = energy_contribution(reason, i, line, energy_line->lo, energy_line->hi);
+                    pol.add(contribution_line, coeff);
+                }
+
+                for (const auto & [j, t] : pins) {
+                    auto [line, coeff] = pin_contributor(reason, j, t);
+                    pol.add(line, coeff);
+                }
+
+                pol.emit(*logger, ProofLevel::Temporary);
             };
 
             // Whether edge-finding or not-first / not-last has moved a bound yet in
@@ -2647,256 +3073,11 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                     // wherever the cheaper rule was enough.
                     if (elastic_rules && ! pushed_in_sweep && ! inside_tasks.empty() && energy + outside_profile <= supply) {
                         auto required = energy - inside_mandatory;
-
-                        // What each time point supplies with and without the
-                        // knapsack cap. The gap between them is what strengthening
-                        // that point would buy the conflict, and it is worth
-                        // knowing separately: the DP costs a layer of proof flags
-                        // per reachable partial sum, so the certificate pays for it
-                        // only where the contradiction cannot do without.
-                        Integer elastic_total = 0_i;
-                        vector<pair<Integer, Integer>> gain_at;
-                        for (Integer t = a; t < b; ++t) {
-                            auto idx = static_cast<size_t>((t - t_lo).raw_value);
-                            auto uncapped = min(max(0_i, capacity - mand_load[idx]), optional_height[idx]);
-                            elastic_total += uncapped;
-                            if (auto gain = uncapped - elastic_supply_at(t); gain > 0_i)
-                                gain_at.emplace_back(gain, t);
-                        }
-
-                        // Biggest gains first, and stop as soon as the comparison
-                        // tips: `strengthen` is then exactly the set of time points
-                        // the conflict rests on, and every other one keeps the
-                        // cheap line.
-                        sort(gain_at, [](const auto & x, const auto & y) { return x.first > y.first; });
-                        vector<Integer> strengthen;
-                        auto supplied = elastic_total;
-                        for (const auto & [gain, t] : gain_at) {
-                            if (required > supplied)
-                                break;
-                            supplied -= gain;
-                            strengthen.push_back(t);
-                        }
+                        auto [strengthen, supplied] = elastic_plan(a, b, required);
 
                         if (required > supplied) {
                             auto justify = [&, a, b, inside_tasks, strengthen, required, supplied](const ReasonLiterals & reason) -> void {
-                                Integer pol_supply = 0_i, pol_required = 0_i;
-                                if (! logger)
-                                    return;
-                                logger->emit_proof_comment("cumulative overload conflict window=[" + std::to_string(a.raw_value) + "," +
-                                    std::to_string(b.raw_value) + ") rule=" + (strengthen.empty() ? "ttheoc" : "kaoc") +
-                                    " strengthened=" + std::to_string(strengthen.size()) + "/" + std::to_string((b - a).raw_value));
-
-                                // Tests only: each of these breaks one step of what
-                                // follows in a way that must make VeriPB reject.
-                                // See CumulativeProofMutation.
-                                auto claim_one_better = std::holds_alternative<cumulative_proof_mutation::ClaimOneBetterAvailability>(mutation);
-                                auto strengthen_one_fewer = std::holds_alternative<cumulative_proof_mutation::StrengthenOneFewer>(mutation);
-                                auto omit_capacity_line = std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation);
-
-                                vector<bool> is_inside(starts.size(), false);
-                                for (auto i : inside_tasks)
-                                    is_inside[i] = true;
-
-                                PolBuilder pol;
-
-                                // One availability line per time point: the
-                                // capacity row, with every compulsory contribution
-                                // pinned off it and every term that is not a
-                                // contained task's optional one weakened away, so
-                                // that what is left is a statement about exactly
-                                // the heights the knapsack reasons over.
-                                for (Integer t = a; t < b; ++t) {
-                                    if (omit_capacity_line && t == b - 1_i)
-                                        continue;
-                                    // Asked here rather than below the elastic
-                                    // branch, which does not use the row: this is
-                                    // also the test for whether the encoding says
-                                    // anything about `t` at all, and moving it down
-                                    // would let a time point with no row take that
-                                    // branch where today it is skipped outright.
-                                    // The cost of keeping it here is that a point
-                                    // which then takes the elastic branch has paid
-                                    // for a recovery it does not cite --- bounded,
-                                    // since rows are cached per time point for the
-                                    // whole constraint, and worth it against
-                                    // changing behaviour on a branch no fixture
-                                    // currently reaches.
-                                    auto capacity_line = capacity_row(t);
-                                    if (! capacity_line)
-                                        continue;
-
-                                    auto idx = static_cast<size_t>((t - t_lo).raw_value);
-                                    auto left = max(0_i, capacity - mand_load[idx]);
-
-                                    // Which of the contained tasks could be running
-                                    // here without being obliged to. These are the
-                                    // heights the cap is stated over, whichever way
-                                    // it is derived.
-                                    vector<SubsetSumItem> items;
-                                    for (auto j : active_tasks) {
-                                        if (t < per_task_t_lo[j] || t > per_task_t_hi[j] || ! is_inside[j])
-                                            continue;
-                                        auto lst = state.upper_bound(starts[j]), eet = state.lower_bound(starts[j]) + llb(j);
-                                        if (is_present(j) && lst <= t && t < eet)
-                                            continue;
-                                        if (state.lower_bound(starts[j]) <= t && t < state.upper_bound(starts[j]) + llb(j))
-                                            items.push_back(
-                                                SubsetSumItem{hlb(j), active_flag(j, static_cast<size_t>((t - per_task_t_lo[j]).raw_value))});
-                                    }
-
-                                    // Where those heights do not add up to what the
-                                    // profile leaves, the capacity row is not the
-                                    // binding fact and citing it would supply the
-                                    // window with resource nobody can take. The
-                                    // binding fact is then each task's own literal
-                                    // axiom, and their sum is the whole cap --- no
-                                    // capacity row, no pins, and nothing for the
-                                    // knapsack to improve on, since the entire set
-                                    // already fits.
-                                    //
-                                    // This is the horizontally elastic cap, and
-                                    // deriving it rather than only computing it is
-                                    // what the first version got wrong: a fixture
-                                    // where every task can be at every time point
-                                    // never takes this branch, and every published
-                                    // one is like that.
-                                    if (optional_height[idx] <= left) {
-                                        pol_supply += optional_height[idx];
-                                        for (const auto & item : items)
-                                            pol.add(! logger->names_and_ids_tracker().xliteral_for(std::get<ProofFlag>(item.term)), item.coefficient,
-                                                logger->names_and_ids_tracker());
-                                        continue;
-                                    }
-
-                                    // A variable height is in the row as the bits
-                                    // of its contribution, not as `h·active`, so
-                                    // what is done to a task's term here is done to
-                                    // those bits. A pin already speaks about them
-                                    // (pin_contributor). An item is converted back
-                                    // to `lb(h)·active` by the same line the
-                                    // energy set converts with, which is the
-                                    // coefficient the item list states and the
-                                    // energy lines are scaled by; and everything
-                                    // else is weakened away a bit at a time.
-                                    PolBuilder avail;
-                                    avail.add(*capacity_line);
-                                    for (auto j : active_tasks) {
-                                        if (t < per_task_t_lo[j] || t > per_task_t_hi[j])
-                                            continue;
-                                        auto fi = static_cast<size_t>((t - per_task_t_lo[j]).raw_value);
-                                        auto lst = state.upper_bound(starts[j]), eet = state.lower_bound(starts[j]) + llb(j);
-                                        if (is_present(j) && lst <= t && t < eet) {
-                                            auto [line, coeff] = pin_contributor(reason, j, t);
-                                            avail.add(line, coeff);
-                                        }
-                                        else if (is_inside[j] && state.lower_bound(starts[j]) <= t && t < state.upper_bound(starts[j]) + llb(j)) {
-                                            if (h_is_var(j))
-                                                avail.add(guaranteed_contribution(reason, j, t));
-                                        }
-                                        else if (h_is_var(j))
-                                            for (const auto & bit : contrib_bits(j, fi))
-                                                avail.weaken(bit, logger->names_and_ids_tracker());
-                                        else
-                                            avail.weaken(active_flag(j, fi), logger->names_and_ids_tracker());
-                                    }
-
-                                    auto line = avail.emit(*logger, ProofLevel::Temporary);
-                                    auto strengthen_here = find(strengthen, t) != strengthen.end();
-                                    if (strengthen_one_fewer && ! strengthen.empty() && t == strengthen.front())
-                                        strengthen_here = false;
-                                    if (strengthen_here) {
-                                        // The reason goes in: the availability
-                                        // line was derived under it (its pins
-                                        // carry the negated reason's literals
-                                        // alongside their own terms), so a dead
-                                        // state's "this prefix cannot be
-                                        // completed" only holds where the reason
-                                        // does, and every RUP inside the
-                                        // strengthening has to say so too.
-                                        auto strengthened = derive_subset_sum_strengthening(*logger, items, line, left, ProofLevel::Temporary, reason,
-                                            claim_one_better ? SubsetSumMutation{subset_sum_mutation::ClaimOneBetter{}}
-                                                             : SubsetSumMutation{subset_sum_mutation::None{}});
-                                        if (! claim_one_better && strengthened.bound != elastic_supply_at(t))
-                                            throw ProofError{"cumulative knapsack overload: the strengthening at time " +
-                                                std::to_string(t.raw_value) + " reached " + std::to_string(strengthened.bound.raw_value) +
-                                                ", not the " + std::to_string(elastic_supply_at(t).raw_value) + " the check counted on"};
-                                        line = strengthened.line;
-                                        pol_supply += strengthened.bound;
-                                    }
-                                    else
-                                        pol_supply += left;
-                                    pol.add(line);
-                                }
-
-                                // ... against each contained task's energy, with
-                                // its compulsory times weakened back out of the
-                                // sum: those time points charged the availability
-                                // side instead, and counting them twice would leave
-                                // the pol open.
-                                //
-                                // That weakening is what makes the pol *itself*
-                                // contradictory, and it is deliberately kept even
-                                // though it is not load-bearing: leaving it out
-                                // still verifies, because the terms it would have
-                                // cancelled are ones unit propagation assigns from
-                                // the reason's own bound literals --- the same
-                                // reason (TTOC)'s pins are usually droppable. So
-                                // there is no mutation lane for this step; a
-                                // corruption of it is accepted, and rightly.
-                                for (auto i : inside_tasks) {
-                                    // Over the task's *own* [est, lct), not over
-                                    // the whole window. A contained task's span
-                                    // sits inside the window either way, so the
-                                    // bound is the same p_i --- but the sum's time
-                                    // points then line up exactly with the ones the
-                                    // availability lines charged for.
-                                    //
-                                    // Take the window instead and the pol is left
-                                    // with a negative coefficient on every
-                                    // (task, time) the task cannot reach: the
-                                    // availability lines never mention those, and
-                                    // nothing cancels them. Unit propagation
-                                    // usually finishes it from the reason's bound
-                                    // literals, which is why every fixture where
-                                    // the tasks all span the window verifies
-                                    // anyway, and why this only showed up on
-                                    // generated instances.
-                                    auto [i_est, i_lst] = state.bounds(starts[i]);
-                                    auto energy_line = window_energy::derive_window_energy(
-                                        *logger, reason, lemma_task(i), i_est, i_lst + llb(i), state.bounds(starts[i]), ProofLevel::Temporary);
-                                    if (! energy_line || energy_line->bound != llb(i))
-                                        throw ProofError{"cumulative elastic overload: a contained task's window energy is not its whole length"};
-                                    pol.add(energy_line->line, hlb(i));
-                                    pol_required += hlb(i) * energy_line->bound;
-
-                                    auto lst = state.upper_bound(starts[i]), eet = state.lower_bound(starts[i]) + llb(i);
-                                    for (Integer t = max(lst, a); t < min(eet, b); ++t) {
-                                        pol.add(! logger->names_and_ids_tracker().xliteral_for(
-                                                    active_flag(i, static_cast<size_t>((t - per_task_t_lo[i]).raw_value))),
-                                            hlb(i), logger->names_and_ids_tracker());
-                                        pol_required -= hlb(i);
-                                    }
-                                }
-
-                                // What the pol actually adds up to, against what
-                                // the rule decided to fire on. The two are computed
-                                // on opposite sides of the propagator --- one from
-                                // the incremental per-time-point arrays, the other
-                                // from the lines as they are emitted --- so they
-                                // agree only if the certificate is charging the
-                                // window for what the check counted. A mismatch is
-                                // a proof VeriPB will reject, and it reads far
-                                // better here than there. Off under a mutation,
-                                // whose whole purpose is to make the two disagree.
-                                if (std::holds_alternative<cumulative_proof_mutation::None>(mutation) &&
-                                    (pol_supply != supplied || pol_required != required))
-                                    throw ProofError{"cumulative elastic overload: the pol says " + std::to_string(pol_required.raw_value) + " > " +
-                                        std::to_string(pol_supply.raw_value) + " but the check said " + std::to_string(required.raw_value) + " > " +
-                                        std::to_string(supplied.raw_value) + " over [" + std::to_string(a.raw_value) + "," +
-                                        std::to_string(b.raw_value) + ")"};
-
-                                pol.emit(*logger, ProofLevel::Temporary);
+                                elastic_certificate(reason, a, b, inside_tasks, strengthen, required, supplied, nullopt);
                             };
 
                             inference.contradiction(
@@ -2914,103 +3095,10 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
 
                     // The (i, t) pairs whose compulsory load the proof
                     // pins: exactly what outside_profile counted.
-                    vector<pair<size_t, Integer>> pins;
-                    if (uses_profile) {
-                        vector<bool> inside(starts.size(), false);
-                        for (auto i : inside_tasks)
-                            inside[i] = true;
-                        for (auto j : active_tasks) {
-                            // Exactly the tasks profile_within counted: mand_load
-                            // holds only those known present. Pinning any other
-                            // would claim load the arithmetic never used --- which
-                            // VeriPB would *accept*, since by this point the reason
-                            // context is contradictory and every RUP under it is
-                            // vacuously valid, so nothing downstream would notice.
-                            // That is exactly why it is written down here rather
-                            // than left to a test to catch.
-                            if (inside[j] || ! is_present(j))
-                                continue;
-                            auto lst = state.upper_bound(starts[j]);
-                            auto eet = state.lower_bound(starts[j]) + llb(j);
-                            for (Integer t = max(lst, a); t < min(eet, b); ++t)
-                                pins.emplace_back(j, t);
-                        }
-                    }
+                    auto pins = uses_profile ? profile_pins(a, b, inside_tasks) : vector<pair<size_t, Integer>>{};
 
                     auto justify = [&, a, b, inside_tasks, pins, uses_profile](const ReasonLiterals & reason) -> void {
-                        if (! logger)
-                            return;
-                        logger->emit_proof_comment("cumulative overload conflict window=[" + std::to_string(a.raw_value) + "," +
-                            std::to_string(b.raw_value) + ") rule=" + (uses_profile ? "ttoc" : "oc"));
-
-                        // Tests only: each of these breaks one step of what
-                        // follows, and each must make VeriPB reject the
-                        // proof. See CumulativeProofMutation.
-                        auto omit_capacity_line = std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation);
-                        auto shrink_lemma_window = std::holds_alternative<cumulative_proof_mutation::ShrinkLemmaWindow>(mutation);
-                        auto overstate_energy = std::holds_alternative<cumulative_proof_mutation::OverstateWindowEnergy>(mutation);
-
-                        // The capacity available across the window, plus
-                        // each contained task's window energy scaled by its
-                        // height, plus (for (TTOC)) the pinned compulsory
-                        // load of the tasks outside it. Each contained
-                        // task's activity terms cancel exactly against its
-                        // terms in the capacity lines, leaving a constraint
-                        // with nothing but negative coefficients on the
-                        // left and a positive right hand side.
-                        //
-                        // The rows come from `capacity_row`, so under #780's
-                        // recovering encoding the whole window is supplied from the
-                        // start-checkpoint block. The cancellation is unaffected
-                        // either way: a recovered row is the *same inequality* as
-                        // the model's, over the same candidates at `t` and the same
-                        // activity flags, so what a contained task cancels against
-                        // does not depend on which of the two produced it. This is
-                        // the first citer to want a row at every point of a window
-                        // rather than at one, so it is where the recovery's
-                        // per-point cost is first paid many times over --- but each
-                        // row is derived once for the constraint and cached, so a
-                        // second window overlapping the first pays nothing.
-                        PolBuilder pol;
-                        for (Integer t = a; t < b; ++t) {
-                            if (omit_capacity_line && t == b - 1_i)
-                                continue;
-                            if (auto line = capacity_row(t))
-                                pol.add(*line);
-                        }
-
-                        for (auto i : inside_tasks) {
-                            auto energy_line = window_energy::derive_window_energy(
-                                *logger, reason, lemma_task(i), a, shrink_lemma_window ? b - 1_i : b, state.bounds(starts[i]), ProofLevel::Temporary);
-                            if (! energy_line) {
-                                // Only reachable under the shrunk-window
-                                // mutation, where a task can be left with
-                                // nothing derivable at all.
-                                if (shrink_lemma_window)
-                                    continue;
-                                throw ProofError{"cumulative overload: a task in the window has no derivable energy"};
-                            }
-                            if (! shrink_lemma_window && energy_line->bound != llb(i))
-                                throw ProofError{"cumulative overload: window energy derivation is weaker than the check assumed"};
-
-                            auto line = energy_line->line;
-                            if (overstate_energy && i == inside_tasks.front()) {
-                                WPBSum activity;
-                                for (Integer t = energy_line->lo; t < energy_line->hi; ++t)
-                                    activity += 1_i * active_flag(i, static_cast<size_t>((t - per_task_t_lo[i]).raw_value));
-                                line = logger->emit_rup_proof_line_under_reason(
-                                    reason, move(activity) >= energy_line->bound + 1_i, ProofLevel::Temporary);
-                            }
-                            auto [contribution_line, coeff] = energy_contribution(reason, i, line, energy_line->lo, energy_line->hi);
-                            pol.add(contribution_line, coeff);
-                        }
-
-                        for (const auto & [j, t] : pins) {
-                            auto [line, coeff] = pin_contributor(reason, j, t);
-                            pol.add(line, coeff);
-                        }
-
-                        pol.emit(*logger, ProofLevel::Temporary);
+                        overload_certificate(reason, a, b, inside_tasks, pins, uses_profile, nullopt);
                     };
 
                     ++cumulative_counters[rule_overload].contradictions;
@@ -3019,6 +3107,127 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                     return PropagatorState::DisableUntilBacktrack;
                 }
             }
+
+            // Presence falsification by energy (#550): the same ladder, asked of an
+            // optional task whose presence is undecided. If putting it in a window
+            // with the known-present tasks there overloads that window, by any rung
+            // that is on, it cannot be present. The certificate is the conflict's,
+            // with the task counted as contained and its energy line derived under
+            // its presence as well as the reason, so what it refutes is "the
+            // reason holds and the task is present", and the wrapping RUP then
+            // concludes the task is absent.
+            //
+            // The task is counted as optional throughout its span, never as having
+            // a compulsory part, because nothing pins it: its presence is exactly
+            // what is in doubt. For the elastic cap that changes nothing (a
+            // compulsory part charged to the required side and one charged to the
+            // profile rearrange into the same comparison); for the knapsack it is
+            // at worst weaker, since the task's height then competes inside the
+            // subset sums rather than coming off the capacity first.
+            //
+            // The windows tried are those containing the task, with ends at its own
+            // est and lct as well as the present tasks'. Not after a push in this
+            // sweep, for the reason the elastic rules are not: the candidates'
+            // bounds would be stale.
+            // Its own function for the reason the phases are, and only
+            // called when there is an undecided optional task to try.
+            auto falsify_by_energy = [&] GCS_CUMULATIVE_PHASE() -> void {
+                auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PresenceByEnergyOneTooFar>(mutation);
+                auto margin = one_too_far ? 1_i : 0_i;
+                for (auto j : overload_tasks) {
+                    if (! presence[j] || is_present(j) || is_absent(j) || llb(j) <= 0_i || hlb(j) <= 0_i)
+                        continue;
+                    ++cumulative_counters[rule_overload_presence].calls;
+                    auto [j_lo, j_hi] = state.bounds(starts[j]);
+                    auto j_est = j_lo, j_lct = j_hi + llb(j), j_energy = llb(j) * hlb(j);
+
+                    vector<Integer> firsts{j_est};
+                    for (auto a : window_starts)
+                        if (a < j_est)
+                            firsts.push_back(a);
+                    sort(firsts);
+                    firsts.erase(unique(firsts.begin(), firsts.end()), firsts.end());
+
+                    auto fired = false;
+                    for (auto a_it = firsts.rbegin(); a_it != firsts.rend() && ! fired; ++a_it) {
+                        auto a = *a_it;
+                        if (elastic_rules) {
+                            reset_elastic();
+                            join_times(j_est, j_lct, hlb(j));
+                        }
+
+                        Integer energy = 0_i, inside_mandatory = 0_i;
+                        vector<size_t> inside_tasks;
+
+                        // Whether [a, b) overloads with the task in it, and if so
+                        // the inference. The task goes last in the contained set,
+                        // so that a mutation aimed at the first contained task
+                        // still hits a task the window really holds.
+                        auto try_window = [&](Integer b) -> bool {
+                            auto contained = inside_tasks;
+                            contained.push_back(j);
+                            auto supply = capacity * slots_within(a, b);
+                            auto window_profile = profile_within(a, b) - inside_mandatory;
+                            auto outside_profile = rules.profile_overload ? window_profile : 0_i;
+
+                            if (energy + j_energy + outside_profile + margin > supply) {
+                                auto uses_profile = energy + j_energy + margin <= supply;
+                                auto pins = uses_profile ? profile_pins(a, b, contained) : vector<pair<size_t, Integer>>{};
+                                auto justify = [&, a, b, contained, pins, uses_profile, j](const ReasonLiterals & reason) -> void {
+                                    if (logger)
+                                        overload_certificate(reason, a, b, contained, pins, uses_profile, j);
+                                };
+                                ++cumulative_counters[rule_overload_presence].firings;
+                                inference.infer_equal(logger, *presence[j], 0_i,
+                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, reason_with_presence());
+                                return true;
+                            }
+
+                            if (elastic_rules) {
+                                auto required = energy - inside_mandatory + j_energy;
+                                auto [strengthen, supplied] = elastic_plan(a, b, required + margin);
+                                if (required + margin > supplied) {
+                                    auto justify = [&, a, b, contained, strengthen, required, supplied, j](const ReasonLiterals & reason) -> void {
+                                        if (logger)
+                                            elastic_certificate(reason, a, b, contained, strengthen, required, supplied, j);
+                                    };
+                                    ++cumulative_counters[rule_overload_presence].firings;
+                                    inference.infer_equal(logger, *presence[j], 0_i,
+                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, reason_with_presence());
+                                    return true;
+                                }
+                            }
+                            return false;
+                        };
+
+                        auto tried_own_end = false;
+                        for (const auto & c : candidates) {
+                            if (! tried_own_end && c.lct > j_lct) {
+                                tried_own_end = true;
+                                if (try_window(j_lct)) {
+                                    fired = true;
+                                    break;
+                                }
+                            }
+                            if (c.est < a)
+                                continue;
+                            energy += c.energy;
+                            inside_mandatory += c.mandatory;
+                            inside_tasks.push_back(c.task);
+                            if (elastic_rules)
+                                join_elastic(c);
+                            if (c.lct >= j_lct && try_window(c.lct)) {
+                                fired = true;
+                                break;
+                            }
+                        }
+                        if (! fired && ! tried_own_end)
+                            fired = try_window(j_lct);
+                    }
+                }
+            };
+            if (! pushed_in_sweep && std::ranges::any_of(overload_tasks, [&](size_t j) { return presence[j] && ! is_present(j) && ! is_absent(j); }))
+                falsify_by_energy();
         }
         return nullopt;
     };

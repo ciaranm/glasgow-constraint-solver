@@ -513,6 +513,19 @@ if(GCS_BUILD_TESTS)
                     --mutate=${mutation} --fixture=${fixture})
         endforeach()
     endforeach()
+    # Presence falsification by energy (#550). Each lane runs on a fixture where
+    # its corruption is load-bearing, since on most the model's rows let unit
+    # propagation re-derive what was dropped: see presence_mutation_fixtures.
+    foreach(lane mutation_oc:presence_emit_nothing mutation_kaoc:presence_emit_nothing mutation_ttheoc:presence_emit_nothing
+            mutation_ttheoc:presence_wrong_task mutation_ttoc:presence_wrong_task exact_fit:presence_one_too_far)
+        string(REPLACE ":" ";" parts ${lane})
+        list(GET parts 0 fixture)
+        list(GET parts 1 mutation)
+        add_cumulative_test(cumulative_kaoc_mutation_${fixture}_${mutation}
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                --basename cumulative_kaoc_mutation_${fixture}_${mutation} $<TARGET_FILE:cumulative_kaoc_test>
+                --mutate=${mutation} --fixture=${fixture})
+    endforeach()
     foreach(mutation toofar drop roomy_toofar)
         add_cumulative_test(cumulative_nfnl_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash

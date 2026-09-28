@@ -991,8 +991,56 @@ eligibility resolved once in `prepare_cumulative_overload_check` is
 unchanged --- it cannot know a runtime presence, so the filtering belongs
 at the point of use.
 
-Falsifying a presence *by* an energy argument, rather than by the
-profile, is issue 09's extension and is not here.
+### Presence falsification by energy (#550)
+
+Falsifying a presence *by* an energy argument, rather than by the profile, is
+the overload ladder asked a different question: not "does this window
+overload?" but "would it, if this undecided task were in it?". If the
+known-present tasks a window contains, plus the undecided task, overload it by
+any rung that is on, the task cannot be present. It rides each rung's own
+switch: (OC') and (TTOC) whenever `overload` is on, which is the default, and
+(TTHE-OC) and (KAOC) under theirs.
+
+**The certificate is the conflict's.** The task is counted as contained, and its
+window-energy line is derived under the reason *plus its presence literal*, so
+that line carries `~present_j` beside the reason's negations. Everything else
+is exactly the conflict certificate, so the sum refutes "the reason holds and
+the task is present", and the wrapping RUP concludes the task is absent. With no
+task being argued absent, the two certificates are the same code, and the
+conflict proofs are byte-identical to before (252 proofs over the cumulative
+test binaries at a pinned seed).
+
+**The task is optional over its whole span, never compulsory.** Nothing pins it,
+since its presence is what is in doubt, so none of its load goes on the profile
+and all of its span is an item. For the elastic cap that changes nothing: a
+compulsory part charged to the required side and one charged to the profile
+rearrange into the same comparison. For the knapsack it is at worst weaker,
+because the task's height then competes inside the subset sums rather than
+coming off the capacity first.
+
+**Detection.** After the window sweep, and only if nothing in it pushed a bound
+(the candidates' bounds would be stale, the same reason the elastic rungs stand
+down), each undecided task tries the windows that contain it. Their ends are the
+present tasks' ests and lcts plus the task's own. That is `O(n^2)` per
+undecided task for (OC') and (TTOC), and the elastic arrays are rebuilt per
+window start. A task that is not optional costs nothing.
+
+**What the mutations can and cannot see.** Leaving the certificate out is
+rejected on about two thirds of 447 random falsifications, and accepted on the
+rest, where unit propagation over the model finds the conflict unaided.
+Pointing the task's energy line at *another* optional task's presence
+(`PresenceByEnergyWrongTask`) is rejected on only three of them, because the
+model's rows let unit propagation re-derive the task's activity once it is
+assumed present. That is the same finding that retired the time-table
+falsification's own WrongTask lane when the start-checkpoint encoding shipped.
+So the lanes run on fixtures a survey found where each corruption is
+load-bearing: `cumulative_kaoc_mutation_mutation_{oc,kaoc,ttheoc}_presence_emit_nothing`,
+`..._{ttheoc,ttoc}_presence_wrong_task`, and
+`cumulative_kaoc_mutation_exact_fit_presence_one_too_far`. The last fires
+where the task fits exactly and claims it absent anyway. The per-rung fixtures
+(`presence_{oc,ttoc,ttheoc,kaoc,kaoc_varh}` in `cumulative_kaoc_test`) could
+not serve as mutation fixtures. Each has a fixed-start optional task, whose
+activity unit propagation settles outright.
 
 ### Deriving over a donor that is not all constants
 

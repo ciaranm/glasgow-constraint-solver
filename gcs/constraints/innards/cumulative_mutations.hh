@@ -173,6 +173,32 @@ namespace gcs::innards
         struct RecoverFromWrongCheckpoint
         {
         };
+
+        /// Presence falsification by energy (#550): emit only the marker,
+        /// leaving the conclusion to the framework's wrapping RUP. Not a
+        /// corruption but a control: if VeriPB accepts this, the window
+        /// certificate is decoration.
+        struct PresenceByEnergyEmitNothing
+        {
+        };
+
+        /// Presence falsification by energy: derive the falsified task's energy
+        /// line under some other optional task's presence rather than its own,
+        /// so the certificate argues about a task nothing has cornered. Like
+        /// \ref cumulative_presence_mutation::WrongTask, this corrupts what
+        /// the derivation is about rather than the route to it, which is what
+        /// a conflict-shaped rule needs.
+        struct PresenceByEnergyWrongTask
+        {
+        };
+
+        /// Presence falsification by energy: fire where the window has exactly
+        /// enough room for the task, not one unit too little, and claim it
+        /// absent anyway. Corrupts the conclusion, so it changes the inference
+        /// as well as the proof.
+        struct PresenceByEnergyOneTooFar
+        {
+        };
     }
 
     using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
@@ -180,7 +206,9 @@ namespace gcs::innards
         cumulative_proof_mutation::PushOneTooFar, cumulative_proof_mutation::DropProfilePin, cumulative_proof_mutation::DropProfilePins,
         cumulative_proof_mutation::ClaimOneBetterAvailability, cumulative_proof_mutation::StrengthenOneFewer,
         cumulative_proof_mutation::DropEnergeticContributor, cumulative_proof_mutation::PublishedEmitNothing,
-        cumulative_proof_mutation::DropPublishedPin, cumulative_proof_mutation::RecoverFromWrongCheckpoint>;
+        cumulative_proof_mutation::DropPublishedPin, cumulative_proof_mutation::RecoverFromWrongCheckpoint,
+        cumulative_proof_mutation::PresenceByEnergyEmitNothing, cumulative_proof_mutation::PresenceByEnergyWrongTask,
+        cumulative_proof_mutation::PresenceByEnergyOneTooFar>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,

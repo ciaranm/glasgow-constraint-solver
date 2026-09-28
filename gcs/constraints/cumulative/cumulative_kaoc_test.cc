@@ -54,7 +54,9 @@ namespace
 {
     // Lengths and the capacity are constants. A height is a constant too
     // unless `height_ranges` gives it a range of more than one value, in which
-    // case it is posted as a variable and enumerated alongside the starts.
+    // case it is posted as a variable and enumerated alongside the starts. A
+    // task flagged in `optional` gets a {0, 1} presence variable, enumerated
+    // after the heights.
     struct Instance
     {
         vector<pair<int, int>> start_ranges;
@@ -62,7 +64,21 @@ namespace
         vector<int> heights;
         int capacity;
         vector<pair<int, int>> height_ranges = {};
+        vector<int> optional = {};
     };
+
+    auto is_optional(const Instance & inst, size_t i) -> bool
+    {
+        return ! inst.optional.empty() && inst.optional[i];
+    }
+
+    auto has_optional_tasks(const Instance & inst) -> bool
+    {
+        for (size_t i = 0; i < inst.optional.size(); ++i)
+            if (inst.optional[i])
+                return true;
+        return false;
+    }
 
     auto height_range(const Instance & inst, size_t i) -> pair<int, int>
     {
@@ -77,28 +93,34 @@ namespace
         return false;
     }
 
-    // What gets enumerated: the starts, then each variable height.
+    // What gets enumerated: the starts, then each variable height, then each
+    // presence.
     auto all_ranges(const Instance & inst) -> vector<pair<int, int>>
     {
         auto ranges = inst.start_ranges;
         for (size_t i = 0; i < inst.start_ranges.size(); ++i)
             if (auto [lo, hi] = height_range(inst, i); lo != hi)
                 ranges.emplace_back(lo, hi);
+        for (size_t i = 0; i < inst.start_ranges.size(); ++i)
+            if (is_optional(inst, i))
+                ranges.emplace_back(0, 1);
         return ranges;
     }
 
     auto is_satisfying(const Instance & inst, const vector<int> & values) -> bool
     {
         auto n = inst.start_ranges.size();
-        vector<int> heights;
+        vector<int> heights, present;
         size_t next = n;
         for (size_t i = 0; i < n; ++i) {
             auto [lo, hi] = height_range(inst, i);
             heights.push_back(lo == hi ? lo : values[next++]);
         }
+        for (size_t i = 0; i < n; ++i)
+            present.push_back(is_optional(inst, i) ? values[next++] : 1);
         int t_lo = INT_MAX, t_hi = INT_MIN;
         for (size_t i = 0; i < n; ++i) {
-            if (inst.lengths[i] == 0 || heights[i] == 0)
+            if (inst.lengths[i] == 0 || heights[i] == 0 || ! present[i])
                 continue;
             t_lo = min(t_lo, values[i]);
             t_hi = max(t_hi, values[i] + inst.lengths[i] - 1);
@@ -106,7 +128,7 @@ namespace
         for (int t = t_lo; t <= t_hi; ++t) {
             int load = 0;
             for (size_t i = 0; i < n; ++i)
-                if (values[i] <= t && t < values[i] + inst.lengths[i])
+                if (present[i] && values[i] <= t && t < values[i] + inst.lengths[i])
                     load += heights[i];
             if (load > inst.capacity)
                 return false;
@@ -126,7 +148,7 @@ namespace
         for (auto & [lo, hi] : inst.start_ranges)
             starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
 
-        if (! has_variable_heights(inst)) {
+        if (! has_variable_heights(inst) && ! has_optional_tasks(inst)) {
             vector<Integer> lengths, heights;
             for (auto l : inst.lengths)
                 lengths.push_back(Integer{l});
@@ -148,7 +170,21 @@ namespace
                 all.push_back(heights.back());
             }
         }
-        p.post(Cumulative{starts, lengths, heights, constant_variable(Integer{inst.capacity})}.with_rules(rules).with_proof_mutation(the_mutation));
+        if (! has_optional_tasks(inst)) {
+            p.post(
+                Cumulative{starts, lengths, heights, constant_variable(Integer{inst.capacity})}.with_rules(rules).with_proof_mutation(the_mutation));
+            return all;
+        }
+        vector<IntegerVariableID> presences;
+        for (size_t i = 0; i < inst.start_ranges.size(); ++i)
+            if (is_optional(inst, i)) {
+                presences.push_back(p.create_integer_variable(0_i, 1_i));
+                all.push_back(presences.back());
+            }
+            else
+                presences.push_back(constant_variable(1_i));
+        p.post(Cumulative{starts, lengths, heights, presences, constant_variable(Integer{inst.capacity})}.with_rules(rules).with_proof_mutation(
+            the_mutation));
         return all;
     }
 
@@ -159,6 +195,13 @@ namespace
     struct MarkerCounts
     {
         size_t oc = 0, ttoc = 0, ttheoc = 0, kaoc = 0;
+        // Presence falsifications by energy (#550), by the rung that made them.
+        size_t presence_oc = 0, presence_ttoc = 0, presence_ttheoc = 0, presence_kaoc = 0;
+
+        [[nodiscard]] auto presence_total() const -> size_t
+        {
+            return presence_oc + presence_ttoc + presence_ttheoc + presence_kaoc;
+        }
 
         [[nodiscard]] auto total() const -> size_t
         {
@@ -176,6 +219,17 @@ namespace
         }
         string line;
         while (getline(proof, line)) {
+            if (line.find("cumulative overload presence") != string::npos) {
+                if (line.find("rule=ttheoc") != string::npos)
+                    ++counts.presence_ttheoc;
+                else if (line.find("rule=kaoc") != string::npos)
+                    ++counts.presence_kaoc;
+                else if (line.find("rule=ttoc") != string::npos)
+                    ++counts.presence_ttoc;
+                else if (line.find("rule=oc") != string::npos)
+                    ++counts.presence_oc;
+                continue;
+            }
             if (line.find("cumulative overload conflict") == string::npos)
                 continue;
             if (line.find("rule=ttheoc") != string::npos)
@@ -341,6 +395,146 @@ namespace
         if (probe.markers.ttheoc == 0)
             fail(what + ": refuted, but no conflict carried the ttheoc marker");
     }
+
+    // What root propagation did to each optional task's presence, in the order
+    // the instance lists the tasks. An upper bound of zero is a falsification.
+    struct PresenceProbe
+    {
+        bool refuted = false;
+        vector<Integer> presence_ub;
+        MarkerCounts markers;
+
+        [[nodiscard]] auto falsified(size_t k = 0) const -> bool
+        {
+            return k < presence_ub.size() && presence_ub[k] == 0_i;
+        }
+    };
+
+    // `keep_proof` leaves the proof for a mutation lane's wrapper to check,
+    // rather than verifying it here.
+    auto probe_presence(const Instance & inst, CumulativeRules rules, const optional<string> & proof_name, bool keep_proof = false) -> PresenceProbe
+    {
+        Problem p;
+        auto vars = post(p, inst, rules);
+        size_t optional_count = 0;
+        for (size_t i = 0; i < inst.start_ranges.size(); ++i)
+            if (is_optional(inst, i))
+                ++optional_count;
+        vector<IntegerVariableID> presences(vars.end() - static_cast<long>(optional_count), vars.end());
+
+        PresenceProbe probe;
+        bool reached_a_node = false, found_a_solution = false;
+        solve_with(p,
+            SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                               found_a_solution = true;
+                               return false;
+                           },
+                .trace = [&](const CurrentState & state) -> bool {
+                    for (const auto & v : presences)
+                        probe.presence_ub.push_back(state.upper_bound(v));
+                    reached_a_node = true;
+                    return false;
+                }},
+            proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+        probe.refuted = ! reached_a_node && ! found_a_solution;
+
+        if (proof_name) {
+            probe.markers = count_markers(*proof_name);
+            if (! keep_proof)
+                verify_proof_and_clean_up(*proof_name);
+        }
+        return probe;
+    }
+
+    // A fixture with one optional task, on which `rules` falsifies its presence
+    // at the root by energy, and neither time-tabling alone nor `below` does.
+    // The optional task is absent from every solution, so the falsification is
+    // sound; the instance has solutions, so it is not a conflict fixture.
+    auto check_presence_rung(const string & what, const Instance & inst, CumulativeRules rules, CumulativeRules below, size_t MarkerCounts::* rung)
+        -> void
+    {
+        println(cerr, "cumulative kaoc {}: presence falsification by energy", what);
+
+        set<vector<int>> solutions;
+        build_expected(solutions, [&](const vector<int> & values) { return is_satisfying(inst, values); }, all_ranges(inst));
+        if (solutions.empty())
+            fail(what + ": the fixture has no solutions, so it tests a conflict rather than a falsification");
+        for (const auto & solution : solutions)
+            if (solution.back() != 0)
+                fail(what + ": a solution has the optional task present, so falsifying it would be a soundness bug");
+
+        if (probe_presence(inst, CumulativeRules{.overload = false}, nullopt).falsified())
+            fail(what + ": time-tabling alone falsifies it, so the energy argument is not needed");
+        if (probe_presence(inst, below, nullopt).falsified())
+            fail(what + ": the rung below already falsifies it, so it is not a differential");
+
+        auto probe = probe_presence(inst, rules, make_optional("cumulative_kaoc_" + what));
+        if (probe.refuted)
+            fail(what + ": refuted at the root, where it has solutions");
+        if (! probe.falsified())
+            fail(what + ": the optional task's presence was not falsified at the root");
+        if (probe.markers.*rung == 0)
+            fail(what + ": falsified, but not by the rung the fixture is for");
+
+        check_enumeration(what + " enumeration", inst, rules, make_optional("cumulative_kaoc_" + what + "_enumeration"));
+    }
+
+    // Presence falsification by energy (#550): one fixture per rung, each with
+    // one optional task, found by a random search for root differentials where
+    // time-tabling's own falsification does not reach. Each is exactly one
+    // unit over; its twin, one unit of capacity better off, must not fire.
+    //
+    // (OC'): the optional task would fill [0, 3) at height 4, and the height-4
+    // unit task must run somewhere in [0, 3) too: 16 units in a window of 15.
+    // It has no compulsory part, so time-tabling sees nothing.
+    const Instance presence_oc{{{0, 0}, {0, 2}, {1, 3}}, {3, 1, 1}, {4, 4, 2}, 5, {}, {1, 0, 0}};
+    // (TTOC): over [3, 8) the optional task and the height-5 one carry 34
+    // units against 35, and the fixed task's compulsory part at 3 and 4, which
+    // the window does not contain, adds the other two.
+    const Instance presence_ttoc{{{3, 4}, {3, 5}, {1, 1}}, {4, 2, 4}, {6, 5, 1}, 7, {}, {1, 0, 0}};
+    const Instance presence_ttheoc{{{1, 1}, {2, 3}, {0, 1}}, {3, 1, 3}, {4, 4, 1}, 6, {}, {1, 0, 0}};
+    const Instance presence_kaoc{{{3, 3}, {0, 1}, {1, 4}}, {4, 2, 3}, {2, 1, 2}, 3, {}, {1, 0, 0}};
+    // The optional task's height is a variable here, so its items are
+    // converted as well as its energy.
+    const Instance presence_kaoc_varh{{{1, 3}, {1, 1}, {2, 5}}, {2, 4, 3}, {2, 2, 1}, 3, {{2, 3}, {2, 3}, {1, 1}}, {0, 1, 0}};
+
+    auto with_capacity(Instance inst, int capacity) -> Instance
+    {
+        inst.capacity = capacity;
+        return inst;
+    }
+
+    // The mutation lanes' fixtures. The ones above do not serve: each of their
+    // optional tasks has a fixed start, so once it is assumed present unit
+    // propagation over the model fixes every one of its activity flags, and
+    // neither the certificate nor its presence literal is ever needed. So these
+    // were found by surveying 447 random falsifications, each with an optional
+    // task whose start has room to move. Leaving the certificate out was
+    // rejected on about two thirds of them; pointing the falsified task's
+    // energy line at another task's presence on only three, which is the same
+    // finding that retired the time-table falsification's WrongTask lane. The
+    // last task of each is a far-off optional bystander, which is what
+    // PresenceByEnergyWrongTask points at.
+    struct PresenceMutationFixture
+    {
+        string name;
+        Instance inst;
+        CumulativeRules rules;
+    };
+
+    const vector<PresenceMutationFixture> presence_mutation_fixtures{
+        {"mutation_oc", Instance{{{3, 4}, {1, 4}, {3, 3}, {30, 30}}, {3, 1, 4, 1}, {2, 1, 2, 1}, 3, {}, {1, 0, 0, 1}}, plain},
+        {"mutation_kaoc", Instance{{{0, 0}, {3, 4}, {2, 3}, {30, 30}}, {3, 3, 3, 1}, {1, 2, 2, 1}, 3, {}, {0, 1, 0, 1}}, knapsack},
+        {"mutation_ttheoc", Instance{{{1, 4}, {0, 3}, {1, 3}, {30, 30}}, {2, 3, 2, 1}, {6, 6, 6, 1}, 7, {}, {1, 0, 0, 1}}, knapsack},
+        {"mutation_ttoc",
+            Instance{{{1, 4}, {3, 6}, {1, 5}, {0, 1}, {2, 5}, {3, 4}, {30, 30}}, {4, 2, 4, 4, 3, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, 2, {},
+                {0, 0, 0, 0, 1, 0, 1}},
+            plain}};
+
+    // Two tasks of height two filling a capacity-two window of four exactly:
+    // the optional one fits beside the other, so nothing may falsify it. The
+    // PresenceByEnergyOneTooFar lane fires here anyway.
+    const Instance exact_fit{{{0, 2}, {0, 2}}, {2, 2}, {2, 2}, 2, {}, {1, 0}};
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -368,10 +562,33 @@ auto main(int argc, char * argv[]) -> int
             the_mutation = cumulative_proof_mutation::StrengthenOneFewer{}, mutating = true;
         else if (arg == "--mutate=capacity")
             the_mutation = cumulative_proof_mutation::OmitCapacityLine{}, mutating = true;
+        else if (arg == "--mutate=presence_emit_nothing")
+            the_mutation = cumulative_proof_mutation::PresenceByEnergyEmitNothing{}, mutating = true;
+        else if (arg == "--mutate=presence_wrong_task")
+            the_mutation = cumulative_proof_mutation::PresenceByEnergyWrongTask{}, mutating = true;
+        else if (arg == "--mutate=presence_one_too_far")
+            the_mutation = cumulative_proof_mutation::PresenceByEnergyOneTooFar{}, mutating = true;
         else if (arg.starts_with("--fixture="))
             mutated_fixture = arg.substr(arg.find('=') + 1);
         else if (arg == "--proof-files-basename" && a + 1 < argc)
             proof_basename = argv[++a];
+    }
+
+    // A presence mutation's fixture has solutions, so the proof has no conflict
+    // in it: what it must have is the falsification being corrupted.
+    if (mutating && (mutated_fixture.starts_with("mutation_") || mutated_fixture == "exact_fit")) {
+        optional<PresenceMutationFixture> chosen;
+        if (mutated_fixture == "exact_fit")
+            chosen = PresenceMutationFixture{"exact_fit", exact_fit, plain};
+        for (const auto & fixture : presence_mutation_fixtures)
+            if (fixture.name == mutated_fixture)
+                chosen = fixture;
+        if (! chosen)
+            fail("mutation mode: no fixture called " + mutated_fixture);
+        if (probe_presence(chosen->inst, chosen->rules, make_optional(proof_basename), true).markers.presence_total() == 0)
+            fail("mutation mode: nothing was falsified, so the proof has nothing corrupted in it");
+        println(cerr, "wrote a deliberately corrupted proof to {}.pbp", proof_basename);
+        return EXIT_SUCCESS;
     }
 
     if (mutating) {
@@ -477,6 +694,36 @@ auto main(int argc, char * argv[]) -> int
         auto markers = check_enumeration("varh_weaken", varh_weaken, knapsack, make_optional("cumulative_kaoc_varh_weaken"));
         if (markers.ttheoc + markers.kaoc == 0)
             fail("varh_weaken: no elastic conflict, so the weakening was not exercised");
+    }
+
+    // Presence falsification by energy, a rung at a time.
+    check_presence_rung("presence_oc", presence_oc, plain, CumulativeRules{.overload = false}, &MarkerCounts::presence_oc);
+    check_presence_rung("presence_ttoc", presence_ttoc, plain, CumulativeRules{.profile_overload = false}, &MarkerCounts::presence_ttoc);
+    check_presence_rung("presence_ttheoc", presence_ttheoc, elastic, plain, &MarkerCounts::presence_ttheoc);
+    check_presence_rung("presence_kaoc", presence_kaoc, knapsack, elastic, &MarkerCounts::presence_kaoc);
+    check_presence_rung("presence_kaoc_varh", presence_kaoc_varh, knapsack, elastic, &MarkerCounts::presence_kaoc);
+
+    // ... their twins, one unit of capacity better off ...
+    for (const auto & [what, inst, rules] :
+        {tuple{"presence_oc", presence_oc, plain}, tuple{"presence_ttoc", presence_ttoc, plain}, tuple{"presence_ttheoc", presence_ttheoc, elastic},
+            tuple{"presence_kaoc", presence_kaoc, knapsack}, tuple{"presence_kaoc_varh", presence_kaoc_varh, knapsack}})
+        if (probe_presence(with_capacity(inst, inst.capacity + 1), rules, nullopt).falsified())
+            fail(string{what} + " negative twin: falsified with a unit of capacity to spare");
+
+    // ... the mutation lanes' fixtures, honestly: the task is falsified, the
+    // bystander is not, and the proof verifies; and on exact_fit nothing is
+    // falsified at all ...
+    for (const auto & fixture : presence_mutation_fixtures) {
+        auto probe = probe_presence(fixture.inst, fixture.rules, make_optional("cumulative_kaoc_" + fixture.name));
+        if (! probe.falsified(0) || probe.falsified(1))
+            fail(fixture.name + ": falsified the wrong tasks, so the mutation lanes would be testing something else");
+    }
+    {
+        auto probe = probe_presence(exact_fit, knapsack, make_optional(string{"cumulative_kaoc_exact_fit"}));
+        if (probe.falsified() || probe.markers.presence_total() != 0)
+            fail("exact_fit: falsified a task with exactly enough room");
+        if (! has_a_solution(exact_fit))
+            fail("exact_fit: the fixture has no solution");
     }
 
     // The soundness net. A conflict-only rule can only ever lose solutions, so

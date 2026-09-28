@@ -109,7 +109,11 @@ namespace gcs
         bool time_table = true;
 
         /// The overload check: a window whose fully-contained tasks carry more
-        /// energy than the window supplies is infeasible. Conflict-only.
+        /// energy than the window supplies is infeasible. Conflict-only, except
+        /// over optional tasks: an undecided one whose energy would overload a
+        /// window alongside the known-present tasks there is inferred absent,
+        /// by whichever of this, \ref profile_overload, \ref elastic_overload
+        /// and \ref knapsack_overload are on (#550).
         bool overload = true;
 
         /// Strengthen the overload check with the mandatory-part load of tasks
