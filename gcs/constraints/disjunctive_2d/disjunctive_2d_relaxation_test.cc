@@ -114,6 +114,28 @@ namespace
         return {xs, ys};
     }
 
+    /// As `post`, but every rectangle optional and every presence a variable
+    /// whose domain is {1}: present, but not resolved away as a constant 1
+    /// would be, so it reaches the certificate as a presence literal (#984).
+    auto post_present(Problem & p, const Instance & inst, Disjunctive2DRules rules, Disjunctive2DProofMutation mutation, int presence_lo = 1)
+        -> pair<vector<IntegerVariableID>, vector<IntegerVariableID>>
+    {
+        vector<IntegerVariableID> xs, ys, ws, hs, pres;
+        for (const auto & [lo, hi] : inst.x_ranges)
+            xs.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        for (const auto & [lo, hi] : inst.y_ranges)
+            ys.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        for (size_t i = 0; i < inst.x_ranges.size(); ++i) {
+            ws.push_back(ConstantIntegerVariableID{Integer{inst.widths[i]}});
+            hs.push_back(ConstantIntegerVariableID{Integer{inst.heights[i]}});
+            pres.push_back(p.create_integer_variable(Integer{presence_lo}, 1_i));
+        }
+        p.post(Disjunctive2D{xs, ys, ws, hs, pres}.with_rules(rules).with_proof_mutation(mutation));
+        auto positions = xs;
+        positions.insert(positions.end(), ys.begin(), ys.end());
+        return {positions, pres};
+    }
+
     /// As `post`, but through the optional-rectangle constructor: each entry of
     /// `presences` is either a constant (0 or 1) or nullopt for a fresh {0, 1}
     /// variable, and the variables made are returned so they can be enumerated.
@@ -425,6 +447,12 @@ auto main(int argc, char * argv[]) -> int
             mutation = disjunctive_2d_proof_mutation::EdgeFindingDropPushed{};
             edge_finding = true;
         }
+        else if (arg == "--mutate=skip_presence_guard")
+            mutation = disjunctive_2d_proof_mutation::SkipPresenceGuard{};
+        else if (arg == "--mutate=skip_presence_conjunct") {
+            mutation = disjunctive_2d_proof_mutation::SkipPresenceConjunct{};
+            overload = true;
+        }
         else if (arg == "--overload")
             overload = true;
         else if (arg == "--edge-finding")
@@ -571,8 +599,28 @@ auto main(int argc, char * argv[]) -> int
 
     if (mutation) {
         Problem p;
+        optional<BranchHeuristic> branch;
+        auto presence_mutation = std::holds_alternative<disjunctive_2d_proof_mutation::SkipPresenceGuard>(*mutation) ||
+            std::holds_alternative<disjunctive_2d_proof_mutation::SkipPresenceConjunct>(*mutation);
         if (std::holds_alternative<disjunctive_2d_proof_mutation::SkipEscapePins>(*mutation))
             post_two_escapes(p, with, *mutation);
+        // The conjunct is only load-bearing where a presence is really
+        // undecided when a flagged row is derived: over a presence fixed to 1
+        // by its domain, unit propagation falsifies the clause's presence
+        // disjuncts without it. So that lane enumerates five unit squares in a
+        // box of four with every presence free, where the overload fires once
+        // search has made all five present.
+        else if (std::holds_alternative<disjunctive_2d_proof_mutation::SkipPresenceConjunct>(*mutation)) {
+            auto [positions, presences] =
+                post_present(p, Instance{vector<pair<int, int>>(5, {0, 1}), vector<pair<int, int>>(5, {0, 1}), vector<int>(5, 1), vector<int>(5, 1)},
+                    with, *mutation, 0);
+            // Presences first, present first, so that search reaches the node
+            // where all five are present with every position still free.
+            branch = branch_sequence(branch_with(variable_order::dom(presences), value_order::largest_first()),
+                branch_with(variable_order::dom(positions), value_order::smallest_first()));
+        }
+        else if (presence_mutation)
+            (void)post_present(p, sharp, with, *mutation);
         else if (ttef)
             post(p, std::holds_alternative<disjunctive_2d_proof_mutation::EdgeFindingDropPushed>(*mutation) ? ttef_pushed_matters : ttef_lb, with,
                 *mutation);
@@ -582,7 +630,12 @@ auto main(int argc, char * argv[]) -> int
             post(p, area, with, *mutation);
         else
             post(p, sharp, with, *mutation);
-        solve_with(p, SolveCallbacks{}, make_optional<ProofOptions>(ProofFileNames{mutation_basename}));
+        SolveCallbacks callbacks{.solution = [&](const CurrentState &) -> bool {
+            return std::holds_alternative<disjunctive_2d_proof_mutation::SkipPresenceConjunct>(*mutation);
+        }};
+        if (branch)
+            callbacks.branch = *branch;
+        solve_with(p, callbacks, make_optional<ProofOptions>(ProofFileNames{mutation_basename}));
         if (count_markers(mutation_basename, firing_marker) == 0)
             fail("mutation mode: the rule never fired, so the proof has nothing corrupted in it");
         println(cerr, "wrote a deliberately corrupted proof to {}.pbp", mutation_basename);
@@ -1486,6 +1539,137 @@ auto main(int argc, char * argv[]) -> int
                 fail("span_cap_column: an overload fired on a window wider than the cap");
             if (name && ! verify(*name))
                 fail("span_cap_column: veripb rejected the proof");
+        }
+    }
+
+    // --- optional rectangles in every rung (#984) -------------------------
+    //
+    // An optional rectangle takes part in the relaxation once it is known
+    // present: its presence goes into the reason, into route B's guard, and
+    // into route A's activity flags as a conjunct. Each rung is run on its own
+    // fixture twice more. With every presence a *variable* fixed to 1, the
+    // rung has to fire exactly as it does on the plain fixture (before #984 it
+    // could not, such rectangles being left out). With every presence
+    // undecided, the enumeration has to agree with brute force over positions
+    // and presences, which is the check that a rectangle that may be absent is
+    // not counted.
+    if (! overload && ! edge_finding && ! ttef && ! projection) {
+        struct Rung
+        {
+            string name;
+            Disjunctive2DRules rules;
+            Instance root_fixture;
+            /// nullopt for a conflict fixture; otherwise the lower bound the
+            /// fourth rectangle's x reaches at the root.
+            optional<Integer> pushed_lb;
+            Instance enumerated;
+        };
+        // Five unit squares free across a box two by two: any four fit, one
+        // to a cell, and all five overload it. No square has a mandatory part
+        // on either axis, so the pairwise rule sees nothing until positions
+        // are fixed, and the overload is what refutes a node where search has
+        // made all five present.
+        const Instance five_units{vector<pair<int, int>>(5, {0, 1}), vector<pair<int, int>>(5, {0, 1}), vector<int>(5, 1), vector<int>(5, 1)};
+        const vector<Rung> rungs{{"relaxation", Disjunctive2DRules{.cumulative_relaxation = true}, sharp, nullopt, sharp},
+            {"overload", Disjunctive2DRules{.relaxation_overload = true}, area, nullopt, five_units},
+            {"edge_finding", Disjunctive2DRules{.relaxation_edge_finding = true}, ef_lb, 3_i, ef_lb},
+            {"ttef", Disjunctive2DRules{.relaxation_time_table_edge_finding = true}, ttef_lb, 4_i, ttef_lb},
+            {"projection", Disjunctive2DRules{.cumulative_projection = every_cumulative_rule}, ef_lb, 3_i, ef_lb}};
+
+        // Every rectangle optional, each presence a variable over `lo..1`.
+        auto post_optional_vars = [](Problem & p, const Instance & inst, Disjunctive2DRules rules,
+                                      int lo) -> std::tuple<vector<IntegerVariableID>, vector<IntegerVariableID>, vector<IntegerVariableID>> {
+            vector<IntegerVariableID> xs, ys, ws, hs, pres;
+            for (const auto & [a, b] : inst.x_ranges)
+                xs.push_back(p.create_integer_variable(Integer{a}, Integer{b}));
+            for (const auto & [a, b] : inst.y_ranges)
+                ys.push_back(p.create_integer_variable(Integer{a}, Integer{b}));
+            for (size_t i = 0; i < inst.x_ranges.size(); ++i) {
+                ws.push_back(ConstantIntegerVariableID{Integer{inst.widths[i]}});
+                hs.push_back(ConstantIntegerVariableID{Integer{inst.heights[i]}});
+                pres.push_back(p.create_integer_variable(Integer{lo}, 1_i));
+            }
+            p.post(Disjunctive2D{xs, ys, ws, hs, pres}.with_rules(rules));
+            return {xs, ys, pres};
+        };
+
+        for (const auto & rung : rungs) {
+            // Present through a variable: the same root as the plain fixture.
+            auto root = [&](Disjunctive2DRules rules, const optional<string> & name) -> Probe {
+                Problem p;
+                auto [xs, ys, pres] = post_optional_vars(p, rung.root_fixture, rules, 1);
+                Probe result;
+                auto reached_a_node = false;
+                solve_with(p,
+                    SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                                       result.satisfiable = true;
+                                       return false;
+                                   },
+                        .trace = [&](const CurrentState & state) -> bool {
+                            for (size_t i = 0; i < xs.size(); ++i)
+                                result.root_x.emplace_back(state.lower_bound(xs[i]), state.upper_bound(xs[i]));
+                            reached_a_node = true;
+                            return false;
+                        }},
+                    name ? make_optional<ProofOptions>(ProofFileNames{*name}) : nullopt);
+                result.refuted_at_root = ! reached_a_node && ! result.satisfiable;
+                if (name)
+                    result.markers = count_markers(*name, firing_marker);
+                return result;
+            };
+            auto did_it = [&](const Probe & probe) {
+                return rung.pushed_lb ? (probe.root_x.size() > 3 && probe.root_x[3].first == *rung.pushed_lb) : probe.refuted_at_root;
+            };
+
+            auto name = "disjunctive_2d_relaxation_optional_present_" + rung.name;
+            auto result = root(rung.rules, proofs ? make_optional(name) : nullopt);
+            if (! did_it(result))
+                fail("optional_present_" + rung.name + ": present optional rectangles did not take part in the rule");
+            if (proofs && result.markers < 1)
+                fail("optional_present_" + rung.name + ": no marker, so something else did it");
+            if (proofs && ! verify(name))
+                fail("optional_present_" + rung.name + ": veripb rejected the proof");
+            if (did_it(root(without, nullopt)))
+                fail("optional_present_" + rung.name + ": it happens with the rule off, so the fixture says nothing about the rule");
+
+            // Undecided, enumerated against brute force.
+            const auto & inst = rung.enumerated;
+            auto n = inst.x_ranges.size();
+            auto is_satisfying = [&](const vector<int> & vals) {
+                for (size_t i = 0; i < n; ++i)
+                    for (size_t j = i + 1; j < n; ++j) {
+                        if (vals[2 * n + i] == 0 || vals[2 * n + j] == 0)
+                            continue;
+                        auto xi = vals[i], yi = vals[n + i], xj = vals[j], yj = vals[n + j];
+                        if (! (xi + inst.widths[i] <= xj || xj + inst.widths[j] <= xi || yi + inst.heights[i] <= yj || yj + inst.heights[j] <= yi))
+                            return false;
+                    }
+                return true;
+            };
+            auto ranges = inst.x_ranges;
+            ranges.insert(ranges.end(), inst.y_ranges.begin(), inst.y_ranges.end());
+            for (size_t i = 0; i < n; ++i)
+                ranges.emplace_back(0, 1);
+            set<vector<int>> expected, actual;
+            gcs::test_innards::build_expected(expected, is_satisfying, ranges);
+
+            auto enum_name = "disjunctive_2d_relaxation_optional_undecided_" + rung.name;
+            Problem p;
+            auto [xs, ys, pres] = post_optional_vars(p, inst, rung.rules, 0);
+            vector<IntegerVariableID> all_vars = xs;
+            all_vars.insert(all_vars.end(), ys.begin(), ys.end());
+            all_vars.insert(all_vars.end(), pres.begin(), pres.end());
+            gcs::test_innards::solve_for_tests(p, proofs ? make_optional(enum_name) : nullopt, actual, std::tuple{all_vars});
+            if (gcs::test_innards::last_run_truncated())
+                fail("optional_undecided_" + rung.name + ": a cap fired, so the enumeration checked no completeness");
+            auto markers = proofs ? count_markers(enum_name, firing_marker) : 0;
+            gcs::test_innards::check_results(proofs ? make_optional(enum_name) : nullopt, expected, actual);
+            println(cerr, "optional_undecided_{}: {} solutions, {} firings", rung.name, actual.size(), markers);
+            // Firing below the root, once search has decided some presences,
+            // is what the enumeration is for: without it, agreeing with brute
+            // force says nothing about the rule.
+            if (proofs && markers == 0)
+                fail("optional_undecided_" + rung.name + ": the rule never fired on a decided presence");
         }
     }
 

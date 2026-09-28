@@ -1455,31 +1455,53 @@ mints one with two `red` rows, a boundary pin and a chain link, at
 position rather than per firing, and it is the price of the degree-one
 cancellation above.
 
-**Optional rectangles take part only when their presence is a
-constant.** Membership is decided from bounds alone, so a rectangle
-whose presence is a *variable* is left out: counted in, its height
-would make the overflow conclusion prune the placements that need it
-absent. That is sound but coarse. A presence variable with the domain
-`{1}`, or one fixed to 1 during search, is present and still left out,
-for the whole solve, because membership is settled once in `prepare()`.
-A constant presence never reaches the decline at all: `task_presence`
-resolves a constant 1 to no literal, so the rectangle is a plain one,
-and drops a constant 0 before anything else sees it.
+**Optional rectangles take part once they are known present (#984).**
+Until #984 a rectangle whose presence was a *variable* was left out of
+every relaxation rung for the whole solve, which was sound but coarse.
+Now membership admits it, on the terms 1D Disjunctive's energy rules set
+in #1039, and each rung decides at the node:
 
-Two things about how this fails are worth knowing, because the first
-version of this section got one of them wrong. **With proofs on, VeriPB
-catches it**: the clause of a pair involving such a rectangle carries
-its presence disjunct, which no goal of the network's offers, so a case
-split cannot close. **With proofs off, nothing does**: the solve loses
-the solutions and says nothing. So the test that pins the decline is an
-enumeration against brute force, not a proof lane, and it has to post
-optional rectangles *with the rule on* --- the optional-form tests never
-turn it on, and until #985's review nothing put the two together.
+- **Route B** (this rung) counts a rectangle as occupying a time, and
+  pushes it, only once it is present. Its presence is then one more fact
+  of the certificate: in the reason, in the network's guard at `big()`,
+  and weakened into every other pair's clause at 1, exactly as a time
+  bound or a zero-size escape is. The pair's own two presences are
+  already in its clause, as the 6-way clause's disjuncts. The fact is
+  stated as `present != 0`, not `present = 1`, so that its negation is
+  the clause's own literal: they are one PB literal for a `{0, 1}`
+  variable but two atoms for a presence with a wider encoding, and the
+  guard cancels only syntactically. A `{1}`-domain fixture caught that.
+- **Route A** (the energetic rungs below) puts the presence in the
+  activity flag as a conjunct, as `Cumulative`'s `active` has it. The
+  pair clause `~act_i + ~act_j + before + before` then still closes by
+  RUP, so the flagged row stays a model fact at `Top` over every declared
+  member, present or not. The sweep counts, charges and pushes only
+  present rectangles, and their presence literals ride to the closing
+  RUP from the reason, as `~present` does in 1D.
+- **The projection** hands the presence to its `Cumulative`, which takes
+  optional tasks itself, and defines the activity flag with it.
 
-Leaving a rectangle out only ever weakens propagation, so a comparison
-of solution sets with the rule on and off cannot notice the decline
-being made too coarse. What notices that is asserting the rule *fires*
-on a constant-present model.
+An undecided rectangle is left alone by all three, which is only weaker:
+counting it would prune the placements that need it absent. With proofs
+on VeriPB would catch that, but with them off the solve would silently
+lose solutions, so the enumeration tests are what pin it
+(`optional_undecided_*` in `disjunctive_2d_relaxation_test`, one per
+rung, each required to fire below the root).
+
+Two restrictions remain, both only weakenings. A presence must be a
+plain variable (route B names its literal), and one no other rectangle
+shares: two members with one presence would put its literal in the guard
+twice and in their pair's clause at coefficient two, the shape #1039
+folded once per variable in 1D. Nothing asks for that here.
+
+Two mutation lanes show both halves are load-bearing:
+`skip_presence_guard` (route B, on `sharp` with presences fixed to 1)
+and `skip_presence_conjunct` (route A, rejected at the pair clause's
+RUP). The second needs presences that are really undecided when a row is
+derived: over a presence fixed to 1 by its domain, unit propagation
+falsifies the clause's presence disjuncts without the conjunct, so that
+lane enumerates five unit squares in a box of four, branching on
+presences first.
 
 **What it does not reach.** The endgame lands on a statement about the
 *mandatory* set with no activity flags in it, which is exactly enough
@@ -1651,7 +1673,9 @@ On `examples/squares` the same three enumerations give identical trees
 again; TTEF fires 47–335 times per instance, mostly in place of
 edge-finding and time-table pushes, and moves proof size by −8% to +10%.
 
-Not yet: variable sizes and optional rectangles.
+Optional rectangles take part in all three energetic rungs once
+present; see the time-tabling rung's section above. Not yet: variable
+sizes.
 
 ### `Cumulative`'s own propagator over each projection (#973)
 

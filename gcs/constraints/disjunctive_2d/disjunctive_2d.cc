@@ -240,27 +240,28 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     // on, and the rule draws the same inferences either way --- which is what
     // keeps a proofs-off run from taking a different search path.
     //
-    // A rectangle with a presence *variable* takes no part. Membership below is
-    // decided from bounds alone, and a rectangle whose mandatory part covers a
-    // time is taken to occupy it --- which an undecided presence does not, so
-    // counting its height would prune the placements that need it absent. With
-    // proofs on VeriPB rejects that (the separation clause carries a presence
-    // disjunct no goal of the network's offers); with them off, a solve would
-    // simply lose those solutions, so this is a decline rather than something
-    // left to the checker.
+    // A rectangle with a presence *variable* takes part (#984), on the terms
+    // 1D Disjunctive's energy rules set in #1039. Membership is still decided
+    // from the model alone; what the presence changes is what each rung does
+    // with the rectangle at a node. It counts as occupying a time, joins a
+    // window's energy, and is pushed, only once it is known present, and its
+    // presence literal then goes into the reason like any other fact the
+    // certificate assumes. An undecided rectangle may still sit in a cached
+    // flagged row, because its activity flag has the presence as a conjunct.
+    // Until then it is left alone, which is only weaker: counting it would
+    // prune the placements that need it absent.
     //
     // A *constant* presence never gets this far: task_presence resolves a
-    // constant 1 to no literal at all, so such a rectangle is a plain one here
-    // and takes part like any other, and a constant 0 has already been dropped
-    // from _active_rects. So `_presence[i]` is set here only for a variable.
+    // constant 1 to no literal at all, so such a rectangle is a plain one here,
+    // and a constant 0 has already been dropped from _active_rects. So
+    // `_presence[i]` is set here only for a variable.
     //
-    // That makes the decline coarser than it has to be: a presence variable
-    // with the domain {1}, or one fixed to 1 during search, is present and is
-    // still left out, for the whole solve, because membership is settled once
-    // here. Taking such a rectangle part properly means putting its presence
-    // literal in every fact list the certificate builds, so that the guard
-    // covers the disjunct its clause brings in --- a larger change than this,
-    // and nothing asks for it yet.
+    // The presence has to be a plain variable, as the positions are, so that
+    // route B can name its literal in the guard. And it must be this
+    // rectangle's alone: two members with one presence would put its literal
+    // in the guard twice and in their pair's clause at coefficient two, the
+    // shape #1039 had to fold once per variable in 1D. Nothing asks for that
+    // here, so such rectangles take no part.
     //
     // A position variable two rectangles share is a bar to both of them. The
     // certificate states one fact per member per bound and guards every row by
@@ -271,10 +272,12 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     // a shared handle on one axis still appears in the other's reason.
     for (auto & members : _relaxation_members)
         members.clear();
-    std::map<IntegerVariableID, size_t> position_uses;
+    std::map<IntegerVariableID, size_t> position_uses, presence_uses;
     for (auto i : _active_rects) {
         ++position_uses[_xs[i]];
         ++position_uses[_ys[i]];
+        if (_presence[i])
+            ++presence_uses[*_presence[i]];
     }
 
     for (auto time_axis : {0, 1}) {
@@ -283,7 +286,7 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         const auto & res_pos = time_axis == 0 ? _ys : _xs;
         const auto & res_size = time_axis == 0 ? _heights : _widths;
         for (auto i : _active_rects) {
-            if (_presence[i])
+            if (_presence[i] && (! std::holds_alternative<SimpleIntegerVariableID>(*_presence[i]) || presence_uses[*_presence[i]] > 1))
                 continue;
             if (position_uses[_xs[i]] > 1 || position_uses[_ys[i]] > 1)
                 continue;
@@ -372,7 +375,10 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
             inputs->starts.push_back(time_pos[i]);
             inputs->lengths.push_back(time_size[i]);
             inputs->heights.push_back(res_size[i]);
-            inputs->presence.push_back(nullopt);
+            // Cumulative takes optional tasks itself, on the same terms: in the
+            // profile and the energy only once present, the presence a
+            // conjunct of each activity flag, and its literal in the reason.
+            inputs->presence.push_back(_presence[i]);
             inputs->active_tasks.push_back(k);
             auto window = cumulative_task_window(initial_state, time_pos[i], time_size[i]);
             inputs->per_task_t_lo.push_back(window.lo);
@@ -598,7 +604,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     };
                     define(inputs.before_flags[k][idx], per_time_before_says(inputs.starts[k], t));
                     define(inputs.after_flags[k][idx], per_time_after_says(inputs.starts[k], inputs.lengths[k], t));
-                    define(inputs.active_flags[k][idx], per_time_active_says(inputs.before_flags[k][idx], inputs.after_flags[k][idx], nullopt));
+                    define(inputs.active_flags[k][idx],
+                        per_time_active_says(inputs.before_flags[k][idx], inputs.after_flags[k][idx], inputs.presence[k]));
                 });
 
                 for (auto time_axis : {0, 1}) {
@@ -1139,8 +1146,10 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             result.set.push_back(Member{i, lo, hi, len(i)});
                             result.total += height(i);
                         };
+                        // Only a rectangle known present occupies a time
+                        // (#984): an undecided one might be absent.
                         for (auto i : members)
-                            if ((! extra || *extra != i) && covers(i, t))
+                            if ((! extra || *extra != i) && is_present(i) && covers(i, t))
                                 include(i);
                         if (extra)
                             include(*extra);
@@ -1155,7 +1164,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     auto event_points = [&]() -> vector<Integer> {
                         vector<Integer> events;
                         for (auto i : members)
-                            if (lst(i) < eet(i)) {
+                            if (is_present(i) && lst(i) < eet(i)) {
                                 events.push_back(lst(i));
                                 events.push_back(eet(i));
                             }
@@ -1198,13 +1207,26 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             SimpleCondition t_lo, t_hi, r_lo, r_hi;
                             optional<SimpleCondition> t_size;
                             optional<ProofFlag> escape;
+                            /// An optional member's presence: the fact that
+                            /// covers the `[present = 0]` disjunct its 6-way
+                            /// clause brings in, guarded and weakened in like
+                            /// the others (#984). prepare() admits only a plain,
+                            /// unshared presence variable, so it names one
+                            /// literal and names it once. Stated as `!= 0`
+                            /// rather than `= 1` so that its negation is the
+                            /// clause's own literal: they are one PB literal for
+                            /// a {0, 1} variable, but two atoms for a presence
+                            /// with a wider encoding, and the guard cancels
+                            /// only syntactically.
+                            optional<SimpleCondition> present;
                         };
                         vector<MemberFacts> facts;
                         for (const auto & m : load.set) {
                             auto tv = get<SimpleIntegerVariableID>(tpos[m.rect]), rv = get<SimpleIntegerVariableID>(rpos[m.rect]);
                             facts.push_back(MemberFacts{m.rect, rv, tv >= t - m.length + 1_i, tv < t + 1_i, rv >= m.res_lo, rv < m.res_hi + 1_i,
                                 tsize_is_var(m.rect) ? optional<SimpleCondition>{get<SimpleIntegerVariableID>(tsize[m.rect]) >= m.length} : nullopt,
-                                tzero[m.rect]});
+                                tzero[m.rect],
+                                presence[m.rect] ? optional<SimpleCondition>{get<SimpleIntegerVariableID>(*presence[m.rect]) != 0_i} : nullopt});
                         }
 
                         // Pin each zero-size escape false under the reason,
@@ -1254,6 +1276,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             guard_fact(f.r_hi);
                             if (f.t_size)
                                 guard_fact(*f.t_size);
+                            if (f.present && ! std::holds_alternative<disjunctive_2d_proof_mutation::SkipPresenceGuard>(mutation))
+                                guard_fact(*f.present);
                             // The fact is that the rectangle is not zero-sized,
                             // so it is the flag itself that goes in the guard.
                             if (f.escape)
@@ -1315,6 +1339,11 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                             clause.add(! tracker.xliteral_for_ensuring(*f.t_size), 1_i, tracker);
                                         if (f.escape)
                                             clause.add(*f.escape, 1_i, tracker);
+                                        // The pair's own two presences are in
+                                        // its clause already, as the 6-way
+                                        // clause's disjuncts.
+                                        if (f.present)
+                                            clause.add(! tracker.xliteral_for_ensuring(*f.present), 1_i, tracker);
                                     }
                                     // No refutation mentions a resource-axis
                                     // bound, so every member's pair of them has
@@ -1353,6 +1382,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             literals.push_back(ProofLiteral{rpos[m.rect] < m.res_hi + 1_i});
                             if (tsize_is_var(m.rect))
                                 literals.push_back(ProofLiteral{tsize[m.rect] >= m.length});
+                            if (presence[m.rect])
+                                literals.push_back(ProofLiteral{*presence[m.rect] != 0_i});
                         }
                         return ExplicitReason{move(literals)};
                     };
@@ -1429,7 +1460,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
 
                     for (auto j : members) {
                         auto len_j = len(j);
-                        if (len_j < 1_i)
+                        if (len_j < 1_i || ! is_present(j))
                             continue;
 
                         // lb-push: with the origin at or after `cur_lo`, a
@@ -1478,12 +1509,32 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     // Constant sizes on both axes: the time-axis one fixes each
                     // activity flag's definition, and the resource-axis one is
                     // the network's duration.
-                    vector<size_t> tasks;
+                    //
+                    // `row_tasks` is every such member, which is what a flagged
+                    // row is stated over: a row is a fact about the model, and an
+                    // optional rectangle's activity flag has its presence as a
+                    // conjunct, so it may sit in a row whether or not it turns
+                    // out present. `tasks` is the ones the sweep may count and
+                    // push, which are those known present (#984): an undecided
+                    // rectangle is left alone, as 1D Disjunctive leaves one.
+                    vector<size_t> row_tasks, tasks;
                     for (auto i : relaxation_members[time_axis])
-                        if (is_constant_variable(tsize[i]) && constant_value_of(tsize[i]) >= 1_i)
-                            tasks.push_back(i);
+                        if (is_constant_variable(tsize[i]) && constant_value_of(tsize[i]) >= 1_i) {
+                            row_tasks.push_back(i);
+                            if (is_present(i))
+                                tasks.push_back(i);
+                        }
                     if (tasks.size() < 2)
                         continue;
+
+                    // A present optional rectangle's presence, for the reason of
+                    // every firing that counts it: its activity flags carry the
+                    // presence, so every energy row and pin over them carries a
+                    // `~present` term the closing RUP discharges from here.
+                    auto add_presence = [&](ReasonLiterals & literals, size_t i) {
+                        if (presence[i])
+                            literals.push_back(ProofLiteral{*presence[i] == 1_i});
+                    };
 
                     auto len = [&](size_t i) { return constant_value_of(tsize[i]); };
                     auto height = [&](size_t i) { return constant_value_of(rsize[i]); };
@@ -1502,8 +1553,19 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         auto implies_started = logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * started >= 1_i, flag, ProofLevel::Top);
                         auto implies_starts_by =
                             logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * starts_by >= 1_i, flag, ProofLevel::Top);
-                        auto backward =
-                            logger->emit_red_proof_lines_reverse_reifying(WPBSum{} + 1_i * started + 1_i * starts_by >= 2_i, flag, ProofLevel::Top);
+                        // An optional rectangle is active only if present, as a
+                        // Cumulative's optional task is. That is what lets the
+                        // pair's 6-way clause close to the same
+                        // `~act_i + ~act_j + before + before` a mandatory pair
+                        // gets, and what keeps the flagged row a model fact.
+                        auto conjuncts = WPBSum{} + 1_i * started + 1_i * starts_by;
+                        auto arity = 2_i;
+                        if (presence[i] && ! std::holds_alternative<disjunctive_2d_proof_mutation::SkipPresenceConjunct>(mutation)) {
+                            (void)logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * (*presence[i] == 1_i) >= 1_i, flag, ProofLevel::Top);
+                            conjuncts += 1_i * (*presence[i] == 1_i);
+                            arity = 3_i;
+                        }
+                        auto backward = logger->emit_red_proof_lines_reverse_reifying(move(conjuncts) >= arity, flag, ProofLevel::Top);
                         return cache.emplace(key, RelaxationActivity{flag, implies_started, implies_starts_by, backward}).first->second;
                     };
 
@@ -1519,7 +1581,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         auto & tracker = logger->names_and_ids_tracker();
 
                         vector<size_t> members;
-                        for (auto i : tasks)
+                        for (auto i : row_tasks)
                             if (declared.at(i).first <= t && t < declared.at(i).second + len(i))
                                 members.push_back(i);
 
@@ -1681,6 +1743,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                 for (auto i : inside) {
                                     literals.push_back(ProofLiteral{tpos[i] >= a});
                                     literals.push_back(ProofLiteral{tpos[i] < b - len(i) + 1_i});
+                                    add_presence(literals, i);
                                 }
 
                                 auto justify = [&, a, b, inside](const ReasonLiterals & reason) -> void {
@@ -1827,6 +1890,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                 for (auto i : inside) {
                                     literals.push_back(ProofLiteral{tpos[i] >= a});
                                     literals.push_back(ProofLiteral{tpos[i] < b - len(i) + 1_i});
+                                    add_presence(literals, i);
                                 }
                                 // The pushed task's other end, which puts it on
                                 // the side of the window its guard assumes.
@@ -1834,9 +1898,11 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     literals.push_back(ProofLiteral{tpos[j] >= a});
                                 else
                                     literals.push_back(ProofLiteral{tpos[j] < b - p_j + 1_i});
+                                add_presence(literals, j);
                                 for (const auto & c : profile) {
                                     literals.push_back(ProofLiteral{tpos[c.rect] >= c.lo});
                                     literals.push_back(ProofLiteral{tpos[c.rect] < c.hi + 1_i});
+                                    add_presence(literals, c.rect);
                                 }
 
                                 auto justify = [&, a, b, inside, j, low_guard, high_guard, starts_inside, profile](
