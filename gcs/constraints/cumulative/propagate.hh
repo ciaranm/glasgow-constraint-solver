@@ -5,6 +5,7 @@
 #include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/constraints/innards/task_presence.hh>
 #include <gcs/constraints/innards/window_energy.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
@@ -20,11 +21,76 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace gcs::innards
 {
     struct CheckpointRecoveryCache;
+    struct CumulativeInputs;
+
+    /**
+     * \brief What one constraint has already looked up about its per-(task,
+     * time) flags: the flags themselves, and whether it has asked for their
+     * definition.
+     *
+     * Looking a flag up by key builds its name and searches the tracker's
+     * name index, which on RCPSP with proofs on cost 2% to 9% of the
+     * instructions of a solve once flags were named on demand (#1111). Asked
+     * once per point instead, it costs less than asking for the definition on
+     * every citation did before. Per install, like the flags' names and
+     * definitions, so it never outlives the proof it describes.
+     */
+    struct CumulativeFlagCache
+    {
+        struct Point
+        {
+            std::optional<ProofFlag> before, after, active;
+            std::optional<std::vector<ProofFlag>> contribution;
+            bool defined = false;
+        };
+
+        struct Hash
+        {
+            [[nodiscard]] auto operator()(const std::pair<std::size_t, long long> & key) const noexcept -> std::size_t
+            {
+                return std::hash<long long>{}(key.second) * 31u + key.first;
+            }
+        };
+
+        std::unordered_map<std::pair<std::size_t, long long>, Point, Hash> points;
+    };
+
+    /// Which of a task's three per-time flags; see cumulative_flag.
+    enum class CumulativeFlag
+    {
+        Before,
+        After,
+        Active
+    };
+
+    /**
+     * \brief A task's per-(task, time) flag, from CumulativeInputs' vectors
+     * where they were filled in and otherwise by key from its owner, which
+     * names it on demand (#1111).
+     *
+     * Names, and does not define: a caller about to cite the flag asks
+     * NamesAndIDsTracker::ensure_flag_defined first, and a definer calls this
+     * from inside the definition.
+     */
+    [[nodiscard]] auto cumulative_flag(const CumulativeInputs &, const NamesAndIDsTracker &, CumulativeFlag, std::size_t task, Integer t)
+        -> ProofFlag;
+
+    /// A variable-height task's contribution bits at one time point, lowest
+    /// first, the same way.
+    [[nodiscard]] auto cumulative_contribution_bits(const CumulativeInputs &, const NamesAndIDsTracker &, std::size_t task, Integer t)
+        -> std::vector<ProofFlag>;
+
+    /// Ask the inputs' owner to define a task's flags at `t`, once per
+    /// install: NamesAndIDsTracker::ensure_flag_defined on the activity
+    /// flag's key, remembered in the inputs' CumulativeFlagCache.
+    auto ensure_cumulative_flags_defined(const CumulativeInputs &, ProofLogger &, std::size_t task, Integer t) -> void;
 
     /**
      * \brief Everything Cumulative's propagator reads: the task data, the
@@ -65,11 +131,25 @@ namespace gcs::innards
         /// Indexed by `t - per_task_t_lo[i]`, over the task's possible-active
         /// window. A derived Cumulative points these at its donor's flags, so
         /// the windows must be the donor's too.
+        ///
+        /// Empty for a task whose flags are named on demand instead, which is
+        /// every task of a constraint that keeps them in the proof (#1111):
+        /// read them through cumulative_flag, which looks such a flag up by
+        /// key from \ref owner.
         std::vector<std::vector<ProofFlag>> before_flags, after_flags, active_flags;
         /// Per (variable-height task, t, bit), the linearised load
         /// contribution. Empty for a constant height, and empty throughout for
-        /// a derived Cumulative, which takes constant heights only.
+        /// a derived Cumulative, which takes constant heights only. Empty too
+        /// where the flags are named on demand; see
+        /// cumulative_contribution_bits.
         std::vector<std::vector<std::vector<ProofFlag>>> contrib_flags;
+        /// Per task, how many contribution bits it has at each time point:
+        /// zero for a constant height. Only read where \ref contrib_flags is
+        /// empty, to know which bits to look up.
+        std::vector<std::size_t> contribution_bit_counts;
+        /// What has been looked up about the flags so far. Shared, because
+        /// the propagator's copy of these inputs is not the only reader.
+        std::shared_ptr<CumulativeFlagCache> flag_cache = std::make_shared<CumulativeFlagCache>();
         /// Where each task's flags run from and to, inclusive. The `hi` half
         /// is what edge-finding needs: a window can extend past the last time a
         /// task could be active, and both the rule and its certificate have to

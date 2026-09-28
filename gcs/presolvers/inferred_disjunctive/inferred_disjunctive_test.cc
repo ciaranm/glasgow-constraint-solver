@@ -1117,7 +1117,7 @@ auto main(int argc, char * argv[]) -> int
 
     // A task two resources share, whose flags the recipe cites on its home
     // resource. Under the start-checkpoint encoding a donor's per-(task, time)
-    // flags are named with the model but defined only when asked for, and the
+    // flags are named and defined only when asked for (#1111, #780), and the
     // recipe cited the reification halves without asking: the proof named a
     // label no line carried. Found by a random fuzz campaign and cut down by a
     // minimiser; everything is fixed at zero, and the second resource cannot

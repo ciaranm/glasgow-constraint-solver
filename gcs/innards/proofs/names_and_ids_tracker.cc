@@ -283,6 +283,11 @@ struct NamesAndIDsTracker::Imp
     // publishes one, and the time-indexed arm is the benchmark baseline.
     bool any_flag_definers = false;
 
+    // #1111: the keyed families a constraint names on demand rather than up
+    // front, as the predicate saying which keys are in the family. See
+    // publish_flag_family.
+    map<string, function<auto(const ProofFlagKey &)->bool>> flag_families;
+
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
     unordered_map<SimpleOrProofOnlyIntegerVariableID, map<vector<Integer>, ProofLine>, HashSimpleOrProofOnlyVariable>
         variable_at_least_one_over_cover_constraints;
@@ -2151,10 +2156,30 @@ auto NamesAndIDsTracker::find_proof_flag(const ConstraintID & id, const ProofFla
     // per-solve state. The family is what says which of the two that overload
     // was --- the numbers alone do not, since v[id][1] and x[id][1] are
     // different flags.
-    auto found = _imp->constraint_keyed_flags.find(flag_name_for_key(id, key));
-    if (found == _imp->constraint_keyed_flags.end())
+    auto name = flag_name_for_key(id, key);
+    auto found = _imp->constraint_keyed_flags.find(name);
+    if (found != _imp->constraint_keyed_flags.end())
+        return found->second;
+
+    // Not named yet: name it now, if the constraint said the key is one of
+    // its family's. The name is the one it would have been given up front, so
+    // a citer cannot tell the difference, and nothing but the flag's index
+    // --- and so the numbering of anonymous flags created after it --- depends
+    // on when it was asked for. That is why this stays const: it fills a
+    // cache whose contents are fixed by the key, and the tracker is never
+    // itself a const object.
+    if (_imp->flag_families.empty())
         return nullopt;
-    return found->second;
+    auto family = _imp->flag_families.find(as_string(id));
+    if (family == _imp->flag_families.end() || ! family->second(key))
+        return nullopt;
+    return const_cast<NamesAndIDsTracker &>(*this).make_proof_flag_named(name);
+}
+
+auto NamesAndIDsTracker::publish_flag_family(const ConstraintID & id, function<auto(const ProofFlagKey &)->bool> in_family) -> void
+{
+    if (! _imp->flag_families.emplace(as_string(id), std::move(in_family)).second)
+        throw ProofError{"constraint published a flag family twice"};
 }
 
 namespace

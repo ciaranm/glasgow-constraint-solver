@@ -2861,6 +2861,34 @@ Misses are loud rather than silent, which is worth knowing before doing (1): a
 flag whose definition never went out is a free variable, so a `pol` citing a
 half finds no such line and a `rup` over it stalls. Neither can pass quietly.
 
+**The names went the same way later (#1111).** Once the definitions were on
+demand, what was left per `(i, t)` was the *name*: an index, two map entries and
+an entry in the variables map, for three flags per task per time point and a
+bit's worth more for a variable height. At a horizon of `2^20` that was 36
+seconds of proofs-on model building and a 710 MB `.varmap`, against 0.04
+seconds with proofs off and a 20 KB proof. Now `define_proof_model` publishes
+the family instead (`NamesAndIDsTracker::publish_flag_family`, a predicate
+saying which keys this constraint would have named), and `find_proof_flag` names
+a key in it on first lookup, under the same name. So every citer, whether the
+propagator, a derived constraint or a presolver, finds the flag exactly as
+before. The same horizon now takes 0.06 seconds and an 11 KB `.varmap`.
+
+Two things came with it. A task's flags are read through `cumulative_flag`,
+which falls back to the lookup where the inputs hold no vector (the
+time-indexed arms and derived constraints still do), and
+`window_energy::Task` takes accessors rather than whole rows. The lemma then
+names and defines only the time points it telescopes over, where it used to
+define a task's whole window first, and proofs got a few hundred lines shorter.
+And each install caches what it has looked up (`CumulativeFlagCache`), because
+building a name to find a flag cost 2% to 9% of a proofs-on RCPSP solve.
+Cached, proofs-on is 0.85x `main`'s instructions over six j30 and data_bl
+instances, with the search identical, and `cumulative_wide_horizon_test` fails
+on `main` with 900,009 names where it now sees 9.
+
+Derived constraints are still eager: `install_derived_cumulative` looks up
+every donor flag over each task's window, which now names them, and it derives
+every per-time capacity row too, a much larger cost.
+
 #### A variable height, once the flags are out of the model
 
 The three rows per `(i, t)` and three per pair that linearise `contrib = h *

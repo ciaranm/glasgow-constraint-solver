@@ -182,7 +182,8 @@ auto gcs::innards::makespan_energy::derive_makespan_bound(ProofLogger & logger, 
             confine.emit(logger, level);
         }
 
-        window_energy::Task lemma_task{task.start, task.length, task.t_lo, *task.before, *task.after, *task.active};
+        window_energy::Task lemma_task{task.start, task.length, task.t_lo, task.active->size(), [&](size_t idx) { return (*task.before)[idx]; },
+            [&](size_t idx) { return (*task.after)[idx]; }, [&](size_t idx) { return (*task.active)[idx]; }};
         auto energy = window_energy::derive_window_energy(
             logger, forget_deadline ? reason : deadline, lemma_task, bound.lo, hi, start_bounds_within(task, hi), level);
 
