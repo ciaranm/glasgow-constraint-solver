@@ -328,11 +328,14 @@ It is the `Nogoods` scheme for one clause, with three differences:
 
 The issue's case was `network_50_cstr` (2024): one `bool_clause` over 2,774
 Booleans, 75% of the model's propagation time. Most of that was not the rescan
-itself but the scan never disabling a clause it had seen was satisfied: it
-stopped at the second undecided literal, and so returned `Enable` whenever two
-undecided literals came before a true one. Stopping at the first false literal
-of the `And` form takes the `Or` calls on 20,443 nodes from 38,555 to 2,543,
-with or without watches.
+itself but the scan not disabling a clause it had seen was satisfied: it
+stopped only at the second undecided literal, and went on past a false literal
+of the `And` form (a true literal of the clause), so a satisfied clause with two
+undecided literals anywhere returned `Enable`. Stopping at the first false
+literal of the `And` form, when it comes before the second undecided one, takes
+the `Or` calls on 20,443 nodes from 38,555 to 2,543 with the scan, and to
+2,360 with watches. A satisfied clause whose true literals all come after two
+undecided ones still returns `Enable` from the scan.
 
 What is left for the watches is small on the corpus. Instructions at fixed
 nodes, relative to the old scan (fataepyc-09, `GCS_BENCH_NODE_LIMIT` in a local
@@ -456,7 +459,10 @@ refined path must behave byte-for-byte like the scan oracle:
   invisible.
 
 - `gcs/constraints/logical/logical_test.cc` (`run_clause_set_test`) — random
-  sets of clauses long enough for watches to move, in all four posted forms,
+  sets of clauses long enough for watches to move, in the four forms that
+  reach the clause case (an unreified `Or`, an `Or` whose reification is fixed
+  true, an `And` over the negated literals whose reification is fixed false,
+  and an `OrIf` whose condition is fixed true),
   against a brute-force oracle and VeriPB, with a watched-vs-scanned differential
   on recursions; then find-one with Luby restarts, and again with every solution
   blocked so that the search restarts many times proving there are none; each
