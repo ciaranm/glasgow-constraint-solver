@@ -52,32 +52,62 @@ using namespace gcs::test_innards;
 
 namespace
 {
-    // Every fixture here is all-constant: the horizontally elastic rules
-    // decline a variable height outright, and the window-energy lemma the
-    // certificate cites wants a constant length.
+    // Lengths and the capacity are constants. A height is a constant too
+    // unless `height_ranges` gives it a range of more than one value, in which
+    // case it is posted as a variable and enumerated alongside the starts.
     struct Instance
     {
         vector<pair<int, int>> start_ranges;
         vector<int> lengths;
         vector<int> heights;
         int capacity;
+        vector<pair<int, int>> height_ranges = {};
     };
 
-    auto is_satisfying(const Instance & inst, const vector<int> & starts) -> bool
+    auto height_range(const Instance & inst, size_t i) -> pair<int, int>
+    {
+        return inst.height_ranges.empty() ? pair{inst.heights[i], inst.heights[i]} : inst.height_ranges[i];
+    }
+
+    auto has_variable_heights(const Instance & inst) -> bool
+    {
+        for (size_t i = 0; i < inst.height_ranges.size(); ++i)
+            if (inst.height_ranges[i].first != inst.height_ranges[i].second)
+                return true;
+        return false;
+    }
+
+    // What gets enumerated: the starts, then each variable height.
+    auto all_ranges(const Instance & inst) -> vector<pair<int, int>>
+    {
+        auto ranges = inst.start_ranges;
+        for (size_t i = 0; i < inst.start_ranges.size(); ++i)
+            if (auto [lo, hi] = height_range(inst, i); lo != hi)
+                ranges.emplace_back(lo, hi);
+        return ranges;
+    }
+
+    auto is_satisfying(const Instance & inst, const vector<int> & values) -> bool
     {
         auto n = inst.start_ranges.size();
+        vector<int> heights;
+        size_t next = n;
+        for (size_t i = 0; i < n; ++i) {
+            auto [lo, hi] = height_range(inst, i);
+            heights.push_back(lo == hi ? lo : values[next++]);
+        }
         int t_lo = INT_MAX, t_hi = INT_MIN;
         for (size_t i = 0; i < n; ++i) {
-            if (inst.lengths[i] == 0 || inst.heights[i] == 0)
+            if (inst.lengths[i] == 0 || heights[i] == 0)
                 continue;
-            t_lo = min(t_lo, starts[i]);
-            t_hi = max(t_hi, starts[i] + inst.lengths[i] - 1);
+            t_lo = min(t_lo, values[i]);
+            t_hi = max(t_hi, values[i] + inst.lengths[i] - 1);
         }
         for (int t = t_lo; t <= t_hi; ++t) {
             int load = 0;
             for (size_t i = 0; i < n; ++i)
-                if (starts[i] <= t && t < starts[i] + inst.lengths[i])
-                    load += inst.heights[i];
+                if (values[i] <= t && t < values[i] + inst.lengths[i])
+                    load += heights[i];
             if (load > inst.capacity)
                 return false;
         }
@@ -89,20 +119,37 @@ namespace
     // every fixture in the file has to carry it.
     CumulativeProofMutation the_mutation = cumulative_proof_mutation::None{};
 
+    // Returns the variables in the order all_ranges() lists their ranges.
     auto post(Problem & p, const Instance & inst, CumulativeRules rules) -> vector<IntegerVariableID>
     {
         vector<IntegerVariableID> starts;
         for (auto & [lo, hi] : inst.start_ranges)
             starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
 
-        vector<Integer> lengths, heights;
-        for (auto l : inst.lengths)
-            lengths.push_back(Integer{l});
-        for (auto h : inst.heights)
-            heights.push_back(Integer{h});
+        if (! has_variable_heights(inst)) {
+            vector<Integer> lengths, heights;
+            for (auto l : inst.lengths)
+                lengths.push_back(Integer{l});
+            for (auto h : inst.heights)
+                heights.push_back(Integer{h});
+            p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(rules).with_proof_mutation(the_mutation));
+            return starts;
+        }
 
-        p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(rules).with_proof_mutation(the_mutation));
-        return starts;
+        vector<IntegerVariableID> lengths, heights, all = starts;
+        for (auto l : inst.lengths)
+            lengths.push_back(constant_variable(Integer{l}));
+        for (size_t i = 0; i < inst.start_ranges.size(); ++i) {
+            auto [lo, hi] = height_range(inst, i);
+            if (lo == hi)
+                heights.push_back(constant_variable(Integer{lo}));
+            else {
+                heights.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+                all.push_back(heights.back());
+            }
+        }
+        p.post(Cumulative{starts, lengths, heights, constant_variable(Integer{inst.capacity})}.with_rules(rules).with_proof_mutation(the_mutation));
+        return all;
     }
 
     // Which rung of the overload ladder justified each conflict. The rules
@@ -180,20 +227,24 @@ namespace
         return probe;
     }
 
-    auto check_enumeration(const string & what, const Instance & inst, CumulativeRules rules, const optional<string> & proof_name) -> void
+    // Returns the overload markers the proof carried, counted before
+    // check_results verifies the proof and deletes it.
+    auto check_enumeration(const string & what, const Instance & inst, CumulativeRules rules, const optional<string> & proof_name) -> MarkerCounts
     {
         print(cerr, "cumulative kaoc {} starts={} lens={} hts={} c={}{}", what, inst.start_ranges, inst.lengths, inst.heights, inst.capacity,
             proof_name ? " with proofs:" : ":");
         cerr << flush;
 
         set<vector<int>> expected, actual;
-        build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(inst, starts); }, inst.start_ranges);
+        build_expected(expected, [&](const vector<int> & values) { return is_satisfying(inst, values); }, all_ranges(inst));
         println(cerr, " expecting {} solutions", expected.size());
 
         Problem p;
-        auto starts = post(p, inst, rules);
-        solve_for_tests(p, proof_name, actual, tuple{starts});
+        auto vars = post(p, inst, rules);
+        solve_for_tests(p, proof_name, actual, tuple{vars});
+        auto markers = proof_name ? count_markers(*proof_name) : MarkerCounts{};
         check_results(proof_name, expected, actual);
+        return markers;
     }
 
     auto fail(const string & message) -> void
@@ -245,7 +296,7 @@ namespace
     auto has_a_solution(const Instance & inst) -> bool
     {
         set<vector<int>> solutions;
-        build_expected(solutions, [&](const vector<int> & starts) { return is_satisfying(inst, starts); }, inst.start_ranges);
+        build_expected(solutions, [&](const vector<int> & values) { return is_satisfying(inst, values); }, all_ranges(inst));
         return ! solutions.empty();
     }
 
@@ -271,6 +322,24 @@ namespace
             fail(what + ": (KAOC) did not refute it");
         if (probe.markers.kaoc == 0)
             fail(what + ": refuted, but no conflict carried the kaoc marker");
+    }
+
+    // The same one rung down: a fixture the horizontally elastic cap refutes
+    // at the root with no time point strengthened, which (TTOC) misses.
+    auto check_elastic_only(const string & what, const Instance & inst) -> void
+    {
+        println(cerr, "cumulative kaoc {}: elastic-only differential", what);
+
+        if (has_a_solution(inst))
+            fail(what + ": the fixture is satisfiable, so refuting it would be a soundness bug");
+        if (probe_root(inst, plain, nullopt).refuted)
+            fail(what + ": (TTOC) already refutes it, so it is not a differential");
+
+        auto probe = probe_root(inst, elastic, make_optional("cumulative_kaoc_" + what));
+        if (! probe.refuted)
+            fail(what + ": (TTHE-OC) did not refute it");
+        if (probe.markers.ttheoc == 0)
+            fail(what + ": refuted, but no conflict carried the ttheoc marker");
     }
 }
 
@@ -342,6 +411,72 @@ auto main(int argc, char * argv[]) -> int
         auto probe = probe_root(Instance{{{0, 4}, {0, 3}, {0, 3}, {0, 3}}, {4, 3, 3, 3}, {3, 3, 3, 3}, 7}, knapsack, nullopt);
         if (probe.refuted)
             fail("compulsory negative twin: refuted an instance the rule should not reach");
+    }
+
+    // (TTHE-OC) on its own, which no lane used to fire: every fixture above
+    // goes on to strengthen some time point, so it carries the kaoc marker.
+    // Capacity two, and the window [1, 8) holds all five tasks, 13 units of
+    // work against the 14 (TTOC) allows. But t = 1 is reachable only by the
+    // length-four task and t = 7 only by the length-three one, both of height
+    // one, so each of those points supplies one unit rather than two, and
+    // that is one unit more than the window can spare.
+    const Instance elastic_edges{{{2, 5}, {2, 5}, {1, 2}, {2, 5}, {3, 5}}, {2, 2, 4, 2, 3}, {1, 1, 1, 1, 1}, 2};
+    check_elastic_only("elastic_edges", elastic_edges);
+
+    // ... and its negative twin, with a third unit of capacity.
+    {
+        auto probe = probe_root(Instance{{{2, 5}, {2, 5}, {1, 2}, {2, 5}, {3, 5}}, {2, 2, 4, 2, 3}, {1, 1, 1, 1, 1}, 3}, knapsack, nullopt);
+        if (probe.refuted)
+            fail("elastic_edges negative twin: refuted an instance with room to spare");
+    }
+
+    // Variable heights (#550). A variable height is in the capacity row as the
+    // bits of its contribution rather than as `h·active`, so the certificate
+    // converts an item's bits back to `lb(h)·active` and weakens away the bits
+    // of a task that is neither an item nor pinned.
+    //
+    // First, Cloutier & Quimper's Example 2 again, with every height a
+    // variable over [2, 3]: counted at their lower bounds they are the
+    // original fixture, and every item needs converting.
+    check_knapsack_only("varh_cloutier_ex2",
+        Instance{cloutier_ex2.start_ranges, cloutier_ex2.lengths, cloutier_ex2.heights, cloutier_ex2.capacity, {{2, 3}, {2, 3}, {2, 3}, {2, 3}}});
+
+    // Instances a random sweep found, on which a step of the variable-height
+    // certificate is load-bearing. Neither step is caught by the arithmetic
+    // cross-check in the certificate, which counts what the rule charges
+    // rather than what the lines say.
+    //
+    // With a non-item's bits left in the line, VeriPB rejects this one at the
+    // root, on every seed: the only one of 12,000 random instances with
+    // variable heights to show it there. The enumeration further down catches the same corruption
+    // only on some seeds, since which of its conflicts meets it depends on the
+    // branching.
+    {
+        const Instance varh_weaken_root{{{1, 3}, {0, 4}, {0, 3}, {3, 4}, {1, 3}, {0, 2}, {1, 5}}, {1, 3, 1, 2, 2, 2, 1}, {3, 1, 2, 3, 2, 1, 3}, 4,
+            {{3, 3}, {1, 3}, {2, 3}, {3, 4}, {2, 2}, {1, 3}, {3, 3}}};
+        if (has_a_solution(varh_weaken_root))
+            fail("varh_weaken_root: the fixture is satisfiable, so refuting it would be a soundness bug");
+        auto probe = probe_root(varh_weaken_root, knapsack, make_optional("cumulative_kaoc_varh_weaken_root"));
+        if (! probe.refuted)
+            fail("varh_weaken_root: (KAOC) did not refute it");
+        if (probe.markers.kaoc == 0)
+            fail("varh_weaken_root: refuted, but no conflict carried the kaoc marker");
+    }
+
+    // With the conversion left out, VeriPB rejects this one (and
+    // varh_cloutier_ex2 above).
+    {
+        const Instance varh_convert{{{1, 1}, {1, 2}, {1, 2}}, {1, 4, 1}, {4, 4, 2}, 5, {{4, 4}, {4, 4}, {2, 4}}};
+        auto markers = check_enumeration("varh_convert", varh_convert, knapsack, make_optional("cumulative_kaoc_varh_convert"));
+        if (markers.ttheoc + markers.kaoc == 0)
+            fail("varh_convert: no elastic conflict, so the conversion was not exercised");
+    }
+    {
+        const Instance varh_weaken{
+            {{0, 1}, {2, 5}, {3, 6}, {1, 4}, {0, 3}}, {2, 3, 2, 1, 3}, {1, 6, 3, 4, 6}, 7, {{1, 3}, {6, 7}, {3, 5}, {4, 6}, {6, 7}}};
+        auto markers = check_enumeration("varh_weaken", varh_weaken, knapsack, make_optional("cumulative_kaoc_varh_weaken"));
+        if (markers.ttheoc + markers.kaoc == 0)
+            fail("varh_weaken: no elastic conflict, so the weakening was not exercised");
     }
 
     // The soundness net. A conflict-only rule can only ever lose solutions, so

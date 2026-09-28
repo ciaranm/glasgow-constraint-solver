@@ -688,10 +688,11 @@ the capacity is a variable: a `(b−a)·capacity` term would survive into
 the conflict line for the wrapping RUP to dispose of over the capacity's
 bits, which it cannot do in general.
 
-The **elastic** rules — (TTHE-OC) and (KAOC) — still decline a variable
-height outright, and that is not the same restriction: their knapsack
-item list and term-dropping read heights off the capacity row's
-coefficients, which a bit-linearised contribution is not.
+The **elastic** rules — (TTHE-OC) and (KAOC) — used to decline a
+variable height outright, since their knapsack item list and
+term-dropping read heights off the capacity row's coefficients, which a
+bit-linearised contribution is not. They now convert the row first; see
+"Variable heights" in the overload ladder's section.
 
 None of these lose soundness or solutions: a task the energy set will
 not take still counts through `F(a, b)`, and a check not made is a
@@ -1890,14 +1891,39 @@ way `(TTOC)`'s pins are droppable on 235 of 248 instances. The step stays, since
 it is what makes the pol itself contradictory rather than only close, but nothing
 can test it.
 
+### Variable heights
+
+A variable height is counted at its lower bound, as the energy set counts it,
+and that is the item's coefficient. The capacity row does not carry `h·active`
+for such a task, though; it carries the bits of the linearised contribution. So
+the availability line treats those bits, not a flag, according to the task's
+role at `t`:
+
+* **pinned** (compulsory): `pin_contributor` already pins the contribution, not
+  the flag, so nothing changes;
+* **an item** (contained and reachable): one `guaranteed_contribution` line,
+  `Σ 2^k·cc_k + lb(h)·¬active ≥ lb(h)`, under the reason. Added to the row, the
+  bits cancel and what is left is `lb(h)·active`, the term the knapsack reads.
+  This is the conversion `donor_view` does for a derived constraint and the
+  energy set does for its rows (#686, #689), in the other direction;
+* **anything else**: each contribution bit is weakened away, where a
+  constant-height task has its flag weakened.
+
+The detection needed nothing: it already read heights through `lb(h)`, and the
+gate that declined a variable height was the only thing between it and the
+certificate. Both steps are load-bearing, and the arithmetic cross-check below
+catches neither, since it counts what the rule charges, not what the lines say.
+Leaving the conversion out is rejected on `varh_cloutier_ex2` (Example 2 with
+every height a variable over `[2, 3]`) and `varh_convert`. Leaving a non-item's
+bits in is rejected on `varh_weaken_root`, the only one of 12,000 random
+instances with variable heights to show it at the root (1,566 of the 12,000
+were refuted there by some overload rung). The seven-task fixture is kept for
+that reason. An
+enumeration over a smaller one, `varh_weaken`, meets the same corruption only on
+some seeds.
+
 ### Restrictions
 
-Constant heights only: a variable height puts bit-linearised contribution terms
-in the capacity row, which neither the knapsack's item list nor the term-dropping
-can read, so v1 declines rather than approximates and the plain rules still run.
-This is *not* the restriction the energy set shed in #689 — there the conversion
-turns an activity bound into contribution terms, where here what would have to
-be converted is the row the items are read off.
 A capacity above 4096 falls back to the elastic cap, since the bitset is
 `capacity + 1` bits at every time point (scheduling capacities are nothing like
 that --- Cloutier & Quimper report `C <= 122` across their benchmarks).
@@ -2308,15 +2334,16 @@ start-checkpoint arm and are registered there. `capacity` is the one that earns
 it: it omits a row from a per-time availability line, which on that arm is a
 recovered row, so it is the negative test over exactly the path this moved.
 
-**A coverage gap this turned up, which predates it.** `(TTHE-OC)` --- the
-elastic cap with *no* time point strengthened --- is never fired by any lane in
+**A coverage gap this turned up, which predated it.** `(TTHE-OC)` --- the
+elastic cap with *no* time point strengthened --- was never fired by any lane in
 the suite, under any encoding: sweeping every cumulative test binary for the
-rule label finds `oc`, `ttoc` and `kaoc` and never `ttheoc`. The certificate
+rule label found `oc`, `ttoc` and `kaoc` and never `ttheoc`. The certificate
 code is shared, and the non-strengthened per-point branch is exercised whenever a
-`kaoc` firing leaves some points unstrengthened, so this is a gap in *detection*
-coverage rather than in the certificate's. The `elastic` rule set in
-`cumulative_kaoc_test.cc` is used for decline-checks, which is why the fixtures
-there all go on to fire `kaoc` instead. Worth a fixture; nobody has written one.
+`kaoc` firing leaves some points unstrengthened, so this was a gap in *detection*
+coverage rather than in the certificate's. `cumulative_kaoc_test`'s
+`elastic_edges` (#550) now fires it at the root, where (TTOC) does not: two
+edge points reachable by one unit-height task each supply one unit rather than
+two.
 
 ### Citing the recovered row: edge-finding's window rows
 
@@ -3053,12 +3080,10 @@ so any difference is the encoding's.
   cached; taking the live bound instead is what makes it reason-backed, for the
   same reason the length does. Whether the declared bound is worth having is a
   measurement nobody has made.
-- **The elastic family over variable heights.** (TTHE-OC) and (KAOC) decline a
-  variable height, and unlike the energy set they are not one conversion away:
-  the knapsack's item list is a set of heights read off a capacity row's
-  coefficients, and a bit-linearised contribution is not a coefficient on a
-  flag. Converting the row first — which is exactly what `donor_view` does for
-  a derived constraint — is the obvious route and has not been tried.
+- ~~**The elastic family over variable heights.**~~ Done (#550): the
+  availability line converts each item's contribution bits back to
+  `lb(h)·active` and weakens away everyone else's. See "Variable heights" in
+  the overload ladder's section.
 - **Conditional bounds for optional tasks.** An undecided task's start
   bounds are never pruned, because there is no conditional-bounds store
   and an unconditional prune would be unsound if the task turns out

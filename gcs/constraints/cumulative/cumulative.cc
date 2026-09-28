@@ -60,7 +60,6 @@ using std::unique_ptr;
 using std::vector;
 using std::ranges::fill;
 using std::ranges::find;
-using std::ranges::none_of;
 using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -2152,11 +2151,11 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         // answer — the rule is off by default, and the cost is propagation
         // performance rather than proof content.
         //
-        // A variable height would put bit-linearised contribution terms in the
-        // capacity line instead of one `h·active`, which neither the knapsack's
-        // item list nor the term-dropping below can read. v1 declines rather
-        // than approximates: the plain rules above still run.
-        auto elastic_rules = (rules.elastic_overload || rules.knapsack_overload) && none_of(active_tasks, [&](size_t i) { return h_is_var(i); });
+        // A variable height is counted at its lower bound, as the energy set
+        // counts it: the item's height is `lb(h)`, and the certificate converts
+        // the bit-linearised contribution the capacity row carries back into
+        // `lb(h)·active` before the knapsack reads it (#550).
+        auto elastic_rules = rules.elastic_overload || rules.knapsack_overload;
 
         // The knapsack cap is pseudo-polynomial in the capacity twice over: a
         // bitset of `capacity + 1` bits at every time point, and a layer of
@@ -2745,19 +2744,36 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                     continue;
                                 }
 
+                                // A variable height is in the row as the bits
+                                // of its contribution, not as `h·active`, so
+                                // what is done to a task's term here is done to
+                                // those bits. A pin already speaks about them
+                                // (pin_contributor). An item is converted back
+                                // to `lb(h)·active` by the same line the
+                                // energy set converts with, which is the
+                                // coefficient the item list states and the
+                                // energy lines are scaled by; and everything
+                                // else is weakened away a bit at a time.
                                 PolBuilder avail;
                                 avail.add(*capacity_line);
                                 for (auto j : active_tasks) {
                                     if (t < per_task_t_lo[j] || t > per_task_t_hi[j])
                                         continue;
-                                    auto flag = active_flag(j, static_cast<size_t>((t - per_task_t_lo[j]).raw_value));
+                                    auto fi = static_cast<size_t>((t - per_task_t_lo[j]).raw_value);
                                     auto lst = state.upper_bound(starts[j]), eet = state.lower_bound(starts[j]) + llb(j);
                                     if (is_present(j) && lst <= t && t < eet) {
                                         auto [line, coeff] = pin_contributor(reason, j, t);
                                         avail.add(line, coeff);
                                     }
-                                    else if (! (is_inside[j] && state.lower_bound(starts[j]) <= t && t < state.upper_bound(starts[j]) + llb(j)))
-                                        avail.weaken(flag, logger->names_and_ids_tracker());
+                                    else if (is_inside[j] && state.lower_bound(starts[j]) <= t && t < state.upper_bound(starts[j]) + llb(j)) {
+                                        if (h_is_var(j))
+                                            avail.add(guaranteed_contribution(reason, j, t));
+                                    }
+                                    else if (h_is_var(j))
+                                        for (const auto & bit : contrib_bits(j, fi))
+                                            avail.weaken(bit, logger->names_and_ids_tracker());
+                                    else
+                                        avail.weaken(active_flag(j, fi), logger->names_and_ids_tracker());
                                 }
 
                                 auto line = avail.emit(*logger, ProofLevel::Temporary);
