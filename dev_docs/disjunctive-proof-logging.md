@@ -1674,8 +1674,49 @@ again; TTEF fires 47–335 times per instance, mostly in place of
 edge-finding and time-table pushes, and moves proof size by −8% to +10%.
 
 Optional rectangles take part in all three energetic rungs once
-present; see the time-tabling rung's section above. Not yet: variable
-sizes.
+present; see the time-tabling rung's section above. Variable time-axis
+sizes take part at their declared floor; see the next section.
+
+### Variable time-axis sizes, at the declared floor (#984)
+
+The three energetic rungs and `cumulative_projection` count a rectangle
+whose time-axis size is a variable at the size's **declared** lower
+bound, as 1D's energy rules count a variable duration (see "Variable
+durations, at the declared floor"). Shrinking a rectangle cannot create
+an overlap, so what holds of the shrunk rectangles holds of the real
+ones. What is lost is the extra energy of a rectangle the search has
+lengthened. The current lower bound would be stronger, but it is a
+state fact, and the activity flags, window energies and flagged rows
+are all cached at `Top` as model facts: a flag defined at a length the
+state supplied would be neither.
+
+The floor enters the proof in one place: each pair refutation under
+the flagged row, where the before flag's row carries the size as a term.
+A `Top` RUP `size ≥ floor`, cached per rectangle, cancels it. In
+non-strict mode every variable size also brings a zero-size escape into
+its pairs' clauses, pinned false the same way and also at `Top`. The pin
+is needed: with two escapes in one pair, the pair clause's RUP does not
+reach both, as route B found under a reason (above). The projection
+hands its `Cumulative` the floor as a **constant** length, so nothing on
+`Cumulative`'s side changes. A variable length there would need the
+proof-only end a `Cumulative` pins a two-variable `after` through. A
+rectangle declared from zero has no guaranteed extent and is left out.
+
+Time-tabling (route B) is unchanged: it counts the current lower bound
+under a reason, as it always has. The resource-axis size must still be
+a positive constant, since it is the comparator network's duration.
+
+Tested by the `variable_size_*` fixtures in
+`disjunctive_2d_relaxation_test`. Every rung's own fixture runs with each
+width a variable over `[w, w + 2]`, strict and non-strict, and must fire
+as it does with constants and not with the rule off. An enumeration over
+positions and widths per rung must agree with brute force. Three mutation
+lanes are each rejected at the pair clause's RUP: `skip_size_floor`,
+`projection_skip_size_floor` and `skip_floor_escape_pins`. **The widths
+run two past the floor, not one.** A width over `[2, 3]` is bits
+`b0 + 2·b1 ≥ 2`, from which unit propagation fixes `b1`. The floor and
+both escapes are then implied at every RUP, and all three mutations
+verify.
 
 ### `Cumulative`'s own propagator over each projection (#973)
 
@@ -1784,8 +1825,8 @@ Tested by:
 - **`squares_projection`.**
 - **Proofs on and off.** The search trees are identical.
 
-Same members as route A: constant sizes only, and no optional
-rectangles.
+Same members as route A, optional rectangles and variable time-axis
+sizes included (above).
 
 ## Reusable ideas
 

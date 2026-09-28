@@ -94,6 +94,13 @@ namespace gcs
          * below, once search has made it present (#984), provided its presence
          * is a plain variable no other rectangle shares. Until then it is left
          * alone, which is only weaker.
+         *
+         * A variable size on the time axis is counted at its current lower
+         * bound by this rule, under a reason, and at its *declared* lower bound
+         * by the energetic rules below and \ref cumulative_projection, whose
+         * rows are model facts (#984); a rectangle declared from zero has no
+         * guaranteed extent and takes no part in those. Either way a rectangle
+         * is only ever counted shorter than it is, which is only weaker.
          */
         bool cumulative_relaxation = false;
 
@@ -118,7 +125,7 @@ namespace gcs
          * same telescope. See #984.
          *
          * Uses the members \ref cumulative_relaxation does, restricted to a
-         * constant time-axis size, and `H` is the model's resource-axis
+         * positive declared time-axis size, and `H` is the model's resource-axis
          * extent over them rather than the current one, since the row is
          * cached. The network's constants are quadratic in that extent, so an
          * axis whose members' resource-axis window does not pass
@@ -207,8 +214,9 @@ namespace gcs
          * and every certificate it writes are `Cumulative`'s, unchanged.
          *
          * Uses the members \ref relaxation_overload does, and is off on an
-         * axis where that rule is for the width of its window. nullopt, the
-         * default, runs nothing.
+         * axis where that rule is for the width of its window. A variable
+         * time-axis size is projected as a constant length, its declared lower
+         * bound (#984). nullopt, the default, runs nothing.
          */
         std::optional<CumulativeRules> cumulative_projection = std::nullopt;
     };
@@ -348,6 +356,14 @@ namespace gcs
         // the capacity row the check cites be cached at Top.
         std::array<std::pair<Integer, Integer>, 2> _relaxation_window{{{Integer{0}, Integer{0}}, {Integer{0}, Integer{0}}}};
         std::array<std::map<std::size_t, std::pair<Integer, Integer>>, 2> _relaxation_declared_time;
+
+        // And each member's time-axis size as the energetic rungs and the
+        // projection count it: the constant, or a variable size's *declared*
+        // lower bound (#984). A rectangle counted shorter than it is only
+        // weakens what they infer, and the declared bound is a model fact, so
+        // the rows over it stay reason-free and cacheable at Top. Zero means
+        // the rectangle has no guaranteed extent and those rules leave it out.
+        std::array<std::map<std::size_t, Integer>, 2> _relaxation_time_floor;
 
         // Per axis, whether that window is narrow enough for the flagged
         // capacity row's network, whose optional tasks have constants
