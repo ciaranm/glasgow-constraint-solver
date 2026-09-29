@@ -215,6 +215,16 @@ constraints and do not restate it.
   `LessThan(x, x)` has contradicted at once since #1088; and a repeat through an
   opposite-sign view is not even `bounds(Z)`. Not merged with `comparison`: the
   same row and theorem, but no shared code.
+- [`value_precede.md`](value_precede.md) — `ValuePrecede`, a value chain
+  whose each value first appears before the next: one propagator per
+  consecutive pair over `cake_pb_cp`'s first-occurrence encoding, matched
+  label for label, and quadratic in the array per chain value. It removes a
+  later value wherever no earlier one can precede it, and nothing else: Law and
+  Lee's forcing half is missing, so it is neither GAC nor `bounds(Z)`, and a
+  backwards enumeration of restricted-growth strings meets 247,823 failures
+  where Gecode's `precede` has none, at 8.0 times the time. Every removal's
+  reason is the whole array. The proofs are one RUP per removal, by a
+  procedure of our own through three of the thesis's theorems.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
