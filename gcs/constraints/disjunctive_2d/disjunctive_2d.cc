@@ -1,3 +1,4 @@
+#include <gcs/constraints/cumulative/donor_view.hh>
 #include <gcs/constraints/cumulative/propagate.hh>
 #include <gcs/constraints/disjunctive_2d/disjunctive_2d.hh>
 #include <gcs/constraints/disjunctive_2d/hints.hh>
@@ -453,11 +454,16 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     // `size >= floor`. Resolved here, from the model alone, like the members
     // themselves, so that the projection draws the same inferences with
     // proofs off.
+    //
+    // Resolved whether or not the rule is on: the projection is also a donor a
+    // presolver can derive a Cumulative from (#973), and its flags and rows
+    // cost nothing until something cites them. The rule is what says whether
+    // its own propagator runs.
     for (auto time_axis : {0, 1}) {
         auto & rects = _projection_rects[time_axis];
         rects.clear();
         _projection[time_axis] = nullptr;
-        if (! _rules.cumulative_projection || ! _relaxation_row_fits[time_axis])
+        if (! _relaxation_row_fits[time_axis])
             continue;
 
         const auto & time_pos = time_axis == 0 ? _xs : _ys;
@@ -474,7 +480,7 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         auto [window_lo, window_hi] = _relaxation_window[time_axis];
         auto inputs = std::make_shared<CumulativeInputs>();
         inputs->capacity = constant_variable(window_hi - window_lo);
-        inputs->rules = *_rules.cumulative_projection;
+        inputs->rules = _rules.cumulative_projection.value_or(CumulativeRules{});
         for (size_t k = 0; k < rects.size(); ++k) {
             auto i = rects[k];
             auto length = constant_variable(floors[i]);
@@ -491,7 +497,7 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
             inputs->per_task_t_hi.push_back(window.hi);
             inputs->flag_key_positions.push_back(static_cast<size_t>(time_axis) * n + i);
         }
-        if (inputs->rules.overload) {
+        if (_rules.cumulative_projection && inputs->rules.overload) {
             auto overload_data = prepare_cumulative_overload_check(
                 inputs->starts, inputs->lengths, inputs->heights, inputs->active_tasks, inputs->per_task_t_lo, inputs->per_task_t_hi, initial_state);
             inputs->overload_tasks = move(overload_data.overload_tasks);
@@ -653,7 +659,31 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
         for (auto time_axis : {0, 1}) {
             if (! _projection[time_axis])
                 continue;
-            _projection[time_axis]->owner = constraint_id();
+            auto & inputs = *_projection[time_axis];
+            inputs.owner = constraint_id();
+
+            // A donor for the presolvers (#973), exactly as prepare() resolved
+            // it, since a presolver sees this constraint as posted rather than
+            // as prepared. Its flags are keyed as the propagator's are, and its
+            // rows are the family published below.
+            PublishedCumulativeDonor donor{.key = CumulativeDonorKey{constraint_id(), *inputs.capacity_row_family},
+                .positions = inputs.flag_key_positions,
+                .starts = inputs.starts,
+                .lengths = {},
+                .heights = {},
+                .presences = {},
+                .capacity = constant_value_of(inputs.capacity)};
+            auto any_optional = std::ranges::any_of(inputs.presence, [](const auto & p) { return p.has_value(); });
+            for (size_t k = 0; k < inputs.starts.size(); ++k) {
+                donor.lengths.push_back(constant_value_of(inputs.lengths[k]));
+                donor.heights.push_back(constant_value_of(inputs.heights[k]));
+                if (any_optional)
+                    donor.presences.push_back(inputs.presence[k].value_or(constant_variable(1_i)));
+            }
+            publish_cumulative_donor(propagators, move(donor));
+
+            if (! _rules.cumulative_projection)
+                continue;
             Triggers projection_triggers;
             for (const auto & start : _projection[time_axis]->starts)
                 projection_triggers.on_bounds.emplace_back(start);

@@ -48,10 +48,14 @@ using std::ranges::any_of;
 
 namespace
 {
-    /// One posted Cumulative a cut can be lifted over.
+    /// One donor a cut can be lifted over: a posted Cumulative, or a
+    /// projection a constraint published (#973).
     struct Donor
     {
+        /// Whose flags these are.
         ConstraintID id;
+        /// Whose rows, which for a projection names the axis too.
+        CumulativeDonorKey key;
         size_t size;
         Integer capacity;
         /// What of this donor can be argued over: which of its tasks have a
@@ -523,7 +527,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
     vector<Task> tasks;
     map<pair<IntegerVariableID, IntegerVariableID>, size_t> task_of;
 
-    for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
+    for (const auto & donor : cumulative_donors(problem, propagators)) {
         bump(&InferredCumulativeStats::donors_seen);
 
         // The mechanism no longer minds an optional donor --- a presence is a
@@ -534,9 +538,9 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         // donor's flags to another's, and two donors' activity flags cancel
         // against each other only if their presence conjuncts do too. Declined
         // until that has a rule of its own rather than a hopeful `pol`.
-        if (! donor.presences().empty()) {
+        if (! donor.presences.empty()) {
             bump(&InferredCumulativeStats::declined_optional);
-            note(StatsLevel::General, donor.constraint_id(),
+            note(StatsLevel::General, donor.key.id,
                 "passed over: it has optional tasks, whose presence conjuncts do not yet cancel across a bridge between donors");
             continue;
         }
@@ -548,11 +552,10 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         // cover, and its terms come out of every row first. A variable duration
         // is no obstacle: a cover is a statement about demands, and lifting
         // works over a row no length appears in.
-        auto view = cumulative_donor_view(donor, state, logger);
+        auto view = donor.view(state, logger);
         if (! view) {
             bump(&InferredCumulativeStats::declined_irreducible_capacity);
-            note(StatsLevel::General, donor.constraint_id(),
-                "passed over: its capacity is a view, which cannot be reduced to a number to lift a cut out of");
+            note(StatsLevel::General, donor.key.id, "passed over: its capacity is a view, which cannot be reduced to a number to lift a cut out of");
             continue;
         }
         if (! view->set_aside.empty())
@@ -561,11 +564,11 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             if (view->height_bounded_by[i])
                 bump(&InferredCumulativeStats::converted_heights);
 
-        const auto & starts = donor.starts();
+        const auto & starts = donor.starts;
         auto capacity = view->capacity;
 
         auto which = donors.size();
-        donors.push_back(Donor{donor.constraint_id(), starts.size(), capacity, *view});
+        donors.push_back(Donor{donor.key.id, donor.key, starts.size(), capacity, *view});
 
         // Every task already found needs a slot for the donor just added,
         // whether or not it turns out to appear in it --- and before the loop
@@ -827,9 +830,9 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         // Only the rows the programme kept are ever cited, and a restriction to
         // fewer members can only make fewer of them bind, so this is every donor
         // whose row could be wanted at any time point.
-        vector<ConstraintID> row_donors;
+        vector<CumulativeDonorKey> row_donors;
         for (auto row : cut.validated->row_indices)
-            row_donors.push_back(donors[row].id);
+            row_donors.push_back(donors[row].key);
 
         DerivedCumulativeSpec spec{.tasks = derived_tasks,
             .capacity = cut.rhs,
@@ -920,7 +923,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 vector<vector<ProofFlag>> kept_weaken_out;
                 for (auto row : programme->row_indices) {
                     const auto & donor = recipe.donors[row];
-                    auto found_row = rows.find(donor.id);
+                    auto found_row = rows.find(donor.key);
                     if (found_row == rows.end())
                         return std::nullopt;
 

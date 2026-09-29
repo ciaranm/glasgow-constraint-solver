@@ -166,17 +166,18 @@ namespace
                         divisor = Integer{std::gcd(divisor.raw_value, heights[i].raw_value)};
 
                 auto donor_id = donor.constraint_id();
+                auto donor_key = CumulativeDonorKey{donor_id, ConstraintProofModelData<Cumulative>::capacity_row_family()};
                 auto presences = demo == Demo::MakespanForgetPresence ? vector<IntegerVariableID>{} : donor.presences();
                 DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, donor.starts(), lengths, heights, presences),
                     .capacity = capacity,
-                    .row_donors = {donor_id},
+                    .row_donors = {donor_key},
                     .recipe = {},
                     .rules = CumulativeRules{}};
 
                 // Every demo here derives from the one donor it was built over,
                 // so each pulls that donor's row out of the map it is handed.
-                auto row_of = [donor_id](const DerivedCumulativeRows & rows) -> ProofLine {
-                    auto at = rows.find(donor_id);
+                auto row_of = [donor_key](const DerivedCumulativeRows & rows) -> ProofLine {
+                    auto at = rows.find(donor_key);
                     if (at == rows.end())
                         fail("the donor had no capacity row where the derived constraint has one");
                     return at->second;
@@ -353,11 +354,12 @@ namespace
                     heights.push_back(constant_value_of(h));
 
                 auto donor_id = donor.constraint_id();
+                auto donor_key = CumulativeDonorKey{donor_id, ConstraintProofModelData<Cumulative>::capacity_row_family()};
                 DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, donor.starts(), lengths, heights),
                     .capacity = constant_value_of(donor.capacity()),
-                    .row_donors = {donor_id},
-                    .recipe = [donor_id](ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer) -> optional<ProofLine> {
-                        auto at = rows.find(donor_id);
+                    .row_donors = {donor_key},
+                    .recipe = [donor_key](ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer) -> optional<ProofLine> {
+                        auto at = rows.find(donor_key);
                         if (at == rows.end())
                             fail("the donor had no capacity row where the derived constraint has one");
                         PolBuilder copy;

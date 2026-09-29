@@ -177,6 +177,11 @@ namespace gcs
      * from cliques in the conflict graph across all posted Cumulatives, and post
      * them in derived mode.
      *
+     * Each axis of a Disjunctive2D is a resource too, as the Cumulative it
+     * projects onto (innards::cumulative_donors, #973): rectangles whose
+     * extents on the other axis overflow its window pairwise can share no
+     * point of this one.
+     *
      * Two tasks conflict if *some* resource cannot hold both at once, i.e. their
      * demands on it sum to more than its capacity. A set of tasks conflicting
      * pairwise can have at most one of them running at any time, whatever

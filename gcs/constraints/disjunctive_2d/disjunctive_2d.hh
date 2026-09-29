@@ -222,6 +222,13 @@ namespace gcs
          * size on either axis is projected as a constant, its declared lower
          * bound: a length on the time axis, a height on the other (#984).
          * nullopt, the default, runs nothing.
+         *
+         * The projection is there whether or not this is set: every axis
+         * whose window fits is published as a donor a presolver can derive a
+         * `Cumulative` from (innards::PublishedCumulativeDonor), as it would
+         * from a posted one (#973). Its flags and rows then exist in the
+         * proof as they do here, and cost nothing until something cites them.
+         * This says only whether this constraint runs the propagator over it.
          */
         std::optional<CumulativeRules> cumulative_projection = std::nullopt;
     };
