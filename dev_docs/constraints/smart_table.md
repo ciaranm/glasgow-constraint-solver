@@ -6,13 +6,16 @@
 > scope aborts the solve (#1119); a short-reason flag defined on every call and
 > never deleted, 20 times the checking time on an enumeration (#1120);
 > `LexSmartTable` and `AtMostOneSmartTable` hints naming no constraint (#1121).
+> Filed from the review of this audit: building the proof model does up to
+> quadratic work in a unary-entry variable's width (#1127); every tree of a row copies
+> the whole scope's domains on every call (#1128).
 > **Not filed**, and cited below by a short name in italics: a value removal
 > asserted with no reason at the `Definitions`, `Links` and `Inferences`
 > assertion levels, so the hints-only proof asserts false clauses, a defect
 > `Circuit` shares (*assertion reasons*), left by decision until the hints-only
 > mode is taken up for the justifier; the `cake_pb_cp` chain failing on the
-> solver's row-flag names (*chain row flags*); and the per-call cost
-> (*per-call cost*), both low priority. Already open and touching this family:
+> solver's row-flag names (*chain row flags*); and the rest of the per-call
+> cost (*per-call cost*), both low priority. Already open and touching this family:
 > #833 (the large-domain policy, whose audit lane marks all three smart-table
 > rows `KnownTrip`), #364 (incrementality survey), #868 (cross-solver). Tracked
 > under #871.
@@ -42,7 +45,8 @@ Three things to know before touching it.
   cannot see this, because it does not check assertions. `Circuit`'s SCC
   propagator has the same defect from the same commit (*assertion reasons*).
 - **It is slow and its proofs are slow to check, for reasons that are not the
-  algorithm.** Every call rebuilds hash maps of every variable's values; on the
+  algorithm.** Every call rebuilds hash maps of every variable's values, one
+  per tree of every live row (#1128); on the
   same search trees it is 17–23 times slower than the native `AtMostOne` and
   8–15 times slower than the native `Lex`. With the default short reasons, it
   defines a reason flag on every call whether or not anything follows, and never
@@ -347,9 +351,16 @@ wontfix on 2026-06-30 (*chain row flags*).
 - **The constructor**: the aliasing and cycle checks, a union-find per row.
 - **`prepare()`**: allocates one `{0, 1}` `State` variable per row, the
   solver-side selector.
-- **`define_proof_model()`**: consolidates each row's unary entries by walking
-  each such variable's initial domain, so its cost is rows × width of
-  unary-entry variables. It writes the rows above.
+- **`define_proof_model()`**, with proofs on only: consolidates each row's
+  unary entries by walking each such variable's initial domain, and writes the
+  rows above. The rows it writes are linear in that width, but the work of
+  building them is up to quadratic in it (#1127). Each initial-domain value is
+  looked up in the consolidated set `S` with a linear `std::count`, so
+  `|D₀| × |S|` comparisons per consolidated entry: `W(W + 1)` for `x ≥ 1` over
+  `0..W`, but `6(W + 1)` for `x ≤ 5`. The consolidation itself takes each input
+  set entry by value, copying and scanning it once per domain value, so
+  `|D₀| × Σ|input set|` more. It is quadratic when `S` or an input set is
+  `Θ(W)`. See [Interval efficiency](#interval-efficiency).
 - **`install_propagators()`**: builds each row's forest once
   (`build_forests`), rooting each tree at the row's first-mentioned variable
   that is not yet in a tree.
@@ -377,7 +388,8 @@ when a row is found dead and restored by the `State` on backtrack. Every call
 rebuilds everything else from the current domains:
 
 - a hash map from each underlying variable to a vector of its values;
-- a copy of that map per tree of every live row;
+- a copy of that map per tree of every live row, each holding every scope
+  variable, not only the tree's own (#1128);
 - the filtered copies, the unsupported sets and the removals.
 
 Every live row is revisited on every call, whatever changed.
@@ -385,8 +397,10 @@ Every live row is revisited on every call, whatever changed.
 **What maintaining it would buy.** #364's survey names "tree-walk frontier
 caching". The cost measured here is more basic: allocation and hash lookups
 are a third of the samples, and half with the map helpers ([CPU performance](#cpu-performance),
-*per-call cost*). STR's usual economies, skipping variables already fully
-supported and variables unchanged since the last call, are not used.
+*per-call cost*). Copying only each tree's own variables would remove the
+factor the whole-scope copies add (#1128). STR's usual economies, skipping
+variables already fully supported and variables unchanged since the last
+call, are not used.
 
 ### Interior values and optional pruning
 
@@ -403,7 +417,11 @@ order-only entry such as `x < y` still loses supports when a hole appears.
 
 - **Unbounded domains.** Per value throughout. Two variables over `0..10⁶`
   with one row `{x < y}` take 1.27 s and 146 MB for four propagator calls
-  (release, `c9ceea25`, pinned). `10⁹` was not run. See [Interval
+  (release, `c9ceea25`, fataepyc-09, 2026-09-26, pinned with `taskset -c 40`
+  and `GLIBC_TUNABLES`). `10⁹` was not run. Separately, with proofs on, one unary
+  entry `x ≥ 1` over `0..128,000` takes 4.1 s to reach the start of the proof,
+  against 1.75 s once its linear membership scan becomes a binary search
+  (#1127; release, `c9ceea25`, fataepyc-10, 2026-09-29). See [Interval
   efficiency](#interval-efficiency).
 - **Negative values and zero.** Tested (`wide_constants` over `−59..58`,
   `stacked_unary` over `−1..4`) and in the brute-force checks. The 5,000-table
@@ -422,10 +440,10 @@ order-only entry such as `x < y` still loses supports when a hole appears.
 behind it.
 
 1. **Propagation.** Each call walks every scope variable's values
-   (`each_value_immutable`) into vectors, copies them per tree, and sorts,
-   intersects and differences them per entry. Everything is proportional to
-   values, not intervals. Nothing here uses `IntervalSet` operations. The
-   consolidation in `define_proof_model` walks initial domains once.
+   (`each_value_immutable`) into vectors, copies all of them once per tree of
+   each live row (#1128), and sorts, intersects and differences them per entry.
+   Everything is proportional to values, not intervals. Nothing here uses
+   `IntervalSet` operations.
 2. **Reasons.** `generic_reason(vars)`, one literal per bound and one per run
    of missing values (#935), so per run. It is built eagerly and not guarded on
    `want_reasons()`, which costs well under 1% of a profile with proofs off.
@@ -433,7 +451,31 @@ behind it.
 3. **Proofs.** One justification per removed value, each `|T| + 1` RUP steps.
    A `=` entry's filtering lemmas are one per discarded value, the order entries'
    one per side, `≠`'s one. There is no width gate anywhere. The encoding is
-   linear in a unary-entry variable's width ([OPB encoding](#opb-encoding)).
+   linear in a unary-entry variable's width ([OPB encoding](#opb-encoding)),
+   but **building it is up to quadratic** in that width (#1127):
+   `define_proof_model` looks each initial-domain value up in the consolidated
+   set `S` with a linear scan (`|D₀| × |S|`), and the consolidation copies and
+   scans each input set entry once per value (`|D₀| × Σ|input set|`). That is
+   quadratic when `S` or an input set is `Θ(W)`, as in both rows below; an
+   entry `x ≤ 5` costs only `6(W + 1)` comparisons. Measured on a release
+   build of `c9ceea25`, fataepyc-10, 2026-09-29, pinned to one core, as the
+   median of three runs of the wall time from entering `solve_with` to
+   `after_proof_started`, with the OPB and proof written to tmpfs
+   (`tmp/fd-smarttable/codex-r1/construct.cc`, `construct_shm.out`; one
+   variable over `0..W`, one row, short reasons off):
+
+   | Row | W = 16,000 | 32,000 | 64,000 | 128,000 |
+   |---|---|---|---|---|
+   | `{x ≥ 1}` | 0.23 s | 0.53 s | 1.45 s | 4.14 s |
+   | same, sorted lookup | 0.20 s | 0.42 s | 0.86 s | 1.75 s |
+   | `{x ∈ {1..W}}` | 0.32 s | 0.93 s | 3.44 s | 12.0 s |
+   | same, sorted lookup and no per-value copy | 0.20 s | 0.43 s | 0.87 s | 1.77 s |
+
+   The "sorted lookup" rows link a variant of `smart_table.cc`
+   (`codex-r1/st_sortedscan.cc`, and `st_sortedscan_v2.cc`, which also takes
+   the set entry by reference). Each writes an OPB and a proof byte-identical to
+   the unmodified build's at every width above, and grows linearly. Without
+   proofs, `define_proof_model` does not run and none of this is paid.
 4. **The audit lane.** Three rows, all `KnownTrip`: `SmartTable` (two wide
    variables, one row `{v0 = v1}`), `LexSmartTable` and `AtMostOneSmartTable`.
    None is in the proof-size case. The rows do not vary unary or set entries,
@@ -541,9 +583,33 @@ no search.
   The two passes, as Mairy et al. publish them, are what reach GAC on a tree
   without iterating. #1007 (closing #994) made the implementation match: its
   second pass had gone leaves up, and it had counted support before the pass
-  finished. Cost per call: rows × Σ over entries of the values of their
-  variables, plus the map building (see [Mutable
-  state](#mutable-state-and-incrementality)). In values, not intervals.
+  finished. Cost per call, as a worst case: for each live row, one copy of
+  the whole scope's current domains per tree of the row, then the values of
+  each entry's variables; plus the map building (see [Mutable
+  state](#mutable-state-and-incrementality)). In values, not intervals. The
+  copies are not bounded by what the row mentions (#1128). A row with `q`
+  trees over a scope holding `D` values copies up to `qD` values: each
+  tree's copy is made just before that tree is filtered, so it is paid
+  whatever that tree's filtering removes, and only a tree that kills the row
+  stops the copies after it. So one row of
+  `n` independent unary entries over `n` variables of `d` values copies
+  `Θ(n²d)`. `LexSmartTable`'s `n` rows, over distinct variables, have `1, …, n` trees
+  over a scope of `2n` variables, so while all are live they copy `Θ(n³d)`. The growth shows
+  at the root, in wall time to the first search node, one propagator call
+  (`tmp/fd-smarttable/codex-r1/forest.cc`, `forest_reps.out`; release build of
+  `c9ceea25`, fataepyc-10, 2026-09-29, pinned to one core, median of five
+  runs):
+
+  | Model | n = 100 | 200 | 400 | 800 |
+  |---|---|---|---|---|
+  | one row `{x[i] ≥ 0 : i < n}`, `x ∈ 0..99`: `n` trees | 0.0097 s | 0.036 s | 0.143 s | 0.561 s |
+  | one row `{x[i] ≤ x[i+1] : i < n − 1}`, same variables: one tree | 0.0035 s | 0.0070 s | 0.014 s | 0.028 s |
+
+  `LexSmartTable` over `0..9` takes 0.0033, 0.018, 0.114 and 0.814 s at
+  `n = 25, 50, 100, 200`: 5.5, 6.3 and 7.1 times per doubling, approaching
+  the cubic 8. Every run makes one propagator call and removes nothing. The
+  times include the solver's setup and the whole call, so the copies' share
+  of them is not isolated.
 - **Why it is true** — each row is a conjunction whose binary entries form a
   forest, so after the two passes each tree's domain copies hold exactly the
   values that appear in some solution of that tree. The trees of a row share no
@@ -669,11 +735,11 @@ examples are smoke tests: `smart_table_small` (the thesis's worked example,
 `smart_table_random` (`-n`, default 6). `smart_table_random` to a first
 solution stays under 3 ms at `n = 16`.
 
-- **CPU**: `AtMostOneSmartTable` at `n = 6` (2.4 s, 110,108 recursions) and
+- **CPU**: `AtMostOneSmartTable` at `n = 6`, over `0..6` with `y = 6` (2.4 s, 110,108 recursions) and
   `LexSmartTable` at `n = 4`, `0..4` (1.8 s, 244,095 recursions), all
   solutions. The native classes find the same trees, which makes the comparison
   exact.
-- **Proofs**: the at-most-one rows at `n = 5`, with short reasons on and off
+- **Proofs**: the at-most-one rows at `n = 5`, over `0..5` with `y = 5`, with short reasons on and off
   (4.2 MB and 2.2 MB, 15.9 s and 0.8 s to check). `LexSmartTable` at `n = 3`,
   `0..4` takes 27 s to check.
 
@@ -687,17 +753,23 @@ within each pair, which is what makes the ratio a per-node one.
 
 | Model | Recursions | Solutions | `propagations` (smart / native) | SmartTable | native | ratio |
 |---|---|---|---|---|---|---|
-| at most one of `x[0..3] ∈ 0..4` is 4 | 654 | 512 | 675 / 675 | 0.0115 s | 0.000627 s | 18× |
-| same, `n = 5` | 7,617 | 6,250 | 7,773 / 7,773 | 0.123 s | 0.00709 s | 17× |
-| same, `n = 6` | 110,108 | 93,312 | 111,663 / 111,663 | 2.42 s | 0.107 s | 23× |
+| at most one of `x[0..3] ∈ 0..4` equals `y = 4` | 654 | 512 | 675 / 675 | 0.0115 s | 0.000627 s | 18× |
+| same, `n = 5`: `x[0..4] ∈ 0..5`, `y = 5` | 7,617 | 6,250 | 7,773 / 7,773 | 0.123 s | 0.00709 s | 17× |
+| same, `n = 6`: `x[0..5] ∈ 0..6`, `y = 6` | 110,108 | 93,312 | 111,663 / 111,663 | 2.42 s | 0.107 s | 23× |
 | `x >lex y`, `n = 3`, `0..4` | 9,745 | 7,750 | 9,882 / 493 | 0.0599 s | 0.00757 s | 7.9× |
 | same, `n = 4`, `0..4` | 244,095 | 195,000 | 244,908 / 3,554 | 1.83 s | 0.140 s | 13× |
 | same, `n = 4`, `0..6` | 3,362,758 | 2,881,200 | 3,365,801 / 13,999 | 24.1 s | 1.85 s | 13× |
 | same, `n = 5`, `0..4` | 6,103,695 | 4,881,250 | 6,108,652 / 24,323 | 53.7 s | 3.57 s | 15× |
 
+The at-most-one rows widen the domain and move the distinguished value with
+`n` (`x[0..n−1] ∈ 0..n`, `y = n`, so `2nⁿ` solutions): they are not an
+arity-only series. The lex rows give `n` and the domain separately.
+
 The native `LexGreaterThan` wakes on bounds and disables itself, so it is
 called far less; the at-most-one pair make the same calls, and there the
-ratio is per call.
+ratio is per call. Each lex row `i` is `i + 1` one-edge trees, so while its
+rows are live a call copies the scope's domains `Θ(n²)` times (#1128); how
+much of the lex ratio's growth with `n` that explains was not isolated.
 
 **Where the time goes**, from `perf` on the `n = 6` at-most-one run, the top ten by self
 time are:
@@ -716,12 +788,16 @@ time are:
 Allocation (`free`, `malloc`, `operator new`, `_int_malloc`) and the hash
 lookup alone are 33%; with the map helpers and the propagator lambda, the ten are 55%. The binary-entry filtering itself,
 `filter_edge`, is 2.9% self time, so the table algorithm is a small share.
-The profile is of a run with proofs off (*per-call cost*).
+The profile is of a run with proofs off (*per-call cost*). Each at-most-one
+row is one tree, so it copies the scope once, and #1128's extra factor is
+absent from this profile.
 
 **What these benchmarks do not exercise.**
 
 - The at-most-one rows are all `≠` entries sharing one variable, so each row
-  is one star-shaped tree. The lex rows are `=` chains ending in one `>`.
+  is one star-shaped tree. The lex rows are forests: row `i` is `x[j] = y[j]`
+  for each `j < i` and `x[i] > y[i]`, independent pairs, so `i + 1` one-edge
+  trees.
 - Neither has unary or set entries, and neither ever reaches rule 2
   (0 failures).
 - Neither is a model anyone posts: both baselines exist to be compared with
@@ -736,12 +812,13 @@ solutions, every proof verified.
 
 | Model | Proof lines | Proof bytes | VeriPB | native: lines, bytes, VeriPB |
 |---|---|---|---|---|
-| at most one, `n = 4` | 6,774 | 333,960 | 0.15 s | 4,454, 130,397, 0.04 s |
-| at most one, `n = 5` | 75,529 | 4,217,044 | 15.86 s | 49,930, 1,639,186, 0.61 s |
+| at most one, `n = 4` (`0..4`, `y = 4`) | 6,774 | 333,960 | 0.15 s | 4,454, 130,397, 0.04 s |
+| at most one, `n = 5` (`0..5`, `y = 5`) | 75,529 | 4,217,044 | 15.86 s | 49,930, 1,639,186, 0.61 s |
 | lex, `n = 3`, `0..3` | 24,807 | 1,479,650 | 2.11 s | 17,859, 667,081, 0.13 s |
 | lex, `n = 3`, `0..4` | 86,651 | 5,174,670 | 27.40 s | 63,899, 2,333,643, 0.68 s |
 
-**Short reasons.** The at-most-one rows posted as a `SmartTable` at `n = 5`,
+**Short reasons.** The at-most-one rows posted as a `SmartTable` at `n = 5`
+(`x[0..4] ∈ 0..5`, `y = 5`),
 with and without them, and with the flag created only when a call has
 something to justify (`tmp/fd-smarttable/mut/st_lazysr.cc`):
 
@@ -784,7 +861,8 @@ time at this level measures nothing useful.
 - Two binary entries that close a cycle within a row are rejected, not
   handled.
 - Wide domains are unusable: the propagator walks values, and a unary entry
-  makes the OPB linear in its variable's width (#833).
+  makes the OPB linear in its variable's width (#833) and the work of building
+  it up to quadratic (#1127).
 - Its proofs chain through `cake_pb_cp` only on narrow shapes (*chain row
   flags*).
 - No front end posts it.
@@ -810,9 +888,17 @@ time at this level measures nothing useful.
    the lemmas load-bearing. One that forgets each call's lemmas when the call
    ends, on a fixture where a later call cites them (`factcheck2/percall/probe.cc` seed
    29 is one), since no in-tree mode does.
-6. **The per-call cost** (*per-call cost*): a flat per-variable index instead
-   of the hash maps, reused buffers, and `get_unrestricted` per row
-   precomputed. Low priority while nothing posts the constraint.
+6. **The per-call cost**: copy only each tree's own variables' domains, not
+   the whole scope's once per tree (#1128), keeping #994's rule that no tree
+   grants support until every tree of its row is feasible. Then, unfiled
+   (*per-call cost*): a flat per-variable index instead of the hash maps,
+   reused buffers, and `get_unrestricted` per row precomputed. **And the
+   construction cost** (#1127): look each initial-domain value up in the
+   consolidated set by binary search or a sorted merge, not `std::count`, and
+   take each input set entry by reference and sorted, not by value. Both leave
+   the OPB and proof byte-identical on the probes in [Interval
+   efficiency](#interval-efficiency). Low priority while nothing posts the
+   constraint.
 7. **The chain** (*chain row flags*): whether it is wanted, and if so cake's
    names for the row and entry flags. The chain-case comment should say what
    limits it either way.
