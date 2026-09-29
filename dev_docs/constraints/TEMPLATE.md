@@ -979,7 +979,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `increasing.md` | `increasing/` | **written**. `Increasing`, `StrictlyIncreasing`, `Decreasing` and `StrictlyDecreasing` over one `IncreasingChain`. Not merged with `comparison`: the same row and theorem, no shared code |
 | `inverse.md` | `inverse/` | **written**. One class; its propagator runs `all_different`'s generalised arc consistent algorithm on one array, and is documented there as well |
 | `knapsack.md` | `knapsack/` | existing note `knapsack.md`; `decision-diagram-proof-strategies.md` |
-| `lex.md` | `lex/`, `lex_smart_table.hh` | |
+| `lex.md` | `lex/`, `lex_smart_table.hh` | **written**. The twelve named `Lex*` forms over `LexCompareGreaterThanOrMaybeEqual`, and `LexSmartTable`, whose engine is `smart_table`'s |
 | `linear.md` | `linear/` | **written**. Note `linear-slack-waking.md` is cross-referenced and due to be folded in; `subset-sum-strengthening.md` is not this family's (an `innards/proofs` helper for `knapsack` and `cumulative`) |
 | `logical.md` | `logical/` | **written**. `And`, `Or`, `AndIf`, `OrIf` over one propagator |
 | `mdd.md` | `mdd/` | `decision-diagram-proof-strategies.md` |
