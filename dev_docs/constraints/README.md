@@ -253,6 +253,20 @@ constraints and do not restate it.
   such shape takes W/2 calls to fail; and `LexSmartTable` ignores the lengths,
   losing solutions when the first array is the longer. The reified detection is
   incomplete.
+- [`sort.md`](sort.md) — `Sort` and `ArgSort`: the Mehlhorn–Thiel propagator
+  over `cake_pb_cp`'s stable-rank encoding, with every inference certified,
+  Hall-interval ones included, by a pigeonhole on the rank line;
+  [`sortedness.md`](../sortedness.md) stays as the long note. `Sort` is
+  `bounds(Z)` on both arrays over distinct variables (GAC is NP-hard) and 2.9
+  to 3.2 times Gecode's `sorted`; `ArgSort` is not `bounds(Z)` on `x` or `p`.
+  No corpus model posts either. Findings:
+  - with proofs off `Sort` still runs its proof's `O(n³)` Hall search, which
+    makes a Hall-heavy benchmark 32 times slower at `n = 100`;
+  - `ArgSort`'s rank propagator is up to cubic per call, and walks an
+    element's domain value by value to find a proof-only threshold when ties
+    leave a hole, 5.5 s at width 10⁹, where no current guard can see it;
+  - the proof costs `Θ(n³)` lines at the root, 118 s to check at `n = 80`, plus
+    `Θ(n²)` lines per order-statistic inference.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
