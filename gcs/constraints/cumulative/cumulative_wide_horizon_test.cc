@@ -1,6 +1,9 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/presolvers/cumulative_strengthening.hh>
+#include <gcs/presolvers/inferred_cumulative.hh>
+#include <gcs/presolvers/inferred_disjunctive.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -21,6 +24,7 @@
 using std::cerr;
 using std::ifstream;
 using std::make_optional;
+using std::make_shared;
 using std::string;
 using std::vector;
 
@@ -34,7 +38,8 @@ using namespace gcs;
 using namespace gcs::test_innards;
 
 // Cumulative's per-(task, time) flags are named when something first looks one
-// up, not per time point of every task's window with the model (#1111). Named
+// up, not per time point of every task's window with the model (#1111), and a
+// derived Cumulative asks for its donor's flags and rows the same way (#1130). Named
 // up front, three unit tasks free across a horizon of 10^5 wrote about 900,000
 // names into the variables map before search started, for a solve that cites a
 // handful of them. The variables map has one entry per name, so counting the
@@ -117,6 +122,59 @@ auto main(int argc, char * argv[]) -> int
         p.post(Disjunctive2D{xs, ys, vector<Integer>(3, 1_i), vector<Integer>(3, 1_i)}.with_rules(
             Disjunctive2DRules{.cumulative_projection = CumulativeRules{}}));
         check(p, "cumulative_wide_horizon_projection");
+    }
+
+    // A derived Cumulative over the same kind of donor, one per presolver
+    // that installs one (#1130). Each derives its rows from the donor's and
+    // pins the donor's flags, and did both for every time point of every
+    // window at install, which named the donor's flags over the horizon and
+    // wrote a proof linear in it. Heights of two on a capacity of three make
+    // every pair conflict, which is a clique and a cover; on a capacity of
+    // five, two fit and three do not, which strengthening rounds down to four.
+    {
+        auto three_tasks = [](Problem & p, Integer capacity) {
+            vector<IntegerVariableID> starts;
+            for (int i = 0; i < 3; ++i)
+                starts.push_back(p.create_integer_variable(0_i, Integer{horizon}));
+            p.post(Cumulative{starts, vector<Integer>(3, 2_i), vector<Integer>(3, 2_i), capacity});
+        };
+
+        {
+            auto stats = make_shared<InferredDisjunctiveStats>();
+            Problem p;
+            three_tasks(p, 3_i);
+            p.add_presolver(InferredDisjunctive{stats});
+            check(p, "cumulative_wide_horizon_inferred_disjunctive");
+            if (0 == stats->cliques_posted)
+                fail("inferred disjunctive posted no clique, so nothing was derived");
+        }
+
+        {
+            auto stats = make_shared<InferredCumulativeStats>();
+            Problem p;
+            three_tasks(p, 3_i);
+            p.add_presolver(InferredCumulative{stats});
+            check(p, "cumulative_wide_horizon_inferred_cumulative");
+            if (0 == stats->cuts_posted)
+                fail("inferred cumulative posted no cut, so nothing was derived");
+        }
+
+        {
+            auto stats = make_shared<CumulativeStrengtheningStats>();
+            Problem p;
+            three_tasks(p, 5_i);
+            p.add_presolver(CumulativeStrengthening{stats});
+            check(p, "cumulative_wide_horizon_strengthening");
+            if (0 == stats->derived.constraints)
+                fail("strengthening installed no derived constraint, so nothing was derived");
+            // The rows it derived, which is the other half of what used to
+            // be linear in the horizon: one per stretch at install, and one
+            // per time point anything cited since.
+            println(cerr, "cumulative_wide_horizon_strengthening: {} capacity rows derived", stats->derived.capacity_rows);
+            if (stats->derived.capacity_rows > static_cast<std::size_t>(most_names))
+                fail("strengthening derived " + std::to_string(stats->derived.capacity_rows) +
+                    " capacity rows, so they are being derived up front again");
+        }
     }
 
     return EXIT_SUCCESS;

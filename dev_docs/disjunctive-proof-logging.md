@@ -1823,9 +1823,11 @@ enumeration (the `projection_skip_bridge` lane).
 issue wanted the derived-Cumulative machinery to learn a second kind of
 donor. That machinery is for presolvers. A constraint can run the
 propagator over its own `CumulativeInputs`, which were hoisted out of
-`Cumulative` for exactly this. The derived path is also eager: it derives
-every row up front so that it can decline cleanly, which is the wrong
-trade for a row that cannot decline and costs about `1.4 KB · n³`.
+`Cumulative` for exactly this. The derived path was also eager then: it
+derived every row up front so that it could decline cleanly, which is the
+wrong trade for a row that cannot decline and costs about `1.4 KB · n³`.
+Since #1130 it derives a row per stretch between window edges at install
+and the rest as they are cited.
 Using a `Disjunctive2D` as a *presolver's* donor (capacity strengthening,
 cliques, lifted covers, makespan bounds) is now a small step, because its
 flags can be found under `Cumulative`'s keys. Only the row lookup

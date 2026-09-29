@@ -4,6 +4,7 @@
 #include <gcs/constraint_id.hh>
 #include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/constraints/cumulative/derived_cumulative_stats.hh>
+#include <gcs/constraints/cumulative/propagate.hh>
 #include <gcs/constraints/innards/makespan_energy.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
@@ -132,23 +133,44 @@ namespace gcs::innards
         /**
          * \brief How the derived row for time `t` is established.
          *
-         * Called once per time point, at ProofLevel::Top, with the rows those
-         * of \ref row_donors that have one wrote for `t`; returns the derived
-         * row, which must say `Σ heights[i]·active[i,t] ≤ capacity` over the
-         * flags \ref tasks point at. Anything else and the propagator's `pol`s
-         * will not cancel, which VeriPB will say so about.
+         * Called at ProofLevel::Top with the rows those of \ref row_donors
+         * that have one wrote for `t`; returns the derived row, which must say
+         * `Σ heights[i]·active[i,t] ≤ capacity` over the flags \ref tasks
+         * point at. Anything else and the propagator's `pol`s will not cancel,
+         * which VeriPB will say so about.
          *
-         * Returning nullopt means this time point cannot be derived, and the
-         * whole constraint is then declined: a derived Cumulative needs a row
-         * everywhere its propagator will cite one, so there is no useful
-         * halfway house.
+         * Called the first time something cites the row for `t`, which may be
+         * during search, and never for a time point nothing cites (#1130).
+         * Over a wide horizon, deriving every row up front cost a proof linear
+         * in the horizon whether or not any rule fired.
+         *
+         * Also called at install, at the first time point of each stretch over
+         * which no window of this constraint's tasks starts or ends. That is
+         * the only place a recipe may decline. Returning nullopt there means
+         * the stretch cannot be derived, and the whole constraint is then
+         * declined: a derived Cumulative needs a row everywhere its propagator
+         * will cite one, so there is no useful halfway house.
+         *
+         * So **a recipe's answer may depend on `t` only through which of this
+         * constraint's tasks can be running then**. The install asks about one
+         * time point of a stretch and takes the answer for the rest. Every
+         * recipe in the tree declines only for want of a member's flag, a
+         * programme over the members present, or a row donor's row where a
+         * member with a demand on it is running --- and a donor has a row
+         * wherever one of its tasks can be running, which that member is. A
+         * recipe that then declines at a point the install did not ask about
+         * has broken this, and it throws there: by then the propagator has
+         * drawn inferences, and there is no declining it.
          *
          * A recipe is a derivation, never an axiom: it has a ProofLogger and no
-         * ProofModel, so it cannot write to the OPB even by mistake.
+         * ProofModel, so it cannot write to the OPB even by mistake. Nor may
+         * it lean on anything but the donors' rows and flags: a call during
+         * search runs wherever the propagator happens to be, and what it
+         * returns is at Top.
          *
          * What it returns must be a line the recipe itself derived, and never a
          * donor's own OPB row handed back unchanged --- even where the donor's
-         * row happens to say exactly the right thing. A later time point
+         * row happens to say exactly the right thing. A later stretch
          * declining takes this constraint out, and taking it out deletes every
          * row already derived for it; a model row among them would be a model
          * row deleted, which is a different proof about a different problem.
@@ -239,10 +261,14 @@ namespace gcs::innards
      * Returns false when the derived constraint could not be set up --- proofs
      * are on but a donor's flags are not where its published keys say, which
      * means the donor was never installed or the windows disagree, or the recipe
-     * declined a time point. That is a decline, not a failure: the caller should
-     * not install a propagator whose inferences it cannot justify. With proofs
-     * off there is nothing to cite and nothing to decline, and the propagator
-     * installs unconditionally, so the same inferences are drawn either way.
+     * declined one of the time points it was asked about here (see
+     * DerivedCumulativeSpec::recipe). That is a decline, not a failure: the
+     * caller should not install a propagator whose inferences it cannot
+     * justify. With proofs off there is nothing to cite and nothing to decline,
+     * and the propagator installs unconditionally.
+     *
+     * Neither the donors' flags nor the rows are looked up per time point
+     * here: both are asked for as they are cited (#1130).
      *
      * \ingroup Innards
      */
