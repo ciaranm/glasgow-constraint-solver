@@ -243,6 +243,24 @@ constraints and do not restate it.
   checked by full enumerations up to `2⁶¹ − 1`. The encoding is `Θ(n²)` rows
   and `Θ(n³)` terms. Its class comment misstates the semantics, and MiniZinc's
   standard library wrongly rejects an all-negative array.
+- [`lex.md`](lex.md) — the twelve `LexGreaterThan`, `LexGreaterEqual`,
+  `LexLessThan` and `LexLessThanEqual` forms, plain, `If` and `Iff`, over one
+  Frisch et al. propagator with a flag-per-position encoding matching
+  `cake_pb_cp`'s; and `LexSmartTable`, a benchmarking reference. Generalised arc
+  consistent on distinct variables, holes and unequal lengths included, at 4.2
+  to 4.8 times Gecode's time on an identical tree. The headline is a proof
+  failure: under the general constructor's `NotIf`, which the `.scp` reader also
+  reaches, a correct inference of the condition's negation is justified under
+  the wrong half of the condition, and VeriPB rejects 50 of 160 random proofs.
+  Also: it materialises a whole-scope reason on every call, and deferring it
+  gives 1.58 times the node throughput on `zephyrus` and 3.0 times on `mqueens`
+  (the reason's content is unchanged; the builds' proofs and first solutions
+  agree); its proofs are quadratic in the array per inference, 654 MB for 211
+  inferences at 200; repeated variables, which lex-leader symmetry breaking
+  produces in seven corpus models, lose generalised arc consistency, and one
+  such shape takes W/2 calls to fail; and `LexSmartTable` ignores the lengths,
+  losing solutions when the first array is the longer. The reified detection is
+  incomplete.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
