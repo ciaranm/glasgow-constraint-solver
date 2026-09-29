@@ -996,7 +996,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `subgraph.md` | `subgraph/` | |
 | `table.md` | `table/`, `extensional_utils.{hh,cc}` | **written**. `Table`, `NegativeTable`, and the extensional propagator that `AutoTable` and the tabulated constraints also run. Not merged with `smart_table`; see its row |
 | `tree.md` | `tree/` | |
-| `value_precede.md` | `value_precede/` | |
+| `value_precede.md` | `value_precede/` | **written**. `ValuePrecede`, for a pair or a chain; `seq_precede_chain` installs it |
 
 Not families, and getting no document: `gcs/constraints/innards/` (shared
 helpers — documented where they are used, or in `constraints.md`).
