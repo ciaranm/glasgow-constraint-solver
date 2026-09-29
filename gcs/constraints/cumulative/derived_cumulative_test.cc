@@ -3,6 +3,7 @@
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/linear.hh>
+#include <gcs/exception.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -96,12 +97,19 @@ namespace
         /// asks about (task, time) pairs the donor never encoded. The install
         /// must decline.
         BeyondDonorWindow,
-        /// A recipe that derives the first time point's row and then declines,
-        /// which is what a cut spanning several donors does when it reaches a
-        /// time point one of them wrote no row for. The install must decline
-        /// --- and the rows it had already put at Top must be deleted, since
-        /// nothing will ever cite them and Top is never forgotten.
+        /// A recipe that declines wherever the donor's first task cannot be
+        /// running, and derives elsewhere, which is what a cut spanning
+        /// several donors does when it reaches a time point one of them wrote
+        /// no row for. The install must decline --- and the rows it had
+        /// already put at Top must be deleted, since nothing will ever cite
+        /// them and Top is never forgotten.
         DeclineMidway,
+        /// A recipe that declines at a time point where nothing about the
+        /// windows changes, which breaks DerivedCumulativeSpec::recipe's
+        /// contract: the install asks only at the first point of each stretch,
+        /// so it installs, and the decline surfaces during search. That has to
+        /// be loud, since the propagator has by then drawn inferences.
+        DeclineUnasked,
         /// C'_t := C_t, plus a certified lower bound on the makespan from the
         /// tasks' energy.
         Makespan,
@@ -273,13 +281,23 @@ namespace
 
                 case Demo::DeclineMidway:
                     *rows_before_declining = 0;
-                    spec.recipe = [row_of, derived = rows_before_declining](
-                                      ProofLogger & logger, const DerivedCumulativeRows & rows, Integer) -> optional<ProofLine> {
-                        if (*derived > 0)
+                    spec.recipe = [row_of, first = cumulative_task_window(state, donor.starts()[0], lengths[0]), derived = rows_before_declining](
+                                      ProofLogger & logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
+                        if (t < first.lo || t > first.hi)
                             return std::nullopt;
                         PolBuilder copy;
                         copy.add(row_of(rows));
                         ++*derived;
+                        return copy.emit(logger, ProofLevel::Top);
+                    };
+                    break;
+
+                case Demo::DeclineUnasked:
+                    spec.recipe = [row_of](ProofLogger & logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
+                        if (t == 1_i)
+                            return std::nullopt;
+                        PolBuilder copy;
+                        copy.add(row_of(rows));
                         return copy.emit(logger, ProofLevel::Top);
                     };
                     break;
@@ -884,6 +902,35 @@ auto main(int argc, char * argv[]) -> int
             // still checks.
             verify_proof_and_clean_up("derived_cumulative_decline_midway");
         }
+    }
+
+    // A recipe whose decline does not follow the windows. The install asks it
+    // about the first point of each stretch, where it derives, so it installs
+    // (#1130); the decline surfaces when the propagator first cites the row it
+    // refuses, which is mid-search and too late to decline anything. That must
+    // throw rather than hand the propagator nothing to cite. With proofs off
+    // there are no rows and nothing to say.
+    if (proofs) {
+        auto presolver = DerivedDemoPresolver{Demo::DeclineUnasked};
+        auto installed = presolver.installed;
+        Problem p;
+        post(p, duplicate_instance, nullopt);
+        p.add_presolver(presolver);
+        auto threw = false;
+        try {
+            solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return true; }},
+                make_optional<ProofOptions>(ProofFileNames{"derived_cumulative_decline_unasked"}));
+        }
+        catch (const UnexpectedException & e) {
+            threw = string{e.what()}.contains("declined at time 1");
+            if (! threw)
+                fail(string{"a recipe declining where the install did not ask threw the wrong thing: "} + e.what());
+        }
+        if (! *installed)
+            fail("a recipe that derives at the first point of every stretch was not installed, so this fixture proves nothing");
+        if (! threw)
+            fail("a recipe declined where the install did not ask, and nothing said so; or the search never cited that row");
+        dispose_of_proof_files("derived_cumulative_decline_unasked");
     }
 
     /* A donor with variable durations, which the derived constraint takes as

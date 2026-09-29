@@ -371,7 +371,9 @@ that the uniform ones do not, so it stays clear which is testing what.
 The other half of that trap: with proofs **off**, no row is derived at all
 (`install_derived_cumulative` only runs a recipe when there is a logger), so a
 corpus that never asks for a proof exercises none of this whatever its windows
-look like. The verified sweep is a separate pass for exactly that reason, and it
+look like. With proofs on, a row is derived at the first point of each stretch
+between window edges, and then wherever something cites one, so the edges still
+build their programmes at install. The verified sweep is a separate pass for exactly that reason, and it
 asserts a non-zero restriction count so it cannot quietly stop covering them.
 
 ## Proof size, which is what decided the design
@@ -411,8 +413,10 @@ turns out to need. On the published Pack constraints that is about three times a
 single-resource row for three resources, plus the crossing, which is a few lines
 per member per row per time point and is lost in the noise beside the programme.
 
-Over a horizon, a derived `Cumulative` costs one such row per time point. For
-eight members and a capacity of twenty:
+Over a horizon, a derived `Cumulative` costs one such row per time point that
+something cites, plus one per stretch between window edges at install (#1130).
+Cited everywhere, which is what a firing that sums a window's rows does, that is
+one per time point. For eight members and a capacity of twenty:
 
 | rows | lines | bytes | veripb | peak RSS |
 |-----:|------:|------:|-------:|---------:|

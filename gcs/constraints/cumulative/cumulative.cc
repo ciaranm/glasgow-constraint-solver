@@ -1118,6 +1118,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .capacity_lines = move(_capacity_lines),
         .capacity_row_family = nullopt,
         .flag_key_positions = {},
+        .flag_owners = {},
+        .lazy_capacity_rows = nullptr,
         .checkpoint_recovery = recovery_cache,
         .pair_contribution_bits_are_conjunctions = _height_bits_citable,
         .per_time_contribution_bits_are_conjunctions = _per_time_flags_in_proof,
@@ -1255,6 +1257,10 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         // pays nothing, and the deriver's rows are at Top.
         if (logger && inputs.capacity_row_family)
             return logger->names_and_ids_tracker().find_or_derive_line_in_family(inputs.owner, *inputs.capacity_row_family, t, *logger);
+        // A derived constraint's, derived from its donors' as they are cited
+        // (#1130), and remembered the same way.
+        if (logger && inputs.lazy_capacity_rows)
+            return inputs.lazy_capacity_rows->row(*logger, t);
         return std::nullopt;
     };
     const auto & rules = inputs.rules;
@@ -3294,6 +3300,27 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     return time_table_phase();
 }
 
+namespace
+{
+    // Whose flags a task's are: its own constraint's, unless the inputs say
+    // otherwise, which a derived Cumulative's do (#1130).
+    auto flag_owner(const CumulativeInputs & inputs, size_t task) -> const ConstraintID &
+    {
+        return inputs.flag_owners.empty() ? inputs.owner : inputs.flag_owners.at(task);
+    }
+}
+
+auto gcs::innards::LazyCapacityRows::row(ProofLogger & logger, Integer t) -> optional<ProofLine>
+{
+    if (auto already = derived.find(t); already != derived.end())
+        return already->second;
+    // Asked, then stored, rather than holding an iterator across the call: a
+    // deriver is free to cite other rows on its way, and could land here.
+    auto line = derive(logger, t);
+    derived.emplace(t, line);
+    return line;
+}
+
 auto gcs::innards::cumulative_flag(const CumulativeInputs & inputs, const NamesAndIDsTracker & tracker, CumulativeFlag which, size_t task, Integer t)
     -> ProofFlag
 {
@@ -3313,7 +3340,7 @@ auto gcs::innards::cumulative_flag(const CumulativeInputs & inputs, const NamesA
     auto key = CumulativeFlag::Before == which ? ConstraintProofModelData<Cumulative>::before_flag_key(position, t)
         : CumulativeFlag::After == which       ? ConstraintProofModelData<Cumulative>::after_flag_key(position, t)
                                                : ConstraintProofModelData<Cumulative>::active_flag_key(position, t);
-    auto flag = tracker.find_proof_flag(inputs.owner, key);
+    auto flag = tracker.find_proof_flag(flag_owner(inputs, task), key);
     if (! flag)
         throw ProofError{"cumulative: no flag for task " + std::to_string(task) + " at time " + std::to_string(t.raw_value)};
     cached = *flag;
@@ -3333,7 +3360,8 @@ auto gcs::innards::cumulative_contribution_bits(const CumulativeInputs & inputs,
     auto position = inputs.flag_key_positions.empty() ? task : inputs.flag_key_positions[task];
     vector<ProofFlag> bits;
     for (size_t k = 0; k < inputs.contribution_bit_counts.at(task); ++k) {
-        auto flag = tracker.find_proof_flag(inputs.owner, ConstraintProofModelData<Cumulative>::contribution_flag_key(position, t, Integer(k)));
+        auto flag =
+            tracker.find_proof_flag(flag_owner(inputs, task), ConstraintProofModelData<Cumulative>::contribution_flag_key(position, t, Integer(k)));
         if (! flag)
             throw ProofError{"cumulative: no contribution bit for task " + std::to_string(task) + " at time " + std::to_string(t.raw_value)};
         bits.push_back(*flag);
@@ -3347,7 +3375,8 @@ auto gcs::innards::ensure_cumulative_flags_defined(const CumulativeInputs & inpu
     if (inputs.flag_cache->points[{task, t.raw_value}].defined)
         return;
     auto position = inputs.flag_key_positions.empty() ? task : inputs.flag_key_positions[task];
-    logger.names_and_ids_tracker().ensure_flag_defined(inputs.owner, ConstraintProofModelData<Cumulative>::active_flag_key(position, t), logger);
+    logger.names_and_ids_tracker().ensure_flag_defined(
+        flag_owner(inputs, task), ConstraintProofModelData<Cumulative>::active_flag_key(position, t), logger);
     // Looked up again rather than held across the call: a definer may read
     // this cache, and one that added a point would rehash it under us.
     inputs.flag_cache->points[{task, t.raw_value}].defined = true;

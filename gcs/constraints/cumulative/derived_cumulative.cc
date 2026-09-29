@@ -11,6 +11,7 @@
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -119,18 +120,34 @@ auto gcs::innards::install_derived_cumulative(
     inputs->guarded_energy =
         make_shared<std::map<std::tuple<std::size_t, Integer, Integer, Integer, Integer, Integer>, window_energy::GuardedWindowEnergy>>();
 
-    // The donors' rows, to derive from. Resolved before anything is installed:
-    // a derived constraint that cannot cite what it needs must not be installed
-    // at all, since its propagator would then be drawing inferences it has no
-    // way to justify.
-    vector<std::pair<Integer, DerivedCumulativeRows>> rows_by_time;
+    // Each task's flags are its donor's, keyed by its position there, and
+    // asked for as they are cited (#1130): looked up here, per time point of
+    // every window, they were named and defined over the whole horizon before
+    // any rule had fired. Heights are constants by the time a task is built,
+    // so no task has contribution bits.
+    for (const auto & task : spec.tasks) {
+        inputs->flag_owners.push_back(task.donor);
+        inputs->flag_key_positions.push_back(task.position);
+    }
+    inputs->contribution_bit_counts.assign(n, 0);
+
+    // Whether some task of this constraint can be running at `t`, which is
+    // where it has a row. Captured by value, since the row deriver below
+    // outlives this call.
+    vector<CumulativeTaskWindow> windows;
+    for (auto i : inputs->active_tasks)
+        windows.push_back(CumulativeTaskWindow{inputs->per_task_t_lo[i], per_task_t_hi[i]});
+    auto covered = [windows](Integer t) -> bool {
+        return std::ranges::any_of(windows, [&](const CumulativeTaskWindow & w) { return t >= w.lo && t <= w.hi; });
+    };
+
+    // Everything below needs a logger, and a derived constraint that cannot
+    // cite what it needs must not be installed at all, since its propagator
+    // would then be drawing inferences it has no way to justify. So the checks
+    // come before anything is installed.
+    size_t rows_derived_here = 0;
     if (logger) {
         auto & tracker = logger->names_and_ids_tracker();
-
-        inputs->before_flags.assign(n, {});
-        inputs->after_flags.assign(n, {});
-        inputs->active_flags.assign(n, {});
-        inputs->contrib_flags.assign(n, {});
         inputs->end_ge_lines = make_shared<vector<std::optional<ProofLine>>>(n);
 
         for (auto i : inputs->active_tasks) {
@@ -150,8 +167,8 @@ auto gcs::innards::install_derived_cumulative(
             // The bridge lemmas that make the pin land, `end >= t+1 -> after`,
             // need no such lookup: the donor emitted one at ProofLevel::Top for
             // every (i, t) it gave the task a window for, unit propagation
-            // finds them, and the flag lookups below have already established
-            // that this constraint's window is inside that one.
+            // finds them, and the window check below establishes that this
+            // constraint's window is inside that one.
             if (! is_constant_variable(task.start) && ! is_constant_variable(task.length)) {
                 auto end_ge = tracker.find_derived_line(task.donor, ConstraintProofModelData<Cumulative>::end_lower_bound_role(position));
                 if (! end_ge)
@@ -159,80 +176,76 @@ auto gcs::innards::install_derived_cumulative(
                 (*inputs->end_ge_lines)[i] = *end_ge;
             }
 
-            for (Integer t = inputs->per_task_t_lo[i]; t <= per_task_t_hi[i]; ++t) {
-                auto before = tracker.find_proof_flag(task.donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
-                auto after = tracker.find_proof_flag(task.donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
-                auto active = tracker.find_proof_flag(task.donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
-                // Missing means that donor never encoded this (task, time): it
-                // was not installed, or it windowed the task differently. Either
-                // way there is nothing to pin, so decline rather than guess.
-                if (! before || ! after || ! active)
-                    return false;
-                inputs->before_flags[i].push_back(*before);
-                inputs->after_flags[i].push_back(*after);
-                inputs->active_flags[i].push_back(*active);
-            }
+            // The donor must have encoded this task over at least this
+            // constraint's window: missing flags mean it was not installed, or
+            // windowed the task differently, and either way there is nothing
+            // to pin, so decline rather than guess. Asked at the window's two
+            // ends only, because a donor's window is one unbroken run of time
+            // points, so containing both ends is containing it all. This names
+            // six flags, where asking at every point named the horizon.
+            for (auto t : {inputs->per_task_t_lo[i], per_task_t_hi[i]})
+                for (const auto & key : {ConstraintProofModelData<Cumulative>::before_flag_key(position, t),
+                         ConstraintProofModelData<Cumulative>::after_flag_key(position, t),
+                         ConstraintProofModelData<Cumulative>::active_flag_key(position, t)})
+                    if (! tracker.find_proof_flag(task.donor, key))
+                        return false;
         }
 
-        // One entry per time point some task of *this* constraint can occupy,
-        // carrying whichever of the row donors wrote a row there. A donor with
-        // nothing at that time is simply absent: the recipe is what knows
+        // One attempt at the row for `t`: the donors' rows there, then the
+        // recipe's derivation from them, which may decline.
+        //
+        // Each donor's own OPB row where it wrote one; failing that, ask the
+        // donor to derive it (#780). Under CumulativeEncoding::StartCheckpoint
+        // there is no `cap_<t>` label to find, and the label lookup alone would
+        // come back empty, the recipe would decline, and this whole constraint
+        // would go --- with no proof failure to say so, since declining is a
+        // supported outcome here. The label is tried first because where it
+        // exists it costs nothing, while a derivation is `O(n^3)` lines. A
+        // donor with nothing at `t` is simply absent: the recipe is what knows
         // whether it needed it.
-        Integer global_lo = inputs->per_task_t_lo[inputs->active_tasks.front()], global_hi = per_task_t_hi[inputs->active_tasks.front()];
-        for (auto i : inputs->active_tasks) {
-            global_lo = std::min(global_lo, inputs->per_task_t_lo[i]);
-            global_hi = std::max(global_hi, per_task_t_hi[i]);
-        }
-
-        for (Integer t = global_lo; t <= global_hi; ++t) {
-            bool covered = false;
-            for (auto i : inputs->active_tasks)
-                if (t >= inputs->per_task_t_lo[i] && t <= per_task_t_hi[i]) {
-                    covered = true;
-                    break;
-                }
-            if (! covered)
-                continue;
-
-            // The donor's own OPB row where it wrote one; failing that, ask the
-            // donor to derive it (#780). Under
-            // CumulativeEncoding::StartCheckpoint there is no `cap_<t>` label
-            // to find, and the label lookup alone would come back empty, the
-            // recipe would decline, and this whole constraint would go --- with
-            // no proof failure to say so, since declining is a supported
-            // outcome here. The label is tried first because where it exists it
-            // costs nothing, while a derivation is `O(n^3)` lines.
+        //
+        // The recipe is moved into a share rather than copied into each
+        // closure that holds it: a recipe's captures can be as big as the
+        // horizon, and CumulativeStrengthening's are.
+        auto attempt = [row_donors = spec.row_donors, recipe = make_shared<decltype(spec.recipe)>(move(spec.recipe))](
+                           ProofLogger & row_logger, Integer t) -> std::optional<ProofLine> {
+            auto & row_tracker = row_logger.names_and_ids_tracker();
             DerivedCumulativeRows rows;
-            for (const auto & donor : spec.row_donors) {
-                if (auto row = tracker.constraint_row_label(donor, ConstraintProofModelData<Cumulative>::capacity_row_role(t)))
+            for (const auto & donor : row_donors) {
+                if (auto row = row_tracker.constraint_row_label(donor, ConstraintProofModelData<Cumulative>::capacity_row_role(t)))
                     rows.emplace(donor, *row);
-                else if (auto derived =
-                             tracker.find_or_derive_line_in_family(donor, ConstraintProofModelData<Cumulative>::capacity_row_family(), t, *logger))
+                else if (auto derived = row_tracker.find_or_derive_line_in_family(
+                             donor, ConstraintProofModelData<Cumulative>::capacity_row_family(), t, row_logger))
                     rows.emplace(donor, *derived);
             }
-            rows_by_time.emplace_back(t, move(rows));
-        }
-    }
+            return (*recipe)(row_logger, rows, t);
+        };
 
-    // Derive this constraint's own rows, here and now, at the top of the
-    // proof: they must outlive every backtrack, since the propagator cites them
-    // at every node. Nothing on this path reaches a ProofModel, so nothing here
-    // can reach the OPB.
-    //
-    // Not through an install_initialiser, even though that is where a posted
-    // constraint would do its once-only proof work. That used to be forced ---
-    // initialisers had already run by the time a presolver was called, so one
-    // installed from here never fired and the propagator cited rows that were
-    // never written --- and #658 has since fixed the ordering. It stays inline
-    // anyway, for a better reason: the caller is told whether this constraint
-    // could be set up, and that answer has to be known now, while there is
-    // still the option of not installing a propagator whose inferences could
-    // not be justified.
-    if (logger) {
-        for (const auto & [t, rows] : rows_by_time) {
-            auto derived = spec.recipe(*logger, rows, t);
+        // Where the recipe's answer can change: wherever a window of this
+        // constraint's tasks starts or ends. Between two of these the same
+        // tasks have flags, and a recipe's answer depends on nothing else (see
+        // DerivedCumulativeSpec::recipe), so asking at the first point of each
+        // stretch is asking about all of it.
+        vector<Integer> edges;
+        for (const auto & w : windows) {
+            edges.push_back(w.lo);
+            edges.push_back(w.hi + 1_i);
+        }
+        std::ranges::sort(edges);
+        edges.erase(std::unique(edges.begin(), edges.end()), edges.end());
+
+        // Asked here and now, at the top of the proof, so that a decline is
+        // known while there is still the option of not installing a
+        // propagator whose inferences could not be justified. What each
+        // attempt derives is a row like any other, and stays for the
+        // propagator to cite.
+        inputs->lazy_capacity_rows = make_shared<LazyCapacityRows>();
+        for (auto t : edges) {
+            if (! covered(t))
+                continue;
+            auto derived = attempt(*logger, t);
             if (! derived) {
-                // The rows for the earlier time points are already at Top, and
+                // The rows for the earlier stretches are already at Top, and
                 // nothing will ever cite them: this constraint is not being
                 // installed, so its propagator does not exist. Top is never
                 // forgotten, so leaving them there is #666 again --- live
@@ -248,8 +261,8 @@ auto gcs::innards::install_derived_cumulative(
                 // later proof for them to tax. The decline fixture does not
                 // cover that path, and nothing else does either.
                 vector<ProofLine> orphans;
-                for (const auto & [_, line] : inputs->capacity_lines)
-                    orphans.push_back(line);
+                for (const auto & [_, line] : inputs->lazy_capacity_rows->derived)
+                    orphans.push_back(*line);
                 if (! orphans.empty()) {
                     logger->emit_proof_comment("derived cumulative: declined at time " + to_string(t.raw_value) + ", dropping " +
                         to_string(orphans.size()) + " rows already derived");
@@ -257,8 +270,27 @@ auto gcs::innards::install_derived_cumulative(
                 }
                 return false;
             }
-            inputs->capacity_lines.emplace(t, *derived);
+            inputs->lazy_capacity_rows->derived.emplace(t, derived);
+            ++rows_derived_here;
         }
+
+        // Every other row, the first time something cites it. Not through an
+        // install_initialiser or a published family: a derived constraint has
+        // no ConstraintID of its own to publish one under, and the rows are
+        // needed wherever its propagator is, not once at the root. Nothing on
+        // this path reaches a ProofModel, so nothing here can reach the OPB.
+        inputs->lazy_capacity_rows->derive = [attempt, covered, stats = spec.stats](ProofLogger & row_logger, Integer t) -> std::optional<ProofLine> {
+            if (! covered(t))
+                return std::nullopt;
+            auto derived = attempt(row_logger, t);
+            if (! derived)
+                throw UnexpectedException{"derived Cumulative: the recipe declined at time " + to_string(t.raw_value) +
+                    ", having derived a row where the same windows cover the same tasks; a recipe's answer may depend on the time only through "
+                    "which windows cover it"};
+            if (stats)
+                ++stats->capacity_rows;
+            return derived;
+        };
     }
 
     // The makespan bound, which is a statement about a variable this constraint
@@ -266,9 +298,20 @@ auto gcs::innards::install_derived_cumulative(
     // rather than in the propagator: nothing it reads changes below the root
     // that would let it say more.
     if (spec.makespan) {
-        // Everything but the start bounds is settled now: the flag vectors live
-        // in `inputs`, which the initialiser holds a share of, and the windows
-        // are the ones its rows were derived over.
+        // Everything but the start bounds is settled now: the flags are read
+        // through `inputs`, which the initialiser holds a share of, and the
+        // windows are the ones its rows are derived over. Through accessors,
+        // which ask for a flag's definition before citing it and name no more
+        // flags than the window-energy lemma cites.
+        auto flag_accessor = [inputs, logger](size_t i, CumulativeFlag which)->std::function<auto(size_t) -> ProofFlag> {
+            if (! logger)
+                return {};
+            return [inputs, logger, i, which](size_t idx) -> ProofFlag {
+                auto t = inputs->per_task_t_lo[i] + Integer{static_cast<long long>(idx)};
+                ensure_cumulative_flags_defined(*inputs, *logger, i, t);
+                return cumulative_flag(*inputs, logger->names_and_ids_tracker(), which, i, t);
+            };
+        };
         vector<makespan_energy::EnergyTask> energy_tasks;
         vector<std::optional<IntegerVariableID>> energy_presences;
         for (auto i : inputs->overload_tasks) {
@@ -297,14 +340,15 @@ auto gcs::innards::install_derived_cumulative(
                 .start_lb = 0_i,
                 .start_ub = 0_i,
                 .link = i < spec.makespan_links.size() ? spec.makespan_links[i] : std::nullopt,
-                .before = logger ? &inputs->before_flags[i] : nullptr,
-                .after = logger ? &inputs->after_flags[i] : nullptr,
-                .active = logger ? &inputs->active_flags[i] : nullptr});
+                .flag_count = static_cast<size_t>(std::max(0LL, (per_task_t_hi[i] - inputs->per_task_t_lo[i] + 1_i).raw_value)),
+                .before = flag_accessor(i, CumulativeFlag::Before),
+                .after = flag_accessor(i, CumulativeFlag::After),
+                .active = flag_accessor(i, CumulativeFlag::Active)});
         }
 
         propagators.install_initialiser(
             [inputs, energy_tasks, energy_presences, makespan = *spec.makespan, capacity = spec.capacity, mutation = spec.makespan_mutation,
-                reached = spec.makespan_bound_reached,
+                reached = spec.makespan_bound_reached, rows_lo = std::ranges::min(windows, {}, &CumulativeTaskWindow::lo).lo,
                 derived_stats = spec.stats](const State & state, auto & inference, ProofLogger * const logger) -> void {
                 // An optional task's length x height is guaranteed work only
                 // once it is known present, and at the root it usually is not.
@@ -364,9 +408,19 @@ auto gcs::innards::install_derived_cumulative(
                     std::holds_alternative<makespan_energy::makespan_energy_mutation::ClaimHigherBound>(mutation) ? bound->bound + 1_i : bound->bound;
 
                 auto justify = [&](const ReasonLiterals & reason) -> void {
-                    if (logger)
-                        makespan_energy::derive_makespan_bound(
-                            *logger, reason, makespan, counted, inputs->capacity_lines, *bound, mutation, ProofLevel::Temporary);
+                    if (! logger)
+                        return;
+                    // The rows the derivation sums: every one this constraint
+                    // has below the window's end, which is what it summed when
+                    // they were all derived up front. One further under
+                    // ClaimHigherBound, whose corrupted window may reach it.
+                    auto rows_end =
+                        std::holds_alternative<makespan_energy::makespan_energy_mutation::ClaimHigherBound>(mutation) ? bound->hi + 1_i : bound->hi;
+                    std::map<Integer, ProofLine> rows;
+                    for (Integer t = rows_lo; t < rows_end; ++t)
+                        if (auto row = inputs->lazy_capacity_rows->row(*logger, t))
+                            rows.emplace(t, *row);
+                    makespan_energy::derive_makespan_bound(*logger, reason, makespan, counted, rows, *bound, mutation, ProofLevel::Temporary);
                 };
 
                 inference.infer_greater_than_or_equal(logger, makespan, claimed,
@@ -408,7 +462,7 @@ auto gcs::innards::install_derived_cumulative(
     if (spec.stats) {
         ++spec.stats->constraints;
         spec.stats->donors += spec.row_donors.size();
-        spec.stats->capacity_rows += inputs->capacity_lines.size();
+        spec.stats->capacity_rows += rows_derived_here;
     }
 
     return true;
