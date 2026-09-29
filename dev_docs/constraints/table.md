@@ -3,9 +3,11 @@
 > **Maturity** production ·
 > **Audited** 2026-09-27 at `c9ceea25` ·
 > **Open issues** filed from this audit: overlapping tuples make the proof's
-> solution lines fail (#1115), a wide domain is still walked value by value at
-> the root on two paths (#1116), tuple values outside the representable range
-> are undefined behaviour or crash the proof layer (#1117), and `table::Auto`
+> solution lines fail (#1115), a wide domain is still walked value by value on
+> three paths, one of them on every call (#1116), extreme tuple values
+> overflow arithmetic or throw `IntegerOverflow` or a `ProofError`, with
+> proofs and, through a view, without (#1117, plus view and far-entry cases
+> found since), and `table::Auto`
 > no longer picks the faster arm on Renault (#1118). Already open and touching
 > this family: #503 (the engine, which is where the remaining gap to Gecode
 > is), #364 (incrementality survey), #833 (large domains), #131 (a generic
@@ -42,12 +44,20 @@ Four things to know before touching it.
   cost is posting, but 1.8× behind on the two small Renaults. #508's measurements
   put most of what remains in the engine (#503), not the table.
 - **A wide domain is trimmed to the table's values once, at the root**, which is
-  what keeps a `0..10^9` variable from costing its width. But the trim runs
-  after the domain rasteriser and only on the live-set path. So a table of eight
-  or more tuples still walks the whole of a variable's domain once, on a
-  column the rasteriser accepts, and a forced `table::CompactTable` removes
-  every out-of-range value separately, at about 34 proof lines each. See
-  [Interval efficiency](#interval-efficiency).
+  what keeps a `0..10^9` variable from costing its width. There are three ways
+  round the trim.
+  - It runs after the domain rasteriser, so a table of eight or more tuples,
+    or any table under a forced `table::CompactTable`, still walks the whole
+    of a variable's domain once, on a column the rasteriser accepts.
+  - It runs only on the live-set path, so a forced `table::CompactTable`
+    removes every out-of-range value separately, at about 34 proof lines each.
+  - It never touches a column where any tuple has a wildcard. While a
+    wildcard row there is live, the support scan walks the whole domain **on
+    every call**, even with only two tuples and under the default algorithm.
+    Once none is, the scan removes the unsupported values one at a time:
+    33,942 proof lines at width 1,000.
+
+  See [Interval efficiency](#interval-efficiency).
 - **`NegativeTable` is not generalised arc consistent**, nor even `bounds(D)`
   on the constraint. It enforces each forbidden tuple's clause separately. `x, y ∈ {1, 2}` with `(1,1)` and `(1,2)`
   forbidden leaves `x = 1` in the domain at the root.
@@ -125,7 +135,9 @@ checked.
 anything else is a compile-time error.
 
 - `table::LiveSet` keeps the live tuples in a sparse set and re-tests each of
-  them against the domains on every wake. It costs what is live.
+  them against the domains on every wake. It costs what is live, except on a
+  column where some tuple has a wildcard, whose whole domain it scans on every
+  call (see [Interval efficiency](#interval-efficiency)).
 - `table::CompactTable` keeps them in a bitset, with a support mask per (column,
   value), and removes the tuples that used a value as the value goes. It costs
   what changed. It is forced from the first call.
@@ -376,7 +388,9 @@ construction.
   sized by the variable, and three `0..10^9` columns asked for 12 GB (#833's
   work, per the code's comment).
 - **This trim runs only on the live-set path, and after the rasteriser**, which
-  is the root-width finding (#1116).
+  is the root-width finding (#1116). It also skips any column where a tuple
+  has a wildcard, live or not. `tuple_value_set` reads the whole tuple list,
+  so a wildcard row that is already dead at the root still blocks the trim.
 
 **`NegativeTable`** installs an initialiser that walks every tuple once, at the
 default priority, looking for a tuple already violated or unit against the
@@ -408,8 +422,13 @@ variable with one value makes that variable's `=` watches fire, which can make
 another tuple unit on the next call.
 
 **Strength with a repeated variable.** Pass 1 tests each position's entry
-against its own domain, so `Table{x, x}` with the tuple `(1, 2)` keeps `x`'s
-values 1 and 2 supported until one is fixed. It gives the right answers and is
+against its own domain, so `Table{x, x}` over `x ∈ {1, 2}` with the tuples
+`(1, 2)` and `(2, 1)` keeps both values at the root, although the relation has
+no solution: each value is supported at each position. Search then proves it
+unsatisfiable (3 recursions; the proof verifies). With `(1, 2)` alone the
+first call already fails. The first position removes 2, and the second then
+finds 1 unsupported (1 recursion, 1 propagation; `tmp/fd-table/codex-r1/xx.cc`).
+It gives the right answers and is
 weaker than generalised arc consistency on the underlying variables. A
 brute-force check (`tmp/fd-table/probes/gacbf.cc`, 3,000 random instances,
 holey domains, views, wildcards, repeated variables) was run at every search
@@ -439,7 +458,9 @@ those 1,500 instances, and none in the smaller sample.
 | support masks (`ExtensionalSupportMasks`) | no | read-only once built, and shared per tuple set |
 | `NegativeTable` watch positions and set-up count | through the refined-watch `watch_state`, restored with the watches | the set-up count lives there because `AutoTable`'s throwaway root search would otherwise leave it saying "all armed" (#1106) |
 
-The live-set path costs what is live per call. The compact path costs what
+The live-set path costs what is live per call, plus, on a column where some
+tuple has a wildcard, a scan of that column's whole domain (see [Interval
+efficiency](#interval-efficiency)). The compact path costs what
 changed: for each column that lost values, it ORs the masks of whichever is
 smaller, the removed values or the kept ones. The history of both, including
 the measurements that chose them, is #508's project (#786, #795, #796, #799,
@@ -470,19 +491,66 @@ not close the gap to Gecode, and it put the remaining time in the engine
 ### Robustness and limits
 
 - **Unbounded domains.** Variables are capped at ±2^61, and a wide domain is
-  handled by the root trim: once trimmed, every later walk is bounded by the
-  table. The two exceptions are in [Interval efficiency](#interval-efficiency).
-  **Tuple values are not capped**, and values beyond ±2^61 reach arithmetic
-  that assumes they are in range (#1117):
+  handled by the root trim: once trimmed, every later walk on that column is
+  bounded by the table. The trim never runs on a column where some tuple has a
+  wildcard, so there the support scan stays proportional to the domain on
+  every call. That and the other two exceptions are in [Interval
+  efficiency](#interval-efficiency).
+  **Tuple values are not capped, and a global cap would be wrong.** The cap applies to
+  underlying variables, not to a posted position: a view `x + 2^62` or a
+  constant `2^62` takes values beyond it. `Table({x + 2^62}, {(2^62),
+  (2^62 + 1)})` over `x ∈ {0, 1}` has two solutions, and its proof verifies. So
+  do a constant position of `2^62` and a view `−x − 2^62`
+  (`tmp/fd-table/codex-r1/extview.cc`). What goes wrong is arithmetic on
+  differences between tuple values and domain values, which assumes they fit
+  (#1117):
   - a column whose values span more than 2^63 overflows `long long` in the span
     computation (`extensional_utils.cc:617`), undefined behaviour that UBSan
     reports; a release build happens to fall back and answer correctly;
   - a column far from a narrow domain overflows the rasteriser's offset
     `value − base` (`:677`; UBSan: `808 - -9223372036854775000`, with
     `x ∈ 0..1000` and eight tuples);
-  - a column lying entirely below −2^61, or entirely above +2^61, makes the
-    root trim state a bound the proof layer cannot write (`IntegerOverflow`,
-    with proofs on).
+  - with proofs on, on a plain variable, a tuple entry about 2^63 from one of
+    the variable's bounds throws. The throw happens while
+    `Table::define_proof_model` writes the entry's `≥`-literal definitions
+    (`table.cc:193`, through `need_gevar` and `reification_shape`), before
+    any propagation. **It is not in the root trim**, which is where #1117's
+    body places it; its ±9·10^18 shapes throw in `define_proof_model` too.
+    Over `±2^61`, with a two-value column at `N` (entries `N` and `N + 1`):
+    - `2^61 ≤ N ≤ 2^63 − 2^61 − 3`, above the domain, verifies (UNSAT);
+    - `N` from `2^63 − 2^61 − 2` to `2^63 − 2^61` throws a `ProofError`, "the
+      reification constant for a half-reified row is the most negative
+      Integer";
+    - `N ≥ 2^63 − 2^61 + 1` throws `IntegerOverflow`: at `6.92·10^18`,
+      `-2305843009213693952 + -6920000000000000000`.
+
+    Below the domain, `N = −(2^63 − 2^61 − 1)` verifies, `−(2^63 − 2^61)`
+    throws the `ProofError`, and `−(2^63 − 2^61 + 1)` the overflow. Without
+    proofs every one of these correctly finds no solution
+    (`tmp/fd-table/codex-r1/extcrash.cc p<N>`).
+
+  **Found here, beyond #1117's body: views and a far entry also throw.** Each
+  of these is with `x ∈ {0, 1}` (`extcrash.cc a|b|c`):
+  - `Table({x + 2^62}, {(−2^62), (−2^62 + 1)})` throws `Integer overflow:
+    --9223372036854775808` with proofs on, in `Table::define_proof_model`
+    (`table.cc:193`, through `NamesAndIDsTracker::need_gevar`). Without proofs
+    it correctly finds no solution.
+  - `Table({x − 2^62}, {(2^62), (2^62 + 1)})` throws `Integer overflow:
+    4611686018427387904 - -4611686018427387904` **with proofs off too**, in
+    pass 1: `bitmap_feasible` (`extensional_utils.cc:186`, called at `:707`)
+    asks `State::in_domain` about the view, which maps `2^62` back to an
+    underlying value of `2^63`.
+  - `Table({x}, {(−2^63 + 1), (0)})` throws `Integer overflow:
+    9223372036854775807 + 1` with proofs on, in `define_proof_model`. Without
+    proofs it correctly finds its one solution.
+
+  Next step 8's filter would drop the offending rows in all four shapes,
+  including the plain-variable one above, since each such entry lies outside
+  its position's initial bounds. It belongs in `prepare`, before the
+  empty-table check, since `Constraint::install` calls `prepare`, then
+  `define_proof_model`, then `install_propagators`. Shapes `a` and `b` and the
+  plain-variable shape would then be empty tables, which is correct, since
+  none has a solution. Shape `c` keeps its `(0)` row and its one solution.
 
   MiniZinc, `gcspy`, the `.scp` reader and the C++ API can all pass such a
   value; XCSP3's parser reads `int` and cannot.
@@ -505,8 +573,43 @@ not close the gap to Gecode, and it put the remaining time in the engine
      second costs `|T| log |T|` to build.
    - **The support scan** (`for_each_value_mutable`, `extensional_utils.cc:864`)
      is a genuine per-value scan. It is how generalised arc consistency finds an
-     unsupported value, and it is bounded, once the root trim has run, by the
-     column's range (at most 4,096) or by its distinct values.
+     unsupported value. Once the root trim has run it is bounded by the column's
+     range (at most 4,096) or by its distinct values, **but not on a column
+     where any tuple has a wildcard**. The trim skips such a column, and it has
+     no residue row either, so every call visits every value of its domain and
+     scans the live tuples for each one until one matches.
+     - **While a wildcard row is live**, that row supports every value, so the
+       walk finds nothing to remove and still visits the whole domain. With
+       `x ∈ 0..W`, `y ∈ 0..1` and the two rows `(*, 0)` and `(1, 1)` under the
+       default algorithm, a solve that stops at the root, after one
+       propagation, takes 0.31 s at W = 10^8 and 3.06 s at 10^9.
+     - **The walk recurs.** Ten such tables over `(x, y_i)`, with `Σ y_i ≥ 1`,
+       branching on the `y_i` in order, give 2,045 recursions and 4,190
+       propagations at every width. They take 0.10 s, 0.99 s and 9.6 s at
+       W = 10^5, 10^6 and 10^7.
+     - **Once no live row has a wildcard there**, the scan removes every
+       unsupported value one at a time. A dead wildcard row still blocks the
+       trim, because the trim reads the whole tuple list. The removals happen
+       at the root when the row is already dead (`y ∈ 1..1` above). They happen
+       again at every node where search kills the last live wildcard row, and
+       backtracking undoes them.
+
+     The timings are wall-clock time of the whole `solve_with` call
+     (`steady_clock`), Release at `c9ceea25`, proofs off, fataepyc-10, pinned
+     with `taskset -c 4` and `GLIBC_TUNABLES` (malloc's mmap and trim
+     thresholds), median of three. The ten-table figures move by about 10%
+     unpinned.
+     A guard build trips on all three shapes at W = 2·10^5, in
+     `for_each_value_mutable`, under all three algorithms. A one-row
+     `{(1, 1)}` control neither trips nor grows under the default algorithm or
+     a forced `LiveSet`. A forced `CompactTable` trips on it too, in the
+     first path's rasteriser walk (`extensional_utils.cc:670`), which on the
+     compact path runs on every call with no eight-tuple gate, before the
+     compact dispatch at `:683` and before any trim. That is how one tuple
+     reaches it. The per-value removals that follow are the second path. They
+     empty the out-of-range values at the root, before the first solution, so
+     only the root call walks the full domain
+     (`tmp/fd-table/codex-r1/wild.cc`).
    - **The compact filter** (`:535`) walks the same values.
    - **The rasteriser** (`:670-681`, `for_each_value_immutable`) visits every
      value of each usable column's domain **whenever it runs**: on every
@@ -551,6 +654,34 @@ not close the gap to Gecode, and it put the remaining time in the engine
    width gate.
    The gap trim's per-run form was checked flat: 124 lines at widths 2·10^6 and
    10^9 (`probes/gap.cc`).
+
+   **A column holding a dead wildcard costs the same under every algorithm.**
+   Its unsupported values also go one at a time, at about 34 lines each the
+   first time (see below), by the same range-literal mechanism. A wildcard
+   column makes the compact table decline the whole table
+   (`build_support_masks` returns false), and below 64 tuples `Auto` never
+   builds compact state at all. So `Auto`, a forced `LiveSet` and a forced
+   `CompactTable` write byte-identical proofs. The two-row table with
+   `y ∈ 1..1` writes 3,342
+   lines (187 KB) at W = 100 and 33,942 lines (8.3 MB) at W = 1,000. The
+   one-row control writes 37 lines at both under the default algorithm. A
+   forced `CompactTable` writes 3,340 and 33,940 lines on it, by the second
+   path. The ten-table search writes 15,529
+   lines (734 KB) at W = 100 and 54,229 lines (9.5 MB) at W = 1,000, across its
+   1,023 solutions. Every one of these proofs verifies, as a complete
+   enumeration.
+
+   **The time recurs; the line cost mostly does not.** At W = 1,000 the
+   ten-table search has ten removal episodes, one per table whose last live
+   wildcard row dies. Each removes the 1,000 values 0 and 2..1000. An episode
+   here is every removal whose reason names that table's `y_i`, spanning its
+   first to its last removal line (`tmp/fd-table/codex-r1/episodes.py`).
+   - **The first** spans 32,902 lines, 7,978 of them `red`: about 33 lines per
+     value.
+   - **Each of the other nine** is exactly 1,000 `rup` lines, one per value,
+     with no `red`, so they introduce no new range-literal definitions.
+
+   The whole proof has 8,004 `red` lines out of 54,229.
 4. **The audit lane.** Three rows, `Table`, `Table/sparse` and `NegativeTable`,
    all pinned `Clean` and all still `Clean` on a guard build at `c9ceea25`. None
    in the proof-size case. **The axes they do not vary:**
@@ -559,9 +690,12 @@ not close the gap to Gecode, and it put the remaining time in the engine
    - the algorithm (all default);
    - holes;
    - views;
+   - wildcards (all post `SimpleTuples`);
    - the other callers of the helper.
 
-   Moving either of the first two trips the guard (#1116).
+   Moving either of the first two trips the guard (#1116), and so does a
+   wildcard column over the wide domain, with two tuples and the default
+   algorithm.
 
 ## Inference catalogue
 
@@ -588,11 +722,27 @@ has with `equals`.
 (table propagation)** or **3.4 (table infeasibility)**. That is one RUP, under
 the generic reason, against the tuple rows. Negating the conclusion falsifies
 some entry of every tuple, which forces each selector value false through its
-row, and the at-least-one row then conflicts. The procedures are stated for EP
-3.10's fully reified encoding, and the argument uses only the `s = j ⇒ match`
-direction GCS has. For `AutoTable` and the tabulated constraints, the rows are
-the `red` lines their builders emit instead of OPB rows. **Theorem 2.6**
-accounts for stating each under a reason. **Theorem 3.3** (complete propagation
+row, and the at-least-one row then conflicts. With two tuples there is no
+at-least-one row: the selector is one bit, and the two rows force it both
+ways. **Every tuple row is in that RUP's dependency set**, not only the rows
+of the tuples that use the removed value, including any row with a wildcard at
+that position. A tuple that uses the value is killed by another atom of the
+reason, and a tuple that does not is killed by the negated conclusion itself.
+Both go through the **literal layer**. That means the `=`, `≥` and
+range-literal definitions and the order-ladder lines between them, including
+those the proof itself has introduced, plus the **link lines** the logger
+derives when it creates a range literal, such as `¬[y = v] ∨ [y ∈ a..b]`. The
+links are themselves RUP from the definitions, but unit propagation over the
+definitions only goes one way: `[y = v]` propagates to `[y ∈ a..b]`, while
+`¬[y ∈ a..b]` does not propagate to `¬[y = v]`. So a reason that states a hole
+as `¬[y ∈ a..b]` needs the links hinted. The `=` definitions
+alone are not enough. The at-most-one row is never needed, and the bound rows
+were not needed in any probe. See [Next steps](#next-steps), item 3, for which
+parts matter how often. The procedures are stated for EP 3.10's fully reified
+encoding, and the argument uses only the `s = j ⇒ match` direction GCS has.
+For `AutoTable` and the tabulated constraints, the rows are the `red` lines
+their builders emit instead of OPB rows. **Theorem 2.6** accounts for stating
+each under a reason. **Theorem 3.3** (complete propagation
 of implied atomic literals) is what lets a bound or a range be the conclusion
 where JP 3.3 states one value.
 
@@ -685,11 +835,17 @@ where JP 3.3 states one value.
 - **Infers** — `x ≠ v`.
 - **Fires when** — any call, on either path, for a value no live tuple matches.
   Under a forced `table::CompactTable`, this is also how out-of-range values go
-  at the root, one at a time.
+  at the root, one at a time. The same happens on a column where some tuple has
+  a wildcard, under every algorithm, once no live row has a wildcard there. At
+  the root, or at every node where search kills the last live wildcard row, it
+  removes each value that no live row holds.
 - **Strength** — `GAC`, with distinct variables (brute-forced).
 - **Algorithm** — live set: pass 1 drops tuples with an entry out of domain,
   then each value's residue is checked and, if stale, the live tuples are
   scanned; `O(live × k)` per call plus a scan per value whose residue died.
+  A column where some tuple has a wildcard has no residue row
+  (`extensional_utils.cc:831-834`), so every value of its domain is scanned
+  against the live tuples on every call.
   Compact: word-parallel filtering by the removed or kept values' masks, then
   one mask test per value against the live words.
 - **Why it is true** — a value in no live tuple has no support: every tuple
@@ -823,8 +979,10 @@ lanes run uncapped.
   `intension_reified.xml`. The table benchmark harness checks `.xml` solution
   counts, but outside the repository.
 - **Rule 3 with proofs.**
-- **A table of eight or more tuples, or a forced compact table, over a wide
-  domain** (see the audit lane).
+- **A table of eight or more tuples, a forced compact table, or a column
+  holding a wildcard, over a wide domain** (see the audit lane). Nothing
+  either loses or restores the last live wildcard row during search over a
+  wide domain.
 - **`NegativeTable`'s strength**, deliberately: no consistency level is checked
   for it.
 - **Mutation lanes:** none in the tree. The four refusals above were run by
@@ -979,8 +1137,11 @@ on the same machine and day (`tmp/fd-table/factcheck/veripb_times.txt`,
 checks in a fifth of a second. That is the family's largest cost for the paper,
 and it is in the checker, not the proof's size. The likely reason is that each
 RUP has to propagate through every tuple row of an arity-5 table; VeriPB was not
-profiled to confirm it. A `hinted RUP` naming the tuple rows that
-matter would be the lever: see [Next steps](#next-steps).
+profiled to confirm it. Every row is in each RUP's dependency set (see [What
+licenses rules 2–5](#inference-catalogue)), so a hint naming only the tuples
+that use the value is not enough. The levers are a `hinted RUP` over the whole
+dependency set, or per-value support clauses derived once. See [Next
+steps](#next-steps).
 
 **What the `Inferences` proofs assert** (`tmp/fd-table/rules/classify.py`):
 
@@ -1007,7 +1168,13 @@ layer's plateau at arity × domain; see [OPB encoding](#opb-encoding).
   solution line (`solx` or `soli`) for a solution two rows match (#1115).
   No inference goes unjustified. The model's auxiliary is simply not
   determined.
-- With proofs on, a column beyond ±2^61 can abort the solve (#1117).
+- With proofs on, a tuple entry far from its position's domain can abort the
+  solve with `IntegerOverflow` or a `ProofError`, always in
+  `define_proof_model`. That covers #1117's plain-variable shapes, whose body
+  places the throw in the root trim instead, and the view and near-`−2^63`
+  shapes found here. A view can also abort the solve without proofs, in
+  pass 1. See [Robustness and
+  limits](#robustness-and-limits).
 - `AutoTable`'s inferences have no rows and no hint in a hints-only proof. That
   is not a gap, since the full proof justifies them, but it is the one place in
   this family where reconstruction needs a search.
@@ -1019,10 +1186,18 @@ Propagation strength does not change with proofs on, for any rule.
 - A MiniZinc or XCSP3 model whose table has duplicate rows, or overlapping
   wildcard rows, with three or more tuples, solves correctly, but its proof
   fails to verify at the first solution that two rows match.
-- A `Table` of eight or more tuples over a very wide variable spends time
-  proportional to the width once, at the root, and at ±2^61 it does not
-  finish. With `table::CompactTable` forced, it also writes about 34 proof
-  lines per value, whose size grows with the width.
+- A `Table` of eight or more tuples, or any `Table` under a forced
+  `table::CompactTable`, over a very wide variable spends time proportional to
+  the width once, at the root, and at ±2^61 it does not finish. With
+  `table::CompactTable` forced, whatever the tuple count, it also writes about
+  34 proof lines per value, whose size grows with the width.
+- A `Table` whose tuples have a wildcard in a column over a very wide variable
+  spends time proportional to the width on every call, under any algorithm and
+  with any number of tuples, until the node where the last live wildcard row
+  there dies. It then removes the unsupported values one at a time. Every
+  such episode costs width-proportional time, but only the first costs about
+  33–34 proof lines per value (one of ten in the probe under [Interval
+  efficiency](#interval-efficiency)); each later one costs one line per value.
 - `NegativeTable` is not generalised arc consistent.
 - A repeated variable in `Table` weakens propagation below GAC on that variable.
 - There is no reified table; MiniZinc's decomposition stops at five variables.
@@ -1036,7 +1211,7 @@ Propagation strength does not change with proofs on, for any rule.
 
 ### Next steps
 
-1. **File and fix overlapping-tuples-solx.** It is a verification failure on a
+1. **Fix the overlapping-tuples proof failure (#1115).** It is a verification failure on a
    Challenge model. Three fixes, with different reach:
    - deduplicate `SimpleTuples` in `prepare`: cheap, and covers MiniZinc
      (`fzn_glasgow.cc:1236` posts `SimpleTuples`) and `yumi-static`. It covers
@@ -1051,13 +1226,105 @@ Propagation strength does not change with proofs on, for any rule.
      solution line. That needs the proof-only selector to be nameable there.
 
    Costs hours; buys correct proofs on real models.
-2. **File and fix root-width-walks**: run the root trim before the rasteriser
-   and before the compact dispatch, and add audit rows with eight tuples and
-   with each algorithm. A small change; it closes a guard trip on the default
-   path, and makes the "same proof under every algorithm" contract true.
-3. **Hinted RUP for the table rules.** Verification is about 830× solve on an arity-5
-   table, probably because each RUP propagates over every row. Naming the rows of the
-   tuples that use the removed value would let VeriPB check only those.
+2. **Fix the root-width walks (#1116).** Running the root trim before the
+   rasteriser and before the compact dispatch fixes the first two paths. It is
+   a small change that closes a guard trip on the default path, and it makes
+   the "same proof under every algorithm" contract true. **It does not touch
+   the wildcard path**, which moving the trim leaves as it is: the trim
+   skips a wildcard column, and so do the rasteriser and the residues.
+   - While a wildcard row is live, that row supports every value, so the scan
+     could skip the column without visiting any value.
+   - Once the last live wildcard row in a column dies, the column needs a trim
+     or support pass over the values the remaining live rows hold, not over
+     the domain.
+   - Anything cached for either case has to stay right across backtracking,
+     which restores the wildcard rows.
+
+   Audit rows: eight tuples; each algorithm; a live wildcard over a wide
+   domain; a wildcard row already dead at the root; and one lost and
+   restored during search. The last is a proposed regression case, not one
+   the probes here time on its own.
+3. **Cheaper RUPs for the table rules.** Verification is about 830× solve on
+   an arity-5 table, probably because each unhinted RUP propagates over the
+   whole database. **Every tuple row is in a removal's dependency set**. The
+   rows of the tuples that use the removed value are not enough, because the
+   other rows are what rule their own selectors out under the negated
+   conclusion. Both sound shapes below also need the **literal layer** for the
+   scope:
+   - the `=`, `≥` and range-literal definitions, whether in the OPB or
+     introduced by a `red` in the proof;
+   - the order-ladder lines derived between them;
+   - the **link lines** the logger derives when it creates a range literal,
+     `¬[y = v] ∨ [y ∈ a..b]` and `¬[y ∈ a..b] ∨ …`. Each is RUP from the
+     definitions, but unit propagation over the definitions cannot get from
+     `¬[y ∈ a..b]` to `¬[y = v]` without them.
+
+   The at-most-one row is never needed, and the bound rows were not needed in
+   any probe. Examples of what each part is for:
+   - In `x, y ∈ 0..3` with the tuple `(3, 1)`, removing `y = 1` under `x = 0`
+     needs `x ≥ 3 ⇒ x ≥ 1`.
+   - With a wildcard, some `=` definitions exist only as `red` lines in the
+     proof.
+   - With `x ∈ 0..2`, `y ∈ {0, 3, 4, 5}` and the tuples `(0,1) (0,2) (1,0)
+     (2,3) (1,4)`, the root removal of `x = 0` has `[y ∈ 1..2]` in its reason,
+     and fails without the two forward link lines `¬[y = 1] ∨ [y ∈ 1..2]` and
+     `¬[y = 2] ∨ [y ∈ 1..2]`.
+
+   The two shapes:
+   - **Hint the whole dependency set.** The at-least-one row, every tuple row
+     of this table, and the literal layer. That limits a RUP to one table's
+     rows, rather than every table's in the model.
+   - **Derive a per-value support clause first**, `¬[x = v] ∨ ⋁_{j ∈ supp(x,v)} [s = j]`,
+     where `supp(x, v)` holds every tuple with `v` or a wildcard at `x`. Derive
+     it once, from the at-least-one row, the rows of the tuples that do *not*
+     support `x = v`, and the literal layer. It is a static fact about the
+     table, so it can live at `Top`. Each removal of `x = v` then hints only
+     that clause, the rows of the tuples in `supp(x, v)`, and the literal
+     layer. The reason's literals need no hint, since they come from negating
+     the claim.
+
+   Both shapes were checked with VeriPB 3.0.2 on hinted RUPs.
+   - **Hand-built cases.** Codex's Boolean example, and four real GCS tables
+     over `x, y`: `(0,0) (1,0) (1,1) (2,2)` over `0..2`; `(0,0) (1,1) (3,1)
+     (2,2)` over `0..3`; one with a wildcard row over `0..3`; and a two-tuple
+     table. The stated set verifies on all of them. On these cases it fails
+     if you hint only the rows of the tuples using the value, or leave out
+     any one row or the at-least-one row. It also fails if you drop the
+     literal layer from the support clause's second step, or hint the `=`
+     definitions alone (on the `0..3` and wildcard tables). With two tuples
+     the selector is one bit and there is no at-least-one row: the two rows
+     alone conflict, and both are needed.
+   - **The link-line counterexample above.** The set without the link lines
+     fails. Adding the two forward links makes it verify, and the inverse link
+     `¬[y ∈ 1..2] ∨ [y = 1] ∨ [y = 2]` alone does not.
+   - **The second fact-check's campaign.** It ran 920 table inferences over
+     226 random instances, with views, negated views, holes, wildcards and
+     out-of-domain entries.
+     The counts below are from the third fact-check's strict classification
+     by this wording (`factcheck3/fc3_worded.py`), which also counts as ladder
+     lines those the proof derives by `pol` against line numbers.
+     - The stated set verifies all 920.
+     - Without the link lines it verifies 918. The forward links are needed
+       in 2 and the inverse links in 1.
+     - The `≥` definitions and the proof-introduced ladder lines cover for
+       each other. Dropping either alone fails none; dropping both fails 113.
+     - Dropping every ladder line fails 3.
+     - Dropping the range-literal definitions, once the links are in, fails
+       none. The bound rows, which the set leaves out, are never missed.
+     - The `=` definitions alone verify only 40.
+     - The support-clause shape verifies all 841 value removals in both
+       steps; without the link lines, 839. Its second step without any of the
+       literal layer verifies only 210, by the second fact-check's count.
+
+     A rerun on four fresh seeds (38 instances, 160 inferences) agrees:
+     dropping both the `≥` definitions and the proof-introduced ladders fails
+     14, and nothing else that is dropped fails.
+
+   Probes: `tmp/fd-table/codex-r1/dep_*`, `r_*.pbp`, `t_*.pbp`,
+   `dep2/depset.py`, `dep3/worded.py` (the counterexample; its set adds the
+   bound rows and counts only label-form ladders), `dep3/camprun/` and
+   `dep4/`, plus the fact-checks' `factcheck/dep/`, `factcheck2/` and
+   `factcheck3/` (whose `fc3_worded.py` is the strict classification).
    Measure first, on `srch_k5_d5_n12`. Whether a hint is needed is for the
    justifier to show.
 4. **Minimal reasons.** Both classes use the whole-scope generic reason. For
@@ -1070,13 +1337,24 @@ Propagation strength does not change with proofs on, for any rule.
 6. **Add an XCSP3 `<extension>` lane**, covering supports, conflicts, `*` and
    `extensionAs`, since the front end's biggest table path is untested in the
    repository.
-7. **File auto-thresholds-stale, and revisit `Auto`'s rule.** Forced compact
+7. **Revisit `Auto`'s rule (#1118).** Forced compact
    is 2.2× faster on Renault, where the wake-count gate never lets `Auto`
    decide. A per-wake cost estimate (live tuples × arity against the mask
    build) might separate Renault from Dubois. Costs a benchmarking session;
    buys up to 2× on configuration instances.
-8. **File extreme-tuple-values** (low priority): drop tuples outside the
-   representable range in `prepare`.
+8. **Fix the extreme tuple values (#1117)** (low priority). Drop a row only
+   when one of its entries is impossible for its **actual posted position**.
+   That means outside that position's initial bounds, which for a view or a
+   constant can lie beyond ±2^61. It does not mean outside ±2^61 itself.
+   Do it in `prepare`, before the empty-table check and so before
+   `define_proof_model`. Compute whatever span or offset is still needed with
+   overflow-safe arithmetic. The filter also removes every throw listed under
+   [Robustness and limits](#robustness-and-limits). **A global ±2^61 filter
+   would be unsound**:
+   `Table({x + 2^62}, {(2^62), (2^62 + 1)})` over `x ∈ {0, 1}` has two
+   solutions and a verifying proof, and the filter would leave it with no rows
+   (`tmp/fd-table/codex-r1/extview.cc`, which also covers a constant and a
+   negated view). Keep that model as a control.
 9. **Cake conformity:** check whether the table chain cases would now pass
    `aux` or `strict`, since #358, which the registration cites, is closed.
 
@@ -1157,4 +1435,4 @@ for so few wakes.
 It is also 5–15% behind forced compact on six of the thirteen `srch_*`
 instances. The doc comment is stale, and the decision rule, which gates on
 wake count, cannot see Renault's case at all: few wakes, each over a very large
-live set. To be filed: auto-thresholds-stale.
+live set. Filed as #1118.

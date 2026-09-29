@@ -176,7 +176,9 @@ constraints and do not restate it.
   failure: a table whose rows overlap, which MiniZinc and XCSP3 both allow and
   `yumi-static` posts, writes proofs VeriPB rejects at the solution line,
   because GCS only half-reifies each tuple's selector value. The width trim that makes a
-  wide domain cheap runs too late on two paths. A fully justified proof of an
+  wide domain cheap runs too late on two paths, and never runs on a column
+  where a tuple has a wildcard, whose domain is then walked on every call
+  while a wildcard row is live. A fully justified proof of an
   arity-5 benchmark takes about 830 times its solve to check. Not merged with
   `smart_table`: no shared code, different encodings.
 
