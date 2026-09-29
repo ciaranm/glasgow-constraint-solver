@@ -233,6 +233,16 @@ constraints and do not restate it.
   where Gecode's `precede` has none, at 8.0 times the time. Every removal's
   reason is the whole array. The proofs are one RUP per removal, by a
   procedure of our own through three of the thesis's theorems.
+- [`seq_precede_chain.md`](seq_precede_chain.md) — `SeqPrecedeChain`, the
+  chain `1, 2, 3, …` over positions: it clamps any variable whose declared
+  bound exceeds the array length and installs a `ValuePrecede`, so it inherits
+  that document's strength and costs, and is weaker again because the chain is
+  propagated pair by pair. The clamp row is part of the encoding's definition,
+  since the chain stops at the array length; `cake_pb_cp` writes one for every
+  position. Everything is independent of width, because the chain is capped,
+  checked by full enumerations up to `2⁶¹ − 1`. The encoding is `Θ(n²)` rows
+  and `Θ(n³)` terms. Its class comment misstates the semantics, and MiniZinc's
+  standard library wrongly rejects an all-negative array.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
