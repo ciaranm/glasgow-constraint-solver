@@ -136,6 +136,21 @@ namespace gcs::innards
         struct SkipPresenceConjunct
         {
         };
+
+        /// The energetic rungs and the projection over a variable time-axis
+        /// size (#984): refute a pair's time-axis disjunct without the size's
+        /// declared floor. The before flag's row keeps its size term, and the
+        /// refutation no longer lands on a clause.
+        struct SkipSizeFloor
+        {
+        };
+
+        /// The same, non-strict: leave the size's zero-size escape unpinned.
+        /// The pair clause's RUP reaches one escape from the floor by bit
+        /// arithmetic, but not two.
+        struct SkipFloorEscapePins
+        {
+        };
     }
 
     using Disjunctive2DProofMutation = std::variant<disjunctive_2d_proof_mutation::None, disjunctive_2d_proof_mutation::EmitNothing,
@@ -145,7 +160,8 @@ namespace gcs::innards
         disjunctive_2d_proof_mutation::EdgeFindingDropPushed, disjunctive_2d_proof_mutation::TimeTableEdgeFindingDropPins,
         disjunctive_2d_proof_mutation::ProjectionRowTooStrong, disjunctive_2d_proof_mutation::ProjectionSkipBridge,
         disjunctive_2d_proof_mutation::ProjectionSkipRefutations, disjunctive_2d_proof_mutation::SkipPresenceGuard,
-        disjunctive_2d_proof_mutation::SkipPresenceConjunct>;
+        disjunctive_2d_proof_mutation::SkipPresenceConjunct, disjunctive_2d_proof_mutation::SkipSizeFloor,
+        disjunctive_2d_proof_mutation::SkipFloorEscapePins>;
 }
 
 #endif

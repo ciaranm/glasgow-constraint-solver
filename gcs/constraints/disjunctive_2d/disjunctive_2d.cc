@@ -58,14 +58,43 @@ namespace
         ProofLine implies_started, implies_starts_by, backward;
     };
 
+    /// What a pair refutation needs about a variable time-axis size that the
+    /// energetic rungs and the projection count at its declared floor (#984):
+    /// that the size is at least the floor, which cancels the size term the
+    /// before flag's row carries, and in non-strict mode that the zero-size
+    /// escape the pair's clause carries is false. Both follow from the model's
+    /// own bound row, so neither wants a reason, and both are about the
+    /// rectangle alone, so both are kept at Top. The escape's pin is not
+    /// optional: the pair clause's RUP can get from the floor to one escape by
+    /// bit arithmetic, but not to two.
+    struct DeclaredFloor
+    {
+        ProofLine at_least;
+        optional<ProofLine> no_escape;
+    };
+
+    auto declared_floor(ProofLogger & logger, map<size_t, DeclaredFloor> & cache, size_t i, const IntegerVariableID & size, Integer floor,
+        const optional<ProofFlag> & escape, const Disjunctive2DProofMutation & mutation) -> const DeclaredFloor &
+    {
+        if (auto found = cache.find(i); found != cache.end())
+            return found->second;
+        auto at_least = logger.emit_rup_proof_line(WPBSum{} + 1_i * size >= floor, ProofLevel::Top);
+        optional<ProofLine> no_escape;
+        if (escape && ! std::holds_alternative<disjunctive_2d_proof_mutation::SkipFloorEscapePins>(mutation))
+            no_escape = logger.emit_rup_proof_line(WPBSum{} + 1_i * *escape <= 0_i, ProofLevel::Top);
+        return cache.emplace(i, DeclaredFloor{at_least, no_escape}).first->second;
+    }
+
     /// What the relaxation overload check keeps between firings, all of it at
     /// Top and so all of it valid for the rest of the proof: the activity
-    /// flags, and the flagged capacity row per time point. Per axis.
+    /// flags, the flagged capacity row per time point, and the variable
+    /// time-axis sizes' declared floors. Per axis.
     struct RelaxationOverloadCache
     {
         std::array<map<pair<size_t, long long>, RelaxationActivity>, 2> activity;
         std::array<map<long long, ProofLine>, 2> rows;
         std::array<map<std::tuple<size_t, long long, long long, long long, long long>, window_energy::GuardedWindowEnergy>, 2> guarded;
+        std::array<map<size_t, DeclaredFloor>, 2> floors;
     };
 
     /// The widest wire the cumulative relaxation's comparator network will
@@ -322,12 +351,15 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         auto & window = _relaxation_window[time_axis];
         auto & declared = _relaxation_declared_time[time_axis];
         declared.clear();
+        auto & floors = _relaxation_time_floor[time_axis];
+        floors.clear();
         auto first = true;
         for (auto i : _relaxation_members[time_axis]) {
             auto lo = initial_state.lower_bound(res_pos[i]), hi = initial_state.upper_bound(res_pos[i]) + constant_value_of(res_size[i]);
             window = first ? pair{lo, hi} : pair{min(window.first, lo), max(window.second, hi)};
             first = false;
             declared.emplace(i, initial_state.bounds(time_pos[i]));
+            floors.emplace(i, max(initial_state.lower_bound(time_size[i]), 0_i));
         }
 
         // The flagged row's network is as wide as the window's end, every
@@ -343,11 +375,15 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     }
 
     // Disjunctive2DRules::cumulative_projection: the Cumulative each axis
-    // projects to, over the relaxation's members with a constant time-axis
-    // size as well --- a variable one would need the proof-only end a
-    // Cumulative pins a two-variable `after` through, which is a later step.
-    // Resolved here, from the model alone, like the members themselves, so
-    // that the projection draws the same inferences with proofs off.
+    // projects to, over the relaxation's members with a guaranteed time-axis
+    // extent. A variable size is projected as a constant, its declared floor
+    // (#984): a projected task with a variable length would need the
+    // proof-only end a Cumulative pins a two-variable `after` through, whereas
+    // at a constant length every flag and row is over the position alone, and
+    // the one place the real size is met, the deriver's pair refutation,
+    // cancels it against a reason-free `size >= floor`. Resolved here, from the
+    // model alone, like the members themselves, so that the projection draws
+    // the same inferences with proofs off.
     for (auto time_axis : {0, 1}) {
         auto & rects = _projection_rects[time_axis];
         rects.clear();
@@ -356,10 +392,10 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
             continue;
 
         const auto & time_pos = time_axis == 0 ? _xs : _ys;
-        const auto & time_size = time_axis == 0 ? _widths : _heights;
         const auto & res_size = time_axis == 0 ? _heights : _widths;
+        const auto & floors = _relaxation_time_floor[time_axis];
         for (auto i : _relaxation_members[time_axis])
-            if (is_constant_variable(time_size[i]) && constant_value_of(time_size[i]) >= 1_i)
+            if (floors.at(i) >= 1_i)
                 rects.push_back(i);
         if (rects.size() < 2) {
             rects.clear();
@@ -372,15 +408,16 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         inputs->rules = *_rules.cumulative_projection;
         for (size_t k = 0; k < rects.size(); ++k) {
             auto i = rects[k];
+            auto length = constant_variable(floors.at(i));
             inputs->starts.push_back(time_pos[i]);
-            inputs->lengths.push_back(time_size[i]);
+            inputs->lengths.push_back(length);
             inputs->heights.push_back(res_size[i]);
             // Cumulative takes optional tasks itself, on the same terms: in the
             // profile and the energy only once present, the presence a
             // conjunct of each activity flag, and its literal in the reason.
             inputs->presence.push_back(_presence[i]);
             inputs->active_tasks.push_back(k);
-            auto window = cumulative_task_window(initial_state, time_pos[i], time_size[i]);
+            auto window = cumulative_task_window(initial_state, time_pos[i], length);
             inputs->per_task_t_lo.push_back(window.lo);
             inputs->per_task_t_hi.push_back(window.hi);
             inputs->flag_key_positions.push_back(static_cast<size_t>(time_axis) * n + i);
@@ -564,10 +601,12 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
         // earliest point with a logger, as for a start-checkpoint Cumulative.
         propagators.install_initialiser(
             [id = constraint_id(), n = _xs.size(), projection = _projection, rects = _projection_rects, window = _relaxation_window, xs = _xs,
-                ys = _ys, before_x = _before_x, before_y = _before_y, mutation = _mutation](State &, auto &, ProofLogger * const logger) -> void {
+                ys = _ys, widths = _widths, heights = _heights, zero_w = _zero_w, zero_h = _zero_h, before_x = _before_x, before_y = _before_y,
+                mutation = _mutation](State &, auto &, ProofLogger * const logger) -> void {
                 if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                     return;
                 auto & tracker = logger->names_and_ids_tracker();
+                auto floors = std::make_shared<std::array<map<size_t, DeclaredFloor>, 2>>();
 
                 // Which of a projection's tasks a flag key's position names, if
                 // any: `axis x n + i`, for a rectangle that axis projects.
@@ -615,6 +654,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         id, *projection[time_axis]->capacity_row_family, [=, &tracker](ProofLogger & row_logger, Integer t) -> optional<ProofLine> {
                             const auto & inputs = *projection[time_axis];
                             const auto & tpos = 0 == time_axis ? xs : ys;
+                            const auto & tsize = 0 == time_axis ? widths : heights;
+                            const auto & tzero = 0 == time_axis ? zero_w : zero_h;
                             const auto & rpos = 0 == time_axis ? ys : xs;
                             const auto & tbefore = 0 == time_axis ? before_x : before_y;
                             const auto & rbefore = 0 == time_axis ? before_y : before_x;
@@ -698,9 +739,17 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     // Both active at `t` refutes both time-axis
                                     // disjuncts of the pair's clause, and what is
                                     // left of it separates them on the other axis.
+                                    // A variable size was projected at its
+                                    // declared floor, and cancels against it.
                                     auto refute = [&](size_t x, size_t kx, size_t y) {
                                         PolBuilder pol;
                                         pol.add(tbefore.at(make_pair(x, y)).forward_line);
+                                        if (! is_constant_variable(tsize[x])) {
+                                            const auto & facts =
+                                                declared_floor(row_logger, (*floors)[time_axis], x, tsize[x], len(kx), tzero[x], mutation);
+                                            if (! std::holds_alternative<disjunctive_2d_proof_mutation::SkipSizeFloor>(mutation))
+                                                pol.add(facts.at_least);
+                                        }
                                         pol.add_for_literal(tracker, tpos[x] >= t - len(kx) + 1_i);
                                         pol.add_for_literal(tracker, tpos[y] < t + 1_i);
                                         pol.saturate().emit(row_logger, ProofLevel::Temporary);
@@ -738,7 +787,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             before_x = move(_before_x), before_y = move(_before_y), clause_lines = move(_clause_lines), zero_w = move(_zero_w),
             zero_h = move(_zero_h), presence = move(_presence), strict = _strict, rules = _rules, relaxation_members = move(_relaxation_members),
             relaxation_window = _relaxation_window, relaxation_declared_time = move(_relaxation_declared_time),
-            relaxation_row_fits = _relaxation_row_fits, overload_cache = std::make_shared<RelaxationOverloadCache>(), mutation = _mutation,
+            relaxation_time_floor = move(_relaxation_time_floor), relaxation_row_fits = _relaxation_row_fits,
+            overload_cache = std::make_shared<RelaxationOverloadCache>(), mutation = _mutation,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Pairwise 2D time-table. The mandatory box of rectangle i is
             //   [ub(x_i), lb(x_i)+lb(w_i)) x [ub(y_i), lb(y_i)+lb(h_i))
@@ -1503,12 +1553,15 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     const auto & tbefore = 0 == time_axis ? before_x : before_y;
                     const auto & rbefore = 0 == time_axis ? before_y : before_x;
                     const auto & declared = relaxation_declared_time[time_axis];
+                    const auto & time_floor = relaxation_time_floor[time_axis];
+                    const auto & tzero = 0 == time_axis ? zero_w : zero_h;
                     auto [window_lo, window_hi] = relaxation_window[time_axis];
                     auto capacity = window_hi - window_lo;
 
-                    // Constant sizes on both axes: the time-axis one fixes each
-                    // activity flag's definition, and the resource-axis one is
-                    // the network's duration.
+                    // A guaranteed extent on the time axis, counted at its
+                    // declared floor, which fixes each activity flag's
+                    // definition; the resource axis's constant size is the
+                    // network's duration, and prepare() has seen to that.
                     //
                     // `row_tasks` is every such member, which is what a flagged
                     // row is stated over: a row is a fact about the model, and an
@@ -1519,7 +1572,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     // rectangle is left alone, as 1D Disjunctive leaves one.
                     vector<size_t> row_tasks, tasks;
                     for (auto i : relaxation_members[time_axis])
-                        if (is_constant_variable(tsize[i]) && constant_value_of(tsize[i]) >= 1_i) {
+                        if (time_floor.at(i) >= 1_i) {
                             row_tasks.push_back(i);
                             if (is_present(i))
                                 tasks.push_back(i);
@@ -1536,7 +1589,11 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             literals.push_back(ProofLiteral{*presence[i] == 1_i});
                     };
 
-                    auto len = [&](size_t i) { return constant_value_of(tsize[i]); };
+                    // A variable size is counted at its declared floor, as 1D
+                    // Disjunctive counts a variable duration, rather than at
+                    // its current lower bound: that is a state fact, and every
+                    // row here is a model fact cached at Top.
+                    auto len = [&](size_t i) { return time_floor.at(i); };
                     auto height = [&](size_t i) { return constant_value_of(rsize[i]); };
                     auto est = [&](size_t i) { return state.lower_bound(tpos[i]); };
                     auto lct = [&](size_t i) { return state.upper_bound(tpos[i]) + len(i); };
@@ -1619,10 +1676,17 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                 // disjuncts of the pair's clause, exactly as
                                 // the time-table rung's certificate refutes
                                 // them, then the order literals are traded for
-                                // the activity flags.
+                                // the activity flags. A variable size is
+                                // cancelled against its declared floor.
                                 auto refute = [&](size_t x, size_t y) {
                                     PolBuilder pol;
                                     pol.add(tbefore.at(make_pair(x, y)).forward_line);
+                                    if (! is_constant_variable(tsize[x])) {
+                                        const auto & facts =
+                                            declared_floor(*logger, overload_cache->floors[time_axis], x, tsize[x], len(x), tzero[x], mutation);
+                                        if (! std::holds_alternative<disjunctive_2d_proof_mutation::SkipSizeFloor>(mutation))
+                                            pol.add(facts.at_least);
+                                    }
                                     pol.add_for_literal(tracker, tpos[x] >= t - len(x) + 1_i);
                                     pol.add_for_literal(tracker, tpos[y] < t + 1_i);
                                     pol.saturate().emit(*logger, ProofLevel::Temporary);
