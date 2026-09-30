@@ -397,27 +397,121 @@ auto main(int argc, char * argv[]) -> int
     }
     println(cerr, "budgets: candidate cap and minimum size both bite, and both are counted");
 
-    // An optional-task donor is declined loudly rather than mis-derived.
+    /* Optional tasks (#1136). The cross-resource family again, with every task
+     * optional and one presence per task, shared by every resource it appears
+     * on: the clique's bridges then run between activity flags that carry the
+     * same presence conjunct, which the bridge's `pol` cancels like any other
+     * shared term. In the mixed variant the first resource posts the tasks
+     * unconditionally, so the same start is optional on some resources and
+     * mandatory on another: two nodes, then, and no bridge between them.
+     *
+     * A solution is the starts followed by the presences, against brute force
+     * that loads a task on a resource wherever that resource says it is there.
+     */
     {
-        auto stats = make_shared<InferredDisjunctiveStats>();
-        Problem p;
-        vector<IntegerVariableID> starts, presences;
-        for (int i = 0; i < 3; ++i) {
-            starts.push_back(p.create_integer_variable(0_i, 3_i));
-            presences.push_back(p.create_integer_variable(0_i, 1_i));
-        }
-        vector<IntegerVariableID> lengths{constant_variable(2_i), constant_variable(2_i), constant_variable(2_i)},
-            heights{constant_variable(1_i), constant_variable(1_i), constant_variable(1_i)};
-        p.post(Cumulative{starts, lengths, heights, presences, constant_variable(1_i)});
-        p.add_presolver(InferredDisjunctive{stats});
-        solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }}, nullopt);
+        auto run = [&](int k, int length, int horizon, bool mixed, const Setup & setup, const optional<string> & proof_name) -> set<vector<int>> {
+            Problem p;
+            vector<IntegerVariableID> starts, presences, lengths;
+            for (int i = 0; i < k; ++i) {
+                starts.push_back(p.create_integer_variable(0_i, Integer{horizon - length}, "s" + to_string(i)));
+                presences.push_back(p.create_integer_variable(0_i, 1_i, "p" + to_string(i)));
+                lengths.push_back(constant_variable(Integer{length}));
+            }
+            for (int r = 0; r < k; ++r) {
+                vector<IntegerVariableID> heights;
+                for (int i = 0; i < k; ++i) {
+                    auto on = false;
+                    for (int j = 0; j < k; ++j)
+                        on = on || (j != i && (i + j) % k == r);
+                    heights.push_back(constant_variable(on ? 1_i : 0_i));
+                }
+                if (mixed && r == 0)
+                    p.post(Cumulative{starts, lengths, heights, constant_variable(1_i)});
+                else
+                    p.post(Cumulative{starts, lengths, heights, presences, constant_variable(1_i)});
+            }
+            auto presolver = InferredDisjunctive{setup.stats};
+            presolver.with_minimum_clique_size(setup.min_clique_size).with_proof_mutation(setup.mutation);
+            p.add_presolver(presolver);
 
-        if (stats->declined_optional != 1)
-            fail("an optional-task donor was not declined");
-        if (stats->cliques_posted != 0)
-            fail("an optional-task donor was used anyway");
+            set<vector<int>> solutions;
+            solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                vector<int> solution;
+                for (const auto & v : starts)
+                    solution.push_back(s(v).raw_value);
+                for (const auto & v : presences)
+                    solution.push_back(s(v).raw_value);
+                solutions.insert(move(solution));
+                return true;
+            }},
+                proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+            return solutions;
+        };
+
+        auto brute = [&](int k, int length, int horizon, bool mixed) {
+            set<vector<int>> expected;
+            vector<int> current(static_cast<size_t>(2 * k), 0);
+            auto ok = [&]() {
+                for (int r = 0; r < k; ++r)
+                    for (int i = 0; i < k; ++i)
+                        for (int j = i + 1; j < k; ++j) {
+                            if ((i + j) % k != r)
+                                continue;
+                            auto here = [&](int t) { return (mixed && r == 0) || current[static_cast<size_t>(k + t)] == 1; };
+                            if (here(i) && here(j) && current[static_cast<size_t>(i)] < current[static_cast<size_t>(j)] + length &&
+                                current[static_cast<size_t>(j)] < current[static_cast<size_t>(i)] + length)
+                                return false;
+                        }
+                return true;
+            };
+            auto recurse = [&](auto && self, int at) -> void {
+                if (at == 2 * k) {
+                    if (ok())
+                        expected.insert(current);
+                    return;
+                }
+                for (int v = 0; v <= (at < k ? horizon - length : 1); ++v) {
+                    current[static_cast<size_t>(at)] = v;
+                    self(self, at + 1);
+                }
+            };
+            recurse(recurse, 0);
+            return expected;
+        };
+
+        for (auto mixed : {false, true}) {
+            const string what = mixed ? "optional tasks, mandatory on one resource" : "optional tasks";
+            const string name = mixed ? "inferred_disjunctive_optional_mixed" : "inferred_disjunctive_optional";
+            auto expected = brute(3, 2, 5, mixed);
+            auto unproved = run(3, 2, 5, mixed, Setup{}, nullopt);
+            if (unproved != expected)
+                fail(what + ": " + to_string(unproved.size()) + " solutions with proofs off, against brute force's " + to_string(expected.size()));
+            auto stats = make_shared<InferredDisjunctiveStats>();
+            auto got = run(3, 2, 5, mixed, Setup{.stats = stats}, proofs ? make_optional(name) : nullopt);
+            if (got != expected)
+                fail(what + ": " + to_string(got.size()) + " solutions against brute force's " + to_string(expected.size()));
+            if (! mixed && stats->cliques_posted != 1)
+                fail(what + ": posted " + to_string(stats->cliques_posted) + " cliques, not the one the family contains");
+            if (! mixed && proofs && stats->bridges_derived == 0)
+                fail(what + ": no bridge was derived, so no presence conjunct was carried between resources");
+            if (proofs)
+                verify_proof_and_clean_up(name);
+            println(cerr, "{}: {} cliques, {} bridges, {} solutions matching brute force", what, stats->cliques_posted, stats->bridges_derived,
+                got.size());
+        }
+
+        // The derived constraint told the tasks are mandatory when they are
+        // not: it then claims a load no schedule need carry, and reasons with
+        // nothing in them to cancel the flags' presence conjuncts. Refused.
+        if (proofs) {
+            const string name = "inferred_disjunctive_optional_mutation";
+            run(3, 2, 5, false, Setup{.mutation = inferred_disjunctive_mutation::ForgetPresence{}}, make_optional(name));
+            if (run_veripb(name + ".opb", name + ".pbp"))
+                fail("veripb accepted a clique of optional tasks posted as mandatory");
+            println(cerr, "veripb rejected the forgotten presence, as expected");
+            dispose_of_proof_files(name);
+        }
     }
-    println(cerr, "an optional-task donor is declined");
 
     /* The diagnostics channel (#662, #723). What a counter says is how many,
      * and what a note says is which one and with what figures --- and a note's
@@ -482,7 +576,7 @@ auto main(int argc, char * argv[]) -> int
 
         const vector<string> expected_names{"donors_seen", "tasks", "conflicting_pairs", "cross_donor_pairs", "cliques_found", "cliques_posted",
             "clique_members_posted", "largest_capacity_bound", "certified_makespan_bound", "resources_with_set_aside_tasks", "converted_heights",
-            "bridges_derived", "declined_optional", "declined_irreducible_capacity", "dropped_too_small", "dropped_subset", "dropped_dominated",
+            "bridges_derived", "declined_irreducible_capacity", "dropped_too_small", "dropped_subset", "dropped_dominated",
             "dropped_over_candidate_budget", "dropped_over_posting_budget", "dropped_disagreeing_length", "dropped_duplicate_appearance",
             "declined_by_install"};
         if (names_of(InferredDisjunctiveStats{}) != expected_names)
@@ -539,33 +633,32 @@ auto main(int argc, char * argv[]) -> int
         }
 
         // A decline: General, naming the constraint it is about, and not
-        // Important --- nothing was limited, and a donor this presolver cannot
-        // bridge across is not a configuration the caller can change. If
-        // everything is Important then nothing is.
+        // Important --- nothing was limited, and a donor whose capacity is a
+        // view is not a configuration the caller can change. If everything is
+        // Important then nothing is.
         {
             Problem p;
-            vector<IntegerVariableID> starts, presences;
-            for (int i = 0; i < 3; ++i) {
+            vector<IntegerVariableID> starts;
+            for (int i = 0; i < 3; ++i)
                 starts.push_back(p.create_integer_variable(0_i, 3_i));
-                presences.push_back(p.create_integer_variable(0_i, 1_i));
-            }
+            auto capacity = p.create_integer_variable(0_i, 0_i);
             vector<IntegerVariableID> lengths{constant_variable(2_i), constant_variable(2_i), constant_variable(2_i)},
                 heights{constant_variable(1_i), constant_variable(1_i), constant_variable(1_i)};
-            p.post(Cumulative{starts, lengths, heights, presences, constant_variable(1_i)});
+            p.post(Cumulative{starts, lengths, heights, capacity + 1_i});
             p.add_presolver(InferredDisjunctive{});
             auto recorded = solve_recording(p);
 
             auto general = notes_at(recorded, StatsLevel::General);
             if (general.size() != 1)
-                fail("an optional-task decline reported " + to_string(general.size()) + " General notes, not one");
+                fail("a view-capacity decline reported " + to_string(general.size()) + " General notes, not one");
             if (! general[0].constraint)
                 fail("the note does not carry the constraint it is about, so nothing can filter on it");
             if (general[0].component != "inferred_disjunctive")
                 fail("the note is not attributed to this presolver");
-            if (string::npos == general[0].text.find("optional"))
+            if (string::npos == general[0].text.find("view"))
                 fail("the note does not say what was wrong: " + general[0].text);
             if (! notes_at(recorded, StatsLevel::Important).empty())
-                fail("an optional-task decline raised an Important note");
+                fail("a view-capacity decline raised an Important note");
         }
 
         // The budgets, which do carry a figure a caller would act on, reported

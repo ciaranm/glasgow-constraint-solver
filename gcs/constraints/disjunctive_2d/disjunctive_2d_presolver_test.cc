@@ -109,7 +109,7 @@ namespace
 
     struct Counts
     {
-        std::size_t posted = 0, declined_optional = 0;
+        std::size_t posted = 0, optional_instances = 0;
     };
 
     struct Setup
@@ -158,7 +158,7 @@ namespace
             if (setup.disjunctive_mutation)
                 presolver.with_proof_mutation(*setup.disjunctive_mutation);
             p.add_presolver(presolver);
-            counts = [stats] { return Counts{stats->cliques_posted, stats->declined_optional}; };
+            counts = [stats] { return Counts{stats->cliques_posted, 0}; };
         } break;
         case Which::Cumulative: {
             auto stats = make_shared<InferredCumulativeStats>();
@@ -166,7 +166,7 @@ namespace
             if (setup.cumulative_mutation)
                 presolver.with_proof_mutation(*setup.cumulative_mutation);
             p.add_presolver(presolver);
-            counts = [stats] { return Counts{stats->cuts_posted, stats->declined_optional}; };
+            counts = [stats] { return Counts{stats->cuts_posted, 0}; };
         } break;
         case Which::Strengthening: {
             auto stats = make_shared<CumulativeStrengtheningStats>();
@@ -326,8 +326,8 @@ auto main(int argc, char * argv[]) -> int
     println(cerr, "the fixtures: every presolver derives from a projection, and matches brute force");
 
     // The same over random small instances: sizes that may vary, strict or
-    // not, and optional rectangles, which the inferring presolvers decline and
-    // strengthening takes.
+    // not, and optional rectangles, whose presences every presolver now
+    // carries into what it derives (#1136).
     std::mt19937 rng(*get_seed());
     auto pick = [&](int lo, int hi) { return std::uniform_int_distribution<int>{lo, hi}(rng); };
     Counts totals[3];
@@ -349,14 +349,17 @@ auto main(int argc, char * argv[]) -> int
         for (auto which : {Which::Disjunctive, Which::Cumulative, Which::Strengthening}) {
             auto counts = check(inst, Setup{.which = which, .projection = pick(0, 1) == 0}, "disjunctive_2d_presolver_sweep_" + name_of(which));
             totals[static_cast<int>(which)].posted += counts.posted;
-            totals[static_cast<int>(which)].declined_optional += counts.declined_optional;
+            if (any_optional && counts.posted > 0)
+                ++totals[static_cast<int>(which)].optional_instances;
         }
     }
     for (auto which : {Which::Disjunctive, Which::Cumulative, Which::Strengthening}) {
         const auto & t = totals[static_cast<int>(which)];
-        println(cerr, "sweep, {}: {} posted, {} optional donors declined", name_of(which), t.posted, t.declined_optional);
+        println(cerr, "sweep, {}: {} posted, on {} instances with optional rectangles", name_of(which), t.posted, t.optional_instances);
         if (0 == t.posted)
             fail("the sweep posted nothing from " + name_of(which) + ", so it checked no certificate over a projection");
+        if (0 == t.optional_instances)
+            fail("the sweep posted nothing from " + name_of(which) + " over optional rectangles (#1136)");
     }
 
     // Mutations: each presolver's own, over the projection's rows.

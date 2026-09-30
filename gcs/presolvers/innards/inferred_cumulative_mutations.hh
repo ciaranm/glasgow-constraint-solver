@@ -77,11 +77,20 @@ namespace gcs::innards
         struct BridgeWrongTask
         {
         };
+
+        /// Post a cut's optional members as if they were mandatory (#1136):
+        /// the derived constraint then loads the resource with tasks that need
+        /// not be there, and gives reasons without the presence literals its
+        /// flags are reified on.
+        struct ForgetPresence
+        {
+        };
     }
 
     using InferredCumulativeMutation = std::variant<inferred_cumulative_mutation::None, inferred_cumulative_mutation::ClaimTighterCapacity,
         inferred_cumulative_mutation::ClaimTallerTask, inferred_cumulative_mutation::ClaimTighterRow,
-        inferred_cumulative_mutation::ClaimHigherMakespanBound, inferred_cumulative_mutation::BridgeWrongTask>;
+        inferred_cumulative_mutation::ClaimHigherMakespanBound, inferred_cumulative_mutation::BridgeWrongTask,
+        inferred_cumulative_mutation::ForgetPresence>;
 }
 
 #endif

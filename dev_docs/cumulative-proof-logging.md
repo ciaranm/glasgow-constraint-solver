@@ -1327,12 +1327,20 @@ which is an implied linear constraint over the presences rather than
 anything a makespan variable's lower bound can hold, and so belongs with
 the conditional-bounds follow-up below rather than here.
 
-The multi-donor case is *not* covered, and that is where the remaining
-work is: `recover_conjunction_flag_bridge` cancels two donors' conjuncts
-against each other, and a presence conjunct cancels only when both donors
-carry the same literal. Mixed arities change the degree arithmetic
-outright. The presolvers of issues 07 and 08 bridge between donors, so
-they still decline an optional one; issue 06's does not, and does not.
+The multi-donor case is covered too (#1136), by keeping every bridge to
+the one case that needs nothing new. `recover_conjunction_flag_bridge`
+bridges `before` and `after` and adds one donor's forward half to the
+other's reverse half. A presence conjunct is not bridged at all. When both
+donors carry the same literal, it appears once with each sign and cancels,
+as the shared terms of `recover_flag_bridge` do. So `InferredDisjunctive`
+and `InferredCumulative` make a task's resolved presence part of its
+identity, beside its start and length. Two appearances are then the same
+task, and are ever bridged, only when they carry the same literal. The
+same start optional on one donor and mandatory on another, or under two
+different presences, is two tasks. Mixed arities, which would change the
+degree arithmetic, never meet in a `pol`. An optional task's guaranteed
+duration is zero, and that is what both presolvers rank and report
+bounds by.
 
 Variable arguments they *do* take, by the same route: each reduces the row
 it is about to argue over before doing so --- `InferredDisjunctive` its

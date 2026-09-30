@@ -3,6 +3,7 @@
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
 #include <gcs/constraints/cumulative/donor_view.hh>
 #include <gcs/constraints/cumulative/propagate.hh>
+#include <gcs/constraints/innards/task_presence.hh>
 #include <gcs/innards/proofs/flag_bridge.hh>
 #include <gcs/innards/proofs/lifted_cover_cut.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -22,6 +23,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -70,9 +72,9 @@ namespace
     /// what the procedure works on is a matrix rather than a row: one column per
     /// task, one row per resource. Tasks are matched across posted constraints
     /// by their start variable and length, which is what his
-    /// `extract_cumulative_matrix` does with the interval expressions, and two
-    /// of a donor's own tasks that look the same stay separate rather than being
-    /// folded into one column.
+    /// `extract_cumulative_matrix` does with the interval expressions, and by
+    /// their presence (#1136); two of a donor's own tasks that look the same
+    /// stay separate rather than being folded into one column.
     struct Task
     {
         IntegerVariableID start;
@@ -81,10 +83,11 @@ namespace
         /// flags were reified on. Two tasks are the same column only if this is
         /// the *same* variable, whatever its bounds happen to be.
         IntegerVariableID length;
-        /// The duration this task is guaranteed to occupy, lb(length). A cover
-        /// is a statement about work every solution has to contain, so the
-        /// energy a cut carries and the order the covers are ranked in both
-        /// count the smallest duration still allowed.
+        /// The duration this task is guaranteed to occupy: lb(length), or zero
+        /// for an optional task, which need not be scheduled at all. A cover is
+        /// a statement about work every solution has to contain, so the energy
+        /// a cut carries and the order the covers are ranked in both count
+        /// this.
         Integer least_length;
         Integer t_lo, t_hi;
 
@@ -100,6 +103,14 @@ namespace
         /// from different donors, which is what DerivedCumulativeTask naming a
         /// donor per task is for.
         size_t canonical_donor;
+
+        /// The presence literal every donor's activity flags carry for this
+        /// task, as task_presence resolves it, or nullopt if it is
+        /// unconditionally present. Part of the column's identity: a member's
+        /// flag on its canonical donor is carried onto its flag on another
+        /// row's donor by a bridge that cancels the presence conjunct only
+        /// when the two carry the same one.
+        optional<IntegerVariableID> presence;
     };
 
     /// A lifted cover inequality over some tasks: `sum_i coefficients[i] a_i <=
@@ -525,25 +536,10 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
     // implementation does with its single matrix.
     vector<Donor> donors;
     vector<Task> tasks;
-    map<pair<IntegerVariableID, IntegerVariableID>, size_t> task_of;
+    map<std::tuple<IntegerVariableID, IntegerVariableID, optional<IntegerVariableID>>, size_t> task_of;
 
     for (const auto & donor : cumulative_donors(problem, propagators)) {
         bump(&InferredCumulativeStats::donors_seen);
-
-        // The mechanism no longer minds an optional donor --- a presence is a
-        // conjunct of the activity flag, so the rows this argues over are the
-        // same shape, and install_derived_cumulative carries the literal into
-        // the reasons. What is still open here is the *cross-donor* half: this
-        // presolver draws tasks from several Cumulatives and bridges one
-        // donor's flags to another's, and two donors' activity flags cancel
-        // against each other only if their presence conjuncts do too. Declined
-        // until that has a rule of its own rather than a hopeful `pol`.
-        if (! donor.presences.empty()) {
-            bump(&InferredCumulativeStats::declined_optional);
-            note(StatsLevel::General, donor.key.id,
-                "passed over: it has optional tasks, whose presence conjuncts do not yet cancel across a bridge between donors");
-            continue;
-        }
 
         // What of this donor a cut can be lifted out of: its capacity as a
         // number, and the tasks whose height is the constant its rows put on
@@ -588,10 +584,13 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             if (demand > capacity)
                 continue;
 
-            // Matched across donors by start and length, and a donor's second
-            // task with the same pair stays its own column rather than being
-            // merged into the first.
-            auto key = pair{starts[i], length};
+            // Matched across donors by start, length and presence, and a
+            // donor's second task with the same key stays its own column
+            // rather than being merged into the first. An optional task is a
+            // column like any other, its presence a conjunct of every activity
+            // flag the rows are over (#1136).
+            auto presence = task_presence(view->presences.empty() ? nullopt : std::make_optional(view->presences[i]), "Cumulative").literal;
+            auto key = std::tuple{starts[i], length, presence};
             auto found = task_of.find(key);
             if (found != task_of.end() && ! tasks[found->second].positions[which]) {
                 tasks[found->second].demands[which] = demand;
@@ -600,8 +599,8 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             }
 
             auto window = cumulative_task_window(state, starts[i], length);
-            Task task{starts[i], length, state.lower_bound(length), window.lo, window.hi, vector<Integer>(donors.size(), 0_i),
-                vector<optional<size_t>>(donors.size(), std::nullopt), which};
+            Task task{starts[i], length, presence ? 0_i : state.lower_bound(length), window.lo, window.hi, vector<Integer>(donors.size(), 0_i),
+                vector<optional<size_t>>(donors.size(), std::nullopt), which, presence};
             task.demands[which] = demand;
             task.positions[which] = i;
             // Only the first column with this key is findable, and that is the
@@ -813,7 +812,8 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 .position = *task.positions[task.canonical_donor],
                 .start = task.start,
                 .length = task.length,
-                .height = cut.coefficients[k]});
+                .height = cut.coefficients[k],
+                .presence = std::holds_alternative<inferred_cumulative_mutation::ForgetPresence>(_mutation) ? nullopt : task.presence});
             recipe.members.push_back(RecipeMember{task.canonical_donor, *task.positions[task.canonical_donor], task.demands, task.positions,
                 cut.coefficients[k], task.t_lo, task.t_hi});
         }
@@ -904,7 +904,10 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                     // rows are the honest ones.
                     [&](const inferred_cumulative_mutation::ClaimHigherMakespanBound &) {},
                     // Corrupts the crossing, which happens below.
-                    [&](const inferred_cumulative_mutation::BridgeWrongTask &) {}}
+                    [&](const inferred_cumulative_mutation::BridgeWrongTask &) {},
+                    // Corrupts the tasks' presences, which are settled before
+                    // any row is derived.
+                    [&](const inferred_cumulative_mutation::ForgetPresence &) {}}
                     .visit(recipe.mutation);
                 // A mutation that leaves nothing to derive has nothing to be
                 // rejected either, and a test asserting on it would be asserting
@@ -1113,7 +1116,6 @@ auto InferredCumulativeStats::entries() const -> vector<StatsEntry>
     add("restricted_rows_rebuilt", restricted_rows_rebuilt);
     result.push_back(StatsEntry{"largest_capacity_bound", largest_capacity_bound.raw_value});
     result.push_back(StatsEntry{"certified_makespan_bound", certified_makespan_bound.raw_value});
-    add("declined_optional", declined_optional);
     add("declined_irreducible_capacity", declined_irreducible_capacity);
     add("donors_with_set_aside_tasks", donors_with_set_aside_tasks);
     add("converted_heights", converted_heights);
