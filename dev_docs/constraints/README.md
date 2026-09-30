@@ -327,6 +327,25 @@ constraints and do not restate it.
   unsupported. Since #1215 a constant outside the solver's integer range is
   refused at construction, so the 64-bit overflow the audit found with proofs
   on can no longer be reached.
+- [`min_max.md`](min_max.md) — `ArrayMin`, `ArrayMax`, `Min` and `Max`: one
+  propagator over a selector-per-entry encoding that matches `cake_pb_cp`'s row
+  for row, though unlabelled and in another order. It is generalised arc
+  consistent on distinct variables, holes included, but only because of a
+  final per-value pass over the array that costs the width of the domains on
+  every call. Without that pass the rules are already GAC on interval domains
+  and `bounds(D)` with holes, almost exactly where Gecode's domain-consistent
+  maximum stops.
+  Because of the pass, three MiniZinc Challenge models make no progress in a
+  minute, one overshoots its time limit by 44 s, and the audit row stays
+  `KnownTrip`. On an identical enumeration it takes 12 to 15 times Gecode's
+  time. Other findings:
+  - a result that shares a variable with an entry through a view (only the
+    C++ API and `gcspy` can post a harmful one) makes it throw "missing support" instead
+    of failing, sometimes before the last solution, and occasionally write a
+    proof VeriPB rejects, from two rules and in both directions; three small
+    fixes are tested together;
+  - plainly repeated variables fall below `bounds(Z)`;
+  - the single-support rule's reason and proof are per value of the result.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
