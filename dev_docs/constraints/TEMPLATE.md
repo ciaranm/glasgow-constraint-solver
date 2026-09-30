@@ -976,7 +976,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `disjunctive.md` | `disjunctive/`, `disjunctive_2d/` | one family, two dimensions; note `disjunctive-proof-logging.md` |
 | `element.md` | `element/` | **written**. `Element`, `Element2D` |
 | `in.md` | `in/` | note `range_literals_spec.md` |
-| `increasing.md` | `increasing/` | `Increasing`, `Decreasing` |
+| `increasing.md` | `increasing/` | **written**. `Increasing`, `StrictlyIncreasing`, `Decreasing` and `StrictlyDecreasing` over one `IncreasingChain`. Not merged with `comparison`: the same row and theorem, no shared code |
 | `inverse.md` | `inverse/` | **written**. One class; its propagator runs `all_different`'s generalised arc consistent algorithm on one array, and is documented there as well |
 | `knapsack.md` | `knapsack/` | existing note `knapsack.md`; `decision-diagram-proof-strategies.md` |
 | `lex.md` | `lex/`, `lex_smart_table.hh` | |
