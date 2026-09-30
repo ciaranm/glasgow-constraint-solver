@@ -975,7 +975,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `dag.md` | `dag/` | `Dag`; shares `connectivity-proofs.md` with `reachable` |
 | `disjunctive.md` | `disjunctive/`, `disjunctive_2d/` | one family, two dimensions; note `disjunctive-proof-logging.md` |
 | `element.md` | `element/` | **written**. `Element`, `Element2D` |
-| `in.md` | `in/` | note `range_literals_spec.md` |
+| `in.md` | `in/` | **written**. One class over constants and variable candidates; also the machinery behind every `create_integer_variable(vector)`. `range_literals_spec.md` stays the range-literal reference |
 | `increasing.md` | `increasing/` | **written**. `Increasing`, `StrictlyIncreasing`, `Decreasing` and `StrictlyDecreasing` over one `IncreasingChain`. Not merged with `comparison`: the same row and theorem, no shared code |
 | `inverse.md` | `inverse/` | **written**. One class; its propagator runs `all_different`'s generalised arc consistent algorithm on one array, and is documented there as well |
 | `knapsack.md` | `knapsack/` | existing note `knapsack.md`; `decision-diagram-proof-strategies.md` |

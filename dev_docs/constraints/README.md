@@ -306,6 +306,24 @@ constraints and do not restate it.
   none is; every reason is the whole scope where two literals suffice; and its
   encoding is `Count`'s from before `Count` was conformed to `cake_pb_cp`. Not
   merged with `counting`: no shared code, and it is the cheaper special case.
+- [`in.md`](in.md) — `In`: a variable equals one of a list of constants or
+  one of a list of variables, over `cake_pb_cp`'s at-least-one and flag-triple
+  encoding, matched label for label. Generalised arc consistent on distinct
+  variables, holes and views included, with every inference certified by our
+  own derivations (guarded bound lemmas carry a range across a selected
+  equality); interval-shaped throughout since #874. Gecode's `member` never
+  prunes a candidate once posted; on an identical tree GCS takes 3.3 to 3.7
+  times its time. Every listed domain from C++ and XCSP3 is an `In`, and so
+  is Python's `post_in`, which is where the findings are: carving `K` values
+  costs Θ(K²) in the state layer's interval scans (12.1 s at 10⁵; 0.021 s with
+  a binary search); the posted `In` stays live after its only useful call,
+  idle on real instances (262,179 calls on XCSP3's `Dubois-015`, 1.6 million
+  on the `all_equal` benchmark, whose time falls 27% with the fix); and its
+  trigger marks the variable's holes as observed, which keeps other
+  constraints' optional interior pruning on. Also: repeated or aliased
+  candidates lose `bounds(Z)` and can take W/2 calls to fail; step 1 is
+  quadratic in interval counts; XCSP3's index-free `element` is unsupported;
+  and a constant near a 64-bit limit aborts a proof-logged run.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
