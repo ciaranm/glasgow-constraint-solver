@@ -89,6 +89,11 @@ namespace gcs
          * proofs are on: a rectangle the certificate could not speak about
          * takes no part in the *inference* either, rather than the two drifting
          * apart.
+         *
+         * An optional rectangle takes part too, in this rule and in every rule
+         * below, once search has made it present (#984), provided its presence
+         * is a plain variable no other rectangle shares. Until then it is left
+         * alone, which is only weaker.
          */
         bool cumulative_relaxation = false;
 

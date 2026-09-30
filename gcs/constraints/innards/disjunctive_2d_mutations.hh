@@ -120,6 +120,22 @@ namespace gcs::innards
         struct ProjectionSkipRefutations
         {
         };
+
+        /// Route B over optional rectangles (#984): leave a present member's
+        /// presence out of the guard. The pair's 6-way clause still carries
+        /// its `[present = 0]` disjunct, and nothing the network's goals offer
+        /// covers it.
+        struct SkipPresenceGuard
+        {
+        };
+
+        /// The energetic rungs over optional rectangles (#984): define the
+        /// activity flag without its presence conjunct. The pair clause the
+        /// flagged row is built from then keeps the 6-way clause's presence
+        /// disjuncts, and does not close.
+        struct SkipPresenceConjunct
+        {
+        };
     }
 
     using Disjunctive2DProofMutation = std::variant<disjunctive_2d_proof_mutation::None, disjunctive_2d_proof_mutation::EmitNothing,
@@ -128,7 +144,8 @@ namespace gcs::innards
         disjunctive_2d_proof_mutation::OverloadSkipRow, disjunctive_2d_proof_mutation::EdgeFindingOneTooFar,
         disjunctive_2d_proof_mutation::EdgeFindingDropPushed, disjunctive_2d_proof_mutation::TimeTableEdgeFindingDropPins,
         disjunctive_2d_proof_mutation::ProjectionRowTooStrong, disjunctive_2d_proof_mutation::ProjectionSkipBridge,
-        disjunctive_2d_proof_mutation::ProjectionSkipRefutations>;
+        disjunctive_2d_proof_mutation::ProjectionSkipRefutations, disjunctive_2d_proof_mutation::SkipPresenceGuard,
+        disjunctive_2d_proof_mutation::SkipPresenceConjunct>;
 }
 
 #endif
