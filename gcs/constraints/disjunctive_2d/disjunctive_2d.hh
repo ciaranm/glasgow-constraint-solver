@@ -80,7 +80,8 @@ namespace gcs
          * packing family has not been measured.
          *
          * A rectangle takes part on an axis only if its size *on the other*
-         * axis is a positive constant, its position there is a plain variable
+         * axis is a constant or a plain variable with a positive declared
+         * lower bound, its position there is a plain variable
          * with a non-negative domain, and that domain is narrow enough for the
          * network's guard coefficients --- the conditions
          * innards::ComparatorNetwork::wire_over imposes. Those are all
@@ -89,6 +90,21 @@ namespace gcs
          * proofs are on: a rectangle the certificate could not speak about
          * takes no part in the *inference* either, rather than the two drifting
          * apart.
+         *
+         * An optional rectangle takes part too, in this rule and in every rule
+         * below, once search has made it present (#984), provided its presence
+         * is a plain variable no other rectangle shares. Until then it is left
+         * alone, which is only weaker.
+         *
+         * A variable size on the time axis is counted at its current lower
+         * bound by this rule, under a reason, and at its *declared* lower bound
+         * by the energetic rules below and \ref cumulative_projection, whose
+         * rows are model facts (#984); a rectangle declared from zero has no
+         * guaranteed extent and takes no part in those. A variable size on the
+         * *other* axis is counted at its declared lower bound by every rule,
+         * this one included, being the comparator network's pinned duration.
+         * Either way a rectangle is only ever counted smaller than it is,
+         * which is only weaker.
          */
         bool cumulative_relaxation = false;
 
@@ -113,7 +129,7 @@ namespace gcs
          * same telescope. See #984.
          *
          * Uses the members \ref cumulative_relaxation does, restricted to a
-         * constant time-axis size, and `H` is the model's resource-axis
+         * positive declared time-axis size, and `H` is the model's resource-axis
          * extent over them rather than the current one, since the row is
          * cached. The network's constants are quadratic in that extent, so an
          * axis whose members' resource-axis window does not pass
@@ -202,8 +218,10 @@ namespace gcs
          * and every certificate it writes are `Cumulative`'s, unchanged.
          *
          * Uses the members \ref relaxation_overload does, and is off on an
-         * axis where that rule is for the width of its window. nullopt, the
-         * default, runs nothing.
+         * axis where that rule is for the width of its window. A variable
+         * size on either axis is projected as a constant, its declared lower
+         * bound: a length on the time axis, a height on the other (#984).
+         * nullopt, the default, runs nothing.
          */
         std::optional<CumulativeRules> cumulative_projection = std::nullopt;
     };
@@ -343,6 +361,17 @@ namespace gcs
         // the capacity row the check cites be cached at Top.
         std::array<std::pair<Integer, Integer>, 2> _relaxation_window{{{Integer{0}, Integer{0}}, {Integer{0}, Integer{0}}}};
         std::array<std::map<std::size_t, std::pair<Integer, Integer>>, 2> _relaxation_declared_time;
+
+        // Each rectangle's size as the relaxation counts it, by dimension (0
+        // the widths, 1 the heights): the constant, or a variable size's
+        // *declared* lower bound (#984). The resource-axis size is counted at
+        // it by every rung, being the comparator network's pinned duration,
+        // and the time-axis size by the energetic rungs and the projection. A
+        // rectangle counted smaller than it is only weakens what they infer,
+        // and the declared bound is a model fact, so the rows over it stay
+        // reason-free and cacheable at Top. Zero means no guaranteed extent,
+        // and a rule that needs one leaves the rectangle out.
+        std::array<std::vector<Integer>, 2> _relaxation_size_floor;
 
         // Per axis, whether that window is narrow enough for the flagged
         // capacity row's network, whose optional tasks have constants

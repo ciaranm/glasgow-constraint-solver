@@ -120,6 +120,45 @@ namespace gcs::innards
         struct ProjectionSkipRefutations
         {
         };
+
+        /// Route B over optional rectangles (#984): leave a present member's
+        /// presence out of the guard. The pair's 6-way clause still carries
+        /// its `[present = 0]` disjunct, and nothing the network's goals offer
+        /// covers it.
+        struct SkipPresenceGuard
+        {
+        };
+
+        /// The energetic rungs over optional rectangles (#984): define the
+        /// activity flag without its presence conjunct. The pair clause the
+        /// flagged row is built from then keeps the 6-way clause's presence
+        /// disjuncts, and does not close.
+        struct SkipPresenceConjunct
+        {
+        };
+
+        /// The energetic rungs and the projection over a variable time-axis
+        /// size (#984): refute a pair's time-axis disjunct without the size's
+        /// declared floor. The before flag's row keeps its size term, and the
+        /// refutation no longer lands on a clause.
+        struct SkipSizeFloor
+        {
+        };
+
+        /// The same, non-strict: leave the size's zero-size escape unpinned.
+        /// The pair clause's RUP reaches one escape from the floor by bit
+        /// arithmetic, but not two.
+        struct SkipFloorEscapePins
+        {
+        };
+
+        /// Every rung over a variable resource-axis size (#984): hand the
+        /// comparator network the model's separation row as it stands, with
+        /// the size's term in it, rather than cancelled down to the declared
+        /// floor the network pins the duration at.
+        struct SkipResourceFloor
+        {
+        };
     }
 
     using Disjunctive2DProofMutation = std::variant<disjunctive_2d_proof_mutation::None, disjunctive_2d_proof_mutation::EmitNothing,
@@ -128,7 +167,9 @@ namespace gcs::innards
         disjunctive_2d_proof_mutation::OverloadSkipRow, disjunctive_2d_proof_mutation::EdgeFindingOneTooFar,
         disjunctive_2d_proof_mutation::EdgeFindingDropPushed, disjunctive_2d_proof_mutation::TimeTableEdgeFindingDropPins,
         disjunctive_2d_proof_mutation::ProjectionRowTooStrong, disjunctive_2d_proof_mutation::ProjectionSkipBridge,
-        disjunctive_2d_proof_mutation::ProjectionSkipRefutations>;
+        disjunctive_2d_proof_mutation::ProjectionSkipRefutations, disjunctive_2d_proof_mutation::SkipPresenceGuard,
+        disjunctive_2d_proof_mutation::SkipPresenceConjunct, disjunctive_2d_proof_mutation::SkipSizeFloor,
+        disjunctive_2d_proof_mutation::SkipFloorEscapePins, disjunctive_2d_proof_mutation::SkipResourceFloor>;
 }
 
 #endif

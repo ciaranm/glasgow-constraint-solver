@@ -1441,7 +1441,9 @@ Four things are worth carrying away:
   well, exactly as the pairwise rule's `pin_escapes` does, and every
   one of them then follows by unit propagation.
 - **Who may take part is settled in `prepare()`, from the model
-  alone** — a positive constant size on the resource axis, plain
+  alone** — a resource-axis size that is a constant or a plain variable
+  with a positive declared lower bound (see "Variable sizes, at the
+  declared floor" below for the variable one), plain
   variables for both positions, a non-negative and not-too-wide
   resource domain. Those are the conditions `wire_over` imposes, and
   deciding them once and without the logger is what keeps the rule
@@ -1455,31 +1457,53 @@ mints one with two `red` rows, a boundary pin and a chain link, at
 position rather than per firing, and it is the price of the degree-one
 cancellation above.
 
-**Optional rectangles take part only when their presence is a
-constant.** Membership is decided from bounds alone, so a rectangle
-whose presence is a *variable* is left out: counted in, its height
-would make the overflow conclusion prune the placements that need it
-absent. That is sound but coarse. A presence variable with the domain
-`{1}`, or one fixed to 1 during search, is present and still left out,
-for the whole solve, because membership is settled once in `prepare()`.
-A constant presence never reaches the decline at all: `task_presence`
-resolves a constant 1 to no literal, so the rectangle is a plain one,
-and drops a constant 0 before anything else sees it.
+**Optional rectangles take part once they are known present (#984).**
+Until #984 a rectangle whose presence was a *variable* was left out of
+every relaxation rung for the whole solve, which was sound but coarse.
+Now membership admits it, on the terms 1D Disjunctive's energy rules set
+in #1039, and each rung decides at the node:
 
-Two things about how this fails are worth knowing, because the first
-version of this section got one of them wrong. **With proofs on, VeriPB
-catches it**: the clause of a pair involving such a rectangle carries
-its presence disjunct, which no goal of the network's offers, so a case
-split cannot close. **With proofs off, nothing does**: the solve loses
-the solutions and says nothing. So the test that pins the decline is an
-enumeration against brute force, not a proof lane, and it has to post
-optional rectangles *with the rule on* --- the optional-form tests never
-turn it on, and until #985's review nothing put the two together.
+- **Route B** (this rung) counts a rectangle as occupying a time, and
+  pushes it, only once it is present. Its presence is then one more fact
+  of the certificate: in the reason, in the network's guard at `big()`,
+  and weakened into every other pair's clause at 1, exactly as a time
+  bound or a zero-size escape is. The pair's own two presences are
+  already in its clause, as the 6-way clause's disjuncts. The fact is
+  stated as `present != 0`, not `present = 1`, so that its negation is
+  the clause's own literal: they are one PB literal for a `{0, 1}`
+  variable but two atoms for a presence with a wider encoding, and the
+  guard cancels only syntactically. A `{1}`-domain fixture caught that.
+- **Route A** (the energetic rungs below) puts the presence in the
+  activity flag as a conjunct, as `Cumulative`'s `active` has it. The
+  pair clause `~act_i + ~act_j + before + before` then still closes by
+  RUP, so the flagged row stays a model fact at `Top` over every declared
+  member, present or not. The sweep counts, charges and pushes only
+  present rectangles, and their presence literals ride to the closing
+  RUP from the reason, as `~present` does in 1D.
+- **The projection** hands the presence to its `Cumulative`, which takes
+  optional tasks itself, and defines the activity flag with it.
 
-Leaving a rectangle out only ever weakens propagation, so a comparison
-of solution sets with the rule on and off cannot notice the decline
-being made too coarse. What notices that is asserting the rule *fires*
-on a constant-present model.
+An undecided rectangle is left alone by all three, which is only weaker:
+counting it would prune the placements that need it absent. With proofs
+on VeriPB would catch that, but with them off the solve would silently
+lose solutions, so the enumeration tests are what pin it
+(`optional_undecided_*` in `disjunctive_2d_relaxation_test`, one per
+rung, each required to fire below the root).
+
+Two restrictions remain, both only weakenings. A presence must be a
+plain variable (route B names its literal), and one no other rectangle
+shares: two members with one presence would put its literal in the guard
+twice and in their pair's clause at coefficient two, the shape #1039
+folded once per variable in 1D. Nothing asks for that here.
+
+Two mutation lanes show both halves are load-bearing:
+`skip_presence_guard` (route B, on `sharp` with presences fixed to 1)
+and `skip_presence_conjunct` (route A, rejected at the pair clause's
+RUP). The second needs presences that are really undecided when a row is
+derived: over a presence fixed to 1 by its domain, unit propagation
+falsifies the clause's presence disjuncts without the conjunct, so that
+lane enumerates five unit squares in a box of four, branching on
+presences first.
 
 **What it does not reach.** The endgame lands on a statement about the
 *mandatory* set with no activity flags in it, which is exactly enough
@@ -1651,7 +1675,107 @@ On `examples/squares` the same three enumerations give identical trees
 again; TTEF fires 47–335 times per instance, mostly in place of
 edge-finding and time-table pushes, and moves proof size by −8% to +10%.
 
-Not yet: variable sizes and optional rectangles.
+Optional rectangles take part in all three energetic rungs once
+present; see the time-tabling rung's section above. Variable sizes on
+either axis take part at their declared floor; see the next section.
+
+### Variable sizes, at the declared floor (#984)
+
+#### On the time axis
+
+The three energetic rungs and `cumulative_projection` count a rectangle
+whose time-axis size is a variable at the size's **declared** lower
+bound, as 1D's energy rules count a variable duration (see "Variable
+durations, at the declared floor"). Shrinking a rectangle cannot create
+an overlap, so what holds of the shrunk rectangles holds of the real
+ones. What is lost is the extra energy of a rectangle the search has
+lengthened. The current lower bound would be stronger, but it is a
+state fact, and the activity flags, window energies and flagged rows
+are all cached at `Top` as model facts: a flag defined at a length the
+state supplied would be neither.
+
+The floor enters the proof in one place: each pair refutation under
+the flagged row, where the before flag's row carries the size as a term.
+A `Top` RUP `size ≥ floor`, cached per rectangle, cancels it. In
+non-strict mode every variable size also brings a zero-size escape into
+its pairs' clauses, pinned false the same way and also at `Top`. The pin
+is needed: with two escapes in one pair, the pair clause's RUP does not
+reach both, as route B found under a reason (above). The projection
+hands its `Cumulative` the floor as a **constant** length, so nothing on
+`Cumulative`'s side changes. A variable length there would need the
+proof-only end a `Cumulative` pins a two-variable `after` through. A
+rectangle declared from zero has no guaranteed extent and is left out.
+
+Time-tabling (route B) is unchanged on this axis: it counts the current
+lower bound under a reason, as it always has.
+
+#### On the resource axis
+
+The resource-axis size is the comparator network's duration, which
+`add_task` and `add_optional_task` pin to a constant. So every rung,
+time-tabling included, counts a variable one at its declared floor as
+well, and the window `H` is taken from the floors' extents,
+`max(ub(pos) + floor) − min(lb(pos))`. The same argument covers both:
+each rectangle shrunk to its floor lies inside the real one, so the
+shrunk rectangles are pairwise disjoint and inside that window whenever
+the real ones are. Time-tabling cannot use the current lower bound
+here, as it does on the time axis, because the rows the network adopts
+are model rows with no room for a reason's literal.
+
+The network reads the model's separation row, the forward half of
+`before`, as `M·~flag + y − x ≥ duration(x)`. With a variable size the
+row has a `−size` term where the constant was. Adding the `Top` line
+`size ≥ floor` gives back exactly that form, with the floor as the
+duration. So each direction is handed to the network already cancelled,
+as a `Top` line cached per ordered pair (`separation_at_floor`), and
+nothing inside `ComparatorNetwork` changes.
+
+**The cancelled row is saturated, and the network is told the
+coefficient it then carries.** The model's `M` was sized for the size's
+whole declared range, so a height declared far past the window gives a
+row whose `M` exceeds the network's guard coefficient, which is sized
+for the window. `add_separation` refuses such a row, so time-tabling
+threw with proofs on and not off. Fuzzing found this 57 times in about
+3,000 seeds. Once the size is cancelled, the row needs no more than its
+own degree: `floor` plus the coefficients of `x`'s bits, which is at
+most `2·(2^width − 1)`, since the floor's extent lies inside the window.
+Saturation caps `M` there. The network raises every row to its own
+coefficient by adding the difference, so the coefficient it is told is
+computed from the tracker's bit coefficients, `min(M, degree)`. The
+`variable_height_*_wide_*` fixtures, with heights over `[h, h + 60]`,
+throw without it.
+The size's zero-size escape, in non-strict mode, is pinned at `Top` as
+on the time axis. Route A's and the projection's pair clauses close by
+RUP with that unit in the database. Route B's pair clause is built by
+`pol` from the model's clause, so there the pin is added to the `pol`,
+which cancels the escape term exactly.
+
+#### Tests
+
+The `variable_width_*` and `variable_height_*` fixtures in
+`disjunctive_2d_relaxation_test` cover the two axes; every fixture has x
+as its time axis. Every rung's own fixture runs with each size in turn a
+variable over `[s, s + 2]`, strict and non-strict, and must fire as it
+does with constants and not with the rule off. Time-tabling joins the
+energetic rungs for the heights. An enumeration over positions and the
+variable sizes per rung, one wider, must agree with brute force. With
+proofs off, counting heights at their declared *maximum* instead makes
+every one of the five height enumerations lose solutions.
+
+Seven mutation lanes, each rejected where the floor is consumed:
+- `skip_size_floor`, `projection_skip_size_floor` and
+  `skip_floor_escape_pins` fail at the pair clause's RUP.
+- `overload_skip_resource_floor` and `projection_skip_resource_floor`
+  hand the network the uncancelled row, and fail at its optional
+  separation.
+- `skip_resource_floor` and `resource_skip_floor_escape_pins` fail
+  inside the lemma through which route B's network consumes the
+  separation.
+
+**The sizes run two past the floor, not one.** A size over `[2, 3]` is
+bits `b0 + 2·b1 ≥ 2`, from which unit propagation fixes `b1`. The floor
+and both escapes are then implied at every RUP, and the time-axis
+mutations all verify.
 
 ### `Cumulative`'s own propagator over each projection (#973)
 
@@ -1760,8 +1884,9 @@ Tested by:
 - **`squares_projection`.**
 - **Proofs on and off.** The search trees are identical.
 
-Same members as route A: constant sizes only, and no optional
-rectangles.
+Same members as route A, optional rectangles and variable sizes
+included (above). A variable size on either axis is projected as its
+floor, a constant length or height.
 
 ## Reusable ideas
 
