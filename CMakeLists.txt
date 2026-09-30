@@ -351,8 +351,10 @@ if(PROJECT_IS_TOP_LEVEL)
         #               DWARF, and those want a debugger, i.e. the Debug
         #               configuration above. The sanitize preset now also
         #               builds the solver as a shared library (see
-        #               GCS_SHARED_LIBRARY), which takes the tree from 91 GiB
-        #               to 7 GiB, so the figures above are for a static build.
+        #               GCS_SHARED_LIBRARY) and links it with packed
+        #               relocations and compressed DWARF, which together take
+        #               the tree from 91 GiB to 5.6 GiB, so the figures above
+        #               are for a static build.
         #
         # Anything other than Debug (Release, Sanitize, or an unset build type)
         # gets -g1 so it always carries at least backtrace-quality debug info.

@@ -62,8 +62,17 @@ relocating. Every program carried its own copy of the solver's.
 So the `sanitize` preset sets `GCS_SHARED_LIBRARY=ON`, and every program links
 one `libglasgow_constraint_solver.so` instead. The same tree came to 7.0 GiB:
 a 646 MiB library, 2.7 GiB of programs (the largest 45 MiB), and 3.2 GiB of
-object files. It also built in 3m45s rather than 5m on 192 cores (one run
-each), since there is much less to link.
+object files. It also built in under 4 minutes rather than 5 on 192 cores (one
+run each), since there is much less to link.
+
+Sanitize also links with `-Wl,-z,pack-relative-relocs`, which stores the
+relative relocations as a DT_RELR bitmap rather than 24 bytes apiece, and
+`-Wl,--compress-debug-sections=zlib`. Each is added only if a check finds the
+linker accepts it, since Apple's does not. Together they halve what is linked:
+a 340 MiB library and 1.55 GiB of programs (the largest 26 MiB), for a 5.6 GiB
+tree, of which the object files are now most. Compressed DWARF costs nothing
+that matters: an ASan report still names each frame's `file:line`, including
+frames inside the shared library.
 
 Release stays static, because Release is what gets benchmarked. In a shared
 library every call to an exported function, including the library's calls to
@@ -323,7 +332,7 @@ Every push to `main` and every pull request runs:
 | `ubuntu-26.04`, default GCC | Test caps off, and the only lane with `-DGCS_WERROR=ON` |
 | `ubuntu-26.04`, clang | clang + libstdc++, including the lifetime-annotation probe tests |
 | `macos-15`, `macos-26` | Apple Clang + libc++ |
-| `ubuntu-26.04` Sanitize | ASan + UBSan, through the `sanitize` test preset |
+| `ubuntu-26.04` Sanitize | ASan + UBSan, through the `sanitize` test preset, against a shared library to fit the runner's disk |
 | `windows-2022` | MSVC: library and ctest, then the XCSP3 / MiniZinc / Python frontends, then VeriPB |
 | `clang-format` | `--dry-run --Werror` over the whole tree |
 
