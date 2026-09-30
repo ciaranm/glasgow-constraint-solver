@@ -743,28 +743,59 @@ tell the constraint's author they had broken somebody.
 The lookup also does the windowing check for free. The donor's flags exist only
 over the windows it encoded, so a derived constraint whose tasks run longer asks
 for a key that has no flag — and declines to install, rather than inventing one
-and finding out at verification time.
+and finding out at verification time. It asks at each window's two ends only:
+a donor's window is one unbroken run of time points, so containing both ends is
+containing all of it. Every other flag is looked up when something cites it,
+through `CumulativeInputs::flag_owners`, which says whose flags a task's are
+(#1130). Asking at every point named the donor's flags over the whole horizon at
+install, 900,018 names for three tasks over `10⁵`, which is what #1111 had just
+stopped the donor doing itself.
 
 ### Where the derivation happens
 
-Inline, in `install_derived_cumulative`, at `ProofLevel::Top` — not from an
-`install_initialiser`. That was originally forced: initialisers had already run
-by the time a presolver was called, so one installed from there never fired and
-the propagator spent the search citing rows that were never written. #658 fixed
-that ordering, and this stays inline anyway for a better reason — the caller is
-told whether the constraint could be set up at all, and that answer has to be
-known while not installing the propagator is still an option.
+At `ProofLevel::Top`, which is what makes the rows survive backtracking, and
+**when a row is first cited** (#1130): `CumulativeInputs::lazy_capacity_rows`
+asks the recipe for the row at `t` the first time the propagator, or the
+makespan bound, wants it, and remembers the answer. Deriving every row at
+install instead wrote a proof linear in the horizon before any rule fired: 90 to
+170 MB for three tasks over `10⁴`, where the donor alone writes 25 KB.
 
-Top level is what makes the rows survive backtracking, which the propagator
-needs at every node.
+What still happens at install is the decision. The caller is told whether the
+constraint could be set up at all, and that answer has to be known while not
+installing the propagator is still an option — a recipe that declines once the
+propagator has drawn inferences leaves nothing to decline. So the install asks
+the recipe about **one time point per stretch**: the first point of each run of
+time over which none of the constraint's task windows starts or ends. Within a
+stretch the same tasks have flags. That makes `O(n)` rows at install, not
+`O(horizon)`, and each is kept for the propagator to cite.
+
+That is sound only if **a recipe's answer depends on `t` only through which of
+the constraint's tasks can be running then**. Every recipe in the tree declines
+only for want of a member's flag, a programme over the members present, or a row
+donor's row where a member with a demand on it is running — and a donor has a
+row wherever one of its tasks can be running, which that member is. The row
+donors' other tasks change what is in a row, never whether a recipe declines,
+which is as well: their windows would have to come from the state the presolver
+sees, and a donor fixed its own in `prepare()`, before anything tightened. A
+recipe that broke the rule would derive at the stretch's first point and decline
+later, during search. That throws `UnexpectedException` rather than hand the
+propagator nothing, and `derived_cumulative_test`'s `DeclineUnasked` fixture
+pins it.
+
+Not from an `install_initialiser`. That was originally forced: initialisers had
+already run by the time a presolver was called, so one installed from there
+never fired and the propagator spent the search citing rows that were never
+written. #658 fixed that ordering, and the probing stays in the install for the
+reason above.
 
 ### The recipe
 
 ```cpp
-std::function<auto(ProofLogger &, ProofLine donor_row, Integer t)->ProofLine>
+std::function<auto(ProofLogger &, const DerivedCumulativeRows &, Integer t)->std::optional<ProofLine>>
 ```
 
-Called once per time point with the donor's row, returning the derived one. It
+Called with the rows the row donors wrote at `t`, by donor, and returning the
+derived one. It
 has a `ProofLogger` and no `ProofModel`, so a recipe cannot write to the OPB
 even by mistake. The two in `derived_cumulative_test` are the shapes to copy: a
 one-line `pol` that copies the donor's row, and
@@ -799,7 +830,8 @@ whichever resource cannot hold both tasks, and that need not be where either
 task's flags are taken from. The recipe is handed the rows those donors wrote
 for that time point, by donor, and may return nullopt to decline a time point it
 cannot derive — which declines the whole constraint, since the propagator cites
-a row at every time it covers.
+a row at every time it covers. A decline has to be found at install, at the
+stretch it falls in; see above.
 
 **The bridge is one `pol`.** `recover_flag_bridge`
 ([`flag_bridge.hh`](../gcs/innards/proofs/flag_bridge.hh)) turns one donor's

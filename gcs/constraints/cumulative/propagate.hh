@@ -16,6 +16,7 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -62,6 +63,24 @@ namespace gcs::innards
         std::unordered_map<std::pair<std::size_t, long long>, Point, Hash> points;
     };
 
+    /**
+     * \brief Capacity rows derived the first time something cites them, by a
+     * deriver the inputs carry rather than by a family a constraint published.
+     *
+     * For a derived Cumulative (#1130), which has no ConstraintID of its own
+     * to publish a family under. Each answer is remembered, so a time point
+     * is derived once however often it is cited, and the rows a deriver
+     * returns are at ProofLevel::Top, so backtracking loses none of them.
+     */
+    struct LazyCapacityRows
+    {
+        std::function<auto(ProofLogger &, Integer t)->std::optional<ProofLine>> derive;
+        std::map<Integer, std::optional<ProofLine>> derived;
+
+        /// The row for `t`, deriving it if nothing has asked before.
+        [[nodiscard]] auto row(ProofLogger &, Integer t) -> std::optional<ProofLine>;
+    };
+
     /// Which of a task's three per-time flags; see cumulative_flag.
     enum class CumulativeFlag
     {
@@ -72,8 +91,8 @@ namespace gcs::innards
 
     /**
      * \brief A task's per-(task, time) flag, from CumulativeInputs' vectors
-     * where they were filled in and otherwise by key from its owner, which
-     * names it on demand (#1111).
+     * where they were filled in and otherwise by key from the task's flag
+     * owner, which names it on demand (#1111).
      *
      * Names, and does not define: a caller about to cite the flag asks
      * NamesAndIDsTracker::ensure_flag_defined first, and a definer calls this
@@ -87,7 +106,7 @@ namespace gcs::innards
     [[nodiscard]] auto cumulative_contribution_bits(const CumulativeInputs &, const NamesAndIDsTracker &, std::size_t task, Integer t)
         -> std::vector<ProofFlag>;
 
-    /// Ask the inputs' owner to define a task's flags at `t`, once per
+    /// Ask the task's flag owner to define its flags at `t`, once per
     /// install: NamesAndIDsTracker::ensure_flag_defined on the activity
     /// flag's key, remembered in the inputs' CumulativeFlagCache.
     auto ensure_cumulative_flags_defined(const CumulativeInputs &, ProofLogger &, std::size_t task, Integer t) -> void;
@@ -133,9 +152,10 @@ namespace gcs::innards
         /// the windows must be the donor's too.
         ///
         /// Empty for a task whose flags are named on demand instead, which is
-        /// every task of a constraint that keeps them in the proof (#1111):
-        /// read them through cumulative_flag, which looks such a flag up by
-        /// key from \ref owner.
+        /// every task of a constraint that keeps them in the proof (#1111),
+        /// and every task of a derived one (#1130): read them through
+        /// cumulative_flag, which looks such a flag up by key from the task's
+        /// flag owner.
         std::vector<std::vector<ProofFlag>> before_flags, after_flags, active_flags;
         /// Per (variable-height task, t, bit), the linearised load
         /// contribution. Empty for a constant height, and empty throughout for
@@ -165,9 +185,10 @@ namespace gcs::innards
         /// under ConstraintProofModelData<Cumulative>::end_lower_bound_role.
         std::shared_ptr<std::vector<std::optional<ProofLine>>> end_ge_lines;
 
-        /// t -> the row saying the load at t is within the capacity. A posted
-        /// constraint's are OPB rows; a derived constraint's are derived from
-        /// its donor's, in the proof.
+        /// t -> the row saying the load at t is within the capacity, where
+        /// the model has one. Empty under the shipped start-checkpoint
+        /// encoding, and for a derived constraint, whose rows come from \ref
+        /// lazy_capacity_rows.
         std::map<Integer, ProofLine> capacity_lines;
 
         /// Where the row for a time point comes from when it is not in \ref
@@ -181,12 +202,27 @@ namespace gcs::innards
         std::optional<std::string> capacity_row_family;
 
         /// Per task, the position its per-(task, time) flags are keyed under
-        /// by \ref owner, which is what asking the owner to define one on
-        /// demand has to name. Empty means each task's own index, which is
-        /// every posted Cumulative; a constraint that runs this propagator over
-        /// a subset of its own objects, or over more than one projection of
-        /// them, keys them its own way and says so here.
+        /// by its flag owner (\ref flag_owners), which is what asking that
+        /// owner to define one on demand has to name. Empty means each task's
+        /// own index, which is every posted Cumulative; a constraint that runs
+        /// this propagator over a subset of its own objects, or over more than
+        /// one projection of them, or over other constraints' tasks, keys them
+        /// its own way and says so here.
         std::vector<std::size_t> flag_key_positions;
+
+        /// Per task, the constraint its per-(task, time) flags are keyed
+        /// under and defined by. Empty means \ref owner, for every task. A
+        /// derived Cumulative fills it in (#1130): its tasks take their flags
+        /// from their donors, which need not be the same donor for every task,
+        /// so there is no one constraint to ask.
+        std::vector<ConstraintID> flag_owners;
+
+        /// Where the row for a time point comes from when it is in neither
+        /// \ref capacity_lines nor a published \ref capacity_row_family: a
+        /// derived Cumulative's rows, derived from its donors' as they are
+        /// cited (#1130). Shared, because the propagator's copy of these
+        /// inputs is not the only one that cites rows.
+        std::shared_ptr<LazyCapacityRows> lazy_capacity_rows;
 
         /// Where an inference gets the row for a time point from, when it is
         /// not \ref capacity_lines: recovered from the start-checkpoint block,

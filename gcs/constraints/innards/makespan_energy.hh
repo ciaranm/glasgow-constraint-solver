@@ -8,6 +8,8 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <cstddef>
+#include <functional>
 #include <map>
 #include <optional>
 #include <variant>
@@ -146,11 +148,14 @@ namespace gcs::innards::makespan_energy
         /// task's own length.
         std::optional<MakespanLink> link = std::nullopt;
 
-        /// The task's per-time flags, as window_energy::Task
-        /// describes them, or null with proofs off.
-        const std::vector<ProofFlag> * before = nullptr;
-        const std::vector<ProofFlag> * after = nullptr;
-        const std::vector<ProofFlag> * active = nullptr;
+        /// How many time points the task's flags cover, from `t_lo`.
+        std::size_t flag_count = 0;
+
+        /// The task's per-time flags, as window_energy::Task describes them,
+        /// or empty with proofs off. Accessors rather than vectors, so that
+        /// a caller whose flags are named on demand (#1130) names no more of
+        /// them than the derivation cites.
+        std::function<auto(std::size_t idx)->ProofFlag> before = {}, after = {}, active = {};
     };
 
     /**

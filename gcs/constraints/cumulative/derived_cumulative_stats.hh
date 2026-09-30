@@ -32,9 +32,11 @@ namespace gcs
         /// derived constraint over several resources names more than one.
         std::size_t donors = 0;
 
-        /// Per-time capacity rows derived, summed. Zero with proofs off, there
-        /// being no rows to derive: it is a measure of what the certificate
-        /// cost, not of what the constraint says.
+        /// Per-time capacity rows derived, summed: one per stretch between
+        /// window edges at install, and one per further time point something
+        /// cited during search (#1130), so it grows as the solve goes on. Zero
+        /// with proofs off, there being no rows to derive: it is a measure of
+        /// what the certificate cost, not of what the constraint says.
         std::size_t capacity_rows = 0;
 
         /// Makespan lower bounds actually pushed. Only a spec that asked for a

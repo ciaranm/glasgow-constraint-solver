@@ -133,7 +133,7 @@ auto gcs::innards::makespan_energy::derive_makespan_bound(ProofLogger & logger, 
         // lemma will clip it using the flag range. A disagreement would make
         // the bound the caller is about to claim one the derivation does not
         // reach, which VeriPB would only notice as a rejected wrapping RUP.
-        if (task.active->size() != static_cast<size_t>(max(0LL, (task.t_hi - task.t_lo + 1_i).raw_value)))
+        if (task.flag_count != static_cast<size_t>(max(0LL, (task.t_hi - task.t_lo + 1_i).raw_value)))
             throw ProofError{"makespan energy bound: a task's flag range is not the window the bound was searched over"};
 
         // The deadline, made available to the lemma's own reverse unit
@@ -182,8 +182,7 @@ auto gcs::innards::makespan_energy::derive_makespan_bound(ProofLogger & logger, 
             confine.emit(logger, level);
         }
 
-        window_energy::Task lemma_task{task.start, task.length, task.t_lo, task.active->size(), [&](size_t idx) { return (*task.before)[idx]; },
-            [&](size_t idx) { return (*task.after)[idx]; }, [&](size_t idx) { return (*task.active)[idx]; }};
+        window_energy::Task lemma_task{task.start, task.length, task.t_lo, task.flag_count, task.before, task.after, task.active};
         auto energy = window_energy::derive_window_energy(
             logger, forget_deadline ? reason : deadline, lemma_task, bound.lo, hi, start_bounds_within(task, hi), level);
 
