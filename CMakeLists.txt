@@ -80,6 +80,26 @@ if(NOT MSVC)
     set(CMAKE_EXE_LINKER_FLAGS_SANITIZE    "-fsanitize=address,undefined")
     set(CMAKE_SHARED_LINKER_FLAGS_SANITIZE "-fsanitize=address,undefined")
 
+    # Sanitize also links small, because its tree has more than once outgrown a CI
+    # runner's disk (see the debug information notes below, and GCS_SHARED_LIBRARY).
+    # The sanitizers leave millions of relative relocations in each output, which
+    # pack-relative-relocs stores as a compact DT_RELR bitmap instead of 24 bytes
+    # apiece, and compressing the debug sections shrinks the -g1 DWARF. Both are
+    # GNU ld / lld flags that Apple's linker rejects, hence the checks; the first
+    # also needs glibc 2.36 or later to load the result, which every Linux lane has.
+    include(CheckLinkerFlag)
+    foreach(_gcs_flag -Wl,-z,pack-relative-relocs -Wl,--compress-debug-sections=zlib)
+        string(MAKE_C_IDENTIFIER "LINKER_SUPPORTS${_gcs_flag}" _gcs_var)
+        unset(${_gcs_var} CACHE)
+        check_linker_flag(CXX ${_gcs_flag} ${_gcs_var})
+        if(${_gcs_var})
+            string(APPEND CMAKE_EXE_LINKER_FLAGS_SANITIZE " ${_gcs_flag}")
+            string(APPEND CMAKE_SHARED_LINKER_FLAGS_SANITIZE " ${_gcs_flag}")
+        endif()
+    endforeach()
+    unset(_gcs_flag)
+    unset(_gcs_var)
+
     # A sanitizer build that quietly stops sanitizing is worse than not having one,
     # so fail the configure rather than hand back a build that only looks instrumented.
     # This catches the flags going missing however it happens: the shadowing above
@@ -195,6 +215,49 @@ option(GCS_WERROR "Treat compiler warnings as errors (CI lane only; not for norm
 # binaries stay portable across the manylinux / macOS x86-64 baseline.
 option(GCS_NATIVE_ARCH "Tune the Release build for the build machine's CPU with -march=native; turn OFF for redistributable binaries such as wheels" ON)
 
+# Build the solver as a shared library rather than a static one. The point is
+# disk space, not deployment: every test, example and frontend links the whole
+# solver, so a static build gives each of the tree's ~170 programs its own copy
+# of the library's code and DWARF, and under ASan that is enough to fill a CI
+# runner (see the Sanitize notes on debug information below). Linked against one
+# shared copy, each program carries only its own translation unit.
+#
+# OFF by default, and on only in the sanitize preset. A Release build is what
+# gets benchmarked, and in a shared library every call to an exported function,
+# including the library's calls to itself, goes through the PLT instead of being
+# linked direct, so its numbers would stop being the ones we mean. The default
+# follows BUILD_SHARED_LIBS because that is what decided the library's type
+# before this option existed.
+#
+# Not supported on Windows, where a DLL needs its exports declared and the tree
+# declares none. Nor is it meant for the Python bindings: the wheel carries the
+# extension module alone, so gcspy has to link the solver statically.
+option(GCS_SHARED_LIBRARY "Build glasgow_constraint_solver as a shared library, to save disk in builds with many test programs (the sanitize preset turns it on)" ${BUILD_SHARED_LIBS})
+if(GCS_SHARED_LIBRARY AND WIN32)
+    message(FATAL_ERROR "GCS_SHARED_LIBRARY is not supported on Windows: the library declares no DLL exports.")
+endif()
+if(GCS_SHARED_LIBRARY AND GCS_ENABLE_PYTHON)
+    message(FATAL_ERROR "GCS_SHARED_LIBRARY cannot be combined with GCS_ENABLE_PYTHON: the gcspy module is shipped without the library, so it must link it statically.")
+endif()
+# The build tree needs nothing, since CMake gives each program an absolute RPATH
+# to the library there. An installed program (fzn-glasgow) needs to find it
+# relative to itself, so that the install stays relocatable.
+# As in minizinc/CMakeLists.txt, a relative path is only right when it does not
+# depend on the prefix, so an absolute BINDIR or LIBDIR gets an absolute one.
+if(GCS_SHARED_LIBRARY)
+    if(IS_ABSOLUTE ${CMAKE_INSTALL_BINDIR} OR IS_ABSOLUTE ${CMAKE_INSTALL_LIBDIR})
+        set(CMAKE_INSTALL_RPATH ${CMAKE_INSTALL_FULL_LIBDIR})
+    else()
+        file(RELATIVE_PATH _gcs_bin_to_lib ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR} ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
+        if(APPLE)
+            set(CMAKE_INSTALL_RPATH "@loader_path/${_gcs_bin_to_lib}")
+        else()
+            set(CMAKE_INSTALL_RPATH "$ORIGIN/${_gcs_bin_to_lib}")
+        endif()
+        unset(_gcs_bin_to_lib)
+    endif()
+endif()
+
 # Compiler flag checks always run so results are available for target-specific use.
 include(CheckCXXCompilerFlag)
 unset(COMPILER_SUPPORTS_MARCH_NATIVE CACHE)
@@ -286,7 +349,10 @@ if(PROJECT_IS_TOP_LEVEL)
         #               function + file:line there, which is all a CI log is ever
         #               read for; what is given up is macros and local-variable
         #               DWARF, and those want a debugger, i.e. the Debug
-        #               configuration above.
+        #               configuration above. The sanitize preset now also
+        #               builds the solver as a shared library (see
+        #               GCS_SHARED_LIBRARY), which takes the tree from 91 GiB
+        #               to 7 GiB, so the figures above are for a static build.
         #
         # Anything other than Debug (Release, Sanitize, or an unset build type)
         # gets -g1 so it always carries at least backtrace-quality debug info.
