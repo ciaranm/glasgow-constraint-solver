@@ -208,10 +208,10 @@ namespace gcs
          * the other axis. A `Cumulative` states that with per-(task, time)
          * activity flags and one capacity row per time point in its OPB;
          * this constraint has neither, so it supplies both inside the proof
-         * (#973). The flags are *named* with the model, under
+         * (#973). The flags are *named* on first lookup (#1111), under
          * `ConstraintProofModelData<Cumulative>`'s keys at position `axis x n
          * + i`, and *defined* by `red`, on demand, exactly as a
-         * start-checkpoint `Cumulative` defines its own. The row at a time
+         * start-checkpoint `Cumulative` names and defines its own. The row at a time
          * point is \ref relaxation_overload's flagged row, over those flags,
          * derived by innards::ComparatorNetwork the first time something
          * cites it and cached at `ProofLevel::Top`. Past that the propagator

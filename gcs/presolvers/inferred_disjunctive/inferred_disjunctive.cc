@@ -111,8 +111,8 @@ namespace
     /// time. Absent when that resource never encoded the pair.
     ///
     /// Asking for them is also asking the donor to define them: #780's
-    /// per-(task, time) flags are named with the model but defined on demand,
-    /// so a citer that skipped this would cite reification halves that do not
+    /// per-(task, time) flags are defined on demand (and since #1111 named on
+    /// demand too, by the lookup below), so a citer that skipped this would cite reification halves that do not
     /// exist yet. Nothing happens for a donor whose flags are OPB rows. The same
     /// ask InferredCumulative makes before it cites a donor's flags.
     [[nodiscard]] auto flags_for(ProofLogger & logger, const ConstraintID & donor, size_t position, Integer t)

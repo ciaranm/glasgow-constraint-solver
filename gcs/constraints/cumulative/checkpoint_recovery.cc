@@ -62,12 +62,11 @@ namespace
                 continue;
             // As flag_at: the row is stated over flags that may only be defined
             // on demand, and stating it is an ask for them.
-            logger.names_and_ids_tracker().ensure_flag_defined(inputs.owner, Data::active_flag_key(i, t), logger);
-            auto idx = (t - inputs.per_task_t_lo[i]).raw_value;
+            ensure_cumulative_flags_defined(inputs, logger, i, t);
             if (is_constant_variable(inputs.heights[i]))
-                load += constant_value_of(inputs.heights[i]) * inputs.active_flags[i][idx];
+                load += constant_value_of(inputs.heights[i]) * cumulative_flag(inputs, logger.names_and_ids_tracker(), CumulativeFlag::Active, i, t);
             else {
-                const auto & bits = inputs.contrib_flags[i][idx];
+                auto bits = cumulative_contribution_bits(inputs, logger.names_and_ids_tracker(), i, t);
                 for (Integer k = 0_i; k.raw_value < static_cast<long long>(bits.size()); ++k)
                     load += power2(k) * bits[k.raw_value];
             }
@@ -167,13 +166,13 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     // so asking for one at `t` asks for its definition first. Nothing happens
     // where the constraint published no definer, which is every encoding whose
     // flags are OPB rows. Every one of this file's uses goes through here.
-    auto flag_at = [&](const vector<vector<ProofFlag>> & flags, size_t i) -> const ProofFlag & {
-        tracker.ensure_flag_defined(inputs.owner, Data::active_flag_key(i, t), logger);
-        return flags[i][(t - inputs.per_task_t_lo[i]).raw_value];
+    auto flag_at = [&](CumulativeFlag which, size_t i) -> ProofFlag {
+        ensure_cumulative_flags_defined(inputs, logger, i, t);
+        return cumulative_flag(inputs, tracker, which, i, t);
     };
-    auto cb = [&](size_t i) -> const ProofFlag & { return flag_at(inputs.before_flags, i); };
-    auto ca = [&](size_t i) -> const ProofFlag & { return flag_at(inputs.after_flags, i); };
-    auto cact = [&](size_t i) -> const ProofFlag & { return flag_at(inputs.active_flags, i); };
+    auto cb = [&](size_t i) -> ProofFlag { return flag_at(CumulativeFlag::Before, i); };
+    auto ca = [&](size_t i) -> ProofFlag { return flag_at(CumulativeFlag::After, i); };
+    auto cact = [&](size_t i) -> ProofFlag { return flag_at(CumulativeFlag::Active, i); };
     auto pair_flag = [&](const ProofFlagKey & key) { return *tracker.find_proof_flag(inputs.owner, key); };
     auto sb = [&](size_t i, size_t j) { return pair_flag(Data::pair_before_flag_key(i, j)); };
     auto sa = [&](size_t i, size_t j) { return pair_flag(Data::pair_after_flag_key(i, j)); };
@@ -190,9 +189,9 @@ auto gcs::innards::recover_cumulative_capacity_row(ProofLogger & logger, const C
     // every capacity row is the bit-linearised contribution, `cc` per (task,
     // time) and `scc` per (task, task). See the encoding.
     auto var_height = [&](size_t i) { return ! is_constant_variable(inputs.heights[i]); };
-    auto cc_bits = [&](size_t i) -> const vector<ProofFlag> & {
-        tracker.ensure_flag_defined(inputs.owner, Data::active_flag_key(i, t), logger);
-        return inputs.contrib_flags[i][(t - inputs.per_task_t_lo[i]).raw_value];
+    auto cc_bits = [&](size_t i) -> vector<ProofFlag> {
+        ensure_cumulative_flags_defined(inputs, logger, i, t);
+        return cumulative_contribution_bits(inputs, tracker, i, t);
     };
     auto scc_bits = [&](size_t i, size_t j) {
         vector<ProofFlag> bits;

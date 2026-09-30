@@ -705,6 +705,11 @@ namespace gcs::innards
          * those mean the same thing to a caller --- there is nothing to cite,
          * so do not do the thing that would need citing.
          *
+         * A flag in a family published with \ref publish_flag_family is named
+         * here, on the first lookup. That is logically const, a cache filled on
+         * demand: the answer is exactly the one naming it up front would have
+         * given, so a caller holding the tracker as const is told the truth.
+         *
          * Pair it with innards::ConstraintProofModelData, which is how a
          * constraint publishes the *keys* it uses; building one here instead
          * would be guessing at another constraint's naming scheme.
@@ -715,6 +720,29 @@ namespace gcs::innards
          * look up.
          */
         [[nodiscard]] auto find_proof_flag(const ConstraintID & id, const ProofFlagKey & key) const -> std::optional<ProofFlag>;
+
+        /**
+         * \brief A constraint's promise that the flags in a keyed family will
+         * be named when first looked up, rather than all up front (#1111).
+         *
+         * The naming counterpart of \ref publish_flag_definer. Cumulative's
+         * per-(task, time) flags are the first consumer: a name costs an index,
+         * two map entries and a line of the variables map, and a horizon of
+         * 2^20 made three of those per task per time point take 36 seconds and
+         * a 710 MB map, for flags almost none of which any proof cites.
+         *
+         * `in_family` says which keys the constraint would have named, and
+         * must be a pure function of the key: \ref find_proof_flag then names
+         * a key it accepts, under exactly the name the matching
+         * create_proof_flag overload gives, and answers nullopt for one it
+         * does not, as it would have for a key outside an eagerly named
+         * family.
+         *
+         * Published at model time, so that anyone looking the flags up later
+         * --- the constraint's own propagator, a derived constraint, a
+         * presolver --- finds the family whichever of them asks first.
+         */
+        auto publish_flag_family(const ConstraintID & id, std::function<auto(const ProofFlagKey &)->bool> in_family) -> void;
 
         /**
          * \brief Record a line this constraint established *inside the proof*,
@@ -773,9 +801,9 @@ namespace gcs::innards
          * The flag-side counterpart of \ref publish_derived_line_family, and
          * the fourth of the "per-solve, constraint-keyed memo" facilities the
          * \todo there predicted. Cumulative's per-(task, time) flags are the
-         * first consumer: their *names* are cheap and go out with the model,
-         * but their definitions are two `red` steps each and a horizon's worth
-         * of them is the whole cost #780 exists to remove.
+         * first consumer: their definitions are two `red` steps each and a
+         * horizon's worth of them is the whole cost #780 exists to remove.
+         * Their names are made on demand too, by \ref publish_flag_family.
          *
          * The definer is called at most once per `(id, key)` and is expected to
          * emit whatever that flag needs --- its reification halves, and

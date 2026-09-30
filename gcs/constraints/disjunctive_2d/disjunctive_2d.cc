@@ -597,31 +597,32 @@ auto Disjunctive2D::define_proof_model(ProofModel & model, const State &) -> voi
     }
 
     // Disjunctive2DRules::cumulative_projection's per-(task, time) flags,
-    // *named* here and nothing more: they are defined inside the proof, on
-    // demand, by the definer install_propagators publishes, exactly as a
-    // start-checkpoint Cumulative's are. So nothing reaches the OPB. The keys
-    // are Cumulative's own, at position `axis x n + i`, so that the propagator
-    // asking to have one defined, and anyone else looking one up, finds it by
-    // the scheme every other Cumulative flag is found by.
-    for (auto time_axis : {0, 1}) {
-        auto & inputs = _projection[time_axis];
-        if (! inputs)
-            continue;
-        auto & tracker = model.names_and_ids_tracker();
-        auto m = _projection_rects[time_axis].size();
-        inputs->before_flags.assign(m, {});
-        inputs->after_flags.assign(m, {});
-        inputs->active_flags.assign(m, {});
-        auto name = [&](const ProofFlagKey & key) { return tracker.create_proof_flag_values(_constraint_id, key.values, key.annotation); };
-        for (size_t k = 0; k < m; ++k) {
-            auto position = inputs->flag_key_positions[k];
-            for (Integer t = inputs->per_task_t_lo[k]; t <= inputs->per_task_t_hi[k]; ++t) {
-                inputs->before_flags[k].push_back(name(ConstraintProofModelData<Cumulative>::before_flag_key(position, t)));
-                inputs->after_flags[k].push_back(name(ConstraintProofModelData<Cumulative>::after_flag_key(position, t)));
-                inputs->active_flags[k].push_back(name(ConstraintProofModelData<Cumulative>::active_flag_key(position, t)));
-            }
-        }
-    }
+    // neither named nor defined here: they are named on first lookup, from the
+    // family published below, and defined inside the proof, on demand, by the
+    // definer install_propagators publishes, exactly as a start-checkpoint
+    // Cumulative's are (#1111). So nothing reaches the OPB, and nothing is
+    // paid per time point of a horizon no rule looks at. The keys are
+    // Cumulative's own, at position `axis x n + i`, so that the propagator
+    // asking for one, and anyone else looking one up, finds it by the scheme
+    // every other Cumulative flag is found by.
+    if (_projection[0] || _projection[1])
+        model.names_and_ids_tracker().publish_flag_family(
+            _constraint_id, [n = _xs.size(), projection = _projection, rects = _projection_rects](const ProofFlagKey & key) {
+                if (key.family != ProofFlagFamily::Values || ! key.annotation || key.values.size() != 2 || key.values[0] < 0)
+                    return false;
+                if (*key.annotation != "cb" && *key.annotation != "ca" && *key.annotation != "cact")
+                    return false;
+                auto position = static_cast<size_t>(key.values[0]);
+                auto axis = position / n;
+                if (axis > 1 || ! projection[axis])
+                    return false;
+                auto found = std::find(rects[axis].begin(), rects[axis].end(), position % n);
+                if (found == rects[axis].end())
+                    return false;
+                auto k = static_cast<size_t>(found - rects[axis].begin());
+                auto t = Integer{key.values[1]};
+                return projection[axis]->per_task_t_lo[k] <= t && t <= projection[axis]->per_task_t_hi[k];
+            });
 }
 
 auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
@@ -705,15 +706,15 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     auto t = Integer{key.values[1]};
                     if (t < inputs.per_task_t_lo[k] || t > inputs.per_task_t_hi[k])
                         return;
-                    auto idx = static_cast<size_t>((t - inputs.per_task_t_lo[k]).raw_value);
                     auto define = [&](const ProofFlag & flag, const WPBSumLE & says) {
                         auto [implies, implied_by] = definer_logger.emit_red_proof_lines_reifying(says, flag, ProofLevel::Top);
                         tracker.register_in_proof_reification(flag, implies, implied_by);
                     };
-                    define(inputs.before_flags[k][idx], per_time_before_says(inputs.starts[k], t));
-                    define(inputs.after_flags[k][idx], per_time_after_says(inputs.starts[k], inputs.lengths[k], t));
-                    define(inputs.active_flags[k][idx],
-                        per_time_active_says(inputs.before_flags[k][idx], inputs.after_flags[k][idx], inputs.presence[k]));
+                    auto before = cumulative_flag(inputs, tracker, CumulativeFlag::Before, k, t);
+                    auto after = cumulative_flag(inputs, tracker, CumulativeFlag::After, k, t);
+                    define(before, per_time_before_says(inputs.starts[k], t));
+                    define(after, per_time_after_says(inputs.starts[k], inputs.lengths[k], t));
+                    define(cumulative_flag(inputs, tracker, CumulativeFlag::Active, k, t), per_time_active_says(before, after, inputs.presence[k]));
                 });
 
                 for (auto time_axis : {0, 1}) {
@@ -742,12 +743,11 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             row_logger.emit_proof_comment(
                                 "disjunctive2d cumulative projection row axis=" + std::to_string(time_axis) + " t=" + std::to_string(t.raw_value));
 
-                            auto flag_index = [&](size_t k) { return static_cast<size_t>((t - inputs.per_task_t_lo[k]).raw_value); };
-                            auto active = [&](size_t k) -> const ProofFlag & {
-                                tracker.ensure_flag_defined(
-                                    id, ConstraintProofModelData<Cumulative>::active_flag_key(inputs.flag_key_positions[k], t), row_logger);
-                                return inputs.active_flags[k][flag_index(k)];
+                            auto flag = [&](CumulativeFlag which, size_t k) -> ProofFlag {
+                                ensure_cumulative_flags_defined(inputs, row_logger, k, t);
+                                return cumulative_flag(inputs, tracker, which, k, t);
                             };
+                            auto active = [&](size_t k) { return flag(CumulativeFlag::Active, k); };
                             auto len = [&](size_t k) { return constant_value_of(inputs.lengths[k]); };
                             auto height = [&](size_t k) { return constant_value_of(inputs.heights[k]); };
 
@@ -785,13 +785,13 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                 auto i = axis_rects[k];
                                 if (! skip_bridge) {
                                     PolBuilder pol;
-                                    pol.add(reification_half(tracker, inputs.before_flags[k][flag_index(k)], ReificationHalf::Implies));
+                                    pol.add(reification_half(tracker, flag(CumulativeFlag::Before, k), ReificationHalf::Implies));
                                     pol.add_for_literal(tracker, tpos[i] >= t + 1_i);
                                     pol.saturate().emit(row_logger, ProofLevel::Temporary);
                                 }
                                 if (! skip_bridge) {
                                     PolBuilder pol;
-                                    pol.add(reification_half(tracker, inputs.after_flags[k][flag_index(k)], ReificationHalf::Implies));
+                                    pol.add(reification_half(tracker, flag(CumulativeFlag::After, k), ReificationHalf::Implies));
                                     pol.add_for_literal(tracker, tpos[i] < t - len(k) + 1_i);
                                     pol.saturate().emit(row_logger, ProofLevel::Temporary);
                                 }

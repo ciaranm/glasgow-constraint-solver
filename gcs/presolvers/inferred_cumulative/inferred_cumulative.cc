@@ -125,8 +125,8 @@ namespace
     /// never encoded the pair --- which is how a task outside its window looks,
     /// and is also how it looks in the donor's own capacity row.
     /// Asking a donor for a flag is also asking it to define one: #780's
-    /// per-(task, time) flags are named with the model but defined on demand,
-    /// and a citer that skipped this would reference a free variable. Nothing
+    /// per-(task, time) flags are defined on demand (and since #1111 named on
+    /// demand too, by the lookup), and a citer that skipped this would reference a free variable. Nothing
     /// happens for a donor whose flags are OPB rows, which is all of them under
     /// every encoding but StartCheckpoint.
     auto ensure_donor_flags(ProofLogger & logger, const ConstraintID & donor, size_t position, Integer t) -> void

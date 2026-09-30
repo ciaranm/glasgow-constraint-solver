@@ -416,7 +416,9 @@ namespace gcs
         Integer _time_slot_lo = 0_i;
 
         // Filled in by define_proof_model; consumed by install_propagators.
-        // Each [task_idx] is indexed by t − _per_task_t_lo[i].
+        // Each [task_idx] is indexed by t − _per_task_t_lo[i]. All four are
+        // left empty when the flags live in the proof, which names them on
+        // demand instead (#1111); see define_proof_model.
         std::vector<std::vector<innards::ProofFlag>> _before_flags;
         std::vector<std::vector<innards::ProofFlag>> _after_flags;
         std::vector<std::vector<innards::ProofFlag>> _active_flags;
@@ -426,6 +428,10 @@ namespace gcs
         // empty middle vector for tasks whose height is constant (those use
         // h·active directly in C_t).
         std::vector<std::vector<std::vector<innards::ProofFlag>>> _contrib_flags;
+        // Per task, how many contribution bits a variable height has at each
+        // time point, and zero for a constant one: what naming the bits on
+        // demand needs to know.
+        std::vector<std::size_t> _contribution_bit_counts;
         // For a task whose start AND length both vary, a proof-only end = s + l
         // introduced INSIDE the proof (a conservative extension, with no OPB
         // encoding): cake reifies `after` on s + l directly, so end has no cake
