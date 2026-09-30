@@ -1441,7 +1441,9 @@ Four things are worth carrying away:
   well, exactly as the pairwise rule's `pin_escapes` does, and every
   one of them then follows by unit propagation.
 - **Who may take part is settled in `prepare()`, from the model
-  alone** — a positive constant size on the resource axis, plain
+  alone** — a resource-axis size that is a constant or a plain variable
+  with a positive declared lower bound (see "Variable sizes, at the
+  declared floor" below for the variable one), plain
   variables for both positions, a non-negative and not-too-wide
   resource domain. Those are the conditions `wire_over` imposes, and
   deciding them once and without the logger is what keeps the rule
@@ -1674,10 +1676,12 @@ again; TTEF fires 47–335 times per instance, mostly in place of
 edge-finding and time-table pushes, and moves proof size by −8% to +10%.
 
 Optional rectangles take part in all three energetic rungs once
-present; see the time-tabling rung's section above. Variable time-axis
-sizes take part at their declared floor; see the next section.
+present; see the time-tabling rung's section above. Variable sizes on
+either axis take part at their declared floor; see the next section.
 
-### Variable time-axis sizes, at the declared floor (#984)
+### Variable sizes, at the declared floor (#984)
+
+#### On the time axis
 
 The three energetic rungs and `cumulative_projection` count a rectangle
 whose time-axis size is a variable at the size's **declared** lower
@@ -1702,21 +1706,76 @@ hands its `Cumulative` the floor as a **constant** length, so nothing on
 proof-only end a `Cumulative` pins a two-variable `after` through. A
 rectangle declared from zero has no guaranteed extent and is left out.
 
-Time-tabling (route B) is unchanged: it counts the current lower bound
-under a reason, as it always has. The resource-axis size must still be
-a positive constant, since it is the comparator network's duration.
+Time-tabling (route B) is unchanged on this axis: it counts the current
+lower bound under a reason, as it always has.
 
-Tested by the `variable_size_*` fixtures in
-`disjunctive_2d_relaxation_test`. Every rung's own fixture runs with each
-width a variable over `[w, w + 2]`, strict and non-strict, and must fire
-as it does with constants and not with the rule off. An enumeration over
-positions and widths per rung must agree with brute force. Three mutation
-lanes are each rejected at the pair clause's RUP: `skip_size_floor`,
-`projection_skip_size_floor` and `skip_floor_escape_pins`. **The widths
-run two past the floor, not one.** A width over `[2, 3]` is bits
-`b0 + 2·b1 ≥ 2`, from which unit propagation fixes `b1`. The floor and
-both escapes are then implied at every RUP, and all three mutations
-verify.
+#### On the resource axis
+
+The resource-axis size is the comparator network's duration, which
+`add_task` and `add_optional_task` pin to a constant. So every rung,
+time-tabling included, counts a variable one at its declared floor as
+well, and the window `H` is taken from the floors' extents,
+`max(ub(pos) + floor) − min(lb(pos))`. The same argument covers both:
+each rectangle shrunk to its floor lies inside the real one, so the
+shrunk rectangles are pairwise disjoint and inside that window whenever
+the real ones are. Time-tabling cannot use the current lower bound
+here, as it does on the time axis, because the rows the network adopts
+are model rows with no room for a reason's literal.
+
+The network reads the model's separation row, the forward half of
+`before`, as `M·~flag + y − x ≥ duration(x)`. With a variable size the
+row has a `−size` term where the constant was. Adding the `Top` line
+`size ≥ floor` gives back exactly that form, with the floor as the
+duration. So each direction is handed to the network already cancelled,
+as a `Top` line cached per ordered pair (`separation_at_floor`), and
+nothing inside `ComparatorNetwork` changes.
+
+**The cancelled row is saturated, and the network is told the
+coefficient it then carries.** The model's `M` was sized for the size's
+whole declared range, so a height declared far past the window gives a
+row whose `M` exceeds the network's guard coefficient, which is sized
+for the window. `add_separation` refuses such a row, so time-tabling
+threw with proofs on and not off. Fuzzing found this 57 times in about
+3,000 seeds. Once the size is cancelled, the row needs no more than its
+own degree: `floor` plus the coefficients of `x`'s bits, which is at
+most `2·(2^width − 1)`, since the floor's extent lies inside the window.
+Saturation caps `M` there. The network raises every row to its own
+coefficient by adding the difference, so the coefficient it is told is
+computed from the tracker's bit coefficients, `min(M, degree)`. The
+`variable_height_*_wide_*` fixtures, with heights over `[h, h + 60]`,
+throw without it.
+The size's zero-size escape, in non-strict mode, is pinned at `Top` as
+on the time axis. Route A's and the projection's pair clauses close by
+RUP with that unit in the database. Route B's pair clause is built by
+`pol` from the model's clause, so there the pin is added to the `pol`,
+which cancels the escape term exactly.
+
+#### Tests
+
+The `variable_width_*` and `variable_height_*` fixtures in
+`disjunctive_2d_relaxation_test` cover the two axes; every fixture has x
+as its time axis. Every rung's own fixture runs with each size in turn a
+variable over `[s, s + 2]`, strict and non-strict, and must fire as it
+does with constants and not with the rule off. Time-tabling joins the
+energetic rungs for the heights. An enumeration over positions and the
+variable sizes per rung, one wider, must agree with brute force. With
+proofs off, counting heights at their declared *maximum* instead makes
+every one of the five height enumerations lose solutions.
+
+Seven mutation lanes, each rejected where the floor is consumed:
+- `skip_size_floor`, `projection_skip_size_floor` and
+  `skip_floor_escape_pins` fail at the pair clause's RUP.
+- `overload_skip_resource_floor` and `projection_skip_resource_floor`
+  hand the network the uncancelled row, and fail at its optional
+  separation.
+- `skip_resource_floor` and `resource_skip_floor_escape_pins` fail
+  inside the lemma through which route B's network consumes the
+  separation.
+
+**The sizes run two past the floor, not one.** A size over `[2, 3]` is
+bits `b0 + 2·b1 ≥ 2`, from which unit propagation fixes `b1`. The floor
+and both escapes are then implied at every RUP, and the time-axis
+mutations all verify.
 
 ### `Cumulative`'s own propagator over each projection (#973)
 
@@ -1825,8 +1884,9 @@ Tested by:
 - **`squares_projection`.**
 - **Proofs on and off.** The search trees are identical.
 
-Same members as route A, optional rectangles and variable time-axis
-sizes included (above).
+Same members as route A, optional rectangles and variable sizes
+included (above). A variable size on either axis is projected as its
+floor, a constant length or height.
 
 ## Reusable ideas
 

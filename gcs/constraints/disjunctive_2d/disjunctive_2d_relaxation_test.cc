@@ -163,32 +163,40 @@ namespace
         return {xs, ys, pres_vars};
     }
 
-    /// As `post`, but every width a variable over `[w, w + extra]`, where `w` is
-    /// the instance's: a variable time-axis size, which the energetic rungs
-    /// and the projection count at its declared floor (#984), so that the
-    /// instance's own widths are what they count and each fixture fires as it
-    /// does with constants. The widths made are returned so that they can be
-    /// enumerated.
+    /// As `post`, but every size in one dimension a variable over
+    /// `[s, s + extra]`, where `s` is the instance's: the widths for `dim` 0,
+    /// the heights for 1. Every fixture here has x as its time axis, so that is
+    /// a variable time-axis size and a variable resource-axis size in turn,
+    /// which the relaxation counts at its declared floor (#984): the
+    /// instance's own sizes are what it counts, and each fixture fires as it
+    /// does with constants. The variable sizes are returned so that they can
+    /// be enumerated.
     ///
-    /// Two wider, not one: a width over `[2, 3]` is bits `b0 + 2 b1 >= 2`,
+    /// Two wider, not one: a size over `[2, 3]` is bits `b0 + 2 b1 >= 2`,
     /// from which unit propagation fixes `b1`, and then the floor and the
     /// escapes' falsity are both implied at every RUP and nothing citing them
     /// is load-bearing. Over `[2, 4]` no bit is forced.
-    auto post_sized(Problem & p, const Instance & inst, Disjunctive2DRules rules, Disjunctive2DProofMutation mutation, int extra, bool strict)
-        -> std::tuple<vector<IntegerVariableID>, vector<IntegerVariableID>, vector<IntegerVariableID>>
+    auto post_sized(Problem & p, const Instance & inst, Disjunctive2DRules rules, Disjunctive2DProofMutation mutation, int dim, int extra,
+        bool strict) -> std::tuple<vector<IntegerVariableID>, vector<IntegerVariableID>, vector<IntegerVariableID>>
     {
-        vector<IntegerVariableID> xs, ys, ws;
-        vector<IntegerVariableID> hs;
+        vector<IntegerVariableID> xs, ys, ws, hs, sized;
         for (const auto & [lo, hi] : inst.x_ranges)
             xs.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
         for (const auto & [lo, hi] : inst.y_ranges)
             ys.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
-        for (size_t i = 0; i < inst.x_ranges.size(); ++i) {
-            ws.push_back(p.create_integer_variable(Integer{inst.widths[i]}, Integer{inst.widths[i] + extra}));
-            hs.push_back(ConstantIntegerVariableID{Integer{inst.heights[i]}});
-        }
+        for (size_t i = 0; i < inst.x_ranges.size(); ++i)
+            for (auto d : {0, 1}) {
+                auto size = d == 0 ? inst.widths[i] : inst.heights[i];
+                auto & sizes = d == 0 ? ws : hs;
+                if (d == dim) {
+                    sizes.push_back(p.create_integer_variable(Integer{size}, Integer{size + extra}));
+                    sized.push_back(sizes.back());
+                }
+                else
+                    sizes.push_back(ConstantIntegerVariableID{Integer{size}});
+            }
         p.post(Disjunctive2D{xs, ys, ws, hs}.with_strict(strict).with_rules(rules).with_proof_mutation(mutation));
-        return {xs, ys, ws};
+        return {xs, ys, sized};
     }
 
     auto count_markers(const string & basename, const string & marker) -> int
@@ -438,6 +446,9 @@ auto main(int argc, char * argv[]) -> int
     // And Cumulative's own propagator on each projection (#973), with every
     // one of its rules on.
     auto projection = false;
+    // The escape-pin mutation on a variable resource-axis size, for
+    // time-tabling, rather than on a variable time-axis size.
+    auto resource_escapes = false;
     // With a mutation: run it over this many instances of the sweep's family
     // and report which ones VeriPB rejects, to find a fixture on which it is
     // load-bearing. A development tool, not a lane.
@@ -522,6 +533,20 @@ auto main(int argc, char * argv[]) -> int
         else if (arg == "--mutate=skip_floor_escape_pins") {
             mutation = disjunctive_2d_proof_mutation::SkipFloorEscapePins{};
             overload = true;
+        }
+        else if (arg == "--mutate=skip_resource_floor")
+            mutation = disjunctive_2d_proof_mutation::SkipResourceFloor{};
+        else if (arg == "--mutate=overload_skip_resource_floor") {
+            mutation = disjunctive_2d_proof_mutation::SkipResourceFloor{};
+            overload = true;
+        }
+        else if (arg == "--mutate=projection_skip_resource_floor") {
+            mutation = disjunctive_2d_proof_mutation::SkipResourceFloor{};
+            projection = true;
+        }
+        else if (arg == "--mutate=resource_skip_floor_escape_pins") {
+            mutation = disjunctive_2d_proof_mutation::SkipFloorEscapePins{};
+            resource_escapes = true;
         }
         else if (arg == "--mutate=projection_skip_size_floor") {
             mutation = disjunctive_2d_proof_mutation::SkipSizeFloor{};
@@ -648,8 +673,14 @@ auto main(int argc, char * argv[]) -> int
         // width over [2, 4]. Non-strict for the escape pins, which gives every
         // pair two escapes, one more than the pair clause's RUP can reach.
         else if (std::holds_alternative<disjunctive_2d_proof_mutation::SkipSizeFloor>(*mutation) ||
-            std::holds_alternative<disjunctive_2d_proof_mutation::SkipFloorEscapePins>(*mutation))
-            (void)post_sized(p, area, with, *mutation, 2, ! std::holds_alternative<disjunctive_2d_proof_mutation::SkipFloorEscapePins>(*mutation));
+            (std::holds_alternative<disjunctive_2d_proof_mutation::SkipFloorEscapePins>(*mutation) && ! resource_escapes))
+            (void)post_sized(p, area, with, *mutation, 0, 2, ! std::holds_alternative<disjunctive_2d_proof_mutation::SkipFloorEscapePins>(*mutation));
+        // The same over a variable resource-axis size: `sharp` for
+        // time-tabling (`--mutate=skip_resource_floor` and, non-strict,
+        // `resource_skip_floor_escape_pins`), and `area` for the overload
+        // check and the projection, with every height over [h, h + 2].
+        else if (std::holds_alternative<disjunctive_2d_proof_mutation::SkipResourceFloor>(*mutation) || resource_escapes)
+            (void)post_sized(p, (overload || projection) ? area : sharp, with, *mutation, 1, 2, ! resource_escapes);
         // The conjunct is only load-bearing where a presence is really
         // undecided when a flagged row is derived: over a presence fixed to 1
         // by its domain, unit propagation falsifies the clause's presence
@@ -1726,22 +1757,27 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
-    // --- variable time-axis sizes in every energetic rung (#984) ----------
+    // --- variable sizes, on either axis, in every rung (#984) -------------
     //
-    // A rectangle whose time-axis size is a variable is counted at the size's
-    // declared lower bound, which is a model fact, so everything built over it
-    // stays reason-free. Each rung runs on its own fixture with every width a
-    // variable from the fixture's width to two more, for the reason post_sized
-    // gives: it has to fire at the root exactly as it does with constants,
-    // strict and non-strict (where each variable size brings a zero-size
-    // escape into its pairs' clauses), and not with the rule off. Then an
-    // enumeration over positions and widths has to agree with brute force,
-    // which is the check that a rectangle longer than its floor is not pushed
-    // as if it were shorter. That needs a width to be able to exceed its
-    // floor and nothing more, so it runs one wider, where the solutions and so
-    // the proofs are half the size. Time-tabling is not here: it counts a
-    // variable size at its current lower bound, under a reason, and always
-    // has.
+    // A rectangle whose size is a variable is counted at the size's declared
+    // lower bound, which is a model fact, so everything built over it stays
+    // reason-free. On the time axis that is the energetic rungs and the
+    // projection; time-tabling counts a variable time-axis size at its current
+    // lower bound, under a reason, as it always has. On the resource axis it
+    // is every rung, time-tabling included, since the size is the comparator
+    // network's pinned duration and the separation rows it adopts are cut down
+    // to it.
+    //
+    // Every fixture has x as its time axis, so the widths are made variable
+    // and then the heights, each from the fixture's size to two more, for the
+    // reason post_sized gives. Each rung has to fire at the root exactly as
+    // it does with constants, strict and non-strict (where each variable size
+    // brings a zero-size escape into its pairs' clauses), and not with the
+    // rule off. Then an enumeration over positions and the variable sizes has
+    // to agree with brute force, which is the check that a rectangle bigger
+    // than its floor is not treated as if it were smaller. That needs a size
+    // to be able to exceed its floor and nothing more, so it runs one bigger,
+    // where the solutions and so the proofs are half the size.
     if (! overload && ! edge_finding && ! ttef && ! projection) {
         struct Rung
         {
@@ -1754,84 +1790,107 @@ auto main(int argc, char * argv[]) -> int
             Instance enumerated;
         };
         const Instance tiling{vector<pair<int, int>>(4, {0, 2}), vector<pair<int, int>>(4, {0, 2}), vector<int>(4, 2), vector<int>(4, 2)};
-        const vector<Rung> rungs{{"overload", Disjunctive2DRules{.relaxation_overload = true}, area, nullopt, tiling},
+        const vector<Rung> energetic{{"overload", Disjunctive2DRules{.relaxation_overload = true}, area, nullopt, tiling},
             {"edge_finding", Disjunctive2DRules{.relaxation_edge_finding = true}, ef_lb, 3_i, ef_lb},
             {"ttef", Disjunctive2DRules{.relaxation_time_table_edge_finding = true}, ttef_lb, 4_i, ttef_lb},
             {"projection", Disjunctive2DRules{.cumulative_projection = every_cumulative_rule}, ef_lb, 3_i, ef_lb}};
+        // `sharp` is a conflict, so enumerating it would compare no solutions
+        // with none: three squares of two instead, free in a box five by five,
+        // which the rule prunes below the root once search has fixed some.
+        const Instance small{{{0, 3}, {0, 3}, {0, 3}}, {{0, 3}, {0, 3}, {0, 3}}, {2, 2, 2}, {2, 2, 2}};
+        const Rung time_tabling{"relaxation", Disjunctive2DRules{.cumulative_relaxation = true}, sharp, nullopt, small};
 
-        for (const auto & rung : rungs) {
-            auto root = [&](Disjunctive2DRules rules, bool strict, const optional<string> & name) -> Probe {
-                Problem p;
-                auto [xs, ys, ws] = post_sized(p, rung.root_fixture, rules, disjunctive_2d_proof_mutation::None{}, 2, strict);
-                Probe result;
-                auto reached_a_node = false;
-                solve_with(p,
-                    SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
-                                       result.satisfiable = true;
-                                       return false;
-                                   },
-                        .trace = [&](const CurrentState & state) -> bool {
-                            for (size_t i = 0; i < xs.size(); ++i)
-                                result.root_x.emplace_back(state.lower_bound(xs[i]), state.upper_bound(xs[i]));
-                            reached_a_node = true;
-                            return false;
-                        }},
-                    name ? make_optional<ProofOptions>(ProofFileNames{*name}) : nullopt);
-                result.refuted_at_root = ! reached_a_node && ! result.satisfiable;
-                if (name)
-                    result.markers = count_markers(*name, firing_marker);
-                return result;
-            };
-            auto did_it = [&](const Probe & probe) {
-                return rung.pushed_lb ? (probe.root_x.size() > 3 && probe.root_x[3].first == *rung.pushed_lb) : probe.refuted_at_root;
-            };
+        for (auto dim : {0, 1}) {
+            auto rungs = energetic;
+            if (dim == 1)
+                rungs.insert(rungs.begin(), time_tabling);
+            string sized = dim == 0 ? "width" : "height";
 
-            for (auto strict : {true, false}) {
-                auto label = "variable_size_" + rung.name + (strict ? "_strict" : "_nonstrict");
-                auto name = "disjunctive_2d_relaxation_" + label;
-                auto result = root(rung.rules, strict, proofs ? make_optional(name) : nullopt);
-                if (! did_it(result))
-                    fail(label + ": variable widths at their declared floor did not take part in the rule");
-                if (proofs && result.markers < 1)
-                    fail(label + ": no marker, so something else did it");
-                if (proofs && ! verify(name))
-                    fail(label + ": veripb rejected the proof");
-                if (did_it(root(without, strict, nullopt)))
-                    fail(label + ": it happens with the rule off, so the fixture says nothing about the rule");
-            }
+            for (const auto & rung : rungs) {
+                auto root = [&](Disjunctive2DRules rules, int extra, bool strict, const optional<string> & name) -> Probe {
+                    Problem p;
+                    auto [xs, ys, sizes] = post_sized(p, rung.root_fixture, rules, disjunctive_2d_proof_mutation::None{}, dim, extra, strict);
+                    Probe result;
+                    auto reached_a_node = false;
+                    solve_with(p,
+                        SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                                           result.satisfiable = true;
+                                           return false;
+                                       },
+                            .trace = [&](const CurrentState & state) -> bool {
+                                for (size_t i = 0; i < xs.size(); ++i)
+                                    result.root_x.emplace_back(state.lower_bound(xs[i]), state.upper_bound(xs[i]));
+                                reached_a_node = true;
+                                return false;
+                            }},
+                        name ? make_optional<ProofOptions>(ProofFileNames{*name}) : nullopt);
+                    result.refuted_at_root = ! reached_a_node && ! result.satisfiable;
+                    if (name)
+                        result.markers = count_markers(*name, firing_marker);
+                    return result;
+                };
+                auto did_it = [&](const Probe & probe) {
+                    return rung.pushed_lb ? (probe.root_x.size() > 3 && probe.root_x[3].first == *rung.pushed_lb) : probe.refuted_at_root;
+                };
 
-            const auto & inst = rung.enumerated;
-            auto n = inst.x_ranges.size();
-            auto is_satisfying = [&](const vector<int> & vals) {
-                for (size_t i = 0; i < n; ++i)
-                    for (size_t j = i + 1; j < n; ++j) {
-                        auto xi = vals[i], yi = vals[n + i], xj = vals[j], yj = vals[n + j], wi = vals[2 * n + i], wj = vals[2 * n + j];
-                        if (! (xi + wi <= xj || xj + wj <= xi || yi + inst.heights[i] <= yj || yj + inst.heights[j] <= yi))
-                            return false;
+                // Heights also run far past the window: the model sizes each
+                // separation row's big-M for the size's whole range, which
+                // then exceeds the comparator network's guard coefficient,
+                // sized for the window. Found by fuzzing, where time-tabling
+                // threw with proofs on and not off.
+                for (auto extra : dim == 1 ? vector{2, 60} : vector{2})
+                    for (auto strict : {true, false}) {
+                        auto label = "variable_" + sized + "_" + rung.name + (extra == 2 ? "" : "_wide") + (strict ? "_strict" : "_nonstrict");
+                        auto name = "disjunctive_2d_relaxation_" + label;
+                        auto result = root(rung.rules, extra, strict, proofs ? make_optional(name) : nullopt);
+                        if (! did_it(result))
+                            fail(label + ": variable " + sized + "s at their declared floor did not take part in the rule");
+                        if (proofs && result.markers < 1)
+                            fail(label + ": no marker, so something else did it");
+                        if (proofs && ! verify(name))
+                            fail(label + ": veripb rejected the proof");
+                        if (did_it(root(without, extra, strict, nullopt)))
+                            fail(label + ": it happens with the rule off, so the fixture says nothing about the rule");
                     }
-                return true;
-            };
-            auto ranges = inst.x_ranges;
-            ranges.insert(ranges.end(), inst.y_ranges.begin(), inst.y_ranges.end());
-            for (size_t i = 0; i < n; ++i)
-                ranges.emplace_back(inst.widths[i], inst.widths[i] + 1);
-            set<vector<int>> expected, actual;
-            gcs::test_innards::build_expected(expected, is_satisfying, ranges);
 
-            auto enum_name = "disjunctive_2d_relaxation_variable_size_enumerate_" + rung.name;
-            Problem p;
-            auto [xs, ys, ws] = post_sized(p, inst, rung.rules, disjunctive_2d_proof_mutation::None{}, 1, false);
-            vector<IntegerVariableID> all_vars = xs;
-            all_vars.insert(all_vars.end(), ys.begin(), ys.end());
-            all_vars.insert(all_vars.end(), ws.begin(), ws.end());
-            gcs::test_innards::solve_for_tests(p, proofs ? make_optional(enum_name) : nullopt, actual, std::tuple{all_vars});
-            if (gcs::test_innards::last_run_truncated())
-                fail("variable_size_enumerate_" + rung.name + ": a cap fired, so the enumeration checked no completeness");
-            auto markers = proofs ? count_markers(enum_name, firing_marker) : 0;
-            gcs::test_innards::check_results(proofs ? make_optional(enum_name) : nullopt, expected, actual);
-            println(cerr, "variable_size_enumerate_{}: {} solutions, {} firings", rung.name, actual.size(), markers);
-            if (proofs && markers == 0)
-                fail("variable_size_enumerate_" + rung.name + ": the rule never fired");
+                const auto & inst = rung.enumerated;
+                auto n = inst.x_ranges.size();
+                auto is_satisfying = [&](const vector<int> & vals) {
+                    auto width = [&](size_t i) { return dim == 0 ? vals[2 * n + i] : inst.widths[i]; };
+                    auto height = [&](size_t i) { return dim == 1 ? vals[2 * n + i] : inst.heights[i]; };
+                    for (size_t i = 0; i < n; ++i)
+                        for (size_t j = i + 1; j < n; ++j) {
+                            auto xi = vals[i], yi = vals[n + i], xj = vals[j], yj = vals[n + j];
+                            if (! (xi + width(i) <= xj || xj + width(j) <= xi || yi + height(i) <= yj || yj + height(j) <= yi))
+                                return false;
+                        }
+                    return true;
+                };
+                auto ranges = inst.x_ranges;
+                ranges.insert(ranges.end(), inst.y_ranges.begin(), inst.y_ranges.end());
+                for (size_t i = 0; i < n; ++i) {
+                    auto size = dim == 0 ? inst.widths[i] : inst.heights[i];
+                    ranges.emplace_back(size, size + 1);
+                }
+                set<vector<int>> expected, actual;
+                gcs::test_innards::build_expected(expected, is_satisfying, ranges);
+
+                auto label = "variable_" + sized + "_enumerate_" + rung.name;
+                auto enum_name = "disjunctive_2d_relaxation_" + label;
+                Problem p;
+                auto [xs, ys, sizes] = post_sized(p, inst, rung.rules, disjunctive_2d_proof_mutation::None{}, dim, 1, false);
+                vector<IntegerVariableID> all_vars = xs;
+                all_vars.insert(all_vars.end(), ys.begin(), ys.end());
+                all_vars.insert(all_vars.end(), sizes.begin(), sizes.end());
+                gcs::test_innards::solve_for_tests(p, proofs ? make_optional(enum_name) : nullopt, actual, std::tuple{all_vars});
+                if (gcs::test_innards::last_run_truncated())
+                    fail(label + ": a cap fired, so the enumeration checked no completeness");
+                auto markers = proofs ? count_markers(enum_name, firing_marker) : 0;
+                gcs::test_innards::check_results(proofs ? make_optional(enum_name) : nullopt, expected, actual);
+                println(cerr, "{}: {} solutions, {} firings", label, actual.size(), markers);
+                if (proofs && markers == 0)
+                    fail(label + ": the rule never fired");
+            }
         }
     }
 
