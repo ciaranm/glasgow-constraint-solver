@@ -324,7 +324,9 @@ auto position_variable(const Position & pos, const vector<IntegerVariableID> & v
 // The propagator used to disable itself whenever vars[0] was single-valued
 // after a call, but either of its passes can fix vars[0] part-way through
 // while another position still holds a different value, or several. Every
-// shape here gave wrong answers that way; see the call site in main().
+// shape the call site in main() passes here gave wrong answers that way,
+// except {x, x + 1} at an odd width: there the domain empties before x is
+// fixed, so that one is a control that passed on the old code too.
 auto run_disable_test(bool proofs, const string & label, const vector<vector<int>> & domains, const vector<Position> & positions, bool check_gac)
     -> void
 {
