@@ -1,15 +1,23 @@
+#include <gcs/constraints/at_most_one.hh>
+#include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/lex_smart_table.hh>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
+#include <gcs/proof.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <string>
 
 using namespace gcs;
 
 using std::cerr;
+using std::getline;
+using std::ifstream;
+using std::string;
 
 namespace
 {
@@ -47,6 +55,36 @@ namespace
         if (! posting_throws(tuples))
             return true;
         cerr << label << ": unexpected InvalidProblemDefinitionException\n";
+        return false;
+    }
+
+    // LexSmartTable and AtMostOneSmartTable delegate to a SmartTable they build
+    // in prepare(), and that child has to carry the posted constraint's ID, or
+    // its assertion hints name no constraint at all (issue #1121). So solve at
+    // AssertionLevel::Inferences, where the hints are on the wire, and check
+    // that some smart_table hint names the posted constraint, which is the
+    // problem's first, and that none says unnamed.
+    auto hints_name_posted_constraint(const char * label, Problem & p) -> bool
+    {
+        const string proof_name = "smart_table_dup_test_hints";
+        auto options = ProofOptions{ProofFileNames{proof_name}};
+        options.set_assertion_level(AssertionLevel::Inferences);
+        solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) { return true; }}, options);
+
+        int named = 0, unnamed = 0;
+        ifstream proof{proof_name + ".pbp"};
+        for (string line; getline(proof, line);) {
+            if (line.find("::smart_table:((constraint_id _1))") != string::npos)
+                ++named;
+            if (line.find("::smart_table:((constraint_id unnamed))") != string::npos)
+                ++unnamed;
+        }
+        proof.close();
+        test_innards::dispose_of_proof_files(proof_name);
+
+        if (named > 0 && unnamed == 0)
+            return true;
+        cerr << label << ": expected smart_table hints naming _1 and none unnamed, got " << named << " named and " << unnamed << " unnamed\n";
         return false;
     }
 }
@@ -112,6 +150,21 @@ auto main(int, char *[]) -> int
         ok = false;
     }
     catch (const InvalidProblemDefinitionException &) {
+    }
+
+    {
+        Problem p;
+        auto a = p.create_integer_variable_vector(2, 0_i, 2_i, "a");
+        auto b = p.create_integer_variable_vector(2, 0_i, 2_i, "b");
+        p.post(LexSmartTable{a, b});
+        ok &= hints_name_posted_constraint("LexSmartTable", p);
+    }
+    {
+        Problem p;
+        auto a = p.create_integer_variable_vector(3, 0_i, 2_i, "a");
+        auto v = p.create_integer_variable(0_i, 2_i, "v");
+        p.post(AtMostOneSmartTable{a, v});
+        ok &= hints_name_posted_constraint("AtMostOneSmartTable", p);
     }
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;

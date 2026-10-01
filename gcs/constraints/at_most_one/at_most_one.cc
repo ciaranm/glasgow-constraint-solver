@@ -192,6 +192,7 @@ auto AtMostOneSmartTable::prepare(Propagators & propagators, State & initial_sta
     all_vars.emplace_back(_val);
 
     SmartTable smt_table{all_vars, tuples};
+    smt_table.set_constraint_id(constraint_id());
     move(smt_table).install(propagators, initial_state, optional_model);
 
     return false;
