@@ -191,7 +191,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
     auto donors_before = _stats->donors_seen;
     size_t limit_declines_this_run = 0;
 
-    for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
+    for (const auto & donor : cumulative_donors(problem, propagators)) {
         bump(&CumulativeStrengtheningStats::donors_seen);
 
         // Everything below is an argument about the donor's per-time rows
@@ -204,14 +204,13 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // published what a pin of that task's `after` needs. Optional tasks need
         // nothing at all, their presence being a conjunct inside the activity
         // flag rather than a term beside it.
-        auto view = cumulative_donor_view(donor, state, logger);
+        auto view = donor.view(state, logger);
         if (! view) {
             bump(&CumulativeStrengtheningStats::declined_irreducible_capacity);
-            note(StatsLevel::General, donor.constraint_id(),
-                "passed over: its capacity is a view, which cannot be reduced to a number to strengthen against");
+            note(StatsLevel::General, donor.key.id, "passed over: its capacity is a view, which cannot be reduced to a number to strengthen against");
             continue;
         }
-        const auto & starts = donor.starts();
+        const auto & starts = donor.starts;
         auto n = starts.size();
         auto capacity = view->capacity;
         auto unentitled_raise = std::holds_alternative<cumulative_strengthening_mutation::RaiseUnentitled>(_mutation);
@@ -228,7 +227,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         if (capacity > Integer{_max_subset_sum_capacity}) {
             bump(&CumulativeStrengtheningStats::declined_capacity_too_large);
             ++limit_declines_this_run;
-            note(StatsLevel::General, donor.constraint_id(),
+            note(StatsLevel::General, donor.key.id,
                 "passed over: its capacity of " + to_string(capacity.raw_value) + " is beyond the subset-sum limit of " +
                     to_string(_max_subset_sum_capacity) + ", see with_subset_sum_capacity_limit");
             continue;
@@ -245,7 +244,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // passes every other check.
         if (any_of(view->usable, [&](size_t i) { return view->heights[i] > capacity; })) {
             bump(&CumulativeStrengtheningStats::declined_infeasible_donor);
-            note(StatsLevel::General, donor.constraint_id(),
+            note(StatsLevel::General, donor.key.id,
                 "passed over: a task's guaranteed demand is greater than the capacity, so the constraint is infeasible on its own");
             continue;
         }
@@ -409,7 +408,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
 
         if (! assessed) {
             bump(&CumulativeStrengtheningStats::declined_nothing_to_gain);
-            note(StatsLevel::Detailed, donor.constraint_id(),
+            note(StatsLevel::Detailed, donor.key.id,
                 "passed over: its capacity is already the largest load its tasks can reach, and no height moved either");
             continue;
         }
@@ -452,7 +451,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             if (states > _max_dynamic_programming_states) {
                 bump(&CumulativeStrengtheningStats::declined_over_budget);
                 ++limit_declines_this_run;
-                note(StatsLevel::General, donor.constraint_id(),
+                note(StatsLevel::General, donor.key.id,
                     "passed over: the derivation would need " + to_string(states) + " dynamic programming states against a budget of " +
                         to_string(_max_dynamic_programming_states) + ", see with_dynamic_programming_budget");
                 continue;
@@ -461,7 +460,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             if (raise_lines > _max_raise_lines) {
                 bump(&CumulativeStrengtheningStats::declined_over_raise_budget);
                 ++limit_declines_this_run;
-                note(StatsLevel::General, donor.constraint_id(),
+                note(StatsLevel::General, donor.key.id,
                     "passed over: raising heights would need " + to_string(raise_lines) + " proof lines against a budget of " +
                         to_string(_max_raise_lines) + ", see with_raise_budget");
                 continue;
@@ -478,7 +477,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         for (auto & point : time_points)
             by_time.emplace(point.t, move(point));
 
-        auto donor_id = donor.constraint_id();
+        auto donor_id = donor.key.id;
         auto heights = view->heights;
         auto stats = _stats;
 
@@ -499,16 +498,16 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
 
         DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, starts, view->lengths, derived_heights, view->presences),
             .capacity = kappa,
-            .row_donors = {donor_id},
-            .recipe = [donor_id, view = *view, heights, capacity, kappa, by_time, stats, subset_sum_corruption, raise_too_fast, unentitled_raise](
-                          ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
+            .row_donors = {donor.key},
+            .recipe = [donor_id, donor_key = donor.key, view = *view, heights, capacity, kappa, by_time, stats, subset_sum_corruption, raise_too_fast,
+                          unentitled_raise](ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
                 auto point = by_time.find(t);
                 if (point == by_time.end())
                     throw ProofError{"cumulative strengthening: no time point worked out for " + to_string(t.raw_value)};
 
                 // The donor is the only row source, and it wrote a row wherever
                 // this constraint has one, since they cover the same tasks.
-                auto donor_row_at = rows.find(donor_id);
+                auto donor_row_at = rows.find(donor_key);
                 if (donor_row_at == rows.end())
                     throw ProofError{"cumulative strengthening: the donor has no capacity row at time " + to_string(t.raw_value) +
                         ", which cannot happen for a constraint derived over all of its tasks"};

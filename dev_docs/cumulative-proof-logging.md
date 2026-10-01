@@ -715,6 +715,15 @@ heights and capacity, and creates no flags and no rows of its own: it pins the
 donor's flags, and its per-time capacity rows are derived in the proof from the
 donor's by a recipe the caller supplies.
 
+A donor is usually a posted `Cumulative`. It can also be a Cumulative that an
+installed constraint projects itself onto and publishes, which each axis of a
+`Disjunctive2D` is (#973; see
+[disjunctive-proof-logging.md](disjunctive-proof-logging.md)). The presolvers
+find both through `cumulative_donors`. A row donor is named by a
+`CumulativeDonorKey`, the constraint and its family of rows, since one
+`Disjunctive2D` has two families. Its rows are looked up by `cap_<t>` label for
+a posted `Cumulative`, and otherwise derived through that family.
+
 ### Reaching the donor
 
 Two halves, both following the discipline #603 set for citing another

@@ -4,6 +4,7 @@
 #include <gcs/constraint_id.hh>
 #include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/constraints/cumulative/derived_cumulative_stats.hh>
+#include <gcs/constraints/cumulative/donor_view.hh>
 #include <gcs/constraints/cumulative/propagate.hh>
 #include <gcs/constraints/innards/makespan_energy.hh>
 #include <gcs/innards/proofs/proof_line.hh>
@@ -27,9 +28,11 @@ namespace gcs::innards
      * to be found.
      *
      * A derived constraint creates no flags of its own, so every task has to
-     * point at a posted Cumulative that already encoded it: `donor` says which,
-     * and `position` says which of that donor's tasks it is, since the flag keys
-     * ConstraintProofModelData publishes are by task position.
+     * point at a donor that already encoded it: `donor` says which, and
+     * `position` says under which position that donor keys the task's flags,
+     * since the flag keys ConstraintProofModelData<Cumulative> publishes are by
+     * task position. For a posted Cumulative that is the task's index; for a
+     * published donor it is PublishedCumulativeDonor::positions' entry.
      *
      * Tasks may name *different* donors. That is what an inferred constraint
      * over several resources needs --- a clique whose members conflict pairwise
@@ -42,10 +45,10 @@ namespace gcs::innards
      */
     struct DerivedCumulativeTask
     {
-        /// The posted Cumulative whose flags express this task's activity.
+        /// The donor whose flags express this task's activity.
         ConstraintID donor;
 
-        /// This task's index within that donor's own task list.
+        /// The position that donor keys this task's flags under.
         std::size_t position;
 
         /// The start variable, which must be the one the donor was posted with
@@ -99,7 +102,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using DerivedCumulativeRows = std::map<ConstraintID, ProofLine>;
+    using DerivedCumulativeRows = std::map<CumulativeDonorKey, ProofLine>;
 
     /**
      * \brief A Cumulative whose proof semantics are *derived* rather than
@@ -128,7 +131,7 @@ namespace gcs::innards
         /// a pairwise conflict is witnessed by whichever resource cannot hold
         /// both tasks, which need not be where either task's flags are taken
         /// from.
-        std::vector<ConstraintID> row_donors;
+        std::vector<CumulativeDonorKey> row_donors;
 
         /**
          * \brief How the derived row for time `t` is established.

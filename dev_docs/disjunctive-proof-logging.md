@@ -1828,11 +1828,48 @@ derived every row up front so that it could decline cleanly, which is the
 wrong trade for a row that cannot decline and costs about `1.4 KB · n³`.
 Since #1130 it derives a row per stretch between window edges at install
 and the rest as they are cited.
-Using a `Disjunctive2D` as a *presolver's* donor (capacity strengthening,
-cliques, lifted covers, makespan bounds) is now a small step, because its
-flags can be found under `Cumulative`'s keys. Only the row lookup
-differs: a family per axis, not a `cap_<t>` label or the one `cap`
-family. That step is not taken here.
+
+### A projection as a presolver's donor (#973)
+
+`CumulativeStrengthening`, `InferredDisjunctive` and `InferredCumulative`
+derive a `Cumulative` in the proof from a donor's flags and rows. Each
+projection is such a donor. The three presolvers take it as they take a
+posted `Cumulative`, through `cumulative_donors`
+([`donor_view.hh`](../gcs/constraints/cumulative/donor_view.hh)), so
+they find, for instance, the clique of rectangles whose heights pairwise
+overflow the strip.
+
+- **Published, not recomputed.** A presolver sees the constraints as
+  posted, never as prepared, and a `State` that initialisers may already
+  have tightened. The projection's capacity is the window `prepare()` read
+  off the declared bounds, and a presolver working it out again could get
+  a narrower one than the rows say. So `install_propagators` publishes
+  each axis with `publish_cumulative_donor`, into a slot of the solve's
+  `Propagators`: members, flag positions, sizes at their floors, capacity
+  and row family. It does so with proofs on or off, so a presolver draws
+  the same inferences either way.
+- **Keyed by row family too.** One `Disjunctive2D` is two donors under one
+  `ConstraintID`, so a donor whose rows are cited is a
+  `CumulativeDonorKey`: the ID and the family, `projx` or `projy`. A posted
+  `Cumulative` is its ID and `cap`. The flags need only the ID, since the
+  two axes' positions are distinct.
+- **Indexed by flag position.** A donor's starts and view are indexed by
+  the position its flags are keyed under, `axis · n + i`. The positions
+  that are no task of this axis are holes: zero length, and neither usable
+  nor set aside. So the presolvers' existing position arithmetic carries
+  over unchanged.
+- **There whether or not `cumulative_projection` is.** `prepare()` now
+  resolves each projection whenever its window fits, and the flag and row
+  families are published with it. They cost nothing until cited. The rule
+  only says whether the projection's own propagator runs.
+
+The presolvers that decline optional donors decline an optional
+projection the same way. Strengthening takes one. With every presolver
+off, proofs are byte-identical to before on the existing `Disjunctive2D`,
+presolver and derived-constraint tests (376 proofs).
+`disjunctive_2d_presolver_test` checks each presolver over projections
+against brute force, with proofs on and off, and runs one mutation of
+each over a projection's rows.
 
 **Two things about `Cumulative`'s rules the fixtures had to allow for.**
 Its overload check leaves out a task whose start is a {0, 1} variable,

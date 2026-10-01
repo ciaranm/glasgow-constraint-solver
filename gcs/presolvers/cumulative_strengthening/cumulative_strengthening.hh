@@ -176,6 +176,9 @@ namespace gcs
      * strengthened version as a *derived* constraint whose per-time capacity
      * rows are proved from the donor's.
      *
+     * Each axis of a Disjunctive2D is a donor too, as the Cumulative it
+     * projects onto (innards::cumulative_donors, #973).
+     *
      * The rules are Schulz's pre-solving strengthenings, as recapped by
      * Cloutier and Quimper (CP 2026, section 2.3). The load at a time point is a
      * sum of the heights of the tasks running then, so it can only ever take a

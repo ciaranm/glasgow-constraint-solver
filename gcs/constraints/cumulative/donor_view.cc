@@ -7,7 +7,9 @@
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
+#include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/problem.hh>
 
 #include <algorithm>
 #include <optional>
@@ -25,6 +27,83 @@ using std::optional;
 using std::pair;
 using std::size_t;
 using std::vector;
+
+namespace
+{
+    // Where publish_cumulative_donor keeps what it is given: a slot in
+    // Propagators::shared_derived_data, keyed on this object's address, which
+    // nothing else uses. So it lives exactly as long as the solve does.
+    const char published_donors_slot = 0;
+    using PublishedDonors = vector<PublishedCumulativeDonor>;
+}
+
+auto gcs::innards::publish_cumulative_donor(Propagators & propagators, PublishedCumulativeDonor donor) -> void
+{
+    propagators.shared_derived_data<PublishedDonors>(&published_donors_slot)->push_back(move(donor));
+}
+
+auto gcs::innards::cumulative_donors(const Problem & problem, Propagators & propagators) -> vector<CumulativeDonor>
+{
+    vector<CumulativeDonor> result;
+    for (const auto & donor : problem.each_constraint_of_type<Cumulative>())
+        result.push_back(
+            CumulativeDonor{.key = CumulativeDonorKey{donor.constraint_id(), ConstraintProofModelData<Cumulative>::capacity_row_family()},
+                .starts = donor.starts(),
+                .presences = donor.presences(),
+                .source = &donor});
+
+    for (const auto & published : *propagators.shared_derived_data<PublishedDonors>(&published_donors_slot)) {
+        size_t size = 0;
+        for (auto position : published.positions)
+            size = std::max(size, position + 1);
+        vector<IntegerVariableID> starts(size, constant_variable(0_i)), presences;
+        if (! published.presences.empty())
+            presences.assign(size, constant_variable(1_i));
+        for (size_t k = 0; k < published.positions.size(); ++k) {
+            starts[published.positions[k]] = published.starts[k];
+            if (! presences.empty())
+                presences[published.positions[k]] = published.presences[k];
+        }
+        result.push_back(CumulativeDonor{.key = published.key, .starts = move(starts), .presences = move(presences), .source = published});
+    }
+
+    return result;
+}
+
+auto CumulativeDonor::view(const State & state, const ProofLogger * const logger) const -> optional<CumulativeDonorView>
+{
+    if (auto posted = std::get_if<const Cumulative *>(&source))
+        return cumulative_donor_view(**posted, state, logger);
+
+    // Everything but a start and a presence is a number already, the
+    // constraint that published this having fixed them in prepare(), so there
+    // is nothing to reduce and nothing to convert: every task is usable, and
+    // there are no terms in its rows but theirs. The one test that is left is
+    // the one cumulative_donor_view makes of an optional task that is on its
+    // way to being falsified.
+    const auto & published = std::get<PublishedCumulativeDonor>(source);
+    CumulativeDonorView view;
+    view.lengths.assign(starts.size(), constant_variable(0_i));
+    view.heights.assign(starts.size(), 0_i);
+    view.height_bounded_by.assign(starts.size(), nullopt);
+    view.presences = presences;
+    view.capacity = published.capacity;
+    for (size_t k = 0; k < published.positions.size(); ++k) {
+        auto position = published.positions[k];
+        if (published.lengths[k] <= 0_i || published.heights[k] <= 0_i)
+            continue;
+        if (! published.presences.empty() && task_presence(published.presences[k], "Cumulative").literal && published.heights[k] > view.capacity) {
+            view.set_aside.push_back(position);
+            continue;
+        }
+        view.lengths[position] = constant_variable(published.lengths[k]);
+        view.heights[position] = published.heights[k];
+        view.usable.push_back(position);
+    }
+    std::ranges::sort(view.usable);
+    std::ranges::sort(view.set_aside);
+    return view;
+}
 
 auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State & state, const ProofLogger * const logger)
     -> optional<CumulativeDonorView>

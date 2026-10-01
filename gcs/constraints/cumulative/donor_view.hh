@@ -5,12 +5,17 @@
 #include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
+#include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
+#include <gcs/problem-fwd.hh>
 #include <gcs/variable_id.hh>
 
+#include <compare>
 #include <cstddef>
 #include <optional>
+#include <string>
+#include <variant>
 #include <vector>
 
 namespace gcs::innards
@@ -148,6 +153,111 @@ namespace gcs::innards
      */
     [[nodiscard]] auto cumulative_donor_view(const Cumulative & donor, const State & state, const ProofLogger * const logger)
         -> std::optional<CumulativeDonorView>;
+
+    /**
+     * \brief Which capacity rows a donor's are: the constraint, and which of
+     * its families of per-time rows.
+     *
+     * A posted Cumulative has one family,
+     * ConstraintProofModelData<Cumulative>::capacity_row_family. A constraint
+     * that projects itself onto more than one Cumulative has one per
+     * projection under the one ConstraintID: a Disjunctive2D has one per axis
+     * (#973). So a donor whose rows are cited is named by both. Its flags need
+     * only the ConstraintID, their positions being distinct across
+     * projections.
+     *
+     * \ingroup Innards
+     */
+    struct CumulativeDonorKey
+    {
+        ConstraintID id;
+        std::string row_family;
+
+        [[nodiscard]] auto operator<=>(const CumulativeDonorKey &) const = default;
+    };
+
+    /**
+     * \brief A Cumulative an installed constraint projects itself onto,
+     * published so that a presolver can derive from it as it would from a
+     * posted one (#973).
+     *
+     * Its flags are Cumulative's, keyed under \ref key's constraint at \ref
+     * positions, and named and defined on demand; its rows are \ref key's
+     * family, derived on demand. Both exist only with proofs on, but this is
+     * published either way, from what the constraint resolved in prepare(),
+     * so that a presolver draws the same inferences with proofs off. A
+     * presolver cannot recompute it: it sees the constraints as posted, not
+     * as prepared, and a State that initialisers may have tightened since.
+     *
+     * Every argument is a number but the starts and presences. A projection
+     * with a variable size projects it at a constant, as its rows do.
+     *
+     * \ingroup Innards
+     */
+    struct PublishedCumulativeDonor
+    {
+        CumulativeDonorKey key;
+
+        /// Per task, the position its flags are keyed under by `key.id`.
+        std::vector<std::size_t> positions;
+
+        std::vector<IntegerVariableID> starts;
+        std::vector<Integer> lengths, heights;
+
+        /// Per task, the presence as task_presence reads it, or empty if no
+        /// task is optional.
+        std::vector<IntegerVariableID> presences;
+
+        Integer capacity;
+    };
+
+    /**
+     * \brief Publish a donor for the presolvers of this solve.
+     *
+     * From an install, which runs before any presolver does.
+     *
+     * \ingroup Innards
+     */
+    auto publish_cumulative_donor(Propagators &, PublishedCumulativeDonor) -> void;
+
+    /**
+     * \brief One donor as a presolver finds it: a posted Cumulative, or one a
+     * constraint published (see PublishedCumulativeDonor).
+     *
+     * Indexed by flag key position throughout: \ref starts, \ref presences
+     * and the view's vectors speak, at `p`, about the task whose flags are
+     * keyed at `p`. A position that is no task of this donor's --- the other
+     * axis's, for a Disjunctive2D --- is a hole: a constant start, a zero
+     * length, and in neither CumulativeDonorView::usable nor
+     * CumulativeDonorView::set_aside, so that derived_cumulative_tasks_from
+     * drops it and nothing weakens it.
+     *
+     * \ingroup Innards
+     */
+    struct CumulativeDonor
+    {
+        CumulativeDonorKey key;
+        std::vector<IntegerVariableID> starts;
+
+        /// As posted, or empty if no task is optional.
+        std::vector<IntegerVariableID> presences;
+
+        std::variant<const Cumulative *, PublishedCumulativeDonor> source;
+
+        /// See cumulative_donor_view. Built when asked for rather than up
+        /// front, since for a posted Cumulative it can look flags up, and a
+        /// presolver that passes the donor over first should not have.
+        [[nodiscard]] auto view(const State &, const ProofLogger * const) const -> std::optional<CumulativeDonorView>;
+    };
+
+    /**
+     * \brief Every donor a presolver could derive from: the posted
+     * Cumulatives, in posting order, and then everything published with
+     * publish_cumulative_donor.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto cumulative_donors(const Problem &, Propagators &) -> std::vector<CumulativeDonor>;
 
     /**
      * \brief Reduce one of a donor's capacity rows to the form a recipe argues

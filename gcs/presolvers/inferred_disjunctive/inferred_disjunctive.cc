@@ -57,7 +57,7 @@ namespace
     /// what it demands there.
     struct Appearance
     {
-        ConstraintID donor;
+        CumulativeDonorKey donor;
         size_t position;
         Integer height;
     };
@@ -86,14 +86,14 @@ namespace
     /// went out with the reduction and weakening an absent variable is refused.
     struct Resource
     {
-        ConstraintID id;
+        CumulativeDonorKey id;
         Integer capacity;
     };
 
     /// The witness resources' views, by donor, as a recipe needs them: to
     /// reduce a row to the constant-argument form build_am1_from_row reads, and
     /// to know which of that resource's positions still have a term in it.
-    using DonorViews = map<ConstraintID, CumulativeDonorView>;
+    using DonorViews = map<CumulativeDonorKey, CumulativeDonorView>;
 
     /// Why a pair conflicts: the resource that cannot hold both, and the
     /// numbers saying it cannot. The demands and the capacity rather than the
@@ -102,7 +102,7 @@ namespace
     /// that can work it out wrongly.
     struct Conflict
     {
-        ConstraintID witness;
+        CumulativeDonorKey witness;
         size_t witness_position_u, witness_position_v;
         Integer demand_u, demand_v, capacity;
     };
@@ -207,7 +207,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     vector<Resource> resources;
     DonorViews views;
 
-    for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
+    for (const auto & donor : cumulative_donors(problem, propagators)) {
         bump(&InferredDisjunctiveStats::donors_seen);
 
         // The mechanism no longer minds an optional donor --- a presence is a
@@ -218,9 +218,9 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         // donor's flags to another's, and two donors' activity flags cancel
         // against each other only if their presence conjuncts do too. Declined
         // until that has a rule of its own rather than a hopeful `pol`.
-        if (! donor.presences().empty()) {
+        if (! donor.presences.empty()) {
             bump(&InferredDisjunctiveStats::declined_optional);
-            note(StatsLevel::General, donor.constraint_id(),
+            note(StatsLevel::General, donor.key.id,
                 "passed over: it has optional tasks, whose presence conjuncts do not yet cancel across a bridge between donors");
             continue;
         }
@@ -233,10 +233,10 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         // witnesses is weakened over it first. A variable duration is no
         // obstacle: a conflict is a statement about heights, and a clique's
         // rows say nothing about how long anything runs for.
-        auto view = cumulative_donor_view(donor, state, logger);
+        auto view = donor.view(state, logger);
         if (! view) {
             bump(&InferredDisjunctiveStats::declined_irreducible_capacity);
-            note(StatsLevel::General, donor.constraint_id(),
+            note(StatsLevel::General, donor.key.id,
                 "passed over: its capacity is a view, which cannot be reduced to a number to argue conflicts against");
             continue;
         }
@@ -246,11 +246,11 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
             if (view->height_bounded_by[i])
                 bump(&InferredDisjunctiveStats::converted_heights);
 
-        const auto & starts = donor.starts();
-        resources.push_back(Resource{donor.constraint_id(), view->capacity});
+        const auto & starts = donor.starts;
+        resources.push_back(Resource{donor.key, view->capacity});
         const auto & lengths = view->lengths;
         const auto & heights = view->heights;
-        views.emplace(donor.constraint_id(), *view);
+        views.emplace(donor.key, *view);
 
         for (auto i : view->usable) {
             auto found = task_of_start.find(starts[i]);
@@ -268,7 +268,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                 bump(&InferredDisjunctiveStats::dropped_disagreeing_length);
                 continue;
             }
-            else if (any_of(tasks[found->second].appearances, [&](const Appearance & a) { return a.donor == donor.constraint_id(); })) {
+            else if (any_of(tasks[found->second].appearances, [&](const Appearance & a) { return a.donor == donor.key; })) {
                 // A donor posting one (start, length) pair twice --- a height-2
                 // task split into two height-1 rows, say --- is a legal model,
                 // and the second row is a second appearance of the same node.
@@ -286,7 +286,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                 continue;
             }
 
-            tasks[found->second].appearances.push_back(Appearance{donor.constraint_id(), i, heights[i]});
+            tasks[found->second].appearances.push_back(Appearance{donor.key, i, heights[i]});
         }
     }
 
@@ -297,7 +297,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     // The conflict graph. A pair conflicts if some one resource cannot hold
     // both; the first such resource found is the witness the certificate will
     // use, since any of them proves the same at-most-one.
-    map<ConstraintID, Integer> capacity_of;
+    map<CumulativeDonorKey, Integer> capacity_of;
     for (const auto & resource : resources)
         capacity_of.emplace(resource.id, resource.capacity);
 
@@ -545,13 +545,13 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         // bridges a pair's witness across to those where they differ.
         vector<DerivedCumulativeTask> derived_tasks;
         vector<optional<makespan_energy::MakespanLink>> links;
-        set<ConstraintID> row_donors;
+        set<CumulativeDonorKey> row_donors;
         for (auto i : clique) {
             const auto & home = tasks[i].appearances.front();
             auto link = makespan_links.find(tasks[i].start);
             links.push_back(link == makespan_links.end() ? std::nullopt : optional<makespan_energy::MakespanLink>{link->second});
             derived_tasks.push_back(DerivedCumulativeTask{
-                .donor = home.donor, .position = home.position, .start = tasks[i].start, .length = tasks[i].length, .height = 1_i});
+                .donor = home.donor.id, .position = home.position, .start = tasks[i].start, .length = tasks[i].length, .height = 1_i});
         }
         for (size_t a = 0; a < clique.size(); ++a)
             for (size_t b = a + 1; b < clique.size(); ++b)
@@ -564,7 +564,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
 
         DerivedCumulativeSpec spec{.tasks = derived_tasks,
             .capacity = 1_i,
-            .row_donors = vector<ConstraintID>{row_donors.begin(), row_donors.end()},
+            .row_donors = vector<CumulativeDonorKey>{row_donors.begin(), row_donors.end()},
             .recipe = [members, task_data, conflicts, views, stats, claim_rhs_zero, bridge_wrong_task](
                           ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
                 auto & tracker = recipe_logger.names_and_ids_tracker();
@@ -580,7 +580,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                 vector<ProofLiteralOrFlag> flags;
                 for (auto i : here) {
                     const auto & home = task_data[i].appearances.front();
-                    auto found = flags_for(recipe_logger, home.donor, home.position, t);
+                    auto found = flags_for(recipe_logger, home.donor.id, home.position, t);
                     if (! found)
                         return std::nullopt;
                     flags.push_back(std::get<2>(*found));
@@ -608,8 +608,8 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
 
                 // Bridges, once per (member, witnessing resource) rather than
                 // once per pair: several pairs of a clique often share a witness.
-                map<pair<size_t, ConstraintID>, ProofLine> bridges;
-                auto bridge_to = [&](size_t i, const ConstraintID & witness, size_t witness_position) -> optional<ProofLine> {
+                map<pair<size_t, CumulativeDonorKey>, ProofLine> bridges;
+                auto bridge_to = [&](size_t i, const CumulativeDonorKey & witness, size_t witness_position) -> optional<ProofLine> {
                     const auto & home = task_data[i].appearances.front();
                     if (home.donor == witness)
                         return std::nullopt; // already there, nothing to carry
@@ -619,8 +619,8 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                     if (already != bridges.end())
                         return already->second;
 
-                    auto from = flags_for(recipe_logger, home.donor, home.position, t);
-                    auto to = flags_for(recipe_logger, witness, witness_position, t);
+                    auto from = flags_for(recipe_logger, home.donor.id, home.position, t);
+                    auto to = flags_for(recipe_logger, witness.id, witness_position, t);
                     if (! from || ! to)
                         throw ProofError{"inferred disjunctive: a resource that witnesses a conflict at time " + to_string(t.raw_value) +
                             " has no flags for one of the tasks it is about"};
@@ -649,12 +649,13 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         // weakened away, and a variable capacity replaced by the
                         // number `c.capacity` already holds.
                         const auto & witness_view = views.at(c.witness);
-                        auto reduced = recover_constant_argument_row(recipe_logger, witness_view, c.witness, row->second, t, ProofLevel::Temporary);
+                        auto reduced =
+                            recover_constant_argument_row(recipe_logger, witness_view, c.witness.id, row->second, t, ProofLevel::Temporary);
                         if (! reduced)
                             return std::nullopt;
 
-                        auto u_flags = flags_for(recipe_logger, c.witness, c.witness_position_u, t);
-                        auto v_flags = flags_for(recipe_logger, c.witness, c.witness_position_v, t);
+                        auto u_flags = flags_for(recipe_logger, c.witness.id, c.witness_position_u, t);
+                        auto v_flags = flags_for(recipe_logger, c.witness.id, c.witness_position_v, t);
                         if (! u_flags || ! v_flags)
                             return std::nullopt;
 
@@ -670,7 +671,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         for (auto other : witness_view.usable) {
                             if (other == c.witness_position_u || other == c.witness_position_v)
                                 continue;
-                            auto other_flags = flags_for(recipe_logger, c.witness, other, t);
+                            auto other_flags = flags_for(recipe_logger, c.witness.id, other, t);
                             if (other_flags)
                                 weaken_out.push_back(std::get<2>(*other_flags));
                         }

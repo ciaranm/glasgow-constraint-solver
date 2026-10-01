@@ -198,6 +198,9 @@ namespace gcs
      * cover inequalities over the posted Cumulatives' capacity rows, and post
      * them in derived mode.
      *
+     * Each axis of a Disjunctive2D is a donor too, as the Cumulative it
+     * projects onto (innards::cumulative_donors, #973).
+     *
      * This is the second stage of Sidorov (CP 2026). A *cover* is a set of tasks
      * whose demands together overshoot a resource, so they cannot all run;
      * *lifting* then brings the remaining tasks in with the largest coefficients
