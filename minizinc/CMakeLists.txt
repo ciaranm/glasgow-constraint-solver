@@ -307,8 +307,21 @@ set_tests_properties(minizinc-countops PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-crystalmaze COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ crystalmaze true true)
 set_tests_properties(minizinc-crystalmaze PROPERTIES SKIP_RETURN_CODE 66)
 
-add_test(NAME minizinc-decreasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ decreasing true true)
+# The standard library has no plain int overload of decreasing or
+# strictly_decreasing, so an int array used to take the optional overload and be
+# decomposed into int_lin_le, and these lanes passed against the decomposition
+# (#1146). The fzn counts are what notice that happening again: every shape in
+# decreasingshapes, and the one in each single-shape lane, must reach a builtin.
+# decreasingreif checks that the reified and half-reified forms, which have no
+# builtin, still flatten.
+add_test(NAME minizinc-decreasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 1 glasgow_increasing_int $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ decreasingtest true true)
 set_tests_properties(minizinc-decreasing PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-decreasing-shapes COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 5 glasgow_increasing_int --fzn-count 2 glasgow_strictly_increasing_int --fzn-count 1 glasgow_increasing_bool --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ decreasingshapes true true)
+set_tests_properties(minizinc-decreasing-shapes PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-decreasing-reif COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ decreasingreif true true)
+set_tests_properties(minizinc-decreasing-reif PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-disjointdomain COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjointdomain true true)
 set_tests_properties(minizinc-disjointdomain PROPERTIES SKIP_RETURN_CODE 66)
@@ -342,7 +355,7 @@ set_tests_properties(minizinc-globalcardinalityrepeated PROPERTIES SKIP_RETURN_C
 add_test(NAME minizinc-globalcardinalityrepeatedclosed COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_global_cardinality_closed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalityrepeatedclosed true true)
 set_tests_properties(minizinc-globalcardinalityrepeatedclosed PROPERTIES SKIP_RETURN_CODE 66)
 
-add_test(NAME minizinc-increasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ increasing true true)
+add_test(NAME minizinc-increasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ increasingtest true true)
 set_tests_properties(minizinc-increasing PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-inverses COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ inverses true true)
@@ -501,7 +514,7 @@ set_tests_properties(minizinc-argsort-reif PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-splitrandom COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ splitrandom true true)
 set_tests_properties(minizinc-splitrandom PROPERTIES SKIP_RETURN_CODE 66)
 
-add_test(NAME minizinc-strictlydecreasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ strictlydecreasing true true)
+add_test(NAME minizinc-strictlydecreasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 1 glasgow_strictly_increasing_int $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ strictlydecreasing true true)
 set_tests_properties(minizinc-strictlydecreasing PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-strictlyincreasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ strictlyincreasing true true)
