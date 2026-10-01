@@ -542,9 +542,6 @@ member's flags — is `BridgeWrongTask`.
 
 ## What is not here
 
-- Optional tasks — not because a derived `Cumulative` cannot reason over them,
-  but because this presolver bridges flags between donors and a presence
-  conjunct has to cancel across that bridge before it may.
 - Lifting during search: a constraint lifted from a conflict does not propagate
   after backtracking, so this is root-level only.
 - Variable durations and demands are **not** on this list. A demand enters a
