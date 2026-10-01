@@ -509,14 +509,15 @@ add_scp_chain_test(negative_table_unsat   none)
 add_scp_chain_test(smart_table_sat        none)
 add_scp_chain_test(smart_table_unsat      none)
 
-# none (chain-only): lex_smart_table, which desugars to a SmartTable. With a
-# non-empty common prefix its proof fails at the elaboration step, by citing a
-# per-row selector flag (f[0][t0]) that cake's OPB names differently, as above.
-# What does chain is the empty common prefix, and both
-# directions of it are pinned: cake encodes an empty vars_2 as a single
-# entry-free row that every assignment matches, and an empty vars_1 as no row
-# at all. The first is the row LexSmartTable once failed to build when vars_1
-# is the longer array (issue #1138), which made it report no solution.
+# none (chain-only): lex_smart_table, which desugars to a SmartTable with one
+# row per common-prefix position, plus an equal-prefix row when vars_1 is the
+# longer array. Once that table has two or more rows its proof fails at the
+# elaboration step, by citing a per-row selector flag (f[0][t0]) that cake's OPB
+# names differently, as above; a one-row table chains. These two cases pin the
+# empty common prefix in both directions: cake encodes an empty vars_2 as a
+# single entry-free row that every assignment matches, and an empty vars_1 as
+# no row at all. The first is the row LexSmartTable once failed to build when
+# vars_1 is the longer array (issue #1138), which made it report no solution.
 add_scp_chain_test(lex_smart_table_empty_right_sat   none)
 add_scp_chain_test(lex_smart_table_empty_left_unsat  none)
 
