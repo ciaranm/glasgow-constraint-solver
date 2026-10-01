@@ -236,10 +236,14 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
                 }
             }
 
-            // Entailed once any var is single-valued: the chain equalities will
-            // have propagated that value to every other var (or contradicted),
-            // so further calls have nothing to do.
-            if (state.has_single_value(vars[0]))
+            // Entailed once the entry bounds meet: the bounds pass has just
+            // pinned every var to lo (or contradicted), so further calls have
+            // nothing to do. Testing whether vars[0] is single-valued after the
+            // passes would not do (issue #1153): either pass can fix vars[0]
+            // part-way through, through a hole or through another position
+            // over the same variable, while other vars keep values unequal to
+            // it, and disabling then would never compare them again.
+            if (lo == hi)
                 return PropagatorState::DisableUntilBacktrack;
 
             return PropagatorState::Enable;

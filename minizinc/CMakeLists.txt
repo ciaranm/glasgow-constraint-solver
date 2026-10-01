@@ -424,6 +424,11 @@ set_tests_properties(minizinc-mdd PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-allequal COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ allequaltest true true)
 set_tests_properties(minizinc-allequal PROPERTIES SKIP_RETURN_CODE 66)
 
+# Issue #1153: holes made during search, under the model's own branching. The
+# --fzn-count guards that the one all_equal reaches the builtin.
+add_test(NAME minizinc-allequal-search-holes COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 1 glasgow_all_equal_int --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ allequalsearchholes true true)
+set_tests_properties(minizinc-allequal-search-holes PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-member COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ membertest true true)
 set_tests_properties(minizinc-member PROPERTIES SKIP_RETURN_CODE 66)
 

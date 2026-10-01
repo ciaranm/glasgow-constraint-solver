@@ -11,12 +11,15 @@ namespace gcs
     /**
      * \brief Constrain that vars[0] = vars[1] = ... = vars[n-1].
      *
-     * Achieves GAC in a single propagator pass by intersecting every
-     * variable's domain and pruning each variable to that intersection.
-     * This is strictly stronger per pass than the equivalent chain of
-     * binary Equals constraints, where bound and hole removals would
-     * have to ripple along the chain via the propagation queue, one
-     * step at a time.
+     * Each propagator call prunes every variable to the bounds all the
+     * variables share and, if any domain has holes, to the intersection of
+     * every variable's domain. This is stronger per call than the equivalent
+     * chain of binary Equals constraints, where bound and hole removals
+     * would have to ripple along the chain via the propagation queue, one
+     * step at a time. At its fixpoint it is GAC on distinct variables, but
+     * one call need not reach that fixpoint: over holes a bound can land
+     * inside another variable's interval and need a second call, and a
+     * variable repeated through views changes under its own inferences.
      *
      * \ingroup Constraints
      */
