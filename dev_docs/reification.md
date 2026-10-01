@@ -294,9 +294,25 @@ shape and PB unit propagation closes the gap. But if a constraint emits
 *explicit* RUP scaffolding (e.g., `lex/lex.cc`'s
 `run_lex_undecided_detection`), the scaffolding's reason may need to
 include `cond` or `¬cond` as a literal, depending on which direction is
-being inferred. Lex currently only fully supports the Iff polarity for
-its scaffolded inferences; the NotIf case is latent (and not exposed in
-the public API).
+being inferred. The rule is that the scaffolding lives under the
+*negation of the literal the dispatcher will infer*, since that is what
+the RUP step assumes. A must-not-hold verdict only ever infers `¬cond`
+(under `If` and `Iff`; `NotIf` infers nothing), so its scaffolding goes
+under `cond`. A must-hold verdict infers `cond` under `Iff` but `¬cond`
+under `NotIf` (and nothing under `If`), so its scaffolding goes under `¬cond` or `cond`
+respectively: this is the one case where the right polarity depends on
+the reification kind. Getting it wrong for `NotIf` made VeriPB reject
+Lex's proofs (issue #1137).
+
+The callable receives only the bare condition, not the literal that will
+be inferred, so Lex works out the two literals from `_reif_cond` itself
+in `install_propagators` and captures them into its
+`infer_cond_when_undecided`. That duplicates the dispatcher's policy
+(`cond_to_infer_if_constraint_must_hold` and friends), which
+`install_reified_dispatcher`'s documentation asks constraints not to
+consult, and it is the exception to "One callable per direction" below.
+It is there because nothing else currently tells the callable which
+literal it is justifying.
 
 ### Capture-by-reference inside install_propagators
 
@@ -319,7 +335,9 @@ You don't need to handle `If` vs `NotIf` vs `Iff` differently in your
 callables. The dispatcher (and the `cond_to_infer_*` methods) does that
 for you. Your `enforce_constraint_must_hold` is the same code regardless
 of whether we got there via an `Iff` whose cond is now true, an `If`
-whose cond is now true, or an unconditional `MustHold`.
+whose cond is now true, or an unconditional `MustHold`. The exception is
+an `infer_cond_when_undecided` whose explicit scaffolding names the
+condition: see "Justifications can depend on the cond polarity" above.
 
 ### The `ReificationVerdict` variant carries the inference materials,
 ### but doesn't carry `PropagatorState`

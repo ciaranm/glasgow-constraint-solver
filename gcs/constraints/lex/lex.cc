@@ -337,9 +337,10 @@ namespace
         // at-least-one is then active, and the bounds force every aux flag
         // to FALSE, violating it. We pre-emit those ~aux_flag lines so
         // VeriPB's PB unit propagation can chain. The caller supplies that
-        // literal per verdict, since it depends on the reification kind
-        // (cond inferred under Iff, ~cond under NotIf), or nullopt when the
-        // kind infers nothing for this verdict.
+        // literal per verdict, or nullopt when the kind infers nothing for
+        // the verdict: must-not-hold infers ~cond (under If and Iff), but
+        // must-hold infers cond under Iff and ~cond under NotIf, so it
+        // depends on the reification kind.
         auto reason_under = [&](const optional<Literal> & assumption) {
             auto result = reason;
             if (assumption)
