@@ -1,9 +1,12 @@
 include "globals.mzn";
 
-% Empty and single-element arrays under reification, half-reification and
-% negation. The standard library's reified increasing decomposition is wrong on
-% an empty array, so redefinitions.mzn decides these lengths before reaching it
-% (#1146); minizinc-decreasing-empty-not covers a negation at the top level.
+% Empty and single-element arrays under reification and half-reification, and
+% a reified negation of a single-element array. The standard library's reified
+% increasing decomposition is wrong on an empty array, so redefinitions.mzn
+% decides these lengths before reaching it (#1146). Negations of an empty array
+% are covered by minizinc-decreasing-empty-not and
+% minizinc-strictlydecreasing-empty-not at the top level, and by
+% minizinc-decreasing-empty-halfnot under implication.
 array[1..0] of var 1..3: e;
 array[1..1] of var 1..3: o;
 var bool: r1;
