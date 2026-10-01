@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <sstream>
 #include <string>
+#include <type_traits>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -341,9 +342,13 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                             // the copy, so it is taken only when one will run, and
                             // it costs one step per interval of result, less than
                             // the justification's own walk over result's values.
+                            // The if constexpr keeps it out of the proofs-off
+                            // instantiation altogether, so a run without proofs
+                            // does not even test logger here.
                             IntervalSet<Integer> result_before;
-                            if (logger)
-                                result_before = state.copy_of_values(result);
+                            if constexpr (std::remove_cvref_t<decltype(inference)>::materialises_reasons)
+                                if (logger)
+                                    result_before = state.copy_of_values(result);
                             auto justf = [&, var_i = var_i, v = v](const ReasonLiterals & reason) {
                                 for (auto r : result_before.each()) {
                                     if (min ? r >= v : r <= v)
