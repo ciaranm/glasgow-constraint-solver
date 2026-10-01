@@ -60,6 +60,7 @@
 #include <random>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 #include <version>
@@ -954,26 +955,119 @@ auto main(int argc, char * argv[]) -> int
             cerr, "solution preservation: {} cuts over {} random instances ({} non-unit), {} lifting subproblems", posted, drawn, non_unit, steps);
     }
 
-    // An optional-task donor is declined loudly rather than mis-derived.
+    /* Optional tasks (#1136): the headline instance and the two-resource one,
+     * every task optional, with one presence per task shared by every resource
+     * that posts it. A cut over several resources then carries each member's
+     * row onto its flags through a bridge whose presence conjunct cancels. In
+     * the mixed variant the first resource posts the tasks unconditionally, so
+     * the same start and length is a different column there.
+     *
+     * A solution is the starts followed by the presences, against brute force
+     * that loads a task on a resource wherever that resource says it is there.
+     */
     {
-        auto stats = make_shared<InferredCumulativeStats>();
-        Problem p;
-        vector<IntegerVariableID> starts, presences;
-        for (int i = 0; i < 4; ++i) {
-            starts.push_back(p.create_integer_variable(0_i, 3_i));
-            presences.push_back(p.create_integer_variable(0_i, 1_i));
-        }
-        vector<IntegerVariableID> lengths(4, constant_variable(2_i)),
-            heights{constant_variable(5_i), constant_variable(2_i), constant_variable(2_i), constant_variable(2_i)};
-        p.post(Cumulative{starts, lengths, heights, presences, constant_variable(5_i)});
-        p.add_presolver(InferredCumulative{stats});
-        solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }}, nullopt);
+        auto run = [&](const Instance & instance, bool mixed, const Setup & setup, const optional<string> & proof_name) -> set<vector<int>> {
+            Problem p;
+            auto n = instance.demands.size();
+            vector<IntegerVariableID> starts, presences, lengths;
+            for (std::size_t i = 0; i < n; ++i) {
+                starts.push_back(p.create_integer_variable(0_i, Integer{instance.latest(i)}, "s" + to_string(i)));
+                presences.push_back(p.create_integer_variable(0_i, 1_i, "p" + to_string(i)));
+                lengths.push_back(constant_variable(instance.lengths[i]));
+            }
+            auto resources = instance.resources();
+            for (std::size_t r = 0; r < resources.size(); ++r) {
+                vector<IntegerVariableID> heights;
+                for (const auto & d : resources[r].demands)
+                    heights.push_back(constant_variable(d));
+                if (mixed && r == 0)
+                    p.post(Cumulative{starts, lengths, heights, constant_variable(resources[r].capacity)});
+                else
+                    p.post(Cumulative{starts, lengths, heights, presences, constant_variable(resources[r].capacity)});
+            }
+            auto presolver = InferredCumulative{setup.stats};
+            presolver.with_budgets(setup.max_covers, setup.max_posted).with_proof_mutation(setup.mutation);
+            p.add_presolver(presolver);
 
-        if (stats->declined_optional != 1)
-            fail("an optional-task donor was not declined");
-        if (stats->cuts_posted != 0)
-            fail("an optional-task donor was used anyway");
-        println(cerr, "an optional-task donor is declined");
+            set<vector<int>> solutions;
+            solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                vector<int> solution;
+                for (const auto & v : starts)
+                    solution.push_back(s(v).raw_value);
+                for (const auto & v : presences)
+                    solution.push_back(s(v).raw_value);
+                solutions.insert(move(solution));
+                return true;
+            }},
+                proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+            return solutions;
+        };
+
+        auto brute = [&](const Instance & instance, bool mixed) {
+            auto n = instance.demands.size();
+            auto resources = instance.resources();
+            set<vector<int>> expected;
+            vector<int> current(2 * n, 0);
+            auto ok = [&]() {
+                for (int t = 0; t < instance.horizon; ++t)
+                    for (std::size_t r = 0; r < resources.size(); ++r) {
+                        Integer load = 0_i;
+                        for (std::size_t i = 0; i < n; ++i)
+                            if (((mixed && r == 0) || current[n + i] == 1) && t >= current[i] && t < current[i] + instance.lengths[i].raw_value)
+                                load += resources[r].demands[i];
+                        if (load > resources[r].capacity)
+                            return false;
+                    }
+                return true;
+            };
+            auto recurse = [&](auto && self, std::size_t at) -> void {
+                if (at == 2 * n) {
+                    if (ok())
+                        expected.insert(current);
+                    return;
+                }
+                for (int v = 0; v <= (at < n ? instance.latest(at) : 1); ++v) {
+                    current[at] = v;
+                    self(self, at + 1);
+                }
+            };
+            recurse(recurse, 0);
+            return expected;
+        };
+
+        // Mixed only where there is a second resource for the tasks to be
+        // optional on.
+        for (const auto & [what, instance, mixed] : {std::tuple<string, Instance, bool>{"one resource", lifted_instance(9), false},
+                 std::tuple<string, Instance, bool>{"two resources", two_resource_instance(7), false},
+                 std::tuple<string, Instance, bool>{"two resources", two_resource_instance(7), true}}) {
+            const string label = "optional tasks, " + what + (mixed ? ", mandatory on the first" : "");
+            const string name = "inferred_cumulative_optional";
+            auto expected = brute(instance, mixed);
+            auto unproved = run(instance, mixed, Setup{}, nullopt);
+            if (unproved != expected)
+                fail(label + ": " + to_string(unproved.size()) + " solutions with proofs off, against brute force's " + to_string(expected.size()));
+            auto stats = make_shared<InferredCumulativeStats>();
+            auto got = run(instance, mixed, Setup{.stats = stats}, proofs ? make_optional(name) : nullopt);
+            if (got != expected)
+                fail(label + ": " + to_string(got.size()) + " solutions against brute force's " + to_string(expected.size()));
+            if (! mixed && 0 == stats->cuts_posted)
+                fail(label + ": no cut was posted over the optional tasks");
+            if (proofs)
+                verify_proof_and_clean_up(name);
+            println(cerr, "{}: {} cuts ({} over several resources), {} solutions matching brute force", label, stats->cuts_posted,
+                stats->multi_resource_cuts_posted, got.size());
+        }
+
+        // The derived constraint told the tasks are mandatory when they are
+        // not: it then claims a load no schedule need carry. Refused.
+        if (proofs) {
+            const string name = "inferred_cumulative_optional_mutation";
+            run(lifted_instance(9), false, Setup{.mutation = inferred_cumulative_mutation::ForgetPresence{}}, make_optional(name));
+            if (run_veripb(name + ".opb", name + ".pbp"))
+                fail("veripb accepted a cut over optional tasks posted as mandatory");
+            println(cerr, "veripb rejected the forgotten presence, as expected");
+            dispose_of_proof_files(name);
+        }
     }
 
     /* The diagnostics channel (#662, #723). What a counter says is how many,
@@ -1039,8 +1133,8 @@ auto main(int argc, char * argv[]) -> int
 
         const vector<string> expected_names{"donors_seen", "tasks", "covers_considered", "lifting_subproblems", "lifting_subproblems_over_budget",
             "cuts_found", "cuts_uncertifiable", "cuts_posted", "non_unit_cuts_posted", "multi_resource_cuts_posted", "restricted_rows_rebuilt",
-            "largest_capacity_bound", "certified_makespan_bound", "declined_optional", "declined_irreducible_capacity", "donors_with_set_aside_tasks",
-            "converted_heights", "dropped_dominated", "dropped_over_budget", "dropped_over_state_budget", "declined_by_install"};
+            "largest_capacity_bound", "certified_makespan_bound", "declined_irreducible_capacity", "donors_with_set_aside_tasks", "converted_heights",
+            "dropped_dominated", "dropped_over_budget", "dropped_over_state_budget", "declined_by_install"};
         if (names_of(InferredCumulativeStats{}) != expected_names)
             fail("the flat view is [" + joined(names_of(InferredCumulativeStats{})) + "], expected [" + joined(expected_names) +
                 "]. These names are public, so this is a user-visible change and not a tidy-up.");
@@ -1095,33 +1189,32 @@ auto main(int argc, char * argv[]) -> int
         }
 
         // A decline: General, naming the constraint it is about, and not
-        // Important --- nothing was limited, and a donor this presolver cannot
-        // bridge across is not a configuration the caller can change. If
-        // everything is Important then nothing is.
+        // Important --- nothing was limited, and a donor whose capacity is a
+        // view is not a configuration the caller can change. If everything is
+        // Important then nothing is.
         {
             Problem p;
-            vector<IntegerVariableID> starts, presences;
-            for (int i = 0; i < 4; ++i) {
+            vector<IntegerVariableID> starts;
+            for (int i = 0; i < 4; ++i)
                 starts.push_back(p.create_integer_variable(0_i, 3_i));
-                presences.push_back(p.create_integer_variable(0_i, 1_i));
-            }
+            auto capacity = p.create_integer_variable(0_i, 4_i);
             vector<IntegerVariableID> lengths(4, constant_variable(2_i)),
                 heights{constant_variable(5_i), constant_variable(2_i), constant_variable(2_i), constant_variable(2_i)};
-            p.post(Cumulative{starts, lengths, heights, presences, constant_variable(5_i)});
+            p.post(Cumulative{starts, lengths, heights, capacity + 1_i});
             p.add_presolver(InferredCumulative{});
             auto recorded = solve_recording(p);
 
             auto general = notes_at(recorded, StatsLevel::General);
             if (general.size() != 1)
-                fail("an optional-task decline reported " + to_string(general.size()) + " General notes, not one");
+                fail("a view-capacity decline reported " + to_string(general.size()) + " General notes, not one");
             if (! general[0].constraint)
                 fail("the note does not carry the constraint it is about, so nothing can filter on it");
             if (general[0].component != "inferred_cumulative")
                 fail("the note is not attributed to this presolver");
-            if (string::npos == general[0].text.find("optional"))
+            if (string::npos == general[0].text.find("view"))
                 fail("the note does not say what was wrong: " + general[0].text);
             if (! notes_at(recorded, StatsLevel::Important).empty())
-                fail("an optional-task decline raised an Important note");
+                fail("a view-capacity decline raised an Important note");
         }
 
         // The output budget, which does carry a figure a caller would act on,

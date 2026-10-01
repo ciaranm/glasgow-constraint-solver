@@ -3,6 +3,7 @@
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
 #include <gcs/constraints/cumulative/donor_view.hh>
 #include <gcs/constraints/cumulative/propagate.hh>
+#include <gcs/constraints/innards/task_presence.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/proofs/am1_from_pairs.hh>
 #include <gcs/innards/proofs/am1_from_row.hh>
@@ -25,6 +26,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -62,19 +64,26 @@ namespace
         Integer height;
     };
 
-    /// A task, as the conflict graph sees it. Identified by its start variable,
-    /// which is what makes two donors' entries the same task.
+    /// A task, as the conflict graph sees it. Identified by its start variable
+    /// and its presence, which is what makes two donors' entries the same task
+    /// (#1136): the bridge from one donor's activity flag to another's cancels
+    /// the presence conjunct only when both carry the same one.
     struct Task
     {
         IntegerVariableID start;
+        /// The presence literal the donors' activity flags carry for this task,
+        /// as task_presence resolves it, or nullopt if it is unconditionally
+        /// present.
+        optional<IntegerVariableID> presence;
         /// As posted, which may be a variable: it is what the derived
         /// constraint is given, so that its propagator reads the same duration
         /// the donor's flags were reified on.
         IntegerVariableID length;
-        /// The duration this task is guaranteed to occupy, lb(length). What a
+        /// The duration this task is guaranteed to occupy: lb(length), or zero
+        /// for an optional task, which need not be scheduled at all. What a
         /// clique can *say* about the schedule is a statement about durations
-        /// every solution has to contain, so it is the smallest one still
-        /// allowed that every energy sum and every ranking here counts.
+        /// every solution has to contain, so this is what every energy sum and
+        /// every ranking here counts.
         Integer least_length;
         Integer t_lo, t_hi;
         vector<Appearance> appearances;
@@ -203,27 +212,12 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     // Collect the tasks, keyed by start variable so that the same task on two
     // resources is one node of the conflict graph.
     vector<Task> tasks;
-    map<IntegerVariableID, size_t> task_of_start;
+    map<pair<IntegerVariableID, optional<IntegerVariableID>>, size_t> task_of_start;
     vector<Resource> resources;
     DonorViews views;
 
     for (const auto & donor : cumulative_donors(problem, propagators)) {
         bump(&InferredDisjunctiveStats::donors_seen);
-
-        // The mechanism no longer minds an optional donor --- a presence is a
-        // conjunct of the activity flag, so the rows this argues over are the
-        // same shape, and install_derived_cumulative carries the literal into
-        // the reasons. What is still open here is the *cross-donor* half: this
-        // presolver draws tasks from several Cumulatives and bridges one
-        // donor's flags to another's, and two donors' activity flags cancel
-        // against each other only if their presence conjuncts do too. Declined
-        // until that has a rule of its own rather than a hopeful `pol`.
-        if (! donor.presences.empty()) {
-            bump(&InferredDisjunctiveStats::declined_optional);
-            note(StatsLevel::General, donor.key.id,
-                "passed over: it has optional tasks, whose presence conjuncts do not yet cancel across a bridge between donors");
-            continue;
-        }
 
         // What of this donor an inferred constraint can argue over: its
         // capacity as a number, and the tasks whose height is the constant its
@@ -253,11 +247,20 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         views.emplace(donor.key, *view);
 
         for (auto i : view->usable) {
-            auto found = task_of_start.find(starts[i]);
+            // An optional task is a node like any other, its presence a
+            // conjunct of every activity flag the rows are over (#1136). Part of
+            // its identity, so that the one bridge a clique can need, from a
+            // member's flag on its home donor to its flag on a witness, joins
+            // two flags carrying the same presence literal: the `pol` then
+            // cancels it as it cancels the shared terms of `before` and `after`.
+            // The same start under a different presence, or optional on one
+            // donor and not another, is a different node, needing no bridge.
+            auto presence = task_presence(view->presences.empty() ? nullopt : std::make_optional(view->presences[i]), "Cumulative").literal;
+            auto found = task_of_start.find(pair{starts[i], presence});
             if (found == task_of_start.end()) {
                 auto window = cumulative_task_window(state, starts[i], lengths[i]);
-                found = task_of_start.emplace(starts[i], tasks.size()).first;
-                tasks.push_back(Task{starts[i], lengths[i], state.lower_bound(lengths[i]), window.lo, window.hi, {}});
+                found = task_of_start.emplace(pair{starts[i], presence}, tasks.size()).first;
+                tasks.push_back(Task{starts[i], presence, lengths[i], presence ? 0_i : state.lower_bound(lengths[i]), window.lo, window.hi, {}});
             }
             else if (tasks[found->second].length != lengths[i]) {
                 // Two resources disagreeing about a duration is not something
@@ -550,8 +553,12 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
             const auto & home = tasks[i].appearances.front();
             auto link = makespan_links.find(tasks[i].start);
             links.push_back(link == makespan_links.end() ? std::nullopt : optional<makespan_energy::MakespanLink>{link->second});
-            derived_tasks.push_back(DerivedCumulativeTask{
-                .donor = home.donor.id, .position = home.position, .start = tasks[i].start, .length = tasks[i].length, .height = 1_i});
+            derived_tasks.push_back(DerivedCumulativeTask{.donor = home.donor.id,
+                .position = home.position,
+                .start = tasks[i].start,
+                .length = tasks[i].length,
+                .height = 1_i,
+                .presence = std::holds_alternative<inferred_disjunctive_mutation::ForgetPresence>(_mutation) ? nullopt : tasks[i].presence});
         }
         for (size_t a = 0; a < clique.size(); ++a)
             for (size_t b = a + 1; b < clique.size(); ++b)
@@ -831,7 +838,6 @@ auto InferredDisjunctiveStats::entries() const -> vector<StatsEntry>
     add("resources_with_set_aside_tasks", resources_with_set_aside_tasks);
     add("converted_heights", converted_heights);
     add("bridges_derived", bridges_derived);
-    add("declined_optional", declined_optional);
     add("declined_irreducible_capacity", declined_irreducible_capacity);
     add("dropped_too_small", dropped_too_small);
     add("dropped_subset", dropped_subset);

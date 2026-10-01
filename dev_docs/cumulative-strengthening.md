@@ -349,9 +349,9 @@ identically. What the presence changes is the reasons the derived constraint's
 propagator gives, which `install_derived_cumulative` handles once it is told the
 donor's presence arguments — see
 [cumulative-proof-logging.md](cumulative-proof-logging.md). `InferredDisjunctive`
-and `InferredCumulative` still decline, for a reason that is theirs rather than
-this one's: they bridge flags between donors, and a presence conjunct has to
-cancel across that bridge first.
+and `InferredCumulative`, which bridge flags between donors, take optional donors
+too since #1136, by only ever bridging between flags that carry the same presence
+literal.
 
 Variable lengths and heights are deliberately **not** on this list either, and
 nor is a variable capacity. `CumulativeDonorView`

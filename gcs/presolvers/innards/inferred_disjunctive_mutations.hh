@@ -64,11 +64,19 @@ namespace gcs::innards
         struct ClaimHigherMakespanBound
         {
         };
+
+        /// Post a clique's optional members as if they were mandatory (#1136):
+        /// the derived constraint then loads the resource with tasks that need
+        /// not be there, and gives reasons without the presence literals its
+        /// flags are reified on.
+        struct ForgetPresence
+        {
+        };
     }
 
-    using InferredDisjunctiveMutation =
-        std::variant<inferred_disjunctive_mutation::None, inferred_disjunctive_mutation::ClaimRhsZero, inferred_disjunctive_mutation::BridgeWrongTask,
-            inferred_disjunctive_mutation::IncludeNonConflicting, inferred_disjunctive_mutation::ClaimHigherMakespanBound>;
+    using InferredDisjunctiveMutation = std::variant<inferred_disjunctive_mutation::None, inferred_disjunctive_mutation::ClaimRhsZero,
+        inferred_disjunctive_mutation::BridgeWrongTask, inferred_disjunctive_mutation::IncludeNonConflicting,
+        inferred_disjunctive_mutation::ClaimHigherMakespanBound, inferred_disjunctive_mutation::ForgetPresence>;
 }
 
 #endif
