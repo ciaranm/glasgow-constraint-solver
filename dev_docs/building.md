@@ -48,6 +48,37 @@ given up is macros and local-variable DWARF, and those want a debugger — which
 is what the `Debug` configuration is for. Build `Debug` when you are going to
 attach one.
 
+### The Sanitize build uses a shared library
+
+The `-g1` figures above are for a static build, and the tree kept growing: by
+the end of September 2026 a static Sanitize tree was 91 GiB again, 85 GiB of it
+in the programs. DWARF was no longer most of it. `among_test` was a 610 MiB
+binary, of which 206 MiB was `.data` and 185 MiB `.rela.dyn` (8 million
+relative relocations). That is sanitizer bookkeeping: UBSan emits a data record
+for every check it inserts (`among.cc.o` alone has over 32,000), ASan
+instruments each of those as a global, and the pointers in both need
+relocating. Every program carried its own copy of the solver's.
+
+So the `sanitize` preset sets `GCS_SHARED_LIBRARY=ON`, and every program links
+one `libglasgow_constraint_solver.so` instead. The same tree came to 7.0 GiB:
+a 646 MiB library, 2.7 GiB of programs (the largest 45 MiB), and 3.2 GiB of
+object files. It also built in under 4 minutes rather than 5 on 192 cores (one
+run each), since there is much less to link.
+
+Sanitize also links with `-Wl,-z,pack-relative-relocs`, which stores the
+relative relocations as a DT_RELR bitmap rather than 24 bytes apiece, and
+`-Wl,--compress-debug-sections=zlib`. Each is added only if a check finds the
+linker accepts it, since Apple's does not. Together they halve what is linked:
+a 340 MiB library and 1.55 GiB of programs (the largest 26 MiB), for a 5.6 GiB
+tree, of which the object files are now most. Compressed DWARF costs nothing
+that matters: an ASan report still names each frame's `file:line`, including
+frames inside the shared library.
+
+Release stays static, because Release is what gets benchmarked. In a shared
+library every call to an exported function, including the library's calls to
+itself, goes through the PLT rather than being linked direct. `-fPIC` is not
+the difference: `CMAKE_POSITION_INDEPENDENT_CODE` is on in every build.
+
 ### The per-configuration flags must stay plain `set()`
 
 The `CMAKE_CXX_FLAGS_<CONFIG>` assignments near the top of `CMakeLists.txt` are
@@ -101,6 +132,7 @@ hw.logicalcpu)`.
 | `GCS_ENABLE_DOXYGEN` | `OFF` | Adds the `docs` target |
 | `GCS_NATIVE_ARCH` | `ON` | `-march=native` on Release. Turn off for redistributable binaries such as wheels |
 | `GCS_WERROR` | `OFF` | `-Werror`. One CI lane only — see below |
+| `GCS_SHARED_LIBRARY` | `BUILD_SHARED_LIBS`, i.e. off | Build the solver as a shared library. The `sanitize` preset turns it on, for disk space (see above). Refused on Windows (no DLL exports) and with `GCS_ENABLE_PYTHON` (the wheel does not carry the library) |
 | `GCS_ENABLE_VIEW_WRAP_SWEEP` | `OFF` | The full view-wrap proof sweep; see [view-proof-logging.md](view-proof-logging.md) |
 | `GCS_LARGE_DOMAIN_GUARD` | `OFF` | Development tripwire for width-proportional work, plus the audit lane; see [large-domains.md](large-domains.md) |
 | `GCS_TEST_CAP_DEFAULTS` | `ON` | Per-solve caps on the data-driven constraint tests; see [constraints.md](constraints.md) |
@@ -300,7 +332,7 @@ Every push to `main` and every pull request runs:
 | `ubuntu-26.04`, default GCC | Test caps off, and the only lane with `-DGCS_WERROR=ON` |
 | `ubuntu-26.04`, clang | clang + libstdc++, including the lifetime-annotation probe tests |
 | `macos-15`, `macos-26` | Apple Clang + libc++ |
-| `ubuntu-26.04` Sanitize | ASan + UBSan, through the `sanitize` test preset |
+| `ubuntu-26.04` Sanitize | ASan + UBSan, through the `sanitize` test preset, against a shared library to fit the runner's disk |
 | `windows-2022` | MSVC: library and ctest, then the XCSP3 / MiniZinc / Python frontends, then VeriPB |
 | `clang-format` | `--dry-run --Werror` over the whole tree |
 

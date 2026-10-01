@@ -36,6 +36,12 @@ endif()
 configure_file(glasgow.msc.in ${CMAKE_CURRENT_BINARY_DIR}/install/glasgow.msc @ONLY)
 
 install(TARGETS fzn-glasgow RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT minizinc)
+# A static fzn-glasgow is self-contained, but a shared one needs the library
+# beside it, and `--component minizinc` must install something that runs.
+# minizinc-installed-msc is the test that notices.
+if(GCS_SHARED_LIBRARY)
+    install(TARGETS glasgow_constraint_solver LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT minizinc)
+endif()
 install(DIRECTORY mznlib/ DESTINATION ${_gcs_mznlib_install_dir} COMPONENT minizinc)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/install/glasgow.msc DESTINATION ${_gcs_msc_install_dir} COMPONENT minizinc)
 
