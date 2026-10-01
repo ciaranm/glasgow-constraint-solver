@@ -313,7 +313,12 @@ set_tests_properties(minizinc-crystalmaze PROPERTIES SKIP_RETURN_CODE 66)
 # (#1146). The fzn counts are what notice that happening again: every shape in
 # decreasingshapes, and the one in each single-shape lane, must reach a builtin.
 # decreasingreif checks that the reified and half-reified forms, which have no
-# builtin, still flatten.
+# builtin, still flatten. The standard library's reified increasing
+# decomposition is wrong on an empty array, so the overloads decide arrays of
+# length 0 or 1 themselves; decreasingtrivial and the two empty-not lanes check
+# those lengths under reification, half-reification and negation. MiniZinc
+# finds the empty-not models inconsistent while flattening, so the solver never
+# runs and there is no proof to check.
 add_test(NAME minizinc-decreasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 1 glasgow_increasing_int $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ decreasingtest true true)
 set_tests_properties(minizinc-decreasing PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -322,6 +327,15 @@ set_tests_properties(minizinc-decreasing-shapes PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-decreasing-reif COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ decreasingreif true true)
 set_tests_properties(minizinc-decreasing-reif PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-decreasing-trivial COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ decreasingtrivial true true)
+set_tests_properties(minizinc-decreasing-trivial PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-decreasing-empty-not COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --unsatisfiable --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ decreasingemptynot true false)
+set_tests_properties(minizinc-decreasing-empty-not PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-strictlydecreasing-empty-not COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --unsatisfiable --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ strictlydecreasingemptynot true false)
+set_tests_properties(minizinc-strictlydecreasing-empty-not PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-disjointdomain COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjointdomain true true)
 set_tests_properties(minizinc-disjointdomain PROPERTIES SKIP_RETURN_CODE 66)

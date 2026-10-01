@@ -11,5 +11,13 @@ include "nosets.mzn";
 % that is its standard library's spelling.
 include "increasing.mzn";
 include "strictly_increasing.mzn";
-predicate decreasing(array [$X] of var $$E: xs) = increasing(reverse(array1d(xs)));
-predicate strictly_decreasing(array [$X] of var $$E: xs) = strictly_increasing(reverse(array1d(xs)));
+%
+% Arrays of length 0 or 1 are decided here, because the standard library's
+% fzn_increasing_int_reif and fzn_strictly_increasing_int_reif take the
+% minimum of the array's index set, which is undefined on an empty array, so
+% without the guard r <-> decreasing([]) is unsatisfiable and
+% not decreasing([]) is satisfiable.
+predicate decreasing(array [$X] of var $$E: xs) =
+    if length(xs) <= 1 then true else increasing(reverse(array1d(xs))) endif;
+predicate strictly_decreasing(array [$X] of var $$E: xs) =
+    if length(xs) <= 1 then true else strictly_increasing(reverse(array1d(xs))) endif;
