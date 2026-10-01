@@ -1,4 +1,11 @@
-add_library(glasgow_constraint_solver
+# Static unless GCS_SHARED_LIBRARY says otherwise; see that option for why.
+if(GCS_SHARED_LIBRARY)
+    set(_gcs_library_type SHARED)
+else()
+    set(_gcs_library_type STATIC)
+endif()
+
+add_library(glasgow_constraint_solver ${_gcs_library_type}
         constraint.cc
         current_state.cc
         exception.cc
