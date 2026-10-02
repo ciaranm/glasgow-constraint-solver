@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_GLOBAL_CARDINALITY_JUSTIFY_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_GLOBAL_CARDINALITY_JUSTIFY_HH
 
+#include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
@@ -18,6 +19,35 @@ namespace gcs::innards
     // The two count lines for each cover value, {Sum_i x_{i=v} <= c_v,
     // Sum_i x_{i=v} >= c_v}, as emitted by the proof model.
     using GCCCountLines = std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>>;
+
+    /**
+     * \brief Make a Hall inference whose reason and justification both read the
+     * state it was decided in, not the state after it.
+     *
+     * The single-literal infer() pushes the literal first and then runs the
+     * justification, and a LazyReasonOver is materialised after the push too
+     * (snapshot_reason, in inference_tracker.hh). The Hall reasons and pols read
+     * the domains of other positions and the counts' bounds, and when the array
+     * holds a variable and a view of it, or a count is itself one of the
+     * variables or a view of another count, the push moves those too: the reason
+     * could come out naming the conclusion itself, or the pol could state a
+     * bound the reason does not, and VeriPB rejected the proof (issue #1191).
+     *
+     * So when a proof is being written, build the reason now and go through
+     * infer_all(), which emits the justification's steps before it pushes
+     * anything and closes each literal with a RUP under that same reason.
+     * Without a logger nothing is logged and the reason is never read, so this
+     * is the plain infer() with no reason, exactly as before.
+     */
+    template <typename Inference_, typename Emit_, typename Hint_, typename BuildReason_>
+    auto infer_hall_before_push(Inference_ & inference, ProofLogger * const logger, const Literal & lit, const JustifyExplicitly<Emit_, Hint_> & why,
+        BuildReason_ && build_reason) -> void
+    {
+        if (logger && inference.want_reasons())
+            inference.infer_all(logger, std::vector<Literal>{lit}, why, Reason{ExplicitReason{build_reason()}});
+        else
+            inference.infer(logger, lit, why, Reason{NoReason{}});
+    }
 
     /**
      * \brief Emit the capacity-cut aggregate for a set W of cover values.

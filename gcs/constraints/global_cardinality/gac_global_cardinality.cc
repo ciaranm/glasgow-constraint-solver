@@ -623,14 +623,12 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
                     if (subset)
                         confined.push_back(vars[k]);
                 }
-                inference.infer(logger, vars[i] != value,
+                infer_hall_before_push(inference, logger, vars[i] != value,
                     JustifyExplicitly{[&, cut_values, confined](const ReasonLiterals &) {
                                           emit_gcc_capacity_pol(*logger, state, vars, values, counts, count_lines, cut_values, confined);
                                       },
                         ThenRUP::Yes, hints::GlobalCardinality{owner}},
-                    LazyReasonOver{vars, [&, cut_values, confined](const State &, ReasonLiterals & out) {
-                                       out = gcc_capacity_reason(state, values, counts, cut_values, confined);
-                                   }});
+                    [&] { return gcc_capacity_reason(state, values, counts, cut_values, confined); });
             }
             else {
                 // Demand cut: cover values inside the cut are at their lower bound.
@@ -651,15 +649,13 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
                     if (meets)
                         potential.push_back(vars[k]);
                 }
-                inference.infer(logger, vars[i] != value,
+                infer_hall_before_push(inference, logger, vars[i] != value,
                     JustifyExplicitly{//
                         [&, cut_values, potential, value = value, i = i](const ReasonLiterals &) {
                             emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], value);
                         },
                         ThenRUP::Yes, hints::GlobalCardinality{owner}},
-                    LazyReasonOver{vars, [&, cut_values, potential](const State &, ReasonLiterals & out) {
-                                       out = gcc_demand_reason(state, vars, values, counts, cut_values, potential);
-                                   }});
+                    [&] { return gcc_demand_reason(state, vars, values, counts, cut_values, potential); });
             }
         }
 
@@ -689,15 +685,13 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
         }
         for (const auto & val : state.each_value_mutable(vars[i]))
             if (! in_cover(val))
-                inference.infer(logger, vars[i] != val,
+                infer_hall_before_push(inference, logger, vars[i] != val,
                     JustifyExplicitly{//
                         [&, cut_values, potential, val = val, i = i](const ReasonLiterals &) {
                             emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], val);
                         },
                         ThenRUP::Yes, hints::GlobalCardinality{owner}},
-                    LazyReasonOver{vars, [&, cut_values, potential](const State &, ReasonLiterals & out) {
-                                       out = gcc_demand_reason(state, vars, values, counts, cut_values, potential);
-                                   }});
+                    [&] { return gcc_demand_reason(state, vars, values, counts, cut_values, potential); });
     }
 
     return PropagatorState::Enable;
