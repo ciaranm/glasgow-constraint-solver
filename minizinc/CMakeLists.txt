@@ -527,6 +527,15 @@ set_tests_properties(minizinc-tablebool PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-tableint COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ tableint true true)
 set_tests_properties(minizinc-tableint PROPERTIES SKIP_RETURN_CODE 66)
 
+# Duplicate rows, which MiniZinc keeps: every solution is matched by two rows,
+# and the proof's solution lines used to fail (issue #1115). One enumerates
+# (solx), the other optimises (soli).
+add_test(NAME minizinc-tableintduplicates COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_table_int $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ tableintduplicates true true)
+set_tests_properties(minizinc-tableintduplicates PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-tableintduplicatesopt COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_table_int $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ tableintduplicatesopt false true)
+set_tests_properties(minizinc-tableintduplicatesopt PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-times COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ times true true)
 set_tests_properties(minizinc-times PROPERTIES SKIP_RETURN_CODE 66)
 

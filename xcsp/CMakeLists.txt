@@ -122,6 +122,10 @@ add_xcsp_test(disjunctive)
 add_xcsp_test(no_overlap_var)
 add_xcsp_test(no_overlap_2d)
 add_xcsp_test(no_overlap_2d_var)
+# Overlapping supports: wildcard rows covering each other, and an exact
+# duplicate, through the shared-tuples path a group uses. Solutions that two
+# rows match used to make the proof's solution lines fail (issue #1115).
+add_xcsp_test(extension_overlap)
 add_xcsp_test(instantiation)
 add_xcsp_test(intension_arithmetic)
 add_xcsp_test(intension_basic)

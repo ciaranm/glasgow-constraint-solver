@@ -29,6 +29,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::holds_alternative;
+using std::nullopt;
 using std::optional;
 using std::string;
 using std::stringstream;
@@ -124,7 +125,7 @@ auto Table::prepare(Propagators & propagators, State & initial_state, ProofModel
             if (depointinate(tuples).empty()) {
                 // No allowed tuples means the constraint is UNSAT. We let
                 // define_proof_model emit a trivially-false `0 >= 1` constraint
-                // (which is morally what an empty selector domain encodes), and
+                // (which is morally an at-least-one over no tuples), and
                 // install_propagators installs a contradiction initialiser. Skip
                 // building the live-tuple set: it would be empty and the
                 // propagator won't run anyway.
@@ -160,38 +161,49 @@ auto Table::prepare(Propagators & propagators, State & initial_state, ProofModel
 auto Table::define_proof_model(ProofModel & model, const State &) -> void
 {
     if (_has_no_tuples) {
-        // Morally equivalent to a selector with empty domain (`0 ≥ 1`).
+        // Morally an at-least-one over no tuples (`0 ≥ 1`).
         model.add_constraint(WPBSum{} >= 1_i);
         return;
     }
 
     visit(
         [&](auto && tuples) {
-            // Proof-only: the selector exists so the encoding has something to
-            // name, and nothing in the proof ever cites it -- the per-tuple rows
-            // below are all VeriPB needs to re-derive `selector != i` by unit
-            // propagation when it checks one of the propagator's RUP steps. So it
-            // gets no State, no domain, and no propagation cost.
-            auto selector = model.create_proof_only_integer_variable(0_i, Integer(depointinate(tuples).size() - 1),
-                "aux_table" + as_string(_constraint_id), IntegerVariableProofRepresentation::DirectOnly);
-
-            // pb encoding, if necessary
+            // One flag per tuple, reified both ways against "tuple j matches",
+            // and an at-least-one over the flags, which is cake_pb_cp's
+            // encoding. Nothing in the proof ever cites a flag: the forward
+            // halves are all VeriPB needs to re-derive `¬flag` by unit
+            // propagation when it checks one of the propagator's RUP steps.
+            //
+            // The reverse halves are what a solution line needs. Tuples may
+            // overlap (a duplicate row, or a wildcard row covering another),
+            // so a solution can match two rows. Without the reverse halves
+            // their flags are left unassigned, and VeriPB cannot see that the
+            // at-least-one holds (#1115). There is no at-most-one: with both
+            // halves it would make an assignment two rows match infeasible.
+            WPBSum at_least_one;
             for (const auto & [tuple_idx, tuple] : enumerate(depointinate(tuples))) {
-                // selector == tuple_idx -> /\_i vars[i] == tuple[i]
                 bool infeasible = false;
                 WPBSum lits;
-                lits += Integer(tuple.size()) * (selector != Integer(tuple_idx));
                 for (const auto & [var_idx, var] : enumerate(_vars)) {
                     if (is_immediately_infeasible(var, tuple[var_idx]))
                         infeasible = true;
                     else
                         add_lit_unless_immediately_true(lits, var, tuple[var_idx]);
                 }
-                if (infeasible)
-                    model.add_constraint(WPBSum{} + 1_i * (selector != Integer(tuple_idx)) >= 1_i);
-                else
-                    model.add_constraint(lits >= Integer(lits.terms.size() - 1));
+                vector<long long> index{static_cast<long long>(tuple_idx)};
+                if (infeasible) {
+                    // The tuple can never match, so the flag is simply false,
+                    // and the reverse half would be trivially satisfied.
+                    auto flag = model.create_proof_flag(_constraint_id, index, nullopt);
+                    model.add_constraint(WPBSum{} + 1_i * ! flag >= 1_i);
+                    at_least_one += 1_i * flag;
+                }
+                else {
+                    auto n_lits = Integer(lits.terms.size());
+                    at_least_one += 1_i * model.create_proof_flag_fully_reifying(_constraint_id, index, nullopt, move(lits) >= n_lits);
+                }
             }
+            model.add_labelled_constraint(_constraint_id, "al1", move(at_least_one) >= 1_i);
         },
         move(_tuples));
 }

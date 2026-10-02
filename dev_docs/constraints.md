@@ -742,8 +742,11 @@ variables, the flag could still be either 0 or 1, so any later
 constraint that *requires* the flag to be a particular value
 (e.g. an at-least-one selector sum `Σ sel_i ≥ 1`) will fail
 verification on `solx`. Full reif lets unit propagation determine
-the flag from the underlying variables, mirroring what `Count` and
-`SmartTable` do.
+the flag from the underlying variables, mirroring what `Count`,
+`SmartTable` and `Table` do. If the alternatives can overlap, as a
+table's rows can, put an at-least-one over the flags and no
+at-most-one: with both halves, an at-most-one makes an assignment
+that two alternatives match infeasible (#1115).
 
 **When half reif is still right.** If the flag is acting as a
 *selector* — i.e. the reverse half is a *different* inequality, not

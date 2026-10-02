@@ -429,12 +429,12 @@ namespace gcs::innards
         Reason reason;
 
         /**
-         * The live-tuple set. There is deliberately no selector variable here: the
-         * selector exists only so that the OPB encoding has something to name, so
-         * it is a proof-only variable owned by define_proof_model and the
-         * propagator never sees it. Nothing this propagator infers mentions it --
-         * the selector prunings were always NoJustificationNeeded, and VeriPB
-         * re-derives them by unit propagation when it checks a `var != val` RUP.
+         * The live-tuple set. There is deliberately no selector here: Table's
+         * per-tuple flags exist only so that the OPB encoding has something to
+         * name, so they are proof flags owned by define_proof_model and the
+         * propagator never sees them. Nothing this propagator infers mentions
+         * them -- VeriPB re-derives a dead tuple's `~flag` by unit propagation
+         * when it checks a `var != val` RUP.
          */
         std::shared_ptr<ExtensionalLiveTuples> live;
 
