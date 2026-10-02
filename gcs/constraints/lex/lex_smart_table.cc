@@ -63,6 +63,7 @@ auto LexSmartTable::prepare(Propagators & propagators, State & initial_state, Pr
     all_vars.insert(all_vars.end(), _vars_2.begin(), _vars_2.end());
 
     auto smt_table = SmartTable{all_vars, tuples};
+    smt_table.set_constraint_id(constraint_id());
     move(smt_table).install(propagators, initial_state, optional_model);
 
     return false;
