@@ -194,15 +194,20 @@ namespace
 
     // A load operand need not be a plain variable: the class takes
     // vector<IntegerVariableID>, so the C++ API can hand it a view or a
-    // constant. Stage 4 reads each bin's ceiling out of a `pol`, which cannot
-    // cite either of those, so it has to step around such a bin rather than
-    // throw --- and the answer has to come out the same whether or not proofs
-    // are being written.
+    // constant. Stage 4 reads each bin's ceiling out of a `pol`, which it
+    // cites only for a plain variable, so it has to step around such a bin
+    // rather than throw --- and the answer has to come out the same whether or
+    // not proofs are being written. Stage 3's upfront proof cites the load's
+    // bound in a `pol` too, and used to throw for a constant or a view load
+    // (issue #1195), so `upfront` runs the same model under that strategy,
+    // with or without Shaw.
     auto run_stage4_degenerate_load_test(bool proofs, const vector<pair<int, int>> & item_ranges, const vector<int> & sizes,
-        const vector<pair<int, int>> & load_ranges, size_t view_load, std::optional<size_t> constant_load, int constant_value) -> void
+        const vector<pair<int, int>> & load_ranges, size_t view_load, std::optional<size_t> constant_load, int constant_value, bool shaw = true,
+        bool upfront = false, bool negated_view = false) -> void
     {
-        print(cerr, "bin_packing stage4 degenerate loads {} sizes={} loads={} view@{}{}{}", item_ranges, sizes, load_ranges, view_load,
-            constant_load ? " constant@" + std::to_string(*constant_load) : "", proofs ? " with proofs:" : ":");
+        print(cerr, "bin_packing stage4 degenerate loads {} sizes={} loads={} {}view@{}{}{}{}{}", item_ranges, sizes, load_ranges,
+            negated_view ? "negated " : "", view_load, constant_load ? " constant@" + std::to_string(*constant_load) : "", shaw ? "" : " no-shaw",
+            upfront ? " upfront" : "", proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = item_ranges.size();
@@ -233,6 +238,8 @@ namespace
             auto & [lo, hi] = load_ranges[b];
             if (constant_load && b == *constant_load)
                 loads.push_back(ConstantIntegerVariableID{Integer{constant_value}});
+            else if (b == view_load && negated_view)
+                loads.push_back(-p.create_integer_variable(Integer{3 - hi}, Integer{3 - lo}) + 3_i);
             else if (b == view_load)
                 loads.push_back(p.create_integer_variable(Integer{lo - 3}, Integer{hi - 3}) + 3_i);
             else
@@ -243,7 +250,12 @@ namespace
         for (auto sz : sizes)
             sizes_i.push_back(Integer{sz});
 
-        p.post(BinPacking{items, sizes_i, loads}.with_cardinality_reasoning(bin_packing::Shaw{}));
+        BinPacking bin_packing{items, sizes_i, loads};
+        if (shaw)
+            bin_packing.with_cardinality_reasoning(bin_packing::Shaw{});
+        if (upfront)
+            bin_packing.with_proof_strategy(proof_strategy::Upfront{});
+        p.post(bin_packing);
 
         auto proof_name = proofs ? make_optional<std::string>("bin_packing_stage4_degen_test") : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{items, loads});
@@ -259,6 +271,78 @@ namespace
     // constant has no literal in any bin's row for that row to cancel: the OPB
     // folds it into its bin's right-hand side. With `load_form`, each bin gets a
     // load variable over 0..capacity in place of the constant capacity.
+    // An item that is the same view, y + 2, as the load of a bin after bin 0.
+    // The view gets its own bit vector at the first row naming it as an
+    // integer term, which used to be that bin's row, so the rows before it
+    // spelled the item's eq atoms through y and everything after spelled them
+    // over the view's vector, and the pols over the earlier rows did not
+    // cancel. Both proof strategies were affected; the upfront one reaches it
+    // only now that a view load no longer throws (issue #1195).
+    auto run_item_view_load_test(bool proofs, bool upfront, bool shaw, const vector<pair<int, int>> & item_ranges, pair<int, int> view_range,
+        const vector<int> & sizes, size_t view_bin, const vector<int> & load_uppers) -> void
+    {
+        print(cerr, "bin_packing item view as load items={} view={} sizes={} view_bin={} load_uppers={}{}{}{}", item_ranges, view_range, sizes,
+            view_bin, load_uppers, upfront ? " upfront" : "", shaw ? " shaw" : "", proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto num_bins = load_uppers.size();
+        // The plain variables, in order: the items but the last, then y + 2's
+        // value, then every load but the view one.
+        vector<pair<int, int>> ranges = item_ranges;
+        ranges.push_back(view_range);
+        for (size_t b = 0; b < num_bins; ++b)
+            if (b != view_bin)
+                ranges.emplace_back(0, load_uppers[b]);
+
+        auto is_satisfying = [&](const vector<int> & vals) {
+            vector<int> load(num_bins, 0);
+            for (size_t i = 0; i <= item_ranges.size(); ++i)
+                load[vals[i]] += sizes[i];
+            size_t next = item_ranges.size() + 1;
+            for (size_t b = 0; b < num_bins; ++b)
+                if (load[b] != (b == view_bin ? vals[item_ranges.size()] : vals[next++]))
+                    return false;
+            return true;
+        };
+
+        set<tuple<vector<int>>> expected, actual;
+        build_expected(expected, is_satisfying, ranges);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> plain, items, loads;
+        for (auto & [lo, hi] : item_ranges) {
+            plain.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+            items.push_back(plain.back());
+        }
+        auto y = p.create_integer_variable(Integer{view_range.first - 2}, Integer{view_range.second - 2});
+        auto view = y + 2_i;
+        items.push_back(view);
+        plain.push_back(view);
+        for (size_t b = 0; b < num_bins; ++b) {
+            if (b == view_bin)
+                loads.push_back(view);
+            else {
+                plain.push_back(p.create_integer_variable(0_i, Integer{load_uppers[b]}));
+                loads.push_back(plain.back());
+            }
+        }
+
+        vector<Integer> sizes_i;
+        for (auto sz : sizes)
+            sizes_i.push_back(Integer{sz});
+        BinPacking bin_packing{items, sizes_i, loads};
+        if (shaw)
+            bin_packing.with_cardinality_reasoning(bin_packing::Shaw{});
+        if (upfront)
+            bin_packing.with_proof_strategy(proof_strategy::Upfront{});
+        p.post(bin_packing);
+
+        auto proof_name = proofs ? make_optional<std::string>("bin_packing_item_view_load_test") : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{plain});
+        check_results(proof_name, expected, actual);
+    }
+
     auto run_stage4_constant_item_test(bool proofs, bool bounds_only, bool load_form, const vector<variant<int, pair<int, int>>> & item_specs,
         const vector<int> & sizes, const vector<int> & capacities) -> void
     {
@@ -552,6 +636,26 @@ auto main(int argc, char * argv[]) -> int
         if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
             run_stage4_degenerate_load_test(proofs, {{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 3}, {0, 2}}, 1, nullopt, 0);
             run_stage4_degenerate_load_test(proofs, {{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 3}, {0, 2}}, 1, make_optional<size_t>(0), 3);
+
+            // The same loads under the upfront proof strategy, with and without
+            // Shaw, and with the view negated (issue #1195). The last two are
+            // close to the issue's instances, with item 0 pinned to bin 0: bin
+            // 0's load is a constant 3 (and bin 1's a view), then a view taking
+            // the values 1 to 3 (and bin 1's load plain).
+            for (bool shaw : {false, true}) {
+                run_stage4_degenerate_load_test(proofs, {{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 3}, {0, 2}}, 1, nullopt, 0, shaw, true);
+                run_stage4_degenerate_load_test(proofs, {{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 3}, {0, 2}}, 1, nullopt, 0, shaw, true, true);
+                run_stage4_degenerate_load_test(
+                    proofs, {{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 3}, {0, 2}}, 1, make_optional<size_t>(0), 3, shaw, true);
+            }
+            run_stage4_degenerate_load_test(
+                proofs, {{0, 0}, {0, 1}, {0, 1}}, {1, 2, 2}, {{3, 3}, {0, 4}}, 1, make_optional<size_t>(0), 3, false, true);
+            run_stage4_degenerate_load_test(proofs, {{0, 0}, {0, 1}, {0, 1}}, {1, 2, 2}, {{1, 3}, {0, 4}}, 0, nullopt, 0, false, true);
+
+            // An item that is the same view as a later bin's load, under each
+            // strategy: shapes a random sweep found rejected (issue #1195).
+            run_item_view_load_test(proofs, true, false, {{1, 2}, {0, 2}}, {1, 2}, {2, 2, 2}, 2, {3, 6, 2});
+            run_item_view_load_test(proofs, false, true, {{0, 3}, {1, 3}}, {0, 2}, {1, 2, 3}, 3, {2, 3, 3, 4});
 
             // Constant items (issue #1192). The first five are shapes a random
             // sweep found aborting with proofs: one with two of its four

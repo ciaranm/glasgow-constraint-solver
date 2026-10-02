@@ -323,14 +323,19 @@ namespace
         return s;
     }
 
+    // Add the definition of a load's current bound to a pol that cancels the
+    // load's term in its bin's OPB row. A constant load has no term there: the
+    // row folds it into its degree, so there is nothing to cancel and nothing
+    // to add, exactly as in the constant-capacity form (issue #1195). A view
+    // load's term is spelled over the view's own bits, because define_proof_model
+    // registers the view before writing any row, and the tracker hands back
+    // its literal's definition in the same spelling (invariant 1 of
+    // dev_docs/view-proof-logging.md).
     auto add_bound_p_term(PolBuilder & b, const State & state, ProofLogger * logger, IntegerVariableID v, bool upper) -> void
     {
-        overloaded{[&](const SimpleIntegerVariableID & sv) {
-                       b.add_for_literal(logger->names_and_ids_tracker(), upper ? sv <= state.upper_bound(sv) : sv >= state.lower_bound(sv));
-                   },
-            [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; },
-            [&](const ViewOfIntegerVariableID &) { throw UnimplementedException{}; }}
-            .visit(v);
+        if (holds_alternative<ConstantIntegerVariableID>(v))
+            return;
+        b.add_for_literal(logger->names_and_ids_tracker(), upper ? v <= state.upper_bound(v) : v >= state.lower_bound(v));
     }
 
     // One edge's forward chain, for parent in DAG[i], branch, and succ in
@@ -1364,12 +1369,13 @@ namespace
     // A bin contributes nothing when its ceiling is not one a `pol` can cite.
     // In the constant-capacity form the ceiling is a constant in the bin's own
     // OPB row and always can be; in the variable-load form it is a bound
-    // literal on loads[b], which `add_bound_p_term` states only for a plain
-    // variable (a view would need explicit pol arithmetic over a view operand
-    // --- see dev_docs/view-proof-logging.md --- and a constant has no bound
-    // literal at all). Deciding that from the operand's *kind* and not from
-    // whether proofs are being written is what keeps the inferences the same
-    // either way.
+    // literal on loads[b], which Stage 4 cites only for a plain variable. A
+    // constant load's bound is in its row already, and a view's could be cited
+    // through `add_bound_p_term` as Stage 3 does (issue #1195), but counting
+    // either here would change which inferences Stage 4 makes, so that is left
+    // for a change of its own. Deciding that from the operand's *kind* and not
+    // from whether proofs are being written is what keeps the inferences the
+    // same either way.
     auto bin_contribution(const Stage4Scratch & sc, size_t b, long long t, long long alpha) -> long long
     {
         return sc.citable[b] ? std::max(0LL, ceil_div(t - sc.caps[b], alpha)) : 0;
@@ -1812,6 +1818,24 @@ auto BinPacking::define_proof_model(ProofModel & model, const State &) -> void
     // handles; the @c[id][role] labels are internal (BinPacking is not a
     // cake-encoded constraint).
     auto num_bins = _have_loads ? _loads.size() : _capacities.size();
+
+    // A view gets its own bit vector the first time it appears as an integer
+    // term in a row, and from then on its literals are spelled over that
+    // vector; before then they are spelled through the underlying variable.
+    // A view load is such a term in its bin's row. So when an item is the same
+    // view as a later bin's load, the rows before that bin spelled the item's
+    // eq atoms through the underlying variable, and everything after, the
+    // proof included, over the view's vector: the pols over the earlier rows
+    // did not cancel, and VeriPB rejected them. Register every view load
+    // before writing any row, so that these rows spell a view one way (as
+    // GlobalCardinality does for its counts, issue #1197). A view registered
+    // by a constraint posted later has the same effect on these rows, and that
+    // is not handled here (issue #1200).
+    if (_have_loads)
+        for (const auto & load : _loads)
+            if (const auto * view = std::get_if<ViewOfIntegerVariableID>(&load))
+                static_cast<void>(model.names_and_ids_tracker().need_view(*view));
+
     for (size_t b = 0; b < num_bins; ++b) {
         auto bin_idx = Integer(static_cast<long long>(b));
         WPBSum sum;
