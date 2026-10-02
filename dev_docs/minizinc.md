@@ -546,7 +546,7 @@ minizinc/CMakeLists.txt                builds fzn-glasgow + ctest entries
 minizinc/glasgow.msc.in                template for the generated solver definitions
 minizinc/glasgow-for-debugging.msc     dummy executable for manual debugging
 minizinc/mznlib/                       per-predicate overrides
-minizinc/mznlib/redefinitions.mzn      include "nosets.mzn" entry point
+minizinc/mznlib/redefinitions.mzn      include "nosets.mzn" entry point, plus global overloads the stdlib lacks
 minizinc/mznlib/redefinitions-2.0.mzn  per-MiniZinc-version overrides
 minizinc/tests/                        per-test .mzn instances
 minizinc/run_minizinc_test.bash        cross-solver diff + VeriPB harness
@@ -556,7 +556,11 @@ minizinc/run_installed_msc_test.bash   checks the installed solver definition
 ## Adding a new constraint binding: checklist
 
 1. Identify the FlatZinc predicate(s) — usually `fzn_<name>_int`,
-   often plus `_int_reif` and `_bool` and `_bool_reif`.
+   often plus `_int_reif` and `_bool` and `_bool_reif`. Check that the
+   stdlib's global really calls them for every type you care about: its
+   `decreasing` has no plain `var int` overload, so an int array took the
+   optional one and was decomposed, and our `fzn_decreasing_int.mzn` was
+   never reached (#1146). `redefinitions.mzn` now supplies the overload.
 2. For each, add an override in
    `mznlib/fzn_<name>_<type>[_reif].mzn` that declares a
    `glasgow_<name>_<type>[_reif]` predicate and redirects `fzn_*` to
