@@ -3,11 +3,14 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <util/overloaded.hh>
+
 #include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <random>
 #include <set>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -152,6 +155,110 @@ auto run_count_result_in_array_test(bool proofs, pair<int, int> shared_range, in
     check_results(proof_name, expected, actual);
 }
 
+// A position, value_of_interest or how_many in run_aliased_count_test: an
+// index into the shared variables, a constant, or a view of a shared variable
+// (negated first if asked, then offset).
+struct AliasedConstant
+{
+    int value;
+};
+struct AliasedView
+{
+    int index;
+    bool negate;
+    int offset;
+};
+using AliasedEntry = variant<int, AliasedConstant, AliasedView>;
+
+// how_many and value_of_interest sharing a variable with a position, or with
+// each other, directly or through a view (issue #1201). The justifications read which positions can still
+// meet value_of_interest, and which values it can take, and the single-literal
+// inference used to run them after its own push. When that push also moves a
+// position or value_of_interest, VeriPB rejected the proof. Solved under the
+// harness's branching and then under the default branching, since the bad
+// inferences depend on the search path.
+auto run_aliased_count_test(bool proofs, const vector<pair<int, int>> & shared_domains, const vector<AliasedEntry> & positions, AliasedEntry voi,
+    AliasedEntry how_many) -> void
+{
+    auto label = [](const AliasedEntry & e) -> string {
+        return overloaded{
+            [](int i) { return "u" + std::to_string(i); },                                                                   //
+            [](AliasedConstant c) { return std::to_string(c.value); },                                                       //
+            [](AliasedView v) { return (v.negate ? "-u" : "u") + std::to_string(v.index) + "+" + std::to_string(v.offset); } //
+        }
+            .visit(e);
+    };
+    string positions_label;
+    for (const auto & e : positions)
+        positions_label += (positions_label.empty() ? "" : ",") + label(e);
+    print(cerr, "count aliased domains={} positions={} voi={} how_many={}{}", shared_domains, positions_label, label(voi), label(how_many),
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto value_of = [](const AliasedEntry & e, const vector<int> & vals) -> int {
+        return overloaded{
+            [&](int i) { return vals.at(i); },                                                          //
+            [](AliasedConstant c) { return c.value; },                                                  //
+            [&](AliasedView v) { return (v.negate ? -vals.at(v.index) : vals.at(v.index)) + v.offset; } //
+        }
+            .visit(e);
+    };
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected,
+        [&](const vector<int> & vals) -> bool {
+            int counted = 0;
+            for (const auto & e : positions)
+                if (value_of(e, vals) == value_of(voi, vals))
+                    ++counted;
+            return counted == value_of(how_many, vals);
+        },
+        shared_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    auto post = [&](Problem & p) -> vector<IntegerVariableID> {
+        vector<IntegerVariableID> shared;
+        for (const auto & [lo, hi] : shared_domains)
+            shared.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
+        auto var_of = [&](const AliasedEntry & e) -> IntegerVariableID {
+            return overloaded{
+                [&](int i) -> IntegerVariableID { return shared.at(i); },                                           //
+                [](AliasedConstant c) -> IntegerVariableID { return ConstantIntegerVariableID{Integer(c.value)}; }, //
+                [&](AliasedView v) -> IntegerVariableID {
+                    return v.negate ? -shared.at(v.index) + Integer(v.offset) : shared.at(v.index) + Integer(v.offset);
+                } //
+            }
+                .visit(e);
+        };
+        vector<IntegerVariableID> array;
+        for (const auto & e : positions)
+            array.push_back(var_of(e));
+        p.post(Count{array, var_of(voi), var_of(how_many)});
+        return shared;
+    };
+
+    auto proof_name = proofs ? make_optional("count_test_aliased") : nullopt;
+    {
+        Problem p;
+        auto shared = post(p);
+        solve_for_tests(p, proof_name, actual, tuple{shared});
+        check_results(proof_name, expected, actual);
+    }
+    {
+        Problem p;
+        auto shared = post(p);
+        actual.clear();
+        last_run_truncated() = false;
+        solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState & s) -> bool { return actual.emplace(extract_from_state(s, shared)), true; }, //
+                .stats_report = silent_stats_report()                                                                            //
+            },
+            proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+        check_results(proof_name, expected, actual);
+    }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -242,6 +349,21 @@ auto main(int argc, char * argv[]) -> int
             // result variable also in array.
             run_count_result_in_array_test(proofs, {0, 2}, 0);
             run_count_result_in_array_test(proofs, {0, 2}, 1);
+
+            // how_many is value_of_interest (the issue's instance, which
+            // MiniZinc's count(x, y) = y reaches), or one of the positions, or
+            // value_of_interest is one of the positions; then two of those at
+            // once. All but the first are shapes a random sweep found rejected.
+            using C = AliasedConstant;
+            run_aliased_count_test(proofs, {{3, 4}, {1, 3}, {1, 2}, {1, 2}, {1, 2}}, {1, 2, 3, 4}, 0, 0);
+            run_aliased_count_test(proofs, {{3, 5}}, {0, C{1}, C{1}, 0}, 0, 0);
+            run_aliased_count_test(proofs, {{-1, 2}, {2, 5}}, {1, 1, 0, 0}, 1, C{3});
+            run_aliased_count_test(proofs, {{3, 6}, {1, 5}, {3, 6}, {0, 1}}, {1, 3, 2, 2}, C{2}, 1);
+            run_aliased_count_test(proofs, {{3, 5}, {3, 7}, {2, 5}}, {2, 0, C{1}, 0, 1}, 2, 1);
+            run_aliased_count_test(proofs, {{2, 6}, {0, 4}}, {1, 0, 0, 0, 0}, 1, 0);
+            run_aliased_count_test(proofs, {{3, 7}, {1, 5}, {0, 4}, {2, 2}}, {1, 1, 3, 2, 2}, 1, 0);
+            // Through a view alone: how_many is 3 - value_of_interest.
+            run_aliased_count_test(proofs, {{1, 2}, {0, 0}, {4, 4}, {-1, 1}, {3, 6}, {0, 1}}, {0, 1, 2, 3, 4}, 5, AliasedView{5, true, 3});
         }
     }
 
