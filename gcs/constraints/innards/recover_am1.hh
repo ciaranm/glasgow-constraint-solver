@@ -14,25 +14,25 @@ namespace gcs::innards
      *
      * Given a set of atoms <em>a_0, ..., a_{n-1}</em>, this emits a single
      * proof line folding together the pairwise lines supplied by the caller
-     * via the <code>pair_ne</code> callback. The fold itself never looks at the
-     * atoms' polarity, only at the pairwise lines, and the callers use two
-     * conventions for them:
+     * via the <code>pair_ne</code> callback. The atoms are <b>negated</b>:
+     * <em>a_k</em> = <code>x != v_k</code>, <code>pair_ne(a_i, a_j)</code>
+     * returns <em>a_i + a_j &ge; 1</em>, and the result is <em>&Sigma; a_k
+     * &ge; n - 1</em>, the at-most-one over the atoms' negations
+     * <code>x == v_k</code>. Every caller (<code>Among</code>,
+     * <code>GlobalCardinality</code>) states its at-most-ones this way.
      *
-     * - <b>positive atoms</b>, <em>a_k</em> = <code>x == v</code>
-     *   (<code>GlobalCardinality</code>): <code>pair_ne(a_i, a_j)</code>
-     *   returns <em>&not;a_i + &not;a_j &ge; 1</em>, and the result is the
-     *   at-most-one <em>&Sigma; a_k &le; 1</em>, i.e. <em>&Sigma; &not;a_k
-     *   &ge; n - 1</em>;
-     * - <b>negated atoms</b>, <em>a_k</em> = <code>x != v</code>
-     *   (<code>Among</code>): <code>pair_ne(a_i, a_j)</code> returns
-     *   <em>a_i + a_j &ge; 1</em>, and the result is <em>&Sigma; a_k &ge;
-     *   n - 1</em>, the at-most-one over the atoms' negations.
-     *
-     * Only one step depends on which: the short cut for two atoms that are
-     * FalseLiteral (issue #171, in the implementation) is sound under the negated convention
-     * only, where two false atoms really do violate the at-most-one. Under the
-     * positive one they satisfy it, and the short cut's <em>0 &ge; 1</em> is
-     * not RUP (issue #1046).
+     * The fold itself never looks at the atoms, only at the pairwise lines. Two
+     * checks before it do. The complementary-pair check below ignores polarity.
+     * The short cut for two atoms that are FalseLiteral (issue #171, in the
+     * implementation) does not, which is why the convention matters. Under it, two
+     * false atoms really do violate the at-most-one, so <em>0 &ge; 1</em> is RUP.
+     * Passing the atoms un-negated (<code>x == v</code>, with pairwise lines
+     * <em>&not;a_i + &not;a_j &ge; 1</em>) folds to the same line, but then two
+     * false atoms satisfy the at-most-one and the short cut's <em>0 &ge; 1</em> is
+     * not RUP: that was issue #1046, from <code>GlobalCardinality</code> passing a
+     * constant's atoms. (<code>GlobalCardinality</code> now also leaves constants
+     * out of its at-most-ones altogether, since their terms are folded into the
+     * count lines the result is summed with.)
      *
      * The caller is responsible for the pairwise step. How that line is
      * derived is constraint-specific; every current caller's OPB encoding
@@ -51,9 +51,8 @@ namespace gcs::innards
      * bit-aliased two-value variable), the generic fold is not tight, so the
      * helper switches to a dedicated derivation. Its result is then the PB
      * normal form of the at-most-one after the pair folds to a constant:
-     * <em>&Sigma;<sub>k not in pair</sub> &not;a_k &ge; n - 2</em>, which is
-     * equivalent to <em>&Sigma; &not;a_k &ge; n - 1</em> (for positive atoms;
-     * with negated atoms, read <em>a_k</em> for <em>&not;a_k</em>). (See issue #557: the
+     * <em>&Sigma;<sub>k not in pair</sub> a_k &ge; n - 2</em>, which is
+     * equivalent to <em>&Sigma; a_k &ge; n - 1</em>. (See issue #557: the
      * loose generic result left a residual literal that broke aggregating pols in
      * <code>GlobalCardinality</code>. Only a caller that passes several
      * conditions on one variable can produce such a pair: that is

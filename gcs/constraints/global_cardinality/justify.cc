@@ -48,6 +48,12 @@ auto gcs::innards::emit_gcc_capacity_pol(ProofLogger & logger, const State & sta
     // difference between a line per cover value and a line per domain value.
     vector<Integer> still_possible;
     for (const auto & var : confined) {
+        // A constant adds a fixed 0 or 1 to each count line: our OPB folds it into
+        // the right-hand side, and cake_pb_cp's pins it with a unit row. Either way
+        // it leaves no term here for an at-least-one to cancel, so it needs none
+        // (and the tracker has none to give it).
+        if (holds_alternative<ConstantIntegerVariableID>(var))
+            continue;
         still_possible.clear();
         for (const auto & val : hall)
             if (state.in_domain(var, val))
@@ -83,20 +89,28 @@ auto gcs::innards::emit_gcc_demand_pol(ProofLogger & logger, const State & state
     }
     (void)vars;
     for (const auto & var : potential) {
+        // As for the capacity pol: a constant's contribution to the count lines is
+        // fixed, so it leaves no term for an at-most-one to cancel and needs none.
+        // It is never the pruned variable: in the GAC arm's feasible flow a
+        // constant's only edge carries flow, so nothing prunes it.
+        if (holds_alternative<ConstantIntegerVariableID>(var))
+            continue;
+        // recover_am1 takes its atoms negated: x != v, with pairwise lines
+        // (x != v) + (x != w) >= 1, and gives Sum_v (x != v) >= n - 1.
         vector<IntegerVariableCondition> atoms;
         for (const auto & val : hall)
-            atoms.push_back(var == val);
+            atoms.push_back(var != val);
         if (pruned_var == optional<IntegerVariableID>{var} && pruned_value)
-            atoms.push_back(var == *pruned_value);
+            atoms.push_back(var != *pruned_value);
         if (atoms.size() >= 2)
             pb.add(recover_am1<IntegerVariableCondition>(
                 logger, ProofLevel::Temporary, atoms, [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
-                    return logger.emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
+                    return logger.emit(RUPProofRule{}, WPBSum{} + 1_i * p + 1_i * q >= 1_i, ProofLevel::Temporary);
                 }));
         else if (atoms.size() == 1)
             // At-most-one over a single atom is the vacuous x <= 1; emit it so
             // the pol still gets the (1 - x) contribution for this variable.
-            pb.add(logger.emit(RUPProofRule{}, WPBSum{} + 1_i * ! atoms[0] >= 0_i, ProofLevel::Temporary));
+            pb.add(logger.emit(RUPProofRule{}, WPBSum{} + 1_i * atoms[0] >= 0_i, ProofLevel::Temporary));
     }
     pb.emit(logger, ProofLevel::Temporary);
 }

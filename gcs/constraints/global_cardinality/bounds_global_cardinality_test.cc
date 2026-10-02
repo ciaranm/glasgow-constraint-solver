@@ -178,6 +178,14 @@ auto main(int argc, char * argv[]) -> int
         {{1, 1, 2}, {1, 2}, {1, 1}, false},                   // all-const vars + counts, wrong count (contradiction)
         {{pair{1, 2}, pair{1, 2}}, {1}, {pair{0, 2}}, false}, // single cover value
         {{pair{1, 2}}, {}, {}, false},                        // empty value set, open: any assignment allowed
+        // A constant mixed in with real variables (issue #1046). Every row above
+        // with a constant in it is decided before any Hall reasoning runs; with
+        // proofs, these aborted (a constant has no at-least-one line for the
+        // capacity reasoning to use) or wrote a bare `0 >= 1` that VeriPB rejected
+        // (recover_am1's short cut, given a constant's false atoms). These two are
+        // the issue's MiniZinc models.
+        {{pair{1, 3}, pair{1, 4}, 0}, {0, 1, 2, 3, 4}, {pair{0, 1}, pair{0, 1}, pair{0, 2}, pair{0, 1}, pair{0, 1}}, true},
+        {{pair{2, 3}, 1, pair{2, 3}, pair{0, 2}}, {0, 1, 2, 3, 4}, {pair{0, 1}, pair{0, 1}, pair{0, 2}, pair{0, 1}, pair{0, 1}}, false},
     };
 
     mt19937 rand(*get_seed());
@@ -195,6 +203,45 @@ auto main(int argc, char * argv[]) -> int
         for (int i = 0; i < n_vars; ++i) {
             auto lo = lo_dist(rand);
             vars_range.emplace_back(pair{lo, lo + width_dist(rand)});
+        }
+
+        auto n_values = n_values_dist(rand);
+        set<int> value_set;
+        while (static_cast<int>(value_set.size()) < n_values)
+            value_set.insert(value_dist(rand));
+        vector<int> values(value_set.begin(), value_set.end());
+
+        vector<Range> counts_range;
+        for (int i = 0; i < n_values; ++i) {
+            auto hi = count_hi_dist(rand);
+            counts_range.emplace_back(pair{0, hi});
+        }
+
+        data.emplace_back(vars_range, values, counts_range, closed_dist(rand) == 1);
+    }
+
+    // Constants mixed in with real variables (issue #1046), some in the cover
+    // and some not. A separate loop, so that the instances above stay what they
+    // were for every seed.
+    for (int iteration = 0; iteration < 24; ++iteration) {
+        uniform_int_distribution n_vars_dist(3, 4);
+        uniform_int_distribution n_values_dist(2, 4);
+        uniform_int_distribution lo_dist(0, 2);
+        uniform_int_distribution width_dist(0, 2);
+        uniform_int_distribution value_dist(0, 4);
+        uniform_int_distribution constant_dist(0, 2);
+        uniform_int_distribution count_hi_dist(0, 3);
+        uniform_int_distribution closed_dist(0, 1);
+
+        auto n_vars = n_vars_dist(rand);
+        vector<Range> vars_range;
+        for (int i = 0; i < n_vars; ++i) {
+            if (constant_dist(rand) == 0)
+                vars_range.emplace_back(value_dist(rand));
+            else {
+                auto lo = lo_dist(rand);
+                vars_range.emplace_back(pair{lo, lo + width_dist(rand)});
+            }
         }
 
         auto n_values = n_values_dist(rand);

@@ -25,7 +25,8 @@ namespace gcs::innards
      * Sums, over each value v in W, the count line Sum_i x_{i=v} <= c_v and (for
      * a non-constant count) the defining implication of c_v <= ub_v, plus an
      * at-least-one over its domain for each confined variable (a variable whose
-     * domain lies within the W values). The result is
+     * domain lies within the W values) other than a constant, whose part in the
+     * count lines is fixed and leaves nothing to cancel. The result is
      *   Sum_{i not confined, v in W} x_{i=v} <= cap - |confined|,
      * cap = Sum_{v in W} ub_v. When the cut is saturated (|confined| == cap) the
      * right-hand side is 0, so a wrapping RUP under \ref gcc_capacity_reason
@@ -103,8 +104,9 @@ namespace gcs::innards
      * Sums, over each value v in W, the count line Sum_i x_{i=v} >= c_v and (for
      * a non-constant count) the defining implication of c_v >= lb_v, plus an
      * at-most-one over W for each potential variable (one that can take a W
-     * value). If `pruned_var` is given it gets an at-most-one over W together
-     * with the extra value `cut_values`-external value index `pruned_value`. The
+     * value) other than a constant, as for the capacity pol. If `pruned_var` is
+     * given it gets an at-most-one over W together with the extra value
+     * `cut_values`-external value index `pruned_value`. The
      * result is Sum_{i not potential, v in W} x_{i=v} >= demand - |potential|;
      * a wrapping RUP under \ref gcc_demand_reason closes the pruning/contradiction.
      */

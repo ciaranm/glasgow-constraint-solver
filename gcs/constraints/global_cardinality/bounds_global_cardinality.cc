@@ -240,6 +240,12 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                 // (clipped to the variable's bounds, which the reason pins too).
                 vector<Integer> still_possible;
                 for (const auto & var : confined) {
+                    // A constant's contribution to the count lines is fixed, so
+                    // it leaves no term to cancel and needs no at-least-one (see
+                    // emit_gcc_capacity_pol in justify.cc); the tracker has none
+                    // to give it.
+                    if (holds_alternative<ConstantIntegerVariableID>(var))
+                        continue;
                     still_possible.clear();
                     for (auto v = a; v <= b; ++v)
                         if (state.in_domain(var, values[v]))
@@ -309,6 +315,10 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                                     }
                                 vector<Integer> still_possible;
                                 for (const auto & var : confined) {
+                                    // A constant leaves no term to cancel: no
+                                    // at-least-one (see emit_capacity_pol).
+                                    if (holds_alternative<ConstantIntegerVariableID>(var))
+                                        continue;
                                     still_possible.clear();
                                     for (auto v = a; v <= b; ++v)
                                         if (state.in_domain(var, values[v]))
@@ -332,12 +342,16 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                                 auto & tracker = logger->names_and_ids_tracker();
                                 PolBuilder pb;
                                 for (const auto & var : potential) {
+                                    // A constant leaves no term to cancel: no
+                                    // at-most-one (see emit_demand_pol).
+                                    if (holds_alternative<ConstantIntegerVariableID>(var))
+                                        continue;
                                     vector<IntegerVariableCondition> atoms;
                                     for (std::size_t v = a; v <= b; ++v)
-                                        atoms.push_back(var == values[v]);
+                                        atoms.push_back(var != values[v]);
                                     pb.add(recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Temporary, atoms,
                                         [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
-                                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
+                                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * p + 1_i * q >= 1_i, ProofLevel::Temporary);
                                         }));
                                 }
                                 for (std::size_t v = a; v <= b; ++v)
@@ -389,14 +403,21 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                         pb.add_for_literal(tracker, counts[v] >= state.bounds(counts[v]).first);
                 }
                 for (const auto & var : potential) {
+                    // A constant's contribution to the count lines is fixed, so
+                    // it leaves no term to cancel and needs no at-most-one. It is
+                    // never kvar, having no value outside the hall set to lose.
+                    if (holds_alternative<ConstantIntegerVariableID>(var))
+                        continue;
+                    // recover_am1 takes its atoms negated (x != v), with pairwise
+                    // lines (x != v) + (x != w) >= 1.
                     vector<IntegerVariableCondition> atoms;
                     for (std::size_t v = a; v <= b; ++v)
-                        atoms.push_back(var == values[v]);
+                        atoms.push_back(var != values[v]);
                     if (kvar == optional<IntegerVariableID>{var})
-                        atoms.push_back(var == kw);
+                        atoms.push_back(var != kw);
                     pb.add(recover_am1<IntegerVariableCondition>(
                         *logger, ProofLevel::Temporary, atoms, [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
-                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
+                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * p + 1_i * q >= 1_i, ProofLevel::Temporary);
                         }));
                 }
                 pb.emit(*logger, ProofLevel::Temporary);

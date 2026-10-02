@@ -342,6 +342,16 @@ set_tests_properties(minizinc-globalcardinalityrepeated PROPERTIES SKIP_RETURN_C
 add_test(NAME minizinc-globalcardinalityrepeatedclosed COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_global_cardinality_closed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalityrepeatedclosed true true)
 set_tests_properties(minizinc-globalcardinalityrepeatedclosed PROPERTIES SKIP_RETURN_CODE 66)
 
+# A par entry in the variable array, which the front end posts as a constant in
+# GlobalCardinality's scope (#1046). With proofs the open model aborted and the
+# closed model's proof was rejected; the solutions were right either way, so it
+# is the proof run that tests anything here.
+add_test(NAME minizinc-globalcardinalityconstant COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_global_cardinality $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalityconstant true true)
+set_tests_properties(minizinc-globalcardinalityconstant PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-globalcardinalityconstantclosed COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_global_cardinality_closed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalityconstantclosed true true)
+set_tests_properties(minizinc-globalcardinalityconstantclosed PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-increasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ increasing true true)
 set_tests_properties(minizinc-increasing PROPERTIES SKIP_RETURN_CODE 66)
 
