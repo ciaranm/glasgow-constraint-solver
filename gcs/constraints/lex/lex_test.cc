@@ -1,6 +1,7 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/lex.hh>
 #include <gcs/problem.hh>
+#include <gcs/reification.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
@@ -211,8 +212,39 @@ auto run_lex_test_6(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int>
 enum class ReifKind
 {
     If,
-    Iff
+    Iff,
+    NotIf,
+    MustNotHold
 };
+
+template <ReifKind R>
+auto reified_lex_holds(int c, bool constraint_holds) -> bool
+{
+    if constexpr (R == ReifKind::If)
+        return (c == 0) || constraint_holds;
+    else if constexpr (R == ReifKind::Iff)
+        return (c == 1) == constraint_holds;
+    else if constexpr (R == ReifKind::NotIf)
+        return (c == 0) || ! constraint_holds;
+    else
+        return ! constraint_holds;
+}
+
+// No named class exposes NotIf or MustNotHold, so these go through the
+// general constructor, with the less variants swapping their operands as the
+// named LexLess* classes do.
+template <LexVariant V>
+auto post_general_lex(Problem & p, vector<IntegerVariableID> v1, vector<IntegerVariableID> v2, ReificationCondition reif_cond) -> void
+{
+    if constexpr (V == LexVariant::GreaterThan)
+        p.post(LexCompareGreaterThanOrMaybeEqual{std::move(v1), std::move(v2), reif_cond, false, false});
+    else if constexpr (V == LexVariant::GreaterEqual)
+        p.post(LexCompareGreaterThanOrMaybeEqual{std::move(v1), std::move(v2), reif_cond, true, false});
+    else if constexpr (V == LexVariant::LessThan)
+        p.post(LexCompareGreaterThanOrMaybeEqual{std::move(v2), std::move(v1), reif_cond, false, true});
+    else
+        p.post(LexCompareGreaterThanOrMaybeEqual{std::move(v2), std::move(v1), reif_cond, true, true});
+}
 
 template <LexVariant V, ReifKind R>
 auto post_reified_lex(Problem & p, vector<IntegerVariableID> v1, vector<IntegerVariableID> v2, IntegerVariableCondition cond) -> void
@@ -227,6 +259,10 @@ auto post_reified_lex(Problem & p, vector<IntegerVariableID> v1, vector<IntegerV
         else
             p.post(LexLessThanEqualIf{std::move(v1), std::move(v2), cond});
     }
+    else if constexpr (R == ReifKind::NotIf)
+        post_general_lex<V>(p, std::move(v1), std::move(v2), reif::NotIf{cond});
+    else if constexpr (R == ReifKind::MustNotHold)
+        post_general_lex<V>(p, std::move(v1), std::move(v2), reif::MustNotHold{});
     else {
         if constexpr (V == LexVariant::GreaterThan)
             p.post(LexGreaterThanIff{std::move(v1), std::move(v2), cond});
@@ -244,8 +280,12 @@ auto reif_kind_name() -> const char *
 {
     if constexpr (R == ReifKind::If)
         return "if";
-    else
+    else if constexpr (R == ReifKind::Iff)
         return "iff";
+    else if constexpr (R == ReifKind::NotIf)
+        return "not_if";
+    else
+        return "not";
 }
 
 template <LexVariant V, ReifKind R>
@@ -263,10 +303,7 @@ auto run_lex_reified_test_2(bool proofs, const ViewWrapConfig & view_cfg, pair<i
         expected,
         [](int a1, int a2, int b1, int b2, int c) {
             bool constraint_holds = cmp_lex<V>(tie(a1, a2), tie(b1, b2));
-            if constexpr (R == ReifKind::If)
-                return (c == 0) || constraint_holds;
-            else
-                return (c == 1) == constraint_holds;
+            return reified_lex_holds<R>(c, constraint_holds);
         },
         r1, r2, r3, r4, pair{0, 1});
     println(cerr, " expecting {} solutions", expected.size());
@@ -299,10 +336,7 @@ auto run_lex_reified_test_3(bool proofs, const ViewWrapConfig & view_cfg, pair<i
         expected,
         [](int a1, int a2, int a3, int b1, int b2, int b3, int c) {
             bool constraint_holds = cmp_lex<V>(tie(a1, a2, a3), tie(b1, b2, b3));
-            if constexpr (R == ReifKind::If)
-                return (c == 0) || constraint_holds;
-            else
-                return (c == 1) == constraint_holds;
+            return reified_lex_holds<R>(c, constraint_holds);
         },
         r1, r2, r3, r4, r5, r6, pair{0, 1});
     println(cerr, " expecting {} solutions", expected.size());
@@ -339,10 +373,7 @@ auto run_lex_reified_test_unequal(bool proofs, const ViewWrapConfig & view_cfg, 
             vector<int> left(v.begin(), v.begin() + n_left);
             vector<int> right(v.begin() + n_left, v.begin() + n_left + n_right);
             bool constraint_holds = cmp_lex<V>(left, right);
-            if constexpr (R == ReifKind::If)
-                return (c == 0) || constraint_holds;
-            else
-                return (c == 1) == constraint_holds;
+            return reified_lex_holds<R>(c, constraint_holds);
         },
         [&]() {
             vector<pair<int, int>> all = r_left;
@@ -547,6 +578,17 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     run_reified_variant_tests<LexVariant::LessThan, ReifKind::Iff>(proofs, view_cfg);
     run_reified_variant_tests<LexVariant::LessThanEqual, ReifKind::If>(proofs, view_cfg);
     run_reified_variant_tests<LexVariant::LessThanEqual, ReifKind::Iff>(proofs, view_cfg);
+
+    // NotIf and MustNotHold (issue #1137: NotIf's must-hold verdict once
+    // stated its scaffold under the wrong polarity of cond).
+    run_reified_variant_tests<LexVariant::GreaterThan, ReifKind::NotIf>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::GreaterThan, ReifKind::MustNotHold>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::GreaterEqual, ReifKind::NotIf>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::GreaterEqual, ReifKind::MustNotHold>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::LessThan, ReifKind::NotIf>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::LessThan, ReifKind::MustNotHold>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::LessThanEqual, ReifKind::NotIf>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::LessThanEqual, ReifKind::MustNotHold>(proofs, view_cfg);
 }
 
 auto main(int argc, char * argv[]) -> int
