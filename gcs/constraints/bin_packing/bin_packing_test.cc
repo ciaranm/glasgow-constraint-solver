@@ -10,6 +10,7 @@
 #include <set>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 #include <version>
 
@@ -28,7 +29,9 @@ using std::nullopt;
 using std::pair;
 using std::set;
 using std::tuple;
+using std::variant;
 using std::vector;
+using std::visit;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;
@@ -243,6 +246,72 @@ namespace
         p.post(BinPacking{items, sizes_i, loads}.with_cardinality_reasoning(bin_packing::Shaw{}));
 
         auto proof_name = proofs ? make_optional<std::string>("bin_packing_stage4_degen_test") : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{items, loads});
+
+        check_results(proof_name, expected, actual);
+    }
+
+    // A constant item (issue #1192). The class takes vector<IntegerVariableID>,
+    // so the C++ API can pin an item with a constant, and Stage 4 counts every
+    // pinned item of positive size. Its final pol used to ask the proof tracker
+    // for the item's at-least-one row, which a constant does not have, so with
+    // proofs on the solve aborted, losing solutions on a satisfiable model. A
+    // constant has no literal in any bin's row for that row to cancel: the OPB
+    // folds it into its bin's right-hand side. With `load_form`, each bin gets a
+    // load variable over 0..capacity in place of the constant capacity.
+    auto run_stage4_constant_item_test(bool proofs, bool bounds_only, bool load_form, const vector<variant<int, pair<int, int>>> & item_specs,
+        const vector<int> & sizes, const vector<int> & capacities) -> void
+    {
+        print(cerr, "bin_packing stage4 constant items {} sizes={} {}={}{}{}", item_specs, sizes, load_form ? "load ceilings" : "caps", capacities,
+            bounds_only ? " bc" : "", proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto n = item_specs.size();
+        auto num_bins = capacities.size();
+
+        auto loads_of = [&](const vector<int> & items) -> std::optional<vector<int>> {
+            vector<int> bin_load(num_bins, 0);
+            for (size_t i = 0; i < n; ++i) {
+                if (items[i] < 0 || items[i] >= static_cast<int>(num_bins))
+                    return nullopt;
+                bin_load[items[i]] += sizes[i];
+            }
+            for (size_t b = 0; b < num_bins; ++b)
+                if (bin_load[b] > capacities[b])
+                    return nullopt;
+            return bin_load;
+        };
+
+        // A load variable is fixed by its items, so the load form's solutions
+        // are the capacity form's with the loads appended.
+        set<pair<vector<int>, vector<int>>> expected, actual;
+        set<vector<int>> item_solutions;
+        build_expected(item_solutions, [&](const vector<int> & items) { return loads_of(items).has_value(); }, item_specs);
+        for (const auto & items : item_solutions)
+            expected.emplace(items, load_form ? *loads_of(items) : vector<int>{});
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> items, loads;
+        for (const auto & spec : item_specs)
+            items.push_back(visit([&](const auto & x) { return create_integer_variable_or_constant(p, x); }, spec));
+
+        vector<Integer> sizes_i, caps_i;
+        for (auto sz : sizes)
+            sizes_i.push_back(Integer{sz});
+        for (auto c : capacities) {
+            caps_i.push_back(Integer{c});
+            if (load_form)
+                loads.push_back(p.create_integer_variable(0_i, Integer{c}));
+        }
+
+        auto bin_packing = load_form ? BinPacking{items, sizes_i, loads} : BinPacking{items, sizes_i, caps_i};
+        bin_packing.with_cardinality_reasoning(bin_packing::Shaw{});
+        if (bounds_only)
+            bin_packing.with_consistency(consistency::BC{});
+        p.post(bin_packing);
+
+        auto proof_name = proofs ? make_optional<std::string>("bin_packing_stage4_constant_test") : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{items, loads});
 
         check_results(proof_name, expected, actual);
@@ -483,6 +552,23 @@ auto main(int argc, char * argv[]) -> int
         if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
             run_stage4_degenerate_load_test(proofs, {{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 3}, {0, 2}}, 1, nullopt, 0);
             run_stage4_degenerate_load_test(proofs, {{0, 1}, {0, 1}, {0, 1}}, {1, 2, 2}, {{0, 3}, {0, 2}}, 1, make_optional<size_t>(0), 3);
+
+            // Constant items (issue #1192). The first five are shapes a random
+            // sweep found aborting with proofs: one with two of its four
+            // solutions reported before the abort, three whose lone solution was
+            // lost, and an unsatisfiable one that aborted instead. The next two
+            // are the first of them under BC, and in the variable-load form,
+            // both of which aborted too. The last is a control: a zero-size
+            // constant beside a rounding pigeonhole, which Stage 4 never counts,
+            // so it passed before the fix as well.
+            run_stage4_constant_item_test(proofs, false, false, {2, pair{0, 2}, pair{0, 2}, pair{0, 2}}, {2, 1, 3, 4}, {4, 4, 3});
+            run_stage4_constant_item_test(proofs, false, false, {pair{0, 1}, pair{0, 1}, 0}, {3, 4, 3}, {7, 3});
+            run_stage4_constant_item_test(proofs, false, false, {pair{0, 1}, pair{0, 1}, pair{0, 1}, 0}, {2, 3, 4, 3}, {6, 6});
+            run_stage4_constant_item_test(proofs, false, false, {1, pair{0, 1}, pair{0, 1}}, {2, 2, 4}, {5, 4});
+            run_stage4_constant_item_test(proofs, false, false, {1, pair{0, 2}, pair{0, 2}}, {3, 4, 4}, {7, 4, 3});
+            run_stage4_constant_item_test(proofs, true, false, {2, pair{0, 2}, pair{0, 2}, pair{0, 2}}, {2, 1, 3, 4}, {4, 4, 3});
+            run_stage4_constant_item_test(proofs, false, true, {2, pair{0, 2}, pair{0, 2}, pair{0, 2}}, {2, 1, 3, 4}, {4, 4, 3});
+            run_stage4_constant_item_test(proofs, false, false, {pair{0, 1}, pair{0, 1}, pair{0, 1}, 1}, {3, 3, 3, 0}, {5, 5});
         }
     }
 
