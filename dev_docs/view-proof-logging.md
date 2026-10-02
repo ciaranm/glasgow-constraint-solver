@@ -116,6 +116,20 @@ sides do hold the same literals, but not in the same *roles* — the same interv
 can be a partition cell on one side and a request with its own covering on the
 other — so argue per side rather than by assuming the structures match.
 
+**A view's spelling can change while the model is being written.** Its bit
+vector is registered the first time the view appears as an integer-valued
+term in a row (`need_all_proof_names_in`), or as a view objective
+(`ProofModel::write_preamble`). Until then its literals are spelled through
+the underlying variable, and from then on over the bit vector, which is
+also how the proof spells them. So any row that names a literal on a view
+before that view is registered, whether the registration comes from a
+later row of the same constraint or from a constraint posted later, spells
+it differently from the proof, and a `pol` that cancels against that row
+strands (invariant 1). `GlobalCardinality` met the first case when a count
+was the same view as a position (issue #1197), and now registers its view
+counts (`names_and_ids_tracker().need_view`) before writing any row; the
+second case is still open.
+
 ### If you are touching the view machinery itself
 
 - **Measure spans against the emitted representation.** Any code that

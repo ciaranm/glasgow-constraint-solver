@@ -191,6 +191,87 @@ auto run_aliased_views_test(bool proofs, const vector<pair<int, int>> & under_ra
     }
 }
 
+// Counts that are views of the array's variables, with the array holding other
+// views of the same variables (issue #1197). A count goes into its row as an
+// integer, which registers a view's own bit vector, and the rows written before
+// that spelled the view's eq atoms through the underlying variable instead,
+// while the proof's at-most-ones used the registered spelling: nothing
+// cancelled and VeriPB rejected the Hall pols. Positions and counts are both
+// `+-under[base] + offset`. Solved under the harness's random branching and
+// under the default one.
+auto run_aliased_counts_test(bool proofs, const vector<pair<int, int>> & under_ranges, const vector<AliasedPosition> & positions,
+    const vector<int> & values, const vector<AliasedPosition> & count_positions, bool closed) -> void
+{
+    print(cerr, "gacgcc aliased counts under={} positions=[", under_ranges);
+    for (const auto & q : positions)
+        print(cerr, " {}u{}{:+}", q.negate ? "-" : "", q.base, q.offset);
+    print(cerr, " ] values={} counts=[", values);
+    for (const auto & q : count_positions)
+        print(cerr, " {}u{}{:+}", q.negate ? "-" : "", q.base, q.offset);
+    print(cerr, " ] closed={}{}", closed, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto value_of = [&](const AliasedPosition & q, const vector<int> & under) { return (q.negate ? -under[q.base] : under[q.base]) + q.offset; };
+    auto is_satisfying = [&](const vector<int> & under) -> bool {
+        for (std::size_t j = 0; j < values.size(); ++j) {
+            int c = 0;
+            for (const auto & q : positions)
+                if (value_of(q, under) == values[j])
+                    ++c;
+            if (c != value_of(count_positions[j], under))
+                return false;
+        }
+        if (closed)
+            for (const auto & q : positions)
+                if (find(values.begin(), values.end(), value_of(q, under)) == values.end())
+                    return false;
+        return true;
+    };
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, is_satisfying, under_ranges);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    auto post = [&](Problem & p) -> vector<IntegerVariableID> {
+        vector<IntegerVariableID> under, vars, counts;
+        for (const auto & [lo, hi] : under_ranges)
+            under.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
+        auto as_view = [&](const AliasedPosition & q) -> IntegerVariableID {
+            return q.negate ? -under[q.base] + Integer(q.offset) : under[q.base] + Integer(q.offset);
+        };
+        for (const auto & q : positions)
+            vars.push_back(as_view(q));
+        for (const auto & q : count_positions)
+            counts.push_back(as_view(q));
+        vector<Integer> int_values;
+        for (auto v : values)
+            int_values.emplace_back(v);
+        p.post(GlobalCardinality{vars, int_values, counts}.with_consistency(consistency::GAC{}).with_closed(closed));
+        return under;
+    };
+
+    auto proof_name = proofs ? make_optional("gacgcc_aliased_counts_test") : nullopt;
+    {
+        Problem p;
+        auto under = post(p);
+        solve_for_tests(p, proof_name, actual, tuple{under});
+        check_results(proof_name, expected, actual);
+    }
+    {
+        Problem p;
+        auto under = post(p);
+        actual.clear();
+        last_run_truncated() = false;
+        solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState & s) -> bool { return actual.emplace(extract_from_state(s, under)), true; }, //
+                .stats_report = silent_stats_report()                                                                           //
+            },
+            proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+        check_results(proof_name, expected, actual);
+    }
+}
+
 // The magic sequence, GlobalCardinality{x, {0, ..., n - 1}, x}: every count is
 // one of the variables (issue #1191). The Hall pols read the counts' bounds, and
 // the single-literal inference used to run them after its own push, so when
@@ -454,6 +535,17 @@ auto main(int argc, char * argv[]) -> int
         for (int n : {4, 5, 6, 7})
             for (bool closed : {false, true})
                 run_magic_sequence_test(proofs, n, closed);
+        // The issue's instance, then two that a random sweep found failing on
+        // the GAC arm.
+        run_aliased_counts_test(proofs, {{-1, 3}, {0, 2}, {0, 3}, {1, 1}, {0, 1}, {0, 2}, {0, 3}},
+            {{0, false, 2}, {1, false, 0}, {2, false, 0}, {0, true, 4}}, {0, 1, 2, 3, 4},
+            {{3, false, 0}, {4, false, 0}, {5, false, 0}, {0, false, 2}, {6, false, 0}}, false);
+        run_aliased_counts_test(proofs, {{-1, 3}, {2, 3}, {1, 3}, {0, 4}, {0, 2}},
+            {{0, false, 0}, {1, true, 3}, {0, false, 0}, {1, false, 0}, {0, true, 3}, {0, false, 2}}, {1, 2, 3, 4},
+            {{2, false, 0}, {3, false, 0}, {0, true, 3}, {4, false, 0}}, false);
+        run_aliased_counts_test(proofs, {{2, 6}, {-1, 0}, {2, 6}, {-1, 1}, {0, 4}, {1, 3}},
+            {{0, false, 0}, {1, false, 0}, {2, true, 3}, {3, true, 5}, {3, false, 0}, {2, false, -2}}, {0, 1, 3, 4, 5},
+            {{2, true, 5}, {2, false, 0}, {4, false, 0}, {5, false, 0}, {2, false, -2}}, false);
     }
 
     return EXIT_SUCCESS;
