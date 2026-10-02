@@ -277,7 +277,8 @@ namespace
     auto run_lex_undecided_detection(const State & state, ProofLogger * const, const vector<IntegerVariableID> & vars_1,
         const vector<IntegerVariableID> & vars_2, bool or_equal, const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_gt_flags,
         const shared_ptr<vector<ProofFlag>> & decision_at_gt_flags, const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_lt_flags,
-        const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags, const IntegerVariableCondition & cond, const ConstraintID & owner)
+        const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags, const optional<Literal> & must_hold_scaffold_under,
+        const optional<Literal> & must_not_hold_scaffold_under, const ConstraintID & owner)
         -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>>
     {
         auto n1 = vars_1.size();
@@ -329,28 +330,36 @@ namespace
         if (! definitely_holds && ! definitely_does_not_hold)
             return reification_verdict::StillUndecided{};
 
-        // When the dispatcher infers cond, the framework's RUP step will
-        // assume the *negation* of the inferred literal. The scaffolding
-        // therefore lives under that negation: the opposite-direction
-        // encoding's at-least-one is then active, and the bounds force
-        // every aux flag to FALSE, violating it. We pre-emit those
-        // ~aux_flag lines so VeriPB's PB unit propagation can chain.
+        // When the dispatcher infers a cond literal, the framework's RUP
+        // step will assume the *negation* of the inferred literal. The
+        // scaffolding therefore lives under that negation, which is the
+        // literal the opposite direction's encoding is half-reified on: its
+        // at-least-one is then active, and the bounds force every aux flag
+        // to FALSE, violating it. We pre-emit those ~aux_flag lines so
+        // VeriPB's PB unit propagation can chain. The caller supplies that
+        // literal per verdict, or nullopt when the kind infers nothing for
+        // the verdict: must-not-hold infers ~cond (under If and Iff), but
+        // must-hold infers cond under Iff and ~cond under NotIf, so it
+        // depends on the reification kind.
+        auto reason_under = [&](const optional<Literal> & assumption) {
+            auto result = reason;
+            if (assumption)
+                result.push_back(*assumption);
+            return result;
+        };
+
         if (definitely_holds) {
-            auto reason_under_cond_false = reason;
-            reason_under_cond_false.push_back(! cond);
             return reification_verdict::MustHold<JustifyExplicitly<hints::LexUnsatScaffold>>{
-                .justification = JustifyExplicitly{hints::LexUnsatScaffold{{owner}, &state, std::move(reason_under_cond_false), vars_2, vars_1, n,
+                .justification = JustifyExplicitly{hints::LexUnsatScaffold{{owner}, &state, reason_under(must_hold_scaffold_under), vars_2, vars_1, n,
                                                        prefix_equal_lt_flags, decision_at_lt_flags},
                     ThenRUP::Yes},          //
                 .reason = std::move(reason) //
             };
         }
         else {
-            auto reason_under_cond_true = reason;
-            reason_under_cond_true.push_back(cond);
             return reification_verdict::MustNotHold<JustifyExplicitly<hints::LexUnsatScaffold>>{
-                .justification = JustifyExplicitly{hints::LexUnsatScaffold{{owner}, &state, std::move(reason_under_cond_true), vars_1, vars_2, n,
-                                                       prefix_equal_gt_flags, decision_at_gt_flags},
+                .justification = JustifyExplicitly{hints::LexUnsatScaffold{{owner}, &state, reason_under(must_not_hold_scaffold_under), vars_1,
+                                                       vars_2, n, prefix_equal_gt_flags, decision_at_gt_flags},
                     ThenRUP::Yes},          //
                 .reason = std::move(reason) //
             };
@@ -566,13 +575,32 @@ auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propag
             state, inference, logger, vars_2, vars_1, ! or_equal, prefix_equal_lt_flags, decision_at_lt_flags, cond, state_handle, owner);
     };
 
+    // Each verdict's scaffold is stated under the negation of the cond literal
+    // the dispatcher infers for it, which is the literal define_proof_model
+    // half-reified the scaffold's direction on: the less direction on ~cond
+    // for Iff and on cond for NotIf, the greater direction on cond for If and
+    // Iff. A verdict the kind infers nothing for gets nullopt, and MustHold and
+    // MustNotHold never reach the undecided pass.
+    optional<Literal> must_hold_scaffold_under, must_not_hold_scaffold_under;
+    overloaded{
+        [&](const reif::MustHold &) {},                                     //
+        [&](const reif::MustNotHold &) {},                                  //
+        [&](const reif::If & r) { must_not_hold_scaffold_under = r.cond; }, //
+        [&](const reif::NotIf & r) { must_hold_scaffold_under = r.cond; },  //
+        [&](const reif::Iff & r) {
+            must_hold_scaffold_under = ! r.cond;
+            must_not_hold_scaffold_under = r.cond;
+        } //
+    }
+        .visit(_reif_cond);
+
     auto infer_cond_when_undecided = [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal, prefix_equal_gt_flags = _prefix_equal_gt_flags,
                                          decision_at_gt_flags = _decision_at_gt_flags, prefix_equal_lt_flags = _prefix_equal_lt_flags,
-                                         decision_at_lt_flags = _decision_at_lt_flags,
+                                         decision_at_lt_flags = _decision_at_lt_flags, must_hold_scaffold_under, must_not_hold_scaffold_under,
                                          owner = constraint_id()](const State & state, auto &, ProofLogger * const logger,
-                                         const IntegerVariableCondition & cond) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>> {
+                                         const IntegerVariableCondition &) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>> {
         return run_lex_undecided_detection(state, logger, vars_1, vars_2, or_equal, prefix_equal_gt_flags, decision_at_gt_flags,
-            prefix_equal_lt_flags, decision_at_lt_flags, cond, owner);
+            prefix_equal_lt_flags, decision_at_lt_flags, must_hold_scaffold_under, must_not_hold_scaffold_under, owner);
     };
 
     install_reified_dispatcher(propagators, constraint_id(), _evaluated_cond, _reif_cond, triggers, std::move(enforce_constraint_must_hold),

@@ -96,6 +96,274 @@ auto run_bgcc_test(bool proofs, const vector<Range> & vars_range, const vector<i
     check_results(proof_name, expected, actual);
 }
 
+// A variable and a view of it in the array (issue #1191). The Hall removals'
+// reasons used to be built after the removal had been pushed, and with a view
+// in the array that push moves another position's domain too, so the reason
+// could come out naming the removal itself and justify nothing: VeriPB
+// rejected the proof. The solutions were right. Positions are
+// `+-under[base] + offset`; the solutions are checked over the underlying
+// variables and the counts.
+struct AliasedPosition
+{
+    std::size_t base;
+    bool negate;
+    int offset;
+};
+
+auto run_aliased_views_test(bool proofs, const vector<pair<int, int>> & under_ranges, const vector<AliasedPosition> & positions,
+    const vector<int> & values, const vector<pair<int, int>> & counts_range, bool closed) -> void
+{
+    print(cerr, "bgcc aliased views under={} positions=[", under_ranges);
+    for (const auto & q : positions)
+        print(cerr, " {}u{}{:+}", q.negate ? "-" : "", q.base, q.offset);
+    print(cerr, " ] values={} counts={} closed={}{}", values, counts_range, closed, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto value_of = [&](const AliasedPosition & q, const vector<int> & under) { return (q.negate ? -under[q.base] : under[q.base]) + q.offset; };
+    auto is_satisfying = [&](const vector<int> & under, const vector<int> & counts) -> bool {
+        for (std::size_t j = 0; j < values.size(); ++j) {
+            int c = 0;
+            for (const auto & q : positions)
+                if (value_of(q, under) == values[j])
+                    ++c;
+            if (c != counts[j])
+                return false;
+        }
+        if (closed)
+            for (const auto & q : positions)
+                if (find(values.begin(), values.end(), value_of(q, under)) == values.end())
+                    return false;
+        return true;
+    };
+
+    set<tuple<vector<int>, vector<int>>> expected, actual;
+    build_expected(expected, is_satisfying, under_ranges, counts_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    auto post = [&](Problem & p) -> pair<vector<IntegerVariableID>, vector<IntegerVariableID>> {
+        vector<IntegerVariableID> under, vars, counts;
+        for (const auto & [lo, hi] : under_ranges)
+            under.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
+        for (const auto & q : positions)
+            vars.push_back(q.negate ? -under[q.base] + Integer(q.offset) : under[q.base] + Integer(q.offset));
+        for (const auto & [lo, hi] : counts_range)
+            counts.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
+        vector<Integer> int_values;
+        for (auto v : values)
+            int_values.emplace_back(v);
+        p.post(GlobalCardinality{vars, int_values, counts}.with_closed(closed));
+        return pair{under, counts};
+    };
+
+    auto proof_name = proofs ? make_optional("bgcc_aliased_views_test") : nullopt;
+    {
+        Problem p;
+        auto [under, counts] = post(p);
+        solve_for_tests(p, proof_name, actual, tuple{under, counts});
+        check_results(proof_name, expected, actual);
+    }
+
+    // Again under the solver's default branching. The harness branches at
+    // random, and the issue's instance needs the default order's path to reach
+    // the removal whose reason went wrong.
+    {
+        Problem p;
+        auto [under, counts] = post(p);
+        actual.clear();
+        last_run_truncated() = false;
+        solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState & s) -> bool {
+                    return actual.emplace(extract_from_state(s, under), extract_from_state(s, counts)), true;
+                },                                    //
+                .stats_report = silent_stats_report() //
+            },
+            proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+        check_results(proof_name, expected, actual);
+    }
+}
+
+// Counts that are views of the array's variables, with the array holding other
+// views of the same variables (issue #1197). A count goes into its row as an
+// integer, which registers a view's own bit vector, and the rows written before
+// that spelled the view's eq atoms through the underlying variable instead,
+// while the proof's at-most-ones used the registered spelling: nothing
+// cancelled and VeriPB rejected the Hall pols. Positions and counts are both
+// `+-under[base] + offset`. Solved under the harness's random branching and
+// under the default one.
+auto run_aliased_counts_test(bool proofs, const vector<pair<int, int>> & under_ranges, const vector<AliasedPosition> & positions,
+    const vector<int> & values, const vector<AliasedPosition> & count_positions, bool closed) -> void
+{
+    print(cerr, "bgcc aliased counts under={} positions=[", under_ranges);
+    for (const auto & q : positions)
+        print(cerr, " {}u{}{:+}", q.negate ? "-" : "", q.base, q.offset);
+    print(cerr, " ] values={} counts=[", values);
+    for (const auto & q : count_positions)
+        print(cerr, " {}u{}{:+}", q.negate ? "-" : "", q.base, q.offset);
+    print(cerr, " ] closed={}{}", closed, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto value_of = [&](const AliasedPosition & q, const vector<int> & under) { return (q.negate ? -under[q.base] : under[q.base]) + q.offset; };
+    auto is_satisfying = [&](const vector<int> & under) -> bool {
+        for (std::size_t j = 0; j < values.size(); ++j) {
+            int c = 0;
+            for (const auto & q : positions)
+                if (value_of(q, under) == values[j])
+                    ++c;
+            if (c != value_of(count_positions[j], under))
+                return false;
+        }
+        if (closed)
+            for (const auto & q : positions)
+                if (find(values.begin(), values.end(), value_of(q, under)) == values.end())
+                    return false;
+        return true;
+    };
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, is_satisfying, under_ranges);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    auto post = [&](Problem & p) -> vector<IntegerVariableID> {
+        vector<IntegerVariableID> under, vars, counts;
+        for (const auto & [lo, hi] : under_ranges)
+            under.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
+        auto as_view = [&](const AliasedPosition & q) -> IntegerVariableID {
+            return q.negate ? -under[q.base] + Integer(q.offset) : under[q.base] + Integer(q.offset);
+        };
+        for (const auto & q : positions)
+            vars.push_back(as_view(q));
+        for (const auto & q : count_positions)
+            counts.push_back(as_view(q));
+        vector<Integer> int_values;
+        for (auto v : values)
+            int_values.emplace_back(v);
+        p.post(GlobalCardinality{vars, int_values, counts}.with_closed(closed));
+        return under;
+    };
+
+    auto proof_name = proofs ? make_optional("bgcc_aliased_counts_test") : nullopt;
+    {
+        Problem p;
+        auto under = post(p);
+        solve_for_tests(p, proof_name, actual, tuple{under});
+        check_results(proof_name, expected, actual);
+    }
+    {
+        Problem p;
+        auto under = post(p);
+        actual.clear();
+        last_run_truncated() = false;
+        solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState & s) -> bool { return actual.emplace(extract_from_state(s, under)), true; }, //
+                .stats_report = silent_stats_report()                                                                           //
+            },
+            proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+        check_results(proof_name, expected, actual);
+    }
+}
+
+// The magic sequence, GlobalCardinality{x, {0, ..., n - 1}, x}: every count is
+// one of the variables (issue #1191). The Hall pols read the counts' bounds, and
+// the single-literal inference used to run them after its own push, so when
+// the pushed variable was a count, the pol cited the new bound while the reason
+// stated the old one. Proofs were rejected for several n on the bounds arm, from
+// MiniZinc as well. Solved under the harness's random branching and under the
+// default one.
+auto run_magic_sequence_test(bool proofs, int n, bool closed) -> void
+{
+    print(cerr, "bgcc magic sequence n={} closed={}{}", n, closed, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto is_satisfying = [&](const vector<int> & x) -> bool {
+        for (int v = 0; v < n; ++v)
+            if (count(x.begin(), x.end(), v) != x[v])
+                return false;
+        return true;
+    };
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, is_satisfying, vector<pair<int, int>>(n, pair{0, n - 1}));
+    println(cerr, " expecting {} solutions", expected.size());
+
+    auto post = [&](Problem & p) -> vector<IntegerVariableID> {
+        vector<IntegerVariableID> x;
+        vector<Integer> values;
+        for (int v = 0; v < n; ++v) {
+            x.push_back(p.create_integer_variable(0_i, Integer(n - 1)));
+            values.emplace_back(v);
+        }
+        p.post(GlobalCardinality{x, values, x}.with_closed(closed));
+        return x;
+    };
+
+    auto proof_name = proofs ? make_optional("bgcc_magic_sequence_test") : nullopt;
+    {
+        Problem p;
+        auto x = post(p);
+        solve_for_tests(p, proof_name, actual, tuple{x});
+        check_results(proof_name, expected, actual);
+    }
+    {
+        Problem p;
+        auto x = post(p);
+        actual.clear();
+        last_run_truncated() = false;
+        solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState & s) -> bool { return actual.emplace(extract_from_state(s, x)), true; }, //
+                .stats_report = silent_stats_report()                                                                       //
+            },
+            proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+        check_results(proof_name, expected, actual);
+    }
+}
+
+// The issue's instance, with y + 3 and with 3 - y, and then seeded random
+// positions over two underlying variables, each one plain, offset or negated,
+// so that most instances put a variable and a view of it together. Its own
+// generator, so that main's random instances stay what they were.
+auto aliased_views_data() -> vector<tuple<vector<pair<int, int>>, vector<AliasedPosition>, vector<int>, vector<pair<int, int>>, bool>>
+{
+    mt19937 rand(*get_seed());
+    vector<tuple<vector<pair<int, int>>, vector<AliasedPosition>, vector<int>, vector<pair<int, int>>, bool>> aliased_data = {
+        {{{0, 4}, {-1, 2}}, {{0, false, 0}, {1, false, 0}, {1, false, 3}}, {0, 2}, {{0, 2}, {0, 2}}, false},
+        {{{0, 4}, {-1, 2}}, {{0, false, 0}, {1, false, 0}, {1, true, 3}}, {0, 2}, {{0, 2}, {0, 2}}, false},
+    };
+    for (int iteration = 0; iteration < 16; ++iteration) {
+        uniform_int_distribution lo_dist(-1, 1);
+        uniform_int_distribution width_dist(1, 3);
+        uniform_int_distribution n_positions_dist(3, 4);
+        uniform_int_distribution base_dist(0, 1);
+        uniform_int_distribution negate_dist(0, 2);
+        uniform_int_distribution offset_dist(-2, 3);
+        uniform_int_distribution n_values_dist(2, 3);
+        uniform_int_distribution value_dist(-1, 4);
+        uniform_int_distribution closed_dist(0, 1);
+
+        vector<pair<int, int>> under_ranges;
+        for (int u = 0; u < 2; ++u) {
+            auto lo = lo_dist(rand);
+            under_ranges.emplace_back(lo, lo + width_dist(rand));
+        }
+        vector<AliasedPosition> positions;
+        auto n_positions = n_positions_dist(rand);
+        for (int i = 0; i < n_positions; ++i) {
+            bool negate = negate_dist(rand) == 0;
+            positions.push_back(AliasedPosition{static_cast<std::size_t>(base_dist(rand)), negate, offset_dist(rand) + (negate ? 2 : 0)});
+        }
+        auto n_values = n_values_dist(rand);
+        set<int> value_set;
+        while (static_cast<int>(value_set.size()) < n_values)
+            value_set.insert(value_dist(rand));
+        vector<int> values(value_set.begin(), value_set.end());
+        vector<pair<int, int>> counts_range(values.size(), pair{0, n_positions});
+        aliased_data.emplace_back(under_ranges, positions, values, counts_range, closed_dist(rand) == 1);
+    }
+
+    return aliased_data;
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -178,6 +446,14 @@ auto main(int argc, char * argv[]) -> int
         {{1, 1, 2}, {1, 2}, {1, 1}, false},                   // all-const vars + counts, wrong count (contradiction)
         {{pair{1, 2}, pair{1, 2}}, {1}, {pair{0, 2}}, false}, // single cover value
         {{pair{1, 2}}, {}, {}, false},                        // empty value set, open: any assignment allowed
+        // A constant mixed in with real variables (issue #1046). Every row above
+        // with a constant in it is decided before any Hall reasoning runs; with
+        // proofs, these aborted (a constant has no at-least-one line for the
+        // capacity reasoning to use) or wrote a bare `0 >= 1` that VeriPB rejected
+        // (recover_am1's short cut, given a constant's false atoms). These two are
+        // the issue's MiniZinc models.
+        {{pair{1, 3}, pair{1, 4}, 0}, {0, 1, 2, 3, 4}, {pair{0, 1}, pair{0, 1}, pair{0, 2}, pair{0, 1}, pair{0, 1}}, true},
+        {{pair{2, 3}, 1, pair{2, 3}, pair{0, 2}}, {0, 1, 2, 3, 4}, {pair{0, 1}, pair{0, 1}, pair{0, 2}, pair{0, 1}, pair{0, 1}}, false},
     };
 
     mt19937 rand(*get_seed());
@@ -212,11 +488,66 @@ auto main(int argc, char * argv[]) -> int
         data.emplace_back(vars_range, values, counts_range, closed_dist(rand) == 1);
     }
 
+    // Constants mixed in with real variables (issue #1046), some in the cover
+    // and some not. A separate loop, so that the instances above stay what they
+    // were for every seed.
+    for (int iteration = 0; iteration < 24; ++iteration) {
+        uniform_int_distribution n_vars_dist(3, 4);
+        uniform_int_distribution n_values_dist(2, 4);
+        uniform_int_distribution lo_dist(0, 2);
+        uniform_int_distribution width_dist(0, 2);
+        uniform_int_distribution value_dist(0, 4);
+        uniform_int_distribution constant_dist(0, 2);
+        uniform_int_distribution count_hi_dist(0, 3);
+        uniform_int_distribution closed_dist(0, 1);
+
+        auto n_vars = n_vars_dist(rand);
+        vector<Range> vars_range;
+        for (int i = 0; i < n_vars; ++i) {
+            if (constant_dist(rand) == 0)
+                vars_range.emplace_back(value_dist(rand));
+            else {
+                auto lo = lo_dist(rand);
+                vars_range.emplace_back(pair{lo, lo + width_dist(rand)});
+            }
+        }
+
+        auto n_values = n_values_dist(rand);
+        set<int> value_set;
+        while (static_cast<int>(value_set.size()) < n_values)
+            value_set.insert(value_dist(rand));
+        vector<int> values(value_set.begin(), value_set.end());
+
+        vector<Range> counts_range;
+        for (int i = 0; i < n_values; ++i) {
+            auto hi = count_hi_dist(rand);
+            counts_range.emplace_back(pair{0, hi});
+        }
+
+        data.emplace_back(vars_range, values, counts_range, closed_dist(rand) == 1);
+    }
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [vars_range, values, counts_range, closed] : data)
             run_bgcc_test(proofs, vars_range, values, counts_range, closed);
+        for (auto & [under_ranges, positions, values, counts_range, closed] : aliased_views_data())
+            run_aliased_views_test(proofs, under_ranges, positions, values, counts_range, closed);
+        for (int n : {4, 5, 6, 7})
+            for (bool closed : {false, true})
+                run_magic_sequence_test(proofs, n, closed);
+        // The issue's instance, then two that a random sweep found failing on
+        // the GAC arm.
+        run_aliased_counts_test(proofs, {{-1, 3}, {0, 2}, {0, 3}, {1, 1}, {0, 1}, {0, 2}, {0, 3}},
+            {{0, false, 2}, {1, false, 0}, {2, false, 0}, {0, true, 4}}, {0, 1, 2, 3, 4},
+            {{3, false, 0}, {4, false, 0}, {5, false, 0}, {0, false, 2}, {6, false, 0}}, false);
+        run_aliased_counts_test(proofs, {{-1, 3}, {2, 3}, {1, 3}, {0, 4}, {0, 2}},
+            {{0, false, 0}, {1, true, 3}, {0, false, 0}, {1, false, 0}, {0, true, 3}, {0, false, 2}}, {1, 2, 3, 4},
+            {{2, false, 0}, {3, false, 0}, {0, true, 3}, {4, false, 0}}, false);
+        run_aliased_counts_test(proofs, {{2, 6}, {-1, 0}, {2, 6}, {-1, 1}, {0, 4}, {1, 3}},
+            {{0, false, 0}, {1, false, 0}, {2, true, 3}, {3, true, 5}, {3, false, 0}, {2, false, -2}}, {0, 1, 3, 4, 5},
+            {{2, true, 5}, {2, false, 0}, {4, false, 0}, {5, false, 0}, {2, false, -2}}, false);
     }
 
     return EXIT_SUCCESS;

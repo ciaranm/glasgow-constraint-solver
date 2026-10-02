@@ -1863,8 +1863,8 @@ overflow the strip.
   families are published with it. They cost nothing until cited. The rule
   only says whether the projection's own propagator runs.
 
-The presolvers that decline optional donors decline an optional
-projection the same way. Strengthening takes one. With every presolver
+An optional projection is a donor like any other: every presolver carries
+its presences into what it derives (#1136). With every presolver
 off, proofs are byte-identical to before on the existing `Disjunctive2D`,
 presolver and derived-constraint tests (376 proofs).
 `disjunctive_2d_presolver_test` checks each presolver over projections

@@ -135,6 +135,86 @@ auto run_dup_min_max_test(bool proofs, bool min, const string & label, const vec
     check_results(proof_name, expected, actual);
 }
 
+// One position of an aliased-view instance: coefficient * vars[var] + offset,
+// with coefficient 1 or -1.
+struct ViewPosition
+{
+    int var;
+    int coefficient;
+    int offset;
+};
+
+// Aliased-view test (issue #1165): the result and the array entries are views
+// of a few shared variables, with differing offsets and signs, over holey
+// domains. Removing a value from one position then removes one from another
+// as well, which the propagator's union rule, its single-support rule and its
+// GAC pass must all allow for. With default_branching the solve uses the
+// solver's default branching, as the instances in the issue were found with;
+// otherwise the harness's seeded random branching. Consistency isn't checked,
+// as on the other duplicate runs.
+auto run_aliased_view_min_max_test(bool proofs, bool min, bool default_branching, const string & label, const vector<vector<int>> & domains,
+    const vector<ViewPosition> & array_positions, ViewPosition result_position) -> void
+{
+    print(cerr, "{} aliased views {} {}{}", min ? "min" : "max", label, default_branching ? "default branching" : "random branching",
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto value_at = [&](const vector<int> & vals, const ViewPosition & pos) { return pos.coefficient * vals.at(pos.var) + pos.offset; };
+
+    set<vector<int>> expected, actual;
+    vector<int> vals(domains.size());
+    auto enumerate_assignments = [&](auto & self, std::size_t i) -> void {
+        if (i == domains.size()) {
+            int extreme = value_at(vals, array_positions.at(0));
+            for (const auto & pos : array_positions)
+                extreme = min ? std::min(extreme, value_at(vals, pos)) : std::max(extreme, value_at(vals, pos));
+            if (extreme == value_at(vals, result_position))
+                expected.insert(vals);
+            return;
+        }
+        for (auto v : domains.at(i)) {
+            vals.at(i) = v;
+            self(self, i + 1);
+        }
+    };
+    enumerate_assignments(enumerate_assignments, 0);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> vars;
+    for (const auto & d : domains) {
+        vector<Integer> values;
+        for (auto v : d)
+            values.emplace_back(v);
+        vars.push_back(p.create_integer_variable(values));
+    }
+    auto view_of = [&](const ViewPosition & pos) -> IntegerVariableID {
+        auto var = vars.at(pos.var);
+        return (pos.coefficient == 1 ? var : -var) + Integer(pos.offset);
+    };
+    vector<IntegerVariableID> array;
+    for (const auto & pos : array_positions)
+        array.push_back(view_of(pos));
+    auto result = view_of(result_position);
+    if (min)
+        p.post(ArrayMin{array, result});
+    else
+        p.post(ArrayMax{array, result});
+
+    auto proof_name = proofs ? make_optional((min ? string{"min_max_test_min_aliased_"} : string{"min_max_test_max_aliased_"}) + label) : nullopt;
+    if (default_branching) {
+        last_run_truncated() = false;
+        solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+            actual.insert(extract_from_state(s, vars));
+            return true;
+        }},
+            proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+    }
+    else
+        solve_for_tests(p, proof_name, actual, tuple{vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -208,6 +288,59 @@ auto main(int argc, char * argv[]) -> int
                 run_dup_min_max_test(proofs, m, "xy_resx", {{1, 5}, {1, 5}}, {0, 1}, 0, {0, 6});
                 // {x, y, z} with result = y — forces y == min/max(x,y,z).
                 run_dup_min_max_test(proofs, m, "xyz_resy", {{1, 4}, {1, 4}, {1, 4}}, {0, 1, 2}, 1, {0, 5});
+            }
+
+            // Issue #1165. Each fixed instance is run under both branchings;
+            // with default branching each one failed on the unfixed propagator,
+            // the first two by throwing "missing support", the next two by a
+            // proof VeriPB rejected from the GAC pass, and the last three by
+            // one rejected from the single-support rule.
+            for (bool default_branching : {true, false}) {
+                // ArrayMin{{z + 1}, z}: unsatisfiable.
+                run_aliased_view_min_max_test(proofs, true, default_branching, "z_plus_1", {{0, 1, 2, 3, 4}}, {{0, 1, 1}}, {0, 1, 0});
+                // Min{z, y, z - 1}, y created first: satisfiable, five solutions.
+                run_aliased_view_min_max_test(proofs, true, default_branching, "z_y_z_minus_1", {{-3, -2, -1, 0, 1, 3, 4}, {-3, -2, 0, 1, 2, 3, 4}},
+                    {{1, 1, 0}, {0, 1, 0}}, {1, 1, -1});
+                // ArrayMin{{y + 1, 1 - x, y + 1}, -x}.
+                run_aliased_view_min_max_test(
+                    proofs, true, default_branching, "gac_pass", {{1, 3, 4}, {-2, 4}}, {{1, 1, 1}, {0, -1, 1}, {1, 1, 1}}, {0, -1, 0});
+                // ArrayMax{{-y, 1 - w, y + 1, -1 - w}, y + 2}.
+                run_aliased_view_min_max_test(proofs, false, default_branching, "gac_pass", {{0, 3, 4}, {-3, -1, 4}},
+                    {{0, -1, 0}, {1, -1, 1}, {0, 1, 1}, {1, -1, -1}}, {0, 1, 2});
+                // ArrayMin{{v1 - 2, -v2, 1 - v0}, -v0 - 2}.
+                run_aliased_view_min_max_test(proofs, true, default_branching, "single_support", {{-3, -2, -1, 0, 1, 2, 3}, {-3, -2, -1, 4}, {-2, 4}},
+                    {{1, 1, -2}, {2, -1, 0}, {0, -1, 1}}, {0, -1, -2});
+                // ArrayMax{{x, y - 2, y}, y + 2}.
+                run_aliased_view_min_max_test(proofs, false, default_branching, "single_support", {{-2, 3, 4}, {-3, -2, 0, 1, 2}},
+                    {{0, 1, 0}, {1, 1, -2}, {1, 1, 0}}, {1, 1, 2});
+                // ArrayMin{{-x - 1, -y - 4}, -x - 3}.
+                run_aliased_view_min_max_test(proofs, true, default_branching, "single_support_offset_2", {{1, 2, 3, 4, 5}, {-2, 3, 4}},
+                    {{0, -1, -1}, {1, -1, -4}}, {0, -1, -3});
+            }
+
+            // Random aliased-view instances: holey domains, every position a
+            // view +-v + b with b in -3..3, and the result sharing its
+            // variable with at least one entry.
+            mt19937 alias_rand(*get_seed() + (proofs ? 1 : 0));
+            auto rand_int = [&](int lo, int hi) { return uniform_int_distribution(lo, hi)(alias_rand); };
+            for (int t = 0; t < 15; ++t) {
+                for (bool m : {true, false}) {
+                    int n_vars = rand_int(1, 3), n_entries = rand_int(1, 4);
+                    vector<vector<int>> domains(n_vars);
+                    for (auto & d : domains) {
+                        for (int v = -3; v <= 4; ++v)
+                            if (rand_int(0, 3) != 0)
+                                d.push_back(v);
+                        if (d.empty())
+                            d.push_back(rand_int(-3, 4));
+                    }
+                    auto random_position = [&](int var) { return ViewPosition{var, rand_int(0, 1) ? 1 : -1, rand_int(-3, 3)}; };
+                    vector<ViewPosition> entries;
+                    for (int e = 0; e < n_entries; ++e)
+                        entries.push_back(random_position(rand_int(0, n_vars - 1)));
+                    auto result_position = random_position(entries.at(rand_int(0, n_entries - 1)).var);
+                    run_aliased_view_min_max_test(proofs, m, false, "random_" + std::to_string(t), domains, entries, result_position);
+                }
             }
         }
     }

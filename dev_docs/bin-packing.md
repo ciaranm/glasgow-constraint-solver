@@ -366,12 +366,22 @@ packing gets it. `DELTA` is piecewise constant in `α` with breakpoints at
 the item sizes, so the distinct sizes plus 1 are the whole family.
 
 **Which items are counted.** `S(α)` is the items with `sizes[i] >= α`,
-plus every item already pinned to a bin whatever its size. An item below
-the threshold buys less than a whole unit of a bin's divided capacity
-while costing `c_i (|D_i| - 1)`, so it only pays its way once `|D_i| = 1`
-— which is exactly where that cost is zero. This is the domain-aware
-form of the threshold rule L2 uses: the classical bound has no domains to
-be aware of, and `|D_i| - 1` is where ours reads them.
+plus every item of positive size already pinned to a bin, however small.
+An item below the threshold buys less than a whole unit of a bin's divided
+capacity while costing `c_i (|D_i| - 1)`, so it only pays its way once
+`|D_i| = 1` — which is exactly where that cost is zero. This is the
+domain-aware form of the threshold rule L2 uses: the classical bound has
+no domains to be aware of, and `|D_i| - 1` is where ours reads them.
+
+A constant item of positive size is pinned, so it is counted, but it gets
+no at-least-one row, and no term in a bin's weakening or slack line. There
+is no row to state (the proof tracker has none for a constant), and none
+is needed. The OPB folds a constant's size into its bin's right-hand side,
+so its bin's row already reads `... >= T_b - cap_b` with the constant's
+size in `T_b`, exactly what a variable item's `~x` term leaves once `c_i`
+times its at-least-one has cancelled it. Its `c_i (|D_i| - 1)` is 0, so
+`DELTA` is unchanged. Before #1192 the final `pol` asked for the row
+anyway, and a proof-logged solve with a constant item aborted.
 
 **`max(0, R_b)` and not `R_b`.** A bin with room to spare has a negative
 `R_b` that would drag the sum down. Such a bin supplies the trivially

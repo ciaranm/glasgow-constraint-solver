@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <sstream>
 #include <string>
+#include <type_traits>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -121,66 +122,76 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
             // representation the model states these rows in, so the two bound
             // lemmas cross on the view's own encoding rather than having to reach
             // the underlying one.
-            auto unsupported = state.copy_of_values(result);
-            for (const auto & var : vars) {
-                if (unsupported.empty())
-                    break;
-                // The copy has to be a named local: each_interval() hands out
-                // a generator that *borrows* the set, which must outlive it
-                // (see IntervalSet's class documentation). Iterating over a
-                // temporary's generator leaves it dangling, which reads
-                // garbage intervals, fails to erase the values that really
-                // are supported, and so removes supported values from the
-                // result -- lost solutions, not merely lost pruning.
-                auto var_values = state.copy_of_values(var);
-                for (auto [lo, hi] : var_values.each_interval())
-                    unsupported.erase_range(lo, hi);
-            }
+            //
+            // When result shares a variable with an entry through a view (say
+            // result is z and an entry is z - 1), removing a value from result
+            // also removes one from that entry, so the union this computed can
+            // be stale by the time it finishes. That is why it is a lambda: see
+            // the support scan below.
+            auto remove_values_no_var_holds = [&]() {
+                auto unsupported = state.copy_of_values(result);
+                for (const auto & var : vars) {
+                    if (unsupported.empty())
+                        break;
+                    // The copy has to be a named local: each_interval() hands out
+                    // a generator that *borrows* the set, which must outlive it
+                    // (see IntervalSet's class documentation). Iterating over a
+                    // temporary's generator leaves it dangling, which reads
+                    // garbage intervals, fails to erase the values that really
+                    // are supported, and so removes supported values from the
+                    // result -- lost solutions, not merely lost pruning.
+                    auto var_values = state.copy_of_values(var);
+                    for (auto [lo, hi] : var_values.each_interval())
+                        unsupported.erase_range(lo, hi);
+                }
 
-            for (auto [lo, hi] : unsupported.each_interval()) {
-                ReasonLiterals reason;
-                for (auto & var : vars)
-                    reason.emplace_back(not_in_range(var, lo, hi));
+                for (auto [lo, hi] : unsupported.each_interval()) {
+                    ReasonLiterals reason;
+                    for (auto & var : vars)
+                        reason.emplace_back(not_in_range(var, lo, hi));
 
-                inference.infer_not_in_range(logger, result, lo, hi,
-                    JustifyExplicitly{//
-                        [logger, result, min, lo = lo, hi = hi, &vars, &selectors](const ReasonLiterals & reason) {
-                            // The range conclusion cannot be RUPped on its own, and
-                            // not for the reason the per-value form gets away with.
-                            // Negating the conclusion is fine: two opposing bounds on
-                            // result do contradict through the bit rows. It is the
-                            // *reason* that blocks it -- "var not in [lo, hi]" is the
-                            // disjunction ~ge(lo) \/ ge(hi+1), and RUP cannot case
-                            // split. (The per-value form never meets this, because
-                            // result = val pins every bit of result and so pins var's
-                            // too, deciding both halves at once.)
-                            //
-                            // So each half is restated as a clause the checker can
-                            // unit propagate. One of the two crosses the half-reified
-                            // row and carries the selector with it; the other crosses
-                            // the unconditional row and does not. For max the model is
-                            // result >= var_i always and result <= var_i under f_i, so
-                            // it is the lower lemma that needs f_i; for min it is the
-                            // upper one. With both in the database the selector clause
-                            // and the conclusion are plain propagation.
-                            for (const auto & [idx, var] : enumerate(vars)) {
-                                auto lower = WPBSum{} + 1_i * (result < lo) + 1_i * (var >= lo);
-                                auto upper = WPBSum{} + 1_i * (var < hi + 1_i) + 1_i * (result >= hi + 1_i);
-                                if (min)
-                                    upper += 1_i * ! selectors.at(idx);
-                                else
-                                    lower += 1_i * ! selectors.at(idx);
+                    inference.infer_not_in_range(logger, result, lo, hi,
+                        JustifyExplicitly{//
+                            [logger, result, min, lo = lo, hi = hi, &vars, &selectors](const ReasonLiterals & reason) {
+                                // The range conclusion cannot be RUPped on its own, and
+                                // not for the reason the per-value form gets away with.
+                                // Negating the conclusion is fine: two opposing bounds on
+                                // result do contradict through the bit rows. It is the
+                                // *reason* that blocks it -- "var not in [lo, hi]" is the
+                                // disjunction ~ge(lo) \/ ge(hi+1), and RUP cannot case
+                                // split. (The per-value form never meets this, because
+                                // result = val pins every bit of result and so pins var's
+                                // too, deciding both halves at once.)
+                                //
+                                // So each half is restated as a clause the checker can
+                                // unit propagate. One of the two crosses the half-reified
+                                // row and carries the selector with it; the other crosses
+                                // the unconditional row and does not. For max the model is
+                                // result >= var_i always and result <= var_i under f_i, so
+                                // it is the lower lemma that needs f_i; for min it is the
+                                // upper one. With both in the database the selector clause
+                                // and the conclusion are plain propagation.
+                                for (const auto & [idx, var] : enumerate(vars)) {
+                                    auto lower = WPBSum{} + 1_i * (result < lo) + 1_i * (var >= lo);
+                                    auto upper = WPBSum{} + 1_i * (var < hi + 1_i) + 1_i * (result >= hi + 1_i);
+                                    if (min)
+                                        upper += 1_i * ! selectors.at(idx);
+                                    else
+                                        lower += 1_i * ! selectors.at(idx);
 
-                                logger->emit_rup_proof_line_under_reason(reason, move(lower) >= 1_i, ProofLevel::Temporary);
-                                logger->emit_rup_proof_line_under_reason(reason, move(upper) >= 1_i, ProofLevel::Temporary);
-                                logger->emit_rup_proof_line_under_reason(reason,
-                                    WPBSum{} + 1_i * ! selectors.at(idx) + 1_i * not_in_range(result, lo, hi) + 1_i * in_range(var, lo, hi) >= 1_i,
-                                    ProofLevel::Temporary);
-                            }
-                        },
-                        ThenRUP::Yes, hints::MinMax{owner}},
-                    ExplicitReason{reason});
-            }
+                                    logger->emit_rup_proof_line_under_reason(reason, move(lower) >= 1_i, ProofLevel::Temporary);
+                                    logger->emit_rup_proof_line_under_reason(reason, move(upper) >= 1_i, ProofLevel::Temporary);
+                                    logger->emit_rup_proof_line_under_reason(reason,
+                                        WPBSum{} + 1_i * ! selectors.at(idx) + 1_i * not_in_range(result, lo, hi) + 1_i * in_range(var, lo, hi) >=
+                                            1_i,
+                                        ProofLevel::Temporary);
+                                }
+                            },
+                            ThenRUP::Yes, hints::MinMax{owner}},
+                        ExplicitReason{reason});
+                }
+            };
+            remove_values_no_var_holds();
 
             // is there more than one variable that can support the values in result?
             optional<IntegerVariableID> support_1, support_2;
@@ -195,8 +206,18 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 }
             }
 
-            if (! support_1)
-                throw UnexpectedException{"missing support, bug in MinMaxArray propagator"};
+            if (! support_1) {
+                // Only reachable when result shares a variable with an entry
+                // through a view: the union pass's removals from result then
+                // shrank that entry too, until no entry meets what is left of
+                // result. (Without such sharing, every value the pass leaves
+                // in result is held by some entry.) The state is infeasible,
+                // so fail here: a second union pass now finds every value of
+                // result unheld, and its last removal empties result, which
+                // throws, justified exactly as any other union removal is.
+                remove_values_no_var_holds();
+                throw UnexpectedException{"union pass did not wipe out result, bug in MinMaxArray propagator"};
+            }
             else if (! support_2) {
                 // no, there's only a single var left that has any intersection with result. so, that
                 // variable has to lose any values not present in result.
@@ -223,10 +244,18 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 // is missing all of result's values, so its model selector must be false. This
                 // is value-independent, so the range path emits it once per interval rather
                 // than once per removed value.
+                //
+                // It walks result_set, the domain the reason's extra literals were built
+                // from, not result's live domain: the tracker runs a justification after
+                // its inference, and when support_1 shares a variable with result through
+                // a view, that inference has already removed values from result, whose
+                // lemmas the bridge below still needs. A value an earlier interval's
+                // removal took out of result is harmless here, since its var != val
+                // literal is still in the reason.
                 auto rule_out_other_selectors = [&](const ReasonLiterals & reason) {
                     for (const auto & [idx, var] : enumerate(vars))
                         if (var != *support_1) {
-                            for (const auto & rval : state.each_value_immutable(result))
+                            for (const auto & rval : result_set.each())
                                 logger->emit_rup_proof_line_under_reason(
                                     reason, WPBSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != rval)) >= 1_i, ProofLevel::Temporary);
                             logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
@@ -304,8 +333,24 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                         bool supported_as_extreme = state.in_domain(result, v) && (! others_limit || (min ? v <= *others_limit : v >= *others_limit));
                         bool supported_under_other = other_extreme && (min ? v > *other_extreme : v < *other_extreme);
                         if (! supported_as_extreme && ! supported_under_other) {
+                            // The justification needs result's values as they were
+                            // before this inference, but the tracker runs it after:
+                            // when var_i shares a variable with result through a
+                            // view, removing v from var_i has already removed a
+                            // value from result, and that value's lemmas are needed.
+                            // So copy the domain first. Only the justification reads
+                            // the copy, so it is taken only when one will run, and
+                            // it costs one step per interval of result, less than
+                            // the justification's own walk over result's values.
+                            // The if constexpr keeps it out of the proofs-off
+                            // instantiation altogether, so a run without proofs
+                            // does not even test logger here.
+                            IntervalSet<Integer> result_before;
+                            if constexpr (std::remove_cvref_t<decltype(inference)>::materialises_reasons)
+                                if (logger)
+                                    result_before = state.copy_of_values(result);
                             auto justf = [&, var_i = var_i, v = v](const ReasonLiterals & reason) {
-                                for (auto r : state.each_value_immutable(result)) {
+                                for (auto r : result_before.each()) {
                                     if (min ? r >= v : r <= v)
                                         continue;
                                     // if var_i = v and result = r, no var can equal result, breaking al1

@@ -240,6 +240,12 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                 // (clipped to the variable's bounds, which the reason pins too).
                 vector<Integer> still_possible;
                 for (const auto & var : confined) {
+                    // A constant's contribution to the count lines is fixed, so
+                    // it leaves no term to cancel and needs no at-least-one (see
+                    // emit_gcc_capacity_pol in justify.cc); the tracker has none
+                    // to give it.
+                    if (holds_alternative<ConstantIntegerVariableID>(var))
+                        continue;
                     still_possible.clear();
                     for (auto v = a; v <= b; ++v)
                         if (state.in_domain(var, values[v]))
@@ -296,7 +302,7 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                     // LE_j; this yields c_j - Sum_{i not confined} x >= L.
                     // The final RUP closes c_j >= L; its reason supplies
                     // c_v <= ub_v (v != j), discharging the gevars.
-                    inference.infer(logger, counts[j] >= lower,
+                    infer_hall_before_push(inference, logger, counts[j] >= lower,
                         JustifyExplicitly{//
                             [&, a = a, b = b, j = j](const ReasonLiterals &) {
                                 auto & tracker = logger->names_and_ids_tracker();
@@ -309,6 +315,10 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                                     }
                                 vector<Integer> still_possible;
                                 for (const auto & var : confined) {
+                                    // A constant leaves no term to cancel: no
+                                    // at-least-one (see emit_capacity_pol).
+                                    if (holds_alternative<ConstantIntegerVariableID>(var))
+                                        continue;
                                     still_possible.clear();
                                     for (auto v = a; v <= b; ++v)
                                         if (state.in_domain(var, values[v]))
@@ -319,25 +329,29 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                                 pb.emit(*logger, ProofLevel::Temporary);
                             },
                             ThenRUP::Yes, hints::GlobalCardinality{owner}},
-                        LazyReasonOver{vars, [&, j = j](const State &, ReasonLiterals & out) { out = capacity_reason(j); }});
+                        [&, j = j] { return capacity_reason(j); });
                 auto upper = potential_count - (demand - lb_j);
                 if (upper < ub_j)
                     // Dual: at-most-one over H per potential variable, the
                     // count lines GE_v with the defining implication of
                     // c_v >= lb_v for v != j, and the j count line GE_j;
                     // RUP-closes c_j <= U, the reason discharging the gevars.
-                    inference.infer(logger, counts[j] <= upper,
+                    infer_hall_before_push(inference, logger, counts[j] <= upper,
                         JustifyExplicitly{//
                             [&, a = a, b = b, j = j](const ReasonLiterals &) {
                                 auto & tracker = logger->names_and_ids_tracker();
                                 PolBuilder pb;
                                 for (const auto & var : potential) {
+                                    // A constant leaves no term to cancel: no
+                                    // at-most-one (see emit_demand_pol).
+                                    if (holds_alternative<ConstantIntegerVariableID>(var))
+                                        continue;
                                     vector<IntegerVariableCondition> atoms;
                                     for (std::size_t v = a; v <= b; ++v)
-                                        atoms.push_back(var == values[v]);
+                                        atoms.push_back(var != values[v]);
                                     pb.add(recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Temporary, atoms,
                                         [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
-                                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
+                                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * p + 1_i * q >= 1_i, ProofLevel::Temporary);
                                         }));
                                 }
                                 for (std::size_t v = a; v <= b; ++v)
@@ -350,7 +364,7 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                                 pb.emit(*logger, ProofLevel::Temporary);
                             },
                             ThenRUP::Yes, hints::GlobalCardinality{owner}},
-                        LazyReasonOver{vars, [&, j = j](const State &, ReasonLiterals & out) { out = demand_reason(j); }});
+                        [&, j = j] { return demand_reason(j); });
             }
 
             if (confined_count > cap) {
@@ -364,10 +378,10 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                         continue;
                     for (std::size_t v = a; v <= b; ++v)
                         if (Integer val = values[v]; state.in_domain(var, val))
-                            inference.infer(logger, var != val,
+                            infer_hall_before_push(inference, logger, var != val,
                                 JustifyExplicitly{
                                     [&](const ReasonLiterals &) { emit_capacity_pol(nullopt); }, ThenRUP::Yes, hints::GlobalCardinality{owner}},
-                                LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = capacity_reason(nullopt); }});
+                                [&] { return capacity_reason(nullopt); });
                 }
             }
 
@@ -389,14 +403,21 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                         pb.add_for_literal(tracker, counts[v] >= state.bounds(counts[v]).first);
                 }
                 for (const auto & var : potential) {
+                    // A constant's contribution to the count lines is fixed, so
+                    // it leaves no term to cancel and needs no at-most-one. It is
+                    // never kvar, having no value outside the hall set to lose.
+                    if (holds_alternative<ConstantIntegerVariableID>(var))
+                        continue;
+                    // recover_am1 takes its atoms negated (x != v), with pairwise
+                    // lines (x != v) + (x != w) >= 1.
                     vector<IntegerVariableCondition> atoms;
                     for (std::size_t v = a; v <= b; ++v)
-                        atoms.push_back(var == values[v]);
+                        atoms.push_back(var != values[v]);
                     if (kvar == optional<IntegerVariableID>{var})
-                        atoms.push_back(var == kw);
+                        atoms.push_back(var != kw);
                     pb.add(recover_am1<IntegerVariableCondition>(
                         *logger, ProofLevel::Temporary, atoms, [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
-                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
+                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * p + 1_i * q >= 1_i, ProofLevel::Temporary);
                         }));
                 }
                 pb.emit(*logger, ProofLevel::Temporary);
@@ -411,10 +432,10 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                 for (const auto & var : potential)
                     for (const auto & val : state.each_value_mutable(var))
                         if (! hall_contains(val))
-                            inference.infer(logger, var != val,
+                            infer_hall_before_push(inference, logger, var != val,
                                 JustifyExplicitly{[&, var = var, val = val](const ReasonLiterals &) { emit_demand_pol(var, val); }, ThenRUP::Yes,
                                     hints::GlobalCardinality{owner}},
-                                LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = demand_reason(nullopt); }});
+                                [&] { return demand_reason(nullopt); });
             }
         }
     }

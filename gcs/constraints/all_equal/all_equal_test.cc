@@ -1,10 +1,13 @@
 #include <gcs/constraints/all_equal.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/linear.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <random>
@@ -24,7 +27,9 @@
 
 using std::cerr;
 using std::flush;
+using std::function;
 using std::make_optional;
+using std::make_pair;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
@@ -256,6 +261,162 @@ auto run_dup_all_equal_test(bool proofs, const vector<pair<int, int>> & unique_d
     check_results(proof_name, expected, actual);
 }
 
+// Issue #1153 shapes. Each underlying variable has a listed domain, and each
+// position of the AllEqual is `sign * var + offset` over one of them, so a
+// variable can be repeated plainly or through a view, and an underlying
+// variable no position mentions is free. The expected set is brute-forced over
+// the underlying variables.
+struct Position
+{
+    int var;
+    int sign;
+    int offset;
+};
+
+auto int_range(int lo, int hi) -> vector<int>
+{
+    vector<int> result;
+    for (int v = lo; v <= hi; ++v)
+        result.push_back(v);
+    return result;
+}
+
+auto to_integers(const vector<int> & vs) -> vector<Integer>
+{
+    vector<Integer> result;
+    for (auto v : vs)
+        result.emplace_back(v);
+    return result;
+}
+
+auto enumerate_assignments(const vector<vector<int>> & domains, const function<bool(const vector<int> &)> & is_satisfying) -> set<tuple<vector<int>>>
+{
+    set<tuple<vector<int>>> result;
+    vector<int> values(domains.size());
+    function<void(size_t)> rec = [&](size_t i) {
+        if (i == domains.size()) {
+            if (is_satisfying(values))
+                result.emplace(values);
+            return;
+        }
+        for (auto v : domains[i]) {
+            values[i] = v;
+            rec(i + 1);
+        }
+    };
+    rec(0);
+    return result;
+}
+
+auto position_value(const Position & pos, const vector<int> & values) -> int
+{
+    return pos.sign * values.at(pos.var) + pos.offset;
+}
+
+auto position_variable(const Position & pos, const vector<IntegerVariableID> & vars) -> IntegerVariableID
+{
+    auto v = vars.at(pos.var);
+    if (pos.sign == 1)
+        return v + Integer(pos.offset);
+    return -v + Integer(pos.offset);
+}
+
+// The propagator used to disable itself whenever vars[0] was single-valued
+// after a call, but either of its passes can fix vars[0] part-way through
+// while another position still holds a different value, or several. Every
+// shape the call site in main() passes here gave wrong answers that way,
+// except {x, x + 1} at an odd width: there the domain empties before x is
+// fixed, so that one is a control that passed on the old code too.
+auto run_disable_test(bool proofs, const string & label, const vector<vector<int>> & domains, const vector<Position> & positions, bool check_gac)
+    -> void
+{
+    print(cerr, "all_equal disable [{}]{}", label, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto expected = enumerate_assignments(domains, [&](const vector<int> & values) {
+        for (const auto & pos : positions)
+            if (position_value(pos, values) != position_value(positions.at(0), values))
+                return false;
+        return true;
+    });
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> vars;
+    for (const auto & d : domains)
+        vars.push_back(p.create_integer_variable(to_integers(d)));
+    vector<IntegerVariableID> posted;
+    for (const auto & pos : positions)
+        posted.push_back(position_variable(pos, vars));
+    p.post(AllEqual{posted});
+
+    set<tuple<vector<int>>> actual;
+    auto proof_name = proofs ? make_optional("all_equal_test_disable") : nullopt;
+    if (check_gac)
+        solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});
+    else
+        solve_for_tests(p, proof_name, actual, tuple{vars});
+    check_results(proof_name, expected, actual);
+}
+
+// The same bug with holes made during search rather than at the root: other
+// constraints punch holes and move bounds, under a fixed branching order that
+// is known to reach it. The harness's random branching might not, so this one
+// solves with its own. Each instance came from a random search over models of
+// this shape (the first two) or is the MiniZinc model in
+// minizinc/tests/allequalsearchholes.mzn (the third).
+auto run_search_holes_test(bool proofs, const string & label, const vector<pair<int, int>> & domains, const vector<pair<int, int>> & not_equals,
+    const vector<tuple<int, int, int>> & sum_at_most, const vector<int> & all_equal, const vector<int> & branch_order) -> void
+{
+    print(cerr, "all_equal search holes [{}]{}", label, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    vector<vector<int>> listed;
+    for (auto [lo, hi] : domains)
+        listed.push_back(int_range(lo, hi));
+    auto expected = enumerate_assignments(listed, [&](const vector<int> & values) {
+        for (auto i : all_equal)
+            if (values.at(i) != values.at(all_equal.at(0)))
+                return false;
+        for (auto [i, j] : not_equals)
+            if (values.at(i) == values.at(j))
+                return false;
+        for (auto [i, j, c] : sum_at_most)
+            if (values.at(i) + values.at(j) > c)
+                return false;
+        return true;
+    });
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> vars;
+    for (auto [lo, hi] : domains)
+        vars.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
+    for (auto [i, j] : not_equals)
+        p.post(NotEquals{vars.at(i), vars.at(j)});
+    for (auto [i, j, c] : sum_at_most)
+        p.post(LinearLessThanEqual{WeightedSum{} + 1_i * vars.at(i) + 1_i * vars.at(j), Integer(c)});
+    vector<IntegerVariableID> posted;
+    for (auto i : all_equal)
+        posted.push_back(vars.at(i));
+    p.post(AllEqual{posted});
+    vector<IntegerVariableID> branch_vars;
+    for (auto i : branch_order)
+        branch_vars.push_back(vars.at(i));
+
+    set<tuple<vector<int>>> actual;
+    auto proof_name = proofs ? make_optional("all_equal_test_search_holes") : nullopt;
+    last_run_truncated() = false;
+    solve_with(p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState & s) -> bool { return actual.emplace(extract_from_state(s, vars)), true; }, //
+            .branch = branch_with(variable_order::in_order(branch_vars), value_order::smallest_first()),                   //
+            .stats_report = silent_stats_report()                                                                          //
+        },
+        proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -325,6 +486,31 @@ auto main(int argc, char * argv[]) -> int
             run_all_equal_collection_test(proofs, "mixed", {3, pair{1, 5}, 3});
         }
         if (run_dup) {
+            // Issue #1153. vars[0] holey, and no hole left once the bounds
+            // pass is done, so the hole pass never runs: x in {1, 3} and
+            // y in {2, 4} land on x = 3 and y = 2.
+            run_disable_test(proofs, "holey_first_unsat", {{1, 3}, {2, 4}}, {{0, 1, 0}, {1, 1, 0}}, true);
+            run_disable_test(proofs, "holey_first_sat", {{1, 5}, int_range(0, 3)}, {{0, 1, 0}, {1, 1, 0}}, true);
+            run_disable_test(proofs, "holey_first_three", {{0, 2, 4}, int_range(1, 3), int_range(1, 3)}, {{0, 1, 0}, {1, 1, 0}, {2, 1, 0}}, true);
+            // A repeat through an offset view fixes x part-way through the
+            // bounds pass, over intervals; and through the hole pass's removals
+            // from x + 1, when the bounds pass leaves x holey.
+            run_disable_test(proofs, "offset_repeat", {int_range(0, 2), int_range(0, 5)}, {{0, 1, 0}, {1, 1, 0}, {0, 1, 1}}, false);
+            run_disable_test(proofs, "offset_repeat_holey", {{-1, 0, 1, 2, 4, 5}, int_range(0, 5)}, {{0, 1, 0}, {1, 1, 0}, {0, 1, 1}}, false);
+            // Through an opposite-sign view: 2 - x >= 1 fixes x = 1.
+            run_disable_test(proofs, "negated_repeat", {int_range(0, 3), int_range(1, 5)}, {{0, 1, 0}, {1, 1, 0}, {0, -1, 2}}, false);
+            // {x, x + 1} is unsatisfiable, and y is free. At an even width x is
+            // fixed mid-call before its domain empties; at an odd width it
+            // empties first.
+            for (int width : {2, 10, 11})
+                run_disable_test(
+                    proofs, "offset_pair_width_" + std::to_string(width), {int_range(0, width), int_range(0, width)}, {{0, 1, 0}, {0, 1, 1}}, false);
+
+            run_search_holes_test(proofs, "trial_437", {{1, 5}, {0, 3}, {0, 3}, {0, 5}, {0, 5}, {0, 5}}, {{0, 4}}, {{1, 4, 4}, {1, 4, 6}}, {0, 1, 2},
+                {3, 4, 5, 0, 1, 2});
+            run_search_holes_test(
+                proofs, "trial_933", {{0, 3}, {1, 4}, {0, 4}, {0, 5}}, {{2, 3}, {2, 3}, {1, 3}}, {{0, 3, 4}}, {1, 0, 2}, {3, 0, 1, 2});
+            run_search_holes_test(proofs, "minizinc", {{1, 5}, {0, 4}, {0, 5}}, {{1, 2}}, {{0, 2, 4}, {1, 2, 7}}, {1, 0}, {2, 0, 1});
             // {x, x} — tautology, every value of x.
             run_dup_all_equal_test(proofs, {{1, 5}}, {0, 0});
             // {x, x, y} — reduces to AllEqual({x, y}); intersection of domains.

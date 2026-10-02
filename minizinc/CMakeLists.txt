@@ -363,6 +363,11 @@ set_tests_properties(minizinc-globalcardinalityclosed PROPERTIES SKIP_RETURN_COD
 add_test(NAME minizinc-globalcardinalitylowup COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalitylowup true true)
 set_tests_properties(minizinc-globalcardinalitylowup PROPERTIES SKIP_RETURN_CODE 66)
 
+# The magic sequence, where every count is one of the counted variables (#1191).
+# The solutions were right; it is the proof run that tests anything here.
+add_test(NAME minizinc-globalcardinalitymagic COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --unsatisfiable --fzn-pattern glasgow_global_cardinality $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalitymagic true true)
+set_tests_properties(minizinc-globalcardinalitymagic PROPERTIES SKIP_RETURN_CODE 66)
+
 # A cover that repeats a value, which MiniZinc permits and GlobalCardinality does
 # not: the front end folds the repeat out and posts the count equality it stood
 # for (#922). The fzn pattern is what stops these passing vacuously -- if the
@@ -373,6 +378,16 @@ set_tests_properties(minizinc-globalcardinalityrepeated PROPERTIES SKIP_RETURN_C
 
 add_test(NAME minizinc-globalcardinalityrepeatedclosed COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_global_cardinality_closed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalityrepeatedclosed true true)
 set_tests_properties(minizinc-globalcardinalityrepeatedclosed PROPERTIES SKIP_RETURN_CODE 66)
+
+# A par entry in the variable array, which the front end posts as a constant in
+# GlobalCardinality's scope (#1046). With proofs the open model aborted and the
+# closed model's proof was rejected; the solutions were right either way, so it
+# is the proof run that tests anything here.
+add_test(NAME minizinc-globalcardinalityconstant COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_global_cardinality $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalityconstant true true)
+set_tests_properties(minizinc-globalcardinalityconstant PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-globalcardinalityconstantclosed COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_global_cardinality_closed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalityconstantclosed true true)
+set_tests_properties(minizinc-globalcardinalityconstantclosed PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-increasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ increasingtest true true)
 set_tests_properties(minizinc-increasing PROPERTIES SKIP_RETURN_CODE 66)
@@ -455,6 +470,11 @@ set_tests_properties(minizinc-mdd PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-allequal COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ allequaltest true true)
 set_tests_properties(minizinc-allequal PROPERTIES SKIP_RETURN_CODE 66)
+
+# Issue #1153: holes made during search, under the model's own branching. The
+# --fzn-count guards that the one all_equal reaches the builtin.
+add_test(NAME minizinc-allequal-search-holes COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 1 glasgow_all_equal_int --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ allequalsearchholes true true)
+set_tests_properties(minizinc-allequal-search-holes PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-member COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ membertest true true)
 set_tests_properties(minizinc-member PROPERTIES SKIP_RETURN_CODE 66)

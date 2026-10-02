@@ -1411,8 +1411,10 @@ namespace
                 // is really a view is spelled the way the OPB spelled it and
                 // the terms cancel.
                 WPBSum dropped;
+                // A constant has no literal to weaken away: its term is a constant
+                // in the row already (see the at-least-one loop below).
                 for (const auto & [i, item] : enumerate(items))
-                    if (! kept_in(i, b) && sizes[i] > 0_i)
+                    if (! kept_in(i, b) && sizes[i] > 0_i && ! holds_alternative<ConstantIntegerVariableID>(item))
                         dropped += sizes[i] * (item == bin_idx);
 
                 PolBuilder pb;
@@ -1432,7 +1434,7 @@ namespace
                 // line is not worth writing to say so.
                 WPBSum slack;
                 for (const auto & [i, item] : enumerate(items))
-                    if (kept_in(i, b))
+                    if (kept_in(i, b) && ! holds_alternative<ConstantIntegerVariableID>(item))
                         slack += Integer{sc.weight[i]} * (item != bin_idx);
                 if (! slack.terms.empty())
                     bin_lines.push_back(logger->emit_rup_proof_line(move(slack) >= 0_i, ProofLevel::Temporary));
@@ -1444,6 +1446,16 @@ namespace
             final_pol.add(line);
         for (const auto & [i, item] : enumerate(items)) {
             if (! sc.counted[i] && ! (shave && i == shave->first))
+                continue;
+            // A constant item of positive size is pinned, so it is counted, but it
+            // has no literal in any bin's row: the OPB folds its size into its
+            // bin's right-hand side, which is the same T_b - cap_b the variable
+            // item's term and its at-least-one would leave, so there is nothing
+            // here to cancel, and the tracker has no at-least-one for a constant
+            // (issue #1192). Its c_i (|D_i| - 1) is 0, so the arithmetic that
+            // decided agrees. It is never the shaved item, which needs two bins
+            // to choose from.
+            if (holds_alternative<ConstantIntegerVariableID>(item))
                 continue;
             // Name exactly the bins the item can still take: the runs the rest
             // of its definition range goes in as are what the reason rules out.

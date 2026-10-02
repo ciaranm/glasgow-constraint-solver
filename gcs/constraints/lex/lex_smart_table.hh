@@ -13,6 +13,10 @@ namespace gcs
      * \brief Lexicographic ordering constraint, encoded as a SmartTable.
      * Enforce vars_1 >_lex vars_2.
      *
+     * The arrays may differ in length, with the same meaning as for
+     * LexGreaterThan: an equal common prefix makes the longer array the
+     * greater.
+     *
      * Kept around for benchmarking and as a reference encoding; for
      * normal use, prefer LexGreaterThan (or one of the other dedicated
      * Lex* constraints in lex.hh), which share a single specialised

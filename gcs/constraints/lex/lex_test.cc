@@ -1,6 +1,8 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/lex.hh>
+#include <gcs/constraints/lex_smart_table.hh>
 #include <gcs/problem.hh>
+#include <gcs/reification.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
@@ -45,13 +47,16 @@ enum class LexVariant
     GreaterThan,
     GreaterEqual,
     LessThan,
-    LessThanEqual
+    LessThanEqual,
+    // LexSmartTable: the same relation as GreaterThan, through its SmartTable
+    // encoding rather than the dedicated propagator.
+    SmartTable
 };
 
 template <LexVariant V, typename T>
 auto cmp_lex(const T & a, const T & b) -> bool
 {
-    if constexpr (V == LexVariant::GreaterThan)
+    if constexpr (V == LexVariant::GreaterThan || V == LexVariant::SmartTable)
         return a > b;
     else if constexpr (V == LexVariant::GreaterEqual)
         return a >= b;
@@ -70,8 +75,10 @@ auto post_lex(Problem & p, vector<IntegerVariableID> v1, vector<IntegerVariableI
         p.post(LexGreaterEqual{std::move(v1), std::move(v2)});
     else if constexpr (V == LexVariant::LessThan)
         p.post(LexLessThan{std::move(v1), std::move(v2)});
-    else
+    else if constexpr (V == LexVariant::LessThanEqual)
         p.post(LexLessThanEqual{std::move(v1), std::move(v2)});
+    else
+        p.post(LexSmartTable{std::move(v1), std::move(v2)});
 }
 
 template <LexVariant V>
@@ -83,8 +90,10 @@ auto variant_name() -> const char *
         return ">=";
     else if constexpr (V == LexVariant::LessThan)
         return "<";
-    else
+    else if constexpr (V == LexVariant::LessThanEqual)
         return "<=";
+    else
+        return "> (smart table)";
 }
 
 template <LexVariant V>
@@ -211,8 +220,39 @@ auto run_lex_test_6(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int>
 enum class ReifKind
 {
     If,
-    Iff
+    Iff,
+    NotIf,
+    MustNotHold
 };
+
+template <ReifKind R>
+auto reified_lex_holds(int c, bool constraint_holds) -> bool
+{
+    if constexpr (R == ReifKind::If)
+        return (c == 0) || constraint_holds;
+    else if constexpr (R == ReifKind::Iff)
+        return (c == 1) == constraint_holds;
+    else if constexpr (R == ReifKind::NotIf)
+        return (c == 0) || ! constraint_holds;
+    else
+        return ! constraint_holds;
+}
+
+// No named class exposes NotIf or MustNotHold, so these go through the
+// general constructor, with the less variants swapping their operands as the
+// named LexLess* classes do.
+template <LexVariant V>
+auto post_general_lex(Problem & p, vector<IntegerVariableID> v1, vector<IntegerVariableID> v2, ReificationCondition reif_cond) -> void
+{
+    if constexpr (V == LexVariant::GreaterThan)
+        p.post(LexCompareGreaterThanOrMaybeEqual{std::move(v1), std::move(v2), reif_cond, false, false});
+    else if constexpr (V == LexVariant::GreaterEqual)
+        p.post(LexCompareGreaterThanOrMaybeEqual{std::move(v1), std::move(v2), reif_cond, true, false});
+    else if constexpr (V == LexVariant::LessThan)
+        p.post(LexCompareGreaterThanOrMaybeEqual{std::move(v2), std::move(v1), reif_cond, false, true});
+    else
+        p.post(LexCompareGreaterThanOrMaybeEqual{std::move(v2), std::move(v1), reif_cond, true, true});
+}
 
 template <LexVariant V, ReifKind R>
 auto post_reified_lex(Problem & p, vector<IntegerVariableID> v1, vector<IntegerVariableID> v2, IntegerVariableCondition cond) -> void
@@ -227,6 +267,10 @@ auto post_reified_lex(Problem & p, vector<IntegerVariableID> v1, vector<IntegerV
         else
             p.post(LexLessThanEqualIf{std::move(v1), std::move(v2), cond});
     }
+    else if constexpr (R == ReifKind::NotIf)
+        post_general_lex<V>(p, std::move(v1), std::move(v2), reif::NotIf{cond});
+    else if constexpr (R == ReifKind::MustNotHold)
+        post_general_lex<V>(p, std::move(v1), std::move(v2), reif::MustNotHold{});
     else {
         if constexpr (V == LexVariant::GreaterThan)
             p.post(LexGreaterThanIff{std::move(v1), std::move(v2), cond});
@@ -244,8 +288,12 @@ auto reif_kind_name() -> const char *
 {
     if constexpr (R == ReifKind::If)
         return "if";
-    else
+    else if constexpr (R == ReifKind::Iff)
         return "iff";
+    else if constexpr (R == ReifKind::NotIf)
+        return "not_if";
+    else
+        return "not";
 }
 
 template <LexVariant V, ReifKind R>
@@ -263,10 +311,7 @@ auto run_lex_reified_test_2(bool proofs, const ViewWrapConfig & view_cfg, pair<i
         expected,
         [](int a1, int a2, int b1, int b2, int c) {
             bool constraint_holds = cmp_lex<V>(tie(a1, a2), tie(b1, b2));
-            if constexpr (R == ReifKind::If)
-                return (c == 0) || constraint_holds;
-            else
-                return (c == 1) == constraint_holds;
+            return reified_lex_holds<R>(c, constraint_holds);
         },
         r1, r2, r3, r4, pair{0, 1});
     println(cerr, " expecting {} solutions", expected.size());
@@ -299,10 +344,7 @@ auto run_lex_reified_test_3(bool proofs, const ViewWrapConfig & view_cfg, pair<i
         expected,
         [](int a1, int a2, int a3, int b1, int b2, int b3, int c) {
             bool constraint_holds = cmp_lex<V>(tie(a1, a2, a3), tie(b1, b2, b3));
-            if constexpr (R == ReifKind::If)
-                return (c == 0) || constraint_holds;
-            else
-                return (c == 1) == constraint_holds;
+            return reified_lex_holds<R>(c, constraint_holds);
         },
         r1, r2, r3, r4, r5, r6, pair{0, 1});
     println(cerr, " expecting {} solutions", expected.size());
@@ -339,10 +381,7 @@ auto run_lex_reified_test_unequal(bool proofs, const ViewWrapConfig & view_cfg, 
             vector<int> left(v.begin(), v.begin() + n_left);
             vector<int> right(v.begin() + n_left, v.begin() + n_left + n_right);
             bool constraint_holds = cmp_lex<V>(left, right);
-            if constexpr (R == ReifKind::If)
-                return (c == 0) || constraint_holds;
-            else
-                return (c == 1) == constraint_holds;
+            return reified_lex_holds<R>(c, constraint_holds);
         },
         [&]() {
             vector<pair<int, int>> all = r_left;
@@ -396,6 +435,37 @@ auto run_reified_variant_tests(bool proofs, const ViewWrapConfig & view_cfg) -> 
 }
 
 template <LexVariant V>
+auto run_unequal_length_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
+{
+    // Unequal lengths: standard lex semantics says longer wins on equal
+    // common prefix. So [1,2] <_lex [1,2,0] holds and [1,2,0] <=_lex [1,2]
+    // does not. Cover both directions and several common-prefix shapes.
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}, {1, 2}});
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 2}, {1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
+
+    // Asymmetric domains so the longer side cannot necessarily extend the
+    // equal prefix freely.
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 2}}, {{1, 3}, {1, 2}, {0, 2}});
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 2}, {0, 2}}, {{1, 3}, {1, 2}});
+
+    // Length 1 vs length 3: degenerate "all common prefix is just the first
+    // element" case.
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}}, {{1, 3}, {1, 3}, {1, 3}});
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}}, {{1, 3}});
+
+    // Degenerate (issue #254): empty operands and all-fixed operands.
+    // Empty-vs-empty: equal, so the non-strict variants hold and the strict
+    // ones do not. Empty-vs-nonempty: the empty side is a strict prefix.
+    run_lex_test_unequal<V>(proofs, view_cfg, {}, {});       // equal-length empty: depends on or_equal
+    run_lex_test_unequal<V>(proofs, view_cfg, {}, {{1, 3}}); // empty < [x]
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}}, {}); // [x] > empty
+    // All-fixed (singleton) operands, both directions.
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}}, {{2, 2}});                 // [1] < [2]
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}, {2, 2}}, {{1, 1}, {2, 2}}); // equal
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}, {3, 3}}, {{1, 1}, {2, 2}}); // [1,3] > [1,2]
+}
+
+template <LexVariant V>
 auto run_variant_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
     // Length-2: same domain for both arrays
@@ -440,32 +510,7 @@ auto run_variant_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     // Length-6 with small domains, to exercise longer chains
     run_lex_test_6<V>(proofs, view_cfg, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2});
 
-    // Unequal lengths: standard lex semantics says longer wins on equal
-    // common prefix. So [1,2] <_lex [1,2,0] holds and [1,2,0] <=_lex [1,2]
-    // does not. Cover both directions and several common-prefix shapes.
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}, {1, 2}});
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 2}, {1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
-
-    // Asymmetric domains so the longer side cannot necessarily extend the
-    // equal prefix freely.
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 2}}, {{1, 3}, {1, 2}, {0, 2}});
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 2}, {0, 2}}, {{1, 3}, {1, 2}});
-
-    // Length 1 vs length 3: degenerate "all common prefix is just the first
-    // element" case.
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}}, {{1, 3}, {1, 3}, {1, 3}});
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}}, {{1, 3}});
-
-    // Degenerate (issue #254): empty operands and all-fixed operands.
-    // Empty-vs-empty: equal, so the non-strict variants hold and the strict
-    // ones do not. Empty-vs-nonempty: the empty side is a strict prefix.
-    run_lex_test_unequal<V>(proofs, view_cfg, {}, {});       // equal-length empty: depends on or_equal
-    run_lex_test_unequal<V>(proofs, view_cfg, {}, {{1, 3}}); // empty < [x]
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}}, {}); // [x] > empty
-    // All-fixed (singleton) operands, both directions.
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}}, {{2, 2}});                 // [1] < [2]
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}, {2, 2}}, {{1, 1}, {2, 2}}); // equal
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}, {3, 3}}, {{1, 1}, {2, 2}}); // [1,3] > [1,2]
+    run_unequal_length_tests<V>(proofs, view_cfg);
 }
 
 // Dup-variable test: Lex with the same handle appearing across the two
@@ -538,6 +583,11 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     run_variant_tests<LexVariant::GreaterEqual>(proofs, view_cfg);
     run_variant_tests<LexVariant::LessThan>(proofs, view_cfg);
     run_variant_tests<LexVariant::LessThanEqual>(proofs, view_cfg);
+    // LexSmartTable, on the unequal-length and degenerate shapes only: they
+    // pin issue #1138, where it built no row for an equal common prefix and so
+    // lost every solution in which a longer vars_1 wins on length alone. Its
+    // equal-length shapes never build that row.
+    run_unequal_length_tests<LexVariant::SmartTable>(proofs, view_cfg);
 
     run_reified_variant_tests<LexVariant::GreaterThan, ReifKind::If>(proofs, view_cfg);
     run_reified_variant_tests<LexVariant::GreaterThan, ReifKind::Iff>(proofs, view_cfg);
@@ -547,6 +597,17 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     run_reified_variant_tests<LexVariant::LessThan, ReifKind::Iff>(proofs, view_cfg);
     run_reified_variant_tests<LexVariant::LessThanEqual, ReifKind::If>(proofs, view_cfg);
     run_reified_variant_tests<LexVariant::LessThanEqual, ReifKind::Iff>(proofs, view_cfg);
+
+    // NotIf and MustNotHold (issue #1137: NotIf's must-hold verdict once
+    // stated its scaffold under the wrong polarity of cond).
+    run_reified_variant_tests<LexVariant::GreaterThan, ReifKind::NotIf>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::GreaterThan, ReifKind::MustNotHold>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::GreaterEqual, ReifKind::NotIf>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::GreaterEqual, ReifKind::MustNotHold>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::LessThan, ReifKind::NotIf>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::LessThan, ReifKind::MustNotHold>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::LessThanEqual, ReifKind::NotIf>(proofs, view_cfg);
+    run_reified_variant_tests<LexVariant::LessThanEqual, ReifKind::MustNotHold>(proofs, view_cfg);
 }
 
 auto main(int argc, char * argv[]) -> int
