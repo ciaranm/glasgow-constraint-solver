@@ -42,10 +42,12 @@ template <typename Literal_>
         throw UnexpectedException{"recover_am1 needs at least two atoms"};
 
     if constexpr (is_same_v<Literal_, IntegerVariableCondition>) {
-        // If ≥2 atoms simplify to FalseLiteral (e.g. literals over constants
-        // that don't satisfy the condition), the AM1 they're meant to
-        // capture is genuinely violated by the input: literal-as-PB gives
-        // ≥2 of them as 0, so Σ atoms ≥ n - 1 fails. Folding pair_ne lines
+        // If ≥2 atoms simplify to FalseLiteral (e.g. x != v over a constant x
+        // equal to v), the AM1 they're meant to capture is genuinely violated
+        // by the input: literal-as-PB gives ≥2 of them as 0, so Σ atoms ≥ n - 1
+        // fails. This relies on the atoms being negated, as the header says:
+        // over un-negated atoms two false ones satisfy the AM1, and the `0 ≥ 1`
+        // below is not RUP (issue #1046). Folding pair_ne lines
         // via the usual pol expression doesn't recover a valid line —
         // pair_ne over two false atoms emits a direct `0 ≥ 1` contradiction,
         // and the pol summation embeds it in a malformed expression that
@@ -68,8 +70,8 @@ template <typename Literal_>
     // Detect a complementary literal pair among the atoms: two atoms that are the
     // same underlying proof literal with opposite polarity. This arises when a
     // bit-aliased two-value variable contributes two of the atoms -- e.g. a
-    // {0,1}-domain variable whose (== 1)/(== 0) atoms *are* the single bit b0 /
-    // ~b0, so an at-most-one over {var == 0, var == 1, ...} contains {~b0, b0}.
+    // {0,1}-domain variable whose (!= 0)/(!= 1) atoms *are* the single bit b0 /
+    // ~b0, so an at-most-one over {var != 0, var != 1, ...} contains {b0, ~b0}.
     // The generic pairwise->global fold below is not tight in that case: the
     // tautological pair line (b0 + ~b0 >= 1) normalises to a constant
     // mid-derivation, and the ceiling-division renormalisation then discards a
@@ -137,14 +139,14 @@ template <typename Literal_>
     if (complementary_pair && atoms.size() >= 3) {
         // Block scheme for the degenerate complementary-pair case (issue #557).
         // With a pair (p, q) where atoms[q] == !atoms[p], every other atom a_k is
-        // forced false: pair_ne(a_k, a_p) + pair_ne(a_k, a_q) = 2 ~a_k + (~a_p +
-        // ~a_q), and because the pair is complementary the bracket folds to the
-        // constant 1, so dividing by 2 gives exactly ~a_k >= 1. Accumulating each
+        // forced true: pair_ne(a_k, a_p) + pair_ne(a_k, a_q) = 2 a_k + (a_p +
+        // a_q), and because the pair is complementary the bracket folds to the
+        // constant 1, so dividing by 2 gives exactly a_k >= 1. Accumulating each
         // further other atom the same way (multiply the running sum by 2, add its
         // two pair lines, divide by 2) keeps every coefficient at exactly the
         // divisor and never rounds a unit away -- the property the generic fold
-        // loses. The result is the tight Sum_{k != p, q} ~a_k >= n - 2, which is
-        // the PB-normal form of the global at-most-one Sum ~a >= n - 1 (the pair
+        // loses. The result is the tight Sum_{k != p, q} a_k >= n - 2, which is
+        // the PB-normal form of the global at-most-one Sum a >= n - 1 (the pair
         // itself contributes the folded-away +1). With n >= 3 there is at least
         // one other atom, so the builder is never empty. (n == 2 with a pair is
         // left to the generic fold below, which already yields the correct trivial
