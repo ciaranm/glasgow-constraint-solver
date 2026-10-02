@@ -135,6 +135,23 @@ auto GlobalCardinality::clone() const -> unique_ptr<Constraint>
 
 auto GlobalCardinality::define_proof_model(ProofModel & model, const State &) -> void
 {
+    // A count goes into its row as an integer term, and a view first seen that
+    // way gets its own bit vector registered (need_all_proof_names_in, in the
+    // tracker), after which every literal on that view is spelled over the bit
+    // vector. Literals on a view not yet registered are spelled through the
+    // underlying variable instead. So a count that is the same view as one of
+    // the positions had that position's eq atoms spelled one way in the rows
+    // written before its own row and the other way after, while the proof's
+    // at-most-ones use the registered spelling throughout: in the rows written
+    // first nothing cancelled, and VeriPB rejected the Hall pols (issue #1197).
+    // Register every view count before writing any row, so that this
+    // constraint's rows spell a view the same way. (A view registered by a
+    // constraint posted later has the same effect on these rows, and that is
+    // not handled here.)
+    for (const auto & count : _counts)
+        if (const auto * view = std::get_if<ViewOfIntegerVariableID>(&count))
+            static_cast<void>(model.names_and_ids_tracker().need_view(*view));
+
     // The closed restriction: every variable takes one of the cover values.
     // `<i>_al1` is cake_pb_cp's own label for this row
     // (cencode_global_cardinality_aux's cat_least_one, prefixed by the variable
