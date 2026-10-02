@@ -48,7 +48,8 @@ auto LexSmartTable::prepare(Propagators & propagators, State & initial_state, Pr
     // Constraint::prepare about returning false.
     SmartTuples tuples;
 
-    for (unsigned int i = 0; i < min(_vars_1.size(), _vars_2.size()); ++i) {
+    auto common = min(_vars_1.size(), _vars_2.size());
+    for (unsigned int i = 0; i < common; ++i) {
         vector<SmartEntry> tuple;
         for (unsigned int j = 0; j < i + 1; ++j) {
             if (j < i)
@@ -56,6 +57,17 @@ auto LexSmartTable::prepare(Propagators & propagators, State & initial_state, Pr
             else if (j == i)
                 tuple.emplace_back(SmartTable::greater_than(_vars_1[j], _vars_2[j]));
         }
+        tuples.emplace_back(tuple);
+    }
+
+    // An equal common prefix makes the longer array the greater, as for
+    // LexGreaterThan and cake_pb_cp's lex_smart_table, so when vars_1 is the
+    // longer one there is one more row: equality over the whole common prefix.
+    // With vars_2 empty that row has no entries, and every assignment matches it.
+    if (_vars_1.size() > _vars_2.size()) {
+        vector<SmartEntry> tuple;
+        for (unsigned int j = 0; j < common; ++j)
+            tuple.emplace_back(SmartTable::equals(_vars_1[j], _vars_2[j]));
         tuples.emplace_back(tuple);
     }
 

@@ -1,5 +1,6 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/lex.hh>
+#include <gcs/constraints/lex_smart_table.hh>
 #include <gcs/problem.hh>
 #include <gcs/reification.hh>
 #include <gcs/solve.hh>
@@ -46,13 +47,16 @@ enum class LexVariant
     GreaterThan,
     GreaterEqual,
     LessThan,
-    LessThanEqual
+    LessThanEqual,
+    // LexSmartTable: the same relation as GreaterThan, through its SmartTable
+    // encoding rather than the dedicated propagator.
+    SmartTable
 };
 
 template <LexVariant V, typename T>
 auto cmp_lex(const T & a, const T & b) -> bool
 {
-    if constexpr (V == LexVariant::GreaterThan)
+    if constexpr (V == LexVariant::GreaterThan || V == LexVariant::SmartTable)
         return a > b;
     else if constexpr (V == LexVariant::GreaterEqual)
         return a >= b;
@@ -71,8 +75,10 @@ auto post_lex(Problem & p, vector<IntegerVariableID> v1, vector<IntegerVariableI
         p.post(LexGreaterEqual{std::move(v1), std::move(v2)});
     else if constexpr (V == LexVariant::LessThan)
         p.post(LexLessThan{std::move(v1), std::move(v2)});
-    else
+    else if constexpr (V == LexVariant::LessThanEqual)
         p.post(LexLessThanEqual{std::move(v1), std::move(v2)});
+    else
+        p.post(LexSmartTable{std::move(v1), std::move(v2)});
 }
 
 template <LexVariant V>
@@ -84,8 +90,10 @@ auto variant_name() -> const char *
         return ">=";
     else if constexpr (V == LexVariant::LessThan)
         return "<";
-    else
+    else if constexpr (V == LexVariant::LessThanEqual)
         return "<=";
+    else
+        return "> (smart table)";
 }
 
 template <LexVariant V>
@@ -427,6 +435,37 @@ auto run_reified_variant_tests(bool proofs, const ViewWrapConfig & view_cfg) -> 
 }
 
 template <LexVariant V>
+auto run_unequal_length_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
+{
+    // Unequal lengths: standard lex semantics says longer wins on equal
+    // common prefix. So [1,2] <_lex [1,2,0] holds and [1,2,0] <=_lex [1,2]
+    // does not. Cover both directions and several common-prefix shapes.
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}, {1, 2}});
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 2}, {1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
+
+    // Asymmetric domains so the longer side cannot necessarily extend the
+    // equal prefix freely.
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 2}}, {{1, 3}, {1, 2}, {0, 2}});
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 2}, {0, 2}}, {{1, 3}, {1, 2}});
+
+    // Length 1 vs length 3: degenerate "all common prefix is just the first
+    // element" case.
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}}, {{1, 3}, {1, 3}, {1, 3}});
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}}, {{1, 3}});
+
+    // Degenerate (issue #254): empty operands and all-fixed operands.
+    // Empty-vs-empty: equal, so the non-strict variants hold and the strict
+    // ones do not. Empty-vs-nonempty: the empty side is a strict prefix.
+    run_lex_test_unequal<V>(proofs, view_cfg, {}, {});       // equal-length empty: depends on or_equal
+    run_lex_test_unequal<V>(proofs, view_cfg, {}, {{1, 3}}); // empty < [x]
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}}, {}); // [x] > empty
+    // All-fixed (singleton) operands, both directions.
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}}, {{2, 2}});                 // [1] < [2]
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}, {2, 2}}, {{1, 1}, {2, 2}}); // equal
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}, {3, 3}}, {{1, 1}, {2, 2}}); // [1,3] > [1,2]
+}
+
+template <LexVariant V>
 auto run_variant_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
     // Length-2: same domain for both arrays
@@ -471,32 +510,7 @@ auto run_variant_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     // Length-6 with small domains, to exercise longer chains
     run_lex_test_6<V>(proofs, view_cfg, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2});
 
-    // Unequal lengths: standard lex semantics says longer wins on equal
-    // common prefix. So [1,2] <_lex [1,2,0] holds and [1,2,0] <=_lex [1,2]
-    // does not. Cover both directions and several common-prefix shapes.
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}, {1, 2}});
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 2}, {1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
-
-    // Asymmetric domains so the longer side cannot necessarily extend the
-    // equal prefix freely.
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 2}}, {{1, 3}, {1, 2}, {0, 2}});
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 2}, {0, 2}}, {{1, 3}, {1, 2}});
-
-    // Length 1 vs length 3: degenerate "all common prefix is just the first
-    // element" case.
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}}, {{1, 3}, {1, 3}, {1, 3}});
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}}, {{1, 3}});
-
-    // Degenerate (issue #254): empty operands and all-fixed operands.
-    // Empty-vs-empty: equal, so the non-strict variants hold and the strict
-    // ones do not. Empty-vs-nonempty: the empty side is a strict prefix.
-    run_lex_test_unequal<V>(proofs, view_cfg, {}, {});       // equal-length empty: depends on or_equal
-    run_lex_test_unequal<V>(proofs, view_cfg, {}, {{1, 3}}); // empty < [x]
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}}, {}); // [x] > empty
-    // All-fixed (singleton) operands, both directions.
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}}, {{2, 2}});                 // [1] < [2]
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}, {2, 2}}, {{1, 1}, {2, 2}}); // equal
-    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}, {3, 3}}, {{1, 1}, {2, 2}}); // [1,3] > [1,2]
+    run_unequal_length_tests<V>(proofs, view_cfg);
 }
 
 // Dup-variable test: Lex with the same handle appearing across the two
@@ -569,6 +583,11 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     run_variant_tests<LexVariant::GreaterEqual>(proofs, view_cfg);
     run_variant_tests<LexVariant::LessThan>(proofs, view_cfg);
     run_variant_tests<LexVariant::LessThanEqual>(proofs, view_cfg);
+    // LexSmartTable, on the unequal-length and degenerate shapes only: they
+    // pin issue #1138, where it built no row for an equal common prefix and so
+    // lost every solution in which a longer vars_1 wins on length alone. Its
+    // equal-length shapes never build that row.
+    run_unequal_length_tests<LexVariant::SmartTable>(proofs, view_cfg);
 
     run_reified_variant_tests<LexVariant::GreaterThan, ReifKind::If>(proofs, view_cfg);
     run_reified_variant_tests<LexVariant::GreaterThan, ReifKind::Iff>(proofs, view_cfg);
