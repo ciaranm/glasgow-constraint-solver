@@ -296,7 +296,7 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                     // LE_j; this yields c_j - Sum_{i not confined} x >= L.
                     // The final RUP closes c_j >= L; its reason supplies
                     // c_v <= ub_v (v != j), discharging the gevars.
-                    inference.infer(logger, counts[j] >= lower,
+                    infer_hall_before_push(inference, logger, counts[j] >= lower,
                         JustifyExplicitly{//
                             [&, a = a, b = b, j = j](const ReasonLiterals &) {
                                 auto & tracker = logger->names_and_ids_tracker();
@@ -319,14 +319,14 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                                 pb.emit(*logger, ProofLevel::Temporary);
                             },
                             ThenRUP::Yes, hints::GlobalCardinality{owner}},
-                        LazyReasonOver{vars, [&, j = j](const State &, ReasonLiterals & out) { out = capacity_reason(j); }});
+                        [&, j = j] { return capacity_reason(j); });
                 auto upper = potential_count - (demand - lb_j);
                 if (upper < ub_j)
                     // Dual: at-most-one over H per potential variable, the
                     // count lines GE_v with the defining implication of
                     // c_v >= lb_v for v != j, and the j count line GE_j;
                     // RUP-closes c_j <= U, the reason discharging the gevars.
-                    inference.infer(logger, counts[j] <= upper,
+                    infer_hall_before_push(inference, logger, counts[j] <= upper,
                         JustifyExplicitly{//
                             [&, a = a, b = b, j = j](const ReasonLiterals &) {
                                 auto & tracker = logger->names_and_ids_tracker();
@@ -350,7 +350,7 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                                 pb.emit(*logger, ProofLevel::Temporary);
                             },
                             ThenRUP::Yes, hints::GlobalCardinality{owner}},
-                        LazyReasonOver{vars, [&, j = j](const State &, ReasonLiterals & out) { out = demand_reason(j); }});
+                        [&, j = j] { return demand_reason(j); });
             }
 
             if (confined_count > cap) {
@@ -364,10 +364,10 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                         continue;
                     for (std::size_t v = a; v <= b; ++v)
                         if (Integer val = values[v]; state.in_domain(var, val))
-                            inference.infer(logger, var != val,
+                            infer_hall_before_push(inference, logger, var != val,
                                 JustifyExplicitly{
                                     [&](const ReasonLiterals &) { emit_capacity_pol(nullopt); }, ThenRUP::Yes, hints::GlobalCardinality{owner}},
-                                LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = capacity_reason(nullopt); }});
+                                [&] { return capacity_reason(nullopt); });
                 }
             }
 
@@ -411,10 +411,10 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                 for (const auto & var : potential)
                     for (const auto & val : state.each_value_mutable(var))
                         if (! hall_contains(val))
-                            inference.infer(logger, var != val,
+                            infer_hall_before_push(inference, logger, var != val,
                                 JustifyExplicitly{[&, var = var, val = val](const ReasonLiterals &) { emit_demand_pol(var, val); }, ThenRUP::Yes,
                                     hints::GlobalCardinality{owner}},
-                                LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = demand_reason(nullopt); }});
+                                [&] { return demand_reason(nullopt); });
             }
         }
     }
