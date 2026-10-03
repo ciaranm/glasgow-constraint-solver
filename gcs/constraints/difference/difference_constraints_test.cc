@@ -500,41 +500,58 @@ namespace
     //
     // Integer's arithmetic is overflow-checked and throws, so this cannot
     // happen. The point of this test is to say so out loud: it demands the
-    // throw, and it demands the right answer at a weight one order of magnitude
-    // inside the boundary, so that "checked" and "usable up to the limit" are
-    // both pinned.
+    // throw, and it demands the right answer at the largest weights the range
+    // allows, so that "checked" and "usable up to the limit" are both pinned.
+    // Weights are inputs, so they lie in the bounded range
+    // (dev_docs/integer-ranges.md); it is only path sums that can leave it.
     auto run_overflow_test() -> void
     {
         print(cerr, "difference extreme weights:");
         cerr << flush;
 
-        constexpr auto limit = std::numeric_limits<long long>::max();
+        const auto big = Integer::max_bounded_value();
 
-        // Far below the boundary: `x - y <= limit / 4` is vacuous over these
-        // domains, and every relaxation the propagator performs (`ub[y] + d`,
-        // `lb[x] - d`) stays comfortably in range, so the answer must simply be
-        // right --- all 36 assignments.
+        // A single vacuous edge at the top of the range, `x - y <= big` over
+        // two 0..5 variables: every relaxation stays comfortably in range, so
+        // the answer must simply be right --- all 36 assignments.
         {
             Problem p;
             auto x = p.create_integer_variable(0_i, 5_i, "x");
             auto y = p.create_integer_variable(0_i, 5_i, "y");
-            p.post(DifferenceConstraints{{DifferenceEdge{x, y, Integer{limit / 4}}}}.auditing_incremental_propagation());
+            p.post(DifferenceConstraints{{DifferenceEdge{x, y, big}}}.auditing_incremental_propagation());
             auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }});
             if (36 != stats.solutions)
                 throw UnexpectedException{"difference found " + to_string(stats.solutions) +
-                    " solutions for a single vacuous edge of weight limit/4 over two 0..5 variables, where all 36 assignments satisfy it. A large "
-                    "but perfectly representable weight must give the right answer, not a truncated one."};
+                    " solutions for a single vacuous edge of the largest weight over two 0..5 variables, where all 36 assignments satisfy it. A "
+                    "large but in-range weight must give the right answer, not a truncated one."};
         }
 
-        // Over the boundary: two chained edges of weight -(limit/2 + 1). Each
-        // is representable; their sum is not. The lower-bound relaxation
-        // computes `lb[from] - d`, so the second edge asks for
-        // (limit/2 + 1) + (limit/2 + 1) = limit + 2 and Integer refuses.
+        // Chains of edges `x[i] - x[i+1] <= -big` over the whole range: two of
+        // them span it exactly, so there is one solution, and three cannot fit.
+        for (auto [length, expected] : vector<pair<int, long long>>{{2, 1}, {3, 0}}) {
+            Problem p;
+            auto x = p.create_integer_variable_vector(length + 1, Integer::min_bounded_value(), big, "x");
+            vector<DifferenceEdge> edges;
+            for (int i = 0; i < length; ++i)
+                edges.push_back(DifferenceEdge{x[i], x[i + 1], -big});
+            p.post(DifferenceConstraints{edges});
+            auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }});
+            if (expected != stats.solutions)
+                throw UnexpectedException{"difference found " + to_string(stats.solutions) + " solutions for a chain of " + to_string(length) +
+                    " edges of the largest weight over the whole range, where there are " + to_string(expected)};
+        }
+
+        // Over the boundary: nine such edges, each in range, whose path weight
+        // is past the end of Integer. Bellman-Ford forms it, and Integer
+        // refuses: an arithmetic constraint may throw when a sum it needs does
+        // not fit, but must never wrap.
         {
             Problem p;
-            auto x = p.create_integer_variable_vector(3, 0_i, 5_i, "x");
-            p.post(DifferenceConstraints{{DifferenceEdge{x[0], x[1], Integer{-(limit / 2 + 1)}}, //
-                DifferenceEdge{x[1], x[2], Integer{-(limit / 2 + 1)}}}});
+            auto x = p.create_integer_variable_vector(10, Integer::min_bounded_value(), big, "x");
+            vector<DifferenceEdge> edges;
+            for (int i = 0; i < 9; ++i)
+                edges.push_back(DifferenceEdge{x[i], x[i + 1], -big});
+            p.post(DifferenceConstraints{edges});
 
             bool threw = false;
             try {
@@ -551,6 +568,67 @@ namespace
         }
 
         println(cerr, " ok");
+    }
+
+    // Heavy edges whose sums the algorithms used to form for nothing
+    // (dev_docs/integer-ranges.md), each in the three modes:
+    //
+    // - a two-edge negative cycle of weight 2A on four 0..1 variables. Bellman-
+    //   Ford relaxed it round after round until its potentials left Integer's
+    //   range, though the answer needs no large value at all. A potential below
+    //   the sum of the negative weights is now taken as the evidence instead.
+    // - a chain of edges of weight B in both directions, which root
+    //   simplification's all-pairs shortest paths summed past 2^63, though no
+    //   path longer than a domain can make any edge redundant.
+    auto run_heavy_edge_test(bool proofs) -> void
+    {
+        const auto A = Integer::min_bounded_value(), B = Integer::max_bounded_value();
+        for (const string mode : {"default", "no simplification", "not incremental"}) {
+            auto configure = [&](DifferenceConstraints && d) -> DifferenceConstraints {
+                if (mode == "no simplification")
+                    d.simplifying_at_root(false);
+                else if (mode == "not incremental")
+                    d.incrementally(false);
+                return std::move(d);
+            };
+
+            auto solve = [&](Problem & p, const string & name) -> long long {
+                auto proof_name = "difference_heavy_" + name;
+                auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }},
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
+                if (proofs)
+                    verify_proof_and_clean_up(proof_name);
+                return stats.solutions;
+            };
+
+            {
+                print(cerr, "difference heavy edges, small negative cycle, {}{}:", mode, proofs ? " with proofs" : "");
+                cerr << flush;
+                Problem p;
+                auto v = p.create_integer_variable_vector(4, 0_i, 1_i, "v");
+                p.post(configure(DifferenceConstraints{{DifferenceEdge{v[0], v[1], A}, DifferenceEdge{v[1], v[0], A}, DifferenceEdge{v[2], v[0], 0_i},
+                    DifferenceEdge{v[3], v[2], 0_i}}}));
+                if (auto n = solve(p, "cycle"); n != 0)
+                    throw UnexpectedException{"difference found " + to_string(n) + " solutions to a system with a negative cycle"};
+                println(cerr, " ok");
+            }
+
+            {
+                print(cerr, "difference heavy edges, chain of weight B, {}{}:", mode, proofs ? " with proofs" : "");
+                cerr << flush;
+                Problem p;
+                auto x = p.create_integer_variable_vector(10, 0_i, 1_i, "x");
+                vector<DifferenceEdge> edges;
+                for (int i = 0; i + 1 < 10; ++i) {
+                    edges.push_back(DifferenceEdge{x[i], x[i + 1], B});
+                    edges.push_back(DifferenceEdge{x[i + 1], x[i], B});
+                }
+                p.post(configure(DifferenceConstraints{edges}));
+                if (auto n = solve(p, "chain"); n != 1024)
+                    throw UnexpectedException{"difference found " + to_string(n) + " solutions to a system of vacuous edges over ten 0..1 variables"};
+                println(cerr, " ok");
+            }
+        }
     }
 
     // A negated view operand is not a difference constraint at all, and
@@ -1366,11 +1444,15 @@ auto main(int argc, char * argv[]) -> int
     auto bare = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
 
     if (bare) {
-        if (mode == "basic")
+        if (mode == "basic") {
             for (bool incremental : {true, false}) {
                 run_transitive_test(incremental);
                 run_hole_snap_test(incremental);
             }
+            for (bool proofs : {false, true})
+                if (! proofs || can_run_veripb())
+                    run_heavy_edge_test(proofs);
+        }
         if (mode == "reified")
             for (bool incremental : {true, false}) {
                 run_reified_bounds_test(incremental);

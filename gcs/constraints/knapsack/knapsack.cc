@@ -1,3 +1,4 @@
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/knapsack/hints.hh>
 #include <gcs/constraints/knapsack/knapsack.hh>
 #include <gcs/constraints/knapsack/knapsack_upfront.hh>
@@ -60,11 +61,13 @@ using fmt::print;
 Knapsack::Knapsack(vector<Integer> weights, vector<Integer> profits, vector<IntegerVariableID> vars, IntegerVariableID weight,
     IntegerVariableID profit) : _coeffs({move(weights), move(profits)}), _vars(move(vars)), _totals({weight, profit})
 {
+    innards::require_bounded(_coeffs, "a coefficient of Knapsack");
 }
 
 Knapsack::Knapsack(vector<vector<Integer>> coefficients, vector<IntegerVariableID> vars, vector<IntegerVariableID> totals) :
     _coeffs(move(coefficients)), _vars(move(vars)), _totals(move(totals))
 {
+    innards::require_bounded(_coeffs, "a coefficient of Knapsack");
 }
 
 auto Knapsack::with_proof_strategy(KnapsackProofStrategy strategy) -> Knapsack &
@@ -576,13 +579,21 @@ namespace
     }
 }
 
-auto Knapsack::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+auto Knapsack::prepare(Propagators &, State & initial_state, ProofModel * const optional_model) -> bool
 {
     // The two strategies draw the same inferences and share this OPB encoding;
     // they differ only in the proof scaffolding, so each has its own three-phase
     // implementation over the same arguments. Validation lives in whichever one
     // runs, since the messages differ.
-    if (holds_alternative<proof_strategy::Upfront>(_proof_strategy)) {
+    //
+    // The upfront strategy's static DAG holds every partial sum, and cannot be
+    // built when they do not fit in an Integer. Without a proof to write the
+    // per-call DP draws the same inferences, so that is used instead, rather
+    // than letting a proof strategy change the answer
+    // (dev_docs/integer-ranges.md). With a proof, the DAG's own flag rows would
+    // need those sums, so the overflow stands.
+    if (holds_alternative<proof_strategy::Upfront>(_proof_strategy) &&
+        (optional_model || knapsack_upfront_partial_sums_fit(initial_state, _coeffs, _vars))) {
         _upfront = knapsack_upfront_prepare(initial_state, move(_coeffs), move(_vars), move(_totals));
         return true;
     }

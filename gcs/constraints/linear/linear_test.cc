@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <optional>
 #include <random>
 #include <set>
 #include <tuple>
@@ -332,6 +333,72 @@ auto run_dup_linear_test(bool proofs, const string & mode, pair<int, int> a_rang
     check_results(proof_name, expected, actual);
 }
 
+// Nine terms at the top of the bounded range and nine at the bottom, created in
+// that order so that the propagator sums them in it. The total is small, but a
+// running partial sum passes 2^63 after the eighth, which used to throw
+// IntegerOverflow (dev_docs/integer-ranges.md). z is free over -2..2, so the
+// constraint still has something to decide. Both incremental thresholds, and
+// for an equality the tabulated arm too.
+auto run_partial_sum_order_test(bool proofs, const string & mode) -> void
+{
+    // A not-equals is written as half-reified rows, and nine coefficients at the
+    // top of the range genuinely do not fit in one row's reification constant,
+    // so with a proof that is an IntegerOverflow the rule allows.
+    if (proofs && mode == "ne")
+        return;
+
+    const auto A = Integer::min_bounded_value(), B = Integer::max_bounded_value();
+    for (auto threshold : {std::optional<std::size_t>{}, std::optional<std::size_t>{0}})
+        for (bool tabulated : {false, true}) {
+            if (tabulated && mode != "eq")
+                continue;
+            print(cerr, "linear {} partial sum order{}{}{}", mode, threshold ? " incremental" : "", tabulated ? " tabulated" : "",
+                proofs ? " with proofs:" : ":");
+            cerr << flush;
+
+            Problem p;
+            WeightedSum sum;
+            for (int i = 0; i < 9; ++i)
+                sum += 1_i * p.create_integer_variable(B, B);
+            for (int i = 0; i < 9; ++i)
+                sum += 1_i * p.create_integer_variable(A, A);
+            auto z = p.create_integer_variable(-2_i, 2_i);
+            sum += 1_i * z;
+
+            set<tuple<int>> expected, actual;
+            for (int v = -2; v <= 2; ++v)
+                if ((mode == "eq" && v == 0) || (mode == "ne" && v != 0) || (mode == "le" && v <= 0) || (mode == "ge" && v >= 0))
+                    expected.emplace(v);
+            println(cerr, " expecting {} solutions", expected.size());
+
+            if (mode == "eq") {
+                LinearEquality c{sum, 0_i};
+                c.with_incremental_threshold(threshold);
+                if (tabulated)
+                    c.with_consistency(consistency::Tabulated{});
+                p.post(c);
+            }
+            else if (mode == "ne") {
+                LinearNotEquals c{sum, 0_i};
+                c.with_incremental_threshold(threshold);
+                p.post(c);
+            }
+            else if (mode == "le")
+                p.post(LinearLessThanEqual{sum, 0_i, threshold});
+            else
+                p.post(LinearGreaterThanEqual{sum, 0_i, threshold});
+
+            // Lanes that share a mode run beside each other in one directory, so
+            // the name carries everything that tells them apart.
+            auto proof_name = proofs ? make_optional("linear_test_partial_sum_order_" + mode + threshold_proof_suffix() +
+                                           (std::getenv("GCS_LINEAR_SLACK_WATCH_THRESHOLD") ? "_slack" : "") + (threshold ? "_incremental" : "") +
+                                           (tabulated ? "_tabulated" : ""))
+                                     : nullopt;
+            solve_for_tests(p, proof_name, actual, tuple{z});
+            check_results(proof_name, expected, actual);
+        }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -496,6 +563,9 @@ auto main(int argc, char * argv[]) -> int
                 if (mode == "eq")
                     run_dup_linear_test<LinearEquality>(proofs, mode, {0, 5}, {0, 5}, {1, -1, 2}, 4, [](int a, int b) { return a == b; });
             }
+
+            if (view_wrap_config_is_effectively_bare(view_cfg, n_positions) && (mode == "eq" || mode == "ne" || mode == "le" || mode == "ge"))
+                run_partial_sum_order_test(proofs, mode);
         }
     }
 

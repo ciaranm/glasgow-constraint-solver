@@ -1,3 +1,4 @@
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/value_precede/hints.hh>
 #include <gcs/constraints/value_precede/value_precede.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -29,10 +30,12 @@ using std::vector;
 
 ValuePrecede::ValuePrecede(vector<Integer> chain, vector<IntegerVariableID> vars) : _chain(move(chain)), _vars(move(vars))
 {
+    innards::require_bounded(_chain, "a chain value of ValuePrecede");
 }
 
 ValuePrecede::ValuePrecede(Integer s, Integer t, vector<IntegerVariableID> vars) : _chain({s, t}), _vars(move(vars))
 {
+    innards::require_bounded(_chain, "a chain value of ValuePrecede");
 }
 
 auto ValuePrecede::clone() const -> unique_ptr<Constraint>

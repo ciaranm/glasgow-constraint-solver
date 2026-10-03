@@ -1,6 +1,7 @@
 #include <gcs/constraint.hh>
 #include <gcs/constraints/global_cardinality/global_cardinality.hh>
 #include <gcs/constraints/global_cardinality/hints.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/exception.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -70,6 +71,7 @@ auto gcs::fold_repeated_cover_values(vector<Integer> & values, vector<IntegerVar
 GlobalCardinality::GlobalCardinality(vector<IntegerVariableID> vars, vector<Integer> values, vector<IntegerVariableID> counts) :
     _vars(move(vars)), _values(move(values)), _counts(move(counts))
 {
+    innards::require_bounded(_values, "a value of GlobalCardinality");
     // Both propagators index _counts by a cover position, and every phase after
     // this one -- the encoding, the .scp term, the propagators -- assumes the two
     // lists line up. Unchecked, a short _counts was a heap-buffer-overflow in

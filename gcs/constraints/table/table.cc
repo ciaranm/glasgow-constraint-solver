@@ -1,4 +1,5 @@
 #include <gcs/constraints/extensional_utils.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/table/hints.hh>
 #include <gcs/constraints/table/table.hh>
 #include <gcs/exception.hh>
@@ -49,6 +50,7 @@ using fmt::println;
 
 Table::Table(vector<IntegerVariableID> v, ExtensionalTuples t) : _vars(move(v)), _tuples(move(t))
 {
+    innards::require_bounded(_tuples, "a tuple value of Table");
 }
 
 auto Table::with_algorithm(TableAlgorithm algorithm) -> Table &

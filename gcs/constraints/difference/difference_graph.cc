@@ -9,6 +9,7 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/innards/wide_sum.hh>
 
 #include <util/overloaded.hh>
 
@@ -756,6 +757,16 @@ namespace
         // sound evidence that the system has a negative cycle, and the
         // extraction above is then guaranteed to find it.
         //
+        // There is a second, earlier, piece of evidence. While the predecessor
+        // graph has no cycle, every bound is reached along a simple predecessor
+        // path from some seed, so it can improve on the best seed by at most the
+        // total weight of the negative edges. A candidate past that limit
+        // therefore means the predecessor graph, once this edge joins it, has a
+        // cycle reachable from the edge's head, and a predecessor cycle is
+        // negative. Stopping there finds the same cycle before relaxing it round
+        // after round runs the bounds out of Integer's range
+        // (dev_docs/integer-ranges.md).
+        //
         // With `refute` set this refutes on the spot, at the exact edge that
         // relaxed, which is what the shipping non-incremental path wants.
         // Without it the cycle is only reported, which is what the audit
@@ -763,18 +774,28 @@ namespace
         // not to duplicate the refutation.
         auto relax_lower_bounds(vector<Integer> & lb, vector<optional<size_t>> & lb_pred, bool refute) const -> bool
         {
+            WideSum limit{Integer::min_value()};
+            for (const auto & bound : lb)
+                limit = std::max(limit, WideSum{bound});
+            for_each_active_edge([&](size_t e) {
+                if (arcs[e].d < 0_i)
+                    limit -= arcs[e].d;
+            });
+
             for (size_t round = 0; round <= round_bound; ++round) {
                 bool changed = false, cycle = false;
                 for_each_active_edge([&](size_t e) {
                     if (cycle)
                         return;
                     const auto & edge = arcs[e];
-                    auto candidate = lb[edge.from] - edge.d;
-                    if (candidate > lb[edge.to]) {
-                        lb[edge.to] = candidate;
+                    auto wide_candidate = WideSum{lb[edge.from]} - edge.d;
+                    if (wide_candidate > lb[edge.to]) {
+                        auto past_limit = wide_candidate > limit;
+                        if (! past_limit)
+                            lb[edge.to] = wide_candidate.narrow_or_throw("a difference-logic bound");
                         lb_pred[edge.to] = e;
                         changed = true;
-                        if (round == round_bound) {
+                        if (past_limit || round == round_bound) {
                             if (refute)
                                 contradict_on_cycle(extract_cycle(edge.to, lb_pred, lb_tail_of), lb_tail_of, lb_head_of);
                             cycle = true;
@@ -791,18 +812,29 @@ namespace
 
         auto relax_upper_bounds(vector<Integer> & ub, vector<optional<size_t>> & ub_pred, bool refute) const -> bool
         {
+            // The mirror of relax_lower_bounds's limit.
+            WideSum limit{Integer::max_value()};
+            for (const auto & bound : ub)
+                limit = std::min(limit, WideSum{bound});
+            for_each_active_edge([&](size_t e) {
+                if (arcs[e].d < 0_i)
+                    limit += arcs[e].d;
+            });
+
             for (size_t round = 0; round <= round_bound; ++round) {
                 bool changed = false, cycle = false;
                 for_each_active_edge([&](size_t e) {
                     if (cycle)
                         return;
                     const auto & edge = arcs[e];
-                    auto candidate = ub[edge.to] + edge.d;
-                    if (candidate < ub[edge.from]) {
-                        ub[edge.from] = candidate;
+                    auto wide_candidate = WideSum{ub[edge.to]} + edge.d;
+                    if (wide_candidate < ub[edge.from]) {
+                        auto past_limit = wide_candidate < limit;
+                        if (! past_limit)
+                            ub[edge.from] = wide_candidate.narrow_or_throw("a difference-logic bound");
                         ub_pred[edge.from] = e;
                         changed = true;
-                        if (round == round_bound) {
+                        if (past_limit || round == round_bound) {
                             if (refute)
                                 contradict_on_cycle(extract_cycle(edge.from, ub_pred, ub_tail_of), ub_tail_of, ub_head_of);
                             cycle = true;

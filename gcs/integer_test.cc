@@ -1,4 +1,6 @@
 #include <gcs/innards/integer_overflow.hh>
+#include <gcs/innards/power.hh>
+#include <gcs/innards/wide_sum.hh>
 #include <gcs/integer.hh>
 
 #include <catch2/catch_test_macros.hpp>
@@ -9,6 +11,8 @@
 using namespace gcs;
 using Catch::Matchers::EndsWith;
 using gcs::innards::IntegerOverflow;
+using gcs::innards::power2;
+using gcs::innards::WideSum;
 
 TEST_CASE("Integer arithmetic on normal values")
 {
@@ -106,4 +110,68 @@ TEST_CASE("Integer increment and decrement at limits")
 
     Integer also_at_min = Integer::min_value();
     REQUIRE_THROWS_AS(also_at_min--, IntegerOverflow);
+}
+
+TEST_CASE("The bounded range is symmetric, and require_bounded checks it")
+{
+    REQUIRE(Integer::min_bounded_value() == -Integer::max_bounded_value());
+    REQUIRE(innards::require_bounded(Integer::max_bounded_value(), "x") == Integer::max_bounded_value());
+    REQUIRE(innards::require_bounded(Integer::min_bounded_value(), "x") == Integer::min_bounded_value());
+    REQUIRE_THROWS_AS(innards::require_bounded(Integer::max_bounded_value() + 1_i, "x"), IntegerOverflow);
+    REQUIRE_THROWS_AS(innards::require_bounded(Integer::min_bounded_value() - 1_i, "x"), IntegerOverflow);
+}
+
+TEST_CASE("power2 past the top of Integer is an overflow")
+{
+    // Issue #202: this used to be an UnimplementedException.
+    REQUIRE(power2(62_i) == Integer{1LL << 62});
+    REQUIRE_THROWS_AS(power2(63_i), IntegerOverflow);
+}
+
+TEST_CASE("WideSum is exact whatever order the terms come in")
+{
+    const auto B = Integer::max_bounded_value(), A = Integer::min_bounded_value();
+    WideSum grouped;
+    for (int i = 0; i < 9; ++i)
+        grouped += B;
+    REQUIRE(! grouped.narrow());
+    REQUIRE_THROWS_AS(grouped.narrow_or_throw(), IntegerOverflow);
+    for (int i = 0; i < 9; ++i)
+        grouped += A;
+    REQUIRE(grouped.narrow() == 0_i);
+
+    WideSum low{Integer::min_value()};
+    low -= 1_i;
+    REQUIRE(! low.narrow());
+    REQUIRE(low < Integer::min_value());
+    low += 1_i;
+    REQUIRE(low.narrow() == Integer::min_value());
+    REQUIRE((-low) > Integer::max_value());
+    REQUIRE((-(-low)).narrow() == Integer::min_value());
+
+    REQUIRE(WideSum{Integer::max_value()} + 1_i > WideSum{Integer::max_value()});
+    REQUIRE(WideSum{-5_i} < WideSum{3_i});
+    REQUIRE(WideSum{-5_i} == -5_i);
+}
+
+TEST_CASE("WideSum divides exactly, past Integer's range too")
+{
+    const auto two_to_the_60 = Integer{1LL << 60};
+    REQUIRE(WideSum{12_i}.divided_exactly_by(4_i) == 3_i);
+    REQUIRE(WideSum{12_i}.divided_exactly_by(-4_i) == -3_i);
+    REQUIRE(! WideSum{13_i}.divided_exactly_by(4_i));
+    REQUIRE(! WideSum{13_i}.divided_exactly_by(0_i));
+    REQUIRE(! WideSum{Integer::min_value()}.divided_exactly_by(-1_i));
+
+    // 2^64 is past Integer's range, but 2^64 / 2^60 is 16.
+    WideSum two_to_the_64;
+    for (int i = 0; i < 16; ++i)
+        two_to_the_64 += two_to_the_60;
+    REQUIRE(! two_to_the_64.narrow());
+    REQUIRE(two_to_the_64.divided_exactly_by(two_to_the_60) == 16_i);
+    REQUIRE((-two_to_the_64).divided_exactly_by(two_to_the_60) == -16_i);
+    REQUIRE(two_to_the_64.divided_exactly_by(-two_to_the_60) == -16_i);
+    REQUIRE(! (two_to_the_64 + 1_i).divided_exactly_by(two_to_the_60));
+    // A quotient that does not fit is refused.
+    REQUIRE(! two_to_the_64.divided_exactly_by(2_i));
 }
