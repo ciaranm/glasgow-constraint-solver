@@ -130,9 +130,9 @@ auto ReifiedLinearInequality::prepare(Propagators &, State & initial_state, Proo
         holds_alternative<evaluated_reif::MustNotHold>(_evaluated_cond) || (und && holds_alternative<reif::Iff>(_reif_cond));
 
     if (may_must_hold && n_terms(_sanitised) >= threshold)
-        _incremental_must_hold = initial_state.add_constraint_state(LinearIncrementalState{n_terms(_sanitised), 0_i});
+        _incremental_must_hold = initial_state.add_constraint_state(LinearIncrementalState{n_terms(_sanitised), WideSum{}});
     if (may_must_not_hold && n_terms(_sanitised_neg) >= threshold)
-        _incremental_must_not_hold = initial_state.add_constraint_state(LinearIncrementalState{n_terms(_sanitised_neg), 0_i});
+        _incremental_must_not_hold = initial_state.add_constraint_state(LinearIncrementalState{n_terms(_sanitised_neg), WideSum{}});
 
     // Slack-based waking, for a direction already decided at install time that is
     // long enough and loose enough that most coarse wakes could not propagate

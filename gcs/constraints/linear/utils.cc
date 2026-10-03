@@ -3,6 +3,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
+#include <gcs/innards/wide_sum.hh>
 
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
@@ -28,17 +29,20 @@ using std::ranges::sort;
 auto gcs::innards::tidy_up_linear(const WeightedSum & coeff_vars) -> pair<TidiedUpLinear, Integer>
 {
     SumOf<Weighted<SimpleIntegerVariableID>> simplified_sum;
-    Integer modifier{0_i};
+    // Exact, and narrowed once below, so that only a total that does not fit
+    // throws, whatever order the constants come in.
+    WideSum wide_modifier;
     for (const auto & [c, v] : coeff_vars.terms)
         overloaded{
-            [&, &c = c](const SimpleIntegerVariableID & v) { simplified_sum += c * v; },         //
-            [&, &c = c](const ConstantIntegerVariableID & v) { modifier -= c * v.const_value; }, //
+            [&, &c = c](const SimpleIntegerVariableID & v) { simplified_sum += c * v; },              //
+            [&, &c = c](const ConstantIntegerVariableID & v) { wide_modifier -= c * v.const_value; }, //
             [&, &c = c](const ViewOfIntegerVariableID & v) {
                 simplified_sum += (v.negate_first ? -c : c) * v.actual_variable;
-                modifier -= c * v.then_add;
+                wide_modifier -= c * v.then_add;
             } //
         }
             .visit(v);
+    auto modifier = wide_modifier.narrow_or_throw("the constant part of a linear constraint");
 
     sort(simplified_sum.terms,
         [](const Weighted<SimpleIntegerVariableID> & a, const Weighted<SimpleIntegerVariableID> & b) { return a.variable < b.variable; });

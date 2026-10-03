@@ -9,6 +9,7 @@
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/innards/wide_sum.hh>
 
 #include <cstddef>
 #include <optional>
@@ -93,7 +94,9 @@ namespace gcs::innards
     struct LinearIncrementalState
     {
         std::size_t n_active;
-        Integer fixed_lower;
+        // Exact, because terms fix in search order and a partial sum of them
+        // can leave Integer's range where the total does not.
+        WideSum fixed_lower;
     };
 
     /**

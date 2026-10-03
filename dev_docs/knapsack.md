@@ -326,6 +326,20 @@ terminal-bound `pol` lines that close the actual `inference.infer_all`
 RUP for the `totals[x] ≥ lo` / `≤ hi` conclusions. Everything else
 the per-call needs is already in the database at `Top` or `Current`.
 
+## Partial sums past `Integer`
+
+The static DAG holds every partial sum, up to the sum of every item's largest
+contribution, and its flag rows reify the running sum against each of them. When
+that sum does not fit in an `Integer`, which nine items of weight
+`max_bounded_value()` already manage, the DAG cannot be built. That is a limit of
+the scaffolding, not of the constraint, so with no proof being written
+`Knapsack::prepare()` uses the per-call DP instead, which draws the same
+inferences (`knapsack_upfront_partial_sums_fit`): the proof strategy must not
+change the answer (`dev_docs/integer-ranges.md`). With a proof the flag rows would
+need those sums, so it throws `IntegerOverflow`, as the per-call DP's own proof
+does at the same size. `knapsack_upfront_test`'s `run_wide_partial_sums_test` pins
+both.
+
 ## Memory footprint
 
 The static DAG plus its scaffolding can grow large. With *k*

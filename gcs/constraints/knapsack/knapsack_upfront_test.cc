@@ -226,6 +226,51 @@ auto run_knapsack_upfront_regression(pair<int, int> valrange, const vector<vecto
     test_innards::check_results(make_optional(proof_name), expected, actual);
 }
 
+// Nine items of weight at the top of the bounded range, any one of which fills
+// the knapsack. The upfront strategy's static DAG would hold every partial sum,
+// up to nine times that weight, which does not fit in an Integer. Without a
+// proof the per-call DP draws the same inferences, so a proof strategy must not
+// change the answer and this falls back to it (dev_docs/integer-ranges.md).
+// With a proof the DAG's own rows would need those sums, which is an
+// IntegerOverflow the rule allows.
+auto run_wide_partial_sums_test(bool proofs) -> void
+{
+    print(cerr, "knapsack upfront, partial sums past Integer{}:", proofs ? " with proofs" : "");
+    cerr << flush;
+    const auto B = Integer::max_bounded_value();
+
+    Problem p;
+    auto items = p.create_integer_variable_vector(9, 0_i, 1_i, "x");
+    auto weight = p.create_integer_variable(B - 1_i, B, "w");
+    auto profit = p.create_integer_variable(0_i, 9_i, "p");
+    p.post(Knapsack{vector<Integer>(9, B), vector<Integer>(9, 1_i), items, weight, profit}.with_proof_strategy(proof_strategy::Upfront{}));
+
+    set<tuple<vector<int>>> expected, actual;
+    for (int i = 0; i < 9; ++i) {
+        vector<int> one(9, 0);
+        one[i] = 1;
+        expected.emplace(one);
+    }
+
+    if (proofs) {
+        bool overflowed = false;
+        try {
+            solve_with(p, SolveCallbacks{}, ProofOptions{ProofFileNames{"knapsack_upfront_wide"}});
+        }
+        catch (const innards::IntegerOverflow &) {
+            overflowed = true;
+        }
+        if (! overflowed)
+            throw UnexpectedException{"knapsack upfront wrote a proof whose rows cannot fit in an Integer"};
+        println(cerr, " IntegerOverflow, as allowed");
+        return;
+    }
+
+    println(cerr, " expecting {} solutions", expected.size());
+    solve_for_tests(p, nullopt, actual, tuple{items});
+    check_results(nullopt, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -291,6 +336,8 @@ auto main(int argc, char * argv[]) -> int
 
         // {x, y, x} — x's coefficient is summed at positions 0 and 2.
         run_dup_knapsack_upfront_test(proofs, "xyx", {0, 2}, {{0, 2}, {0, 2}}, {0, 1, 0}, {{1, 2, 1}, {3, 1, 2}}, {{0, 8}, {0, 12}});
+
+        run_wide_partial_sums_test(proofs);
     }
 
     return EXIT_SUCCESS;

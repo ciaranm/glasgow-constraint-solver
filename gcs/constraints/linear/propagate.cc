@@ -243,8 +243,11 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
     // of negative ones, neither of which feeds lower_sum -- so one recompute at
     // the top of each sweep from the current bounds is exact, and picks up any
     // tightening a previous inverse sweep made.
+    // Summed exactly and narrowed once, so that only a total that does not fit
+    // throws: nine terms at the top of the bounded range and nine at the bottom
+    // sum to zero, but not in that order (dev_docs/integer-ranges.md).
     auto compute_lower_sum = [&]() -> Integer {
-        Integer s{0};
+        WideSum s;
         for (unsigned i = 0, e = coeff_vars.terms.size(); i != e; ++i) {
             const auto & cv = coeff_vars.terms[i];
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
@@ -254,7 +257,7 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
                 s += (coeff >= 0_i) ? (coeff * bounds[i].first) : (coeff * bounds[i].second);
             }
         }
-        return s;
+        return s.narrow_or_throw();
     };
 
     // The forward (sum <= value) sweep reaches the <= fixpoint in one pass and is
@@ -309,15 +312,16 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
             break;
 
         auto inferences_before_inverse = inference.count_inferences();
-        Integer inv_lower_sum{0};
+        WideSum wide_inv_lower_sum;
         for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
-                inv_lower_sum += -bounds[idx].second;
+                wide_inv_lower_sum -= bounds[idx].second;
             else {
                 auto coeff = get_coeff(cv);
-                inv_lower_sum += (-coeff >= 0_i) ? (-coeff * bounds[idx].first) : (-coeff * bounds[idx].second);
+                wide_inv_lower_sum += (-coeff >= 0_i) ? (-coeff * bounds[idx].first) : (-coeff * bounds[idx].second);
             }
         }
+        Integer inv_lower_sum = wide_inv_lower_sum.narrow_or_throw();
 
         for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
             const auto & cv = coeff_vars.terms[p];
@@ -394,17 +398,20 @@ namespace
     template <typename CoeffVars_>
     auto linear_slack_cover(const CoeffVars_ & coeff_vars, Integer value, const State & state) -> vector<std::size_t>
     {
+        // The sums here only choose which terms to watch, so they are compared
+        // exactly and never narrowed: summed in an Integer, the order the terms
+        // come in could overflow them where the totals fit.
         const auto n = coeff_vars.terms.size();
         vector<Integer> pot;
         pot.reserve(n);
-        Integer lower_sum{0};
+        WideSum lower_sum;
         for (const auto & cv : coeff_vars.terms) {
             auto c = get_coeff(cv);
             auto b = state.bounds(get_var(cv));
             lower_sum += (c >= 0_i) ? (c * b.first) : (c * b.second);
             pot.push_back(abs(c) * (b.second - b.first));
         }
-        auto slack = value - lower_sum;
+        auto slack = WideSum{value} - lower_sum;
 
         vector<std::size_t> order(n);
         std::iota(order.begin(), order.end(), std::size_t{0});
@@ -412,7 +419,7 @@ namespace
 
         Integer max_pot = (n == 0) ? 0_i : pot[order.front()];
         auto margin = slack - max_pot; // >= 0 at the sweep's fixpoint
-        Integer unwatched_sum{0};
+        WideSum unwatched_sum;
         for (const auto & p : pot)
             unwatched_sum += p;
 
@@ -552,10 +559,12 @@ auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer
     for (bool first = true;; first = false) {
         auto inferences_before_forward = inference.count_inferences();
 
-        // Forward (<=): coeff_p * x_p <= value - (lower_sum - contrib_p).
-        Integer lower_sum = st.fixed_lower;
+        // Forward (<=): coeff_p * x_p <= value - (lower_sum - contrib_p). Summed
+        // exactly and narrowed once, like compute_lower_sum.
+        WideSum wide_lower_sum = st.fixed_lower;
         for (std::size_t k = 0; k != st.n_active; ++k)
-            lower_sum += min_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
+            wide_lower_sum += min_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
+        Integer lower_sum = wide_lower_sum.narrow_or_throw();
 
         for (std::size_t k = 0; k != st.n_active; ++k) {
             auto p = active[k];
@@ -575,9 +584,10 @@ auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer
         auto inferences_before_inverse = inference.count_inferences();
 
         // Backward (>=): mirror of the forward pass on the inverse sum.
-        Integer inv_lower_sum = -st.fixed_lower;
+        WideSum wide_inv_lower_sum = -st.fixed_lower;
         for (std::size_t k = 0; k != st.n_active; ++k)
-            inv_lower_sum += inv_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
+            wide_inv_lower_sum += inv_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
+        Integer inv_lower_sum = wide_inv_lower_sum.narrow_or_throw();
 
         for (std::size_t k = 0; k != st.n_active; ++k) {
             auto p = active[k];
@@ -654,7 +664,8 @@ auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer 
     // condition is definitely false, so this is inequality. so long as at least two variables aren't
     // fixed, don't try to do anything.
     auto single_unset = coeff_vars.terms.end();
-    Integer accum = 0_i;
+    // Exact, so that the order the fixed terms come in cannot overflow it.
+    WideSum accum;
     for (auto i = coeff_vars.terms.begin(), i_end = coeff_vars.terms.end(); i != i_end; ++i) {
         auto val = state.optional_single_value(get_var(*i));
         if (val)
@@ -683,10 +694,10 @@ auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer 
     }
     else {
         // exactly one thing remaining, so it can't be given the single value that would
-        // make the equality hold.
-        Integer residual = value - accum;
-        if (0_i == residual % get_coeff(*single_unset)) {
-            Integer forbidden = residual / get_coeff(*single_unset);
+        // make the equality hold. The residual can be past Integer's range and
+        // still have an Integer quotient, when the coefficient is large.
+        if (auto forbidden_value = (WideSum{value} - accum).divided_exactly_by(get_coeff(*single_unset))) {
+            Integer forbidden = *forbidden_value;
             if (state.in_domain(get_var(*single_unset), forbidden)) {
                 // the forbidden value is in the domain, so disallow it, and then
                 // we won't do anything else.
@@ -700,7 +711,7 @@ auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer 
             }
         }
         else {
-            // the forbidden value isn't an integer, so it can't happen
+            // the forbidden value isn't an Integer, so it can't happen
             return PropagatorState::DisableUntilBacktrack;
         }
     }

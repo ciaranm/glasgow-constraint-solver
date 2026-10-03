@@ -570,6 +570,67 @@ namespace
         println(cerr, " ok");
     }
 
+    // Heavy edges whose sums the algorithms used to form for nothing
+    // (dev_docs/integer-ranges.md), each in the three modes:
+    //
+    // - a two-edge negative cycle of weight 2A on four 0..1 variables. Bellman-
+    //   Ford relaxed it round after round until its potentials left Integer's
+    //   range, though the answer needs no large value at all. A potential below
+    //   the sum of the negative weights is now taken as the evidence instead.
+    // - a chain of edges of weight B in both directions, which root
+    //   simplification's all-pairs shortest paths summed past 2^63, though no
+    //   path longer than a domain can make any edge redundant.
+    auto run_heavy_edge_test(bool proofs) -> void
+    {
+        const auto A = Integer::min_bounded_value(), B = Integer::max_bounded_value();
+        for (const string mode : {"default", "no simplification", "not incremental"}) {
+            auto configure = [&](DifferenceConstraints && d) -> DifferenceConstraints {
+                if (mode == "no simplification")
+                    d.simplifying_at_root(false);
+                else if (mode == "not incremental")
+                    d.incrementally(false);
+                return std::move(d);
+            };
+
+            auto solve = [&](Problem & p, const string & name) -> long long {
+                auto proof_name = "difference_heavy_" + name;
+                auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }},
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
+                if (proofs)
+                    verify_proof_and_clean_up(proof_name);
+                return stats.solutions;
+            };
+
+            {
+                print(cerr, "difference heavy edges, small negative cycle, {}{}:", mode, proofs ? " with proofs" : "");
+                cerr << flush;
+                Problem p;
+                auto v = p.create_integer_variable_vector(4, 0_i, 1_i, "v");
+                p.post(configure(DifferenceConstraints{{DifferenceEdge{v[0], v[1], A}, DifferenceEdge{v[1], v[0], A}, DifferenceEdge{v[2], v[0], 0_i},
+                    DifferenceEdge{v[3], v[2], 0_i}}}));
+                if (auto n = solve(p, "cycle"); n != 0)
+                    throw UnexpectedException{"difference found " + to_string(n) + " solutions to a system with a negative cycle"};
+                println(cerr, " ok");
+            }
+
+            {
+                print(cerr, "difference heavy edges, chain of weight B, {}{}:", mode, proofs ? " with proofs" : "");
+                cerr << flush;
+                Problem p;
+                auto x = p.create_integer_variable_vector(10, 0_i, 1_i, "x");
+                vector<DifferenceEdge> edges;
+                for (int i = 0; i + 1 < 10; ++i) {
+                    edges.push_back(DifferenceEdge{x[i], x[i + 1], B});
+                    edges.push_back(DifferenceEdge{x[i + 1], x[i], B});
+                }
+                p.post(configure(DifferenceConstraints{edges}));
+                if (auto n = solve(p, "chain"); n != 1024)
+                    throw UnexpectedException{"difference found " + to_string(n) + " solutions to a system of vacuous edges over ten 0..1 variables"};
+                println(cerr, " ok");
+            }
+        }
+    }
+
     // A negated view operand is not a difference constraint at all, and
     // accepting one would be unsound rather than merely incomplete, so it is
     // rejected at construction.
@@ -1383,11 +1444,15 @@ auto main(int argc, char * argv[]) -> int
     auto bare = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
 
     if (bare) {
-        if (mode == "basic")
+        if (mode == "basic") {
             for (bool incremental : {true, false}) {
                 run_transitive_test(incremental);
                 run_hole_snap_test(incremental);
             }
+            for (bool proofs : {false, true})
+                if (! proofs || can_run_veripb())
+                    run_heavy_edge_test(proofs);
+        }
         if (mode == "reified")
             for (bool incremental : {true, false}) {
                 run_reified_bounds_test(incremental);
