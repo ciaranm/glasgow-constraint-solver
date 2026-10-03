@@ -151,6 +151,30 @@ namespace gcs
             return Integer(std::numeric_limits<decltype(raw_value)>::max() / 8);
         }
         ///@}
+
+        /**
+         * \name The widest domain an auxiliary variable may have.
+         *
+         * A constraint sometimes needs a variable of its own over the values of
+         * a view, and a view can reach twice as far as a declared variable. So
+         * an auxiliary may span a quarter of the machine range, enough for any
+         * view's values and for a magnitude sized to their bit width. That is
+         * where the declared range itself used to sit, and is the same reach a
+         * view's own proof bit vector has. Problem refuses a declared domain
+         * outside min_bounded_value() .. max_bounded_value(); State refuses any
+         * domain, declared or auxiliary, outside these.
+         */
+        ///@{
+        static inline constexpr auto min_auxiliary_value() -> Integer
+        {
+            return Integer(-(std::numeric_limits<decltype(raw_value)>::max() / 4));
+        }
+
+        static inline constexpr auto max_auxiliary_value() -> Integer
+        {
+            return Integer(std::numeric_limits<decltype(raw_value)>::max() / 4);
+        }
+        ///@}
     };
 
     ///@{

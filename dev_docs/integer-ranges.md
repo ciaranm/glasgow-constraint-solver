@@ -15,9 +15,9 @@ size it is, and what a constraint has to do to keep its side of the bargain.
 
 Every `Integer` a caller hands the solver:
 
-- **A variable's declared domain.** `State::allocate_integer_variable_with_state`
-  checks it, which covers every route to a variable, including the auxiliaries
-  constraints create for themselves.
+- **A variable's declared domain.** `Problem::create_integer_variable` checks
+  it. An *auxiliary* variable, one a constraint creates for itself, is not an
+  input, and may be wider: see [Auxiliary variables](#auxiliary-variables).
 - **A constant.** `ConstantIntegerVariableID`'s constructor checks it, so `42_c`,
   `constant_variable()` and the constant folding in the view operators all do.
 - **A view's offset.** `ViewOfIntegerVariableID`'s constructor checks it. A view
@@ -42,6 +42,26 @@ bottom, so that negating an input never leaves it. That matters because the
 solver negates things the caller never sees: `maximise(x + c)` is stored as
 `−x − c`, and with `min_bounded_value()` at −2⁶⁰ it would have thrown for `c`
 at the bottom of the range.
+
+## Auxiliary variables
+
+A constraint sometimes needs a variable of its own over a view's values: ArgSort
+copies its inputs, Divide and Modulus size magnitudes to their operands' bit
+widths, Power's chain holds intermediate powers. A view reaches twice as far as
+a declared variable, so such a variable has to be allowed further too.
+`State::allocate_integer_variable_with_state`, which every variable goes
+through, refuses a domain outside `Integer::min_auxiliary_value()` ..
+`max_auxiliary_value()`, a quarter of the machine range: enough for any view's
+values (at most `2 · max_bounded_value()`) and for a magnitude rounded up to its
+bit width (`2⁶¹ − 1`). That is where the declared range itself used to sit, and
+is the reach a view's own proof bit vector already has, so a row over two such
+auxiliaries is no harder to write than a row over two views.
+
+The same reasoning applies to a constraint a constraint builds for itself. Its
+parameters must still lie in `S`, since it goes through the same constructor as
+any other, so build it over the underlying variables rather than over views:
+Power's tabulated form is a `Table` over the variables beneath its views, with
+each view value translated back, so that every tuple value lies in `S`.
 
 ## What "behaves" means
 

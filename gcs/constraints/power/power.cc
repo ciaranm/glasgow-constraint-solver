@@ -216,9 +216,16 @@ auto Power::prepare(Propagators & propagators, State & initial_state, ProofModel
         determined.push_back({*a3.var, [a1, a3, k, px](const vector<Integer> & vals) -> optional<Integer> {
                                   auto xv = a1.coeff * vals[px] + a1.offset;
                                   auto want = checked_integer_power(xv, k);
-                                  if ((! want) || (*want - a3.offset) % a3.coeff != 0_i)
+                                  // A power near the end of Integer, less a view's offset, is past
+                                  // every domain: not a tuple, rather than an overflow.
+                                  try {
+                                      if ((! want) || (*want - a3.offset) % a3.coeff != 0_i)
+                                          return nullopt;
+                                      return (*want - a3.offset) / a3.coeff;
+                                  }
+                                  catch (const IntegerOverflow &) {
                                       return nullopt;
-                                  return (*want - a3.offset) / a3.coeff;
+                                  }
                               }});
 
     if (want_tabulation(_level, enum_vars.vars(), determined, initial_state)) {
