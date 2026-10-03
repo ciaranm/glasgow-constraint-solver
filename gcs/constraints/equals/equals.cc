@@ -4,6 +4,7 @@
 #include <gcs/constraints/innards/justify_not_in_range.hh>
 #include <gcs/constraints/innards/no_overlap_walk.hh>
 #include <gcs/constraints/innards/reified_dispatcher.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -371,6 +372,7 @@ namespace
 ReifiedEquals::ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool neq) :
     _v1(v1), _v2(v2), _cond(cond), _neq(neq)
 {
+    innards::require_bounded(_cond, "the value in an equality's condition");
 }
 
 auto ReifiedEquals::with_proof_mutation(const EqualsProofMutation mutation) -> ReifiedEquals &

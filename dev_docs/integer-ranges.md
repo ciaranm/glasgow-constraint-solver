@@ -26,9 +26,16 @@ Every `Integer` a caller hands the solver:
   only that its single offset lies in `S`. A view's values can therefore reach
   twice as far as a variable's, about ±2⁶¹: one extra bit, and never more.
 - **Every constraint parameter**: a coefficient, a tuple value, a chain value, a
-  distance, a capacity, and so on. Each constraint checks its own, with
-  `innards::require_bounded`, when it is constructed. See
-  [Obligations on a constraint](#obligations-on-a-constraint).
+  distance, a capacity, an index start, an integer inside a regular expression,
+  and so on. Each constraint checks its own when it is constructed, with
+  `innards::require_bounded` (`gcs/constraints/innards/require_bounded.hh`
+  has the overloads for vectors, weighted sums, tuples, literals and
+  reification conditions). A regular expression is only compiled when the
+  constraint is installed, so its integers are checked then.
+- **The value in a literal or condition** a constraint takes, such as the `z ==
+  v` of `LessThanIf{x, y, z == v}` or a literal of `Or`. Here the stored value
+  may also be one past the top of the range, because `x <= v` is stored as `x <
+  v + 1` and `x > v` as `x >= v + 1`: those are what an in-range `v` produces.
 
 `S` is symmetric, one value short of an eighth of two's complement at the
 bottom, so that negating an input never leaves it. That matters because the
@@ -86,9 +93,12 @@ declared domain exactly `S`, so that default lost a bit too.
 ## Obligations on a constraint
 
 - **Check every `Integer` parameter** with `innards::require_bounded(value,
-  "a description")` in the constructor. Parameters that become variables or
-  constants on the way in (a constant array passed through
-  `as_constant_variables`, say) are already checked.
+  "a description")` in the constructor, and every literal or reification
+  condition it takes. Parameters that become variables or constants on the way
+  in (a constant array passed through `as_constant_variables`, say, as
+  `Cumulative`'s and `Disjunctive`'s constant lengths are) are already checked.
+  `integer_ranges_test` has a refusal case for every constraint that takes
+  one; add yours there.
 - **Do not narrow the rule by dropping inputs.** An out-of-range tuple value
   could never match a variable, but it could match a view (#1117's review), and
   silently dropping it hides a caller's mistake. Throw instead.
@@ -97,6 +107,7 @@ declared domain exactly `S`, so that default lost a bit too.
   at both ends of `S`, with proofs. That is where every bug in this area has
   been.
 
-The parameter checks are being added constraint by constraint. Until a
-constraint has its own, an out-of-range parameter may still throw late, or not
-at all.
+A constraint whose own arithmetic genuinely needs more than 64 bits for
+in-range inputs throws then, during search: `DifferenceConstraints`, for
+example, forms Bellman-Ford path sums, and a chain of nine edges of weight
+`max_bounded_value()` has a path sum past the end of `Integer`.
