@@ -162,10 +162,10 @@ auto State::allocate_integer_variable_with_state(Integer lower, Integer upper) -
     // using the solver rather than working on it: naming only the constants
     // would send them to the source to find out what they are.
     if (lower < Integer::min_bounded_value() || upper > Integer::max_bounded_value())
-        throw InvalidProblemDefinitionException{format("variable created with domain {}..{}, which is outside the widest supported "
-                                                       "domain of {}..{} (Integer::min_bounded_value() .. "
-                                                       "Integer::max_bounded_value()); the proof model cannot be written for a domain "
-                                                       "this wide",
+        throw IntegerOverflow{format("variable created with domain {}..{}, which is outside the widest supported "
+                                     "domain of {}..{} (Integer::min_bounded_value() .. "
+                                     "Integer::max_bounded_value()); the proof model cannot be written for a domain "
+                                     "this wide",
             lower.raw_value, upper.raw_value, Integer::min_bounded_value().raw_value, Integer::max_bounded_value().raw_value)};
     _imp->integer_variable_states.back().emplace_back(lower, upper);
     return SimpleIntegerVariableID{_imp->integer_variable_states.back().size() - 1};

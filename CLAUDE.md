@@ -29,6 +29,7 @@ reasoning behind them.
 | wondering what the checker will accept, or why a proof is slow to check | [`veripb-facts.md`](dev_docs/veripb-facts.md) |
 | creating an auxiliary variable for a proof | [`variable-encodings.md`](dev_docs/variable-encodings.md) |
 | touching views | [`view-proof-logging.md`](dev_docs/view-proof-logging.md) |
+| taking an `Integer` parameter, or doing arithmetic on values | [`integer-ranges.md`](dev_docs/integer-ranges.md) — what must lie in the bounded range, and what a constraint promises when it does |
 | making a propagator faster | [`propagator-performance.md`](dev_docs/propagator-performance.md), then [`benchmarking.md`](dev_docs/benchmarking.md) |
 | changing the build, an option, or a toolchain assumption | [`building.md`](dev_docs/building.md) |
 | writing C++ that clang-format does not settle | [`code-style.md`](dev_docs/code-style.md) |

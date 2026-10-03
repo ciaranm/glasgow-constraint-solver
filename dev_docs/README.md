@@ -29,6 +29,12 @@ library. For an introduction to *using* the solver, start with the top-level
   the `State` class, the `IntervalSet` domain representation, chronological
   backtracking via epochs, and the inference paths through which propagators
   modify domains. Read first when changing the solver internals.
+- [Integer ranges](integer-ranges.md) — the one range every input must lie in
+  (domains, constants, view offsets and constraint parameters), the
+  `IntegerOverflow` thrown outside it, the one extra bit a view may take, what
+  a comparison constraint and an arithmetic constraint each promise for
+  in-range inputs, and why the range is an eighth of the machine range. Read
+  before adding a constraint that takes an `Integer` parameter.
 - [Variable encodings: state, OPB, and proof](variable-encodings.md) — the map of
   the ways to bring a variable into existence, along two axes (does it have solver
   state, and is its encoding asserted in the OPB or introduced inside the proof).
