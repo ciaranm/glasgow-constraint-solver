@@ -22,6 +22,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -1956,7 +1957,16 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    auto options_vars = options.parse(argc, argv);
+    cxxopts::ParseResult options_vars;
+    try {
+        options_vars = options.parse(argc, argv);
+    }
+    catch (const cxxopts::exceptions::exception & e) {
+        // An unknown option, or a malformed value: say so rather than abort.
+        cerr << "Error: " << e.what() << endl;
+        cerr << "Try " << argv[0] << " --help" << endl;
+        return EXIT_FAILURE;
+    }
 
     if (options_vars.count("help")) {
         cout << "Usage: " << argv[0] << " [options] xcsp-file.xml" << endl;
@@ -1974,6 +1984,25 @@ auto main(int argc, char * argv[]) -> int
         parser.parse(options_vars["file"].as<string>().c_str());
     }
     catch (const UnimplementedException & e) {
+        cout << "s UNSUPPORTED" << endl;
+        cout << "c " << e.what() << endl;
+        return EXIT_FAILURE;
+    }
+    catch (const innards::IntegerOverflow & e) {
+        // A value outside the range the solver accepts (dev_docs/integer-ranges.md),
+        // or arithmetic over in-range values that does not fit.
+        cout << "s UNSUPPORTED" << endl;
+        cout << "c " << e.what() << endl;
+        return EXIT_FAILURE;
+    }
+    catch (const std::out_of_range & e) {
+        // The parser refusing an integer that does not fit in an int (the patch
+        // applied to it in xcsp/CMakeLists.txt), or its own std::stoi refusing.
+        cout << "s UNSUPPORTED" << endl;
+        cout << "c " << e.what() << endl;
+        return EXIT_FAILURE;
+    }
+    catch (const std::invalid_argument & e) {
         cout << "s UNSUPPORTED" << endl;
         cout << "c " << e.what() << endl;
         return EXIT_FAILURE;
@@ -2057,44 +2086,61 @@ auto main(int argc, char * argv[]) -> int
     auto restarts =
         options_vars.contains("restarts") ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>())) : nullopt;
 
-    auto stats = solve_with(problem, //
-        SolveCallbacks{              //
-            .solution = [&](const CurrentState & s) -> bool {
-                if (callbacks.is_optimisation) {
-                    saved_solution.emplace(s.clone());
-                    cout << "o " << s(*callbacks.objective_variable) << endl;
-                    return true;
-                }
-                else if (options_vars.contains("all")) {
-                    // Stream each solution as a compact tuple line. The
-                    // test runner sorts and diffs these against the cached
-                    // expected output.
-                    cout << "ENUMSOL:";
-                    for (const auto & [n, v] : callbacks.variables())
-                        if (v.id)
-                            cout << " " << n << "=" << s(*v.id);
-                        else
-                            cout << " " << n << "=*";
-                    cout << endl;
-                    return true;
-                }
-                else {
-                    saved_solution.emplace(s.clone());
-                    return false;
-                }
-            },
-            .branch = *brancher,
-            .restarts = restarts},
-        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt, &abort_flag);
-
-    if (timeout_thread.joinable()) {
-        {
-            unique_lock<mutex> guard(timeout_mutex);
-            abort_flag.store(true);
-            timeout_cv.notify_all();
+    auto stop_timeout_thread = [&]() {
+        if (timeout_thread.joinable()) {
+            {
+                unique_lock<mutex> guard(timeout_mutex);
+                abort_flag.store(true);
+                timeout_cv.notify_all();
+            }
+            timeout_thread.join();
         }
-        timeout_thread.join();
+    };
+
+    optional<Stats> maybe_stats;
+    try {
+        maybe_stats = solve_with(problem, //
+            SolveCallbacks{               //
+                .solution = [&](const CurrentState & s) -> bool {
+                    if (callbacks.is_optimisation) {
+                        saved_solution.emplace(s.clone());
+                        cout << "o " << s(*callbacks.objective_variable) << endl;
+                        return true;
+                    }
+                    else if (options_vars.contains("all")) {
+                        // Stream each solution as a compact tuple line. The
+                        // test runner sorts and diffs these against the cached
+                        // expected output.
+                        cout << "ENUMSOL:";
+                        for (const auto & [n, v] : callbacks.variables())
+                            if (v.id)
+                                cout << " " << n << "=" << s(*v.id);
+                            else
+                                cout << " " << n << "=*";
+                        cout << endl;
+                        return true;
+                    }
+                    else {
+                        saved_solution.emplace(s.clone());
+                        return false;
+                    }
+                },
+                .branch = *brancher,
+                .restarts = restarts},
+            options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt, &abort_flag);
     }
+    catch (const innards::IntegerOverflow & e) {
+        // Arithmetic during search over in-range values that does not fit, which
+        // an arithmetic constraint may report (dev_docs/integer-ranges.md). The
+        // timeout thread must be stopped before it is destroyed.
+        stop_timeout_thread();
+        cout << "s UNSUPPORTED" << endl;
+        cout << "c " << e.what() << endl;
+        return EXIT_FAILURE;
+    }
+
+    stop_timeout_thread();
+    auto & stats = *maybe_stats;
 
     bool actually_aborted = actually_timed_out || was_terminated.load();
 

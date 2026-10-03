@@ -337,11 +337,12 @@ auto main(int argc, char * argv[]) -> int
         run_power_alias_test(proofs, {-5, 5});
 
         for (bool exp_is_constant : {false, true}) {
-            // 9^19 = 1350851717672992089 is exactly representable in long long but
-            // is off-by-89 when computed via double-precision pow(); pin the result
-            // to a window bracketing both.
+            // 9^18 = 150094635296999121 is exactly representable in long long but
+            // is off by 15 when computed via double-precision pow(); pin the result
+            // to a window bracketing both. (This was 9^19, until that left the
+            // bounded range.)
             run_power_pinned_test(
-                proofs, exp_is_constant, 9_i, 19_i, {1350851717672992000LL, 1350851717672992089LL}, make_optional(Integer{1350851717672992089LL}));
+                proofs, exp_is_constant, 9_i, 18_i, {150094635296999100LL, 150094635296999140LL}, make_optional(Integer{150094635296999121LL}));
 
             // 10^20 overflows long long: must be UNSAT, not an overflow error.
             run_power_pinned_test(proofs, exp_is_constant, 10_i, 20_i, {0, 100}, nullopt);

@@ -1,4 +1,5 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/sort/arg_sort.hh>
 #include <gcs/constraints/sort/hints.hh>
 #include <gcs/constraints/sort/sortedness.hh>
@@ -56,6 +57,7 @@ using fmt::print;
 
 ArgSort::ArgSort(vector<IntegerVariableID> x, vector<IntegerVariableID> p, Integer offset) : _x(move(x)), _p(move(p)), _offset(offset)
 {
+    innards::require_bounded(_offset, "the offset of ArgSort");
 }
 
 auto ArgSort::clone() const -> unique_ptr<Constraint>

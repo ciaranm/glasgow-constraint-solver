@@ -1,6 +1,7 @@
 #include <gcs/constraints/in/hints.hh>
 #include <gcs/constraints/in/in.hh>
 #include <gcs/constraints/innards/justify_not_in_range.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/literal.hh>
@@ -54,6 +55,7 @@ using fmt::print;
 
 In::In(IntegerVariableID var, vector<IntegerVariableID> vars, vector<Integer> vals) : _var(var), _var_vals(move(vars)), _val_vals(move(vals))
 {
+    innards::require_bounded(_val_vals, "a value of In");
 }
 
 In::In(IntegerVariableID var, vector<IntegerVariableID> vals) : _var(var), _var_vals(move(vals))
@@ -62,6 +64,7 @@ In::In(IntegerVariableID var, vector<IntegerVariableID> vals) : _var(var), _var_
 
 In::In(IntegerVariableID var, vector<Integer> vals) : _var(var), _val_vals(move(vals))
 {
+    innards::require_bounded(_val_vals, "a value of In");
 }
 
 auto In::clone() const -> unique_ptr<Constraint>

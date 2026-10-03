@@ -14,7 +14,6 @@
 #include <gcs/constraints/power.hh>
 #include <gcs/constraints/table.hh>
 #include <gcs/expression.hh>
-#include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/presolver.hh>
 #include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
@@ -1118,16 +1117,16 @@ TEST_CASE("A row too large to render says so, rather than failing as bare arithm
     // naming what was being emitted (issue #852).
     //
     // Variable domains are capped at Integer::max_bounded_value() so the ordinary
-    // routes cannot get here; large coefficients still can, which is what this
-    // uses. The point is the diagnosis, not the refusal: the row genuinely does
+    // routes cannot get here; large coefficients, though in range themselves,
+    // still can, which is what this uses. The point is the diagnosis, not the refusal: the row genuinely does
     // not fit, and refusing it is right.
     Problem p;
     auto a = p.create_integer_variable(0_i, 1024_i), b = p.create_integer_variable(0_i, 1024_i);
     auto r = p.create_integer_variable(0_i, 1_i);
-    p.post(LinearEqualityIff{WeightedSum{} + Integer{1LL << 60} * a + Integer{1LL << 60} * b, 0_i, r == 1_i});
+    p.post(LinearEqualityIff{WeightedSum{} + Integer::max_bounded_value() * a + Integer::max_bounded_value() * b, 0_i, r == 1_i});
 
     auto proof_name = "solve_test_row_too_large";
     CHECK_THROWS_AS(solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) { return false; }, .stats_report = silent_stats_report()},
                         ProofOptions{proof_name}),
-        ProofError);
+        IntegerOverflow);
 }

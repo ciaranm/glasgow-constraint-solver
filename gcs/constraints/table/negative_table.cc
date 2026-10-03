@@ -1,3 +1,4 @@
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/table/hints.hh>
 #include <gcs/constraints/table/negative_table.hh>
 #include <gcs/exception.hh>
@@ -121,6 +122,7 @@ namespace gcs
 
 NegativeTable::NegativeTable(vector<IntegerVariableID> v, ExtensionalTuples t) : _vars(move(v)), _tuples(move(t))
 {
+    innards::require_bounded(_tuples, "a tuple value of NegativeTable");
 }
 
 auto NegativeTable::clone() const -> unique_ptr<Constraint>

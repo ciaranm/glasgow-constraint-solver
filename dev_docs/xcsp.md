@@ -263,6 +263,28 @@ non-`le` condition (#147), `precedence` with `covered=true`,
 `channel` with the one-to-many shape or with its first list longer
 than its second, `nValues` with `<except>`.
 
+## Integer range
+
+The parser reads every integer as a C++ `int`, so the XCSP front end supports
+32-bit values only, a much narrower range than the solver's own
+([`integer-ranges.md`](integer-ranges.md)). Upstream's conversion,
+`UTF8String::to(int &)`, does not check for overflow, so `4294967297` used to be
+read as `1`, silently, and an instance using it got a wrong answer. Two more
+hazards come from the parser using `INT_MAX` and `INT_MIN` as sentinels: a tuple
+value of `2147483647` is `STAR`, the wildcard, and a domain reaching `INT_MAX`
+was listed by an `int` loop that overflowed and never finished.
+
+`xcsp/CMakeLists.txt` applies `xcsp/xcsp3_parser_integer_overflow.patch` to the
+fetched parser (FetchContent's `PATCH_COMMAND`, through
+`xcsp/apply_parser_patch.cmake`, which does nothing if the patch is already in
+place). It makes the conversion throw `std::out_of_range` for anything outside
+`int`, refuses a tuple value of `2147483647`, and widens the domain loop. The
+parser's own `std::stoi` calls already throw `std::out_of_range`. `main()` catches
+those, and `IntegerOverflow` from model building or from search, and reports
+each as `s UNSUPPORTED` with the reason on a `c` line. When moving the pinned
+parser commit, check the patch still applies; the configure step fails if it
+does not.
+
 ## Testing
 
 Each ctest is a small `.xml` instance run by `xcsp/run_xcsp_test.bash`:

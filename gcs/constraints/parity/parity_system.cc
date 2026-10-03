@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/cake_truthiness.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/parity/gf2_system.hh>
 #include <gcs/constraints/parity/hints.hh>
@@ -52,6 +53,8 @@ ParitySystem::ParitySystem(const vector<vector<IntegerVariableID>> & rows, Parit
 
 ParitySystem::ParitySystem(vector<Literals> rows, ParitySystemPropagation propagation) : _rows(move(rows)), _propagation(propagation)
 {
+    for (const auto & row : _rows)
+        innards::require_bounded(row, "the value in a literal of ParitySystem");
 }
 
 auto ParitySystem::clone() const -> unique_ptr<Constraint>

@@ -20,6 +20,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <csignal>
 #include <cstdint>
@@ -28,6 +29,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -95,6 +97,37 @@ public:
 
 namespace
 {
+    // Every integer FlatZinc gives us goes through here. nlohmann::json keeps an
+    // integer past long long as an unsigned or, past that, as a float, and a cast
+    // to long long wraps either silently: 2^64 - 1 was read as -1, so a model got
+    // a wrong answer. Refuse instead, naming the value as it was written. A value
+    // that fits but lies outside the bounded range is refused by whatever it
+    // becomes (dev_docs/integer-ranges.md), with the right number in the message.
+    auto json_integer(const nlohmann::json & j) -> Integer
+    {
+        auto too_big = [&]() {
+            return innards::IntegerOverflow{format("the integer {} does not fit in an Integer, let alone the supported range {}..{} "
+                                                   "(Integer::min_bounded_value() .. Integer::max_bounded_value())",
+                j.dump(), Integer::min_bounded_value().raw_value, Integer::max_bounded_value().raw_value)};
+        };
+
+        if (j.is_number_unsigned()) {
+            auto u = j.get<unsigned long long>();
+            if (u > static_cast<unsigned long long>(std::numeric_limits<long long>::max()))
+                throw too_big();
+            return Integer{static_cast<long long>(u)};
+        }
+        if (j.is_number_integer())
+            return Integer{j.get<long long>()};
+        if (j.is_number_float()) {
+            // An integer literal too long for any integer type arrives as a float.
+            auto d = j.get<double>();
+            if (std::isfinite(d) && std::trunc(d) == d && std::fabs(d) >= 9.2e18)
+                throw too_big();
+        }
+        throw FlatZincInterfaceError{format("expected an integer, but got {}", j.dump())};
+    }
+
     static atomic<bool> abort_flag{false};
 
     auto sig_int_or_term_handler(int) -> void
@@ -176,7 +209,7 @@ namespace
                 if (val.is_boolean())
                     result.push_back(static_cast<bool>(val) ? 1_i : 0_i);
                 else
-                    result.push_back(Integer{static_cast<long long>(val)});
+                    result.push_back(json_integer(val));
             }
             data.unnamed_constant_arrays.push_back(move(result));
             return &data.unnamed_constant_arrays.back();
@@ -184,7 +217,7 @@ namespace
         else if (a.is_object()) {
             vector<Integer> result;
             for (const auto & val_range : a["set"])
-                for (auto val = val_range[0].template get<long long>(); val <= val_range[1].template get<long long>(); ++val)
+                for (auto val = json_integer(val_range[0]); val <= json_integer(val_range[1]); ++val)
                     result.push_back(Integer(val));
             data.unnamed_constant_arrays.push_back(move(result));
             return &data.unnamed_constant_arrays.back();
@@ -198,7 +231,7 @@ namespace
         auto a = args.at(idx)["set"];
         IntervalSet<Integer> result;
         for (const auto & range : a)
-            result.insert_at_end(Integer{static_cast<long long>(range[0])}, Integer{static_cast<long long>(range[1])});
+            result.insert_at_end(json_integer(range[0]), json_integer(range[1]));
         return result;
     }
 
@@ -218,7 +251,7 @@ namespace
         for (const auto & set_obj : a) {
             vector<Integer> values;
             for (const auto & range : set_obj["set"])
-                for (auto v = range[0].template get<long long>(); v <= range[1].template get<long long>(); ++v)
+                for (auto v = json_integer(range[0]); v <= json_integer(range[1]); ++v)
                     values.push_back(Integer{v});
             result.push_back(move(values));
         }
@@ -241,7 +274,7 @@ namespace
                 if (v.is_string())
                     result.push_back(data.integer_variables.at(v).first);
                 else if (v.is_number())
-                    result.push_back(ConstantIntegerVariableID{Integer{static_cast<long long>(v)}});
+                    result.push_back(ConstantIntegerVariableID{json_integer(v)});
                 else if (v.is_boolean())
                     result.push_back(ConstantIntegerVariableID{static_cast<bool>(v) ? 1_i : 0_i});
                 else
@@ -261,7 +294,7 @@ namespace
         auto a = args.at(idx);
         if (! a.is_number())
             throw FlatZincInterfaceError{format("Didn't get a number where a constant was needed? arg is \"{}\"", a.dump())};
-        return Integer{static_cast<long long>(a)};
+        return json_integer(a);
     }
 
     // Several of our predicates take an array whose values gcs numbers from zero
@@ -305,7 +338,7 @@ namespace
             return iter->second.first;
         }
         else if (a.is_number()) {
-            auto val = Integer{static_cast<long long>(a)};
+            auto val = json_integer(a);
             return ConstantIntegerVariableID{val};
         }
         else if (a.is_boolean()) {
@@ -461,10 +494,7 @@ auto main(int argc, char * argv[]) -> int
                 if (! vardata.contains("domain")) {
                     // The widest domain the solver accepts, which leaves headroom
                     // for sums and products of unbounded variables to stay within
-                    // Integer. Halving was one bit short: writing a half-reified
-                    // row over two such variables overflowed while emitting the OPB
-                    // (issue #852), so the bound is a named quarter now rather than
-                    // a local guess.
+                    // Integer (see Integer::max_bounded_value() and issue #852).
                     auto var = problem.create_integer_variable(Integer::min_bounded_value(), Integer::max_bounded_value(), name);
                     data.integer_variables.emplace(name, pair{var, false});
                     if ((! vardata.contains("defined")) || (! vardata["defined"].get<bool>()))
@@ -473,17 +503,16 @@ auto main(int argc, char * argv[]) -> int
                 }
                 else {
                     auto size = vardata["domain"].size();
-                    auto var = problem.create_integer_variable(                   //
-                        Integer{vardata["domain"][0][0].get<long long>()},        //
-                        Integer{vardata["domain"][size - 1][1].get<long long>()}, //
+                    auto var = problem.create_integer_variable(       //
+                        json_integer(vardata["domain"][0][0]),        //
+                        json_integer(vardata["domain"][size - 1][1]), //
                         name);
                     data.integer_variables.emplace(name, pair{var, false});
                     if ((! vardata.contains("defined")) || (! vardata["defined"].get<bool>()))
                         data.branch_variables.push_back(var);
                     data.all_variables.push_back(var);
                     for (unsigned i = 0; i < size - 1; ++i) {
-                        problem.post(Or{{! (var >= Integer{vardata["domain"][i][1].get<long long>()} + 1_i),
-                                            var >= Integer{vardata["domain"][i + 1][0].get<long long>()}},
+                        problem.post(Or{{! (var >= json_integer(vardata["domain"][i][1]) + 1_i), var >= json_integer(vardata["domain"][i + 1][0])},
                             TrueLiteral{}});
                     }
                 }
@@ -504,7 +533,7 @@ auto main(int argc, char * argv[]) -> int
                 for (const auto & set_obj : arraydata["a"]) {
                     vector<Integer> values;
                     for (const auto & range : set_obj["set"])
-                        for (auto v = range[0].template get<long long>(); v <= range[1].template get<long long>(); ++v)
+                        for (auto v = json_integer(range[0]); v <= json_integer(range[1]); ++v)
                             values.push_back(Integer{v});
                     set_values.push_back(move(values));
                 }
@@ -527,7 +556,7 @@ auto main(int argc, char * argv[]) -> int
                     // false or an integer, and if the flattener has fixed every element
                     // of a var bool array then no variable is left to recover it from.
                     seen_a_bool = seen_a_bool || v.is_boolean();
-                    Integer val = v.is_boolean() ? (static_cast<bool>(v) ? 1_i : 0_i) : Integer{v.get<long long>()};
+                    Integer val = v.is_boolean() ? (static_cast<bool>(v) ? 1_i : 0_i) : json_integer(v);
                     values.push_back(val);
                     variables.push_back(ConstantIntegerVariableID{val});
                 }
@@ -622,7 +651,7 @@ auto main(int argc, char * argv[]) -> int
                 // variable rhs onto the left with coefficient -1 and compare against 0.
                 Integer total{0_i};
                 if (args.at(2).is_number())
-                    total = Integer{static_cast<long long>(args.at(2))};
+                    total = json_integer(args.at(2));
                 else
                     terms += -1_i * arg_as_var(data, args, 2);
 
@@ -705,7 +734,7 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "int_lin_eq_reif" || id == "int_lin_le_reif" || id == "int_lin_ne_reif") {
                 auto coeffs = arg_as_array_of_integer(data, args, 0);
                 const auto & vars = arg_as_array_of_var(data, args, 1);
-                Integer total{static_cast<long long>(args.at(2))};
+                Integer total = json_integer(args.at(2));
                 if (coeffs->size() != vars.size())
                     throw FlatZincInterfaceError{format("Array length mismatch in {} in {}", id, fznname)};
                 const auto & reif = arg_as_var(data, args, 3);
@@ -1089,9 +1118,9 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (id == "glasgow_mdd") {
                 auto vars = arg_as_array_of_var(data, args, 0);
-                auto N = static_cast<long long>(args.at(1));
+                auto N = json_integer(args.at(1)).raw_value;
                 auto level = arg_as_array_of_integer(data, args, 2);
-                auto E = static_cast<long long>(args.at(3));
+                auto E = json_integer(args.at(3)).raw_value;
                 auto from = arg_as_array_of_integer(data, args, 4);
                 auto label = arg_as_array_of_set_of_integer(data, args, 5);
                 auto to = arg_as_array_of_integer(data, args, 6);
@@ -1165,10 +1194,10 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (id == "glasgow_regular") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
-                const auto & num_states = static_cast<long long>(args.at(1));
-                const auto & num_symbols = static_cast<long long>(args.at(2));
+                const auto num_states = json_integer(args.at(1)).raw_value;
+                const auto num_symbols = json_integer(args.at(2)).raw_value;
                 const auto & raw_transitions = arg_as_array_of_integer(data, args, 3);
-                const auto & start_state = static_cast<long long>(args.at(4));
+                const auto start_state = json_integer(args.at(4)).raw_value;
 
                 // Keyed by the symbol values the model's own variables take, which
                 // FlatZinc regular numbers 1..S. Regular takes the symbols it is
@@ -1245,8 +1274,8 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(Table{vars, move(tuples)});
             }
             else if (id == "glasgow_value_precede_int") {
-                Integer s{static_cast<long long>(args.at(0))};
-                Integer t{static_cast<long long>(args.at(1))};
+                Integer s = json_integer(args.at(0));
+                Integer t = json_integer(args.at(1));
                 const auto & vars = arg_as_array_of_var(data, args, 2);
                 problem.post(ValuePrecede{s, t, vars});
             }

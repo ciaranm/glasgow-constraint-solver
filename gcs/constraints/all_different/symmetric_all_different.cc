@@ -2,6 +2,7 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/constraints/all_different/hints.hh>
 #include <gcs/constraints/all_different/symmetric_all_different.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -47,6 +48,7 @@ using fmt::print;
 
 SymmetricAllDifferent::SymmetricAllDifferent(vector<IntegerVariableID> vars, Integer start) : _vars(move(vars)), _start(start)
 {
+    innards::require_bounded(_start, "the start of SymmetricAllDifferent");
 }
 
 auto SymmetricAllDifferent::clone() const -> unique_ptr<Constraint>

@@ -1,0 +1,8 @@
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <var id="x"> 0..1 2147483647 </var>
+  </variables>
+  <constraints>
+    <intension> ne(x,1) </intension>
+  </constraints>
+</instance>

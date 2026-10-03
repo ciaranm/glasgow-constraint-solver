@@ -408,10 +408,21 @@ namespace
         //   lin_less_than      sum <  value    value - 1
         //   lin_greater_equal  sum >= value    negated
         //   lin_greater_than   sum >  value    negated, value + 1
+        //
+        // The step can take a value at the end of the bounded range outside it,
+        // which a linear constraint then refuses (dev_docs/integer-ranges.md),
+        // though the constraint is a perfectly good one: `sum < min` holds for
+        // 2x with x near min. So there, the step goes into the sum instead, as
+        // a constant term (`sum + 1 <= value`, `sum - 1 >= value`), which the
+        // constraint folds into its right-hand side internally.
         if (base == "lin_less_equal" || base == "lin_less_than" || base == "lin_greater_equal" || base == "lin_greater_than") {
             bool greater = base.starts_with("lin_greater_");
-            if (base.ends_with("_than"))
-                value = greater ? value + 1_i : value - 1_i;
+            if (base.ends_with("_than")) {
+                if (greater ? value < Integer::max_bounded_value() : value > Integer::min_bounded_value())
+                    value = greater ? value + 1_i : value - 1_i;
+                else
+                    coeff_vars += (greater ? -1_i : 1_i) * constant_variable(1_i);
+            }
 
             if (greater) {
                 // Posting the derived classes rather than repeating their
