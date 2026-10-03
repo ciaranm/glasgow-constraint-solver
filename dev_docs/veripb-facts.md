@@ -286,6 +286,12 @@ rows. And the row writer gives any row in the band a normalised degree of zero
 instead (`emit_inequality_to.cc`), which changes nothing about what it says,
 since such a row is trivially true either way.
 
+The fix in VeriPB itself is [MR 233](https://gitlab.com/MIAOresearch/software/VeriPB-dev/-/merge_requests/233)
+on VeriPB-dev (a private project), which only stores a constraint in 64- or
+128-bit arithmetic when its slack plus one fits too. Keep both guards even once
+a release has it: the proofs GCS writes should still check on the VeriPB
+versions people already have.
+
 ## Names and labels
 
 VeriPB 3.0.2 allows `-` in **both** variable names and `@labels`. Earlier
