@@ -241,7 +241,14 @@ domains restricted to the static DAG (with `LiveNode` predecessor
 tracking); for each `w ∈ DAG[i+1] \ growing` either a cap-exceeded
 `pol` step against the LE half of the per-bin OPB line (plus current
 load upper for variable-load) followed by `~S` RUP at `Current`, or a
-pure forward-unreachable `~S` RUP. Variable-load form additionally
+pure forward-unreachable `~S` RUP. The load's current bound goes into
+that `pol`, and into the layer-`n` lower-bound filter's below, through
+`add_bound_p_term`. For a plain variable or a view that is its literal's
+definition. For a view it is spelled over the view's own bits, as the
+row names it, because `define_proof_model` registers every view load
+before writing any row. A constant load adds nothing, because the row has
+already folded it into its degree, as in the constant-capacity form
+(issue #1195). Variable-load form additionally
 filters layer `n` by current `loads[b]` lower bound (`~g_dn` + `~S`
 cached) and interior holes; terminal `loads[b] ≥ lo` / `≤ hi`
 inferences emit per-state `pol` chains and aggregating RUPs. Backward
@@ -500,17 +507,19 @@ rather than argument-shaped, so every counted item's row goes in.
   and the threshold family already recovers the cases that matter.
 - *Load bounds.* Stage 4 infers item prunes and contradictions only; the
   load variables are left to Stage 2.
-- *Bins whose ceiling cannot be cited.* In the variable-load form the
-  ceiling enters the `pol` as a bound literal on `loads[b]`, which
-  `add_bound_p_term` states for a plain variable only: a view operand
-  would need explicit `pol` arithmetic over a view (see
-  `view-proof-logging.md`) and a constant has no bound literal at all.
-  Such a bin contributes zero to `DELTA` instead, which costs strength
-  and never soundness. The decision is made from the operand's *kind*,
-  so the inferences drawn do not depend on whether proofs are being
-  written — the alternative, throwing `UnimplementedException` the way
-  the `upfront` Stage 3 strategy does for the same operands, is what the
-  degenerate-load fixtures exist to keep out.
+- *Bins whose ceiling Stage 4 does not cite.* In the variable-load form
+  the ceiling enters the `pol` as a bound literal on `loads[b]`, and
+  Stage 4 counts a bin only when that load is a plain variable. A
+  constant load's ceiling is already in its row, and a view's could be
+  cited through `add_bound_p_term`, as the `upfront` Stage 3 strategy
+  has done since issue #1195. Counting either would strengthen Stage 4,
+  which is a change of its own. Such a bin contributes zero to `DELTA`
+  instead, which costs strength and never soundness. The decision is
+  made from the operand's *kind*, so the inferences drawn do not depend
+  on whether proofs are being written. The alternative, throwing
+  `UnimplementedException` as the `upfront` Stage 3 strategy did for the
+  same operands until #1195, is what the degenerate-load fixtures exist
+  to keep out.
 - *Joint GAC.* Still NP-hard, still out of scope. Stage 4 strengthens the
   envelope, it does not close it.
 
