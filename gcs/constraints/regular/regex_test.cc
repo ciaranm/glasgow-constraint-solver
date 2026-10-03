@@ -26,6 +26,8 @@ namespace
         for (const auto & value : sequence) {
             set<long> next;
             for (auto q : active) {
+                if (static_cast<size_t>(q) >= nfa.transitions.size())
+                    continue;
                 auto it = nfa.transitions[static_cast<size_t>(q)].find(value);
                 if (it != nfa.transitions[static_cast<size_t>(q)].end())
                     next.insert(it->second.begin(), it->second.end());
@@ -40,15 +42,28 @@ namespace
         return false;
     }
 
+    auto is_deterministic(const RegexNfa & automaton) -> bool
+    {
+        for (const auto & state_transitions : automaton.transitions)
+            for (const auto & [_, targets] : state_transitions)
+                if (targets.size() != 1)
+                    return false;
+        return true;
+    }
+
     // Enumerate every sequence of length 0..max_len over the given symbols and
-    // assert the compiled NFA agrees with the reference matcher on each.
+    // assert the compiled NFA, and the DFA determinised from it, agree with the
+    // reference matcher on each.
     auto cross_check(const string & regex, const vector<Integer> & alphabet, const vector<Integer> & enum_symbols, size_t max_len) -> void
     {
         auto nfa = regex_to_nfa(regex, alphabet);
+        auto dfa = regex_to_dfa(regex, alphabet);
+        CHECK(is_deterministic(dfa));
         vector<Integer> sequence;
         auto recurse = [&](auto && self) -> void {
             INFO("regex \"" << regex << "\" sequence length " << sequence.size());
             CHECK(nfa_accepts(nfa, sequence) == regex_reference_accepts(regex, alphabet, sequence));
+            CHECK(nfa_accepts(dfa, sequence) == regex_reference_accepts(regex, alphabet, sequence));
             if (sequence.size() == max_len)
                 return;
             for (const auto & symbol : enum_symbols) {
@@ -174,6 +189,38 @@ TEST_CASE("Regex counted quantifiers")
     CHECK(! nfa_accepts(between, {7_i, 7_i, 7_i, 7_i}));
 
     cross_check("2{0,2} 3", {}, {2_i, 3_i}, 4);
+}
+
+TEST_CASE("Regex ambiguous expressions determinise")
+{
+    // Each of these accepts some word along two runs of its NFA, which is
+    // what Regular's encoding cannot tolerate (issue #1203).
+    auto ambiguous = regex_to_nfa("0|0", {});
+    CHECK(! is_deterministic(ambiguous));
+    auto determinised = regex_to_dfa("0|0", {});
+    CHECK(is_deterministic(determinised));
+    CHECK(determinised.num_states == 2);
+
+    cross_check("0|0", {}, {0_i, 1_i}, 3);
+    cross_check("0* 0*", {}, {0_i, 1_i}, 4);
+    cross_check("(0|0) 1", {}, {0_i, 1_i}, 3);
+    cross_check("0 1*|0 1", {}, {0_i, 1_i}, 4);
+    cross_check("(0|1)* 1 (0|1)*", {}, {0_i, 1_i}, 5);
+    cross_check("(0+)+ 1?", {}, {0_i, 1_i}, 4);
+}
+
+TEST_CASE("Determinise a hand-written automaton")
+{
+    // Two transitions on 0 out of the start; state 3 has no entry in
+    // transitions at all, and state 4 is unreachable.
+    RegexNfa nfa{5, {{{0_i, {1, 2}}}, {{1_i, {3}}}, {{0_i, {3}}}}, {3, 4}};
+    auto dfa = determinise(nfa);
+    CHECK(is_deterministic(dfa));
+    // {0}, {1, 2}, {3}: the subsets reachable from the start.
+    CHECK(dfa.num_states == 3);
+    CHECK(dfa.final_states == vector<long>{2});
+    for (const auto & word : vector<vector<Integer>>{{}, {0_i}, {0_i, 0_i}, {0_i, 1_i}, {1_i, 0_i}, {0_i, 1_i, 0_i}})
+        CHECK(nfa_accepts(dfa, word) == nfa_accepts(nfa, word));
 }
 
 TEST_CASE("Regex parse errors")

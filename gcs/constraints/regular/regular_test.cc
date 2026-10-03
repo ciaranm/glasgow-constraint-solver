@@ -4,6 +4,7 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
@@ -23,8 +24,10 @@
 #endif
 
 using std::cerr;
+using std::cmp_less;
 using std::flush;
 using std::make_optional;
+using std::move;
 using std::nullopt;
 using std::pair;
 using std::set;
@@ -32,6 +35,7 @@ using std::string;
 using std::tuple;
 using std::unordered_map;
 using std::vector;
+using std::ranges::any_of;
 using std::ranges::find;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -164,15 +168,77 @@ auto run_regular_regex_test(bool proofs, const string & label, const string & re
     check_results(proof_name, expected, actual);
 }
 
+// A non-deterministic automaton through the public constructor that takes
+// one, under each proof strategy. The oracle simulates the automaton as given;
+// Regular determinises it, which is what lets Bacchus take it at all.
+auto run_regular_nfa_test(bool proofs, const string & label, const vector<pair<int, int>> & var_ranges,
+    const vector<unordered_map<Integer, set<long>>> & transitions, const vector<long> & final_states) -> void
+{
+    auto accepts = [&](const vector<int> & seq) -> bool {
+        set<long> active{0};
+        for (int val : seq) {
+            set<long> next;
+            for (auto q : active)
+                if (cmp_less(q, transitions.size()))
+                    if (auto it = transitions[q].find(Integer(val)); it != transitions[q].end())
+                        next.insert(it->second.begin(), it->second.end());
+            active = move(next);
+        }
+        return any_of(final_states, [&](long f) { return active.contains(f); });
+    };
+
+    for (const auto & [strategy_name, strategy] : vector<pair<string, RegularProofStrategy>>{
+             {"upfront", proof_strategy::Upfront{}}, {"percall", proof_strategy::PerCall{}}, {"bacchus", proof_strategy::Bacchus{}}}) {
+        print(cerr, "regular nfa {} {} {} vars{}", label, strategy_name, var_ranges.size(), proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        set<tuple<vector<int>>> expected, actual;
+        build_expected(expected, [&](vector<int> seq) { return accepts(seq); }, var_ranges);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> vars;
+        for (const auto & [a, b] : var_ranges)
+            vars.push_back(p.create_integer_variable(Integer(a), Integer(b)));
+        p.post(Regular{vars, static_cast<long>(transitions.size()), transitions, final_states}.with_proof_strategy(strategy));
+
+        auto proof_name = proofs ? make_optional("regular_nfa_test_" + label + "_" + strategy_name) : nullopt;
+        solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});
+        check_results(proof_name, expected, actual);
+    }
+}
+
+auto run_all_nfa_tests(bool proofs) -> void
+{
+    // Two transitions on 0 out of the start, each completed by a different
+    // second symbol: the XCSP3 reader used to keep only the first, losing
+    // the word 0 0 (issue #1204).
+    run_regular_nfa_test(proofs, "unambiguous", {{0, 1}, {0, 1}}, //
+        {{{0_i, {1, 2}}}, {{1_i, {3}}}, {{0_i, {3}}}, {}}, {3});
+    // Two accepting runs on the word 0 1.
+    run_regular_nfa_test(proofs, "ambiguous", {{0, 1}, {0, 1}}, //
+        {{{0_i, {1, 2}}}, {{1_i, {3}}}, {{1_i, {4}}}, {}, {}}, {3, 4});
+    // "Contains a 1": the guessing automaton, with a run per 1 in the word.
+    run_regular_nfa_test(proofs, "contains_a_1", {{0, 1}, {0, 1}, {0, 1}, {0, 1}}, //
+        {{{0_i, {0}}, {1_i, {0, 1}}}, {{0_i, {1}}, {1_i, {1}}}}, {1});
+}
+
 auto run_all_regex_tests(bool proofs) -> void
 {
     // Deterministic: a fixed sequence.
     run_regular_regex_test(proofs, "concat", "0 1 0", {{0, 1}, {0, 1}, {0, 1}});
     // The 0*11*0* language from the Pesant example.
     run_regular_regex_test(proofs, "star", "0* 1 1* 0*", {{0, 1}, {0, 1}, {0, 1}, {0, 1}});
-    // Genuine non-determinism: after reading a 1 the NFA can be in two states,
-    // exercising the disjunctive transition clause in the proof model.
+    // After reading a 1 the NFA can be in two states; determinised, the
+    // automaton has one.
     run_regular_regex_test(proofs, "nfa_fanout", "1 2|1 3", {{1, 3}, {1, 3}});
+    // Ambiguous expressions: some word has two accepting runs through the NFA,
+    // and the state flags were left undetermined on its solution line until
+    // the automaton was determinised (issue #1203).
+    run_regular_regex_test(proofs, "ambiguous_union", "0|0", {{0, 1}});
+    run_regular_regex_test(proofs, "ambiguous_stars", "0* 0*", {{0, 1}, {0, 1}});
+    run_regular_regex_test(proofs, "ambiguous_prefix", "0 1*|0 1", {{0, 1}, {0, 1}});
+    run_regular_regex_test(proofs, "contains_a_1", "(0|1)* 1 (0|1)*", {{0, 1}, {0, 1}, {0, 1}, {0, 1}});
     // Wildcard expands to the domain's min..max.
     run_regular_regex_test(proofs, "wildcard", "0 . 0", {{0, 1}, {0, 1}, {0, 1}});
     // Counted quantifier with a trailing star.
@@ -283,6 +349,7 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -
         return;
 
     run_all_regex_tests(proofs);
+    run_all_nfa_tests(proofs);
 
     // Dup-variable cases: "even zeros" DFA with positions[0] reused.
     // {x, x, y} — two equal letters then y; "even zeros" wants total zeros

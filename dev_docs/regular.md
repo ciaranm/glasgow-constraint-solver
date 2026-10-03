@@ -21,7 +21,7 @@ strategy is selected with the fluent
 |--------------------|--------------------------------------------------------------------------|----------------|
 | `PerCall`          | Per-call propagator emits per-(parent, val) intermediates each call.     | `gcs/constraints/regular/regular_legacy.{cc,hh}` |
 | `Upfront` (default) | Upfront per-val backward chains + statically-dead-state lines at Top, then per-call cache-gated `~state[i][q]` lines for dynamic state-deaths. | `gcs/constraints/regular/regular.{cc,hh}` |
-| `Bacchus`          | Upfront Bacchus encoding (per-(i, q, v) transition extension variables + AL1s) derived from the natural OPB at Top; per-call propagator emits no proof. Deterministic automata only (not regex/NFA input). | `gcs/constraints/regular/regular_bacchus.{cc,hh}` |
+| `Bacchus`          | Upfront Bacchus encoding (per-(i, q, v) transition extension variables + AL1s) derived from the natural OPB at Top; per-call propagator emits no proof. No regex input. | `gcs/constraints/regular/regular_bacchus.{cc,hh}` |
 
 The OPB is identical across all three — DFA semantics, no propagator
 internals (see [Constraint definition](#constraint-definition) and
@@ -91,12 +91,40 @@ by a deterministic finite automaton:
 The sequence `vars[0..n-1]` is accepted iff feeding the symbols from
 left to right starting at state `0` ends in a state in `final_states`.
 
-`Regular` supports two automaton constructors (sparse map / dense table
-form) plus a regex form, and a `short_reasons` boolean (via
+`Regular` supports three automaton constructors (sparse map, dense
+table, and a non-deterministic form whose `transitions[q][val]` is a
+set of states) plus a regex form, and a `short_reasons` boolean (via
 `with_short_reasons()`) forwarded to the propagator but unused (or
 near-unused) by the `Upfront` and `Bacchus` strategies. Keeping the flag
 as a dummy lets one `regular_random` binary benchmark all three
 strategies from one call site.
+
+### Every automaton is determinised first
+
+A regex compiles to a non-deterministic automaton, and the
+non-deterministic constructor takes one (the XCSP3 reader uses it,
+because XCSP3 allows two transitions on one symbol out of one state).
+Both are determinised by the subset construction
+(`innards::determinise`, in `regex.cc`) before anything else sees them,
+so the propagators, the OPB encoding, the proof and the written `.scp`
+all describe the same deterministic automaton. Only the subsets
+reachable from `{0}` are built, numbered breadth-first over sorted
+symbols, so the numbering, and hence the `.scp`, does not depend on
+hash-map iteration order. The construction can be exponential in the
+automaton's size, as it is for MiniZinc, which also determinises a
+regex before a solver sees it.
+
+The encoding below needs this. Its state flags mean "the run is in
+state `q`", with an exactly-one per layer. On a word with two accepting
+runs nothing in the OPB says which run the flags follow, so unit
+propagation leaves them unassigned where the runs differ and VeriPB
+rejects the solution line (issue #1203). `"0|0"`, `"0* 0*"` and
+`"(0|1)* 1 (0|1)*"` all have such words. A deterministic automaton has
+one run per word, and unit propagation fixes it from the start state
+forward. Non-determinism alone was not the problem; ambiguity was, but
+determinising removes both, and also lets `Bacchus` take a
+non-deterministic automaton. It still refuses a regex, but only because
+its strategy dispatch runs before the regex is compiled.
 
 ## Layered DAG view
 

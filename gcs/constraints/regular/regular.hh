@@ -30,8 +30,8 @@ namespace gcs
      * statically-dead-node lines once at the root; PerCall re-emits
      * per-(parent, val) intermediates on every propagation call; Bacchus emits
      * a stronger transition-extension encoding at the root so the per-call
-     * propagator needs no proof lines. Bacchus supports only a deterministic
-     * automaton, not regular-expression / NFA input. See dev_docs/regular.md.
+     * propagator needs no proof lines. Bacchus does not support
+     * regular-expression input. See dev_docs/regular.md.
      *
      * \ingroup ProofStrategy
      */
@@ -40,12 +40,13 @@ namespace gcs
     /**
      * \brief Constrain that the sequence of variables is a member of the
      * language recognised by the given finite automaton, equivalent to a regex
-     * expression. The automaton may be non-deterministic: each (state, value)
-     * pair maps to a set of next states.
+     * expression. The automaton may be non-deterministic, with each (state,
+     * value) pair mapping to a set of next states; it is then determinised by
+     * the subset construction before anything else sees it.
      *
      * The automaton may instead be given as a regular expression string, which
-     * is compiled to an NFA over the constrained variables' domains. The syntax
-     * matches MiniZinc/Gecode (see regular/regex.hh).
+     * is compiled to a deterministic automaton over the constrained variables'
+     * domains. The syntax matches MiniZinc/Gecode (see regular/regex.hh).
      *
      * The OPB encoding — the natural per-(state, val) forward chains plus
      * per-layer exactly-one — is shared by every proof strategy. By default the
@@ -97,9 +98,21 @@ namespace gcs
             std::vector<IntegerVariableID> vars, long num_states, std::vector<std::vector<long>> transitions, std::vector<long> final_states);
 
         /**
+         * \brief Constrain that the sequence of variables is accepted by a
+         * possibly non-deterministic automaton: transitions[q] maps each value
+         * to the set of states reachable from q on it, and state 0 is the
+         * start. The automaton is determinised by the subset construction,
+         * which can make it exponentially larger, and the OPB encoding, the
+         * proof and any written .scp all describe the deterministic one.
+         */
+        explicit Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, std::set<long>>> transitions,
+            std::vector<long> final_states);
+
+        /**
          * \brief Constrain that the sequence of variables matches the given
-         * regular expression. The expression is compiled to an NFA over the
-         * contiguous min..max range of the variables' domains.
+         * regular expression. The expression is compiled to a deterministic
+         * automaton over the contiguous min..max range of the variables'
+         * domains.
          */
         explicit Regular(std::vector<IntegerVariableID> vars, std::string regex);
 
@@ -111,8 +124,8 @@ namespace gcs
         /// Select the proof-logging strategy: proof_strategy::Upfront (the
         /// default), proof_strategy::PerCall, or proof_strategy::Bacchus.
         /// Proof-only: it never changes the inferences drawn, the solutions
-        /// found, or the OPB encoding. proof_strategy::Bacchus requires a
-        /// deterministic automaton (not regular-expression / NFA input).
+        /// found, or the OPB encoding. proof_strategy::Bacchus does not
+        /// support regular-expression input.
         auto with_proof_strategy(RegularProofStrategy strategy) -> Regular &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

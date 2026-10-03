@@ -170,8 +170,8 @@ auto run_all_regex_tests(bool proofs) -> void
     run_regular_regex_test(proofs, "concat", "0 1 0", {{0, 1}, {0, 1}, {0, 1}});
     // The 0*11*0* language from the Pesant example.
     run_regular_regex_test(proofs, "star", "0* 1 1* 0*", {{0, 1}, {0, 1}, {0, 1}, {0, 1}});
-    // Genuine non-determinism: after reading a 1 the NFA can be in two states,
-    // exercising the disjunctive transition clause in the proof model.
+    // After reading a 1 the NFA can be in two states; determinised, the
+    // automaton has one.
     run_regular_regex_test(proofs, "nfa_fanout", "1 2|1 3", {{1, 3}, {1, 3}});
     // Wildcard expands to the domain's min..max.
     run_regular_regex_test(proofs, "wildcard", "0 . 0", {{0, 1}, {0, 1}, {0, 1}});
@@ -179,6 +179,9 @@ auto run_all_regex_tests(bool proofs) -> void
     run_regular_regex_test(proofs, "counted", "0{1,2} 1*", {{0, 1}, {0, 1}, {0, 1}});
     // Negated class over an alphabet with a hole at the top of the range.
     run_regular_regex_test(proofs, "negclass", "[^0] [^0]", {{0, 2}, {0, 2}});
+    // Ambiguous: a word with two accepting runs through the NFA (issue #1203).
+    run_regular_regex_test(proofs, "ambiguous_prefix", "0 1*|0 1", {{0, 1}, {0, 1}});
+    run_regular_regex_test(proofs, "contains_a_1", "(0|1)* 1 (0|1)*", {{0, 1}, {0, 1}, {0, 1}, {0, 1}});
 }
 
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -> void
