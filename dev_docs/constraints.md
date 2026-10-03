@@ -565,6 +565,23 @@ temporary scaffolding — nothing further is logged per literal. Never write
 an `emit` that assumes it will be called once per firing literal, and never
 pass a literal the steps do not conclude.
 
+**The single-literal `infer_*` methods run `emit` after the push.** The
+literal is applied first, and then `emit` runs against the updated state. An
+eager reason was snapshotted before the push, but a lazy one
+(`LazyReasonOver`) is materialised after it too. So an `emit` that reads the
+state, such as which values a variable has or which positions can still
+match, sees the domains after the inference. That is harmless unless the
+push changes something `emit` reads. It does when the scope repeats a
+variable, directly or through a view of it (`x` and `-x + c`): Count's
+`how_many` is its value of interest, a GlobalCardinality count is one of the
+array's variables, or a min or max is a view of an entry. Then the steps need
+not hold under the reason, and VeriPB rejects them (#1165, #1191, #1201).
+Either have `emit` use what the decision used, captured before the inference,
+or pass the literal to `infer_all`, which runs `emit` before it applies
+anything. A lazy reason is not safe either way: `infer_all` materialises it
+for the steps before the push, but each literal's closing RUP materialises it
+again after that literal's push (#1198), so pass an eager reason.
+
 **Assertion hints (optional).** Both `JustifyUsingRUP` and
 `JustifyExplicitly` take an optional trailing *typed assertion hint*, e.g.
 `JustifyUsingRUP{hints::Foo{owner}}` or `JustifyExplicitly{emit,

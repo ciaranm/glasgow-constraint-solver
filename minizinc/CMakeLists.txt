@@ -222,6 +222,18 @@ set_tests_properties(minizinc-bounded-dpath PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-count COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ counttest true true)
 set_tests_properties(minizinc-count PROPERTIES SKIP_RETURN_CODE 66)
 
+# Count with how_many or the value of interest sharing a variable with the
+# array, or with each other: the justifications used to read the state after
+# their own push, and VeriPB rejected the proofs (issue #1201).
+add_test(NAME minizinc-countaliased COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --unsatisfiable --fzn-pattern glasgow_count_eq $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ countaliased true true)
+set_tests_properties(minizinc-countaliased PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-countaliasedboth COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_count_eq $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ countaliasedboth true true)
+set_tests_properties(minizinc-countaliasedboth PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-countaliasedvoi COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_count_eq $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ countaliasedvoi true true)
+set_tests_properties(minizinc-countaliasedvoi PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-cumulative COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativetest false true)
 set_tests_properties(minizinc-cumulative PROPERTIES SKIP_RETURN_CODE 66)
 

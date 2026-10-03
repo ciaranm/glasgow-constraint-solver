@@ -39,6 +39,36 @@ using std::print;
 using fmt::print;
 #endif
 
+namespace
+{
+    // Count's justifications read the state: which positions can still meet
+    // value_of_interest, and which values it can take. The single-literal
+    // JustifyExplicitly infers push the literal first and run the justification
+    // after it. So when how_many is value_of_interest or one of the positions,
+    // or value_of_interest is one of the positions, directly or through a view
+    // of the same variable, the push has already moved what the justification
+    // reads. It then writes lemmas that are not RUP under the reason, which was
+    // snapshotted before the push, and VeriPB rejects the proof (issue #1201).
+    //
+    // infer_all() emits the steps before it pushes anything, so go through it
+    // when a proof is being written. A contradiction there throws instead of
+    // setting the stop flag, which the propagation loop treats the same way, so
+    // the reason for the _or_stop calls below (avoiding the unwind) now holds
+    // with proofs off only. Without a logger the justification never runs, so
+    // take the non-throwing path the caller passes in, and do not even build
+    // the literal.
+    template <typename Inference_, typename Lit_, typename Emit_, typename Hint_, typename OrStop_>
+    [[nodiscard]] auto infer_before_push_or_stop(Inference_ & inference, ProofLogger * const logger, Lit_ && make_lit,
+        const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, OrStop_ && or_stop) -> bool
+    {
+        if (logger) {
+            inference.infer_all(logger, vector<Literal>{make_lit()}, why, reason);
+            return true;
+        }
+        return or_stop();
+    }
+}
+
 Count::Count(std::vector<IntegerVariableID> vars, const IntegerVariableID & value_of_interest, const IntegerVariableID & how_many) :
     _vars(move(vars)), _value_of_interest(value_of_interest), _how_many(how_many)
 {
@@ -131,8 +161,10 @@ auto Count::install_propagators(Propagators & propagators) -> void
             // where the unwinder is 11-15% of the run. Same inference, same
             // proof step, same reason; only the way out of the propagator
             // differs, and [[nodiscard]] makes forgetting to take it an error.
-            if (! inference.infer_less_than_or_stop(
-                    logger, how_many, how_many_is_less_than, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, reason))
+            auto how_many_just = JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}};
+            if (! infer_before_push_or_stop(
+                    inference, logger, [&] { return how_many < how_many_is_less_than; }, how_many_just, reason,
+                    [&] { return inference.infer_less_than_or_stop(logger, how_many, how_many_is_less_than, how_many_just, reason); }))
                 return PropagatorState::DisableUntilBacktrack;
 
             // must have at least this many occurrences of the value of interest
@@ -198,8 +230,10 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             }
                         }
                     };
-                    if (! inference.infer_not_equal_or_stop(
-                            logger, value_of_interest, voi, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, reason)) {
+                    auto voi_just = JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}};
+                    if (! infer_before_push_or_stop(
+                            inference, logger, [&] { return value_of_interest != voi; }, voi_just, reason,
+                            [&] { return inference.infer_not_equal_or_stop(logger, value_of_interest, voi, voi_just, reason); })) {
                         stop = true;
                         break;
                     }
@@ -249,8 +283,10 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= how_many_must) >= 1_i, ProofLevel::Temporary);
                         };
-                        if (! inference.infer_not_equal_or_stop(
-                                logger, value_of_interest, voi, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, reason)) {
+                        auto voi_just = JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}};
+                        if (! infer_before_push_or_stop(
+                                inference, logger, [&] { return value_of_interest != voi; }, voi_just, reason,
+                                [&] { return inference.infer_not_equal_or_stop(logger, value_of_interest, voi, voi_just, reason); })) {
                             stop = true;
                             break;
                         }
@@ -282,7 +318,9 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i, ProofLevel::Temporary);
                 };
                 auto just = JustifyExplicitly{emit, ThenRUP::Yes, hints::Count{owner}};
-                if (! inference.infer_greater_than_or_equal_or_stop(logger, how_many, *lowest_how_many_must, just, reason))
+                if (! infer_before_push_or_stop(
+                        inference, logger, [&] { return how_many >= *lowest_how_many_must; }, just, reason,
+                        [&] { return inference.infer_greater_than_or_equal_or_stop(logger, how_many, *lowest_how_many_must, just, reason); }))
                     return PropagatorState::DisableUntilBacktrack;
             }
 
@@ -315,7 +353,9 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             ProofLevel::Temporary);
                 };
                 auto just = JustifyExplicitly{emit, ThenRUP::Yes, hints::Count{owner}};
-                if (! inference.infer_less_than_or_stop(logger, how_many, *highest_how_many_might + 1_i, just, reason))
+                if (! infer_before_push_or_stop(
+                        inference, logger, [&] { return how_many < *highest_how_many_might + 1_i; }, just, reason,
+                        [&] { return inference.infer_less_than_or_stop(logger, how_many, *highest_how_many_might + 1_i, just, reason); }))
                     return PropagatorState::DisableUntilBacktrack;
             }
 
