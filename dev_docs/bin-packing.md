@@ -129,14 +129,20 @@ next call catches anything missed.
 ### Stage 3 — per-bin partial-load DAG, per-bin GAC
 
 For each bin `b` a layered DAG: layer `i` corresponds to item `i`,
-nodes are partial-load values `w ∈ {0..C_b}`, edges are
+nodes are partial-load values `w`, edges are
 "`items[i] == b`" (load `+= sizes[i]`) or "`items[i] ≠ b`" (load
 unchanged), terminals are layer-`n` nodes whose load lies in
-`loads[b]`'s domain (or `≤ capacities[b]`). `C_b = Σ_i sizes[i]` —
-matching Knapsack, no intersection with `loads[b]`'s initial upper or
-`caps[b]` (Knapsack's "Static reduction" rationale carries over: the
-per-call cap-exceeded path needs a Top flag for the over-bound
-successor to chain against).
+`loads[b]`'s domain (or `≤ capacities[b]`). Every partial sum the items'
+initial domains can produce is a node, matching Knapsack, with no
+intersection with `loads[b]`'s initial upper or `caps[b]` (Knapsack's
+"Static reduction" rationale carries over: the per-call cap-exceeded
+path needs a Top flag for the over-bound successor to chain against).
+The sums are exact and checked (`include_weight`): one that does not
+fit in 64 bits throws `IntegerOverflow`, as the range rule allows an
+arithmetic constraint ([`integer-ranges.md`](integer-ranges.md)). That
+takes several items near the top of the range able to share one bin.
+Summing them raw, under a cap that was the total of every size, used
+to wrap and lose solutions.
 
 **Reified per-node state flags (both proof strategies).** For each
 forward-reachable `(b, i, w)`, three reified flags at `ProofLevel::Top`
@@ -327,6 +333,14 @@ that no single bin can see survives Stage 3. Stage 4 is the pass that
 catches those, and it is opt-in:
 `with_cardinality_reasoning(bin_packing::Shaw{})`, defaulting to
 `bin_packing::NoCardinality{}` (measurements below).
+
+Its sums (the per-bin totals `T_b`, the penalty, `DELTA`) are checked. A
+threshold whose arithmetic does not fit in 64 bits is skipped, and once
+a per-bin total does not fit, Stage 4 stops for the call, since the
+totals only grow. Skipping costs strength only, and costs it the same
+way with and without proofs. These sums used to be raw `long long`,
+which wrapped near the top of the integer range: Shaw then lost solutions
+and wrote proofs VeriPB rejected.
 
 The motivating example is the one #209 was opened with:
 `items=[(0,1),(0,1),(0,1)] sizes=[1,2,2] caps=[3,2]`. Only two solutions
