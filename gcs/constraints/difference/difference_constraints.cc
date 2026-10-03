@@ -1,5 +1,6 @@
 #include <gcs/constraints/difference/difference_constraints.hh>
 #include <gcs/constraints/difference/difference_graph.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -54,6 +55,11 @@ namespace
 
 DifferenceConstraints::DifferenceConstraints(vector<DifferenceEdge> edges) : _edges(move(edges))
 {
+    for (const auto & e : _edges) {
+        innards::require_bounded(e.d, "the weight of a difference edge");
+        if (e.cond)
+            innards::require_bounded(*e.cond, "the value in a difference edge's condition");
+    }
     // Reject negated views up front, so a bad model is a post-time error rather
     // than a mysterious proof failure much later. prepare() redoes the
     // deviewing; this is a cheap guard, not the canonicalisation itself.

@@ -500,41 +500,58 @@ namespace
     //
     // Integer's arithmetic is overflow-checked and throws, so this cannot
     // happen. The point of this test is to say so out loud: it demands the
-    // throw, and it demands the right answer at a weight one order of magnitude
-    // inside the boundary, so that "checked" and "usable up to the limit" are
-    // both pinned.
+    // throw, and it demands the right answer at the largest weights the range
+    // allows, so that "checked" and "usable up to the limit" are both pinned.
+    // Weights are inputs, so they lie in the bounded range
+    // (dev_docs/integer-ranges.md); it is only path sums that can leave it.
     auto run_overflow_test() -> void
     {
         print(cerr, "difference extreme weights:");
         cerr << flush;
 
-        constexpr auto limit = std::numeric_limits<long long>::max();
+        const auto big = Integer::max_bounded_value();
 
-        // Far below the boundary: `x - y <= limit / 4` is vacuous over these
-        // domains, and every relaxation the propagator performs (`ub[y] + d`,
-        // `lb[x] - d`) stays comfortably in range, so the answer must simply be
-        // right --- all 36 assignments.
+        // A single vacuous edge at the top of the range, `x - y <= big` over
+        // two 0..5 variables: every relaxation stays comfortably in range, so
+        // the answer must simply be right --- all 36 assignments.
         {
             Problem p;
             auto x = p.create_integer_variable(0_i, 5_i, "x");
             auto y = p.create_integer_variable(0_i, 5_i, "y");
-            p.post(DifferenceConstraints{{DifferenceEdge{x, y, Integer{limit / 4}}}}.auditing_incremental_propagation());
+            p.post(DifferenceConstraints{{DifferenceEdge{x, y, big}}}.auditing_incremental_propagation());
             auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }});
             if (36 != stats.solutions)
                 throw UnexpectedException{"difference found " + to_string(stats.solutions) +
-                    " solutions for a single vacuous edge of weight limit/4 over two 0..5 variables, where all 36 assignments satisfy it. A large "
-                    "but perfectly representable weight must give the right answer, not a truncated one."};
+                    " solutions for a single vacuous edge of the largest weight over two 0..5 variables, where all 36 assignments satisfy it. A "
+                    "large but in-range weight must give the right answer, not a truncated one."};
         }
 
-        // Over the boundary: two chained edges of weight -(limit/2 + 1). Each
-        // is representable; their sum is not. The lower-bound relaxation
-        // computes `lb[from] - d`, so the second edge asks for
-        // (limit/2 + 1) + (limit/2 + 1) = limit + 2 and Integer refuses.
+        // Chains of edges `x[i] - x[i+1] <= -big` over the whole range: two of
+        // them span it exactly, so there is one solution, and three cannot fit.
+        for (auto [length, expected] : vector<pair<int, long long>>{{2, 1}, {3, 0}}) {
+            Problem p;
+            auto x = p.create_integer_variable_vector(length + 1, Integer::min_bounded_value(), big, "x");
+            vector<DifferenceEdge> edges;
+            for (int i = 0; i < length; ++i)
+                edges.push_back(DifferenceEdge{x[i], x[i + 1], -big});
+            p.post(DifferenceConstraints{edges});
+            auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }});
+            if (expected != stats.solutions)
+                throw UnexpectedException{"difference found " + to_string(stats.solutions) + " solutions for a chain of " + to_string(length) +
+                    " edges of the largest weight over the whole range, where there are " + to_string(expected)};
+        }
+
+        // Over the boundary: nine such edges, each in range, whose path weight
+        // is past the end of Integer. Bellman-Ford forms it, and Integer
+        // refuses: an arithmetic constraint may throw when a sum it needs does
+        // not fit, but must never wrap.
         {
             Problem p;
-            auto x = p.create_integer_variable_vector(3, 0_i, 5_i, "x");
-            p.post(DifferenceConstraints{{DifferenceEdge{x[0], x[1], Integer{-(limit / 2 + 1)}}, //
-                DifferenceEdge{x[1], x[2], Integer{-(limit / 2 + 1)}}}});
+            auto x = p.create_integer_variable_vector(10, Integer::min_bounded_value(), big, "x");
+            vector<DifferenceEdge> edges;
+            for (int i = 0; i < 9; ++i)
+                edges.push_back(DifferenceEdge{x[i], x[i + 1], -big});
+            p.post(DifferenceConstraints{edges});
 
             bool threw = false;
             try {

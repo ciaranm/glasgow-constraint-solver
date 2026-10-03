@@ -1,5 +1,6 @@
 #include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/linear/hints.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/linear/propagate.hh>
@@ -52,6 +53,9 @@ ReifiedLinearInequality::ReifiedLinearInequality(
     WeightedSum coeff_vars, Integer value, ReificationCondition cond, std::optional<std::size_t> incremental_threshold) :
     _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond), _incremental_threshold(incremental_threshold)
 {
+    innards::require_bounded(_coeff_vars, "a coefficient of a linear constraint");
+    innards::require_bounded(_value, "the right-hand side of a linear constraint");
+    innards::require_bounded(_reif_cond, "the value in a linear constraint's condition");
 }
 
 auto ReifiedLinearInequality::clone() const -> unique_ptr<Constraint>

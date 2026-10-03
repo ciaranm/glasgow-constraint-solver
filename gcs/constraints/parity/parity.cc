@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/cake_truthiness.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/parity/hints.hh>
 #include <gcs/constraints/parity/parity.hh>
@@ -58,6 +59,7 @@ ParityOdd::ParityOdd(const vector<IntegerVariableID> & vars) : ParityOdd(to_lits
 
 ParityOdd::ParityOdd(Literals l) : _lits(move(l))
 {
+    innards::require_bounded(_lits, "the value in a literal of ParityOdd");
 }
 
 auto ParityOdd::clone() const -> unique_ptr<Constraint>

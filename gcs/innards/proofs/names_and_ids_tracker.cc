@@ -949,9 +949,10 @@ auto NamesAndIDsTracker::need_view_named_by(const ProofLiteral & lit) -> void
     if (const auto * inner = std::get_if<Literal>(&lit))
         if (const auto * cond = std::get_if<IntegerVariableCondition>(inner))
             if (const auto * view = std::get_if<ViewOfIntegerVariableID>(&cond->var)) {
-                // A view too wide for a bit vector of its own (an offset near
-                // 2^61, say) cannot be registered by anything, so its literals
-                // keep the deviewed spelling and it never changes.
+                // A view too wide for a bit vector of its own could not be
+                // registered by anything, so its literals would keep the
+                // deviewed spelling. The range rule (dev_docs/integer-ranges.md)
+                // refuses the offset that would make one, so this is a guard.
                 auto [lo, hi] = view_bounds(*view);
                 if (bits_encoding_fits(lo, hi))
                     static_cast<void>(need_view(*view));
@@ -3005,9 +3006,9 @@ auto NamesAndIDsTracker::reification_shape(const WPBSumLE & ineq, const HalfReif
         }
     }
     catch (const IntegerOverflow &) {
-        throw ProofError{"cannot size the reification constant for a half-reified row: the sum of its positive contributions does not fit "
-                         "in an Integer. The variables involved may have domains near Integer::max_bounded_value(), or be views offsetting "
-                         "one outwards, or the coefficients may be too large"};
+        throw IntegerOverflow{"cannot size the reification constant for a half-reified row: the sum of its positive contributions does not fit "
+                              "in an Integer. The variables involved may have domains near Integer::max_bounded_value(), or be views offsetting "
+                              "one outwards, or the coefficients may be too large"};
     }
 
     // Usually it would be fine to say 0_i rather than -1_i here, because if a constraint
@@ -3020,9 +3021,9 @@ auto NamesAndIDsTracker::reification_shape(const WPBSumLE & ineq, const HalfReif
     // negative Integer has no negation, so catch it here where there is still
     // something useful to say rather than at the negation.
     if (clamped_reif_const == Integer::min_value())
-        throw ProofError{"the reification constant for a half-reified row is the most negative Integer, which the >= rendering cannot "
-                         "negate. The variables involved may have domains near Integer::max_bounded_value(), or be views offsetting one "
-                         "outwards, or the coefficients may be too large"};
+        throw IntegerOverflow{"the reification constant for a half-reified row is the most negative Integer, which the >= rendering cannot "
+                              "negate. The variables involved may have domains near Integer::max_bounded_value(), or be views offsetting one "
+                              "outwards, or the coefficients may be too large"};
 
     // if we have a false literal on the left hand side, adjusting the degree of falsity
     // up by the sum of positive terms is enough that it will be trivially true.

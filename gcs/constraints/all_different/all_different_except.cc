@@ -2,6 +2,7 @@
 #include <gcs/constraints/all_different/encoding.hh>
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/constraints/all_different/hints.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -54,6 +55,7 @@ using fmt::print;
 
 AllDifferentExcept::AllDifferentExcept(vector<IntegerVariableID> vars, vector<Integer> excluded) : _vars(move(vars)), _excluded(move(excluded))
 {
+    innards::require_bounded(_excluded, "an excluded value of AllDifferentExcept");
 }
 
 auto AllDifferentExcept::clone() const -> unique_ptr<Constraint>

@@ -53,7 +53,11 @@ namespace gcs
         bool negate_first;
         Integer then_add;
 
-        constexpr explicit ViewOfIntegerVariableID(SimpleIntegerVariableID a, bool n, Integer o) : actual_variable(a), negate_first(n), then_add(o)
+        /// Throws IntegerOverflow if \a o lies outside Integer::min_bounded_value()
+        /// .. Integer::max_bounded_value(): a view may widen its variable's range
+        /// by at most that much, one bit, however it was composed.
+        constexpr explicit ViewOfIntegerVariableID(SimpleIntegerVariableID a, bool n, Integer o) :
+            actual_variable(a), negate_first(n), then_add(innards::require_bounded(o, "a view's offset"))
         {
         }
 
@@ -77,7 +81,9 @@ namespace gcs
     {
         Integer const_value;
 
-        constexpr explicit ConstantIntegerVariableID(Integer x) : const_value(x)
+        /// Throws IntegerOverflow if \a x lies outside Integer::min_bounded_value()
+        /// .. Integer::max_bounded_value(), like any other input.
+        constexpr explicit ConstantIntegerVariableID(Integer x) : const_value(innards::require_bounded(x, "a constant"))
         {
         }
 
