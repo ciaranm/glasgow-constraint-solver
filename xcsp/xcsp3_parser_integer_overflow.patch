@@ -1,3 +1,30 @@
+--- a/include/XCSP3Domain.h
++++ b/include/XCSP3Domain.h
+@@ -93,7 +93,13 @@ namespace XCSP3Core {
+         XIntegerInterval(int inf, int sup) : min(inf), max(sup) {}
+ 
+ 
+-        int width() override { return max - min + 1; }
++        // max - min + 1 overflows an int for an interval spanning (nearly) the
++        // whole range, so saturate: callers only test for 1, for zero, and for
++        // equality, which a saturated width leaves correct.
++        int width() override {
++            long long w = static_cast<long long>(max) - min + 1;
++            return w > std::numeric_limits<int>::max() ? std::numeric_limits<int>::max() : static_cast<int>(w);
++        }
+ 
+ 
+         int minimum() override { return min; }
+@@ -130,7 +136,8 @@ namespace XCSP3Core {
+ 
+         void addEntity(XIntegerEntity *e) {
+             values.push_back(e);
+-            size += e->width();
++            long long sum = static_cast<long long>(size) + e->width();
++            size = sum > std::numeric_limits<int>::max() ? std::numeric_limits<int>::max() : static_cast<int>(sum);
+         }
+ 
+ 
 --- a/src/UTF8String.cc
 +++ b/src/UTF8String.cc
 @@ -26,6 +26,10 @@
@@ -11,7 +38,7 @@
  using namespace XCSP3Core;
  
  typedef unsigned char Byte;
-@@ -258,15 +262,21 @@
+@@ -258,15 +262,21 @@ bool UTF8String::to(int &v) const {
          neg = true;
      }
  
@@ -37,6 +64,21 @@
  
      while(it != end && it.isWhiteSpace())
          ++it;
+--- a/src/XCSP3Manager.cc
++++ b/src/XCSP3Manager.cc
+@@ -321,9 +321,10 @@ void XCSP3Manager::buildVariable(XVariable *variable) {
+     std::vector<int> values;
+ 
+     for(unsigned int i = 0; i < variable->domain->values.size(); i++) {
+-        for(int j = variable->domain->values[i]->minimum();
++        // long long, so that a domain reaching INT_MAX does not overflow j.
++        for(long long j = variable->domain->values[i]->minimum();
+             j <= variable->domain->values[i]->maximum(); j++) {
+-            values.push_back(j);
++            values.push_back(static_cast<int>(j));
+         }
+     }
+     callback->buildVariableInteger(variable->id, values);
 --- a/src/XMLParser.cc
 +++ b/src/XMLParser.cc
 @@ -28,6 +28,8 @@
@@ -48,7 +90,7 @@
  using namespace XCSP3Core;
  
  
-@@ -308,8 +310,12 @@
+@@ -308,8 +310,12 @@ bool XMLParser::parseTuples(const UTF8String &txt, vector<vector<int> > &tuples)
          if(token == UTF8String("*")) {
              hasStar = true;
              val = STAR;
@@ -62,18 +104,3 @@
          currentTuple.push_back(val);
      }
      return hasStar;
---- a/src/XCSP3Manager.cc
-+++ b/src/XCSP3Manager.cc
-@@ -321,9 +321,10 @@
-     std::vector<int> values;
- 
-     for(unsigned int i = 0; i < variable->domain->values.size(); i++) {
--        for(int j = variable->domain->values[i]->minimum();
-+        // long long, so that a domain reaching INT_MAX does not overflow j.
-+        for(long long j = variable->domain->values[i]->minimum();
-             j <= variable->domain->values[i]->maximum(); j++) {
--            values.push_back(j);
-+            values.push_back(static_cast<int>(j));
-         }
-     }
-     callback->buildVariableInteger(variable->id, values);
