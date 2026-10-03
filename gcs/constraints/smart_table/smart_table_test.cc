@@ -439,6 +439,65 @@ auto run_deep_tree_test(bool proofs, const string & mode) -> void
     check_results(proof_name, expected, actual);
 }
 
+// Entries naming a variable, a view of one, or a constant that the scope does
+// not list (issue #1119). They used to abort the solve with std::out_of_range;
+// they constrain what they name like any other entry, and the propagator is GAC
+// over those variables too, so consistency is checked on all three.
+auto run_outside_scope_test(bool proofs, const string & mode) -> void
+{
+    struct Case
+    {
+        string label;
+        function<SmartTable(IntegerVariableID, IntegerVariableID, IntegerVariableID)> table;
+        function<bool(int, int, int)> satisfied;
+    };
+
+    vector<Case> cases{{"binary", [](auto a, auto b, auto c) { return SmartTable{{a, b}, SmartTuples{{SmartTable::less_than(a, c)}}}; },
+                           [](int a, int, int c) { return a < c; }},
+        {"binary_and_unary",
+            [](auto a, auto b, auto c) {
+                return SmartTable{{a, b}, SmartTuples{{SmartTable::less_than(a, c)}, {SmartTable::equals(c, 1_i), SmartTable::greater_than(b, a)}}};
+            },
+            [](int a, int b, int c) { return a < c || (c == 1 && b > a); }},
+        {"unary_only", [](auto a, auto, auto c) { return SmartTable{{a}, SmartTuples{{SmartTable::not_in_set(c, {2_i, 3_i})}}}; },
+            [](int, int, int c) { return c != 2 && c != 3; }},
+        {"view", [](auto a, auto b, auto c) { return SmartTable{{a, b}, SmartTuples{{SmartTable::greater_than(c + 1_i, b)}}}; },
+            [](int, int b, int c) { return c + 1 > b; }},
+        {"constant",
+            [](auto a, auto b, auto) { return SmartTable{{a, b}, SmartTuples{{SmartTable::less_than(a, 2_c)}, {SmartTable::equals(b, 3_i)}}}; },
+            [](int a, int b, int) { return a < 2 || b == 3; }},
+        {"two_constants", [](auto a, auto, auto) { return SmartTable{{a}, SmartTuples{{SmartTable::less_than(1_c, 2_c)}}}; },
+            [](int, int, int) { return true; }},
+        {"false_constants",
+            [](auto a, auto, auto) { return SmartTable{{a}, SmartTuples{{SmartTable::less_than(2_c, 1_c)}, {SmartTable::equals(a, 2_i)}}}; },
+            [](int a, int, int) { return a == 2; }},
+        {"empty_scope", [](auto, auto, auto c) { return SmartTable{{}, SmartTuples{{SmartTable::equals(c, 0_i)}, {SmartTable::equals(c, 3_i)}}}; },
+            [](int, int, int c) { return c == 0 || c == 3; }}};
+
+    for (const auto & [label, table, satisfied] : cases) {
+        print(cerr, "smart table {} {}{}", mode, label, proofs ? " with proofs:" : ":");
+        cerr << flush;
+        Problem p;
+        auto a = p.create_integer_variable(0_i, 3_i);
+        auto b = p.create_integer_variable(0_i, 3_i);
+        auto c = p.create_integer_variable(0_i, 3_i);
+        p.post(table(a, b, c));
+
+        set<tuple<int, int, int>> expected, actual;
+        for (int x = 0; x <= 3; ++x)
+            for (int y = 0; y <= 3; ++y)
+                for (int z = 0; z <= 3; ++z)
+                    if (satisfied(x, y, z))
+                        expected.emplace(x, y, z);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        auto proof_name = proofs ? make_optional("smart_table_test_" + mode + "_" + label) : nullopt;
+        solve_for_tests_checking_consistency(
+            p, proof_name, expected, actual, tuple{pair{a, CheckConsistency::GAC}, pair{b, CheckConsistency::GAC}, pair{c, CheckConsistency::GAC}});
+        check_results(proof_name, expected, actual);
+    }
+}
+
 // issue #254: degenerate SmartTable instances — an empty tuple list (no
 // allowed tuple, so unsatisfiable), all-fixed (singleton-domain) variables in
 // both the matching and non-matching directions, and a single-variable table.
@@ -582,7 +641,7 @@ auto main(int argc, char * argv[]) -> int
     // in gcs/CMakeLists.txt.
     const vector<string> all_modes = {"lex_gt", "lex_ge", "lex_lt", "lex_le", "lex_gt_fixed", "lex_ge_fixed", "lex_lt_fixed", "lex_le_fixed",
         "am1_eq", "am1_in_set", "al1_eq", "al1_in_set", "mixed_same_var", "stacked_unary", "wide_constants", "degenerate", "dead_tuple", "deep_tree",
-        "views"};
+        "outside_scope", "views"};
     const vector<string> modes = requested_mode.empty() ? all_modes : vector<string>{requested_mode};
 
     vector<pair<int, vector<pair<int, int>>>> data = {
@@ -615,7 +674,7 @@ auto main(int argc, char * argv[]) -> int
         // These modes carry their own instances rather than using the
         // length/ranges table below.
         if (mode == "mixed_same_var" || mode == "stacked_unary" || mode == "wide_constants" || mode == "degenerate" || mode == "dead_tuple" ||
-            mode == "deep_tree") {
+            mode == "deep_tree" || mode == "outside_scope") {
             for (bool proofs : {false, true}) {
                 if (proofs && ! can_run_veripb())
                     continue;
@@ -629,6 +688,8 @@ auto main(int argc, char * argv[]) -> int
                     run_dead_tuple_test(proofs, mode);
                 else if (mode == "deep_tree")
                     run_deep_tree_test(proofs, mode);
+                else if (mode == "outside_scope")
+                    run_outside_scope_test(proofs, mode);
                 else
                     run_degenerate_test(proofs, mode);
             }
