@@ -184,6 +184,28 @@ auto run_dup_table_test(
     check_results(proof_name, expected, actual);
 }
 
+// A constant position that rules some tuples out entirely, so the OPB says
+// their flags are false outright. The test utilities' {k, k} ranges build a
+// variable, so this posts a real ConstantIntegerVariableID. The duplicate row
+// also makes each solution match two rows (issue #1115).
+auto run_constant_table_test(bool proofs, TableAlgorithm algorithm) -> void
+{
+    print(cerr, "table constant position{}", proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    SimpleTuples allowed{{1_i, 2_i}, {1_i, 2_i}, {3_i, 3_i}, {2_i, 2_i}, {3_i, 1_i}};
+    set<tuple<int>> expected{{1}, {2}}, actual;
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto x = p.create_integer_variable(1_i, 3_i);
+    p.post(Table{{x, ConstantIntegerVariableID{2_i}}, allowed}.with_algorithm(algorithm));
+
+    auto proof_name = proofs ? make_optional("table_test_constant") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{x});
+    check_results(proof_name, expected, actual);
+}
+
 auto algorithm_label(TableAlgorithm a) -> const char *
 {
     return overloaded{                         //
@@ -249,6 +271,10 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, TableAlgorithm 
     run_table_test_2(proofs, view_cfg, algorithm, {1, 1}, {1, 1}, {{1_i, 1_i}});             // fixed (1,1) is an allowed tuple (tautology)
     run_table_test_2(proofs, view_cfg, algorithm, {2, 2}, {3, 3}, {{1_i, 1_i}});             // fixed (2,3) is not in the table (contradiction)
     run_table_test_2(proofs, view_cfg, algorithm, {1, 1}, {1, 3}, {{1_i, 1_i}, {1_i, 2_i}}); // mixed: v1 fixed, v2 variable
+    // Duplicate rows (issue #1115): a solution two rows match, which needs at
+    // least three tuples to show up in the proof.
+    run_table_test_2(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {{1_i, 2_i}, {1_i, 2_i}, {3_i, 3_i}});
+    run_table_test_2(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {{3_i, 1_i}, {2_i, 2_i}, {3_i, 1_i}, {2_i, 2_i}, {3_i, 1_i}});
 
     // Table, 3 variables
     run_table_test_3(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {1, 3}, {{1_i, 1_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 1_i, 3_i}, {3_i, 3_i, 3_i}});
@@ -261,6 +287,11 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, TableAlgorithm 
     run_wildcard_table_test(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {1, 3}, {{{1_i, Wildcard{}, 3_i}, {Wildcard{}, 2_i, Wildcard{}}}});
     run_wildcard_table_test(
         proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {1, 3}, {{{Wildcard{}, Wildcard{}, Wildcard{}}}}); // all wildcards: all tuples allowed
+    // Overlapping rows (issue #1115): a wildcard row covering concrete rows, and
+    // two wildcard rows covering each other's solutions.
+    run_wildcard_table_test(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {1, 3}, {{{1_i, Wildcard{}, Wildcard{}}, {1_i, 2_i, 3_i}, {3_i, 3_i, 3_i}}});
+    run_wildcard_table_test(proofs, view_cfg, algorithm, {1, 3}, {1, 3}, {1, 3},
+        {{{1_i, Wildcard{}, 2_i}, {Wildcard{}, 2_i, Wildcard{}}, {3_i, 1_i, 1_i}, {1_i, 2_i, Wildcard{}}}});
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -302,6 +333,7 @@ auto main(int argc, char * argv[]) -> int
                     proofs, algorithm, {{1, 3}, {1, 3}}, {0, 1, 0}, {{1_i, 2_i, 1_i}, {1_i, 2_i, 2_i}, {2_i, 3_i, 2_i}, {3_i, 3_i, 3_i}});
                 // {x, x} -- only diagonal tuples can match.
                 run_dup_table_test(proofs, algorithm, {{1, 3}}, {0, 0}, {{1_i, 1_i}, {2_i, 3_i}, {3_i, 3_i}});
+                run_constant_table_test(proofs, algorithm);
             }
         }
     }

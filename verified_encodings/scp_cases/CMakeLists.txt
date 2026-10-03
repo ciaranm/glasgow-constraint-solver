@@ -477,14 +477,14 @@ add_scp_chain_test(strictly_decreasing_unsat   none)
 # none (chain-only): table (the variables take one of the listed allowed tuples)
 # and negative_table (they take none of the listed forbidden tuples). A tuple
 # entry is an integer or `*` (a wildcard matching any value); the solver and
-# cake_pb_cp agree on this s-expr shape exactly. Stays none: the per-tuple
-# encodings reference each variable's eq/ge literals, whose definitions diverge
-# from cake's eager variable encoding -- the solver derives them lazily from the
-# bits and leaves the tuple clauses unlabelled, where cake emits the full ladder
-# up front and labels them (#358). The refutation (unsat) cases verify regardless
-# (RUP finds the contradiction without cake's reverse-reified literal labels); the
-# enumeration (sat) cases verify here because the tuple clauses use the eq
-# literals cake also provides. table_sat allows three of the nine pairs;
+# cake_pb_cp agree on this s-expr shape exactly. Stays none, though since #1115
+# the table rows have cake's shape and labels. What still differs is in how the
+# variables are written: cake writes the definition of a ge literal at a
+# variable's lower bound, or one past its upper bound, with a 0 coefficient on
+# the literal where the solver writes 1, and the same goes for an all-wildcard
+# tuple's trivially true row; and the solver writes a {0,1} variable's eq
+# literals as its bit (#1193). In these four cases only the ge rows differ.
+# table_sat allows three of the nine pairs;
 # table_unsat's only allowed tuple lies outside the domains. negative_table_sat
 # forbids the diagonal, leaving the off-diagonal pairs; negative_table_unsat uses
 # `(* k)` wildcard rows to forbid every value of one variable, emptying its domain.
