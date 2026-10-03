@@ -22,6 +22,7 @@
 #include <fstream>
 #include <optional>
 #include <sstream>
+#include <type_traits>
 
 #include <variant>
 #include <version>
@@ -182,6 +183,11 @@ struct ProofLogger::Imp
     // most recent solution of an optimisation problem. Kept so that the next,
     // strictly better solution can delete both: see ProofLogger::solution.
     optional<pair<ProofLine, ProofLine>> previous_soli_lines;
+
+    // Whether the `min:` line spelled a view objective over the underlying
+    // variable's bits; copied from the ProofModel in start_proof. See the `e`
+    // line in solution().
+    bool objective_written_over_underlying = false;
 
     string proof_file;
     // A proof is many short lines; the default stream buffer makes for a
@@ -358,8 +364,26 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         // normal soli, emit e line for trimmer
         visit(
             [&](const auto & id) {
+                // The `e` line restates the constraint VeriPB has just derived
+                // from `min:`, so it has to spell the objective the way `min:`
+                // did. When that went over the underlying variable's bits (a
+                // plain negation, which is what maximise() stores, or a view too
+                // wide for its own bit vector), and a constraint has registered
+                // the view since, which only the plain negation allows, it would
+                // otherwise be spelled over the view's bits here, and the check
+                // fails (issue #1206). `min:` drops the view's offset, so the
+                // bound moves by it.
+                auto bound = optional_minimise_variable_and_value->second - 1_i;
                 _imp->proof << "e ";
-                emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
+                if constexpr (std::is_same_v<std::decay_t<decltype(id)>, ViewOfIntegerVariableID>) {
+                    if (_imp->objective_written_over_underlying)
+                        emit_inequality_to(names_and_ids_tracker(),
+                            WPBSum{} + (id.negate_first ? -1_i : 1_i) * id.actual_variable <= bound - id.then_add, _imp->proof);
+                    else
+                        emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= bound, _imp->proof);
+                }
+                else
+                    emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= bound, _imp->proof);
                 _imp->proof << ":" << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
 
                 auto atom_line = emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
@@ -781,6 +805,7 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
     // derived-line numbering is internally consistent; relativisation cancels any
     // difference from cake's count at reference time.
     _imp->proof_line.number += model.number_of_constraints().number;
+    _imp->objective_written_over_underlying = model.objective_written_over_underlying();
 }
 
 auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber

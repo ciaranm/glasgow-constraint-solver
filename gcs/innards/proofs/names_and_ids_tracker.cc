@@ -1,6 +1,7 @@
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/integer_overflow.hh>
 #include <gcs/innards/interval_tree.hh>
+#include <gcs/innards/proofs/bits_encoding.hh>
 #include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
@@ -873,11 +874,28 @@ auto NamesAndIDsTracker::need_proof_name(const VariableConditionFrom<SimpleOrPro
     }
 }
 
+auto NamesAndIDsTracker::need_view_named_by(const ProofLiteral & lit) -> void
+{
+    if (! _imp->model)
+        return;
+    if (const auto * inner = std::get_if<Literal>(&lit))
+        if (const auto * cond = std::get_if<IntegerVariableCondition>(inner))
+            if (const auto * view = std::get_if<ViewOfIntegerVariableID>(&cond->var)) {
+                // A view too wide for a bit vector of its own (an offset near
+                // 2^61, say) cannot be registered by anything, so its literals
+                // keep the deviewed spelling and it never changes.
+                auto [lo, hi] = view_bounds(*view);
+                if (bits_encoding_fits(lo, hi))
+                    static_cast<void>(need_view(*view));
+            }
+}
+
 auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void
 {
     for (auto & [_, v] : sum.terms)
         overloaded{
             [&](const ProofLiteral & lit) {
+                need_view_named_by(lit);
                 overloaded{
                     [&](const TrueLiteral &) {},                                                        //
                     [&](const FalseLiteral &) {},                                                       //
@@ -887,10 +905,11 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBool
             },                         //
             [&](const ProofFlag &) {}, //
             [&](const IntegerVariableID & var) {
-                // Opportunistically register view bit vectors during model
-                // writing. need_view can only introduce a view while the
-                // model is being written (it throws during the proof-logging
-                // phase), so this is gated on _imp->model.
+                // A view gets its own bit vector the first time a model row
+                // uses it, as an integer term here or through one of its
+                // literals (need_view_named_by). need_view can only introduce
+                // a view while the model is being written (it throws during
+                // the proof-logging phase), so this is gated on _imp->model.
                 if (_imp->model)
                     if (auto view = std::get_if<ViewOfIntegerVariableID>(&var))
                         static_cast<void>(need_view(*view));
@@ -903,13 +922,15 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBool
 
 auto NamesAndIDsTracker::need_all_proof_names_in(const Literals & lits) -> void
 {
-    for (auto & lit : lits)
+    for (auto & lit : lits) {
+        need_view_named_by(lit);
         overloaded{
             [&](const TrueLiteral &) {},                                                        //
             [&](const FalseLiteral &) {},                                                       //
             [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); } //
         }
             .visit(simplify_literal(*this, lit));
+    }
 }
 
 auto NamesAndIDsTracker::need_all_proof_names_in(const HalfReifyOnConjunctionOf & h) -> void
@@ -917,6 +938,7 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const HalfReifyOnConjunctionOf 
     for (auto & term : h)
         overloaded{
             [&](const ProofLiteral & lit) {
+                need_view_named_by(lit);
                 overloaded{
                     [&](const TrueLiteral &) {},                                                        //
                     [&](const FalseLiteral &) {},                                                       //

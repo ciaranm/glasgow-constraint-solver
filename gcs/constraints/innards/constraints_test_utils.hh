@@ -10,6 +10,7 @@
 #include <gcs/stats.hh>
 
 #include <gcs/constraints/innards/cake_probe.hh>
+#include <gcs/constraints/linear.hh>
 
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/variable_id_utils.hh>
@@ -792,6 +793,59 @@ namespace gcs::test_innards
         return branch_with(variable_order::random(p), value_order::reject_random_interval());
     }
 
+    /**
+     * \brief Late view registration: the `_view_mixed_late` lanes.
+     *
+     * A view gets its own bit vector as soon as a proof uses it, and nothing
+     * may depend on which row happened to use it first. A test that posts one
+     * constraint never varies that, so with --late-view-registration the
+     * view-creating helpers below record each view they make, and the solve
+     * helpers post a vacuous `view <= upper + 1000` over each one just before
+     * solving, after the constraint under test. That row names the view as an
+     * integer term, which is exactly what used to register it late and leave
+     * the constraint's own rows spelled the other way (issues #1197, #1200).
+     *
+     * Only tests that solve through solve_for_tests_with_callbacks get the
+     * rows: one that calls solve_with directly (the bespoke circuit tests, for
+     * instance) runs its late lane exactly like its plain mixed one.
+     */
+    struct LateViewRecord
+    {
+        const Problem * problem;
+        IntegerVariableID view;
+        int upper;
+    };
+
+    inline auto late_view_registration() -> bool &
+    {
+        static bool on = false;
+        return on;
+    }
+
+    inline auto late_view_records() -> std::vector<LateViewRecord> &
+    {
+        static std::vector<LateViewRecord> records;
+        return records;
+    }
+
+    inline auto record_view_for_late_registration(const Problem & problem, const IntegerVariableID & view, int upper) -> void
+    {
+        if (late_view_registration())
+            late_view_records().push_back(LateViewRecord{&problem, view, upper});
+    }
+
+    inline auto post_late_view_registrations(Problem & problem) -> void
+    {
+        auto & records = late_view_records();
+        for (const auto & record : records)
+            if (record.problem == &problem)
+                problem.post(WeightedSum{} + 1_i * record.view <= Integer{record.upper} + 1000_i);
+        // Drop every record, not only this problem's: one left by a problem
+        // that was never solved through here could otherwise be matched by a
+        // later problem built at the same address, over the wrong variables.
+        records.clear();
+    }
+
     template <typename SolutionCallback_, typename TraceCallback_>
     auto solve_for_tests_with_callbacks(
         Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
@@ -803,6 +857,8 @@ namespace gcs::test_innards
         if (! innards::idempotent_claim_checker_enabled())
             throw UnexpectedException{"the idempotence claim checker is off: call establish_and_announce_seed() "
                                       "(or enable_idempotent_claim_checker()) at the top of main(), before anything propagates"};
+
+        post_late_view_registrations(p);
 
         // Apply the optional runtime caps (see env_cap). The wrappers count
         // solutions / internal search nodes and return false to stop the solve
@@ -1373,6 +1429,7 @@ namespace gcs::test_innards
             v = v + Integer(wrap.offset);
         else if (! wrap.negate)
             v = v + Integer(0); // force a ViewOfIntegerVariableID for the identity-view case
+        record_view_for_late_registration(problem, v, bounds.second);
         return v;
     }
 
@@ -1399,6 +1456,7 @@ namespace gcs::test_innards
             v = v + Integer(wrap.offset);
         else if (! wrap.negate)
             v = v + Integer(0);
+        record_view_for_late_registration(problem, v, *std::max_element(values.begin(), values.end()));
         return v;
     }
 
@@ -1461,6 +1519,7 @@ namespace gcs::test_innards
         int wrap_index = 0;
         std::optional<int> single_position{};
         bool mixed = false;
+        bool late_registration = false;
     };
 
     /**
@@ -1483,6 +1542,8 @@ namespace gcs::test_innards
      *  - `--view-wrap=N`         : integer index into all_view_wraps()
      *  - `--view-position=all`   : uniform sweep across all positions
      *  - `--view-position=K`     : single-position sweep, position K
+     *  - `--late-view-registration` : register every view after the constraint
+     *                                 under test (see LateViewRecord)
      *
      * Returns the default ViewWrapConfig (no wrapping) if neither flag is
      * present. Unknown args are ignored so existing mode-style argv (e.g. the
@@ -1503,6 +1564,10 @@ namespace gcs::test_innards
                     cfg.mixed = true;
                 else
                     cfg.single_position = std::stoi(val);
+            }
+            else if (arg == "--late-view-registration") {
+                cfg.late_registration = true;
+                late_view_registration() = true;
             }
         }
         return cfg;
@@ -1548,11 +1613,14 @@ namespace gcs::test_innards
      */
     inline auto view_wrap_config_label(const ViewWrapConfig & cfg) -> std::string
     {
+        // Late registration gets its own label: its lanes run beside the
+        // ordinary ones under a parallel ctest and must not share proof files.
+        std::string late = cfg.late_registration ? "_late" : "";
         if (cfg.mixed)
-            return "mixed";
+            return "mixed" + late;
         std::string s = "w" + std::to_string(cfg.wrap_index) + "_p";
         s += cfg.single_position ? std::to_string(*cfg.single_position) : "all";
-        return s;
+        return s + late;
     }
 
     /**

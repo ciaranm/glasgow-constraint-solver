@@ -457,6 +457,15 @@ namespace gcs::innards
         auto need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) -> void;
 
         /**
+         * While the model is being written, give a view its own bit vector
+         * (need_view) as soon as a row names one of its literals, just as a row
+         * naming the view as an integer term does. Otherwise simplify_literal
+         * spells the literal through the underlying variable, and a later row
+         * that does register the view leaves the two spellings disagreeing.
+         */
+        auto need_view_named_by(const ProofLiteral &) -> void;
+
+        /**
          * Ensure that need_proof_name() has been called for everything in a given sum.
          */
         auto need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;

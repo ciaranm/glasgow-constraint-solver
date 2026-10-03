@@ -72,6 +72,7 @@ struct ProofModel::Imp
     ProofLineNumber number_of_constraints{0};
 
     optional<IntegerVariableID> optional_minimise_variable;
+    bool objective_written_over_underlying = false;
     optional<vector<IntegerVariableID>> preserved_variables;
     unsigned long long proof_only_integer_variable_nr = 0;
 
@@ -150,6 +151,7 @@ auto ProofModel::add_constraint(const Literals & lits) -> void
     // rather than omitting it, so the constraint counter stays in step.
     bool tautological = false;
     for (auto & lit : lits) {
+        names_and_ids_tracker().need_view_named_by(lit);
         overloaded{
             [&](const TrueLiteral &) { tautological = true; },                              //
             [&](const FalseLiteral &) {},                                                   //
@@ -274,6 +276,7 @@ auto ProofModel::add_labelled_constraint(const string & label, const Literals & 
     WPBSum sum;
     bool tautological = false;
     for (auto & lit : lits) {
+        names_and_ids_tracker().need_view_named_by(lit);
         overloaded{
             [&](const TrueLiteral &) { tautological = true; },                              //
             [&](const FalseLiteral &) {},                                                   //
@@ -780,6 +783,7 @@ auto ProofModel::write_preamble() -> void
                             _imp->opb_stream << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
                     }
                     else {
+                        _imp->objective_written_over_underlying = true;
                         for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v.actual_variable))
                             _imp->opb_stream << (v.negate_first ? -bit_value : bit_value) << " "
                                              << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
@@ -845,6 +849,11 @@ auto ProofModel::finalise() -> void
     catch (const ios_base::failure &) {
         throw ProofError{"Error writing opb file to '" + _imp->opb_file + "'"};
     }
+}
+
+auto ProofModel::objective_written_over_underlying() const -> bool
+{
+    return _imp->objective_written_over_underlying;
 }
 
 auto ProofModel::number_of_constraints() const -> ProofLineNumber

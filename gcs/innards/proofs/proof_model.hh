@@ -421,6 +421,15 @@ namespace gcs::innards
         auto finalise() -> void;
 
         /**
+         * Whether write_preamble wrote a view objective's `min:` line over the
+         * underlying variable's bits rather than the view's own. A line that has
+         * to restate the objective, such as the `e` line after each `soli`, must
+         * then spell it the same way, even if a constraint has registered the
+         * view since (issue #1206).
+         */
+        [[nodiscard]] auto objective_written_over_underlying() const -> bool;
+
+        /**
          * How many constraints do we have? Used to generate the proof header
          * inside a proof log.
          */

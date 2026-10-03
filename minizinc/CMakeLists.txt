@@ -56,6 +56,15 @@ set_tests_properties(minizinc-installed-msc PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-abs COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ abs true true)
 set_tests_properties(minizinc-abs PROPERTIES SKIP_RETURN_CODE 66)
 
+# Maximising while a constraint uses the objective's negation as a view: the
+# check after each solution has to spell the objective as `min:` did (issue
+# #1206). One gets there by `solve maximize -x`, the other by `y = -x`.
+add_test(NAME minizinc-maximizenegation COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern int_lin_eq $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ maximizenegation false true)
+set_tests_properties(minizinc-maximizenegation PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-maximizenegatedview COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern int_lin_eq $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ maximizenegatedview false true)
+set_tests_properties(minizinc-maximizenegatedview PROPERTIES SKIP_RETURN_CODE 66)
+
 # MiniZinc rewrites `x = y` and `x != y` between two variables into a two-term
 # int_lin_eq / int_lin_ne rather than emitting int_eq / int_ne, and the FlatZinc
 # reader recovers the shape so the specialised propagators are reached at all.
