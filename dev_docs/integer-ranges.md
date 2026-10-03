@@ -90,6 +90,18 @@ The consequence that is easy to miss: a variable declared over the whole of `S`
 is narrower than it used to be. `fzn-glasgow` gives a FlatZinc `var int` with no
 declared domain exactly `S`, so that default lost a bit too.
 
+## Front ends
+
+A front end must refuse a value it cannot read, never wrap it, and must report
+`IntegerOverflow` (from building the model or from search) as an error rather
+than abort. `fzn-glasgow` reads every JSON integer through one checked helper
+([`minizinc.md`](minizinc.md), "Integers past `long long`"). The XCSP front end's
+parser supports `int` only, and is patched to refuse anything wider
+([`xcsp.md`](xcsp.md), "Integer range"). The `.scp` reader turns a strict
+inequality into a non-strict one an integer step away, and at the ends of the
+range moves that step into the sum as a constant instead, so that
+`lin_less_than ... min` stays a constraint it can post.
+
 ## Obligations on a constraint
 
 - **Check every `Integer` parameter** with `innards::require_bounded(value,

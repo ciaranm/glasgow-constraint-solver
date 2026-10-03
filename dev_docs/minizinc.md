@@ -529,6 +529,18 @@ fine; if the user writes a model that needs them, MiniZinc will either
 decompose or fail at flattening. Don't write empty `fzn_*_float.mzn`
 overrides — that breaks the default decomposition path.
 
+### Integers past `long long`
+
+MiniZinc never emits an integer outside `long long`, but `fzn-glasgow` reads
+JSON, which can hold one, and `nlohmann::json` keeps such a value as an unsigned
+integer or, past that, a float. Every integer is read through `json_integer`,
+which refuses those with `IntegerOverflow` (naming the value as written) and
+refuses a non-integral number where an integer is expected. A cast to
+`long long` here used to wrap: `x <= 2^64 - 1` was read as `x <= -1`. Values
+that fit but lie outside the bounded range are refused by whatever they become
+([`integer-ranges.md`](integer-ranges.md)). The `minizinc-range_*` lanes are
+hand-written JSON for these.
+
 ### Search annotations
 
 `fzn-glasgow` understands `int_search`, `bool_search`, and

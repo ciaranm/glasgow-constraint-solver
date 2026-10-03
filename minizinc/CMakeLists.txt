@@ -539,6 +539,25 @@ add_test(NAME minizinc-cumulativeopt-fzn COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}
 add_test(NAME minizinc-emptysetin COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ empty_set_in)
 add_test(NAME minizinc-emptysetinreif COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ empty_set_in_reif)
 
+# Integers at and past the edges of what the solver accepts
+# (dev_docs/integer-ranges.md). These are hand-written JSON, because MiniZinc
+# never emits an integer past long long. Such an integer used to be cast to long
+# long and wrap silently, so `x <= 2^64 - 1` was read as `x <= -1` and lost
+# solutions. Each must now be refused with an error naming the value as
+# written: the pass expression is fzn-glasgow's own `error:` line, and an
+# uncaught exception, whose message could otherwise match, fails the test.
+add_test(NAME minizinc-range-edges COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ range_edges)
+function(add_fzn_range_refusal_test name message)
+    add_test(NAME minizinc-${name} COMMAND $<TARGET_FILE:fzn-glasgow> -a ${CMAKE_SOURCE_DIR}/minizinc/tests/json/${name}.fzn)
+    set_tests_properties(minizinc-${name} PROPERTIES
+        PASS_REGULAR_EXPRESSION "fzn-glasgow[^:]*: error: [^\n]*${message}"
+        FAIL_REGULAR_EXPRESSION "terminate called")
+endfunction()
+add_fzn_range_refusal_test(range_int_past_long_long "the integer 18446744073709551615 does not fit in an Integer")
+add_fzn_range_refusal_test(range_domain_2_63 "the integer 9223372036854775808 does not fit in an Integer")
+add_fzn_range_refusal_test(range_integer_literal_too_long "the integer 1e\\+20 does not fit in an Integer")
+add_fzn_range_refusal_test(range_float_where_int "expected an integer, but got 2.5")
+
 # A var bool output array whose every element the flattener has fixed (#785).
 # This has to be hand-written JSON: MiniZinc drops such an array from `output`
 # unless something else keeps it alive, so a .mzn model cannot reach it. `ns` is
