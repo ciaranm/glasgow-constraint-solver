@@ -456,10 +456,10 @@ auto RegularLegacy::prepare(Propagators &, State & initial_state, ProofModel * c
         for (auto val = lo; val <= hi; ++val)
             alphabet.push_back(val);
 
-        auto nfa = regex_to_nfa(*_regex, alphabet);
-        _num_states = nfa.num_states;
-        _transitions = move(nfa.transitions);
-        _final_states = move(nfa.final_states);
+        auto dfa = regex_to_dfa(*_regex, alphabet);
+        _num_states = dfa.num_states;
+        _transitions = move(dfa.transitions);
+        _final_states = move(dfa.final_states);
         _symbols = symbols_of(_transitions);
     }
 
@@ -514,8 +514,9 @@ auto RegularLegacy::define_proof_model(ProofModel & model, const State &) -> voi
                     model.add_constraint(WPBSum{} + 1_i * (_vars[idx] != val) + (1_i * ! _state_at_pos_flags[idx][q]) >= 1_i);
                 }
                 else {
-                    // state_i = q /\ X_i = val implies state_{i+1} is one of the
-                    // targets (a single target for a DFA, several for an NFA).
+                    // state_i = q /\ X_i = val implies state_{i+1} is the target.
+                    // Every route in leaves the automaton deterministic, so the
+                    // target set is a singleton (see Regular, issue #1203).
                     auto clause = WPBSum{} + 1_i * ! _state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val);
                     for (const auto & new_q : targets)
                         clause += 1_i * _state_at_pos_flags[idx + 1][new_q];
@@ -588,7 +589,7 @@ auto RegularLegacy::s_expr(const ProofModel * const model) const -> SExpr
         vector<Integer> alphabet;
         for (auto val = lo; val <= hi; ++val)
             alphabet.push_back(val);
-        compiled = regex_to_nfa(*_regex, alphabet);
+        compiled = regex_to_dfa(*_regex, alphabet);
         num_states = compiled.num_states;
         transitions = &compiled.transitions;
         final_states = &compiled.final_states;

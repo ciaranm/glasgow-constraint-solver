@@ -483,6 +483,15 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> trans
     _symbols = symbols_of(_transitions);
 }
 
+Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, set<long>>> t, vector<long> f) : _vars(move(v)), _regex(nullopt)
+{
+    auto dfa = determinise(RegexNfa{n, move(t), move(f)});
+    _num_states = dfa.num_states;
+    _transitions = move(dfa.transitions);
+    _final_states = move(dfa.final_states);
+    _symbols = symbols_of(_transitions);
+}
+
 Regular::Regular(vector<IntegerVariableID> v, string regex) : _vars(move(v)), _num_states(0), _regex(move(regex))
 {
     // The automaton is compiled from the regex in prepare(), once the
@@ -532,9 +541,10 @@ auto Regular::prepare(Propagators & propagators, State & initial_state, ProofMod
 
     if (holds_alternative<proof_strategy::Bacchus>(_proof_strategy)) {
         if (_regex)
-            throw UnimplementedException{"the Bacchus proof strategy for Regular does not support regular-expression / NFA input"};
+            throw UnimplementedException{"the Bacchus proof strategy for Regular does not support regular-expression input"};
         // Recover the deterministic transition map the Bacchus encoding
-        // needs from the shared (possibly non-deterministic) representation.
+        // needs from the shared set-valued representation. Every constructor
+        // determinises, so each target set is a singleton.
         vector<unordered_map<Integer, long>> dfa(_transitions.size());
         for (size_t q = 0; q < _transitions.size(); ++q)
             for (const auto & [val, targets] : _transitions[q]) {
@@ -563,10 +573,10 @@ auto Regular::prepare(Propagators & propagators, State & initial_state, ProofMod
         for (auto val = lo; val <= hi; ++val)
             alphabet.push_back(val);
 
-        auto nfa = regex_to_nfa(*_regex, alphabet);
-        _num_states = nfa.num_states;
-        _transitions = move(nfa.transitions);
-        _final_states = move(nfa.final_states);
+        auto dfa = regex_to_dfa(*_regex, alphabet);
+        _num_states = dfa.num_states;
+        _transitions = move(dfa.transitions);
+        _final_states = move(dfa.final_states);
         _symbols = symbols_of(_transitions);
     }
 
@@ -623,8 +633,11 @@ auto Regular::define_proof_model(ProofModel & model, const State &) -> void
                     model.add_constraint(WPBSum{} + 1_i * (_vars[idx] != val) + 1_i * ! flags[idx][q] >= 1_i);
                 }
                 else {
-                    // state_i = q /\ X_i = val implies state_{i+1} is one of the
-                    // targets (a single target for a DFA, several for an NFA).
+                    // state_i = q /\ X_i = val implies state_{i+1} is the target.
+                    // Every constructor leaves the automaton deterministic, so
+                    // the target set is a singleton: with several, a word could
+                    // have two accepting runs, and nothing would say which the
+                    // state flags follow (issue #1203).
                     auto clause = WPBSum{} + 1_i * ! flags[idx][q] + 1_i * (_vars[idx] != val);
                     for (const auto & new_q : targets)
                         clause += 1_i * flags[idx + 1][new_q];
@@ -714,7 +727,7 @@ auto Regular::s_expr(const ProofModel * const model) const -> SExpr
         vector<Integer> alphabet;
         for (auto val = lo; val <= hi; ++val)
             alphabet.push_back(val);
-        compiled = regex_to_nfa(*_regex, alphabet);
+        compiled = regex_to_dfa(*_regex, alphabet);
         num_states = compiled.num_states;
         transitions = &compiled.transitions;
         final_states = &compiled.final_states;

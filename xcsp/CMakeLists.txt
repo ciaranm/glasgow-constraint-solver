@@ -142,6 +142,12 @@ add_xcsp_test(ordered_lengths)
 add_xcsp_test(ordered_strict)
 add_xcsp_test(precedence)
 add_xcsp_test(regular)
+# A non-deterministic, ambiguous automaton: "contains a 1", guessing which 1.
+# The reader used to keep only the first transition on each (state, symbol),
+# which here leaves the final state unreachable (issue #1204). ACE refuses a
+# non-deterministic automaton, so the cache came from ACE on the deterministic
+# twin, the same instance without (q0, 1, q0), and is every word but 0 0 0 0.
+add_xcsp_test(regular_nfa)
 add_xcsp_test(slide)
 add_xcsp_test(sum_not_equals)
 # <sum> with ne against a nonzero constant and against a variable. Both used to

@@ -16,13 +16,13 @@ namespace gcs
     /**
      * \brief Constrain that the sequence of variables is a member of the
      * language recognised by the given finite automaton, equivalent to a regex
-     * expression. The automaton may be non-deterministic: each (state, value)
-     * pair maps to a set of next states. "short_reasons" uses aliases for
+     * expression. "short_reasons" uses aliases for
      * reasons when proof logging is enabled, which can result in shorter
      * proofs.
      *
      * The automaton may instead be given as a regular expression string, which
-     * is compiled to an NFA over the constrained variables' domains. The syntax
+     * is compiled to a deterministic automaton over the constrained variables'
+     * domains (see Regular for why it must be deterministic). The syntax
      * matches MiniZinc/Gecode (see regular/regex.hh).
      *
      * \ingroup Constraints
@@ -64,8 +64,9 @@ namespace gcs
 
         /**
          * \brief Constrain that the sequence of variables matches the given
-         * regular expression. The expression is compiled to an NFA over the
-         * contiguous min..max range of the variables' domains.
+         * regular expression. The expression is compiled to a deterministic
+         * automaton over the contiguous min..max range of the variables'
+         * domains.
          */
         explicit RegularLegacy(std::vector<IntegerVariableID> vars, std::string regex);
 

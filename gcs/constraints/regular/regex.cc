@@ -546,3 +546,50 @@ auto gcs::innards::regex_reference_accepts(const string & regex, const vector<In
     auto root = parse_regex(regex, alphabet_set);
     return match_ends(*root, sequence, 0).contains(sequence.size());
 }
+
+auto gcs::innards::determinise(const RegexNfa & nfa) -> RegexNfa
+{
+    // Each DFA state is a set of NFA states, numbered in the order the
+    // breadth-first search first meets it; the start is {0}. Symbols are
+    // visited in sorted order, through a map, so the numbering is the same on
+    // every standard library.
+    map<set<long>, long> id_of;
+    vector<set<long>> subsets;
+    auto id_for = [&](set<long> subset) -> long {
+        auto [it, inserted] = id_of.emplace(subset, static_cast<long>(subsets.size()));
+        if (inserted)
+            subsets.push_back(move(subset));
+        return it->second;
+    };
+
+    set<long> final_states(nfa.final_states.begin(), nfa.final_states.end());
+
+    RegexNfa dfa;
+    id_for(set<long>{0});
+    for (size_t d = 0; d < subsets.size(); ++d) {
+        map<Integer, set<long>> targets;
+        bool is_final = false;
+        for (auto q : subsets[d]) {
+            if (final_states.contains(q))
+                is_final = true;
+            if (static_cast<size_t>(q) < nfa.transitions.size())
+                for (const auto & [symbol, to] : nfa.transitions[q])
+                    targets[symbol].insert(to.begin(), to.end());
+        }
+
+        unordered_map<Integer, set<long>> transitions;
+        for (auto & [symbol, to] : targets)
+            if (! to.empty())
+                transitions[symbol].insert(id_for(move(to)));
+        dfa.transitions.push_back(move(transitions));
+        if (is_final)
+            dfa.final_states.push_back(static_cast<long>(d));
+    }
+    dfa.num_states = static_cast<long>(subsets.size());
+    return dfa;
+}
+
+auto gcs::innards::regex_to_dfa(const string & regex, const vector<Integer> & alphabet) -> RegexNfa
+{
+    return determinise(regex_to_nfa(regex, alphabet));
+}
