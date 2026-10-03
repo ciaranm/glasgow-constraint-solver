@@ -85,8 +85,8 @@ namespace
         expect_overflow("a constant one above the range", [&] { [[maybe_unused]] auto c = constant_variable(B + 1_i); });
         expect_overflow("a constant one below the range", [&] { [[maybe_unused]] auto c = constant_variable(A - 1_i); });
         expect_overflow("a constant folded past the range", [&] { [[maybe_unused]] auto c = constant_variable(B) + 1_i; });
-        expect_overflow("a domain one below the range", [&] { p.create_integer_variable(A - 1_i, 0_i); });
-        expect_overflow("a domain one above the range", [&] { p.create_integer_variable(0_i, B + 1_i); });
+        expect_overflow("a domain one below the range", [&] { [[maybe_unused]] auto v = p.create_integer_variable(A - 1_i, 0_i); });
+        expect_overflow("a domain one above the range", [&] { [[maybe_unused]] auto v = p.create_integer_variable(0_i, B + 1_i); });
 
         // The edges themselves are fine, and the range is symmetric, so negating
         // them is too.
