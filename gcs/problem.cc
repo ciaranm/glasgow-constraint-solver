@@ -12,6 +12,14 @@
 
 #include <util/overloaded.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#else
+#include <fmt/core.h>
+#endif
+
 #include <algorithm>
 #include <deque>
 #include <regex>
@@ -38,6 +46,12 @@ using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using std::ranges::minmax_element;
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
+#else
+using fmt::format;
+#endif
 
 NamingError::NamingError(const string & w) : MessageException(w)
 {
@@ -100,10 +114,26 @@ auto Problem::check_name(const string & name) -> const string &
     return *it;
 }
 
+namespace
+{
+    // A declared domain is an input, so it must lie in the bounded range
+    // (dev_docs/integer-ranges.md). State allows auxiliaries further, so this
+    // is checked here rather than there. The numbers are spelled out because
+    // this message reaches people using the solver rather than working on it.
+    auto require_declared_domain_bounded(Integer lower, Integer upper) -> void
+    {
+        if (lower < Integer::min_bounded_value() || upper > Integer::max_bounded_value())
+            throw innards::IntegerOverflow{format("variable created with domain {}..{}, which is outside the widest supported domain of {}..{} "
+                                                  "(Integer::min_bounded_value() .. Integer::max_bounded_value())",
+                lower.raw_value, upper.raw_value, Integer::min_bounded_value().raw_value, Integer::max_bounded_value().raw_value)};
+    }
+}
+
 auto Problem::create_integer_variable(Integer lower, Integer upper, const optional<string> & name) -> SimpleIntegerVariableID
 {
     if (lower > upper)
         throw InvalidProblemDefinitionException{"variable has lower bound > upper bound"};
+    require_declared_domain_bounded(lower, upper);
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(lower, upper);
     _imp->integer_variables.emplace_back(result, lower, upper, name ? check_name(*name) : "_" + to_string(++_imp->next_anon_variable));
@@ -117,6 +147,7 @@ auto Problem::create_integer_variable(const vector<Integer> & domain, const opti
         throw InvalidProblemDefinitionException{"variable has empty domain"};
 
     auto [min, max] = minmax_element(domain);
+    require_declared_domain_bounded(*min, *max);
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(*min, *max);
     _imp->integer_variables.emplace_back(result, *min, *max, name ? check_name(*name) : "_" + to_string(++_imp->next_anon_variable));

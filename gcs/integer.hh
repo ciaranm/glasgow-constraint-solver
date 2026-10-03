@@ -110,34 +110,67 @@ namespace gcs
         }
 
         /**
-         * \name The widest bounds a variable's domain may declare.
+         * \name The range every input to the solver must lie in.
          *
-         * A variable's domain must lie within these, and Problem and State
-         * enforce it. They are a quarter of the machine range, which is two
-         * bits of headroom rather than the obvious one, because writing the
-         * proof model costs more than a single carry: a half-reified row's
-         * reification constant is the sum of the positive contributions of
-         * *every* term, so a row relating two variables needs room for both,
+         * A variable's declared domain, a constant, a view's offset, and every
+         * Integer a constraint takes as a parameter (a coefficient, a tuple
+         * value, a distance, and so on) must lie within these. An input outside
+         * them throws IntegerOverflow, as early as possible: domains, constants
+         * and views check it themselves, and constraints check their
+         * parameters when they are constructed. See dev_docs/integer-ranges.md.
+         *
+         * The range is an eighth of the machine range, three bits of headroom,
+         * and symmetric, so that negating an input never leaves it: maximising
+         * `x + c` negates `c`, which the caller never sees.
+         * Two of those are what writing the proof model costs: a half-reified
+         * row's reification constant is the sum of the positive contributions
+         * of *every* term, so a row relating two variables needs room for both,
          * and that constant is then negated when the row is rendered in `>=`
-         * form -- and the most negative machine integer has no negation.
-         *
-         * The boundary is measured, not chosen. At `+/-2^61` `LessThan`, `Plus`
-         * and `AllDifferent` all write their model; at `+/-2^62` all three
-         * abort part-way through, leaving a truncated OPB (issue #852).
+         * form -- and the most negative machine integer has no negation. At a
+         * quarter of the machine range `LessThan`, `Plus` and `AllDifferent`
+         * all write their model, and at a half all three abort part-way through
+         * (issue #852). The third bit is for views: since a view's offset lies
+         * in this range too, a view's values can reach twice as far as a
+         * variable's, and a row over two views at that reach needs the extra
+         * bit, measured on `LessThan`, `AllDifferent` and `Lex`.
          *
          * Arithmetic is deliberately *not* held to this: intermediate results
-         * are expected to exceed it, which is what the headroom is for. This
-         * bounds what may be *declared*, so that the ordinary routes into the
-         * solver cannot reach the cliff by accident. Nothing stops a caller
-         * computing a wider value and using it anyway.
+         * are expected to exceed it, which is what the headroom is for. Where a
+         * constraint's own arithmetic over in-range inputs cannot fit in an
+         * Integer, as a product of two wide variables can't, it throws
+         * IntegerOverflow rather than answering wrongly.
          */
         ///@{
         static inline constexpr auto min_bounded_value() -> Integer
         {
-            return Integer(std::numeric_limits<decltype(raw_value)>::min() / 4);
+            return Integer(-(std::numeric_limits<decltype(raw_value)>::max() / 8));
         }
 
         static inline constexpr auto max_bounded_value() -> Integer
+        {
+            return Integer(std::numeric_limits<decltype(raw_value)>::max() / 8);
+        }
+        ///@}
+
+        /**
+         * \name The widest domain an auxiliary variable may have.
+         *
+         * A constraint sometimes needs a variable of its own over the values of
+         * a view, and a view can reach twice as far as a declared variable. So
+         * an auxiliary may span a quarter of the machine range, enough for any
+         * view's values and for a magnitude sized to their bit width. That is
+         * where the declared range itself used to sit, and is the same reach a
+         * view's own proof bit vector has. Problem refuses a declared domain
+         * outside min_bounded_value() .. max_bounded_value(); State refuses any
+         * domain, declared or auxiliary, outside these.
+         */
+        ///@{
+        static inline constexpr auto min_auxiliary_value() -> Integer
+        {
+            return Integer(-(std::numeric_limits<decltype(raw_value)>::max() / 4));
+        }
+
+        static inline constexpr auto max_auxiliary_value() -> Integer
         {
             return Integer(std::numeric_limits<decltype(raw_value)>::max() / 4);
         }
@@ -265,6 +298,24 @@ namespace gcs
     [[nodiscard]] constexpr inline auto operator""_i(unsigned long long v) -> Integer
     {
         return Integer(v);
+    }
+
+    namespace innards
+    {
+        /**
+         * \brief Return \a v, or throw IntegerOverflow if it lies outside
+         * Integer::min_bounded_value() .. Integer::max_bounded_value(), the
+         * range every input to the solver must lie in. \a what names the
+         * input in the message, for example "a view's offset".
+         *
+         * \ingroup IntegerWrapper
+         */
+        constexpr inline auto require_bounded(Integer v, const char * what) -> Integer
+        {
+            if (v < Integer::min_bounded_value() || v > Integer::max_bounded_value())
+                throw_outside_bounded_range(what, v.raw_value);
+            return v;
+        }
     }
 }
 

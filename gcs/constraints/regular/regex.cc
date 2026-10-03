@@ -70,12 +70,14 @@ namespace
                 continue;
             }
             if (c >= '0' && c <= '9') {
-                long long value = 0;
+                // Checked arithmetic, so a long run of digits throws rather than
+                // wrapping, and then the same range as any other input.
+                Integer value{0};
                 while (i < s.size() && s[i] >= '0' && s[i] <= '9') {
-                    value = value * 10 + (s[i] - '0');
+                    value = value * Integer{10} + Integer{s[i] - '0'};
                     ++i;
                 }
-                tokens.push_back({Tok::Integer, Integer{value}});
+                tokens.push_back({Tok::Integer, gcs::innards::require_bounded(value, "an integer in a regular expression")});
                 continue;
             }
             switch (c) {

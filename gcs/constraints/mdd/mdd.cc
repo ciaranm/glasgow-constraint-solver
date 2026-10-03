@@ -1,3 +1,4 @@
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/mdd/hints.hh>
 #include <gcs/constraints/mdd/mdd.hh>
 #include <gcs/exception.hh>
@@ -437,6 +438,10 @@ struct MDD::Bridge
 MDD::MDD(vector<IntegerVariableID> v, vector<vector<unordered_map<Integer, long>>> t, vector<long> npl, vector<long> ats) :
     _vars(move(v)), _layer_transitions(move(t)), _nodes_per_layer(move(npl)), _accepting_terminals(move(ats))
 {
+    for (const auto & layer : _layer_transitions)
+        for (const auto & node : layer)
+            for (const auto & [value, _] : node)
+                innards::require_bounded(value, "a transition value of MDD");
     if (_nodes_per_layer.size() != _vars.size() + 1)
         throw InvalidProblemDefinitionException{"MDD: nodes_per_layer.size() must equal vars.size() + 1"};
     if (_layer_transitions.size() != _vars.size())
