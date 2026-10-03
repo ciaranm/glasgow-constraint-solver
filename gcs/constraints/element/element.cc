@@ -64,6 +64,21 @@ namespace
     template <typename T_>
     auto check_array_dimensions(const vector<vector<T_>> & v, size_t expected) -> void;
 
+    // An array of constants is an input like any other: every entry lies in
+    // the bounded range (dev_docs/integer-ranges.md).
+    auto require_entries_bounded(const vector<Integer> & v) -> void
+    {
+        for (const auto & entry : v)
+            innards::require_bounded(entry, "an array value of Element");
+    }
+
+    template <typename T_>
+    auto require_entries_bounded(const vector<vector<T_>> & v) -> void
+    {
+        for (const auto & row : v)
+            require_entries_bounded(row);
+    }
+
     template <typename T_>
     auto check_array_dimensions(const vector<T_> & v, size_t expected) -> void
     {
@@ -88,6 +103,10 @@ NDimensionalElement<EntryType_, dimensions_>::NDimensionalElement(IntegerVariabl
     ElementConsistency c) : _result_var(var), _index_vars(move(i)), _index_starts(move(s)), _array(move(a)), _consistency(c)
 {
     check_array_dimensions(*_array, _array->size());
+    for (const auto & start : _index_starts)
+        innards::require_bounded(start, "an index start of Element");
+    if constexpr (std::is_same_v<EntryType_, Integer>)
+        require_entries_bounded(*_array);
 }
 
 namespace

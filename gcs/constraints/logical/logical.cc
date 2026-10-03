@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/cake_truthiness.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/logical/hints.hh>
 #include <gcs/constraints/logical/logical.hh>
@@ -479,6 +480,8 @@ And::And(const vector<IntegerVariableID> & vars) : And(to_lits(vars), TrueLitera
 
 And::And(Literals l, const Literal & full_reif) : _lits(move(l)), _full_reif(full_reif)
 {
+    innards::require_bounded(_lits, "the value in a literal of And");
+    innards::require_bounded(_full_reif, "the value in a literal of And");
 }
 
 auto And::with_watch_threshold(optional<size_t> threshold) -> And &
@@ -530,6 +533,8 @@ Or::Or(const vector<IntegerVariableID> & vars) : Or(to_lits(vars), TrueLiteral{}
 
 Or::Or(Literals l, const Literal & full_reif) : _lits(move(l)), _full_reif(full_reif)
 {
+    innards::require_bounded(_lits, "the value in a literal of Or");
+    innards::require_bounded(_full_reif, "the value in a literal of Or");
 }
 
 auto Or::with_watch_threshold(optional<size_t> threshold) -> Or &
@@ -581,6 +586,8 @@ AndIf::AndIf(const vector<IntegerVariableID> & vars, const IntegerVariableID & c
 
 AndIf::AndIf(Literals l, const Literal & cond) : _lits(move(l)), _cond(cond)
 {
+    innards::require_bounded(_lits, "the value in a literal of AndIf");
+    innards::require_bounded(_cond, "the value in a literal of AndIf");
 }
 
 auto AndIf::clone() const -> unique_ptr<Constraint>
@@ -620,6 +627,8 @@ OrIf::OrIf(const vector<IntegerVariableID> & vars, const IntegerVariableID & con
 
 OrIf::OrIf(Literals l, const Literal & cond) : _lits(move(l)), _cond(cond)
 {
+    innards::require_bounded(_lits, "the value in a literal of OrIf");
+    innards::require_bounded(_cond, "the value in a literal of OrIf");
 }
 
 auto OrIf::with_watch_threshold(optional<size_t> threshold) -> OrIf &

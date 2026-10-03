@@ -1,3 +1,4 @@
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/min_distance/min_distance.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -36,6 +37,9 @@ MinDistance::MinDistance(vector<IntegerVariableID> x, IntegerVariableID z, Array
     MinDistancePropagation propagation) :
     _x(move(x)), _z(z), _distances(move(distances)), _requirements(move(requirements)), _propagation(propagation)
 {
+    innards::require_bounded(*_distances, "a distance of MinDistance");
+    if (_requirements)
+        innards::require_bounded(**_requirements, "a requirement of MinDistance");
 }
 
 auto MinDistance::clone() const -> unique_ptr<Constraint>

@@ -42,7 +42,8 @@ namespace
     using Build = function<auto(Problem &, IntegerVariableID, IntegerVariableID, IntegerVariableID)->void>;
 
     const auto two_to_the_32 = 4294967296_i;
-    const auto two_to_the_60 = 1152921504606846976_i;
+    const auto two_to_the_34 = 17179869184_i;
+    const auto two_to_the_59 = 576460752303423488_i;
 
     auto check(bool x, const auto &... explain) -> void
     {
@@ -95,15 +96,16 @@ namespace
         run("multiply, every corner too small", -two_to_the_32 + 1_i, -two_to_the_32 + 3_i, two_to_the_32 - 3_i, two_to_the_32 - 1_i,
             Integer::min_bounded_value(), 0_i, post, {});
 
-        // Some corners overflow and some do not, with solutions near 2^60: y
+        // Some corners overflow and some do not, with solutions near 2^59: y
         // takes one of two values, and x is whatever lands the product in range.
-        auto z_lo = two_to_the_60, z_hi = two_to_the_60 + 2147483648_i;
+        // x reaches 2^34, so the top corner is past 2^63.
+        auto z_lo = two_to_the_59, z_hi = two_to_the_59 + 2147483648_i;
         set<Solution> near;
-        for (auto y : {1073741824_i, 1073741825_i})
+        for (auto y : {536870912_i, 536870913_i})
             for (auto x = (z_lo + y - 1_i) / y; x * y <= z_hi; ++x)
                 near.emplace(x.raw_value, y.raw_value, (x * y).raw_value);
-        check(! near.empty(), "multiply, near 2^60: nothing expected, so the case tests nothing");
-        run("multiply, near 2^60", 1_i, two_to_the_32, 1073741824_i, 1073741825_i, z_lo, z_hi, post, near);
+        check(! near.empty(), "multiply, near 2^59: nothing expected, so the case tests nothing");
+        run("multiply, near 2^59", 1_i, two_to_the_34, 536870912_i, 536870913_i, z_lo, z_hi, post, near);
 
         // A square, whose bounds come from square_bounds instead. b is a
         // fixed bystander.
@@ -167,10 +169,10 @@ namespace
     {
         // A cube whose chain's links multiply a result-sized auxiliary by a
         // 2^31 base. b is a fixed bystander.
-        const auto mag_lo = two_to_the_60, mag_hi = two_to_the_60 + 10000000000000_i;
+        const auto mag_lo = two_to_the_59, mag_hi = two_to_the_59 + 10000000000000_i;
         for (auto sign : {1_i, -1_i}) {
             set<Solution> cubes;
-            for (auto x = 1048576_i; x * x * x <= mag_hi; ++x)
+            for (auto x = 800000_i; x * x * x <= mag_hi; ++x)
                 if (x * x * x >= mag_lo)
                     cubes.emplace((sign * x).raw_value, 0, (sign * x * x * x).raw_value);
             check(! cubes.empty(), "power: nothing expected, so the case tests nothing");

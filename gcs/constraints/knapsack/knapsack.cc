@@ -1,3 +1,4 @@
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/knapsack/hints.hh>
 #include <gcs/constraints/knapsack/knapsack.hh>
 #include <gcs/constraints/knapsack/knapsack_upfront.hh>
@@ -60,11 +61,13 @@ using fmt::print;
 Knapsack::Knapsack(vector<Integer> weights, vector<Integer> profits, vector<IntegerVariableID> vars, IntegerVariableID weight,
     IntegerVariableID profit) : _coeffs({move(weights), move(profits)}), _vars(move(vars)), _totals({weight, profit})
 {
+    innards::require_bounded(_coeffs, "a coefficient of Knapsack");
 }
 
 Knapsack::Knapsack(vector<vector<Integer>> coefficients, vector<IntegerVariableID> vars, vector<IntegerVariableID> totals) :
     _coeffs(move(coefficients)), _vars(move(vars)), _totals(move(totals))
 {
+    innards::require_bounded(_coeffs, "a coefficient of Knapsack");
 }
 
 auto Knapsack::with_proof_strategy(KnapsackProofStrategy strategy) -> Knapsack &

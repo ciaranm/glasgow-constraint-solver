@@ -949,9 +949,10 @@ auto NamesAndIDsTracker::need_view_named_by(const ProofLiteral & lit) -> void
     if (const auto * inner = std::get_if<Literal>(&lit))
         if (const auto * cond = std::get_if<IntegerVariableCondition>(inner))
             if (const auto * view = std::get_if<ViewOfIntegerVariableID>(&cond->var)) {
-                // A view too wide for a bit vector of its own (an offset near
-                // 2^61, say) cannot be registered by anything, so its literals
-                // keep the deviewed spelling and it never changes.
+                // A view too wide for a bit vector of its own could not be
+                // registered by anything, so its literals would keep the
+                // deviewed spelling. The range rule (dev_docs/integer-ranges.md)
+                // refuses the offset that would make one, so this is a guard.
                 auto [lo, hi] = view_bounds(*view);
                 if (bits_encoding_fits(lo, hi))
                     static_cast<void>(need_view(*view));
@@ -2920,8 +2921,8 @@ auto NamesAndIDsTracker::reification_shape(const WPBSumLE & ineq, const HalfReif
 {
     // so what happens if there's a false literal in the left hand term? conceptually,
     // this means the constraint will always hold, but it's probably useful to have
-    // something that syntactically contains all the right variables. so, we can just
-    // make the degree of falsity be very low so the constraint always holds.
+    // something that syntactically contains all the right variables. So the row
+    // keeps every term, and is made trivially true (see the end of this function).
     bool contains_false_literal = any_of(half_reif.begin(), half_reif.end(), [&](const auto & flag) {
         return overloaded{
             [&](const ProofFlag &) { return false; }, //
@@ -3005,10 +3006,24 @@ auto NamesAndIDsTracker::reification_shape(const WPBSumLE & ineq, const HalfReif
         }
     }
     catch (const IntegerOverflow &) {
-        throw ProofError{"cannot size the reification constant for a half-reified row: the sum of its positive contributions does not fit "
-                         "in an Integer. The variables involved may have domains near Integer::max_bounded_value(), or be views offsetting "
-                         "one outwards, or the coefficients may be too large"};
+        throw IntegerOverflow{"cannot size the reification constant for a half-reified row: the sum of its positive contributions does not fit "
+                              "in an Integer. The variables involved may have domains near Integer::max_bounded_value(), or be views offsetting "
+                              "one outwards, or the coefficients may be too large"};
     }
+
+    // A false literal in the condition makes the row vacuous. Write it as
+    //     lhs - (each other reifying literal's negation) <= max contribution,
+    // which holds whatever the assignment, since lhs is at most its maximum
+    // contribution and each subtracted literal is at most 1. It used to keep
+    // the full reification coefficient on every literal and push the degree out
+    // by the maximum contribution instead, which is just as true but is as big
+    // as the largest rows the model writes: with two views at full reach in the
+    // row, its coefficients summed to within a few of 2^63, and pol steps over
+    // it (the deviewed form) gave VeriPB 3.0.2 rows whose slack overflows its
+    // 64-bit arithmetic, so that it reported a solution as conflicting with
+    // them (dev_docs/integer-ranges.md).
+    if (contains_false_literal)
+        return ReificationShape{.reif_coefficient = -1_i, .effective_rhs = max_contribution_from_positive_terms};
 
     // Usually it would be fine to say 0_i rather than -1_i here, because if a constraint
     // is trivially true, it doesn't really matter whether the implication is there or
@@ -3020,15 +3035,11 @@ auto NamesAndIDsTracker::reification_shape(const WPBSumLE & ineq, const HalfReif
     // negative Integer has no negation, so catch it here where there is still
     // something useful to say rather than at the negation.
     if (clamped_reif_const == Integer::min_value())
-        throw ProofError{"the reification constant for a half-reified row is the most negative Integer, which the >= rendering cannot "
-                         "negate. The variables involved may have domains near Integer::max_bounded_value(), or be views offsetting one "
-                         "outwards, or the coefficients may be too large"};
+        throw IntegerOverflow{"the reification constant for a half-reified row is the most negative Integer, which the >= rendering cannot "
+                              "negate. The variables involved may have domains near Integer::max_bounded_value(), or be views offsetting one "
+                              "outwards, or the coefficients may be too large"};
 
-    // if we have a false literal on the left hand side, adjusting the degree of falsity
-    // up by the sum of positive terms is enough that it will be trivially true.
-    auto effective_rhs = contains_false_literal ? ineq.rhs + max_contribution_from_positive_terms : ineq.rhs;
-
-    return ReificationShape{.reif_coefficient = clamped_reif_const, .effective_rhs = effective_rhs};
+    return ReificationShape{.reif_coefficient = clamped_reif_const, .effective_rhs = ineq.rhs};
 }
 
 auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE

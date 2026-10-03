@@ -1,6 +1,7 @@
 #include <gcs/constraints/among/among.hh>
 #include <gcs/constraints/among/hints.hh>
 #include <gcs/constraints/innards/recover_am1.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
@@ -79,6 +80,7 @@ namespace
 Among::Among(vector<IntegerVariableID> vars, const vector<Integer> & values_of_interest, const IntegerVariableID & how_many) :
     _vars(move(vars)), _values_of_interest(uniqueify(values_of_interest)), _how_many(how_many)
 {
+    innards::require_bounded(_values_of_interest, "a value of interest of Among");
 }
 
 auto Among::clone() const -> unique_ptr<Constraint>
