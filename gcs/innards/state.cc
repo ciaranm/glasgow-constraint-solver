@@ -7,6 +7,7 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
+#include <iterator>
 #include <list>
 #include <string>
 #include <tuple>
@@ -35,6 +36,7 @@ using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::prev;
 using std::string;
 using std::tuple;
 using std::vector;
@@ -108,6 +110,11 @@ struct State::Imp
 
     list<vector<IntervalSet<Integer>>> integer_variable_states{};
     list<vector<ConstraintState>> constraint_states{};
+    // epochs popped by backtrack(), kept so that new_epoch() can copy into
+    // their storage: a fresh copy is megabytes on a big model, which glibc
+    // hands back to the kernel on every backtrack (#1063)
+    list<vector<IntervalSet<Integer>>> spare_integer_variable_states{};
+    list<vector<ConstraintState>> spare_constraint_states{};
     list<vector<function<auto()->void>>> on_backtracks{};
     vector<Literal> guesses{};
     vector<Literal> extra_proof_conditions{};
@@ -747,10 +754,46 @@ auto State::operator()(const IntegerVariableID & i) const -> Integer
     throw VariableDoesNotHaveUniqueValue{"Integer variable " + debug_string(i) + " does not have a unique value"};
 }
 
+namespace
+{
+    // Copy one epoch over the storage of a spare one. For domains, copy
+    // assignment reuses each IntervalSet's own storage too.
+    auto copy_epoch(vector<IntervalSet<Integer>> & to, const vector<IntervalSet<Integer>> & from) -> void
+    {
+        to = from;
+    }
+
+    // Copy assigning a std::any clones, transfers and destroys, which is
+    // dearer than destroying everything and cloning into the kept capacity.
+    auto copy_epoch(vector<ConstraintState> & to, const vector<ConstraintState> & from) -> void
+    {
+        to.clear();
+        to.insert(to.end(), from.begin(), from.end());
+    }
+
+    template <typename T_>
+    auto push_copy_of_back(list<T_> & live, list<T_> & spare) -> void
+    {
+        if (spare.empty())
+            live.push_back(live.back());
+        else {
+            live.splice(live.end(), spare, spare.begin());
+            copy_epoch(live.back(), *prev(live.end(), 2));
+        }
+    }
+
+    template <typename T_>
+    auto pop_to_spare(list<T_> & live, list<T_> & spare, typename list<T_>::size_type new_size) -> void
+    {
+        if (live.size() > new_size)
+            spare.splice(spare.begin(), live, prev(live.end(), live.size() - new_size), live.end());
+    }
+}
+
 auto State::new_epoch(bool subsearch) -> Timestamp
 {
-    _imp->integer_variable_states.push_back(_imp->integer_variable_states.back());
-    _imp->constraint_states.push_back(_imp->constraint_states.back());
+    push_copy_of_back(_imp->integer_variable_states, _imp->spare_integer_variable_states);
+    push_copy_of_back(_imp->constraint_states, _imp->spare_constraint_states);
     _imp->on_backtracks.emplace_back();
 
     return Timestamp{_imp->integer_variable_states.size() - 1, _imp->guesses.size(),
@@ -759,8 +802,8 @@ auto State::new_epoch(bool subsearch) -> Timestamp
 
 auto State::backtrack(Timestamp t) -> void
 {
-    _imp->integer_variable_states.resize(t.when);
-    _imp->constraint_states.resize(t.when);
+    pop_to_spare(_imp->integer_variable_states, _imp->spare_integer_variable_states, t.when);
+    pop_to_spare(_imp->constraint_states, _imp->spare_constraint_states, t.when);
     _imp->guesses.erase(_imp->guesses.begin() + t.how_many_guesses, _imp->guesses.end());
     if (t.how_many_extra_proof_conditions)
         _imp->extra_proof_conditions.erase(
