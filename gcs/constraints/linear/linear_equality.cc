@@ -1,5 +1,6 @@
 #include <gcs/constraints/extensional_utils.hh>
 #include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/linear/hints.hh>
@@ -155,6 +156,9 @@ namespace
 ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool flipped_cond) :
     _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond), _flipped_cond(flipped_cond)
 {
+    innards::require_bounded(_coeff_vars, "a coefficient of a linear constraint");
+    innards::require_bounded(_value, "the right-hand side of a linear constraint");
+    innards::require_bounded(_reif_cond, "the value in a linear constraint's condition");
 }
 
 auto ReifiedLinearEquality::with_consistency(LinearEqualityConsistency level) -> ReifiedLinearEquality &

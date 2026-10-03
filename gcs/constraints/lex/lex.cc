@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/reified_dispatcher.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/lex/hints.hh>
 #include <gcs/constraints/lex/lex.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -473,6 +474,7 @@ LexCompareGreaterThanOrMaybeEqual::LexCompareGreaterThanOrMaybeEqual(
     vector<IntegerVariableID> vars_1, vector<IntegerVariableID> vars_2, ReificationCondition reif_cond, bool or_equal, bool vars_swapped) :
     _vars_1(move(vars_1)), _vars_2(move(vars_2)), _reif_cond(reif_cond), _or_equal(or_equal), _vars_swapped(vars_swapped)
 {
+    innards::require_bounded(_reif_cond, "the value in a Lex condition");
 }
 
 auto LexCompareGreaterThanOrMaybeEqual::clone() const -> unique_ptr<Constraint>

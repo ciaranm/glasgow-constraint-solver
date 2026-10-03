@@ -1,5 +1,6 @@
 #include <gcs/constraints/bin_packing/bin_packing.hh>
 #include <gcs/constraints/bin_packing/hints.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -1645,11 +1646,14 @@ struct BinPacking::DagBridge
 BinPacking::BinPacking(vector<IntegerVariableID> items, vector<Integer> sizes, vector<IntegerVariableID> loads) :
     _items(move(items)), _sizes(move(sizes)), _loads(move(loads)), _capacities(), _have_loads(true)
 {
+    innards::require_bounded(_sizes, "an item size of BinPacking");
 }
 
 BinPacking::BinPacking(vector<IntegerVariableID> items, vector<Integer> sizes, vector<Integer> capacities) :
     _items(move(items)), _sizes(move(sizes)), _loads(), _capacities(move(capacities)), _have_loads(false)
 {
+    innards::require_bounded(_sizes, "an item size of BinPacking");
+    innards::require_bounded(_capacities, "a capacity of BinPacking");
 }
 
 auto BinPacking::with_consistency(BinPackingConsistency level) -> BinPacking &

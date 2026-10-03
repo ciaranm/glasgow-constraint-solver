@@ -1,4 +1,5 @@
 #include <cmath>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/regular/hints.hh>
 #include <gcs/constraints/regular/regex.hh>
 #include <gcs/constraints/regular/regular_legacy.hh>
@@ -398,6 +399,9 @@ namespace
 RegularLegacy::RegularLegacy(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, long>> t, vector<long> f) :
     _vars(move(v)), _num_states(n), _transitions(t.size()), _final_states(move(f)), _regex(nullopt)
 {
+    for (const auto & state : t)
+        for (const auto & [value, _] : state)
+            innards::require_bounded(value, "a transition value of RegularLegacy");
     for (size_t q = 0; q < t.size(); ++q)
         for (const auto & [val, target] : t[q])
             if (target != -1L)

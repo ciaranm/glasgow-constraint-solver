@@ -4,6 +4,7 @@
 #include <gcs/exception.hh>
 
 #include <limits>
+#include <string>
 #include <type_traits>
 
 namespace gcs::innards
@@ -17,10 +18,21 @@ namespace gcs::innards
     public:
         IntegerOverflow(const char * op, long long a, long long b);
         IntegerOverflow(const char * op, long long a);
+
+        /// For a failure that is not a single arithmetic operation, such as an
+        /// input outside the supported range (see Integer::min_bounded_value()).
+        explicit IntegerOverflow(const std::string & message);
     };
 
     [[noreturn]] auto throw_integer_overflow(const char * op, long long a, long long b) -> void;
     [[noreturn]] auto throw_integer_overflow(const char * op, long long a) -> void;
+
+    /**
+     * \brief Throw the IntegerOverflow for an input that lies outside
+     * Integer::min_bounded_value() .. Integer::max_bounded_value(). \a what
+     * names the input, for example "a view's offset".
+     */
+    [[noreturn]] auto throw_outside_bounded_range(const char * what, long long value) -> void;
 
     // Portable checked arithmetic. Each of these mirrors the semantics of the
     // GCC / Clang __builtin_{add,sub,mul}_overflow builtins: the function

@@ -1,4 +1,5 @@
 #include <gcs/innards/integer_overflow.hh>
+#include <gcs/innards/power.hh>
 #include <gcs/integer.hh>
 
 #include <catch2/catch_test_macros.hpp>
@@ -9,6 +10,7 @@
 using namespace gcs;
 using Catch::Matchers::EndsWith;
 using gcs::innards::IntegerOverflow;
+using gcs::innards::power2;
 
 TEST_CASE("Integer arithmetic on normal values")
 {
@@ -106,4 +108,20 @@ TEST_CASE("Integer increment and decrement at limits")
 
     Integer also_at_min = Integer::min_value();
     REQUIRE_THROWS_AS(also_at_min--, IntegerOverflow);
+}
+
+TEST_CASE("The bounded range is symmetric, and require_bounded checks it")
+{
+    REQUIRE(Integer::min_bounded_value() == -Integer::max_bounded_value());
+    REQUIRE(innards::require_bounded(Integer::max_bounded_value(), "x") == Integer::max_bounded_value());
+    REQUIRE(innards::require_bounded(Integer::min_bounded_value(), "x") == Integer::min_bounded_value());
+    REQUIRE_THROWS_AS(innards::require_bounded(Integer::max_bounded_value() + 1_i, "x"), IntegerOverflow);
+    REQUIRE_THROWS_AS(innards::require_bounded(Integer::min_bounded_value() - 1_i, "x"), IntegerOverflow);
+}
+
+TEST_CASE("power2 past the top of Integer is an overflow")
+{
+    // Issue #202: this used to be an UnimplementedException.
+    REQUIRE(power2(62_i) == Integer{1LL << 62});
+    REQUIRE_THROWS_AS(power2(63_i), IntegerOverflow);
 }
