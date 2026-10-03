@@ -930,17 +930,53 @@ auto SmartTable::define_proof_model(ProofModel & model, const State & initial_st
     }
 }
 
+namespace
+{
+    // The variables the propagator works over: the scope as given, then every
+    // variable an entry names whose underlying variable the scope does not
+    // already reach. The OPB encoding reads only the entries, so a tuple
+    // constrains whatever its entries name, in the scope or not, as cake_pb_cp's
+    // encoding of the same .scp does; the propagator's domain maps must cover
+    // all of those too (issue #1119).
+    auto propagator_scope(const vector<IntegerVariableID> & vars, const SmartTuples & tuples) -> vector<IntegerVariableID>
+    {
+        vector<IntegerVariableID> result = vars;
+        set<IntegerVariableID> reached;
+        for (const auto & var : vars)
+            reached.insert(deview(var));
+
+        auto add = [&](const IntegerVariableID & var) {
+            if (reached.insert(deview(var)).second)
+                result.push_back(var);
+        };
+        for (const auto & tuple : tuples)
+            for (const auto & entry : tuple)
+                overloaded{
+                    [&](const BinaryEntry & binary_entry) {
+                        add(binary_entry.var_1);
+                        add(binary_entry.var_2);
+                    },                                                                          //
+                    [&](const UnaryValueEntry & unary_val_entry) { add(unary_val_entry.var); }, //
+                    [&](const UnarySetEntry & unary_set_entry) { add(unary_set_entry.var); }    //
+                }
+                    .visit(entry);
+        return result;
+    }
+}
+
 auto SmartTable::install_propagators(Propagators & propagators) -> void
 {
+    auto scope = propagator_scope(_vars, _tuples);
+
     // Trigger when any var changes? Is this over-kill?
     Triggers triggers;
-    triggers.on_change = {_vars.begin(), _vars.end()};
+    triggers.on_change = {scope.begin(), scope.end()};
 
     vector<Forest> forests = build_forests(_tuples);
 
     propagators.install(
         constraint_id(),
-        [selectors = _selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(_pb_selectors),
+        [selectors = _selectors, vars = move(scope), tuples = move(_tuples), forests = move(forests), pb_selectors = move(_pb_selectors),
             short_reasons = _short_reasons,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto reason = eager_reason(generic_reason(vars), state);

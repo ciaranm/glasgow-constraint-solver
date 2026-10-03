@@ -508,6 +508,9 @@ add_scp_chain_test(negative_table_unsat   none)
 # a variable out of its domain.
 add_scp_chain_test(smart_table_sat        none)
 add_scp_chain_test(smart_table_unsat      none)
+# A row whose entry names C, which the scope (A B) does not list. cake_pb_cp
+# encodes the entry all the same, and the solver used to abort on it (#1119).
+add_scp_chain_test(smart_table_outside_scope_sat  none)
 
 # none (chain-only): lex_smart_table, which desugars to a SmartTable with one
 # row per common-prefix position, plus an equal-prefix row when vars_1 is the
