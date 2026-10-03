@@ -1,0 +1,79 @@
+--- a/src/UTF8String.cc
++++ b/src/UTF8String.cc
+@@ -26,6 +26,10 @@
+ 
+ #include "UTF8String.h"
+ 
++#include <limits>
++#include <stdexcept>
++#include <string>
++
+ using namespace XCSP3Core;
+ 
+ typedef unsigned char Byte;
+@@ -258,15 +262,21 @@
+         neg = true;
+     }
+ 
+-    v = 0;
++    // Accumulate in a wider type and refuse anything that does not fit in an
++    // int, rather than wrapping silently (which turns 4294967297 into 1).
++    long long wide = 0;
+     while(it != end && *it >= '0' && *it <= '9') {
+-        //??? #warning "must check for overflows"
+-        v = v * 10 + (*it - '0');
++        wide = wide * 10 + (*it - '0');
++        if(wide > static_cast<long long>(std::numeric_limits<int>::max()) + 1)
++            throw std::out_of_range("XCSP3 parser: an integer does not fit in an int");
+         ++it;
+     }
+ 
+     if(neg)
+-        v = -v;
++        wide = -wide;
++    if(wide > std::numeric_limits<int>::max() || wide < std::numeric_limits<int>::min())
++        throw std::out_of_range("XCSP3 parser: an integer does not fit in an int");
++    v = static_cast<int>(wide);
+ 
+     while(it != end && it.isWhiteSpace())
+         ++it;
+--- a/src/XMLParser.cc
++++ b/src/XMLParser.cc
+@@ -28,6 +28,8 @@
+ #include "XCSP3Constraint.h"
+ #include "XMLParser.h"
+ 
++#include <stdexcept>
++
+ using namespace XCSP3Core;
+ 
+ 
+@@ -308,8 +310,12 @@
+         if(token == UTF8String("*")) {
+             hasStar = true;
+             val = STAR;
+-        } else
++        } else {
+             token.to(val);
++            // STAR is INT_MAX, so a literal INT_MAX would be read as the wildcard.
++            if(val == STAR)
++                throw std::out_of_range("XCSP3 parser: the tuple value 2147483647 cannot be told apart from the wildcard *");
++        }
+         currentTuple.push_back(val);
+     }
+     return hasStar;
+--- a/src/XCSP3Manager.cc
++++ b/src/XCSP3Manager.cc
+@@ -321,9 +321,10 @@
+     std::vector<int> values;
+ 
+     for(unsigned int i = 0; i < variable->domain->values.size(); i++) {
+-        for(int j = variable->domain->values[i]->minimum();
++        // long long, so that a domain reaching INT_MAX does not overflow j.
++        for(long long j = variable->domain->values[i]->minimum();
+             j <= variable->domain->values[i]->maximum(); j++) {
+-            values.push_back(j);
++            values.push_back(static_cast<int>(j));
+         }
+     }
+     callback->buildVariableInteger(variable->id, values);

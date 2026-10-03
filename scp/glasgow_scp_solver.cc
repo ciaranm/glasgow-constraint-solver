@@ -121,25 +121,36 @@ auto main(int argc, char * argv[]) -> int
     // caller who wants to enumerate an optimisation instance still can. Here we
     // honour it: the .scp says what problem it is, and solving something else
     // would be answering a different question.
-    if (model.minimise_variable)
-        problem.minimise(*model.minimise_variable);
+    //
+    // Search can still throw IntegerOverflow: an arithmetic constraint may, when
+    // a value it needs over in-range inputs does not fit in an Integer
+    // (dev_docs/integer-ranges.md). Report it rather than abort.
+    try {
+        if (model.minimise_variable)
+            problem.minimise(*model.minimise_variable);
 
-    // With an objective, every solution is just the next bound on the way to
-    // the optimum, so the search must run to completion however --all is set;
-    // the last solution printed is the optimal one.
-    bool find_all = options_vars.contains("all") || model.minimise_variable.has_value();
-    auto stats = solve_with(problem, //
-        SolveCallbacks{              //
-            .solution = [&](const CurrentState & state) -> bool {
-                for (const auto & [name, id] : model.variables)
-                    print("{}={} ", name, state(id));
-                println("");
-                return find_all;
-            }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>(ProofFileNames{options_vars["proof-files-basename"].as<string>()}) : nullopt);
+        // With an objective, every solution is just the next bound on the way to
+        // the optimum, so the search must run to completion however --all is set;
+        // the last solution printed is the optimal one.
+        bool find_all = options_vars.contains("all") || model.minimise_variable.has_value();
+        auto stats = solve_with(problem, //
+            SolveCallbacks{              //
+                .solution = [&](const CurrentState & state) -> bool {
+                    for (const auto & [name, id] : model.variables)
+                        print("{}={} ", name, state(id));
+                    println("");
+                    return find_all;
+                }},
+            options_vars.contains("prove") ? make_optional<ProofOptions>(ProofFileNames{options_vars["proof-files-basename"].as<string>()})
+                                           : nullopt);
 
-    if (options_vars.contains("stats"))
-        print("{}", stats);
+        if (options_vars.contains("stats"))
+            print("{}", stats);
+    }
+    catch (const innards::IntegerOverflow & e) {
+        println(cerr, "Error: {}", e.what());
+        return EXIT_FAILURE;
+    }
 
     return EXIT_SUCCESS;
 }
