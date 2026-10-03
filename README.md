@@ -406,12 +406,14 @@ This returns an ``IntegerVariableID``, which is a light-weight handle which you 
 value. For type-safety and avoiding overflow problems, the solver does not accept raw ``int`` and
 similar types directly, and anywhere you use a numerical value you must create an ``Integer``.
 
-For the same reason there is a limit on how wide a domain you may declare: bounds must lie within
-``Integer::min_bounded_value()`` and ``Integer::max_bounded_value()``, which is a quarter of the
-range of the underlying type in each direction, and creating a variable outside it throws an
-``InvalidProblemDefinitionException``. The headroom that leaves is what lets the solver's internal
-arithmetic, and the coefficients it writes into a proof, stay within range; arithmetic itself is
-deliberately not held to the same limit.
+For the same reason there is a limit on the values you may give the solver: domain bounds,
+constants, view offsets and constraint parameters must all lie within
+``Integer::min_bounded_value()`` and ``Integer::max_bounded_value()``, which is an eighth of the
+range of the underlying type in each direction (about ±1.15 × 10¹⁸). Anything outside it
+throws an ``IntegerOverflow``. The headroom that leaves is what lets the solver's internal
+arithmetic, and the coefficients it writes into a proof, stay within range. Arithmetic itself is
+not held to the same limit, so a constraint whose own arithmetic cannot fit, such as a product of
+two very wide variables, also throws ``IntegerOverflow`` rather than giving a wrong answer.
 
 You will also want some constraints. These can be found in the ``gcs/constraints/`` directory. Once
 you construct a constraint, you can add it to a problem instance using ``Problem::post``.

@@ -14,7 +14,6 @@
 #include <gcs/constraints/power.hh>
 #include <gcs/constraints/table.hh>
 #include <gcs/expression.hh>
-#include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/presolver.hh>
 #include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
@@ -1129,5 +1128,5 @@ TEST_CASE("A row too large to render says so, rather than failing as bare arithm
     auto proof_name = "solve_test_row_too_large";
     CHECK_THROWS_AS(solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) { return false; }, .stats_report = silent_stats_report()},
                         ProofOptions{proof_name}),
-        ProofError);
+        IntegerOverflow);
 }

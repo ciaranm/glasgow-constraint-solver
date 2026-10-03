@@ -100,10 +100,10 @@ namespace
     // act on. Variable domains are capped so the ordinary routes cannot reach
     // this (Integer::max_bounded_value()); large coefficients, or views that
     // offset a domain outwards, still can. See issue #852.
-    [[noreturn]] auto rethrow_as_proof_error() -> void
+    [[noreturn]] auto rethrow_as_integer_overflow() -> void
     {
-        throw ProofError{"cannot write a pseudo-Boolean row whose coefficients and variable bounds together do not fit in an Integer; "
-                         "the variables involved may have domains near Integer::max_bounded_value(), or the coefficients may be too large"};
+        throw IntegerOverflow{"cannot write a pseudo-Boolean row whose coefficients and variable bounds together do not fit in an Integer; "
+                              "the variables involved may have domains near Integer::max_bounded_value(), or the coefficients may be too large"};
     }
 }
 
@@ -124,7 +124,7 @@ auto gcs::innards::emit_inequality_to(NamesAndIDsTracker & names_and_ids_tracker
         append_number_to(out, rhs);
     }
     catch (const IntegerOverflow &) {
-        rethrow_as_proof_error();
+        rethrow_as_integer_overflow();
     }
 }
 
@@ -175,7 +175,7 @@ auto gcs::innards::emit_reified_inequality_to(NamesAndIDsTracker & names_and_ids
         append_number_to(out, rhs);
     }
     catch (const IntegerOverflow &) {
-        rethrow_as_proof_error();
+        rethrow_as_integer_overflow();
     }
 }
 
