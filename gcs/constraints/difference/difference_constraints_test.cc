@@ -528,7 +528,7 @@ namespace
 
         // Chains of edges `x[i] - x[i+1] <= -big` over the whole range: two of
         // them span it exactly, so there is one solution, and three cannot fit.
-        for (auto [length, expected] : vector<pair<int, long long>>{{2, 1}, {3, 0}}) {
+        for (auto [length, expected] : vector<pair<int, unsigned long long>>{{2, 1}, {3, 0}}) {
             Problem p;
             auto x = p.create_integer_variable_vector(length + 1, Integer::min_bounded_value(), big, "x");
             vector<DifferenceEdge> edges;
