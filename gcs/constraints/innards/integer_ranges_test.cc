@@ -331,6 +331,98 @@ namespace
     // variable over the whole range or a view at either end of it (#1168).
     // Two positions over two sites at distance B, so z is 0 when they share a
     // site and B when they do not.
+    // AllDifferentExcept with a constant equal to an excluded value beside a
+    // view at full reach. The pair's half-reification then includes the
+    // literal `constant != excluded`, which is false, and the row used to be
+    // written with the full reification coefficient, as big as the largest
+    // rows the model has; pol steps over it gave VeriPB rows whose slack
+    // overflows its 64-bit arithmetic, and it rejected the solution lines.
+    auto run_all_different_except_test(bool proofs) -> void
+    {
+        struct Term
+        {
+            bool is_constant;
+            Integer lo, hi; // the variable's domain, or the constant twice
+            bool negate;
+            Integer offset;
+        };
+        struct Shape
+        {
+            string name;
+            vector<Term> terms;
+            vector<Integer> excluded;
+        };
+        vector<Shape> shapes{{"A, -v + B, except A", {{true, A, A, false, 0_i}, {false, -1_i, 1_i, true, B}}, {A}},
+            {"x + B, A, except A", {{false, B - 1_i, B, false, B}, {true, A, A, false, 0_i}}, {A}},
+            {"x + A, B, except B", {{false, A, A + 1_i, false, A}, {true, B, B, false, 0_i}}, {B}},
+            {"A, A, v + B, except A", {{true, A, A, false, 0_i}, {true, A, A, false, 0_i}, {false, -1_i, 1_i, false, B}}, {A}},
+            {"x + B, y + A, except A", {{false, B - 1_i, B, false, B}, {false, A, A + 1_i, false, A}}, {A}}};
+
+        for (const auto & shape : shapes) {
+            Problem p;
+            vector<IntegerVariableID> vars, bases;
+            vector<pair<Integer, Integer>> base_domains;
+            for (const auto & t : shape.terms) {
+                if (t.is_constant) {
+                    vars.push_back(constant_variable(t.lo));
+                    continue;
+                }
+                bases.push_back(p.create_integer_variable(t.lo, t.hi));
+                base_domains.emplace_back(t.lo, t.hi);
+                vars.push_back((t.negate ? -bases.back() : IntegerVariableID{bases.back()}) + t.offset);
+            }
+            p.post(AllDifferentExcept{vars, shape.excluded});
+
+            // Brute force over the base variables' values.
+            auto satisfied = [&](const vector<Integer> & base_values) {
+                vector<Integer> values;
+                std::size_t next = 0;
+                for (const auto & t : shape.terms) {
+                    if (t.is_constant)
+                        values.push_back(t.lo);
+                    else {
+                        values.push_back((t.negate ? -base_values[next] : base_values[next]) + t.offset);
+                        ++next;
+                    }
+                }
+                for (std::size_t i = 0; i < values.size(); ++i)
+                    for (std::size_t j = i + 1; j < values.size(); ++j)
+                        if (values[i] == values[j] && std::ranges::find(shape.excluded, values[i]) == shape.excluded.end())
+                            return false;
+                return true;
+            };
+            set<tuple<vector<Integer>>> expected, actual;
+            vector<Integer> base_values(bases.size(), 0_i);
+            auto recurse = [&](auto && self, std::size_t b) -> void {
+                if (b == bases.size()) {
+                    if (satisfied(base_values))
+                        expected.emplace(base_values);
+                    return;
+                }
+                for (auto v = base_domains[b].first; v <= base_domains[b].second; ++v) {
+                    base_values[b] = v;
+                    self(self, b + 1);
+                }
+            };
+            recurse(recurse, 0);
+
+            println(
+                cerr, "integer ranges: AllDifferentExcept {}{}: expecting {} solutions", shape.name, proofs ? " with proofs" : "", expected.size());
+            auto proof_name = proofs ? make_optional("integer_ranges_test") : nullopt;
+            solve_for_tests_with_callbacks(
+                p, proof_name,
+                [&](const CurrentState & state) -> bool {
+                    vector<Integer> values;
+                    for (const auto & b : bases)
+                        values.push_back(state(b));
+                    actual.emplace(values);
+                    return true;
+                },
+                [](const CurrentState &) -> bool { return true; });
+            check_results(proof_name, expected, actual);
+        }
+    }
+
     auto run_min_distance_test(bool proofs) -> void
     {
         struct ZShape
@@ -424,6 +516,7 @@ auto main(int argc, char * argv[]) -> int
             continue;
         run_edge_tests(proofs);
         run_min_distance_test(proofs);
+        run_all_different_except_test(proofs);
         for (auto c : {A, B})
             for (bool negate : {false, true})
                 for (bool maximise : {false, true})

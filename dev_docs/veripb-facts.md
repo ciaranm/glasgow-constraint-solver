@@ -267,6 +267,25 @@ Two corrections worth not relapsing into:
   records the one case where a suspected "bit-composition wall" turned out to
   have an ordinary cause.
 
+## Rows whose slack passes 2^63
+
+VeriPB 3.0.2 works on a row in 64-bit arithmetic when its coefficients sum to
+less than 2^63, and its slack, the coefficient sum less the normalised degree
+(the degree after flipping negative coefficients), can then overflow. It
+reports a solution as "conflicting with constraint N" when the row is in fact
+satisfiable, so a correct proof is rejected at a `sol`/`solx` line. The row only
+has to be trivially true with a very negative normalised degree, and it does
+not matter whether GCS wrote it or VeriPB derived it by `pol`: an
+`AllDifferentExcept` row half-reified on a false literal, beside two views at
+the full reach the integer range allows, did both (`integer-ranges.md`).
+`row_slack_test` has a minimal case.
+
+Two guards keep GCS clear of it. A row half-reified on a literal that is false
+is written small (`reification_shape`), which is what removes the derived
+rows. And the row writer gives any row in the band a normalised degree of zero
+instead (`emit_inequality_to.cc`), which changes nothing about what it says,
+since such a row is trivially true either way.
+
 ## Names and labels
 
 VeriPB 3.0.2 allows `-` in **both** variable names and `@labels`. Earlier

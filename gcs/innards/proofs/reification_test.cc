@@ -37,8 +37,11 @@ auto main() -> int
     // Check that after saturation, a reification by a false literal is trivially true.
     // The pol references the constraint by @label; the `e` references the pol's own
     // output (the immediately preceding line), which is a robust proof-internal ref.
+    // The row is written as `lhs - ~r <= max contribution of lhs`, here
+    // 3 t - 2 x + ~r >= -36, whose normalised degree is -36 + 30 = -6
+    // (reification_shape).
     logger.emit_proof_line("pol @test s;", ProofLevel::Current);
-    logger.emit_proof_line("e >= -35 : -1;", ProofLevel::Current);
+    logger.emit_proof_line("e >= -6 : -1;", ProofLevel::Current);
     logger.conclude_none();
     tracker.finalise();
 }
