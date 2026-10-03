@@ -156,9 +156,16 @@ auto Multiply::prepare(Propagators & propagators, State & initial_state, ProofMo
                                   auto v1val = a1.coeff * vals[p1] + a1.offset;
                                   auto v2val = a2.coeff * vals[p2] + a2.offset;
                                   auto product = product_if_representable(v1val, v2val);
-                                  if ((! product) || (*product - a3.offset) % a3.coeff != 0_i)
+                                  // A product near the end of Integer, less a view's offset, is
+                                  // past every domain: not a tuple, rather than an overflow.
+                                  try {
+                                      if ((! product) || (*product - a3.offset) % a3.coeff != 0_i)
+                                          return nullopt;
+                                      return (*product - a3.offset) / a3.coeff;
+                                  }
+                                  catch (const IntegerOverflow &) {
                                       return nullopt;
-                                  return (*product - a3.offset) / a3.coeff;
+                                  }
                               }});
 
     if (want_tabulation(_level, enum_vars.vars(), determined, initial_state)) {

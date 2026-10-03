@@ -15,6 +15,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/difference.hh>
+#include <gcs/constraints/divide.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/global_cardinality.hh>
@@ -27,8 +28,11 @@
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/mdd.hh>
 #include <gcs/constraints/min_distance.hh>
+#include <gcs/constraints/modulus.hh>
+#include <gcs/constraints/multiply.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
+#include <gcs/constraints/power.hh>
 #include <gcs/constraints/regular.hh>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/constraints/sort.hh>
@@ -327,6 +331,127 @@ namespace
 
 namespace
 {
+    // Constraints that mint auxiliary variables over their views' values, or
+    // tabulate over them: an auxiliary may span a view's reach, past the range
+    // a declared domain may take (Integer::max_auxiliary_value()). Each of these
+    // was refused or overflowed before that. The expected counts are by hand,
+    // in the comments. Where `proof_may_overflow`, the proof's bit-product grid
+    // for these magnitudes does not fit in an Integer, which is the documented
+    // limit of Multiply's, Divide's and Modulus's encodings: with proofs, the
+    // only acceptable outcomes are the right answer or IntegerOverflow.
+    auto run_auxiliary_tests(bool proofs) -> void
+    {
+        struct Case
+        {
+            string name;
+            function<void(Problem &)> post;
+            long long expected;
+            bool proof_may_overflow;
+        };
+
+        vector<Case> cases{// x + A is A - 1 or A, past the bottom of the range, so ArgSort's
+            // auxiliary copies of its values are too.
+            {"ArgSort over x + A",
+                [](Problem & p) { p.post(ArgSort{{p.create_integer_variable(-1_i, 0_i) + A}, {p.create_integer_variable(0_i, 0_i)}}); }, 2, false},
+            // x + B is always bigger than 0, so the permutation is [1, 0].
+            {"ArgSort over x + B and 0",
+                [](Problem & p) {
+                    p.post(
+                        ArgSort{{p.create_integer_variable(B - 2_i, B) + B, constant_variable(0_i)}, p.create_integer_variable_vector(2, 0_i, 1_i)});
+                },
+                3, false},
+            // -y + A is near 2A, always smaller than x near A.
+            {"ArgSort over x and -y + A",
+                [](Problem & p) {
+                    auto x = p.create_integer_variable(A, A + 2_i), y = p.create_integer_variable(B - 2_i, B);
+                    p.post(ArgSort{{x, -y + A}, p.create_integer_variable_vector(2, 0_i, 1_i)});
+                },
+                9, false},
+            // 0..3 / (y + B), y in 0..1: the divisor is B or B + 1, so q = 0.
+            {"Divide by y + B",
+                [](Problem & p) {
+                    p.post(Divide{p.create_integer_variable(0_i, 3_i), p.create_integer_variable(0_i, 1_i) + B, p.create_integer_variable(0_i, 0_i)});
+                },
+                8, false},
+            // 6..7 / 2 = 3 = q + B, so q = 3 - B.
+            {"Divide into q + B",
+                [](Problem & p) {
+                    p.post(Divide{p.create_integer_variable(6_i, 7_i), p.create_integer_variable(2_i, 2_i), p.create_integer_variable(A, B) + B});
+                },
+                2, false},
+            // (x + B) mod 3, x in B-2..B: one remainder each.
+            {"Modulus of x + B",
+                [](Problem & p) {
+                    p.post(Modulus{p.create_integer_variable(B - 2_i, B) + B, p.create_integer_variable(3_i, 3_i), p.create_integer_variable(A, B)});
+                },
+                3, true},
+            // 2^e = z + B with e in 60..61: 2^60 = B + 1, so z = 1; 2^61 is past
+            // the view's reach.
+            {"Power with a variable exponent into z + B",
+                [](Problem & p) {
+                    p.post(Power{p.create_integer_variable(2_i, 2_i), p.create_integer_variable(60_i, 61_i), p.create_integer_variable(A, B) + B});
+                },
+                1, false},
+            // x^61 = z + B lies in 0..2B, so x is 0 or 1.
+            {"Power x^61 into z + B",
+                [](Problem & p) { p.post(Power{p.create_integer_variable(-2_i, 2_i), 61_c, p.create_integer_variable(A, B) + B}); }, 2, false},
+            // Tabulated candidates whose arithmetic leaves Integer are not
+            // tuples: 0..2 / (B-1..B) is 0, never 8 or 9.
+            {"Divide tabulating q * y past Integer",
+                [](Problem & p) {
+                    p.post(Divide{p.create_integer_variable(0_i, 2_i), p.create_integer_variable(B - 1_i, B), p.create_integer_variable(8_i, 9_i)});
+                },
+                0, true},
+            // 7..8 mod A is 7..8.
+            {"Modulus tabulating against A",
+                [](Problem & p) {
+                    p.post(Modulus{p.create_integer_variable(7_i, 8_i), p.create_integer_variable(A, A),
+                        p.create_integer_variable(-1099511627776_i, 1099511627776_i)});
+                },
+                2, true},
+            // (x + B) * y is 6B - 3 .. 8B, past z + A's reach.
+            {"Multiply tabulating past z + A",
+                [](Problem & p) {
+                    p.post(Multiply{
+                        p.create_integer_variable(B - 1_i, B) + B, p.create_integer_variable(3_i, 4_i), p.create_integer_variable(A, B) + A});
+                },
+                0, true},
+            // x^3 is near 2^63 for x near 2^21, past z + A's reach.
+            {"Power tabulating past z + A",
+                [](Problem & p) { p.post(Power{p.create_integer_variable(2097150_i, 2097151_i), 3_c, p.create_integer_variable(A, B) + A}); }, 0,
+                true}};
+
+        for (const auto & [name, post, expected, proof_may_overflow] : cases) {
+            println(cerr, "integer ranges: {}{}: expecting {} solutions", name, proofs ? " with proofs" : "", expected);
+            Problem p;
+            post(p);
+            long long solutions = 0;
+            string proof_name = "integer_ranges_auxiliary";
+            try {
+                solve_with(p,
+                    SolveCallbacks{
+                        .solution = [&](const CurrentState &) -> bool {
+                            ++solutions;
+                            return true;
+                        },
+                        .stats_report = silent_stats_report() //
+                    },
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
+            }
+            catch (const innards::IntegerOverflow &) {
+                if (proofs && proof_may_overflow) {
+                    println(cerr, " the proof's grid does not fit, which is allowed here");
+                    continue;
+                }
+                throw;
+            }
+            if (solutions != expected)
+                throw UnexpectedException{name + ": found " + std::to_string(solutions) + " solutions, expected " + std::to_string(expected)};
+            if (proofs)
+                verify_proof_and_clean_up(proof_name);
+        }
+    }
+
     // MinDistance with the largest distance the range allows, and z a plain
     // variable over the whole range or a view at either end of it (#1168).
     // Two positions over two sites at distance B, so z is 0 when they share a
@@ -424,6 +549,7 @@ auto main(int argc, char * argv[]) -> int
             continue;
         run_edge_tests(proofs);
         run_min_distance_test(proofs);
+        run_auxiliary_tests(proofs);
         for (auto c : {A, B})
             for (bool negate : {false, true})
                 for (bool maximise : {false, true})

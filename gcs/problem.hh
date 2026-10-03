@@ -132,7 +132,7 @@ namespace gcs
          * The returned handle is only meaningful for as long as this Problem
          * (or a search state created from it) is alive.
          *
-         * \throws InvalidProblemDefinitionException if the bounds fall outside
+         * \throws IntegerOverflow if the bounds fall outside
          * Integer::min_bounded_value() .. Integer::max_bounded_value(). That cap
          * is on what may be *declared*, not on arithmetic; see Integer for why it
          * sits where it does.
@@ -148,9 +148,9 @@ namespace gcs
          * The returned handle is only meaningful for as long as this Problem
          * (or a search state created from it) is alive.
          *
-         * \throws InvalidProblemDefinitionException if the smallest or largest
-         * value given falls outside Integer::min_bounded_value() ..
-         * Integer::max_bounded_value(); the holes in between are unconstrained.
+         * \throws IntegerOverflow if the smallest or largest value given falls
+         * outside Integer::min_bounded_value() .. Integer::max_bounded_value();
+         * the holes in between are unconstrained.
          */
         [[nodiscard]] auto create_integer_variable(const std::vector<Integer> & domain, const std::optional<std::string> & name = std::nullopt)
             GCS_LIFETIME_BOUND -> SimpleIntegerVariableID;
