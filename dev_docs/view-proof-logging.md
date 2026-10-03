@@ -116,19 +116,40 @@ sides do hold the same literals, but not in the same *roles* — the same interv
 can be a partition cell on one side and a request with its own covering on the
 other — so argue per side rather than by assuming the structures match.
 
-**A view's spelling can change while the model is being written.** Its bit
-vector is registered the first time the view appears as an integer-valued
-term in a row (`need_all_proof_names_in`), or as a view objective
-(`ProofModel::write_preamble`). Until then its literals are spelled through
-the underlying variable, and from then on over the bit vector, which is
-also how the proof spells them. So any row that names a literal on a view
-before that view is registered, whether the registration comes from a
-later row of the same constraint or from a constraint posted later, spells
-it differently from the proof, and a `pol` that cancels against that row
-strands (invariant 1). `GlobalCardinality` met the first case when a count
-was the same view as a position (issue #1197), and now registers its view
-counts (`names_and_ids_tracker().need_view`) before writing any row; the
-second case is still open.
+**A view gets its own bit vector the first time a model row uses it.**
+The row may name the view as an integer-valued term or name one of its
+literals; either way the tracker registers it (`need_view`) before the row is
+written, so every row and every proof line spells the view over its own bit
+vector. The registration happens in `need_all_proof_names_in`, and for a
+literal in `need_view_named_by`, which the clause routes in `ProofModel`
+also call.
+
+- **Why it matters:** a view's spelling must never depend on which row
+  happened to use it first. It used to: only an integer term registered a
+  view, so a row naming just its literals spelled them through the
+  underlying variable. A later row then registered the view, and every
+  `pol` that cancelled against the earlier rows stranded (invariant 1).
+  That was issues #1197 and #1200, in GlobalCardinality, Among and
+  BinPacking.
+- **Two kinds of view are never registered,** and stay spelled through the
+  underlying variable throughout. Neither spelling can change.
+  - A view first seen during proof logging: nothing can register a view
+    from then on.
+  - A view too wide for a bit vector of its own (`bits_encoding_fits`
+    fails), such as an offset near 2^61 on an unbounded variable.
+- **The one deliberate exception is the objective.** `write_preamble`
+  writes a plain negation, which is what `Problem::maximise` stores, over
+  the underlying variable, because that is what cake_pb_cp derives from
+  `(maximize x)`. The line that restates `min:` after each `soli` spells
+  the objective the same way, whatever has been registered since (issue
+  #1206).
+
+The `_view_mixed_late` test lanes check this: they post a constraint over
+every view after the constraint under test, which registers each view as
+late as possible. That only happens in tests that solve through
+`solve_for_tests`. The bespoke circuit tests call `solve_with` directly,
+and Difference rejects the mixed wrap's negations, so their late lanes add
+nothing.
 
 ### If you are touching the view machinery itself
 
@@ -205,7 +226,12 @@ two tiers:
 
 - the **mixed** test is registered **unconditionally** — it's a single cheap
   run per constraint and the most likely to catch a cross-view regression,
-  so it's part of the ordinary `ctest` suite;
+  so it's part of the ordinary `ctest` suite. So is its **late** twin,
+  `_view_mixed_late`, run with `--late-view-registration`. The harness
+  records each view the test creates, and posts a vacuous linear row over
+  each one just before solving (in `solve_for_tests`), after the
+  constraint under test. Every other test posts one constraint, so this is
+  the only one that varies which row registers a view first;
 - the **full per-wrap sweep** (every wrap in `all_view_wraps()` × every
   position; ~18·(n+1) tests per constraint) is large and only registered
   under `-DGCS_ENABLE_VIEW_WRAP_SWEEP=ON`:
