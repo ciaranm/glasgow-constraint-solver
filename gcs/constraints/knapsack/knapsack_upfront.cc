@@ -9,6 +9,7 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/innards/wide_sum.hh>
 
 #include <util/enumerate.hh>
 
@@ -113,10 +114,12 @@ namespace
         vector<Integer> caps;
         caps.reserve(totals.size());
         for (const auto & [x, t] : enumerate(totals)) {
-            Integer sum_x = 0_i;
+            WideSum sum_x;
             for (const auto & [i, v] : enumerate(vars))
                 sum_x += initial_state.upper_bound(v) * coeffs[x][i];
-            caps.push_back(sum_x);
+            // The DAG holds partial sums up to this cap, so one that does not
+            // fit cannot be built; see knapsack_upfront_partial_sums_fit.
+            caps.push_back(sum_x.narrow_or_throw("a partial sum in Knapsack's upfront proof scaffolding"));
             (void)t;
         }
         return caps;
@@ -893,6 +896,27 @@ auto gcs::innards::knapsack_upfront_prepare(State & initial_state, vector<vector
     auto dead_cache_handle = initial_state.add_constraint_state(move(initial_cache));
 
     return make_shared<KnapsackUpfrontData>(move(coeffs), move(vars), move(totals), move(bridge), dead_cache_handle);
+}
+
+auto gcs::innards::knapsack_upfront_partial_sums_fit(
+    const State & initial_state, const vector<vector<Integer>> & coeffs, const vector<IntegerVariableID> & vars) -> bool
+{
+    for (const auto & row : coeffs) {
+        WideSum sum;
+        for (const auto & [i, v] : enumerate(vars)) {
+            if (i >= row.size())
+                return true; // a malformed row is reported by knapsack_upfront_prepare
+            auto ub = initial_state.upper_bound(v);
+            // A single contribution past Integer's range already decides it,
+            // without the multiplication that would overflow.
+            if (row[i] != 0_i && ub != 0_i && Integer::max_value() / abs(row[i]) < abs(ub))
+                return false;
+            sum += ub * row[i];
+        }
+        if (! sum.narrow())
+            return false;
+    }
+    return true;
 }
 
 auto gcs::innards::knapsack_upfront_define_proof_model(ProofModel & model, const ConstraintID & owner, KnapsackUpfrontData & data) -> void

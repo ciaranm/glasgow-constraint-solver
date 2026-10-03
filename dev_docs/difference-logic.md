@@ -1183,24 +1183,49 @@ need `GCS_ENABLE_VIEW_WRAP_SWEEP=ON`, which is where the numbers above come from
 ### Extreme weights
 
 Bellman-Ford accumulates weights along a path, so a system whose edges are each
-representable can still have a path sum that is not. `Integer`'s arithmetic is
-overflow-checked and throws, so this cannot wrap silently — but nothing went
-anywhere near the limit until `run_overflow_test` did. It pins both halves:
+in range (`dev_docs/integer-ranges.md`) can still have a path sum that is not.
+`Integer`'s arithmetic is overflow-checked and throws, so this cannot wrap
+silently. `run_overflow_test` pins both halves:
 
-- a single vacuous edge of weight `LLONG_MAX / 4` over two `0..5` variables must
-  give the right answer (all 36 assignments), so "checked" does not mean "unusable
-  at large weights";
-- two chained edges of weight `-(LLONG_MAX / 2 + 1)`, each representable and
-  their sum not, must throw `IntegerOverflow`. The lower-bound relaxation
-  computes `lb[from] - d` before comparing, so the second edge asks for
-  `LLONG_MAX + 2` and `Integer` refuses.
+- the largest in-range weight gives the right answer, on a single vacuous edge
+  over two `0..5` variables (all 36 assignments) and on chains of two (one
+  solution) and three (none) edges of weight `-max_bounded_value()` over the
+  whole range, so "checked" does not mean "unusable at large weights";
+- a chain of nine such edges has a genuine shortest path past the end of
+  `Integer`, and must throw `IntegerOverflow`: an arithmetic constraint may throw
+  when a sum it needs does not fit, but must never wrap.
 
 A wrapped sum would be the worst failure available: an enormous positive distance
 would come back negative, the propagator would refute a satisfiable system, and
 **proof logging could not catch it**, because nothing wrong would have been
-derived from the model's rows — only from the solver's own arithmetic. Mutation
-check: shrinking the second fixture's weights to `-(LLONG_MAX / 8)`, so the sum
-fits, makes the test fail.
+derived from the model's rows — only from the solver's own arithmetic.
+
+What must *not* throw is a sum nothing needs, and two places used to form them
+(`run_heavy_edge_test`, in all three modes):
+
+- **A negative cycle, relaxed round after round.** Every pass that relaxes from
+  seeds (the initial potential, the simplification's step 1, and the from-scratch
+  pass that refutes) used to wait for round `n` to call a negative cycle, by
+  which time a cycle of weight `2·min_bounded_value()` on four variables had run
+  its values out of range. Now each also stops as soon as a value passes a
+  limit: without a cycle in the predecessor graph a value is reached along a
+  simple path from a seed, so it improves on the best seed by at most the total
+  weight of the negative edges. Past that, the predecessor graph (with the new
+  edge) has a cycle reachable from the edge's head, and a predecessor cycle is
+  negative, so `extract_cycle` finds it there exactly as it does at round `n`,
+  and the telescoping refutation is unchanged. The limit is held in a `WideSum`.
+- **Root simplification's all-pairs paths.** The distances from a source `s`
+  only matter up to a threshold: an edge `s --d--> v` is redundant only if the
+  distance to `v` is at most `d`, and a candidate `u --d--> s` closes a negative
+  cycle only if the distance to `u` is at most `-d - 1`. A path's real weight is
+  its reduced distance `- h(s) + h(end)`, at least `reduced - h(s) + min h`, and
+  reduced distances only grow along a path, so the Dijkstra does not extend a
+  path once that bound passes the threshold. A chain of edges of weight
+  `max_bounded_value()` in both directions used to sum past `2^63` here.
+
+Neither changes a proof: the extracted cycle and its `pol` are the same, and the
+simplification's paths only decide which edges to drop. Mutation check: removing
+any one of the four limits or the pruning makes `run_heavy_edge_test` throw.
 
 ## RCPSP/max: the benchmark this was built for
 

@@ -1,5 +1,6 @@
 #include <gcs/constraints/difference/difference_incremental.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/wide_sum.hh>
 
 #include <algorithm>
 #include <cstddef>
@@ -53,6 +54,17 @@ auto gcs::innards::difference_initial_potential(size_t number_of_nodes, const ve
     // A shortest path out of the source is simple, so after the seeding it uses
     // at most n - 1 real arcs and n - 1 rounds suffice; one more that still
     // relaxes something is sound evidence of a negative cycle.
+    //
+    // Every relaxed value is the weight of some walk from the source, and
+    // without a negative cycle it is at least that of a shortest simple path,
+    // which weighs at least the sum of the negative arc weights. Falling below
+    // that floor is therefore the same evidence, found before a cycle relaxed
+    // round after round can run the potentials out of Integer's range.
+    WideSum floor;
+    for (size_t e = 0; e < arcs.size(); ++e)
+        if (difference_arc_is_active(active, e) && arcs[e].d < 0_i)
+            floor += arcs[e].d;
+
     vector<Integer> potential(number_of_nodes, 0_i);
 
     for (size_t round = 0; round <= number_of_nodes; ++round) {
@@ -60,9 +72,11 @@ auto gcs::innards::difference_initial_potential(size_t number_of_nodes, const ve
         for (size_t e = 0; e < arcs.size(); ++e) {
             if (! difference_arc_is_active(active, e))
                 continue;
-            auto candidate = potential[arcs[e].from] + arcs[e].d;
+            auto candidate = WideSum{potential[arcs[e].from]} + arcs[e].d;
             if (candidate < potential[arcs[e].to]) {
-                potential[arcs[e].to] = candidate;
+                if (candidate < floor)
+                    return nullopt;
+                potential[arcs[e].to] = candidate.narrow_or_throw("a difference-logic shortest path");
                 changed = true;
             }
         }

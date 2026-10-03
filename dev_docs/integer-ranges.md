@@ -111,3 +111,15 @@ A constraint whose own arithmetic genuinely needs more than 64 bits for
 in-range inputs throws then, during search: `DifferenceConstraints`, for
 example, forms Bellman-Ford path sums, and a chain of nine edges of weight
 `max_bounded_value()` has a path sum past the end of `Integer`.
+
+What it must not do is throw on a value nothing needs. The commonest way is a
+running sum whose total fits but whose partial sums do not: nine terms at the
+top of the range and nine at the bottom sum to zero, but not in that order. Sum
+such things in an `innards::WideSum` (`gcs/innards/wide_sum.hh`), which is exact
+to 128 bits, and narrow only the total: `narrow()` says whether it fits,
+`narrow_or_throw("what")` throws if a needed total does not, and
+`divided_exactly_by` solves `c·x = total` for an `Integer` `x` even when the
+total does not fit. Linear's sums, Knapsack's caps and difference logic's
+cycle evidence use it. A saturating sum is *not* a substitute where the value
+feeds an inference: dividing a saturated remainder by a large coefficient gives
+a bound tighter than the true one.
