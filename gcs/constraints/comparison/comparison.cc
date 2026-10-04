@@ -2,6 +2,7 @@
 #include <gcs/constraints/comparison/hints.hh>
 #include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -70,6 +71,7 @@ ReifiedCompareLessThanOrMaybeEqual::ReifiedCompareLessThanOrMaybeEqual(
     const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal, bool vars_swapped) :
     _v1(v1), _v2(v2), _reif_cond(cond), _or_equal(or_equal), _vars_swapped(vars_swapped)
 {
+    innards::require_bounded(_reif_cond, "the value in a comparison's condition");
 }
 
 LessThan::LessThan(const IntegerVariableID v1, const IntegerVariableID v2) : ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::MustHold{}, false)

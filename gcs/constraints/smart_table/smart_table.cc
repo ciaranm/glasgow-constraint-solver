@@ -82,6 +82,15 @@ namespace
 
 SmartTable::SmartTable(vector<IntegerVariableID> v, SmartTuples t) : _vars(move(v)), _tuples(move(t))
 {
+    for (const auto & tuple : _tuples)
+        for (const auto & entry : tuple) {
+            if (const auto * value_entry = std::get_if<UnaryValueEntry>(&entry))
+                innards::require_bounded(value_entry->value, "a value in a SmartTable entry");
+            else if (const auto * set_entry = std::get_if<UnarySetEntry>(&entry))
+                for (const auto & value : set_entry->values)
+                    innards::require_bounded(value, "a value in a SmartTable entry");
+        }
+
     // Aliased BinaryEntry endpoints break build_forests: both ends
     // hash to the same `deview` key, so adjacent_edges holds the entry
     // under one key with two copies, build_tree sees the second

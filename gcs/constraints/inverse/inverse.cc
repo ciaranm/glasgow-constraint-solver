@@ -1,5 +1,6 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/constraints/all_different/justify.hh>
+#include <gcs/constraints/innards/require_bounded.hh>
 #include <gcs/constraints/inverse/hints.hh>
 #include <gcs/constraints/inverse/inverse.hh>
 #include <gcs/exception.hh>
@@ -54,6 +55,8 @@ Inverse::Inverse(vector<IntegerVariableID> x, vector<IntegerVariableID> y, Integ
     _x(move(x)), _y(move(y)), _x_start(x_start), _y_start(y_start)
 
 {
+    innards::require_bounded(_x_start, "the x start of Inverse");
+    innards::require_bounded(_y_start, "the y start of Inverse");
     // x's values are y's indices and are all different, so a longer x could never
     // be satisfied. XCSP3 does not define that shape either, so it is taken to be
     // the arrays passed the wrong way round rather than a model to answer.

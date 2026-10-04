@@ -10,12 +10,30 @@
 // model.
 
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/among.hh>
+#include <gcs/constraints/bin_packing.hh>
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/cumulative.hh>
+#include <gcs/constraints/difference.hh>
+#include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/global_cardinality.hh>
+#include <gcs/constraints/in.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/inverse.hh>
+#include <gcs/constraints/knapsack.hh>
 #include <gcs/constraints/lex.hh>
+#include <gcs/constraints/linear.hh>
+#include <gcs/constraints/logical.hh>
+#include <gcs/constraints/mdd.hh>
+#include <gcs/constraints/min_distance.hh>
+#include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
+#include <gcs/constraints/regular.hh>
+#include <gcs/constraints/smart_table.hh>
+#include <gcs/constraints/sort.hh>
 #include <gcs/constraints/table.hh>
+#include <gcs/constraints/value_precede.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -28,6 +46,8 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 #include <version>
 
@@ -42,9 +62,11 @@ using std::cerr;
 using std::function;
 using std::make_optional;
 using std::nullopt;
+using std::pair;
 using std::set;
 using std::string;
 using std::tuple;
+using std::unordered_map;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -92,6 +114,91 @@ namespace
         // them is too.
         [[maybe_unused]] auto in_range = vector<IntegerVariableID>{x + A, x + B, -x + A, -x + B, constant_variable(A), constant_variable(B),
             -constant_variable(B), -constant_variable(A), -(x + A), -(x + B)};
+    }
+
+    // Every constraint parameter is an input. Each of these is one past an end
+    // of the range and must be refused when the constraint is made; the edges
+    // themselves must be accepted.
+    auto run_parameter_refusal_tests() -> void
+    {
+        Problem p;
+        auto x = p.create_integer_variable(0_i, 3_i, "x"), y = p.create_integer_variable(0_i, 3_i, "y"), z = p.create_integer_variable(0_i, 3_i, "z");
+        auto over = B + 1_i, under = A - 1_i;
+
+        vector<pair<string, function<void(Integer)>>> posts{
+            {"AllDifferentExcept's excluded value", [&](Integer v) { p.post(AllDifferentExcept{{x, y}, {v}}); }},
+            {"SymmetricAllDifferent's start", [&](Integer v) { p.post(SymmetricAllDifferent{{x, y}, v}); }},
+            {"Among's value of interest", [&](Integer v) { p.post(Among{{x, y}, {v}, z}); }},
+            {"BinPacking's size", [&](Integer v) { p.post(BinPacking{{x}, {v}, vector<IntegerVariableID>{y}}); }},
+            {"BinPacking's capacity", [&](Integer v) { p.post(BinPacking{{x}, {1_i}, vector<Integer>{v}}); }},
+            {"Cumulative's length", [&](Integer v) { p.post(Cumulative{{x}, {v}, {1_i}, 1_i}); }},
+            {"DifferenceConstraints' weight", [&](Integer v) { p.post(DifferenceConstraints{{DifferenceEdge{x, y, v}}}); }},
+            {"Element's index start", [&](Integer v) { p.post(Element{z, pair{x, v}, {y}}); }},
+            {"ElementConstantArray's value", [&](Integer v) { p.post(ElementConstantArray{z, x, {v}}); }},
+            {"GlobalCardinality's value", [&](Integer v) { p.post(GlobalCardinality{{x, y}, {v}, {z}}); }},
+            {"In's value", [&](Integer v) { p.post(In{x, vector<Integer>{v}}); }},
+            {"Inverse's start", [&](Integer v) { p.post(Inverse{{x}, {y}, v}); }},
+            {"Knapsack's coefficient", [&](Integer v) { p.post(Knapsack{{v}, {1_i}, {x}, y, z}); }},
+            {"a linear coefficient", [&](Integer v) { p.post(LinearEquality{WeightedSum{} + v * x, 0_i}); }},
+            {"a linear right-hand side", [&](Integer v) { p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x, v}); }},
+            {"MDD's transition value", [&](Integer v) { p.post(MDD{{x}, {{{{v, 0}}}}, {1, 1}, {0}}); }},
+            {"MinDistance's distance", [&](Integer v) { p.post(MinDistance{{x, y}, z, MinDistance::Matrix{{0_i, v}, {v, 0_i}}}); }},
+            {"Regular's transition value", [&](Integer v) { p.post(Regular{{x}, 2, vector<unordered_map<Integer, long>>{{{v, 1}}, {}}, {1}}); }},
+            {"SmartTable's value", [&](Integer v) { p.post(SmartTable{{x}, SmartTuples{{SmartTable::equals(x, v)}}}); }},
+            {"ArgSort's offset", [&](Integer v) { p.post(ArgSort{{x}, {y}, v}); }},
+            {"Table's tuple value", [&](Integer v) { p.post(Table{{x}, SimpleTuples{{v}}}); }},
+            {"Table's wildcard tuple value", [&](Integer v) { p.post(Table{{x, y}, WildcardTuples{{v, Wildcard{}}}}); }},
+            {"NegativeTable's tuple value", [&](Integer v) { p.post(NegativeTable{{x}, SimpleTuples{{v}}}); }},
+            {"ValuePrecede's chain value", [&](Integer v) { p.post(ValuePrecede{v, 1_i, {x, y}}); }}};
+
+        // A condition's value may be one past the top, since `x <= B` is stored
+        // as `x < B + 1`; so these use two past it, and one below the bottom.
+        auto cond_over = B + 2_i;
+        vector<pair<string, function<void(Integer)>>> conditions{{"a comparison's condition", [&](Integer v) { p.post(LessThanIf{x, y, z == v}); }},
+            {"an equality's condition", [&](Integer v) { p.post(EqualsIff{x, y, z >= v}); }},
+            {"a Lex condition", [&](Integer v) { p.post(LexLessThanIf{{x}, {y}, z < v}); }},
+            {"a linear constraint's condition", [&](Integer v) { p.post(LinearLessThanEqualIf{WeightedSum{} + 1_i * x, 1_i, z != v}); }},
+            {"a literal of Or", [&](Integer v) { p.post(Or{{x == v, y == 1_i}, innards::TrueLiteral{}}); }},
+            {"a literal of AndIf", [&](Integer v) { p.post(AndIf{{x == 1_i}, y == v}); }},
+            {"a literal of ParityOdd", [&](Integer v) { p.post(ParityOdd{{x == v, y == 1_i}}); }}};
+
+        // The edges pass the range check. Some constraints refuse a negative
+        // value for reasons of their own, such as a length, which is not what
+        // this is checking, so that refusal is let through.
+        auto accepted = [](const function<void(Integer)> & post, Integer v) {
+            try {
+                post(v);
+            }
+            catch (const InvalidProblemDefinitionException &) {
+            }
+        };
+        for (const auto & [what, post] : posts) {
+            expect_overflow(what + " one above the range", [&] { post(over); });
+            expect_overflow(what + " one below the range", [&] { post(under); });
+            accepted(post, B);
+            accepted(post, A);
+        }
+        for (const auto & [what, post] : conditions) {
+            expect_overflow(what + " two above the range", [&] { post(cond_over); });
+            expect_overflow(what + " one below the range", [&] { post(under); });
+            accepted(post, B + 1_i);
+            accepted(post, A);
+        }
+
+        // A regular expression's integers are compiled, and so checked, when
+        // the constraint is installed.
+        expect_overflow("an integer in a regular expression one above the range", [&] {
+            Problem q;
+            auto w = q.create_integer_variable(0_i, 1_i, "w");
+            q.post(Regular{{w}, std::to_string(over.raw_value)});
+            solve_with(q, SolveCallbacks{});
+        });
+        expect_overflow("an integer in a regular expression too long for any Integer", [&] {
+            Problem q;
+            auto w = q.create_integer_variable(0_i, 1_i, "w");
+            q.post(Regular{{w}, "99999999999999999999999"});
+            solve_with(q, SolveCallbacks{});
+        });
     }
 
     // Three variables, each over three values at one end of the range, each
@@ -190,6 +297,17 @@ namespace
             run_config(
                 proofs, config, "Plus", [](Problem & p, const vector<IntegerVariableID> & v) { p.post(Plus{v[0], v[2], v[1]}); },
                 [](const Values & v) { return v[0] + v[2] == v[1]; });
+            run_config(
+                proofs, config, "ValuePrecede", [](Problem & p, const vector<IntegerVariableID> & v) { p.post(ValuePrecede{A, B, v}); },
+                [](const Values & v) {
+                    for (const auto & value : v) {
+                        if (value == A)
+                            return true;
+                        if (value == B)
+                            return false;
+                    }
+                    return true;
+                });
             // Tuple values are inputs, so they lie in the range, though the views
             // reach beyond it: a row that names the ends of the range matches
             // only where a view takes such a value.
@@ -209,6 +327,53 @@ namespace
 
 namespace
 {
+    // MinDistance with the largest distance the range allows, and z a plain
+    // variable over the whole range or a view at either end of it (#1168).
+    // Two positions over two sites at distance B, so z is 0 when they share a
+    // site and B when they do not.
+    auto run_min_distance_test(bool proofs) -> void
+    {
+        struct ZShape
+        {
+            string name;
+            Integer lo, hi;
+            bool negate;
+            Integer offset;
+        };
+        vector<ZShape> shapes{{"z over the range", A, B, false, 0_i}, {"z = w + B", A, 0_i, false, B}, {"z = w + A", 0_i, B, false, A},
+            {"z = -w + A", A, 0_i, true, A}, {"z = -w + B", 0_i, B, true, B}};
+        for (const auto & shape : shapes)
+            for (auto propagation : {MinDistancePropagation::CheckOnly, MinDistancePropagation::ForwardBound, MinDistancePropagation::PairSupport,
+                     MinDistancePropagation::ForwardBoundMatch, MinDistancePropagation::PairSupportMatch}) {
+                Problem p;
+                auto x = p.create_integer_variable_vector(2, 0_i, 1_i, "x");
+                auto w = p.create_integer_variable(shape.lo, shape.hi, "w");
+                auto z = (shape.negate ? -w : IntegerVariableID{w}) + shape.offset;
+                p.post(MinDistance{x, z, MinDistance::Matrix{{0_i, B}, {B, 0_i}}, std::nullopt, propagation});
+
+                set<tuple<vector<Integer>>> expected, actual;
+                for (auto a : {0_i, 1_i})
+                    for (auto b : {0_i, 1_i}) {
+                        auto distance = a == b ? 0_i : B;
+                        auto w_value = shape.negate ? -(distance - shape.offset) : distance - shape.offset;
+                        if (w_value >= shape.lo && w_value <= shape.hi)
+                            expected.emplace(vector<Integer>{a, b, w_value});
+                    }
+
+                println(cerr, "integer ranges: MinDistance at distance B, {}, propagation {}{}: expecting {} solutions", shape.name,
+                    static_cast<int>(propagation), proofs ? " with proofs" : "", expected.size());
+                auto proof_name = proofs ? make_optional("integer_ranges_test") : nullopt;
+                solve_for_tests_with_callbacks(
+                    p, proof_name,
+                    [&](const CurrentState & state) -> bool {
+                        actual.emplace(vector<Integer>{state(x[0]), state(x[1]), state(w)});
+                        return true;
+                    },
+                    [](const CurrentState &) -> bool { return true; });
+                check_results(proof_name, expected, actual);
+            }
+    }
+
     // An objective that is a view at either end of the range, minimised and
     // maximised. A view beyond the range used to be too wide for a bit vector
     // of its own, and the conclusion then claimed a bound that included the
@@ -252,11 +417,13 @@ auto main(int argc, char * argv[]) -> int
     establish_and_announce_seed(argc, argv);
 
     run_refusal_tests();
+    run_parameter_refusal_tests();
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         run_edge_tests(proofs);
+        run_min_distance_test(proofs);
         for (auto c : {A, B})
             for (bool negate : {false, true})
                 for (bool maximise : {false, true})

@@ -73,6 +73,7 @@ add_library(glasgow_constraint_solver ${_gcs_library_type}
         constraints/innards/product_justify.cc
         constraints/innards/justify_not_in_range.cc
         constraints/innards/recover_am1.cc
+        constraints/innards/require_bounded.cc
         constraints/innards/reified_state.cc
         constraints/innards/tabulation.cc
         constraints/innards/task_presence.cc
