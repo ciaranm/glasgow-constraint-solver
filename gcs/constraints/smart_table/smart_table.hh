@@ -66,6 +66,10 @@ namespace gcs
      * An exact repeat of an entry is allowed. Anything else throws
      * InvalidProblemDefinitionException.
      *
+     * An entry may name a variable, or a constant, that is not among the
+     * specified variables. It constrains it all the same: a tuple holds when
+     * every one of its entries does, whatever they name.
+     *
      * \ingroup Constraints
      * \see Table
      */
