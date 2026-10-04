@@ -330,8 +330,19 @@ auto main(int argc, char * argv[]) -> int
     // carries into what it derives (#1136).
     std::mt19937 rng(*get_seed());
     auto pick = [&](int lo, int hi) { return std::uniform_int_distribution<int>{lo, hi}(rng); };
+    // Forty rounds, and then on until every presolver has posted over
+    // optional rectangles: for about one seed in 150, forty rounds draw no
+    // instance on which one of them does, and the checks below would fail
+    // for want of coverage rather than for anything wrong.
     Counts totals[3];
-    for (int round = 0; round < 40; ++round) {
+    auto covered = [&] {
+        for (const auto & t : totals)
+            if (0 == t.posted || 0 == t.optional_instances)
+                return false;
+        return true;
+    };
+    constexpr int min_rounds = 40, max_rounds = 400;
+    for (int round = 0; round < max_rounds && (round < min_rounds || ! covered()); ++round) {
         Instance inst;
         inst.strict = pick(0, 3) != 0;
         auto n = pick(2, 3);
@@ -357,9 +368,10 @@ auto main(int argc, char * argv[]) -> int
         const auto & t = totals[static_cast<int>(which)];
         println(cerr, "sweep, {}: {} posted, on {} instances with optional rectangles", name_of(which), t.posted, t.optional_instances);
         if (0 == t.posted)
-            fail("the sweep posted nothing from " + name_of(which) + ", so it checked no certificate over a projection");
+            fail("the sweep posted nothing from " + name_of(which) + " in " + to_string(max_rounds) +
+                " rounds, so it checked no certificate over a projection");
         if (0 == t.optional_instances)
-            fail("the sweep posted nothing from " + name_of(which) + " over optional rectangles (#1136)");
+            fail("the sweep posted nothing from " + name_of(which) + " over optional rectangles in " + to_string(max_rounds) + " rounds (#1136)");
     }
 
     // Mutations: each presolver's own, over the projection's rows.
