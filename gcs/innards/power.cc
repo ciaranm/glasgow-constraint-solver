@@ -13,8 +13,10 @@ using std::optional;
 
 auto gcs::innards::power2(Integer i) -> Integer
 {
-    if (i < 0_i || i.raw_value >= numeric_limits<decltype(i.raw_value)>::digits)
-        throw UnimplementedException{"Would get overflow on power2"};
+    if (i < 0_i)
+        throw UnimplementedException{"power2 of a negative exponent"};
+    if (i.raw_value >= numeric_limits<decltype(i.raw_value)>::digits)
+        throw_integer_overflow("power2 ", i.raw_value);
     return Integer{(1_i).raw_value << i.raw_value};
 }
 

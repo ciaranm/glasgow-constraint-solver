@@ -120,18 +120,19 @@ namespace
         }
     }
 
-    // A view too wide for a bit vector of its own, x + c with x unbounded and c
-    // near -2^61, used only through its literals. Nothing can register such a
-    // view, so its literals stay spelled through x; registering it on literal
-    // use, as every other view now is, would overflow sizing the bit vector.
-    auto run_wide_view_literal_test(bool proofs) -> void
+    // The widest views the range rule allows, +/-x + c with x over the whole
+    // bounded range and c at either end of it, used only through their
+    // literals. Such a view spans about 2^62, so it still gets a bit vector of
+    // its own on first use; an offset beyond the range is refused when the view
+    // is made, which is what used to give a view too wide for one (#1209).
+    auto run_wide_view_literal_test(bool proofs, Integer c, bool negate) -> void
     {
-        println(cerr, "view registration: literals on a view too wide for a bit vector{}", proofs ? " with proofs" : "");
+        println(
+            cerr, "view registration: literals on {}x + {}, the widest view the range allows{}", negate ? "-" : "", c, proofs ? " with proofs" : "");
         Problem p;
         auto x = p.create_integer_variable(Integer::min_bounded_value(), Integer::max_bounded_value(), "x");
         auto b = p.create_integer_variable(0_i, 1_i, "b");
-        auto c = Integer{-2305843009213693962LL};
-        auto v = x + c;
+        auto v = (negate ? -x : IntegerVariableID{x}) + c;
         p.post(Or{{v >= c, b == 1_i}, innards::TrueLiteral{}});
         p.post(Or{{v < c, b == 0_i}, innards::TrueLiteral{}});
         p.post(Equals{x, ConstantIntegerVariableID{0_i}});
@@ -151,6 +152,24 @@ namespace
             throw UnexpectedException{"wrong number of solutions"};
         if (proofs)
             verify_proof_and_clean_up(proof_name);
+    }
+
+    auto run_out_of_range_view_test() -> void
+    {
+        println(cerr, "view registration: an offset beyond the bounded range is refused");
+        Problem p;
+        auto x = p.create_integer_variable(0_i, 3_i, "x");
+        for (auto offset : {Integer::min_bounded_value() - 1_i, Integer::max_bounded_value() + 1_i}) {
+            bool refused = false;
+            try {
+                [[maybe_unused]] auto v = x + offset;
+            }
+            catch (const innards::IntegerOverflow &) {
+                refused = true;
+            }
+            if (! refused)
+                throw UnexpectedException{"a view's offset outside the bounded range was accepted"};
+        }
     }
 
     // Maximising x (or minimising -x) while another constraint uses -x (issue
@@ -225,12 +244,16 @@ auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
 
+    run_out_of_range_view_test();
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (bool gac : {false, true})
             run_gcc_then_linear_test(proofs, gac);
-        run_wide_view_literal_test(proofs);
+        for (auto c : {Integer::min_bounded_value(), Integer::max_bounded_value()})
+            for (bool negate : {false, true})
+                run_wide_view_literal_test(proofs, c, negate);
         for (const auto & which : {"less_than", "in", "among", "all_different", "abs"})
             for (bool minimise_negation : {false, true})
                 run_objective_test(proofs, which, minimise_negation);

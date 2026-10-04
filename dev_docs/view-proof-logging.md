@@ -131,12 +131,14 @@ also call.
   `pol` that cancelled against the earlier rows stranded (invariant 1).
   That was issues #1197 and #1200, in GlobalCardinality, Among and
   BinPacking.
-- **Two kinds of view are never registered,** and stay spelled through the
-  underlying variable throughout. Neither spelling can change.
-  - A view first seen during proof logging: nothing can register a view
-    from then on.
-  - A view too wide for a bit vector of its own (`bits_encoding_fits`
-    fails), such as an offset near 2^61 on an unbounded variable.
+- **A view first seen during proof logging is never registered,** and stays
+  spelled through the underlying variable throughout: nothing can register a
+  view from then on, so its spelling cannot change. There used to be a second
+  kind, a view too wide for a bit vector of its own, such as an offset near
+  2^61 on an unbounded variable. The range rule
+  ([`integer-ranges.md`](integer-ranges.md)) now refuses such an offset when
+  the view is made, so every view fits; the `bits_encoding_fits` checks that
+  guarded registration remain only as guards.
 - **The one deliberate exception is the objective.** `write_preamble`
   writes a plain negation, which is what `Problem::maximise` stores, over
   the underlying variable, because that is what cake_pb_cp derives from
