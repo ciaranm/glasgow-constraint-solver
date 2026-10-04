@@ -1746,14 +1746,38 @@ auto main(int argc, char * argv[]) -> int
             gcs::test_innards::solve_for_tests(p, proofs ? make_optional(enum_name) : nullopt, actual, std::tuple{all_vars});
             if (gcs::test_innards::last_run_truncated())
                 fail("optional_undecided_" + rung.name + ": a cap fired, so the enumeration checked no completeness");
-            auto markers = proofs ? count_markers(enum_name, firing_marker) : 0;
             gcs::test_innards::check_results(proofs ? make_optional(enum_name) : nullopt, expected, actual);
-            println(cerr, "optional_undecided_{}: {} solutions, {} firings", rung.name, actual.size(), markers);
+
             // Firing below the root, once search has decided the presence,
             // is what the enumeration is for: without it, agreeing with brute
-            // force says nothing about the rule.
-            if (proofs && markers == 0)
-                fail("optional_undecided_" + rung.name + ": the rule never fired on a decided presence");
+            // force says nothing about the rule. Whether it fires depends on
+            // the search order, though, and solve_for_tests branches at
+            // random: about one seed in 350 never reaches a node where it
+            // does. So count the firings over a second enumeration under the
+            // default branching, which is fixed, and check that one too.
+            if (proofs) {
+                auto fixed_name = enum_name + "_fixed";
+                Problem q;
+                post_optional_vars(q, inst, rung.rules, 0, undecided);
+                long long fixed_solutions = 0;
+                solve_with(q,
+                    SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                                       ++fixed_solutions;
+                                       return true;
+                                   },
+                        .stats_report = silent_stats_report()},
+                    make_optional<ProofOptions>(ProofFileNames{fixed_name}));
+                auto markers = count_markers(fixed_name, firing_marker);
+                println(cerr, "optional_undecided_{}: {} solutions, {} firings under the default branching", rung.name, fixed_solutions, markers);
+                if (std::cmp_not_equal(fixed_solutions, expected.size()))
+                    fail("optional_undecided_" + rung.name + ": the default branching found " + to_string(fixed_solutions) + " solutions, not " +
+                        to_string(expected.size()));
+                if (markers == 0)
+                    fail("optional_undecided_" + rung.name + ": the rule never fired on a decided presence");
+                if (! verify(fixed_name))
+                    fail("optional_undecided_" + rung.name + ": veripb rejected the proof under the default branching");
+                gcs::test_innards::dispose_of_proof_files(fixed_name);
+            }
         }
     }
 
