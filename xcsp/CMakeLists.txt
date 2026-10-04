@@ -1,8 +1,17 @@
 include(FetchContent)
 
+# The parser reads every integer as an int, and upstream's conversion does not
+# check for overflow: 4294967297 is read as 1, silently, so an instance with a
+# value past int32 gets a wrong answer. The patch makes the conversion throw
+# std::out_of_range instead, refuses a tuple value of INT_MAX (the parser's
+# wildcard sentinel, so it would be read as `*`), and stops a domain reaching
+# INT_MAX from overflowing the loop that lists its values. The binary reports
+# the refusals as unsupported. See dev_docs/xcsp.md, "Integer range".
 FetchContent_Declare(xcsp3_cpp_parser
     GIT_REPOSITORY https://github.com/xcsp3team/XCSP3-CPP-Parser.git
     GIT_TAG 179670dd97cd2b87cdeb93aa7268b57bba719490
+    PATCH_COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_integer_overflow.patch
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
     EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(xcsp3_cpp_parser)
 
@@ -142,6 +151,33 @@ add_xcsp_test(ordered_lengths)
 add_xcsp_test(ordered_strict)
 add_xcsp_test(precedence)
 add_xcsp_test(regular)
+# A domain reaching INT_MAX, which the parser listed with an int loop that
+# overflowed and never finished (the patch in this file fixes it). ACE cannot
+# parse such a domain, so the cache is a hand count: x in {0, 1, INT_MAX} with
+# x != 1.
+add_xcsp_test(range_domain_int_max)
+
+# Integers the parser cannot represent. Each used to wrap silently, giving a
+# wrong answer, or to abort; each must now be reported as unsupported, with the
+# reason. An uncaught exception, whose message could otherwise match, and any
+# solution line both fail the test.
+function(add_xcsp_refusal_test name message)
+    add_test(NAME xcsp_${name} COMMAND $<TARGET_FILE:xcsp_glasgow_constraint_solver> --all ${CMAKE_SOURCE_DIR}/xcsp/tests/${name}.xml)
+    set_tests_properties(xcsp_${name} PROPERTIES
+        PASS_REGULAR_EXPRESSION "s UNSUPPORTED\nc [^\n]*${message}"
+        FAIL_REGULAR_EXPRESSION "terminate called;ENUMSOL")
+endfunction()
+# 4294967296..4294967297 was read as 0..1.
+add_xcsp_refusal_test(range_domain_past_int32 "an integer does not fit in an int")
+# A support of (4294967297, 2) was read as (1, 2).
+add_xcsp_refusal_test(range_tuple_past_int32 "an integer does not fit in an int")
+# 2147483647 is the parser's wildcard, so a support of (2147483647, 2) was read
+# as (*, 2).
+add_xcsp_refusal_test(range_tuple_int_max "cannot be told apart from the wildcard")
+# The parser's own std::stoi refusing a condition value, which used to abort.
+add_xcsp_refusal_test(range_condition_past_int32 "stoi")
+# Arithmetic over in-range values that does not fit, which used to abort.
+add_xcsp_refusal_test(range_sum_overflow "does not fit in an Integer")
 add_xcsp_test(slide)
 add_xcsp_test(sum_not_equals)
 # <sum> with ne against a nonzero constant and against a variable. Both used to

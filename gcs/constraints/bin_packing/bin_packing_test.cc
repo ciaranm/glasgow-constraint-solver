@@ -5,9 +5,11 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <set>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <variant>
@@ -24,10 +26,12 @@
 
 using std::cerr;
 using std::flush;
+using std::function;
 using std::make_optional;
 using std::nullopt;
 using std::pair;
 using std::set;
+using std::string;
 using std::tuple;
 using std::variant;
 using std::vector;
@@ -48,6 +52,128 @@ using namespace gcs::test_innards;
 
 namespace
 {
+    // Sizes and bounds at the top of the integer range (dev_docs/integer-ranges.md).
+    // Every sum here is near or past 2^63, and these all used to be summed in
+    // raw long long: per_bin_cap's total of every size wrapped negative, so the
+    // per-bin DAG admitted nothing and GAC lost every solution; Stage 4's
+    // penalty and per-bin totals wrapped, so Shaw lost solutions and wrote a
+    // proof VeriPB rejected; and Stage 2's ceiling threw. Item domains are
+    // small, so the solutions are listed directly, summing a bin's load with an
+    // early exit so that the listing cannot overflow either.
+    auto run_edge_of_range_test(bool proofs, const string & name, const vector<pair<int, int>> & item_ranges, const vector<Integer> & sizes,
+        const vector<Integer> & capacities, bool load_form, bool gac, bool shaw) -> void
+    {
+        print(cerr, "bin_packing edge of range {} {}{}{}{}", name, load_form ? "loads" : "capacities", gac ? " GAC" : " BC", shaw ? " shaw" : "",
+            proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto n = item_ranges.size();
+        auto num_bins = capacities.size();
+
+        // Each solution is the items' bins followed, in the load form, by the
+        // loads they determine.
+        set<vector<Integer>> expected, actual;
+        vector<int> assignment(n);
+        function<void(size_t)> enumerate_items = [&](size_t i) {
+            if (i == n) {
+                vector<Integer> load(num_bins, 0_i);
+                for (size_t j = 0; j < n; ++j) {
+                    auto & l = load[assignment[j]];
+                    if (l > capacities[assignment[j]])
+                        return;
+                    l += sizes[j];
+                }
+                for (size_t b = 0; b < num_bins; ++b)
+                    if (load[b] > capacities[b])
+                        return;
+                vector<Integer> solution;
+                for (auto v : assignment)
+                    solution.push_back(Integer{v});
+                if (load_form)
+                    solution.insert(solution.end(), load.begin(), load.end());
+                expected.insert(solution);
+                return;
+            }
+            for (int v = item_ranges[i].first; v <= item_ranges[i].second; ++v) {
+                assignment[i] = v;
+                enumerate_items(i + 1);
+            }
+        };
+        enumerate_items(0);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> items, loads;
+        for (const auto & [lo, hi] : item_ranges)
+            items.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        if (load_form)
+            for (const auto & c : capacities)
+                loads.push_back(p.create_integer_variable(0_i, c));
+
+        auto bin_packing = load_form ? BinPacking{items, sizes, loads} : BinPacking{items, sizes, capacities};
+        if (! gac)
+            bin_packing.with_consistency(consistency::BC{});
+        if (shaw)
+            bin_packing.with_cardinality_reasoning(bin_packing::Shaw{});
+        p.post(bin_packing);
+
+        // extract_from_state narrows to int, which cannot hold these loads.
+        auto proof_name = proofs ? make_optional<string>("bin_packing_edge_of_range_test") : nullopt;
+        solve_for_tests_with_callbacks(
+            p, proof_name,
+            [&](const CurrentState & state) -> bool {
+                vector<Integer> solution;
+                for (const auto & item : items)
+                    solution.push_back(state(item));
+                for (const auto & load : loads)
+                    solution.push_back(state(load));
+                actual.insert(solution);
+                return true;
+            },
+            [](const CurrentState &) -> bool { return true; });
+        check_results(proof_name, expected, actual);
+    }
+
+    auto run_edge_of_range_tests(bool proofs) -> void
+    {
+        const auto big = Integer::max_bounded_value();
+
+        // Nine items of the largest size, at most one per bin: items 2..8 are
+        // pinned to bins 2..8, and items 0 and 1 share bins 0 and 1. Two
+        // solutions; GAC used to find none, because the total of every size
+        // wrapped.
+        vector<pair<int, int>> pinned{{0, 1}, {0, 1}};
+        for (int i = 2; i < 9; ++i)
+            pinned.emplace_back(i, i);
+        // Sizes {big, 1} over ten bins: the two items cannot share, so 90
+        // solutions. Shaw's penalty wrapped and it found none.
+        vector<pair<int, int>> two_items{{0, 9}, {0, 9}};
+        // The star: nine items of the largest size, item i over bins 0..i+1,
+        // ten bins. Stage 2's ceiling for bin 0 is 9 * big, which threw. Under
+        // GAC the per-bin DAG for bin 0 needs that partial sum too, and it is
+        // exact by design (dev_docs/bin-packing.md, Stage 3), so GAC still
+        // throws IntegerOverflow there, as the range rule allows; BC answers.
+        vector<pair<int, int>> star;
+        for (int i = 0; i < 9; ++i)
+            star.emplace_back(0, i + 1);
+
+        // With proofs, only the two items: the pinned shape and the star put
+        // nine items of the largest size in one bin's rows, whose coefficients
+        // then sum past 2^63, so their proofs cannot be written in an Integer
+        // and throw IntegerOverflow, which the range rule allows. Any shape
+        // whose sizes summed past 2^63, as the wrap needed, has the same rows.
+        for (bool shaw : {false, true}) {
+            for (bool gac : {true, false})
+                for (bool load_form : {false, true}) {
+                    if (! proofs)
+                        run_edge_of_range_test(proofs, "pinned", pinned, vector<Integer>(9, big), vector<Integer>(9, big), load_form, gac, shaw);
+                    run_edge_of_range_test(proofs, "two items", two_items, {big, 1_i}, vector<Integer>(10, big), load_form, gac, shaw);
+                }
+            if (! proofs)
+                run_edge_of_range_test(proofs, "star", star, vector<Integer>(9, big), vector<Integer>(10, big), false, false, shaw);
+        }
+    }
+
     auto run_bin_packing_capa_test(bool proofs, bool upfront, bool cardinality, const ViewWrapConfig & view_cfg,
         const vector<pair<int, int>> & item_ranges, const vector<int> & sizes, const vector<int> & capacities) -> unsigned long long
     {
@@ -587,6 +713,10 @@ auto main(int argc, char * argv[]) -> int
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
+        // Fixed proof names and no wraps, so the bare lane only (issue #961).
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions))
+            run_edge_of_range_tests(proofs);
+
         // Both proof strategies on every case, with and without proofs, and
         // their search trees compared (see check_strategies_agree). The
         // cardinality pass is a strength choice rather than a proof one, so it

@@ -155,28 +155,33 @@ must not rely on that.
 
 ## Epochs and backtracking
 
-`State` supports chronological backtracking by snapshotting the entire
-`integer_variable_states` vector on `new_epoch()` and restoring it on
-`backtrack()`.
+`State` supports chronological backtracking by keeping one snapshot per
+epoch. `integer_variable_states` and `constraint_states` are each a
+`list` of epochs, and every epoch is a `vector` holding every domain, or
+every piece of constraint state. Only the last epoch is live: every read
+and write goes through `.back()`. `new_epoch()` pushes a copy of the
+current epoch, and `backtrack()` pops back to the epoch its `Timestamp`
+names.
 
-```cpp
-auto State::new_epoch(...) -> Timestamp
-{
-    _imp->integer_variable_states.push_back(_imp->integer_variable_states.back());
-    // ...
-}
+Popped epochs are not freed. `backtrack()` moves them onto a spare list,
+and `new_epoch()` copies into a spare epoch's storage when one is there.
+It allocates only when the search goes deeper than it has been before,
+so the spare list never holds more than that deepest point and peak
+memory is unchanged. Without this, a model with tens of thousands of
+variables allocates megabytes per node. glibc hands each freed copy back
+to the kernel, and the next node faults it in again (#1063).
 
-auto State::backtrack(Timestamp t) -> void
-{
-    _imp->integer_variable_states.resize(t.when);
-    // ...
-}
-```
+The two kinds of state are copied differently. Domains are
+copy-assigned, which also reuses each `IntervalSet`'s own storage.
+Constraint state is cleared and then copy-constructed, because
+copy-assigning a `std::any` clones, transfers and destroys, which costs
+more than the fresh copy. See `copy_epoch` in `state.cc`.
 
-The push-back deep-copies every `IntervalSet` in the inner vector. With
-the inline-2 small-vector this is cheap for the dominant cases (one or
-two intervals copied by value, no heap touch) but becomes a real cost
-for variables with many fragmented intervals.
+Either way, every `IntervalSet` and every piece of constraint state is
+deep-copied at every node, and reusing the storage does not change that.
+With the inline-2 small-vector the copy is cheap for the dominant cases
+(one or two intervals copied by value, no heap touch), but it becomes a
+real cost for variables with many fragmented intervals.
 
 `Timestamp` (returned by `new_epoch`, accepted by `backtrack`) records
 the epoch index plus a count of guesses, so the guess list is also
