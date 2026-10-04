@@ -1218,35 +1218,54 @@ namespace
         vector<DeterminedVariable> determined;
         if (! expose_quotient && pout && pout != px && pout != py)
             determined.push_back({*aout.var, [ax, ay, aout, px, py, paux, recover_q](const vector<Integer> & vals) -> optional<Integer> {
-                                      auto xv = px ? ax.coeff * vals[*px] + ax.offset : ax.offset;
-                                      auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
-                                      auto want = xv - recover_q(vals[paux], xv, yv) * yv;
-                                      if ((want - aout.offset) % aout.coeff != 0_i)
+                                      // Every value in play lies within a view's reach, about 2^61, so
+                                      // if |q| * |y| overflows the remainder is past 2^62 and
+                                      // determines nothing in any domain: not a tuple. (The same holds
+                                      // for the other callbacks below, and in Multiply and Power.)
+                                      try {
+                                          auto xv = px ? ax.coeff * vals[*px] + ax.offset : ax.offset;
+                                          auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
+                                          auto want = xv - recover_q(vals[paux], xv, yv) * yv;
+                                          if ((want - aout.offset) % aout.coeff != 0_i)
+                                              return nullopt;
+                                          return (want - aout.offset) / aout.coeff;
+                                      }
+                                      catch (const IntegerOverflow &) {
                                           return nullopt;
-                                      return (want - aout.offset) / aout.coeff;
+                                      }
                                   }});
         bool x_fixed_sign = xlo >= 0_i || xhi <= 0_i;
         Integer x_sign = xhi <= 0_i ? -1_i : 1_i;
         if (! expose_quotient && px && px != py && px != pout && x_fixed_sign)
             determined.push_back({*ax.var, [ax, ay, py, pout, paux, aout, x_sign](const vector<Integer> & vals) -> optional<Integer> {
-                                      auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
-                                      auto outv = pout ? aout.coeff * vals[*pout] + aout.offset : aout.offset;
-                                      auto want = x_sign * vals[paux] * (yv < 0_i ? -yv : yv) + outv;
-                                      if ((want - ax.offset) % ax.coeff != 0_i)
+                                      try {
+                                          auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
+                                          auto outv = pout ? aout.coeff * vals[*pout] + aout.offset : aout.offset;
+                                          auto want = x_sign * vals[paux] * (yv < 0_i ? -yv : yv) + outv;
+                                          if ((want - ax.offset) % ax.coeff != 0_i)
+                                              return nullopt;
+                                          return (want - ax.offset) / ax.coeff;
+                                      }
+                                      catch (const IntegerOverflow &) {
                                           return nullopt;
-                                      return (want - ax.offset) / ax.coeff;
+                                      }
                                   }});
 
         if (want_tabulation(level, enum_vars.vars(), determined, initial_state)) {
             auto accept = [ax, ay, aout, px, py, pout, paux, expose_quotient, recover_q](const vector<Integer> & vals) -> bool {
-                auto xv = px ? ax.coeff * vals[*px] + ax.offset : ax.offset;
-                auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
-                auto outv = pout ? aout.coeff * vals[*pout] + aout.offset : aout.offset;
-                // Divide enumerates no remainder aux: q is the exposed slot and the
-                // remainder is derived. Modulus's aux is the quotient magnitude.
-                if (expose_quotient)
-                    return is_in_relation(xv, yv, outv, xv - outv * yv);
-                return is_in_relation(xv, yv, recover_q(vals[paux], xv, yv), outv);
+                try {
+                    auto xv = px ? ax.coeff * vals[*px] + ax.offset : ax.offset;
+                    auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
+                    auto outv = pout ? aout.coeff * vals[*pout] + aout.offset : aout.offset;
+                    // Divide enumerates no remainder aux: q is the exposed slot and the
+                    // remainder is derived. Modulus's aux is the quotient magnitude.
+                    if (expose_quotient)
+                        return is_in_relation(xv, yv, outv, xv - outv * yv);
+                    return is_in_relation(xv, yv, recover_q(vals[paux], xv, yv), outv);
+                }
+                catch (const IntegerOverflow &) {
+                    return false;
+                }
             };
 
             st.tabulation = TabulationPlan{enum_vars.vars(), move(determined), accept};
