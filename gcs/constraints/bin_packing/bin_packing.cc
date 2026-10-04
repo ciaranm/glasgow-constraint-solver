@@ -180,35 +180,29 @@ namespace
         vector<vector<set<long long>>> dead_g_dn;
     };
 
-    // Per-bin cap on partial sums: sum of all item sizes.
-    //
-    // We deliberately do NOT intersect with initial upper(loads[b]) or
-    // capacities[b] here. Matching Knapsack's design (see
-    // dev_docs/knapsack.md "Static reduction"), the static DAG must contain
-    // every partial-sum vector that any assignment of items in their initial
-    // domains can produce, even ones that already violate the initial cap.
-    // The per-call propagator's "eliminated by current bound" path needs a
-    // Top-level flag for the over-bound successor to emit its pol step
-    // against; dropping the bound filter here guarantees that flag exists,
-    // and removes the need to track over-cap phantoms in the scaffolding.
-    // The initial cap is then enforced by the same per-call cap-exceeded
-    // path that the search will use for tighter current bounds anyway, so
-    // nothing is lost in strength.
-    auto per_bin_cap(const State & /*state*/, const vector<Integer> & sizes, bool /*have_loads*/, const vector<IntegerVariableID> & /*loads*/,
-        const vector<Integer> & /*capacities*/, size_t /*b*/) -> long long
+    // The partial load the include branch reaches from a node of weight w, or
+    // nullopt where that sum does not fit in a long long. A static DAG holds
+    // every partial sum that the items' initial domains can produce, even ones
+    // already past the bin's initial bound (Knapsack's "Static reduction", see
+    // dev_docs/knapsack.md: the per-call cap-exceeded path needs a Top flag for
+    // the over-bound successor to chain against), so its weights are exact sums
+    // of sizes. build_fwd_dag refuses a sum that does not fit, so one that does
+    // not fit is never a DAG node, and the walks that only ask whether a sum is
+    // a node can treat it as one that is not. Summing in raw long long here used
+    // to wrap and drop solutions (dev_docs/integer-ranges.md).
+    auto include_weight(long long w, const Integer & size) -> optional<long long>
     {
-        long long total = 0;
-        for (auto & s : sizes)
-            total += s.raw_value;
-        return total;
+        long long result;
+        if (add_overflows(w, size.raw_value, &result))
+            return nullopt;
+        return result;
     }
 
     // Forward-only static DAG construction. Walks layer by layer, taking the
     // "exclude" branch when items[i] != b is admissible in the initial
-    // domain and the "include" branch when items[i] == b is admissible
-    // (subject to the per-bin cap). Phantoms are computed separately below.
-    auto build_fwd_dag(const State & state, const vector<IntegerVariableID> & items, const vector<Integer> & sizes, size_t b, long long cap)
-        -> PerBinDag
+    // domain and the "include" branch when items[i] == b is admissible.
+    // Phantoms are computed separately below.
+    auto build_fwd_dag(const State & state, const vector<IntegerVariableID> & items, const vector<Integer> & sizes, size_t b) -> PerBinDag
     {
         auto n = items.size();
         auto bin_idx = Integer{static_cast<long long>(b)};
@@ -227,9 +221,12 @@ namespace
                 if (can_be_notb[i])
                     fwd[i + 1].insert(w);
                 if (can_be_b[i]) {
-                    auto w2 = w + sizes[i].raw_value;
-                    if (w2 <= cap)
-                        fwd[i + 1].insert(w2);
+                    // A partial sum the design needs that does not fit in 64
+                    // bits: the rule's allowance for arithmetic constraints.
+                    auto w2 = include_weight(w, sizes[i]);
+                    if (! w2)
+                        throw_integer_overflow("+", w, sizes[i].raw_value);
+                    fwd[i + 1].insert(*w2);
                 }
             }
         }
@@ -254,13 +251,13 @@ namespace
         dag.exclude_succ.assign(n, {});
         dag.include_succ.assign(n, {});
         for (size_t i = 0; i < n; ++i) {
-            auto sz = sizes[i].raw_value;
             dag.exclude_succ[i].resize(dag.nodes_at[i].size());
             dag.include_succ[i].resize(dag.nodes_at[i].size());
             for (size_t p = 0; p < dag.nodes_at[i].size(); ++p) {
                 auto w = dag.nodes_at[i][p];
                 dag.exclude_succ[i][p] = pos_in(dag.nodes_at[i + 1], w);
-                dag.include_succ[i][p] = pos_in(dag.nodes_at[i + 1], w + sz);
+                auto w2 = include_weight(w, sizes[i]);
+                dag.include_succ[i][p] = w2 ? pos_in(dag.nodes_at[i + 1], *w2) : -1;
             }
         }
         return dag;
@@ -441,15 +438,14 @@ namespace
         // 3. Per-coord + joint forward chains, for every (parent in DAG[i],
         //    branch, succ in DAG[i+1]); see emit_forward_chain.
         for (size_t i = 0; i < n; ++i) {
-            auto sz = sizes[i].raw_value;
             for (auto parent_w : dag.nodes_at[i]) {
                 // exclude branch
                 if (dag.node_set[i + 1].contains(parent_w))
                     emit_forward_chain(logger, items, bin_idx, flags, i, parent_w, parent_w, false);
                 // include branch
-                auto succ_w = parent_w + sz;
-                if (dag.node_set[i + 1].contains(succ_w))
-                    emit_forward_chain(logger, items, bin_idx, flags, i, parent_w, succ_w, true);
+                auto succ_w = include_weight(parent_w, sizes[i]);
+                if (succ_w && dag.node_set[i + 1].contains(*succ_w))
+                    emit_forward_chain(logger, items, bin_idx, flags, i, parent_w, *succ_w, true);
             }
         }
 
@@ -467,15 +463,14 @@ namespace
         //           items[i]: items[i] == b OR items[i] != b).
         //      Then rup Σ_{w ∈ DAG[i+1]} S_{i+1,w} >= 1.
         for (size_t i = 0; i < n; ++i) {
-            auto sz = sizes[i].raw_value;
             for (auto parent_w : dag.nodes_at[i]) {
                 const auto & parent_s = flags.s[i].at(parent_w);
                 WPBSum impl = WPBSum{} + 1_i * ! parent_s;
                 if (dag.node_set[i + 1].contains(parent_w))
                     impl += 1_i * flags.s[i + 1].at(parent_w);
-                auto succ_w = parent_w + sz;
-                if (succ_w != parent_w && dag.node_set[i + 1].contains(succ_w))
-                    impl += 1_i * flags.s[i + 1].at(succ_w);
+                auto succ_w = include_weight(parent_w, sizes[i]);
+                if (succ_w && *succ_w != parent_w && dag.node_set[i + 1].contains(*succ_w))
+                    impl += 1_i * flags.s[i + 1].at(*succ_w);
                 logger->emit_rup_proof_line(move(impl) >= 1_i, ProofLevel::Top);
             }
 
@@ -642,7 +637,6 @@ namespace
 
         for (size_t i = 0; i < n; ++i) {
             map<long long, LiveNode> growing;
-            auto sz = sizes[i].raw_value;
 
             for (const auto & [parent_w, _] : completed_layers.back()) {
                 if (can_be_notb[i]) {
@@ -655,11 +649,11 @@ namespace
                     }
                 }
                 if (can_be_b[i]) {
-                    auto succ_w = parent_w + sz;
-                    if (dag.node_set[i + 1].contains(succ_w)) {
-                        auto it = growing.find(succ_w);
+                    auto succ_w = include_weight(parent_w, sizes[i]);
+                    if (succ_w && dag.node_set[i + 1].contains(*succ_w)) {
+                        auto it = growing.find(*succ_w);
                         if (it == growing.end())
-                            it = growing.emplace(succ_w, LiveNode{}).first;
+                            it = growing.emplace(*succ_w, LiveNode{}).first;
                         it->second.predecessors.emplace_back(parent_w, true);
                     }
                 }
@@ -1219,6 +1213,12 @@ namespace
             state, inference, logger, items, have_loads, loads, dag, scratch, flags, opb_lines, b, owner, feasible, inferences, pruned, load_cut);
     }
 
+    // A load is a variable or a view, so its bounds lie within twice
+    // Integer::max_bounded_value(), and a capacity and a size within it once.
+    // Four times it is therefore past any bound plus any size, and adding a size
+    // to it still fits in an Integer.
+    constexpr Integer stage2_saturation = Integer::max_bounded_value() * 4_i;
+
     auto run_stage2(const State & state, auto & inference, ProofLogger * logger, const vector<IntegerVariableID> & items,
         const vector<Integer> & sizes, const vector<IntegerVariableID> & loads, const vector<Integer> & capacities, bool have_loads,
         const ConstraintID & owner) -> void
@@ -1237,12 +1237,17 @@ namespace
             forced_reason.clear();
             excluded_reason.clear();
             still_possible.clear();
+            // Both sums saturate at stage2_saturation, which is past any load
+            // or capacity bound plus any size, so every comparison below comes
+            // out the same as it would on the true sums, and none of them can
+            // overflow (dev_docs/integer-ranges.md).
+            auto saturating_add = [](Integer a, Integer b) { return std::min(a + b, stage2_saturation); };
             Integer floor = 0_i, ceiling = 0_i;
             for (size_t i = 0; i < items.size(); ++i) {
                 auto v = state.optional_single_value(items[i]);
                 if (v && *v == bin_idx) {
-                    floor += sizes[i];
-                    ceiling += sizes[i];
+                    floor = saturating_add(floor, sizes[i]);
+                    ceiling = saturating_add(ceiling, sizes[i]);
                     if (need_reasons)
                         forced_reason.emplace_back(items[i] == bin_idx);
                 }
@@ -1252,7 +1257,7 @@ namespace
                 }
                 else {
                     still_possible.push_back(i);
-                    ceiling += sizes[i];
+                    ceiling = saturating_add(ceiling, sizes[i]);
                 }
             }
 
@@ -1345,7 +1350,42 @@ namespace
     // truncates towards zero, which is floor only for a >= 0).
     auto ceil_div(long long a, long long b) -> long long
     {
-        return a >= 0 ? (a + b - 1) / b : -((-a) / b);
+        return a >= 0 ? a / b + (a % b != 0 ? 1 : 0) : -((-a) / b);
+    }
+
+    // Stage 4's sums run over many items and bins, and near the edges of the
+    // integer range they can pass 64 bits (dev_docs/integer-ranges.md). Each
+    // is checked, and one that does not fit abandons the threshold it was being
+    // worked out for: Stage 4 is reasoning on top of Stages 2 and 3, so
+    // skipping a threshold only costs strength, and costs it the same way with
+    // and without proofs. Stage4Overflow is only ever thrown and caught around
+    // arithmetic, never across an inference.
+    struct Stage4Overflow
+    {
+    };
+
+    auto add4(long long a, long long b) -> long long
+    {
+        long long result;
+        if (add_overflows(a, b, &result))
+            throw Stage4Overflow{};
+        return result;
+    }
+
+    auto sub4(long long a, long long b) -> long long
+    {
+        long long result;
+        if (sub_overflows(a, b, &result))
+            throw Stage4Overflow{};
+        return result;
+    }
+
+    auto mul4(long long a, long long b) -> long long
+    {
+        long long result;
+        if (mul_overflows(a, b, &result))
+            throw Stage4Overflow{};
+        return result;
     }
 
     // Per-call working space, sized once in prepare().
@@ -1379,7 +1419,7 @@ namespace
     // same either way.
     auto bin_contribution(const Stage4Scratch & sc, size_t b, long long t, long long alpha) -> long long
     {
-        return sc.citable[b] ? std::max(0LL, ceil_div(t - sc.caps[b], alpha)) : 0;
+        return sc.citable[b] ? std::max(0LL, ceil_div(sub4(t, sc.caps[b]), alpha)) : 0;
     }
 
     // Write the proof for one Stage 4 inference: each bin's row, then the pol
@@ -1406,12 +1446,14 @@ namespace
         bin_lines.reserve(num_bins);
         for (size_t b = 0; b < num_bins; ++b) {
             auto bin_idx = Integer(static_cast<long long>(b));
-            long long t_b = 0;
+            // The deciding sweep summed exactly these without overflowing, so
+            // this does not either.
+            Integer t_b = 0_i;
             for (const auto & [i, item] : enumerate(items))
                 if (kept_in(i, b))
-                    t_b += sizes[i].raw_value;
+                    t_b += sizes[i];
 
-            if (bin_contribution(sc, b, t_b, alpha) > 0) {
+            if (sc.citable[b] && ceil_div((t_b - Integer{sc.caps[b]}).raw_value, alpha) > 0) {
                 // The capacity row, weakened down to the kept items and then
                 // divided. The weakening goes in as one trivially true line
                 // rather than as raw literal axioms, so an item variable that
@@ -1509,13 +1551,20 @@ namespace
         // per-bin totals once for the whole sweep rather than once per threshold.
         std::ranges::fill(sc.counted, uint8_t{0});
         std::ranges::fill(sc.t, 0LL);
-        for (size_t i = 0; i < n; ++i)
-            if (sizes[i] > 0_i && sc.dom_size[i] == 1) {
-                sc.counted[i] = 1;
-                for (size_t b = 0; b < num_bins; ++b)
-                    if (sc.can[i * num_bins + b])
-                        sc.t[b] += sizes[i].raw_value;
-            }
+        // The per-bin totals only grow, so once one does not fit, nor does it
+        // at any later threshold: there is nothing for Stage 4 to do this call.
+        try {
+            for (size_t i = 0; i < n; ++i)
+                if (sizes[i] > 0_i && sc.dom_size[i] == 1) {
+                    sc.counted[i] = 1;
+                    for (size_t b = 0; b < num_bins; ++b)
+                        if (sc.can[i * num_bins + b])
+                            sc.t[b] = add4(sc.t[b], sizes[i].raw_value);
+                }
+        }
+        catch (const Stage4Overflow &) {
+            return;
+        }
         size_t admitted = 0;
 
         // The load upper bounds the rows are read under have to be in the
@@ -1546,28 +1595,37 @@ namespace
             // a bin's divided capacity while costing c_i (|D_i| - 1), so it only
             // pays its way once it is pinned to a bin -- which is exactly where
             // that cost is zero, and so where it was admitted above.
-            for (; admitted < n && sizes[sc.by_size[admitted]].raw_value >= alpha; ++admitted) {
-                auto i = sc.by_size[admitted];
-                if (sizes[i] <= 0_i || sc.counted[i])
-                    continue;
-                sc.counted[i] = 1;
+            try {
+                for (; admitted < n && sizes[sc.by_size[admitted]].raw_value >= alpha; ++admitted) {
+                    auto i = sc.by_size[admitted];
+                    if (sizes[i] <= 0_i || sc.counted[i])
+                        continue;
+                    sc.counted[i] = 1;
+                    for (size_t b = 0; b < num_bins; ++b)
+                        if (sc.can[i * num_bins + b])
+                            sc.t[b] = add4(sc.t[b], sizes[i].raw_value);
+                }
+            }
+            catch (const Stage4Overflow &) {
+                return;
+            }
+
+            long long penalty = 0, base = 0, delta = 0;
+            try {
+                for (size_t i = 0; i < n; ++i) {
+                    sc.weight[i] = ceil_div(sizes[i].raw_value, alpha);
+                    if (sc.counted[i])
+                        penalty = add4(penalty, mul4(sc.weight[i], sc.dom_size[i] - 1));
+                }
                 for (size_t b = 0; b < num_bins; ++b)
-                    if (sc.can[i * num_bins + b])
-                        sc.t[b] += sizes[i].raw_value;
+                    base = add4(base, bin_contribution(sc, b, sc.t[b], alpha));
+                delta = sub4(base, penalty);
+            }
+            catch (const Stage4Overflow &) {
+                continue;
             }
 
-            long long penalty = 0;
-            for (size_t i = 0; i < n; ++i) {
-                sc.weight[i] = ceil_div(sizes[i].raw_value, alpha);
-                if (sc.counted[i])
-                    penalty += sc.weight[i] * (sc.dom_size[i] - 1);
-            }
-
-            long long base = 0;
-            for (size_t b = 0; b < num_bins; ++b)
-                base += bin_contribution(sc, b, sc.t[b], alpha);
-
-            if (base - penalty >= 1) {
+            if (delta >= 1) {
                 inference.contradiction(logger,
                     JustifyExplicitly{[&, alpha](const ReasonLiterals &) -> void {
                                           emit_stage4_proof(logger, state, items, sizes, loads, have_loads, opb_lines, sc, alpha, nullopt);
@@ -1590,23 +1648,35 @@ namespace
                 // can only lower `base`, and putting it back into one bin raises
                 // that bin's term by at most c_h. So DELTA <= base - penalty +
                 // c_h |D_h|, and there is nothing here when that is below 1.
-                if (base - penalty + sc.weight[h] * sc.dom_size[h] < 1)
-                    continue;
-
                 auto h_counted = sc.counted[h] != 0;
-                auto penalty_less_h = h_counted ? penalty - sc.weight[h] * (sc.dom_size[h] - 1) : penalty;
-                long long base_less_h = 0;
-                for (size_t b = 0; b < num_bins; ++b) {
-                    sc.t_less_h[b] = sc.t[b] - (h_counted && sc.can[h * num_bins + b] ? sizes[h].raw_value : 0);
-                    base_less_h += bin_contribution(sc, b, sc.t_less_h[b], alpha);
+                long long penalty_less_h = 0, base_less_h = 0;
+                try {
+                    if (add4(delta, mul4(sc.weight[h], sc.dom_size[h])) < 1)
+                        continue;
+
+                    penalty_less_h = h_counted ? sub4(penalty, mul4(sc.weight[h], sc.dom_size[h] - 1)) : penalty;
+                    for (size_t b = 0; b < num_bins; ++b) {
+                        sc.t_less_h[b] = sc.t[b] - (h_counted && sc.can[h * num_bins + b] ? sizes[h].raw_value : 0);
+                        base_less_h = add4(base_less_h, bin_contribution(sc, b, sc.t_less_h[b], alpha));
+                    }
+                }
+                catch (const Stage4Overflow &) {
+                    continue;
                 }
 
                 for (size_t b = 0; b < num_bins; ++b) {
                     if (! sc.can[h * num_bins + b])
                         continue;
-                    auto without = bin_contribution(sc, b, sc.t_less_h[b], alpha);
-                    auto with_h = bin_contribution(sc, b, sc.t_less_h[b] + sizes[h].raw_value, alpha);
-                    if (base_less_h - without + with_h - penalty_less_h < 1)
+                    long long delta_h = 0;
+                    try {
+                        auto without = bin_contribution(sc, b, sc.t_less_h[b], alpha);
+                        auto with_h = bin_contribution(sc, b, add4(sc.t_less_h[b], sizes[h].raw_value), alpha);
+                        delta_h = sub4(add4(sub4(base_less_h, without), with_h), penalty_less_h);
+                    }
+                    catch (const Stage4Overflow &) {
+                        continue;
+                    }
+                    if (delta_h < 1)
                         continue;
                     // An earlier inference in this sweep may already have taken
                     // the value; `sc` deliberately keeps the domains the sweep
@@ -1773,8 +1843,7 @@ auto BinPacking::prepare(Propagators &, State & initial_state, ProofModel * cons
         _bridge->dags.reserve(num_bins);
         _bridge->stage3_scratch.assign(num_bins, {});
         for (size_t b = 0; b < num_bins; ++b) {
-            auto cap = per_bin_cap(initial_state, _sizes, _have_loads, _loads, _capacities, b);
-            auto dag = build_fwd_dag(initial_state, _items, _sizes, b, cap);
+            auto dag = build_fwd_dag(initial_state, _items, _sizes, b);
             compute_phantoms(dag, initial_state, _items, _sizes, b);
 
             // Size the per-call scratch to this bin's DAG so the hot path only
