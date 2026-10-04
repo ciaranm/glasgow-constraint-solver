@@ -231,7 +231,7 @@ struct RegularBacchus::Bridge
 RegularBacchus::RegularBacchus(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool sr) :
     _vars(move(v)), _num_states(n), _transitions(move(t)), _final_states(move(f)), _short_reasons(sr)
 {
-    for (const auto & state : t)
+    for (const auto & state : _transitions)
         for (const auto & [value, _] : state)
             innards::require_bounded(value, "a transition value of RegularBacchus");
     set<Integer> sym_set;

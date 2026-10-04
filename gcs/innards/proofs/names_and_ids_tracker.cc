@@ -2947,9 +2947,11 @@ auto NamesAndIDsTracker::reification_shape(const WPBSumLE & ineq, const HalfReif
     // arithmetic catches the overflow, but reports it as a bare arithmetic
     // failure from deep inside model writing, with the OPB already half written
     // and nothing naming the variable at fault. Restate it as something a caller
-    // can act on. Problem and State refuse such domains up front
-    // (Integer::max_bounded_value()), so reaching this means a caller built a
-    // wide bound by some other route (issue #852).
+    // can act on. Problem refuses such domains up front
+    // (Integer::max_bounded_value()), but an auxiliary variable may reach a
+    // quarter of the machine range (Integer::max_auxiliary_value()), so this
+    // can be reached by an auxiliary as well as by a wide bound built some
+    // other way (issue #852).
     Integer max_contribution_from_positive_terms = 0_i;
 
     try {

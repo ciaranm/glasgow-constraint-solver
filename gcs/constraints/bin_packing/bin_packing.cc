@@ -74,7 +74,7 @@ namespace
     //
     // The DAG is the k=1 specialisation of Knapsack's static DAG: layer i
     // holds the surviving partial-load values w reachable from (0,0) under
-    // initial item domains within the per-bin cap. We do NOT intersect with
+    // initial item domains. We do NOT intersect with
     // backward reachability — that information becomes the "statically dead"
     // ~S lines emitted at Top, mirroring Knapsack's design (see
     // dev_docs/knapsack.md "Static reduction").

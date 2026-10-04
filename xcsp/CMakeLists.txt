@@ -4,8 +4,10 @@ include(FetchContent)
 # check for overflow: 4294967297 is read as 1, silently, so an instance with a
 # value past int32 gets a wrong answer. The patch makes the conversion throw
 # std::out_of_range instead, refuses a tuple value of INT_MAX (the parser's
-# wildcard sentinel, so it would be read as `*`), and stops a domain reaching
-# INT_MAX from overflowing the loop that lists its values. The binary reports
+# wildcard sentinel, so it would be read as `*`), stops a domain reaching
+# INT_MAX from overflowing the loop that lists its values, and saturates an
+# interval's width and a domain's size, which overflow for a domain spanning
+# (nearly) the whole of int. The binary reports
 # the refusals as unsupported. See dev_docs/xcsp.md, "Integer range".
 FetchContent_Declare(xcsp3_cpp_parser
     GIT_REPOSITORY https://github.com/xcsp3team/XCSP3-CPP-Parser.git

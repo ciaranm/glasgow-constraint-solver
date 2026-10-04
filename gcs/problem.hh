@@ -161,8 +161,8 @@ namespace gcs
          * gives an optional name that will appear in some output; it does not
          * have to be unique.
          *
-         * \throws InvalidProblemDefinitionException on the same bounds condition
-         * as Problem::create_integer_variable.
+         * \throws IntegerOverflow on the same bounds condition as
+         * Problem::create_integer_variable.
          */
         [[nodiscard]] auto create_integer_variable_vector(std::size_t how_many, Integer lower, Integer upper,
             const std::optional<std::string> & name = std::nullopt) GCS_LIFETIME_BOUND -> std::vector<IntegerVariableID>;
@@ -178,8 +178,8 @@ namespace gcs
          * ```
          * Otherwise, use Problem::create_integer_variable_vector instead.
          *
-         * \throws InvalidProblemDefinitionException on the same bounds condition
-         * as Problem::create_integer_variable.
+         * \throws IntegerOverflow on the same bounds condition as
+         * Problem::create_integer_variable.
          */
         template <std::size_t n_>
         [[nodiscard]] auto create_n_integer_variables(Integer lower, Integer upper, const std::optional<std::string> & name = std::nullopt)
