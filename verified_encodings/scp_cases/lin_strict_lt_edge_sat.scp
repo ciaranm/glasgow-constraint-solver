@@ -1,0 +1,1 @@
+( (version 1) (variables (X -1152921504606846975 -1152921504606846973)) (constraints (_1 lin_less_than (2 X) -1152921504606846975)) (prob_type enumerate) )

@@ -1,0 +1,1 @@
+{"variables": {"x": {"type": "int", "domain": [[0, 9223372036854775808]]}}, "arrays": {}, "constraints": [], "output": ["x"], "solve": {"method": "satisfy"}, "version": "1.0"}

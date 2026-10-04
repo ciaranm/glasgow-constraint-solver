@@ -1,0 +1,12 @@
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <var id="x"> -2147483647..2147483647 </var>
+    <var id="y"> -2147483647..2147483647 </var>
+    <var id="z"> -2147483647..2147483647 </var>
+  </variables>
+  <constraints>
+    <sum><list> x y z </list><coeffs> 2147483647 2147483647 2147483647 </coeffs><condition> (eq,0) </condition></sum>
+    <intension> eq(x,1) </intension>
+    <intension> eq(y,-1) </intension>
+  </constraints>
+</instance>

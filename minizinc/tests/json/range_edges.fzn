@@ -1,0 +1,1 @@
+{"variables": {"x": {"type": "int", "domain": [[1152921504606846972, 1152921504606846975]]}, "y": {"type": "int", "domain": [[0, 3]]}}, "arrays": {}, "constraints": [{"id": "int_lin_eq", "args": [[1, 1], ["x", "y"], 1152921504606846975]}], "output": ["x", "y"], "solve": {"method": "satisfy"}, "version": "1.0"}
