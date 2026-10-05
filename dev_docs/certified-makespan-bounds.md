@@ -20,21 +20,43 @@ well as the run that used it.
 
 Let `M` be the makespan and suppose `M ≤ μ`. Then:
 
-- every task is confined to `[lo, μ)`, where `lo` is the earliest time any of
-  them can be running;
-- [the window-energy lemma](cumulative-proof-logging.md) gives each task
-  `Σ_{t ∈ [lo, μ)} active_{i,t} ≥ d_i`;
+- each counted task has a start range: its own bounds, with the upper bound
+  tightened to `μ − b` where the model has a link row `M − start ≥ b` for it
+  (`start_bounds_within`);
+- [the window-energy lemma](cumulative-proof-logging.md) gives each task the
+  least overlap that range forces with `[lo, μ)`, where `lo` is the earliest
+  time any of the derived constraint's tasks can be running. A task the range
+  keeps wholly inside the window gets `Σ_{t ∈ [lo, μ)} active_{i,t} ≥ d_i`;
+  one that could still start late gets only what it must run inside the
+  window, possibly nothing;
 - summing those weighted by `h_i`, against the constraint's capacity rows summed
   over the same window, cancels every activity term and leaves a line with
   nothing but negative coefficients against a positive right-hand side — a
-  contradiction exactly when `Σ_i d_i h_i > C · |rows in the window|`;
+  contradiction exactly when the guaranteed energies exceed
+  `C · |rows in the window|`;
 - the wrapping RUP concludes `M ≥ μ + 1`.
 
-`makespan_energy_bound` walks the candidate `μ` and returns the largest one
-refuted; `derive_makespan_bound` emits the argument for it, as one `pol` over
-the rows and the per-task lemmas. The constraint then infers `M ≥ μ + 1` with
-that as its `JustifyExplicitly`, from an initialiser, so it fires once at the
-root.
+Every task being confined to `[lo, μ)` is the special case where each counted
+task's start range ends by `μ − d_i`, through its link or its own domain. So a
+missing link costs a task its deadline's confinement, not its place in the sum:
+an unlinked task still counts whatever overlap its own start bounds force, and
+the bound may or may not weaken. With no linked task at all the energies do not
+depend on `M`, so a refuted `μ` refutes the root itself, and on a feasible model
+nothing is certified.
+
+`makespan_energy_bound` walks the integer candidates `μ` from `lo` up to the
+smaller of `ub(M)` and the end of the last task window. A candidate whose bound
+would not beat what the model already implies (`lb(M)`, and `lb(s) + b` over
+the linked tasks) is skipped without being summed; each of the rest sums every
+counted task's energy, and the largest refuted is returned. That is `O(n)` per
+summed candidate, with proofs on or off, so with a loose `ub(M)` it scans the
+whole horizon even when the bound is small (#1267). `derive_makespan_bound`
+emits the argument for the bound found, per counted task in turn: for a linked
+task its own domain does not already confine, one confinement `pol` (next
+section); then the task's window-energy lemma, under the negated conclusion,
+skipping a task the lemma gives nothing. Then one `pol` sums the capacity rows
+and `h_i ×` each energy line. The constraint then infers `M ≥ μ + 1` with that
+as its `JustifyExplicitly`, from an initialiser, so it fires once at the root.
 
 ### Two places the bound is not `L`
 
@@ -56,22 +78,24 @@ number by then: a donor's variable height reaches the derived constraint as the
 demand it guarantees, `lb(h)`, and only that much of it is counted. A task the
 bound cannot speak about carries none of the energy `L` counted. And a window
 narrow enough to exclude a task's whole duration gets only the part that fits —
-which is why the search starts from what the model already implies rather than
-from the makespan variable's declared lower bound. That distinction is not cosmetic: initialisers run before anything
-has propagated, so the makespan's own lower bound is still zero at that point,
-and without it the search settles for a window too narrow to hold every task.
+which is why the search only takes bounds above what the model already implies
+rather than above the makespan variable's declared lower bound. That
+distinction is not cosmetic: initialisers run before anything has propagated,
+so the makespan's own lower bound is still its declared one at that point, and
+without it the search settles for a window too narrow to hold every task.
 Sound, and a weaker number than the constraint deserves.
 
 ## The deadline is a `pol`, not a RUP
 
 The step that makes this an argument about the makespan rather than about the
-tasks' own domains is `start_i ≤ μ - d_i`. It follows from the model's
-`makespan - start_i ≥ d_i` and the negated conclusion `M ≤ μ`, and it is **not**
-reverse unit propagation: a checker will not carry a bound from one variable's
-bits to another's across a linear row, whatever the two order literals say. That
-is the same wall [`VeriPB` RUP limits](../dev_docs/README.md) put in front of
-every cross-variable linear inference, and the answer is the same — a cutting
-planes step.
+tasks' own domains is `start_i ≤ μ - b`. It follows from the model's
+`makespan - start_i ≥ b` (usually `b = d_i`) and the negated conclusion
+`M ≤ μ`, and it is **not** reverse unit propagation: a checker will not carry a
+bound from one variable's bits to another's across a linear row, whatever the
+two order literals say. That is the same wall
+[`VeriPB` RUP limits](../dev_docs/README.md) put in front of every
+cross-variable linear inference, and the answer is the same — a cutting planes
+step.
 
 Adding the model's row to the two order literals' own definitions cancels both
 variables' bits exactly:
@@ -291,4 +315,4 @@ anything.
 Note the makespan rows have to be there to be cited: `--variant=global` puts the
 whole temporal network into one `DifferenceConstraints` propagator, so there is
 no per-task row to sum and the bound falls back to whatever the tasks' own
-domains give.
+domains give, which on a feasible model is nothing.
