@@ -312,8 +312,9 @@ constraints and do not restate it.
   variables, holes and views included, with every inference certified by our
   own derivations (guarded bound lemmas carry a range across a selected
   equality); interval-shaped throughout since #874. Gecode's `member` never
-  prunes a candidate once posted; on an identical tree GCS takes 3.3 to 3.7
-  times its time. Every listed domain from C++ and XCSP3 is an `In`, and so
+  prunes a candidate once posted; enumerating the same solutions without
+  failures, under different branching, GCS takes 3.3 to 3.7 times its time.
+  Every listed domain from C++ and XCSP3 is an `In`, and so
   is Python's `post_in`, which is where the findings are: carving `K` values
   costs Θ(K²) in the state layer's interval scans (12.1 s at 10⁵; 0.021 s with
   a binary search); the posted `In` stays live after its only useful call,
