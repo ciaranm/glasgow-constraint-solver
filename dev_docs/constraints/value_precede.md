@@ -87,9 +87,10 @@ mistranslated; `valueprecede.mzn` and `valueprecedechain.mzn` cover the glue.
 
 Plain variables, constants and views are all accepted. The propagator reads
 `in_domain(x, s)` and `in_domain(x, t)` and removes a value, which is the same
-for any kind. The proof handles views too: the encoding's `x_i = v` literals are
-the view's own, and the `value_precede_constraint_view_mixed` lane runs the
-suite's shapes with views mixed in.
+for any kind. The proof handles views too: the encoding names each view's
+`x_i = v` through the underlying variable's literal, and the
+`value_precede_constraint_view_mixed` lane runs the suite's shapes with views
+mixed in.
 
 ### Reification
 
@@ -210,9 +211,11 @@ position on, so emptying the array of `s` takes one call per position.
 
 `None.` Each call scans from the front for the first possible `s` and then
 prunes `t` up to it. A chain of `k` values is `k − 1` independent propagators,
-each `O(n)` per call. Keeping the first possible `s` as backtrackable state
-would make a call `O(1)` when nothing before it changed; on the corpus the
-family's calls cost 0.18 µs each (below), so there is nothing to buy.
+each making `O(n)` membership tests per call, and each test linear in its
+domain's runs (see [Interval efficiency](#interval-efficiency)). Keeping the
+first possible `s` as backtrackable state would make a call `O(1)` when nothing
+before it changed; on the corpus the family's calls cost 0.18 µs each (below),
+so there is nothing to buy.
 
 ### Interior values and optional pruning
 
@@ -230,7 +233,8 @@ pruning on that variable to stay on, and it says so correctly through its
 position, whatever the width, and the encoding mentions only chain values.
 
 **Negative values and zero.** Tested (`{−1, 1}` over `−1..1`). The chain may
-hold any integers.
+hold integers of either sign, within `±(2⁶⁰ − 1)` since #1215 (see
+[Overflow](#robustness-and-limits)).
 
 **Degenerate shapes.** An empty array, a single constant, all constants in and
 out of order, a chain of zero or one value, and chain values in no domain are
@@ -239,16 +243,66 @@ ordinary pair of positions, and the duplicate runs (`{x, x, y}` and friends)
 check it by enumeration: the semantics is over positions, so a repeat is not a
 special case.
 
-**Overflow.** None to guard: the pass does no arithmetic on values, and the
-encoding's constants are positions, at most `n`.
+**Overflow.** There is something to guard. The pass does no arithmetic on
+values, and the encoding's constants are positions, at most `n`, but the chain
+values go into equality literals and membership tests, and those translate a
+value through a view or into the literal layer. At `c9ceea25`, with
+`x ∈ 0..2`:
+
+- `ValuePrecede{INT64_MIN, 2, {x + 1}}` throws `Integer overflow:
+  -9223372036854775808 - 1` with proofs off, in `State::in_domain`'s
+  translation of the chain value through the view. With proofs on it throws
+  the same, earlier, in `define_proof_model`, where the upper-bound row's
+  literal `x + 1 = INT64_MIN` is translated to `x = INT64_MIN − 1`
+  (`simplify_literal.cc`). Its solutions are `x = 0` and `x = 2`.
+- `ValuePrecede{INT64_MIN, 1, {x}}`, with no view, enumerates those two
+  solutions with proofs off, but with proofs on throws `Integer overflow:
+  --9223372036854775808` in `define_proof_model`, while defining the literal
+  `x = INT64_MIN` for the upper-bound row.
+- `ValuePrecede{INT64_MIN, 1, {−x}}` throws `Integer overflow:
+  --9223372036854775808` with proofs off and on, because the negated view
+  negates the chain value: in `State::in_domain` with proofs off, and with
+  proofs on earlier, in `define_proof_model`, where `simplify_literal.cc`
+  translates the upper-bound row's literal on `−x` to one on `x`.
+- `ValuePrecede{−10, 1, {x + (INT64_MAX − 2), y}}`, with `y ∈ 0..2` too, a
+  moderate chain value through an extreme but representable view offset,
+  throws `Integer overflow: -10 - 9223372036854775805` with proofs off, in
+  `State::in_domain`, and with proofs on, earlier, in `define_proof_model`,
+  where `simplify_literal.cc` translates the upper-bound row's literal on the
+  view to one on `x`.
+
+So it takes a chain value that, read through its position's view, lands at or
+near an end of `Integer`, or past it. Past it overflows with proofs off too
+(`State::in_domain`). At or near it overflows only with proofs on, where the
+literal definitions step past it (`v + 1`, or negating `INT64_MIN`).
+`ValuePrecede{INT64_MAX, 1, {x}}`, and
+`ValuePrecede{0, 1, {x + (INT64_MIN + 2), y}}`, whose translated values fit,
+both enumerate with proofs off and throw `Integer overflow:
+9223372036854775807 + 1` with proofs on, while one step further in,
+`ValuePrecede{0, 1, {x + (INT64_MIN + 3), y}}` is fine both ways. A wide
+domain alone does not. Found in review and
+filed as #1188; fixed by #1215 (merged 2026-10-04), which refuses a chain value
+outside `±(2⁶⁰ − 1)` at construction, together with #1214 (the same day), which
+refuses a view offset outside it. Probes:
+`tmp/fd-codex-1005/ordering/probes/ovf.cc`,
+`tmp/fd-codex-1005/ordering/factcheck/ovf3.cc`,
+`tmp/fd-codex-1005/ordering/factcheck2/ovf.cc` and
+`tmp/fd-codex-1005/ordering/factcheck3/vp{3,4}.cc`.
 
 ### Interval efficiency
 
 **Fine at any width.** There is no loop over values in `value_precede.cc`.
 
 1. **The propagation side.** Up to about `2n` `in_domain` tests per pair per
-   call (the scan for `α`, then the pruning loop up to it), each logarithmic in
-   the domain's runs. No value walk.
+   call (the scan for `α`, then the pruning loop up to it). Each test is
+   `IntervalSet::contains`, which scans the domain's interval list from the
+   front and stops at the first interval reaching the value, so it is linear
+   in the number of runs below the value, not logarithmic. Each removal is an
+   `IntervalSet::erase`, linear in the runs the same way. A call is `O(n)`
+   tests and up to `O(n · r)` work, counting the removals, for `r` the most
+   runs in any domain: `O(n)` on interval domains. No value walk.
+   Making the shared membership test logarithmic would help every caller, but
+   should wait for a measurement that it matters here.
 2. **The reason side.** The reason is `generic_reason(vars)`, built once at
    install and materialised only when a proof asks for it. It names each
    variable's two bounds and **one literal per hole run**, not per value (since
@@ -364,7 +418,8 @@ chain over six variables in `0..3`, 64 for a three-value chain, all that form.
   appears, and the propagator runs until it has removed `s` everywhere. It
   takes one call per position to get there, since each call removes only the
   first.
-- **Algorithm** — as rule 1. `O(n)` per call, `n` calls to finish.
+- **Algorithm** — as rule 1. `O(n)` membership tests per call (see [Interval
+  efficiency](#interval-efficiency)), `n` calls to finish.
 - **Why it is true** — the first occurrence of `s` would need an earlier `s`.
 - **Proof technique** — `RUP`, ours. Under `x_α = s`, the upper-bound row
   gives `pos[s] ≤ α < n`, against the `nos` row `pos[s] ≥ n` (Theorem 2.7).
@@ -413,7 +468,21 @@ GCS_TEST_MAX_RECURSIONS=1500 value_precede_test --seed=1`, and with
 
 - **Strength**, deliberately: no level is claimed, so none is checked. The
   missing forcing rule is invisible to the suite.
-- **Holes.** Every tested domain is an interval.
+- **Holey initial domains.** Every tested domain starts as an interval. Holes
+  do arise during the tests: the propagator's own removals of `t` can be
+  interior (removing 2 from `0..3` at the root leaves one), a longer chain's
+  other pair propagators make holes that this pair then reads, and the shared
+  test brancher rejects random intervals
+  (`value_order::reject_random_interval`). Under the branching pair of
+  `--seed=1` (`variable_order::random(p, 1)`, `reject_random_interval(2)`), a
+  three-variable `ValuePrecede{1, 2, …}` over `0..3` has a hole at all 40 of
+  its trace callbacks, from the root on; across seeds 1, 2, 3, 7 and 42 it is
+  29 to 40 of 36 to 40 (`tmp/fd-codex-1005/ordering/probes/holes.cc` and,
+  for the seed range, `holes_seed.cc`: standalone probes, not counts from
+  inside `value_precede_test`). So
+  enumeration and proofs run over holey domains, though no consistency is
+  checked at any node. No test posts a second constraint, so holes made by
+  another constraint are not exercised.
 - **Real instances:** none ported.
 
 ### Benchmarks and examples
@@ -508,15 +577,15 @@ layer, not in this family: see [Proof performance](#proof-performance).)
 - **A chain is propagated pair by pair,** so it is weaker again than a
   chain algorithm would be.
 - **Its proofs name the whole array in every step,** which makes each line
-  `O(n)` literals long.
+  `O(n + hole runs)` literals long.
 
 ### Next steps
 
 1. **Add Law and Lee's forcing rule.** When a position `β` is fixed to `t`, and
    the only position before `β` that can hold `s` is `α`, infer `x_α = s`.
    Tracking the second possible position of `s`, as their algorithm does, makes
-   it `O(n)` per call like the rest. The proof is a RUP of the same shape as
-   rule 1: under `x_α ≠ s`, the existence row for `s` at `β − 1` has no true
+   it `O(n)` tests per call like the rest. The proof is a RUP of the same shape
+   as rule 1: under `x_α ≠ s`, the existence row for `s` at `β − 1` has no true
    disjunct, and `x_β = t` gives the contradiction. Filed as #1145. It would
    make each pair GAC over distinct variables (the rule-1-plus-forcing closure
    matches brute force on 30,000 distinct-variable pairs, and differs on 182 of
