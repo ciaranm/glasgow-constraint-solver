@@ -91,8 +91,12 @@ that is not a makespan gives a weaker bound instead of a rejected proof. It
 matches the linear family's two-term unconditional rows over plain variables,
 which is what a scheduling model's makespan rows are and what MiniZinc's
 `int_lin_le` flattens them to. A comparison spelling (`start + length ≤
-makespan`) says the same thing over an offset view, whose bits would not cancel
-against the plain variable's, so it is not matched.
+makespan`, or the `start ≤ makespan - length` the FlatZinc reader recovers from a
+two-term `int_lin_le`) says the same thing over an offset view, whose bits would
+not cancel against the plain variable's directly. It is matched too: the
+derivation cites such a row in deview mode, substituting each view's bits
+through its link axiom before the cancellation. A negated view bounds the wrong
+side, and is not matched.
 
 ## Testing it
 
@@ -177,6 +181,13 @@ Rerun on 2026-08-11 against `main` at `83b31a5e` (issue #708), and again the
 same day with the visited-cover rule removed (issue #726), both with VeriPB
 3.0.2. The numbers below are the second run's.
 
+**The proof sizes and checking times in this section were measured before
+#943**, which made start-checkpoint the only encoding `Cumulative` writes, and
+they have not been re-measured since. Every donor row a derived cut cites is now
+recovered from the checkpoint block in the proof, and that made these
+certificates much larger and much slower to check: on `pack001`, #943 alone took
+VeriPB from 0.79 s to 28.4 s. Issue #1254 has the measurements.
+
 Over both collections in all three stages — 330 runs, no failures — **106 of the
 110 instances get a certified bound**, 105 of them beating the critical path, and
 **43 are closed**: the bound equals the best makespan anybody found, so no search
@@ -237,14 +248,17 @@ different question from the one #726 answered.
 
 The rerun also settles two questions that were open defaults:
 
-- **The lifting-call budget never binds.** `_max_lifting_calls` defaults to
-  20000; over the runs that solve any lifting subproblem at all, the most any
-  instance uses is **3361**, and the ninetieth percentile is 3111. (Before #726
-  removed the visited-cover rule those were 1159 and 877; lifting every cover
-  costs about five times the subproblems, and still does not approach the
-  budget.) So the budgeted direction of issue #703 — spending the budget on
-  covers Sidorov's early stop would have abandoned — costs nothing on these
-  collections, because the budget is not what stops us.
+- **The lifting-call budget never binds on Pack or Pack_d.**
+  `_max_lifting_calls` defaults to 20000; over the runs that solve any lifting
+  subproblem at all, the most any instance uses is **3361**, and the ninetieth
+  percentile is 3111. (Before #726 removed the visited-cover rule those were
+  1159 and 877; lifting every cover costs about five times the subproblems, and
+  still does not approach the budget.) So the budgeted direction of issue #703 —
+  spending the budget on covers Sidorov's early stop would have abandoned —
+  costs nothing on these collections, because the budget is not what stops us.
+  It is not true of every collection: measured on 2026-10-04, 25 of the la_x
+  instances exhaust the 20,000 calls, and on PSPLib J90 and J120 the lifting
+  programmes' own state budget binds and changes the cuts posted (#1255).
 - **Two-member cliques are not worth posting here.** With
   `with_minimum_clique_size(2)`, over Pack in both disjunctive-bearing stages and
   Pack_d in the capacity-one stage (165 runs), the posted set changes on nine of

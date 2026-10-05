@@ -53,8 +53,8 @@ every 0/1 point the rows it is lifted from allow satisfies it. So no set of task
 that fits under those resources at one time point fails under the cut at that
 time point,
 and time-tabling, which only ever reasons about one time point, can reach nothing
-new. It therefore ships with **time-tabling off**, and the test asserts
-node-for-node equality with it turned back on.
+new. It therefore ships with **time-tabling off**, and the test asserts the same
+solutions in the same number of recursions with it turned back on.
 
 What is new is the *window* argument, where the two constraints supply and
 consume at different rates and the ratio is what decides.
@@ -377,6 +377,15 @@ build their programmes at install. The verified sweep is a separate pass for exa
 asserts a non-zero restriction count so it cannot quietly stop covering them.
 
 ## Proof size, which is what decided the design
+
+**The figures in this section were measured before #943**, which made
+start-checkpoint the only encoding `Cumulative` writes, and they have not been
+re-measured since. Every donor row a derived cut cites is now recovered from the
+checkpoint block in the proof, at about 7,200 lines a recovery on `pack001`, and
+on that instance #943 alone took the certificate's checking time from 0.79 s to
+28.4 s. Issue #1254 has the measurements. So the judgement below, that proof
+size and checking time are not demonstrably a problem, is a judgement about the
+numbers as they were then.
 
 Measured, because the estimate that nearly sank this was wrong in both directions
 and the two errors very nearly cancelled. Over a single resource one derived row

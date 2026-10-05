@@ -1522,7 +1522,7 @@ same `emit_before_pol` shape per axis:
   is then a single-blocker 1D dichotomy — one pol refutes the
   impossible free direction from the pushed rectangle's captured
   bound, one folds the surviving direction onto the target order
-  literal. Six pols per push, one step regardless of the blocker's
+  literal. Four pols per push, one step regardless of the blocker's
   size (per-pair pushing means there is never a multi-blocker
   chain). The push target is capped to the rectangle's own domain
   (`cur_hi + 1` / `cur_lo − 1`), and zero-size rectangles are
