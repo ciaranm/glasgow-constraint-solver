@@ -351,8 +351,38 @@ nothing here depends on sign.
   The other models were not measured, since their 20 s runs finish nothing
   and nodes explored in fixed time mix strength with speed.
 
-**Overflow.** None to guard: the pass compares bounds and pushes them to other
-existing bounds, adding or subtracting at most 1 inside `infer_*`.
+**Overflow.** There is something to guard. The pass compares bounds and pushes
+them to other existing bounds, but an upper-bound literal `v ≤ b` is built as
+`v < b + 1`, so an operand whose upper bound is `INT64_MAX` overflows wherever
+one is built. At `c9ceea25`, with two distinct variables `x, y ∈ 0..2` and
+`c = INT64_MAX − 2`, `LexGreaterEqual{{x + c}, {y + c}}` throws `Integer
+overflow: 9223372036854775807 + 1` with proofs off, although every view value
+fits in an `Integer` and the unshifted form enumerates its six solutions.
+
+- **The first throw is the reason.** Every call materialises the whole-scope
+  bounds reason (`materialise_bounds` in `reason.cc`), which builds
+  `v ≤ ub(v)` for each unfixed operand.
+- **The tightening builds the same literal.** It constructs
+  `vars_2[α] ≤ ub(vars_1[α])` for `infer_all` and for its proof scaffold, even
+  when the bound changes nothing. So deferring the reason (next step 1) would
+  move the throw there, not remove it.
+- **With proofs on it fails earlier,** in `define_proof_model`: the
+  encoding's half-reified row gets the most negative `Integer` as its
+  reification constant, and the proof model refuses it with a `ProofError`.
+- **The mirror at the bottom** fails with proofs only:
+  `LexGreaterEqual{{x + INT64_MIN}, {y + INT64_MIN}}` enumerates its six
+  solutions with proofs off, and throws `Integer overflow:
+  abs-9223372036854775808` with proofs on, in `define_proof_model`, where
+  registering the view's bit encoding takes the absolute value of the view's
+  lower bound, here the offset (`get_bits_encoding_coeffs`;
+  `tmp/fd-codex-1005/ordering/factcheck/ovf2.cc`).
+
+The top shape was found in review and filed as #1189; the mirror, in this
+document's fact-check. Both are fixed by #1214 (merged 2026-10-04), which
+refuses a view offset outside `±(2⁶⁰ − 1)`, so none of these views can now be
+built. Both shapes are over distinct underlying variables, so they do not
+touch the alias convention for consistency claims. Probe:
+`tmp/fd-codex-1005/ordering/probes/ovf.cc`.
 
 ### Interval efficiency
 
@@ -423,7 +453,8 @@ the condition is decided before branching, as in `probes/lexreif.cc`.
   brute force at the root over random domains **with holes**, and unequal
   lengths from 0 to 3 (`tmp/fd-ordering/ordcheck.cc`, 2,000 instances each of
   `>`, `≥`, `<` and `≤`, at seeds 1 and 2): no GAC failure. `lex_test` also
-  checks GAC at every node, on interval domains. Frisch et al. prove the
+  checks GAC at every node, on domains that start as intervals and gain holes
+  from the test brancher (see [Tests](#tests)). Frisch et al. prove the
   algorithm GAC for the equal-length case; the pass is theirs with the "equal
   prefix satisfies" condition generalised to lengths.
 - **Algorithm** — two bound pushes at `α`. `O(1)`, after the `O(n)` scan.
@@ -649,8 +680,9 @@ position `i < n`: `vars_1[j] = vars_2[j]` for `j < i`, and
   each of the four directions, pairs and triples over several ranges, arrays of
   six, and unequal lengths (both directions, asymmetric domains, one against
   three, #254's empty and all-fixed operands), under
-  `solve_for_tests_checking_gac`, so GAC at every node, on interval domains,
-  in the uncapped run (the caps truncate some of these; see below).
+  `solve_for_tests_checking_gac`, so GAC at every node, on domains that start
+  as intervals, in the uncapped run (the caps truncate some of these; see
+  below).
   Then `If` and `Iff` for each direction over nine shapes (pairs, triples and
   four unequal-length cases, all small positive domains; no arrays of six and
   none of #254's cases), under plain `solve_for_tests`: enumeration and the
@@ -684,7 +716,17 @@ bare lane passes in 18.5 s.
 
 **What the tests do not cover.**
 
-- **Holes**, for the per-node GAC check. The root probe covers them.
+- **Holey initial domains**, for the per-node GAC check. Every tested domain
+  starts as an interval; the root probe covers holey ones. Holes made by
+  branching do reach the check: the shared test brancher rejects random
+  intervals (`value_order::reject_random_interval`), and a non-strict lex over
+  two arrays of three variables in `0..3`, under the branching pair of
+  `--seed=1` (`variable_order::random(p, 1)`, `reject_random_interval(2)`),
+  has a hole at 1,619 of its 2,079 trace callbacks, and at 1,455 to 1,619
+  across seeds 1, 2, 3, 7 and 42 (`tmp/fd-codex-1005/ordering/probes/holes.cc`
+  and, for the seed range, `holes_seed.cc`: standalone probes, not counts from
+  inside `lex_test`). No test posts a second constraint, so holes
+  made by another constraint are not exercised.
 - **Strength of the reified forms,** deliberately unchecked, which is how the
   incomplete detection went unrecorded.
 - **`NotIf` and `MustNotHold`,** which is how the rejected `NotIf` proof went
