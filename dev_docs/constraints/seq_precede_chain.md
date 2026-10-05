@@ -191,12 +191,12 @@ truthfully, since a hole at a chain value moves the first possible occurrence.
 ### Robustness and limits
 
 **Unbounded domains.** Fine, because the chain is capped at `m ≤ n`: however
-wide the declared domains, everything built from the chain is bounded by `n`,
-with or without a clamp (`−2⁶¹..3` at `n = 4` has none, and is fine). Checked
-by full enumerations with verifying proofs: `1..2⁶¹ − 1` at `n = 5`, 52
-solutions, and `−2..2⁶¹ − 1` at `n = 4`, 372, matching brute force
-(`probes/spcfull.cc`). The `±(2⁶¹ − 1)` probe above stops at 1,000 solutions,
-so it checks a partial proof only.
+wide the declared domains, everything built from the chain is bounded by `n`
+(views aside: see Overflow), with or without a clamp (`−2⁶¹..3` at `n = 4` has
+none, and is fine). Checked by full enumerations with verifying proofs:
+`1..2⁶¹ − 1` at `n = 5`, 52 solutions, and `−2..2⁶¹ − 1` at `n = 4`, 372, matching
+brute force (`probes/spcfull.cc`). The `±(2⁶¹ − 1)` probe above stops at 1,000
+solutions, so it checks a partial proof only.
 
 **Negative values and zero.** Unconstrained, and tested: a fixed shape over
 `−2..3`, constant entries of 0 and −1, and the probe over `−W..W`.
@@ -205,8 +205,24 @@ so it checks a partial proof only.
 constants, and a leading value other than 1. A **repeated variable** is a pair
 of positions, checked by enumeration in the duplicate runs.
 
-**Overflow.** `n` as an `Integer`, and the chain `1..m`; nothing near the
-limits.
+**Overflow.** The chain `1..m` and `n` are small, but they go into the
+installed `ValuePrecede`'s literals and membership tests, so an extreme view
+offset overflows as it does there. At `c9ceea25`, with `x, y ∈ 0..2`:
+
+- `SeqPrecedeChain{{y, x + (INT64_MIN + 2)}}` throws `Integer overflow:
+  2 - -9223372036854775806` with proofs off, in `State::in_domain`'s
+  translation of a chain value through the view, and `Integer overflow:
+  9223372036854775807 + 1` with proofs on, earlier, in `ValuePrecede`'s
+  `define_proof_model`, while defining a literal for the upper-bound row.
+- `SeqPrecedeChain{{x + (INT64_MAX − 2), y}}` correctly has no solution with
+  proofs off, but with proofs on throws a `ProofError` from the same
+  `define_proof_model`: a half-reified row's reification constant is the most
+  negative `Integer`.
+
+Found in this document's fact-check while checking Codex's review of
+[`value_precede`](value_precede.md), and of the same class as #1188's view
+shapes. Fixed by #1214 (merged 2026-10-04), which refuses a view offset
+outside `±(2⁶⁰ − 1)`. Probe: `tmp/fd-codex-1005/ordering/factcheck2/spcovf.cc`.
 
 ### Interval efficiency
 
@@ -292,7 +308,26 @@ GCS_TEST_MAX_RECURSIONS=1500 seq_precede_chain_test --seed=1`, at `c9ceea25`).
 **What the tests do not cover.**
 
 - **Strength**, deliberately; none is claimed.
-- **Holes**, and a declared domain wider than the scale case's `1..1000`.
+- **Holey initial domains**, and a declared domain wider than the scale
+  case's `1..1000`. Every tested domain starts as an interval, and this
+  family's own propagation leaves none: the chain is consecutive and values
+  above it are clamped, so at a fixpoint each position has lost an upper run of
+  chain values. A pair's removal can be interior only for a moment, until the
+  next pair removes the values above it. Under in-order smallest-first
+  branching, which makes no holes itself, three variables over `0..3` have a
+  hole at none of 8 trace callbacks, and four wider shapes, up to five
+  variables over `−2..7` and six over `0..3`, at none either, smallest or
+  largest value first (`tmp/fd-codex-1005/ordering/factcheck2/spc.cc`). Holes do
+  reach the tests from the shared test brancher, which rejects random
+  intervals (`value_order::reject_random_interval`). Under the branching pair
+  of `--seed=1` (`variable_order::random(p, 1)`, `reject_random_interval(2)`),
+  the same shape has a hole at 9 of its 17 trace callbacks, and at 8 to 10 of
+  14 to 17 across seeds 1, 2, 3, 7 and 42
+  (`tmp/fd-codex-1005/ordering/probes/holes_seed.cc`, a standalone probe, not
+  a count from inside `seq_precede_chain_test`). So enumeration and proofs run
+  over holey domains, though no consistency is checked. The two-chain run posts
+  its chains over disjoint arrays, so holes made by another constraint are not
+  exercised.
 - **Real instances.**
 - **Much of the random sweep:** most random shapes are infeasible. For seeds 1
   to 6, the no-proofs pass has 7, 5, 5, 6, 6 and 5 of its 8 infeasible, and the
