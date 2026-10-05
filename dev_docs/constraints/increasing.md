@@ -5,7 +5,8 @@
 > **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
 > for what it would file. Already open and touching this family: #833 (the
 > large-domain policy, which the impossible repeated pair below falls
-> outside), #868 (cross-solver comparisons; this document gives one, by hand).
+> outside), #868 (cross-solver comparisons; this document gives a whole-solve
+> comparison by hand, not #868's identical-tree one).
 > Tracked under #871.
 
 Four posted classes, `Increasing`, `StrictlyIncreasing`, `Decreasing` and
@@ -21,8 +22,9 @@ Four things to know before touching it.
   chain of comparisons at its bounds fixpoint supports every value in every
   domain, holes or not, and the propagator reads nothing but bounds. So **holes
   affect nothing here**, the same answer [`comparison`](comparison.md) gives.
-  GCS takes 2.5 to 2.7 times Gecode's time on an identical search tree, and
-  one chain takes about 10% less time than the `n − 1` `LessThan`s it replaces.
+  GCS takes 2.5 to 2.7 times Gecode's time to enumerate the same solutions,
+  under different branching schemes, and one chain takes about 10% less time
+  than the `n − 1` `LessThan`s it replaces.
 - **A repeated variable weakens it, and an impossible repeated pair costs the
   width of its domain.** `StrictlyIncreasing{x, x}`, and equally the
   non-strict `Increasing{x + 1, x}`, are unsatisfiable, but the propagator never
@@ -393,7 +395,9 @@ family.
   instances per class): no GAC failure on distinct variables in any of the four
   classes (seed 1), and on plain repeated variables GAC failing on 579 of 3,000
   (`Increasing`, seed 2) with `bounds(D)` holding on all of them.
-  `increasing_test` also checks GAC at every node, on interval domains.
+  `increasing_test` also checks GAC at every node, on domains that start as
+  intervals and gain holes from the test brancher (see
+  [Tests](#tests)).
 - **Algorithm** — one pass over `v`, `O(n)` bounds reads. Carrying the asked-for
   bound rather than the landed one is why the pass is not a fixpoint over holes
   (see [Propagator inventory](#propagator-inventory)).
@@ -480,9 +484,18 @@ increasing_test --seed=1`, and the same with `--view-position=mixed`, at
 
 **What the tests do not cover.**
 
-- **Holes.** Every tested domain is an interval, so the per-node GAC check
-  never sees a hole. The root probe above covers holes; nothing checks them per
-  node.
+- **Holey initial domains.** Every tested domain starts as an interval. Holes
+  made by branching do reach the per-node GAC check: the shared test brancher
+  uses `value_order::reject_random_interval`, and rejecting an interior
+  interval leaves a hole. Under the branching pair of `--seed=1`
+  (`variable_order::random(p, 1)`, `reject_random_interval(2)`), a
+  three-variable `Increasing` over `0..3` has a hole at 13 of its 19 trace
+  callbacks, and at 8 to 14 of 19 across seeds 1, 2, 3, 7 and 42
+  (`tmp/fd-codex-1005/ordering/probes/holes.cc` and, for the seed range,
+  `holes_seed.cc`: standalone probes of the brancher, not counts from inside
+  `increasing_test`). No test posts a
+  second constraint, so holes made by another constraint are not exercised;
+  the root probe above covers explicitly holey initial domains.
 - **A repeated variable over a wide domain, or behind a view.** The duplicate
   runs use `1..5` and plain variables, so the width-proportional cost of an
   impossible repeated pair, and the opposite-sign weakness, are invisible to
@@ -525,10 +538,13 @@ of the whole solve, proofs off; 2026-09-29.*
 Enumerating every strictly increasing sequence of length `n` over `0..D−1`,
 branching in input order on the smallest value (`inc_gcs.cc`,
 `inc_gecode.cc` in `tmp/fd-ordering/bench/`). Every model here is generalised
-arc consistent, so the three searches explore the same assignments in the same
-order: the same solutions, and no failures in any of them. The node counts
-still differ, because GCS's `smallest_first` gives a variable one child per
-value, where Gecode's `INT_VAL_MIN` branches in two (`x = min`, `x ≠ min`).
+arc consistent, so none of them fails, and each search is depth-first, in input
+order, smallest value first, so all three enumerate the same solutions in the
+same order. The searches are not the same tree: GCS's
+`smallest_first` gives a variable one child per value, where Gecode's
+`INT_VAL_MIN` branches in two (`x = min`, `x ≠ min`), so the internal nodes,
+the intermediate domains and the propagation work differ, as the node counts
+below show.
 
 | n | D | Solutions | GCS `StrictlyIncreasing` | GCS, `n − 1` `LessThan` | Gecode `rel(x, IRT_LE)` |
 |---|---|---|---|---|---|
@@ -540,11 +556,13 @@ value, where Gecode's `INT_VAL_MIN` branches in two (`x = min`, `x ≠ min`).
 | 10 | 20 | 277,134 | 160,446 | 379,712 | 369,511 | 245,352 |
 | 12 | 22 | 999,362 | 629,850 | 1,595,673 | 1,293,291 | 861,852 |
 
-- **GCS is 2.5 to 2.7 times Gecode's time on an identical tree.** This is a
-  whole-solve comparison on a benchmark with no failures, so it measures the
-  search loop and the solution callback as much as the propagator. It is the
-  kind of comparison #868 asks for, done by hand with an API-level Gecode
-  driver rather than through the harness in
+- **GCS takes 2.5 to 2.7 times Gecode's time to enumerate the same
+  solutions.** This is a whole-solve enumeration comparison under the two
+  branching schemes above, on a benchmark with no failures, so it measures the
+  search loop, the branching and the solution callback as much as the
+  propagator. It is not the identical-tree comparison #868 asks for: the
+  branch decisions were not aligned, and no tree was compared. It was done by
+  hand with an API-level Gecode driver rather than through the harness in
   [`cross-solver-benchmarking.md`](../cross-solver-benchmarking.md).
 - **The chain takes 10.9% and 10.5% less time than the pairs** (the pairs take
   11 to 12% longer; the fact-check's re-run gives 9.9% and 10.0% less), with
