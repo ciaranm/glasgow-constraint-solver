@@ -52,7 +52,8 @@ Compiling
 **Optional external tools:**
 - [VeriPB](https://gitlab.com/MIAOresearch/software/VeriPB) — proof checker, required
   to run the full test suite. Written in Rust; install with ``cargo install --path .``
-  after cloning.
+  after cloning. Use a clone of `main` from October 2026 or later: older builds
+  reject some correct proofs (see `dev_docs/veripb-facts.md`).
 - libxml2 — required for XCSP support (``libxml2-dev`` on Ubuntu, ``libxml2`` via Brew).
   XCSP support can be disabled with ``-DGCS_ENABLE_XCSP=OFF``.
 - [MiniZinc](https://www.minizinc.org) — required to use the MiniZinc frontend
