@@ -150,6 +150,8 @@ namespace
             {"MDD's transition value", [&](Integer v) { p.post(MDD{{x}, {{{{v, 0}}}}, {1, 1}, {0}}); }},
             {"MinDistance's distance", [&](Integer v) { p.post(MinDistance{{x, y}, z, MinDistance::Matrix{{0_i, v}, {v, 0_i}}}); }},
             {"Regular's transition value", [&](Integer v) { p.post(Regular{{x}, 2, vector<unordered_map<Integer, long>>{{{v, 1}}, {}}, {1}}); }},
+            {"Regular's non-deterministic transition value",
+                [&](Integer v) { p.post(Regular{{x}, 2, vector<unordered_map<Integer, set<long>>>{{{v, {1}}}, {}}, {1}}); }},
             {"RegularBacchus's transition value",
                 [&](Integer v) { p.post(RegularBacchus{{x}, 2, vector<unordered_map<Integer, long>>{{{v, 1}}, {}}, {1}}); }},
             {"RegularLegacy's transition value",

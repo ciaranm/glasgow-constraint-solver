@@ -498,6 +498,9 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> trans
 Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, set<long>>> t, vector<long> f) :
     _vars(move(v)), _num_states(n), _transitions(move(t)), _final_states(move(f)), _regex(nullopt)
 {
+    for (const auto & state : _transitions)
+        for (const auto & [value, _] : state)
+            innards::require_bounded(value, "a transition value of Regular");
     _symbols = symbols_of(_transitions);
 }
 
