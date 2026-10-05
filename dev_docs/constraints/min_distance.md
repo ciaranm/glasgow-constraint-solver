@@ -6,7 +6,9 @@
 > for what it would file. Already open and touching this family: #833 (the
 > large-domain policy), #944 (interval cardinality instead of an at-most-one
 > per value, which names this family's per-site at-most-ones). Tracked under
-> #871.
+> #871. Since fixed: #1168, the overflows, by #1215 (with #1214 for view
+> offsets), which refuse out-of-range inputs at construction; the overflow
+> text below describes `c9ceea25` (see [Next steps](#next-steps), item 3).
 
 `MinDistance(x, z, D, R, propagation)` says that `z` is the smallest distance
 `D[x_i, x_j]` over all pairs of positions `i < j`, where each `x_i` picks one
@@ -1006,12 +1008,22 @@ propagators are the same with proofs on or off.
    Filed as #1170.
 3. **Stop the ladder at the first level above `z_hi`**, writing that level's
    clause as `m_k ≥ 1` and nothing above it: every higher clause is implied.
-   Fixes the `define_proof_model` overflow for a plain `z` and drops rows. The
-   pins' overflow through an offset view needs its own fix: fail the node when
-   `μ > ub(z)` rather than infer `z ≥ μ`, or make the view layer's offset
-   arithmetic safe (as #1117 asks for `table`). And write `CheckOnly`'s bound
-   as `z ≤ D[a,b]` rather than `z < D[a,b] + 1`. Filed as one issue with the
-   overflow shapes, #1168.
+   That drops rows. **None of this audit's overflows is reachable now.** They
+   were filed together as #1168, which #1215 closed (2026-10-04): a distance
+   outside `±(2⁶⁰ − 1)` is refused at construction, as (since #1214) is a
+   view offset outside that range, and `integer_ranges_test` solves at the
+   largest in-range distance in all five modes, with a plain `z` and with
+   views at either end, with and without proofs. If the range is ever
+   widened, the fixes would be: the ladder stop above, for the
+   `define_proof_model` overflow on a plain `z`; failing the node when `μ >
+   ub(z)` rather than inferring `z ≥ μ` (or overflow-safe view arithmetic),
+   for the pins through an offset view; and skipping `CheckOnly`'s pair bound
+   when `D[a,b] ≥ ub(z)`, where it changes nothing, as the forward
+   propagator's pair bound already does, so that `D[a,b] + 1` is never formed
+   at `2⁶³ − 1`. Writing that bound as `z ≤ D[a,b]` is no fix: `operator<=`
+   builds `z < D[a,b] + 1` itself (`variable_condition.hh:173–175`), and `z <=
+   Integer::max_value()` throws `Integer overflow: 9223372036854775807 + 1`
+   before any inference runs (`tmp/fd-codex-1005/small/probes/le.cc`).
 4. **Raise `z`'s lower bound before everything is fixed:** `z ≥ min_{i<j}
    l_ij`, with `l_ij` the least distance two positions' domains allow (0 if
    they share a site), and at least `z ≥ 0`. `O(p² · n²)`, the same loop as
