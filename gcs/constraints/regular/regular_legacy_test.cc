@@ -179,6 +179,10 @@ auto run_all_regex_tests(bool proofs) -> void
     run_regular_regex_test(proofs, "counted", "0{1,2} 1*", {{0, 1}, {0, 1}, {0, 1}});
     // Negated class over an alphabet with a hole at the top of the range.
     run_regular_regex_test(proofs, "negclass", "[^0] [^0]", {{0, 2}, {0, 2}});
+    // Ambiguous: a word with two accepting runs through the NFA, so the proof
+    // pins the state flags to a canonical run (issue #1203).
+    run_regular_regex_test(proofs, "ambiguous_prefix", "0 1*|0 1", {{0, 1}, {0, 1}});
+    run_regular_regex_test(proofs, "contains_a_1", "(0|1)* 1 (0|1)*", {{0, 1}, {0, 1}, {0, 1}, {0, 1}});
 }
 
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -> void

@@ -23,7 +23,7 @@ strategy is selected with the fluent
 | `Upfront` (default) | Upfront per-val backward chains + statically-dead-state lines at Top, then per-call cache-gated `~state[i][q]` lines for dynamic state-deaths. | `gcs/constraints/regular/regular.{cc,hh}` |
 | `Bacchus`          | Upfront Bacchus encoding (per-(i, q, v) transition extension variables + AL1s) derived from the natural OPB at Top; per-call propagator emits no proof. Deterministic automata only (not regex/NFA input). | `gcs/constraints/regular/regular_bacchus.{cc,hh}` |
 
-The OPB is identical across all three — DFA semantics, no propagator
+The OPB is identical across all three — automaton semantics, no propagator
 internals (see [Constraint definition](#constraint-definition) and
 [OPB encoding](#opb-encoding) below). What differs is what each strategy
 derives in its initialiser at search root, and what its per-call
@@ -81,18 +81,21 @@ and `BinPacking`, see issue #200.
 ## Constraint definition
 
 A `Regular` constraint over a sequence `vars[0..n-1]` is parameterised
-by a deterministic finite automaton:
+by a finite automaton, which may be non-deterministic:
 
-- `num_states`, the number of DFA states (state `0` is the start)
-- `transitions[q][val]`, a partial map from `(state, symbol) -> next
-  state` shared across all positions
+- `num_states`, the number of states (state `0` is the start)
+- `transitions[q][val]`, a partial map from `(state, symbol)` to a set of
+  next states, shared across all positions
 - `final_states`, the set of accepting states
 
-The sequence `vars[0..n-1]` is accepted iff feeding the symbols from
-left to right starting at state `0` ends in a state in `final_states`.
+The sequence `vars[0..n-1]` is accepted iff some run, feeding the
+symbols from left to right starting at state `0`, ends in a state in
+`final_states`.
 
-`Regular` supports two automaton constructors (sparse map / dense table
-form) plus a regex form, and a `short_reasons` boolean (via
+`Regular` supports three automaton constructors (sparse map and dense
+table for a deterministic automaton, and sparse map to sets for a
+non-deterministic one) plus a regex form, which compiles to a
+non-deterministic automaton, and a `short_reasons` boolean (via
 `with_short_reasons()`) forwarded to the propagator but unused (or
 near-unused) by the `Upfront` and `Bacchus` strategies. Keeping the flag
 as a dummy lets one `regular_random` binary benchmark all three
@@ -123,10 +126,128 @@ variable's initial domain):
 
 - If `transitions[q]` has no entry for `val`:
   `(vars[i] != val) + ~state_i_is_q >= 1`
-- Otherwise, where `q' = transitions[q][val]`:
-  `~state_i_is_q + (vars[i] != val) + state_{i+1}_is_q' >= 1`
+- Otherwise:
+  `~state_i_is_q + (vars[i] != val) + ∑_{q' ∈ transitions[q][val]} state_{i+1}_is_q' >= 1`
 
-A human reading the OPB sees DFA semantics, not propagator internals.
+A human reading the OPB sees automaton semantics, not propagator
+internals. The state flags say which run the automaton takes. For a
+non-deterministic automaton that is a choice, and when some word has two
+accepting runs the OPB does not make it; see
+[Ambiguous automata](#ambiguous-automata).
+
+## Ambiguous automata
+
+An automaton is *ambiguous* if some word has two accepting runs. The
+regex `"0|0"` compiles to one, and so does `"(0|1)* 1 (0|1)*"`, which has
+a run for every 1 in the word. On such a word nothing in the OPB says
+which run the state flags follow, so unit propagation from the variables
+leaves them unassigned, and VeriPB rejects the `solx` line. Issue #1203
+has the details. A deterministic automaton cannot be ambiguous. Neither
+can a non-deterministic one in which every accepted word has one
+accepting run: the runs that fail die by unit propagation.
+
+That last part needs one thing from the proof: lines saying which states
+are statically dead. Take a run that reaches the last layer in a
+non-final state. Nothing in the OPB rules that state out until a final
+state is known to be true, so the forward clause that leads to it never
+becomes unit. `Upfront` writes these lines in its Top-level scaffolding.
+`PerCall` used to rely on its per-call sweep, which writes nothing when
+it prunes nothing, so it now calls `emit_regular_static_dead_states` for
+a non-deterministic automaton. A deterministic automaton doesn't need
+them, because every forward clause has a single target.
+
+Determinising the automaton would fix this, but the subset construction
+can make it exponentially larger. Instead the OPB is left alone, and the
+proof pins the state flags to one canonical run, which the variables
+determine by themselves. This is `emit_regular_canonical_run` in
+`canonical_run.{cc,hh}`. Both `Upfront` and `PerCall` call it from an
+initialiser, before any other line mentions the state flags. `Bacchus`
+takes deterministic automata only.
+
+### When it runs
+
+Only when `regular_is_ambiguous` says so, so the deterministic and
+unambiguous cases pay nothing. It asks whether a word of length `n`, over
+the variables' domains at the root, has two accepting runs. It walks the
+automaton's product with itself, one layer per variable, over the
+statically live states. Each pair of runs carries a bit saying whether
+they have diverged yet. A deterministic automaton returns at once.
+
+On 3,000 random regexes the check matched VeriPB exactly. Every automaton
+it called ambiguous had a solution line rejected without the canonical
+run, and every one it called unambiguous verified without it.
+
+### The derivation
+
+Everything is restricted to the *live* `(layer, state)` pairs: those
+reachable from the start under the root domains, and able to reach a
+final state. Every other state flag is false in every solution.
+
+1. **Dead state flags.** `~state_i_is_q` for every pair that is not live,
+   by RUP. The forward-unreachable pairs come first, in ascending layer
+   order, each after its per-value backward chains; the rest follow in
+   descending order. With these in place, `Upfront`'s scaffolding skips
+   its own copies.
+2. **Co-reachability.** A flag `b[i][q]` for each live pair, meaning that
+   the rest of the word, from `vars[i]` on, takes state `q` to a final
+   state. It is defined both ways, through
+   `t[i][q][v] ⇔ vars[i] = v ∧ ∨ b[i+1][q']` over the live targets `q'`
+   of `(q, v)`. At the last layer every live state is final, so there
+   `b` is true. Given the variables, unit propagation fixes every `b`,
+   working backwards.
+3. **The canonical run.** A flag `c[i][q]` for each live pair. At layer 0
+   it is the state flag itself. From there the run steps to the
+   lowest-numbered live target that has `b`. Each edge the run might take
+   gets a flag
+   `d ⇔ c[i][q] ∧ vars[i] = v ∧ b[i+1][q_j] ∧ ∧_{k<j} ~b[i+1][q_k]`, and
+   `c[i+1][q'] ⇔ ∨ d` over the edges into `q'`. Unit propagation fixes
+   these working forwards.
+4. **The OPB's rows hold for `c`**, with every dead state flag read as
+   false. First, `state_i_is_q ⇒ b[i][q]`, from the last layer
+   backwards, each one per value and then over the values. Then:
+   - `c ⇒ b`;
+   - the forward clauses over `c`;
+   - an at-least-one per layer;
+   - an at-most-one per layer. This goes pairwise first: two edges into
+     different states leave from different states, or on different
+     values, or are the same choice between two targets, which picks only
+     one. Then `recover_am1_from_pairs` turns the pairs into the
+     cardinality constraint.
+5. **Pinning.** For each live state flag, a guard `e` with
+   `e ⇒ (c[i][q] ⇒ state_i_is_q)`, each introduced on its own by
+   `red … : e -> 0`. The other direction is not needed: once `c` picks a
+   state, the OPB's at-most-one clears the other state flags. Then one `red ∑ e >= N`. Its witness sends every live
+   state flag to its `c`, every dead one to 0, and every guard to 1.
+   - **Its goals:** the OPB's rows over `c`, which step 4 derived.
+   - **Why it is sound:** the witness touches only flags outside the
+     preserved set, so the projected solution count is unchanged.
+   - **Why it is cheap:** it is one step, so its cost is linear. Guarding
+     every row with a single flag would make it quadratic, because each
+     guard row's `red` would have every earlier guard row as a goal.
+
+Unit propagation from the variables now fixes `b`, then `c`, then the
+guards, and through them every state flag, so every row is satisfied and
+the solution line passes. Steps 1, 2, 3 and 5 stay at `ProofLevel::Top`.
+Step 4 and the backward chains are working, emitted at
+`ProofLevel::Temporary` and deleted once the pinning is done. Nothing
+goes to the core set: the unit propagation a solution line runs sees
+derived constraints too.
+
+### Cost
+
+The flags and lines grow as `n` times the live edges per layer. The
+pairwise at-most-one adds about the live states times the edges into
+them, per layer. Measured on 2026-10-05 with VeriPB 3.0.2, with a second,
+deterministic `Regular` posted to keep the solution count small:
+- **`"(0|1)* 1 (0|1)*"` over 160 variables:** the proof checks in 12.3 s.
+  Determinising the automaton first gives 11.5 s, because the
+  deterministic automaton has two states to the NFA's six.
+- **An automaton whose subset construction blows up,**
+  `(0|1)* 1 (0|1)^k | (0|1)* 1 (0|1)^(k-1)` with `k = 10` over 24
+  variables: the proof checks in 0.6 s. Determinised, it is a million
+  lines and takes 26 minutes.
+- **An unambiguous automaton like `(0|1)* 1 (0|1)^10`** gets no canonical
+  run at all, and checks in 0.06 s; determinised, it takes 220 s.
 
 ## `Regular`'s Top-level scaffolding
 

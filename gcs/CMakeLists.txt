@@ -110,6 +110,7 @@ add_library(glasgow_constraint_solver ${_gcs_library_type}
         constraints/power/power.cc
         constraints/power/power_table.cc
         constraints/reachable/reachable.cc
+        constraints/regular/canonical_run.cc
         constraints/regular/regular.cc
         constraints/regular/regular_bacchus.cc
         constraints/regular/regular_legacy.cc
@@ -1408,6 +1409,10 @@ if(GCS_BUILD_TESTS)
     add_executable(regex_test constraints/regular/regex_test.cc)
     target_link_libraries(regex_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME regex_test COMMAND $<TARGET_FILE:regex_test>)
+
+    add_executable(canonical_run_test constraints/regular/canonical_run_test.cc)
+    target_link_libraries(canonical_run_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME canonical_run_test COMMAND $<TARGET_FILE:canonical_run_test>)
 
     add_executable(bits_encoding_test innards/proofs/bits_encoding_test.cc)
     target_link_libraries(bits_encoding_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)

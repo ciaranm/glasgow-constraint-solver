@@ -153,6 +153,13 @@ add_xcsp_test(ordered_lengths)
 add_xcsp_test(ordered_strict)
 add_xcsp_test(precedence)
 add_xcsp_test(regular)
+# A non-deterministic, ambiguous automaton: "contains a 1", guessing which 1.
+# The reader used to keep only the first transition on each (state, symbol),
+# which here leaves the final state unreachable (issue #1204), and the proof
+# needs Regular's canonical run (issue #1203). ACE refuses a non-deterministic
+# automaton, so the cache came from ACE on the deterministic twin, the same
+# instance without (q0, 1, q0), and is every word but 0 0 0 0.
+add_xcsp_test(regular_nfa)
 # A domain reaching INT_MAX, which the parser listed with an int loop that
 # overflowed and never finished (the patch in this file fixes it). ACE cannot
 # parse such a domain, so the cache is a hand count: x in {0, 1, INT_MAX} with

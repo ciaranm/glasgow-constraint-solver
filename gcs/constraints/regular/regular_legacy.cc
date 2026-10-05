@@ -1,5 +1,6 @@
 #include <cmath>
 #include <gcs/constraints/innards/require_bounded.hh>
+#include <gcs/constraints/regular/canonical_run.hh>
 #include <gcs/constraints/regular/hints.hh>
 #include <gcs/constraints/regular/regex.hh>
 #include <gcs/constraints/regular/regular_legacy.hh>
@@ -534,6 +535,20 @@ auto RegularLegacy::install_propagators(Propagators & propagators) -> void
 {
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
+
+    // Solution lines need every state flag fixed by unit propagation. An
+    // ambiguous automaton's flags need pinning to one run (issue #1203); a
+    // non-deterministic one's need its statically dead states ruled out, which
+    // the canonical run does too.
+    propagators.install_initialiser([vars = _vars, ns = _num_states, t = _transitions, fs = _final_states, flags = _state_at_pos_flags](
+                                        State & state, auto &, ProofLogger * const logger) -> void {
+        if (! logger)
+            return;
+        if (regular_is_ambiguous(vars, t, fs, state))
+            emit_regular_canonical_run(*logger, vars, ns, t, fs, flags, state);
+        else if (regular_is_nondeterministic(t))
+            emit_regular_static_dead_states(*logger, vars, ns, t, fs, flags, state);
+    });
 
     propagators.install(
         constraint_id(),
