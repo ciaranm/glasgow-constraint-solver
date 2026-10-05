@@ -33,7 +33,7 @@ equivalent for that frontend's vocabulary).
 |---|---|---|---|---|
 | intension (algebraic exprs) | various via tree walk | ✓ | ✓ (tree walker; an affine top-level ordering posts one linear inequality instead of an auxiliary variable per compound operand)[^intaff] | ? |
 | extension (table) | `Table` / `NegativeTable` | ✓ | ✓ | ? |
-| regular | `Regular` | ✓ | ✓ (DFA with named states + transitions) | ? |
+| regular | `Regular` | ✓ | ✓ (automaton with named states + transitions, possibly non-deterministic) | ? |
 | mdd | `MDD` | ✓ (deterministic only)[^mdd] | ✓ | ? |
 | allDifferent | `AllDifferent`; `AllDifferentExcept` with `except` | ✓ | ✓ (incl. `except`; not over expression trees) | ? |
 | allDifferent-list / -matrix | various decompositions | ? | matrix ✓ (rows + columns `AllDifferent`); list `s UNSUPPORTED` | ? |
