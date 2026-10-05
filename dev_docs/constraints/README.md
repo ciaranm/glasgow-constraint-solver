@@ -506,6 +506,43 @@ constraints and do not restate it.
       aborts.
     - Its answer depends on presolver order: `DifferenceLogic`'s initialiser
       can tighten a start before it reads the windows.
+- [`inferred_cumulative.md`](../presolvers/inferred_cumulative.md) — the
+  `InferredCumulative` presolver. It is Sidorov's (CP 2026) cover-and-lift
+  procedure over every posted `Cumulative` and every `Disjunctive2D`
+  projection at once. Each lifted cut is posted as a derived `Cumulative`,
+  and each per-time row is certified by replaying the knapsack dynamic
+  programme that validates the whole cut, built by the same code that answers
+  the lifting subproblems. That way no validated cut ever fails to
+  certify: zero uncertifiable over 710 MiniZinc RCPSP and 1,999 PSPLib
+  instances. Findings:
+  - **No front end can run it** (#983). The audit answers what it would detect by
+    building the MiniZinc and XCSP3 shapes by hand. A capacity-one resource
+    posted as `Disjunctive` is invisible. Per-resource length variables
+    break cross-resource lifting (`L` lower on 87 of 710 instances).
+    Three spellings zero the certified bound on every instance without a
+    note: per-resource length variables, single-value length variables, and
+    end-variable makespan rows. Adding `InferredDisjunctive` first can zero it
+    too, where that presolver's bound already reaches this one's.
+  - **#943's single start-checkpoint encoding cost it heavily.** One donor
+    row's recovery is about 7,200 lines, all kept at `Top`. The reference
+    certificate is 6.8 times the lines and 93 times the checking time of the
+    time-indexed arm, so the August Pack_d sweep no longer checks in
+    reasonable time.
+  - **With a makespan named, the root proof is linear in the makespan
+    bound,** so in the task lengths, and its checking time worse than linear.
+  - **The lifting programme's all-pairs frontier sweep** costs up to minutes
+    per PSPLib J90 or J120 instance with proofs off. Its state budget binds
+    on at least 102 of them, changing cuts or dropping ones it could not
+    afford to validate.
+  - **An `Important` note fires on 556 of the 710 instances** for the
+    published procedure's own output budget.
+  - **Assertion levels.** Above `Off`, under the default start-checkpoint
+    encoding, a cut over posted donors gets the proof rejected
+    (#1234). Over a `Disjunctive2D` projection donor every cut
+    is declined instead, and the proof verifies at `Definitions`,
+    `Inferences` and `Backtracking`. At `Links` every proof of a satisfiable
+    model is rejected (#1210). The installed constraint's hints
+    say `constraint_id unnamed`.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
