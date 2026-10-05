@@ -14,6 +14,31 @@
 namespace gcs::innards
 {
     /**
+     * \brief Does some (state, value) pair have more than one next state?
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto regular_is_nondeterministic(const std::vector<std::unordered_map<Integer, std::set<long>>> & transitions) -> bool;
+
+    /**
+     * \brief Derive `~state[i][q]` at ProofLevel::Top for every (layer, state)
+     * pair that, under the variables' domains in `state`, is unreachable from
+     * the start or cannot reach a final state.
+     *
+     * In a non-deterministic automaton a word can lead to a state from which
+     * the run cannot finish: at the last layer, a state that is not final. Unit
+     * propagation from the variables does not rule that state out on its own,
+     * so its flag is left unassigned at the solution line unless something has
+     * said it is dead. Upfront's scaffolding says so; PerCall calls this for a
+     * non-deterministic automaton. emit_regular_canonical_run() calls it too.
+     *
+     * \ingroup Innards
+     */
+    auto emit_regular_static_dead_states(ProofLogger & logger, const std::vector<IntegerVariableID> & vars, long num_states,
+        const std::vector<std::unordered_map<Integer, std::set<long>>> & transitions, const std::vector<long> & final_states,
+        const std::vector<std::vector<ProofFlag>> & state_flags, const State & state) -> void;
+
+    /**
      * \brief Does some word of length `vars.size()`, over the variables'
      * domains in `state`, have two accepting runs through the automaton?
      *

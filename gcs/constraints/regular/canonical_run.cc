@@ -93,6 +93,39 @@ namespace
         return result;
     }
 
+    // Statically dead state flags are false. Forward-unreachable states go
+    // first, in ascending layer order, each by way of its per-value backward
+    // chains, which are working and deleted afterwards; then states that cannot
+    // reach a final state, in descending order.
+    auto emit_static_dead_states(ProofLogger & logger, const vector<IntegerVariableID> & vars, long num_states, const Transitions & transitions,
+        const Layers & layers, const vector<vector<ProofFlag>> & st) -> void
+    {
+        auto n = vars.size();
+        auto rup = [&](WPBSum sum, ProofLevel level) { return logger.emit_rup_proof_line(move(sum) >= 1_i, level); };
+        ProofScaffoldingScope scaffolding{logger};
+
+        logger.emit_proof_comment("Regular: static dead states");
+        for (size_t i = 0; i < n; ++i)
+            for (long next_q = 0; next_q < num_states; ++next_q) {
+                if (layers.forward[i + 1].contains(next_q))
+                    continue;
+                for (auto val : layers.values[i]) {
+                    WPBSum chain = WPBSum{} + 1_i * ! st[i + 1][next_q] + 1_i * (vars[i] != val);
+                    for (long q = 0; q < num_states; ++q)
+                        if (targets_of(transitions, q, val).contains(next_q))
+                            chain += 1_i * st[i][q];
+                    rup(move(chain), ProofLevel::Temporary);
+                }
+                rup(WPBSum{} + 1_i * ! st[i + 1][next_q], ProofLevel::Top);
+            }
+        for (long q = 1; q < num_states; ++q)
+            rup(WPBSum{} + 1_i * ! st[0][q], ProofLevel::Top);
+        for (auto i = n + 1; i-- > 0;)
+            for (auto q : layers.forward[i])
+                if (! layers.live[i].contains(q))
+                    rup(WPBSum{} + 1_i * ! st[i][q], ProofLevel::Top);
+    }
+
     auto is_constant(const ProofLiteralOrFlag & lit) -> bool
     {
         if (auto proof_lit = std::get_if<ProofLiteral>(&lit))
@@ -102,10 +135,21 @@ namespace
     }
 }
 
+auto gcs::innards::regular_is_nondeterministic(const Transitions & transitions) -> bool
+{
+    return any_of(transitions, [](const auto & by_val) { return any_of(by_val, [](const auto & entry) { return entry.second.size() > 1; }); });
+}
+
+auto gcs::innards::emit_regular_static_dead_states(ProofLogger & logger, const vector<IntegerVariableID> & vars, long num_states,
+    const Transitions & transitions, const vector<long> & final_states, const vector<vector<ProofFlag>> & st, const State & state) -> void
+{
+    emit_static_dead_states(logger, vars, num_states, transitions, compute_layers(vars, transitions, final_states, state), st);
+}
+
 auto gcs::innards::regular_is_ambiguous(
     const vector<IntegerVariableID> & vars, const Transitions & transitions, const vector<long> & final_states, const State & state) -> bool
 {
-    if (! any_of(transitions, [](const auto & by_val) { return any_of(by_val, [](const auto & entry) { return entry.second.size() > 1; }); }))
+    if (! regular_is_nondeterministic(transitions))
         return false;
 
     auto layers = compute_layers(vars, transitions, final_states, state);
@@ -139,34 +183,12 @@ auto gcs::innards::emit_regular_canonical_run(ProofLogger & logger, const vector
     auto x_is = [&](size_t i, Integer val) -> ProofLiteralOrFlag { return ProofLiteral{Literal{vars[i] == val}}; };
     auto rup = [&](WPBSum sum, ProofLevel level) { return logger.emit_rup_proof_line(move(sum) >= 1_i, level); };
 
-    // Everything below that is only there to discharge the final red's goals
-    // goes at Temporary, and is deleted when this scope ends. The definitions,
-    // the dead states and the pinning itself stay, at Top.
-    ProofScaffoldingScope scaffolding{logger};
+    emit_static_dead_states(logger, vars, num_states, transitions, layers, st);
 
-    // Statically dead state flags are false. Forward-unreachable states go
-    // first, in ascending layer order, each by way of its per-value backward
-    // chains; then states that cannot reach a final state, in descending order.
-    logger.emit_proof_comment("Regular: canonical run, static dead states");
-    for (size_t i = 0; i < n; ++i)
-        for (long next_q = 0; next_q < num_states; ++next_q) {
-            if (layers.forward[i + 1].contains(next_q))
-                continue;
-            for (auto val : layers.values[i]) {
-                WPBSum chain = WPBSum{} + 1_i * ! st[i + 1][next_q] + 1_i * (vars[i] != val);
-                for (long q = 0; q < num_states; ++q)
-                    if (targets_of(transitions, q, val).contains(next_q))
-                        chain += 1_i * st[i][q];
-                rup(move(chain), ProofLevel::Temporary);
-            }
-            rup(WPBSum{} + 1_i * ! st[i + 1][next_q], ProofLevel::Top);
-        }
-    for (long q = 1; q < num_states; ++q)
-        rup(WPBSum{} + 1_i * ! st[0][q], ProofLevel::Top);
-    for (auto i = n + 1; i-- > 0;)
-        for (auto q : layers.forward[i])
-            if (! live[i].contains(q))
-                rup(WPBSum{} + 1_i * ! st[i][q], ProofLevel::Top);
+    // Everything below that is only there to discharge the final red's goals
+    // goes at Temporary, and is deleted when this scope ends. The definitions
+    // and the pinning itself stay, at Top.
+    ProofScaffoldingScope scaffolding{logger};
 
     // b[i][q]: the rest of the word, from x_i on, takes state q to a final
     // state. Defined over live states only, through

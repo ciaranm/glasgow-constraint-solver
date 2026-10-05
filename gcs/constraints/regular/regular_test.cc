@@ -215,6 +215,12 @@ auto run_all_nfa_tests(bool proofs) -> void
     // the word 0 0 (issue #1204). Unambiguous, so no canonical run.
     run_regular_nfa_test(proofs, "unambiguous", {{0, 1}, {0, 1}}, //
         {{{0_i, {1, 2}}}, {{1_i, {3}}}, {{0_i, {3}}}, {}}, {3});
+    // Reading 1 can end in a final or a non-final state: one accepting run.
+    // Every value is accepted, so the propagator prunes nothing and writes no
+    // dead-state lines, and PerCall used to leave the non-final state's flag
+    // unassigned at the solution line.
+    run_regular_nfa_test(proofs, "nonfinal_sibling", {{0, 1}}, //
+        {{{0_i, {3}}, {1_i, {1, 2}}}, {}, {}, {}}, {2, 3});
     // Two accepting runs on the word 0 1, ending in different final states.
     run_regular_nfa_test(proofs, "ambiguous", {{0, 1}, {0, 1}}, //
         {{{0_i, {1, 2}}}, {{1_i, {3}}}, {{1_i, {4}}}, {}, {}}, {3, 4});

@@ -146,6 +146,16 @@ has the details. A deterministic automaton cannot be ambiguous. Neither
 can a non-deterministic one in which every accepted word has one
 accepting run: the runs that fail die by unit propagation.
 
+That last part needs one thing from the proof: lines saying which states
+are statically dead. Take a run that reaches the last layer in a
+non-final state. Nothing in the OPB rules that state out until a final
+state is known to be true, so the forward clause that leads to it never
+becomes unit. `Upfront` writes these lines in its Top-level scaffolding.
+`PerCall` used to rely on its per-call sweep, which writes nothing when
+it prunes nothing, so it now calls `emit_regular_static_dead_states` for
+a non-deterministic automaton. A deterministic automaton doesn't need
+them, because every forward clause has a single target.
+
 Determinising the automaton would fix this, but the subset construction
 can make it exponentially larger. Instead the OPB is left alone, and the
 proof pins the state flags to one canonical run, which the variables
