@@ -608,8 +608,8 @@ auto Disjunctive2D::define_proof_model(ProofModel & model, const State &) -> voi
             // has to know whether a rectangle is optional. In particular the
             // before flags stay reified *unconditionally* on the arithmetic,
             // which is what keeps every justification below a pol over the same
-            // rows as before, and what makes the 4-way clause become 6-way
-            // rather than something new.
+            // rows as before, and what makes the 4-way clause become 5-way (one
+            // optional rectangle) or 6-way (both) rather than something new.
             for (auto r : {i, j})
                 if (_presence[r])
                     clause_sum += 1_i * (*_presence[r] == 0_i);
@@ -1075,9 +1075,10 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             // is infeasible, so four pols force all four flags
                             // false under the reason and the separation clause
                             // unit-fails in the framework's closing
-                            // reason-wrapped RUP. That is the 4-way clause, plus
-                            // an "absent" disjunct per optional rectangle, whose
-                            // presence literal is then in the reason.
+                            // reason-wrapped RUP. That is the 4-way clause plus
+                            // one `present = 0` disjunct per optional rectangle
+                            // (5-way with one, 6-way with both), each presence
+                            // literal then being in the reason.
                             emit_before_pol(before_x, i, j, lb_lit(xs[i]), lb_lit(width_var[i]), ub_lit(xs[j]));
                             emit_before_pol(before_x, j, i, lb_lit(xs[j]), lb_lit(width_var[j]), ub_lit(xs[i]));
                             emit_before_pol(before_y, i, j, lb_lit(ys[i]), lb_lit(height_var[i]), ub_lit(ys[j]));
@@ -1103,8 +1104,9 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         // Exactly one is undecided, and it is the one that
                         // cannot be there: the same four pols refute all four
                         // separating directions, and the present one's
-                        // presence literal is in the reason, so the six-way
-                        // clause is left with the undecided one's own
+                        // presence literal, if it has one, is in the reason,
+                        // so the 6-way clause (5-way when the present one is
+                        // mandatory) is left with the undecided one's own
                         // "absent" disjunct and the framework's closing RUP
                         // concludes it. Nothing here is conditional on a
                         // rectangle that might not be present --- the before
@@ -1141,9 +1143,10 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // surviving direction folded onto the target order literal's
             // definition row -- so with the escapes pinned the separation
             // clause forces the target in the framework's closing RUP. That
-            // is the 4-way clause, plus an "absent" disjunct per optional
-            // rectangle, whose presence literal reason_for then carries. One
-            // step regardless of the blocker's size.
+            // is the 4-way clause plus one `present = 0` disjunct per optional
+            // rectangle (5-way with one, 6-way with both), whose presence
+            // literals reason_for carries. One step regardless of the
+            // blocker's size.
             //
             // free_is_x selects which axis we push on (the other is the forced
             // axis they overlap on). i is pushed, j blocks.
@@ -1432,9 +1435,10 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             optional<SimpleCondition> t_size;
                             optional<ProofFlag> escape;
                             /// An optional member's presence: the fact that
-                            /// covers the `[present = 0]` disjunct its 6-way
-                            /// clause brings in, guarded and weakened in like
-                            /// the others (#984). prepare() admits only a plain,
+                            /// covers the `[present = 0]` disjunct it brings
+                            /// into each of its pairs' clauses, guarded and
+                            /// weakened in like the others (#984). prepare()
+                            /// admits only a plain,
                             /// unshared presence variable, so it names one
                             /// literal and names it once. Stated as `!= 0`
                             /// rather than `= 1` so that its negation is the
@@ -1563,9 +1567,9 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                             clause.add(! tracker.xliteral_for_ensuring(*f.t_size), 1_i, tracker);
                                         if (f.escape)
                                             clause.add(*f.escape, 1_i, tracker);
-                                        // The pair's own two presences are in
-                                        // its clause already, as the 6-way
-                                        // clause's disjuncts.
+                                        // The pair's own presences are in its
+                                        // clause already, as its `present = 0`
+                                        // disjuncts.
                                         if (f.present)
                                             clause.add(! tracker.xliteral_for_ensuring(*f.present), 1_i, tracker);
                                     }
@@ -1801,7 +1805,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * starts_by >= 1_i, flag, ProofLevel::Top);
                         // An optional rectangle is active only if present, as a
                         // Cumulative's optional task is. That is what lets the
-                        // pair's 6-way clause close to the same
+                        // pair's 5- or 6-way clause close to the same
                         // `~act_i + ~act_j + before + before` a mandatory pair
                         // gets, and what keeps the flagged row a model fact.
                         auto conjuncts = WPBSum{} + 1_i * started + 1_i * starts_by;

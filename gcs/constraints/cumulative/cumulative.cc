@@ -755,10 +755,13 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
     // towards sufficiency, which is why the checkpoints are over _active_tasks
     // and not over every task.
     //
-    // No rule cites these rows directly. Every per-time capacity row a rule
-    // cites is derived from them in the proof, by
-    // innards::recover_cumulative_capacity_row, and BothRecovering checks
-    // each recovered row against the one the time-indexed block still writes.
+    // No rule cites these rows directly. Under StartCheckpoint every per-time
+    // capacity row a rule cites is derived from them in the proof, by
+    // innards::recover_cumulative_capacity_row. BothRecovering checks each
+    // recovered row against the one the time-indexed block still writes,
+    // where the recovery applies at all: over a variable height it declines
+    // under that arm (cumulative_checkpoint_recovery_applies), and rules cite
+    // the model's own rows.
     // A checkpoint row that says too much is a solution VeriPB refuses on the
     // `solx` line of any enumeration test; one that says too little leaves a
     // recovery, and so the inference citing it, unprovable.
@@ -1257,26 +1260,26 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
     const auto & capacity_lines = inputs.capacity_lines;
 
     // Where a citer gets the row saying the load at `t` is within the capacity.
-    // Today that is the OPB row the time-indexed block wrote, unless #780's
-    // recovery is on, in which case it is derived from the start-checkpoint
-    // rows instead --- once per time point, cached, and reason-free at Top, so
-    // the second citer of a point pays nothing and backtracking does not lose
-    // it. The recovery declines a Cumulative it cannot yet speak about (a
-    // variable height, an optional task), and the model row is what is left.
+    // Under StartCheckpoint, the shipped encoding, it is derived from the
+    // start-checkpoint rows (#780) --- once per time point, cached, and
+    // reason-free at Top, so the second citer of a point pays nothing and
+    // backtracking does not lose it. Under a test arm the recovery can
+    // decline (BothRecovering over a variable height; see
+    // cumulative_checkpoint_recovery_applies), and then the OPB row the
+    // time-indexed block wrote is what is left.
     //
     // The time-table family goes through this --- the overflow contradiction,
-    // both bound pushes and the height rule --- and so do the overload
-    // check's (OC)/(TTOC) window supply and the (TTHE-OC)/(KAOC) per-time
-    // availability lines, the latter being the only citer that uses a row as
-    // the base of a per-point sub-derivation rather than summing it straight
-    // into a pol, and so does edge-finding's window supply --- and with it
-    // TTEF, the energetic form and our own not-first / not-last, which is
-    // certified by edge-finding's certificate unchanged, and so does the
-    // published not-first / not-last, the only citer that scales the row
-    // rather than adding it at one. That is every citer in this file. What is left is outside it:
-    // derived_cumulative.cc still looks its donors' rows up by label, which is
-    // the rest of #780. A lane whose every rule has moved joins the
-    // `startcheckpoint` ctest arm, which is where that progress is measured.
+    // both bound pushes and the height rule --- and so do the overload check's
+    // (OC)/(TTOC) window supply and the (TTHE-OC)/(KAOC) per-time availability
+    // lines, the latter being the only citer that uses a row as the base of a
+    // per-point sub-derivation rather than summing it straight into a pol, and
+    // so does edge-finding's window supply --- and with it TTEF, the energetic
+    // form and our own not-first / not-last, which is certified by
+    // edge-finding's certificate unchanged, and so does the published
+    // not-first / not-last, the only citer that scales the row rather than
+    // adding it at one. That is every citer in this file. derived_cumulative.cc,
+    // outside it, looks a donor's row up by label first and asks the donor's
+    // published family to derive it where there is none (#780).
     auto capacity_row = [&](Integer t) -> std::optional<ProofLine> {
         if (logger && inputs.checkpoint_recovery)
             if (auto recovered = recover_cumulative_capacity_row(*logger, inputs, *inputs.checkpoint_recovery, t))

@@ -128,10 +128,11 @@ his early stop would have abandoned cost us nothing there — which leaves only
 the unbudgeted direction, where lifting them can only help.
 
 That is Pack and Pack_d only. Measured on 2026-10-04, 25 of the la_x instances,
-those with 300 to 675 tasks, exhaust the 20,000 calls, so on that collection the
-budgeted direction is live. On PSPLib J90 and J120 it is the lifting
-programmes' state budget that binds instead, and changes the cuts posted
-(#1255).
+all with between 300 and 675 tasks, exhaust the 20,000 calls, so on that
+collection the budgeted direction is live. On PSPLib it is the lifting
+programmes' state budget that binds instead, and changes the cuts posted: on 47
+of the 477 J90 instances and 55 of the 562 J120 instances that finished in
+#1255's re-sweep.
 
 Implementing it verbatim would be wrong: the estimate is an upper bound only
 while the unlifted coefficients stay at most one, which holds at `π₀ = 1` and
@@ -386,8 +387,10 @@ asserts a non-zero restriction count so it cannot quietly stop covering them.
 
 **The figures in this section were measured before #943**, which made
 start-checkpoint the only encoding `Cumulative` writes, and they have not been
-re-measured since. Every donor row a derived cut cites is now recovered from the
-checkpoint block in the proof, at about 7,200 lines a recovery on `pack001`, and
+re-measured since. Every row a derived cut cites from a posted `Cumulative`
+donor is now recovered from that donor's checkpoint block in the proof (a
+`Disjunctive2D` projection donor's come from its comparator network instead), at
+about 7,200 lines a recovery on `pack001`, and
 on that instance #943 alone took the certificate's checking time from 0.79 s to
 28.4 s. Issue #1254 has the measurements. So the judgement below, that proof
 size and checking time are not demonstrably a problem, is a judgement about the

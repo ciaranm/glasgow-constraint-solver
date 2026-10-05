@@ -352,8 +352,9 @@ left is a unit row of the reduced system — so a gathered donor is pure overhea
 on every wake. `keeping_donor_propagators()` exists so the subsumption claim can
 be checked rather than assumed, and it is a strong check: disabling a propagator
 changes neither degrees nor adjacency, so the search must find **the same
-solutions in the same number of recursions**, which is what the test compares.
-Measured, on every tripwire fixture:
+number of solutions in the same number of recursions**, which is what the
+tripwire compares; a separate solution-set equivalence test checks the sets
+themselves. Measured, on every tripwire fixture:
 
 | fixture | kept | retired |
 |---|---|---|
@@ -362,7 +363,8 @@ Measured, on every tripwire fixture:
 | `two_components` | 4 / 7 / 24 | 4 / 7 / **14** |
 | `bool_bridge` | 2 / 3 / 14 | 2 / 3 / **5** |
 
-The same solutions and recursions, for a third to a half of the propagation.
+The same solution and recursion counts, for a third to a half of the
+propagation.
 
 ### What it is measured to buy
 
@@ -530,8 +532,9 @@ slack is a corruption VeriPB is right to accept. What bites is corrupting the
 **The presolver came after all five**, with its own three gates rather than a
 staged bring-up, because it adds no new proof shape for the `ParityOdd` family
 and only the two-RUP shape for the Boolean one: the exact counts in its stats
-block, the solution-and-recursion tripwire, and the strength differential. All
-three are in "The presolver" above with their measured numbers.
+block, the solution-and-recursion-count tripwire, and the strength
+differential. All three are in "The presolver" above with their measured
+numbers.
 
 ## What would exercise it
 

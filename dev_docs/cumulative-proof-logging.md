@@ -23,15 +23,20 @@ capacities.
 
 Also certified, off by default: **edge-finding**, in both directions, under
 `CumulativeRules::edge_finding`, **time-table extended edge-finding** (TTEF)
-under `CumulativeRules::time_table_edge_finding`, **not-first / not-last**
-under `CumulativeRules::not_first_not_last`, and the two elastic rungs of the
-overload check, **(TTHE-OC)** and **(KAOC)** (#550, and over variable heights
-since #1114), under `CumulativeRules::elastic_overload` and
-`CumulativeRules::knapsack_overload`. See the sections below.
+under `CumulativeRules::time_table_edge_finding`, **energetic edge-finding**
+(#755) under `CumulativeRules::energetic_edge_finding`, **not-first / not-last**
+under `CumulativeRules::not_first_not_last` and, in the published detection,
+under `CumulativeRules::not_first_not_last_published` (#746), and the two
+elastic rungs of the overload check, **(TTHE-OC)** and **(KAOC)** (#550, and
+over variable heights since #1114), under `CumulativeRules::elastic_overload`
+and `CumulativeRules::knapsack_overload`. See the sections below.
 
-Not here: energetic reasoning in general. The claim to make is "a wide range of
-commonly used techniques", not completeness. The Open follow-ups section at the
-end says what is still open.
+Not here: energetic reasoning proper, the energetic check and its bound
+adjustments as Baptiste, Le Pape and Nuijten state them. Energetic edge-finding
+counts the same guaranteed energy, but over edge-finding's windows and towards
+edge-finding's conclusions. The claim to make is "a wide range of commonly used
+techniques", not completeness. The Open follow-ups section at the end says what
+is still open.
 
 ## What's hard about it
 
@@ -79,8 +84,10 @@ That was the time-indexed encoding, and it is no longer what the OPB holds.
 Since #780 the only encoding `Cumulative` ships is the start-checkpoint one: the
 per-`(i, t)` flags are defined inside the proof when something first cites them,
 and each `C_t` is derived in the proof from the start-checkpoint rows rather
-than written to the OPB. The inferences below cite the same flags and rows; "The
-start-checkpoint encoding" further down says how they come to exist.
+than written to the OPB. The inferences below cite the same flags and rows;
+[The start-checkpoint encoding, beside the time-indexed one
+(#780)](#the-start-checkpoint-encoding-beside-the-time-indexed-one-780) says how
+they come to exist.
 
 ## Inference 1 — `mand_load[t] > capacity ⇒ contradiction`
 

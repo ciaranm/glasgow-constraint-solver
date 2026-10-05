@@ -189,10 +189,12 @@ same day with the visited-cover rule removed (issue #726), both with VeriPB
 
 **The proof sizes and checking times in this section were measured before
 #943**, which made start-checkpoint the only encoding `Cumulative` writes, and
-they have not been re-measured since. Every donor row a derived cut cites is now
-recovered from the checkpoint block in the proof, and that made these
-certificates much larger and much slower to check: on `pack001`, #943 alone took
-VeriPB from 0.79 s to 28.4 s. Issue #1254 has the measurements.
+they have not been re-measured since. Every row a derived cut cites from a
+posted `Cumulative` donor is now recovered from that donor's checkpoint block in
+the proof (a `Disjunctive2D` projection donor's come from its comparator network
+instead), and that made these certificates much larger and much slower to
+check: on `pack001`, #943 alone took VeriPB from 0.79 s to 28.4 s. Issue #1254
+has the measurements.
 
 Over both collections in all three stages — 330 runs, no failures — **106 of the
 110 instances get a certified bound**, 105 of them beating the critical path, and
@@ -263,8 +265,10 @@ The rerun also settles two questions that were open defaults:
   spending the budget on covers Sidorov's early stop would have abandoned —
   costs nothing on these collections, because the budget is not what stops us.
   It is not true of every collection: measured on 2026-10-04, 25 of the la_x
-  instances exhaust the 20,000 calls, and on PSPLib J90 and J120 the lifting
-  programmes' own state budget binds and changes the cuts posted (#1255).
+  instances, all with between 300 and 675 tasks, exhaust the 20,000 calls, and
+  on PSPLib the lifting programmes' own state budget binds and changes the cuts
+  posted on 47 of the 477 J90 instances and 55 of the 562 J120 instances that
+  finished in #1255's re-sweep.
 - **Two-member cliques are not worth posting here.** With
   `with_minimum_clique_size(2)`, over Pack in both disjunctive-bearing stages and
   Pack_d in the capacity-one stage (165 runs), the posted set changes on nine of

@@ -296,13 +296,14 @@ negated claim still holds, so the closing RUP is rejected.
 
 What no proof can catch is the *set*. If a task that does not conflict with
 everything is raised anyway, the derivation runs honestly and the row it lands on
-is simply not implied by the donor. VeriPB does reject it, at the row's closing
-`ia` step: every step before that is sound and lands on a true but weaker line,
-and what fails is the claim that it implies a row which is false — not anything
-about the derivation.
-`RaiseUnentitled` covers it, on the control fixture where the tallest task misses
-the pairwise test by exactly one. `recover_am1_from_row` refuses a set that does
-not overshoot the capacity outright for the same reason:
+is simply not implied by the donor. `RaiseUnentitled` covers it, on the control
+fixture where the tallest task misses the pairwise test by exactly one. There
+`recover_am1_from_row` would refuse a pair that fits, so the mutation reports a
+demand large enough to overshoot by one, which keeps every step legal. VeriPB
+then rejects at the row's closing `ia` step: every step before that is sound and
+lands on a true but weaker line, and what fails is the claim that it implies a
+row which is false — not anything about the derivation. `recover_am1_from_row`
+refuses a set that does not overshoot the capacity outright for the same reason:
 [it cannot be caught later](../gcs/innards/proofs/am1_from_row.hh).
 
 Those at-most-ones all come off *one* donor row, which is the case where

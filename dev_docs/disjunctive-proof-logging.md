@@ -1510,8 +1510,9 @@ declarative OPB is the `diffn` definition: for each pair and axis `d`,
 `before_{i,j,d} ⇔ pos_{i,d} + size_{i,d} ≤ pos_{j,d}`, plus a single
 **4-way separation clause** per pair
 `before_{i,j,x} + before_{j,i,x} + before_{i,j,y} + before_{j,i,y} ≥ 1`
-(6-way with optional rectangles; see below, where a present rectangle's
-presence literal goes into the reason).
+(one more disjunct per optional rectangle, so 5-way with one and 6-way with
+both; see below, where a present rectangle's presence literal goes into the
+reason).
 Again this is all the scaffolding there is; the justifications are the
 same `emit_before_pol` shape per axis:
 
@@ -1539,8 +1540,9 @@ an all-fixed pure-RUP leaf check.
 **Optional rectangles** (#974) lift 1D's treatment (#735) the same way
 the rest of this section does: a `{0, 1}` presence per rectangle,
 carried as one more disjunct on each separation clause it takes part
-in and nowhere else, so the 4-way clause becomes **6-way** and a
-constant-1 presence gives a byte-identical OPB. The before flags stay
+in and nowhere else, so the 4-way clause becomes **5-way** for a pair with one
+optional rectangle and **6-way** for a pair of them, and a constant-1 presence
+gives a byte-identical OPB. The before flags stay
 reified *unconditionally* on the arithmetic, which is what keeps every
 justification above a pol over the same rows as before.
 
@@ -1553,8 +1555,9 @@ present:
 
 - **Presence falsification**: the same four pols as the contradiction
   refute all four separating directions, the present partner's
-  presence literal is in the reason, and the 6-way clause is left with
-  the undecided rectangle's own "absent" disjunct, which the closing
+  presence literal (if it is optional) is in the reason, and the 6-way
+  clause, 5-way for a mandatory partner, is left with the undecided
+  rectangle's own "absent" disjunct, which the closing
   RUP concludes. The contradiction and the falsification differ only
   in which literal the clause is left with. With both presences
   undecided nothing follows about either one alone, so the pair is
@@ -1677,8 +1680,8 @@ in #1039, and each rung decides at the node:
   pushes it, only once it is present. Its presence is then one more fact
   of the certificate: in the reason, in the network's guard at `big()`,
   and weakened into every other pair's clause at 1, exactly as a time
-  bound or a zero-size escape is. The pair's own two presences are
-  already in its clause, as the 6-way clause's disjuncts. The fact is
+  bound or a zero-size escape is. The pair's own presences are already
+  in its clause, as its `present = 0` disjuncts. The fact is
   stated as `present != 0`, not `present = 1`, so that its negation is
   the clause's own literal: they are one PB literal for a `{0, 1}`
   variable but two atoms for a presence with a wider encoding, and the

@@ -48,7 +48,10 @@ namespace gcs
      * \brief Which of Disjunctive's propagation rules are enabled.
      *
      * Time-tabling and pairwise detectable precedences are on by default, and
-     * every other rule is off. Turning one off weakens propagation but never
+     * every other rule is off. The direction switches (\ref edge_finding_lb,
+     * \ref edge_finding_ub, \ref not_first, \ref not_last) and \ref
+     * overload_cache_bridge default to true, but do nothing unless the rule
+     * they belong to is on. Turning one off weakens propagation but never
      * changes the solutions found, and never changes the OPB encoding: these
      * select propagation strength only, and exist so that a test can attribute
      * an inference to the rule that made it (and so that a fixture can show a

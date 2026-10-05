@@ -186,9 +186,10 @@ namespace gcs
          *
          * This exists so that the subsumption claim can be checked rather than
          * assumed, and it is a strong check: disabling a propagator changes
-         * neither degrees nor adjacency, so the search tree must come out
-         * **node for node identical** either way. It differing means the
-         * subsumption claim is wrong.
+         * neither degrees nor adjacency, so the search must find the same
+         * number of solutions in the same number of recursions either way,
+         * which is what the test compares. It differing means the subsumption
+         * claim is wrong.
          *
          * Donors in a component that got no propagator are never retired,
          * however this is set.
