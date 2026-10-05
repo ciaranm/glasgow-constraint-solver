@@ -973,7 +973,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `cumulative.md` | `cumulative/` | **written**. `Cumulative` and its optional-task form, plus the runtime machinery the three scheduling presolvers install (`derived_cumulative`, `donor_view`, `propagate.hh`, the checkpoint recovery); `Disjunctive2D` runs the same propagator over its projections and is documented in `disjunctive_2d.md`; notes `cumulative-proof-logging.md`, `certified-makespan-bounds.md`, `rule-counters.md` stay |
 | `difference.md` | `difference/` | difference constraints; note `difference-logic.md`, whose presolver half belongs under `dev_docs/presolvers/` |
 | `dag.md` | `dag/` | `Dag`; shares `connectivity-proofs.md` with `reachable` |
-| `disjunctive.md` | `disjunctive/`, `disjunctive_2d/` | one family, two dimensions; note `disjunctive-proof-logging.md` |
+| `disjunctive.md` | `disjunctive/` | **written**. `Disjunctive` only: `disjunctive_2d/` now has its own document, `disjunctive_2d.md`, split out because it is large. Note `disjunctive-proof-logging.md` stays as the long note, and this document describes `ComparatorNetwork` for both |
 | `element.md` | `element/` | **written**. `Element`, `Element2D` |
 | `in.md` | `in/` | **written**. One class over constants and variable candidates; also the machinery behind every `create_integer_variable(vector)`. `range_literals_spec.md` stays the range-literal reference |
 | `increasing.md` | `increasing/` | **written**. `Increasing`, `StrictlyIncreasing`, `Decreasing` and `StrictlyDecreasing` over one `IncreasingChain`. Not merged with `comparison`: the same row and theorem, no shared code |
