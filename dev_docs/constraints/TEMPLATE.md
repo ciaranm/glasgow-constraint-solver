@@ -970,7 +970,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `counting.md` | `count/`, `among/`, `global_cardinality/`, `n_value/` | **written**. The candidate merge, settled: four classes (`Count`, `Among`, `NValue`, `GlobalCardinality` at `BC` and `GAC`), no shared propagation code and four encodings, so one document and no code merge |
 | `comparison.md` | `comparison/` | **written**. Twelve classes over `ReifiedCompareLessThanOrMaybeEqual`; **not** merged with `equals` — same reified-dispatcher pattern, no shared code, separate encodings |
 | `equals.md` | `equals/` | **written** — the pilot. `Equals`, `NotEquals` and the four reified forms |
-| `cumulative.md` | `cumulative/` | the largest family, including the derived cumulative (`derived_cumulative.hh`) that three presolvers install; notes `cumulative-proof-logging.md`, `certified-makespan-bounds.md`, `rule-counters.md` |
+| `cumulative.md` | `cumulative/` | **written**. `Cumulative` and its optional-task form, plus the runtime machinery the three scheduling presolvers install (`derived_cumulative`, `donor_view`, `propagate.hh`, the checkpoint recovery); `Disjunctive2D` runs the same propagator over its projections and is documented in `disjunctive_2d.md`; notes `cumulative-proof-logging.md`, `certified-makespan-bounds.md`, `rule-counters.md` stay |
 | `difference.md` | `difference/` | difference constraints; note `difference-logic.md`, whose presolver half belongs under `dev_docs/presolvers/` |
 | `dag.md` | `dag/` | `Dag`; shares `connectivity-proofs.md` with `reachable` |
 | `disjunctive.md` | `disjunctive/`, `disjunctive_2d/` | one family, two dimensions; note `disjunctive-proof-logging.md` |

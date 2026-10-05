@@ -363,6 +363,48 @@ constraints and do not restate it.
   proof model when `z` could be negative, and through an offset view on `z`
   the propagators too; since #1215 and #1214 such distances and offsets are
   refused at construction.
+- [`cumulative.md`](cumulative.md) — `Cumulative`, over optional tasks and
+  variable lengths, heights and capacity. This is the largest family and the
+  most heavily certified. One propagator carries the whole rule ladder:
+  time-tabling, the overload check and its profile, elastic and knapsack
+  strengthenings, edge-finding with its time-table and energetic forms, and
+  not-first / not-last in our detection and the published one. Every
+  inference is proved, under the one shipped encoding: start-checkpoint,
+  `6n(n − 1) + n` rows and no time point in the model. The per-time capacity
+  rows every rule argues over are recovered inside the proof the first time
+  something cites them. The same propagator runs the derived Cumulatives that
+  three presolvers install, and each axis of a `Disjunctive2D`, so this
+  document also covers that runtime machinery.
+  [`cumulative-proof-logging.md`](../cumulative-proof-logging.md) stays as the
+  long note.
+
+  Findings:
+  - at `Definitions`, `Inferences` and `Backtracking`, a derived Cumulative
+    installed over a posted donor makes the proof unreadable under the
+    shipped start-checkpoint encoding, because the donor publishes its row
+    deriver at every level but its flag definer only at `Off`. The test-only
+    time-indexed encoding verifies. Over a `Disjunctive2D` donor, two
+    presolvers decline and the proof verifies, and `CumulativeStrengthening`
+    throws a `ProofError` where it has something to strengthen;
+  - inputs within the integer range policy throw `IntegerOverflow` at three
+    sites besides #1223. Two of them, and #1223's, throw on feasible
+    single-task instances;
+  - one time-table push's certificate is linear in the push distance at short
+    task lengths. A push of 5,000 at length 1 is 295,048 lines and 10.3 s of
+    VeriPB, invisible to the large-domain lane. The chain is built even with
+    proofs off;
+  - no rule lowers a variable height's upper bound, not even to the
+    capacity, so search walks the height's values one at a time;
+  - the elastic and knapsack conflicts are not counted by the rule counters;
+  - the test-only encodings are reachable from any binary through an
+    environment variable.
+
+  On `data_bl`, edge-finding and TTEF halve the default's instruction count
+  under the example's search. Against Gecode the default is the stronger
+  propagator (7 to 34× fewer nodes), and with both solvers on the same
+  decomposition (312,333 nodes each) ours is 3.6× slower per node. Proofs run
+  to 1.19M lines and 390 to 510 s of VeriPB at 8,917 nodes, about 95% of them
+  this family's own.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
