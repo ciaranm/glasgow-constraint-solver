@@ -337,8 +337,8 @@ constraints and do not restate it.
   maximum stops.
   Because of the pass, three MiniZinc Challenge models make no progress in a
   minute, one overshoots its time limit by 44 s, and the audit row stays
-  `KnownTrip`. On an identical enumeration it takes 12 to 15 times Gecode's
-  time. Other findings:
+  `KnownTrip`. Enumerating the same solutions as Gecode, under different
+  branching, it takes 12 to 15 times Gecode's time. Other findings:
   - a result that shares a variable with an entry through a view (only the
     C++ API and `gcspy` can post a harmful one) makes it throw "missing support" instead
     of failing, sometimes before the last solution, and occasionally write a

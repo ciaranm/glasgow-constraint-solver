@@ -5,8 +5,8 @@
 > **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
 > for what it would file. Already open and touching this family: #833 (the
 > large-domain policy; this family's audit row is `KnownTrip`), #868
-> (cross-solver comparisons; this document gives one, by hand). Tracked under
-> #871.
+> (cross-solver comparisons; this document gives a whole-solve comparison by
+> hand, not the identical-tree one #868 asks for). Tracked under #871.
 
 Four posted classes, `ArrayMin`, `ArrayMax`, `Min` and `Max`, over one class,
 `ArrayMinMax`, and one propagator. `Min` and `Max` are the two-entry case.
@@ -423,7 +423,31 @@ rest of the propagation is interval-level.
    - **The two bound rules:** `O(n)` bounds reads.
    - **Result in union:** `IntervalSet::erase_range` over each entry's
      intervals, and `infer_not_in_range` per remaining run (#815). Per
-     interval.
+     interval, but not linear in intervals: each erase scans the scratch copy
+     from the front (`interval_set.hh:314–352`), an erase inside an interval
+     splits it, inserting into the vector, so the copy grows and later erases
+     rescan the pieces, and an interval an erase covers is dropped with a
+     vector erase that shifts the tail. With `E = Σ_i intervals(x_i)` erases
+     over a result copy that starts with `I₀` intervals, the copy never
+     exceeds `I₀ + E` intervals: the scans are `O(E · (I₀ + E))` steps, and
+     each interval dropped (at most `I₀ + E`) or split off (at most `E`)
+     shifts up to `I₀ + E` entries, so the pass is `O((I₀ + E)²)`.
+     - *Many erases over one interval:* with `result ∈ 0..3K`, one entry over
+       `{0, 3, 6, …, 3K}` and one fixed at 0, the scans take 5,051, 20,101 and
+       80,201 loop iterations at `K` = 100, 200 and 400
+       (`tmp/fd-codex-1005/small/probes/cmpcount.cc`, a verbatim copy of
+       `erase_range`, counting only it); the splits insert at the end, so
+       nothing shifts. At `K` = 16,000, `perf` puts 16% of a root-only solve
+       of that `ArrayMax` in `erase_range`; the rest is the state layer
+       (#1160) and the entry pass's `in_domain` scans (below).
+     - *One erase over many intervals:* in `ArrayMax{{x, c}, r}` with `r` over
+       30,000 even values, `x` over an interval covering them and `c` fixed at
+       0, `x`'s one erase drops every interval of the copy, and `perf` puts
+       13% of a 4.8 s root in `erase_range`, which here is that shift
+       (`tmp/fd-codex-1005/small/factcheck/maxdrop.cc`).
+
+     Both are worst cases, separate from the entry pass's per-value cost
+     (#1166); filed from Codex's review as #1190, beside `In`'s #1162.
    - **Single support:** `domains_intersect` to find the supports, and
      `each_interval_minus` for the runs to remove. Per interval.
    - **The entry pass (lines 278–325) is per value.** For each position `i`,
@@ -563,8 +587,11 @@ The shapes below are for `max`; `min` mirrors them.
   upper bound for `max`.
 - **Strength** — as rule 1.
 - **Algorithm** — copy the result's domain, erase each entry's intervals, and
-  remove what is left run by run. `O(Σ_i intervals(x_i) + intervals(result))`
-  (#815).
+  remove what is left run by run (#815). Each erase scans the copy from the
+  front, the copy can gain an interval per erase, and every interval dropped or
+  split off can shift up to `I₀ + E` entries, so this is `O((I₀ + E)²)` for
+  `E = Σ_i intervals(x_i)` and `I₀ = intervals(result)`, not linear; see
+  [Interval efficiency](#interval-efficiency) and #1190.
 - **Why it is true** — the result equals some entry, and none can take a value
   in the run.
 - **Proof technique** — `RUP sequence`, ours: the guarded form of
@@ -802,11 +829,12 @@ of the whole solve, proofs off; 2026-09-30.*
 smallest value first (`mm_gcs.cc`, `mm_gecode.cc` in
 `tmp/fd-small/min_max/bench/`).
 
-**Identical trees.** Every model here is GAC on these interval domains, so the
-searches explore the same assignments in the same order: the same solution
-counts, and no failure in any. GCS's `smallest_first` gives a variable one
-child per value, where Gecode's `INT_VAL_MIN` branches in two. So the node
-counts differ.
+**The same solutions, not the same tree.** Every model here is GAC on these
+interval domains, so every search enumerates the same solutions, in the same
+order, with no failure in any. The trees differ: GCS's `smallest_first` gives
+a variable one child per value, where Gecode's `INT_VAL_MIN` branches in two,
+so the internal nodes, the intermediate domains and the propagation work all
+differ, and so do the node counts.
 
 **The "pass off" column** is a different binary: `c9ceea25` plus the first
 two aliased-view fixes and an environment switch skipping rule 5. The third
@@ -828,12 +856,14 @@ with the first column for what the pass costs, allowing for layout noise.
 | 3 | 64 | 233,537 | 457,328 | 458,751 | 455,084, 604,705 |
 | 3 | 128 | 1,851,521 | 3,664,096 | 3,670,015 | 3,652,460, 4,861,025 |
 
-- **GCS takes 12 to 15 times Gecode's time on an identical tree** (11.1 to
-  14.7 in the fact-check's re-run, same node and propagation counts). This is
-  a whole-solve comparison on a benchmark with no failures, so it measures the
-  search loop and the solution callback as well as the propagator. It is the
-  kind of comparison #868 asks for, done by hand with an API-level Gecode
-  driver.
+- **GCS takes 12 to 15 times Gecode's time for the whole enumeration** (11.1
+  to 14.7 in the fact-check's re-run, same node and propagation counts as the
+  first run). This is a whole-solve comparison on a benchmark with no
+  failures, under different branching schemes (65,809 GCS recursions against
+  122,879 Gecode nodes on the first row), so it measures the search loop and
+  the solution callback as well as the propagator. It is not the
+  identical-tree comparison #868 asks for: that would need the branch
+  decisions aligned.
 - **The pass is 36% to 41% of GCS's time here** (the two GCS columns differ
   by about 1.7 times), although it never removes a value.
 - **Without the pass, GCS is still 6.8 to 8.6 times Gecode** (6.6 to 8.7 in
