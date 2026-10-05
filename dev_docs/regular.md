@@ -226,12 +226,17 @@ derived constraints too.
 
 The flags and lines grow as `n` times the live edges per layer. The
 pairwise at-most-one adds about the live states times the edges into
-them, per layer. On `"(0|1)* 1 (0|1)*"` over 160 variables the canonical
-run is about a quarter of the proof and takes about 1 s of a 17 s check.
-On an ambiguous automaton whose subset construction blows up,
-`(0|1)* 1 (0|1)^k | (0|1)* 1 (0|1)^(k-1)` with `k = 10` over 24
-variables, the proof with the canonical run checks in 0.7 s. The
-determinised version is a million lines and takes 26 minutes.
+them, per layer. Measured on 2026-10-05 with VeriPB 3.0.2, with a second,
+deterministic `Regular` posted to keep the solution count small:
+- **`"(0|1)* 1 (0|1)*"` over 160 variables:** the proof checks in 12.3 s.
+  Determinising the automaton first gives 11.5 s, because the
+  deterministic automaton has two states to the NFA's six.
+- **An automaton whose subset construction blows up,**
+  `(0|1)* 1 (0|1)^k | (0|1)* 1 (0|1)^(k-1)` with `k = 10` over 24
+  variables: the proof checks in 0.6 s. Determinised, it is a million
+  lines and takes 26 minutes.
+- **An unambiguous automaton like `(0|1)* 1 (0|1)^10`** gets no canonical
+  run at all, and checks in 0.06 s; determinised, it takes 220 s.
 
 ## `Regular`'s Top-level scaffolding
 
