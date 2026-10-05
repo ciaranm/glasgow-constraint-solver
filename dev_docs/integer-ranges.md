@@ -129,8 +129,9 @@ range moves that step into the sum as a constant instead, so that
   condition it takes. Parameters that become variables or constants on the way
   in (a constant array passed through `as_constant_variables`, say, as
   `Cumulative`'s and `Disjunctive`'s constant lengths are) are already checked.
-  `integer_ranges_test` has a refusal case for every constraint that takes
-  one; add yours there.
+  `integer_ranges_test` has refusal cases for most constraints that take one
+  (not yet `And`, `OrIf`, `ParitySystem`, `Element2D`, `MinDistance`'s
+  requirements or `Knapsack`'s two-vector form); add yours there.
 - **Do not narrow the rule by dropping inputs.** An out-of-range tuple value
   could never match a variable, but it could match a view (#1117's review), and
   silently dropping it hides a caller's mistake. Throw instead.
@@ -142,7 +143,7 @@ range moves that step into the sum as a constant instead, so that
 A constraint whose own arithmetic genuinely needs more than 64 bits for
 in-range inputs throws then, during search: `DifferenceConstraints`, for
 example, forms Bellman-Ford path sums, and a chain of nine edges of weight
-`max_bounded_value()` has a path sum past the end of `Integer`.
+`-max_bounded_value()` has a path sum past the end of `Integer`.
 
 What it must not do is throw on a value nothing needs. The commonest way is a
 running sum whose total fits but whose partial sums do not: nine terms at the

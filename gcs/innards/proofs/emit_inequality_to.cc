@@ -97,9 +97,10 @@ namespace
     // together do not fit in an Integer fails here -- part-way through building
     // the string, with the OPB already half written and nothing in the arithmetic
     // failure naming what was being emitted. Restate it as something a caller can
-    // act on. Variable domains are capped so the ordinary routes cannot reach
-    // this (Integer::max_bounded_value()); large coefficients, or views that
-    // offset a domain outwards, still can. See issue #852.
+    // act on. Declared domains are capped (Integer::max_bounded_value()), but
+    // auxiliary variables reach further (Integer::max_auxiliary_value()), and
+    // large coefficients, or views that offset a domain outwards, can reach
+    // this too. See issue #852.
     [[noreturn]] auto rethrow_as_integer_overflow() -> void
     {
         throw IntegerOverflow{"cannot write a pseudo-Boolean row whose coefficients and variable bounds together do not fit in an Integer; "

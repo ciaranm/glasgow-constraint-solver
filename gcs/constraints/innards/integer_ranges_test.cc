@@ -34,6 +34,8 @@
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/power.hh>
 #include <gcs/constraints/regular.hh>
+#include <gcs/constraints/regular/regular_bacchus.hh>
+#include <gcs/constraints/regular/regular_legacy.hh>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/constraints/sort.hh>
 #include <gcs/constraints/table.hh>
@@ -148,6 +150,10 @@ namespace
             {"MDD's transition value", [&](Integer v) { p.post(MDD{{x}, {{{{v, 0}}}}, {1, 1}, {0}}); }},
             {"MinDistance's distance", [&](Integer v) { p.post(MinDistance{{x, y}, z, MinDistance::Matrix{{0_i, v}, {v, 0_i}}}); }},
             {"Regular's transition value", [&](Integer v) { p.post(Regular{{x}, 2, vector<unordered_map<Integer, long>>{{{v, 1}}, {}}, {1}}); }},
+            {"RegularBacchus's transition value",
+                [&](Integer v) { p.post(RegularBacchus{{x}, 2, vector<unordered_map<Integer, long>>{{{v, 1}}, {}}, {1}}); }},
+            {"RegularLegacy's transition value",
+                [&](Integer v) { p.post(RegularLegacy{{x}, 2, vector<unordered_map<Integer, long>>{{{v, 1}}, {}}, {1}}); }},
             {"SmartTable's value", [&](Integer v) { p.post(SmartTable{{x}, SmartTuples{{SmartTable::equals(x, v)}}}); }},
             {"ArgSort's offset", [&](Integer v) { p.post(ArgSort{{x}, {y}, v}); }},
             {"Table's tuple value", [&](Integer v) { p.post(Table{{x}, SimpleTuples{{v}}}); }},

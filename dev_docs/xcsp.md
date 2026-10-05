@@ -278,7 +278,8 @@ was listed by an `int` loop that overflowed and never finished.
 fetched parser (FetchContent's `PATCH_COMMAND`, through
 `xcsp/apply_parser_patch.cmake`, which does nothing if the patch is already in
 place). It makes the conversion throw `std::out_of_range` for anything outside
-`int`, refuses a tuple value of `2147483647`, and widens the domain loop. The
+`int`, refuses a tuple value of `2147483647`, widens the domain loop, and
+saturates an interval's width and a domain's size at `INT_MAX`. The
 parser's own `std::stoi` calls already throw `std::out_of_range`. `main()` catches
 those, and `IntegerOverflow` from model building or from search, and reports
 each as `s UNSUPPORTED` with the reason on a `c` line. When moving the pinned

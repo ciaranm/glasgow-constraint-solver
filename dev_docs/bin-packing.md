@@ -88,6 +88,10 @@ no longer in the item's domain), and still-possibly-in-`b`. Then:
 - `floor_b = Σ sizes[i]` over forced-into-`b`.
 - `ceiling_b = floor_b + Σ sizes[i]` over still-possibly-in-`b`.
 
+Both sums saturate at `4 × max_bounded_value()`, so they never overflow.
+That is past any load bound plus any size, so every comparison below comes
+out exactly as it would on the true sums.
+
 Inferences (variable-load form):
 
 - Lift `loads[b]` lower bound to `floor_b` when above. RUP from the
@@ -319,9 +323,9 @@ scope. Stage 4 below is the strengthening *within* the per-bin
 envelope, and does prune this example.
 
 **Footprint.** Per bin: ~`3 × surviving_nodes` flags, each with two
-reification axioms. For `n=20`, `C_b=20`, 5 bins, ~6 000 flags +
-~12 000 axiom lines after static reduction — workable. For `n=50`,
-`C_b=100`, 10 bins it can climb into the high tens of thousands;
+reification axioms. For `n=20` items of total size 20, 5 bins, ~6 000 flags +
+~12 000 axiom lines after static reduction — workable. For `n=50` items
+of total size 100, 10 bins it can climb into the high tens of thousands;
 `bounds_only=true` is the user-visible escape hatch. There is no
 general "warn when a constraint's OPB footprint gets large" mechanism
 in the solver yet; documented here as a known sharp edge.

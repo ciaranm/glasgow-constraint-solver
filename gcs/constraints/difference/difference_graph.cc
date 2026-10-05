@@ -601,7 +601,10 @@ namespace
         // predecessor-less node would exhibit a real path into `start'
         // whose source has held its seeded distance since before round 0,
         // and the round bound below says that path has already propagated,
-        // contradicting the strict improvement that just happened.
+        // contradicting the strict improvement that just happened. The other
+        // trigger, a candidate past the limit in relax_lower_bounds, rules out
+        // the same walk: such a path would be simple, so its bound could not
+        // pass that limit (difference-logic.md, "Extreme weights").
         auto extract_cycle(size_t start, const vector<optional<size_t>> & pred, auto && tail_of) const -> vector<size_t>
         {
             vector<bool> seen(n, false);
