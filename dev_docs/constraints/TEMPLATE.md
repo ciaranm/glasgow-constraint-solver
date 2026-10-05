@@ -958,7 +958,13 @@ like a propagator: it runs once, over the whole model, and a scan proportional
 to a domain's width is the same hazard wherever it sits. For a scheduling
 presolver the same question is asked of the **horizon**, on the proof side as
 well as the scan: a pass that walks every time point, or a pinned bound whose
-certificate sums rows over a window, is proportional to that span. Three
+certificate sums rows over a window, is proportional to that span. Keep four
+costs apart there and in **Initialisation and global data**: the presolver's
+own discovery pass; the initialisers it installs, which run once at the root
+and may cost CPU with proofs off too; the installed machinery's propagation
+during search; and certificate generation. They need not scale alike. An
+installed makespan initialiser can scan the whole candidate horizon while the
+pass is horizon-free and the certificate covers a short window (#1267). Three
 smaller adjustments: the frontend table lists **entry points** (the option or
 flag that turns the presolver on, per frontend), with `frontend gap (#nnn)`
 where a frontend has none; a budget that applies only with proofs on is a
