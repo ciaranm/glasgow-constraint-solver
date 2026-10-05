@@ -211,8 +211,9 @@ constraints and do not restate it.
   comparisons and one two-sweep propagator, generalised arc consistent on
   distinct variables, holes included, and bounds-only, so holes affect nothing
   here. Each inference is one RUP by JP 3.2, and the family is 2 to 6% of its
-  own enumeration proofs. On an identical enumeration it takes 2.5 to 2.7 times
-  Gecode's chain propagator's time, and about 10% less than the `n − 1`
+  own enumeration proofs. Enumerating the same solutions under a different
+  branching scheme, it takes 2.5 to 2.7 times Gecode's chain propagator's
+  time, and about 10% less than the `n − 1`
   `LessThan`s it replaces. Findings: MiniZinc's int `decreasing` and
   `strictly_decreasing` never reach it, because the standard library has no
   plain `var int` overload to select the solver's own `fzn_decreasing_int`, and
