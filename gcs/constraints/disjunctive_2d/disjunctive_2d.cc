@@ -112,9 +112,19 @@ namespace
     /// floor's extent is inside the window. Saturating caps `M` there, and the
     /// network is told the coefficient the row really carries, because it
     /// raises every row to its own by adding the difference.
+    ///
+    /// Saturating caps every other coefficient at the degree too, and `y`'s
+    /// top bits can be past it when `x` has fewer bits than `y` (`x` in {0}
+    /// and `y` in [0, 2], at floor 1). The network adds and divides these
+    /// rows, so it needs `y`'s bits at their own weights, and a capped bit
+    /// left its certificate short. So each such bit is put back afterwards, by
+    /// adding the difference as a literal axiom, which leaves the degree
+    /// where it is. `x`'s bits need nothing: each is at most the degree, which
+    /// counts all of them and the floor besides.
     auto separation_at_floor(ProofLogger & logger, FloorCache & cache, int dim, size_t x, size_t y, const ProofFlag & flag, ProofLine row,
         Integer guard_coefficient, const IntegerVariableID & size, Integer floor, const optional<ProofFlag> & escape,
-        const SimpleIntegerVariableID & position, const Disjunctive2DProofMutation & mutation) -> ModelSeparation
+        const SimpleIntegerVariableID & position, const SimpleIntegerVariableID & other_position, const Disjunctive2DProofMutation & mutation)
+        -> ModelSeparation
     {
         if (is_constant_variable(size))
             return ModelSeparation{flag, row, guard_coefficient};
@@ -134,6 +144,9 @@ namespace
         if (found == rows.end()) {
             PolBuilder pol;
             pol.add(row).add(facts.at_least).saturate();
+            for (Integer bit = 0_i; bit < tracker.num_bits(other_position); ++bit)
+                if (auto [coefficient, literal] = tracker.get_bit(other_position, bit); coefficient > degree)
+                    pol.add(literal, coefficient - degree, tracker);
             found = rows.emplace(pair{x, y}, pol.emit(logger, ProofLevel::Top)).first;
         }
         return ModelSeparation{flag, found->second, carried};
@@ -880,7 +893,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                         const auto & data = rbefore.at(make_pair(x, y));
                                         return separation_at_floor(row_logger, *floors, 1 - time_axis, x, y, data.flag, data.forward_line,
                                             data.forward_guard_coefficient, rsize[x], height(kx), rzero[x], get<SimpleIntegerVariableID>(rpos[x]),
-                                            mutation);
+                                            get<SimpleIntegerVariableID>(rpos[y]), mutation);
                                     };
                                     network.add_optional_separation(wires[p], direction(i, kp, j), wires[q], direction(j, kq, i), clause);
                                 }
@@ -1538,7 +1551,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     const auto & data = rbefore.at(make_pair(p, q));
                                     return separation_at_floor(*logger, overload_cache->floors, 1 - time_axis, p, q, data.flag, data.forward_line,
                                         data.forward_guard_coefficient, rsize[p], height(p), rzero[p], get<SimpleIntegerVariableID>(rpos[p]),
-                                        mutation);
+                                        get<SimpleIntegerVariableID>(rpos[q]), mutation);
                                 };
                                 network.add_separation(wires[a], direction(i, j), wires[b], direction(j, i), separated);
                             }
@@ -1846,7 +1859,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     const auto & data = rbefore.at(make_pair(x, y));
                                     return separation_at_floor(*logger, overload_cache->floors, 1 - time_axis, x, y, data.flag, data.forward_line,
                                         data.forward_guard_coefficient, rsize[x], height(x), rzero[x], get<SimpleIntegerVariableID>(rpos[x]),
-                                        mutation);
+                                        get<SimpleIntegerVariableID>(rpos[y]), mutation);
                                 };
                                 network.add_optional_separation(wires[p], direction(i, j), wires[q], direction(j, i), clause);
                             }
