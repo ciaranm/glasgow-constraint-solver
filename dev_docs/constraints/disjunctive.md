@@ -626,10 +626,18 @@ Facts that hold for every rule:
   - the window and Θ, or the cut, for the energetic rules.
 
   Then it emits that rule's derivation. The cost is one propagator call per
-  assertion, `O(n³ + H)` with every rule on, plus trying up to sixteen
-  rules. It assumes the detection code, or an equivalent oracle, is
-  available to the reconstructor. A hint naming the rule and its witness
-  would make every rule `hinted`. Whether that is worth carrying is
+  assertion, plus trying up to sixteen rules. Replayed literally, that call
+  is `O(n³ + H)` with every rule on, **plus** time-tabling's and presence
+  falsification's start scans, `O(blocked span × p_j)` per task (see
+  [Interval efficiency](#interval-efficiency), #1245). That term can exceed
+  the rest with only two tasks. A reconstructor need not replay detection
+  literally, since any valid derivation from the reason and the asserted
+  literal will do. Jumping to one past the last blocked time (argued exact,
+  and search-identical on `ft06`, in #1245) is one way to avoid the
+  per-value scan; its cost was not measured here. This reconstruction
+  assumes the detection code, or an equivalent oracle, is available to the
+  reconstructor. A hint naming the rule and its witness would make every
+  rule `hinted`. Whether that is worth carrying is
   [Next steps](#next-steps) item 9.
 
 ### Rule: mandatory-overlap
