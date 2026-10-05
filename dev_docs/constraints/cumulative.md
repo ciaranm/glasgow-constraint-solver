@@ -14,7 +14,8 @@
 > overflow sites), #1236 (the elastic conflicts are not counted), #1237 (a
 > time-table push's certificate is linear in the distance), #1238 (the
 > test-only encodings are reachable), #1239 (a variable height's upper bound
-> is never lowered). Tracked under #871 and #976.
+> is never lowered). Filed from the Codex review: #1267 (the makespan
+> initialiser scans the whole candidate horizon). Tracked under #871 and #976.
 
 `Cumulative(s, d, r, b)` says that at every time point the summed demand of
 the tasks running then is at most the capacity, where task `i` runs over
@@ -474,7 +475,11 @@ What the proof contains, and how an external tool finds it.
 - **Initialisers.** Two at the default priority, three under
   `BothRecovering`. They are the end-proxy definitions and flag definer, and
   the capacity-row family. They cost `O(n)` plus one `introduce_bits_of` per
-  end-proxy task. Nothing is horizon-sized: the definer is lazy.
+  end-proxy task. Nothing is horizon-sized: the definer is lazy. A derived
+  `Cumulative` installs none of these. If it names a makespan it installs
+  one, the makespan initialiser (`InitialiserPriority::Expensive`), whose
+  candidate scan is horizon-shaped (see
+  [`makespan-bound`](#rule-makespan-bound), #1267).
 
 No root cost dominates on a scheduling-shaped instance. On a `0..10⁹` horizon
 the root's and each call's horizon-sized arrays (`8 × 10⁹` bytes each) cost
@@ -670,10 +675,16 @@ axis the four questions are answered on.
      with no proof to write. It is not guarded on `want_reasons()` or on a
      logger, unlike the energetic contributors and the published rule's
      `theta`, which are.
+   - **The derived makespan initialiser's candidate scan**, on a derived
+     constraint that names a makespan: once, at the root, every time point
+     from `rows_lo` up to `min(ub(M), last window end)`, at `O(n)` each, with
+     proofs on or off. With a loose `ub(M)` that is the horizon, whatever the
+     bound found (#1267; see [`makespan-bound`](#rule-makespan-bound)).
 
    No site uses an interval primitive. None needs one for correctness, since
    the domains are not read as sets. What is missing is plateau-jumping over the
-   profile.
+   profile and, for the makespan scan, event-based candidates or a stopping
+   bound (#1267).
 2. **The reason side.** The reason is `generic_reason` over every scoped
    variable. It is one or two bound literals per variable, plus one
    `not_in_range` literal per **run** of holes (never per value), plus a
@@ -867,8 +878,10 @@ Facts true of every rule:
 - **Proof technique** — `RUP sequence` under an extended reason (the
   "chained bound pushes" of the design note). Per step:
   - pin each contributing task active at `t` (three `RUP`s);
-  - pin `j` active at `t` under the reason **extended by** `s_j ≥ t + 1`, so
-    each of its lines reads `[s_j ≥ t+1] ∨ active_j,t`;
+  - pin `j` active at `t` under the reason **extended by** `s_j ≤ t`, which
+    with the running bound puts `j` at `t`. Each of its lines carries the
+    negation `[s_j ≥ t+1]` as a disjunct, so it reads
+    `[s_j ≥ t+1] ∨ active_j,t` (`pin_pushed`, `cumulative.cc:1690`);
   - one `pol` adds them to `C_t`, dominated by `(load − capacity)·[s_j ≥
     t+1]`;
   - except at the last step, one `RUP` deposits `s_j ≥ t + 1` under the reason
@@ -904,8 +917,9 @@ Facts true of every rule:
   `s_j ≤ t − lb(d_j)`.
 - **Why it is true** — if `s_j ≥ t − d_j + 1` for a blocked `t ≥ running`,
   and `s_j ≤ running`, then `j` runs at `t`.
-- **Proof technique** — as `time-table-lower`, with the extension literal
-  `s_j < t − lb(d_j) + 1`.
+- **Proof technique** — as `time-table-lower`, with the reason extended by
+  `s_j ≥ t − lb(d_j) + 1`, so each pin carries `[s_j < t − lb(d_j) + 1]` as
+  its disjunct.
 - **Reason** — whole-scope.
 - **Assertion** — `[s_j < new_ub + 1] ∨ ¬reason`.
 - **Hint** — `hints::Cumulative`.
@@ -1378,14 +1392,55 @@ Facts true of every rule:
   Sidorov's `L`, sometimes better (it divides by the rows actually present,
   not by `μ`) and sometimes worse (it counts only tasks the lemma can speak
   about) (`certified-makespan-bounds.md`).
-- **Algorithm** — walks candidate `μ` and returns the largest refuted. `O(n)`
-  per candidate.
-- **Why it is true** — if `M ≤ μ`, every task finishes in `[lo, μ)`, so the
-  window supplies `C·|rows|`, which is less than the tasks' total energy.
-- **Proof technique** — one `pol` (`derive_makespan_bound`): the window's
-  capacity rows, each task's window-energy line, and each task's link row
-  confining it below `M`. Under the negated conclusion, the wrapping RUP
-  concludes.
+- **Algorithm** — `makespan_energy_bound` walks **every** integer candidate
+  `μ` from `rows_lo` (defined under Proof size below) up to the smaller of
+  `ub(M)` and the end of the last task window, and returns the largest
+  refuted. Each candidate sums every counted task's window energy, `O(n)`.
+  So one initialiser call is `O(n · W)` for those `W` candidates, with proofs
+  on or off. With a loose `ub(M)` that is the horizon, even when the bound
+  and its certificate window are small (#1267). On #1267's helper-level
+  probe (three length-2 tasks, bound 6 throughout) one call took 0.032,
+  0.30, 3.03 and 30.3 ms at horizons of 10³, 10⁴, 10⁵ and 10⁶: linear in
+  the unused horizon (`tmp/fd-codex-1005/sched/probes/hz1267.cc`,
+  `7e1c4178`, fataepyc-10, 2026-10-05, serial, pinned to one core, malloc
+  thresholds fixed; three runs agree within 1% from 10⁴ up and within a few
+  per cent at 10³). This scan is separate
+  from `time_slot_prefix`'s `O(n + H)` storage and from the certificate,
+  whose window ends at `μ`.
+- **Why it is true** — suppose `M ≤ μ`. Each counted task then has a start
+  range: its own bounds, with the upper bound tightened to `μ − b` where a
+  link row `M − s ≥ b` exists (`start_bounds_within`,
+  `makespan_energy.cc:45`). The window-energy lemma gives the least overlap
+  that range forces with `[lo, μ)`. A task the range keeps wholly inside the
+  window counts its full `h·d`; one that could still start late counts only
+  what it must run inside the window, possibly nothing. If those guaranteed
+  energies add up to more than the window supplies, `C·|rows|`, then `M ≤ μ`
+  is refuted. Every task finishing inside the window is the special case
+  where every range is confined. So a missing link removes the deadline's
+  confinement, not the task: an unlinked task keeps whatever overlap its own
+  domain forces, and the bound may or may not weaken.
+  - **With no linked task at all, nothing is certified on a feasible model.**
+    The energies then do not depend on `M`, so a refuted `μ` refutes the
+    root itself. That is why a spelling that loses every link certifies no
+    bound (`inferred_cumulative.md`'s end-variable row).
+  - Checked on three length-2 tasks made pairwise disjoint by one
+    unit-capacity `Cumulative` per pair, starts `x ∈ [0, 2]`
+    and `y, z ∈ [0, 8]`, `M ∈ [0, 10]`, with only `y` and `z` linked. Both
+    inferred presolvers certify `M ≥ 6`, the same as with `x` linked too.
+    Widening the unlinked `x` to `[0, 8]` lowers it to `M ≥ 4`, and with no
+    link at all nothing is certified. Proofs on and off agree, and the root
+    proofs verify (`tmp/fd-codex-1005/sched/probes/mk.cc`, `7e1c4178`).
+- **Proof technique** — `derive_makespan_bound`, per counted task in turn:
+  - for a linked task its own domain does not already confine
+    (`ub(s) > μ − b`), one **confinement** `pol` in deview mode, which is
+    unconditional: the link row plus the two order-literal definitions,
+    giving `¬[s ≥ μ − b + 1] ∨ [M ≥ μ + 1]`, which the lemma's RUPs then use;
+  - the window-energy lemma over the task's start range, derived under the
+    reason plus the negated conclusion `M ≤ μ`. A task the lemma gives no
+    energy is skipped.
+
+  Then one final, unconditional `pol` sums the window's capacity rows and
+  `h ×` each energy line, and the wrapping RUP concludes.
 - **Reason** — `bounds_reason` over the counted tasks' starts, plus their
   presence literals.
 - **Assertion** — `[M ≥ μ + 1] ∨ ¬reason`, hint `makespan`. Seen on `Bl2019`
@@ -1397,9 +1452,9 @@ Facts true of every rule:
   derived constraint is not in the model. A reconstructor has to rediscover
   which implied Cumulative the presolver posted (its task set and capacity),
   and the link rows. The presolver documents give that search's cost.
-- **Proof size** — one `pol` over `|window|` rows, plus `n` window-energy
-  derivations, plus `n` link rows. The window runs from `rows_lo` to `μ`.
-  `rows_lo` is the minimum window start over **all** the derived constraint's
+- **Proof size** — one `pol` over `|window|` rows, plus at most `n`
+  window-energy derivations and at most `n` confinement `pol`s. The window
+  runs from `rows_lo` to `μ`. `rows_lo` is the minimum window start over **all** the derived constraint's
   active tasks, counted or not (`derived_cumulative.cc:137-139`, `:354`). So
   the cost is linear in `μ − rows_lo`, the bound measured from the earliest
   active window, and so in the task lengths, not in the horizon. Each of those rows is a donor row recovered at its first citation,
@@ -1853,6 +1908,9 @@ headline cost. These timings cannot pin the ratio more closely than that.
   such as a Slurm allocation, any span past the limit; without one, arrays
   that fit singly but not together. Short tasks pushed far
   produce enormous certificates.
+- **A derived constraint's makespan initialiser scans the candidate
+  horizon** once at the root, proofs on or off: `O(n)` per time point up to
+  `min(ub(M), last window end)`, however small the bound it finds (#1267).
 - **Large heights, capacities and windows throw `IntegerOverflow`** at four
   sites, within the integer range policy. Three of them throw on feasible
   single-task instances.
@@ -1925,7 +1983,13 @@ Ranked by what they buy against what they cost.
    rule and the time point would turn most `search` verdicts into `hinted`.
    Per the standing rule, that is for the justifier to show is needed, not for
    an issue now.
-10. **Tidy stale comments.** The `CumulativeRules` "All three are on"
+10. **Stop the makespan scan walking the unused horizon** (#1267). Event-based
+    candidates, or a stopping bound past which no candidate can be refuted,
+    preserving the bound found. Not "stop at the first candidate that fails":
+    supply and energy both move with `μ`. A root-only cost, but it is paid
+    with proofs off by every derived constraint that names a makespan. The
+    regression should vary the unused horizon at a fixed bound.
+11. **Tidy stale comments.** The `CumulativeRules` "All three are on"
     comment; `define_proof_model`'s "emitted alongside the time-indexed block"
     and "Nothing cites these yet" (`cumulative.cc:729-764`), both from before
     the flip.
@@ -1982,7 +2046,9 @@ Both are an out-of-stack docs fix.
   partly stale (see Next steps).
 - [`certified-makespan-bounds.md`](../certified-makespan-bounds.md): the
   makespan energy bound, where it differs from Sidorov's `L`, and why the
-  deadline is a `pol`.
+  deadline is a `pol`. Until #1265 its argument confined every task to
+  `[lo, μ)`, which is the special case; see
+  [`makespan-bound`](#rule-makespan-bound).
 - [`rule-counters.md`](../rule-counters.md): `GCS_SCHEDULING_RULE_STATS`, and
   what `already_true` means for each rule.
 - [`cumulative-strengthening.md`](../cumulative-strengthening.md),
