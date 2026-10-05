@@ -451,7 +451,14 @@ subhint and no payload.
   (381,285 nodes), of which 2,006 and 2,058 have the two or more positions that
   install anything. On repeated variables, or `val` among the positions, not
   even `bounds(Z)`; see [Robustness](#robustness-and-limits).
-  `at_most_one_test` also checks GAC at every node, on interval domains.
+  `at_most_one_test` also checks GAC at every node. Its initial domains are
+  intervals, but its brancher, `reject_random_interval`, rejects interior
+  intervals, so later nodes see holes: a probe with the same branching pair
+  (`variable_order::random(p, s)`, `value_order::reject_random_interval(s +
+  1)`) on three positions and `val`, all in `0..3`, has a hole at 156 to 177
+  of its 215 trace callbacks for seeds 1 to 5
+  (`tmp/fd-codex-1005/small/probes/holes.cc`; a probe of the brancher, not a
+  count inside the test).
 - **Algorithm** — a walk over `val`'s domain, and for each value an array scan
   stopping at the second match: `Θ(|dom(val)| · n)` per call, **in values**.
   See [Interval efficiency](#interval-efficiency).
@@ -543,8 +550,13 @@ soundness only. Every fixed shape runs complete.
 
 **What the tests do not cover.**
 
-- **Holes.** Every tested domain is an interval, so the per-node GAC check never
-  sees a hole. The per-node sweep above covers holes.
+- **Holey initial domains.** Every tested domain starts as an interval. The
+  per-node GAC check does see holes, cut by the brancher (see rule 1's
+  Strength), and the per-node sweep above starts from holey domains. No test
+  posts another constraint that makes holes during search; since no hole
+  affects this family's propagation, that matters only for wake counts (see
+  "The triggers overstate the holes" under [Propagator
+  inventory](#propagator-inventory)).
 - **A wide `val`**, which is the family's one width hazard; only the audit
   lane's root probe reaches it.
 - **The consistency of the repeated shapes**, deliberately: the duplicate runs
@@ -558,8 +570,9 @@ soundness only. Every fixed shape runs complete.
   `AtMostOne`.
 - **Corpus:** none can reach it, since MiniZinc and XCSP3 post `Count`.
 - **For CPU:** the enumeration below, which reaches both rules and has a
-  closed-form solution count. Branching on `val` first gives an identical tree
-  to Gecode's.
+  closed-form solution count. With `val` branched first neither solver
+  fails, and both enumerate the same solutions; the trees differ, because the
+  branching schemes do (below).
 - **For proof verification:** the same enumeration at `n = d = 4` or 5.
   Its size tracks the solution count.
 
@@ -592,13 +605,16 @@ what MiniZinc would give it; Gecode posts `count(x, y, IRT_LQ, 1)`.
 | 7 | 6 | `y` first | 5,016,453 | 0 | 5,081,770 / 7,367,914 | 8,491,391 | 0 |
 | 7 | 6 | `y` last | 5,206,496 | 0 | 5,585,343 / 9,712,354 | 11,529,601 | 1,519,105 |
 
-- **With `y` first the three searches are identical**: the same solutions and
-  no failures in any of them. GCS's node counts differ from Gecode's only
-  because `smallest_first` gives a variable one child per value, where Gecode's
-  `INT_VAL_MIN` branches in two. **GCS takes 3.6 and 3.8 times Gecode's
-  time.** As for [`increasing`](increasing.md), a whole-solve comparison on a
-  benchmark with no failures measures the search loop and the solution
-  callback as much as the propagator.
+- **With `y` first none of the three searches fails**, and all three
+  enumerate the same solutions. Gecode's tree is not GCS's: `smallest_first`
+  gives a variable one child per value, where Gecode's `INT_VAL_MIN` branches
+  in two, so the internal nodes, the intermediate domains and the propagation
+  work all differ (770,757 GCS recursions against 1,306,367 Gecode nodes at
+  `n = d = 6`). The two GCS models do share one tree. **GCS takes 3.6 and 3.8
+  times Gecode's time** for the whole enumeration. As for
+  [`increasing`](increasing.md), a whole-solve comparison on a benchmark with
+  no failures measures the search loop and the solution callback as much as
+  the propagator.
 - **With `y` last Gecode prunes less**: it fails 170,359 and 1,519,105 times
   where GCS never does, and is still 2.6 times faster.
 - **`Count` on the same tree takes 1.60 and 1.52 times `AtMostOne`'s time with
