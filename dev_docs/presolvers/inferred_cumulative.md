@@ -8,7 +8,9 @@
 > [Next steps](#next-steps). Already open and touching this presolver: #703
 > (Sidorov's early stop, correctly gated), #868 (cross-solver comparisons),
 > #976 (the scheduling tracker), #983 (no front end reaches the scheduling
-> presolvers). Owned by `cumulative.md`: #1234. At
+> presolvers). Owned by `cumulative.md`: #1234, and #1267 (the installed
+> makespan initialiser scans the whole candidate horizon; filed from the
+> Codex review). At
 > `AssertionLevel::Definitions` and above, a derived `Cumulative`
 > over posted donors makes VeriPB reject the proof under the default
 > start-checkpoint encoding. Over a `Disjunctive2D` projection donor the
@@ -238,13 +240,29 @@ None, and none would be wanted: a presolver's output is unconditional.
   is `InferredDisjunctive`. The two do not see each other's output, and
   posting both posts both sets of cuts with no deduplication.
   `CumulativeStrengthening`'s strengthened capacities are not visible here
-  either, since they live in a derived constraint. So presolver order does not
-  matter to the cuts this one finds.
-  - **But it matters to the certified bound.** `solve_with` runs each
-    presolver's initialisers before the next presolver runs (`solve.cc`,
-    after each `run`). So an earlier `InferredDisjunctive` with the same
-    makespan raises the makespan's lower bound first, and this presolver's
-    bound then has nothing to beat.
+  either, since they live in a derived constraint. So the **donor set** does
+  not depend on presolver order.
+  - **The cuts found can.** The pass reads live bounds: through the donor
+    views (a capacity's upper bound at `donor_view.cc:123`, height lower
+    bounds, length upper bounds at `:169`) and directly (start windows,
+    `cumulative_task_window` at `inferred_cumulative.cc:601`, and length
+    lower bounds at `:602`). `solve_with` runs each presolver's
+    initialisers before the next presolver runs, so an earlier presolver's
+    initialiser can change what this one discovers.
+  - **Checked** (`tmp/fd-codex-1005/sched/probes/ord.cc`, `7e1c4178`, no
+    makespan named). Three starts in `[0, 5]`, lengths and heights 2, one
+    `Cumulative` with capacity in `[3, 4]`; auxiliaries `a, b ∈ [0, 5]` with
+    `a − b ≤ 2`, and `capacity ≥ 4 ⇒ b − a ≤ −3`. `DifferenceLogic`'s
+    initialiser refutes that guarded negative cycle and sets the capacity to
+    3. With `DifferenceLogic` first this presolver posts 3 cuts; alone, or
+    with `DifferenceLogic` after it, 1. Proofs on and off agree, and the root
+    proofs verify with VeriPB 3.0.2 (`--force-checked-deletion`,
+    `VERIFIED NO CONCLUSION`).
+  - **It also matters to the certified bound**, separately. `solve_with`
+    runs each presolver's initialisers before the next presolver runs
+    (`solve.cc`, after each `run`). So an earlier `InferredDisjunctive` with
+    the same makespan raises the makespan's lower bound first, and this
+    presolver's bound then has nothing to beat.
   - **Measured.** On KSD15_D `j3033_9`, `examples/rcpsp --infer-cumulative`
     certifies 361. `--infer-disjunctive --infer-cumulative` certifies 361 in
     `InferredDisjunctive`'s block and 0 in this one's.
@@ -267,7 +285,9 @@ The presolver names no OPB row. It reaches donor rows by
 `CumulativeDonorKey{constraint id, row family}`, through the derived
 constraint's row lookup, and makespan rows through the labels
 `find_makespan_links` reads with each row (`MakespanLink::row`). With proofs
-on, a makespan row with no label is skipped, which costs that task its energy.
+on, a makespan row with no label is skipped, which costs that task its link
+(the deadline's confinement); the overlap its own start bounds force still
+counts.
 
 ### Cake conformity
 
@@ -384,10 +404,17 @@ The whole pass is initialisation. Its cost, in terms of `n` tasks (columns),
   edges, each a programme replay (see
   [Proof performance](#proof-performance)).
 
-None of it is proportional to the horizon or to a domain's width (see
+None of the pass is proportional to the horizon or to a domain's width (see
 [Interval efficiency](#interval-efficiency)). The install-time rows are one
-per stretch, whatever the horizon. The exception is the makespan bound's rows
-when a makespan is named, which are linear in the bound.
+per stretch, whatever the horizon. What the pass installs is another matter
+when a makespan is named, in two ways:
+- **The makespan bound's rows**, with proofs on, are linear in the bound.
+- **The installed makespan initialisers**, one per posted cut, run once at
+  the root with proofs on or off. Each scans every candidate bound up to
+  `min(ub(m), last window end)` and sums every counted task at each, so it is
+  `O(n · H)` on a loose `ub(m)` (`cumulative.md`'s `makespan-bound`, #1267).
+  That grows with unused horizon even where the bound, and its certificate's
+  window, stay small. It is not part of the pass's own cost above.
 
 ### Propagator inventory
 
@@ -465,7 +492,10 @@ sensitivity is `cumulative.md`'s.
 1. **The propagation side (the pass).** It walks no value of any domain:
    every read is a bound, and `cumulative_task_window` is two bound reads. Its
    work is in tasks, donors, covers, subproblems and programme states. It is
-   **fine at any width**, and at any horizon, for the pass itself.
+   **fine at any width**, and at any horizon, for the pass itself. What it
+   installs is not, with a makespan named: each cut's makespan initialiser
+   scans the candidate horizon, proofs on or off (see
+   [Initialisation](#initialisation-and-global-data), #1267).
 2. **The reason side.** The pass gives no reasons. The makespan bound's reason
    (`bounds_reason(scope)` over the counted starts, plus presence literals) is
    per task, not per value.
@@ -646,7 +676,9 @@ MiniZinc RCPSP collections (Pack, Pack_d, BL, KSD15_D, la_x), proofs off, at
   makes the bound worth anything is the links: for each member,
   `find_makespan_links` (this presolver's, shared with `InferredDisjunctive`)
   looks for an unconditional model row saying the task finishes by `m`. A
-  member with no link keeps only what its own domain gives. It finds:
+  member with no link keeps only what its own domain gives: the overlap its
+  start bounds force into the window, which can be its whole duration. It
+  finds:
   - **linear:** two-term `ReifiedLinearInequality` under `MustHold`, of the
     shape `m − s ≥ b` with coefficients exactly `+1` and `−1` and `s` a plain
     variable;
@@ -657,12 +689,19 @@ MiniZinc RCPSP collections (Pack, Pack_d, BL, KSD15_D, la_x), proofs off, at
   initialiser, where `B` is the energy bound over the cut's members. That
   runtime rule, its search for the window, its reason and its derivation are
   `cumulative.md`'s; [`certified-makespan-bounds.md`](../certified-makespan-bounds.md)
-  is the long note.
+  is the long note. Until #1265 its argument confined every task to
+  `[lo, μ)`, which is the special case of the one under *Why it is sound*
+  below.
 - **Posted in derived mode** — it is an inference, not a row.
 - **Why it is sound** — the cut says its members occupy at most `π₀` per time
-  step. Each linked member must finish by `m`. So the members' energy
-  `Σ dᵢ πᵢ`, counted only for members that are known present and have
-  constant lengths, must fit into `π₀` times the window up to `m`.
+  step. Suppose `m ≤ μ`. Each counted member (known present, with a constant
+  length) is confined to its own start bounds and, where a link
+  `m − s ≥ b` exists, to `s ≤ μ − b`. From that range the window-energy lemma
+  gives the least it must run inside the window `[lo, μ)`, and `πᵢ` times
+  that is its guaranteed energy there. If those energies add up to more than
+  `π₀` times the window's rows, `μ` is refuted (`cumulative.md`'s
+  `makespan-bound`). Every member finishing inside the window, at its full
+  `dᵢ πᵢ`, is the special case.
 - **Proof technique** — `cumulative.md`'s; it sums the cut's derived rows for
   every time point from the earliest window start to the bound's window end,
   which is why [Interval efficiency](#interval-efficiency) item 3 is linear
@@ -679,7 +718,22 @@ MiniZinc RCPSP collections (Pack, Pack_d, BL, KSD15_D, la_x), proofs off, at
   - On the `pack001` root proof, naming the makespan adds 411,205 lines
     (279,766 to 690,971) and 51 s of checking (9.3 s to 60.6 s).
 - **What makes it silently weaker (this presolver's half).**
-  - A member with no link carries no energy.
+  - A member with no link loses the deadline's confinement, and so whatever
+    energy only the deadline forced into the window. It keeps what its own
+    start bounds force there. So a missing link can weaken the bound, and
+    need not: with three pairwise-disjoint length-2 tasks, starts
+    `x ∈ [0, 2]` and `y, z ∈ [0, 8]`, `m ∈ [0, 10]` and only `y` and `z`
+    linked, the bound is `m ≥ 6`, the same as with `x` linked, while widening
+    the unlinked `x` to `[0, 8]` lowers it to `m ≥ 4`. Proofs on and off
+    agree, and the root proofs verify
+    (`tmp/fd-codex-1005/sched/probes/mk.cc`; the tasks are made disjoint by
+    one unit-capacity `Cumulative` per pair).
+  - **With no linked member, nothing is certified on a feasible model.** The
+    energies then do not depend on `m`, so a refuted `μ` would refute the
+    root itself. The same probe with no links certifies nothing. That is why
+    the end-variable spelling, which loses every link, certifies no bound on
+    any of the 710 instances (see
+    [Detection](#detection-and-its-failure-modes)).
   - A member whose length is any variable, even one with a single value,
     is left out by the runtime rule.
   - With proofs on, a makespan row with no label is skipped.
@@ -803,7 +857,8 @@ slower".
       (`cumulative_donor_view`). It then takes no
       part in any cover with proofs on, and it would with proofs off.
     - **A makespan row with no label,** skipped by `find_makespan_links` with
-      proofs on, which costs that task its energy.
+      proofs on, which costs that task its link (the deadline's
+      confinement); the overlap its own start bounds force still counts.
 - **The state budget binds on PSPLib J90 and J120.** In the fact-check's
   re-sweep, 102 of the 1,999 instances that finished inside the cap hit the
   budget. That is a lower bound, since killed runs hit it too: `J120_59_6`
@@ -1161,10 +1216,11 @@ other jobs.
 - The same task must be spelled the same way on every resource (same start
   variable, same length variable or constant, same presence) for a cut to
   span resources.
-- With a makespan named, a task with any variable length, or a makespan
-  reached through end variables, contributes no energy, and the reported
-  `certified_makespan_bound` can be zero while `largest_capacity_bound` is
-  not.
+- With a makespan named, a task with any variable length contributes no
+  energy to the makespan bound. A makespan reached through end variables
+  leaves every member unlinked, so on a feasible model nothing is certified.
+  Either way the reported `certified_makespan_bound` can be zero while
+  `largest_capacity_bound` is not.
 - On instances with 100+ tasks and several resources, the pass can take
   minutes with proofs off.
 - With a makespan, the root proof grows linearly with the makespan bound (so
@@ -1278,6 +1334,9 @@ other jobs.
     describe `main` (see [Proof performance](#proof-performance)).
 - [`certified-makespan-bounds.md`](../certified-makespan-bounds.md): the
   makespan bound's derivation and the August Pack / Pack_d sweep.
+  - Until #1265 its argument confined every task to `[lo, μ)`. That is the
+    special case: an unlinked task counts the overlap its start bounds force
+    (see the makespan rewrite).
   - Its claim that a comparison-family makespan row "is not matched" is out of
     date: `find_makespan_links` has matched the comparison family since
     `bd966a2b`.
