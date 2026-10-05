@@ -354,12 +354,21 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     // handle are an edge case of `diffn` rather than a shape worth the
     // bookkeeping, so they take no part in this rule --- on either axis, since
     // a shared handle on one axis still appears in the other's reason.
+    //
+    // A position that is also a size, this rectangle's or another's, is a bar
+    // in the same way (#1253): the size's fact is a bound on the same variable
+    // as the position's own pair of facts. So sizes are counted as uses of a
+    // position too. Two sizes sharing a variable with no position are not: no
+    // member's position facts are over it.
     for (auto & members : _relaxation_members)
         members.clear();
     std::map<IntegerVariableID, size_t> position_uses, presence_uses;
     for (auto i : _active_rects) {
         ++position_uses[_xs[i]];
         ++position_uses[_ys[i]];
+        for (const auto & size : {_widths[i], _heights[i]})
+            if (! is_constant_variable(size))
+                ++position_uses[size];
         if (_presence[i])
             ++presence_uses[*_presence[i]];
     }
@@ -920,8 +929,13 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // flag's negation and the residual order literals, which the
             // closing reason-wrapped RUPs then unit-propagate. The pol is
             // load-bearing; see dev_docs/disjunctive-proof-logging.md.
-            auto emit_before_pol = [&](const map<pair<size_t, size_t>, BeforeFlagData> & before, const vector<IntegerVariableID> & size, size_t a,
-                                       size_t b, const optional<IntegerVariableCondition> & cond_a,
+            //
+            // Every literal is passed in rather than read here, the preceder's
+            // size bound included: a justification runs after its inference
+            // has landed, and a size can be the very variable a push has just
+            // moved (#1253). Each caller reads its literals before the push.
+            auto emit_before_pol = [&](const map<pair<size_t, size_t>, BeforeFlagData> & before, size_t a, size_t b,
+                                       const optional<IntegerVariableCondition> & cond_a, const optional<IntegerVariableCondition> & size_a,
                                        const optional<IntegerVariableCondition> & cond_b) -> void {
                 auto & tracker = logger->names_and_ids_tracker();
                 PolBuilder pol;
@@ -937,8 +951,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 };
                 if (cond_a)
                     add_defining_row(*cond_a);
-                if (! is_constant_variable(size[a]))
-                    add_defining_row(size[a] >= state.lower_bound(size[a]));
+                if (size_a)
+                    add_defining_row(*size_a);
                 if (cond_b)
                     add_defining_row(*cond_b);
                 pol.saturate().emit(*logger, ProofLevel::Temporary);
@@ -1034,10 +1048,10 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             // false under the reason and the 4-way separation
                             // clause unit-fails in the framework's closing
                             // reason-wrapped RUP.
-                            emit_before_pol(before_x, width_var, i, j, lb_lit(xs[i]), ub_lit(xs[j]));
-                            emit_before_pol(before_x, width_var, j, i, lb_lit(xs[j]), ub_lit(xs[i]));
-                            emit_before_pol(before_y, height_var, i, j, lb_lit(ys[i]), ub_lit(ys[j]));
-                            emit_before_pol(before_y, height_var, j, i, lb_lit(ys[j]), ub_lit(ys[i]));
+                            emit_before_pol(before_x, i, j, lb_lit(xs[i]), lb_lit(width_var[i]), ub_lit(xs[j]));
+                            emit_before_pol(before_x, j, i, lb_lit(xs[j]), lb_lit(width_var[j]), ub_lit(xs[i]));
+                            emit_before_pol(before_y, i, j, lb_lit(ys[i]), lb_lit(height_var[i]), ub_lit(ys[j]));
+                            emit_before_pol(before_y, j, i, lb_lit(ys[j]), lb_lit(height_var[j]), ub_lit(ys[i]));
                         };
 
                         vector<IntegerVariableID> rvars{xs[i], ys[i], xs[j], ys[j]};
@@ -1135,18 +1149,21 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 // Every bound literal the justifications below cite, read now,
                 // before the push. The justification runs after the push has
                 // landed, and a position two rectangles share --- or one a push
-                // has just wiped out --- would otherwise be read post-push: a
+                // has just wiped out, or a size that is also the pushed
+                // position (#1253) --- would otherwise be read post-push: a
                 // literal the reason does not support, or the bound of an
                 // empty domain.
                 auto forced_i_lb = lb_lit(forced_pos[i]), forced_i_ub = ub_lit(forced_pos[i]);
                 auto forced_j_lb = lb_lit(forced_pos[j]), forced_j_ub = ub_lit(forced_pos[j]);
                 auto free_j_lb = lb_lit(free_pos[j]), free_j_ub = ub_lit(free_pos[j]);
+                auto forced_i_size = lb_lit(forced_size[i]), forced_j_size = lb_lit(forced_size[j]);
+                auto free_i_size = lb_lit(free_size[i]), free_j_size = lb_lit(free_size[j]);
 
                 // Both forced-axis precedences are refuted by the mandatory
                 // overlap on that axis, exactly as in the contradiction.
-                auto eliminate_forced_axis = [&, forced_i_lb, forced_i_ub, forced_j_lb, forced_j_ub]() -> void {
-                    emit_before_pol(forced_before, forced_size, i, j, forced_i_lb, forced_j_ub);
-                    emit_before_pol(forced_before, forced_size, j, i, forced_j_lb, forced_i_ub);
+                auto eliminate_forced_axis = [&, forced_i_lb, forced_i_ub, forced_j_lb, forced_j_ub, forced_i_size, forced_j_size]() -> void {
+                    emit_before_pol(forced_before, i, j, forced_i_lb, forced_i_size, forced_j_ub);
+                    emit_before_pol(forced_before, j, i, forced_j_lb, forced_j_size, forced_i_ub);
                 };
 
                 // lb-push: i cannot fit below the blocker, push its origin up to
@@ -1159,17 +1176,17 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     // landed by the time the justification runs, so re-reading
                     // the pushed variable's bounds from the state would cite
                     // the post-push bound, which the reason does not support.
-                    auto justify = [&, i, j, cur_lo = cur_lo, target, free_j_lb, free_j_ub, eliminate_forced_axis](
+                    auto justify = [&, i, j, cur_lo = cur_lo, target, free_j_lb, free_j_ub, free_i_size, free_j_size, eliminate_forced_axis](
                                        const ReasonLiterals & reason) -> void {
                         pin_escapes(reason, i, j);
                         eliminate_forced_axis();
                         // Free axis: i entirely before j contradicts i's lower
                         // bound (it cannot fit below the blocker) ...
-                        emit_before_pol(free_before, free_size, i, j, free_pos[i] >= cur_lo, free_j_ub);
+                        emit_before_pol(free_before, i, j, free_pos[i] >= cur_lo, free_i_size, free_j_ub);
                         // ... so j precedes i, putting pos_i at j's mandatory
                         // end or later, folded onto the target order literal's
                         // definition row: bf -> pos_i >= target.
-                        emit_before_pol(free_before, free_size, j, i, free_j_lb, free_pos[i] < target);
+                        emit_before_pol(free_before, j, i, free_j_lb, free_j_size, free_pos[i] < target);
                     };
                     inference.infer_greater_than_or_equal(
                         logger, free_pos[i], target, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, reason_for(i, j, rv));
@@ -1180,17 +1197,17 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     auto target = max(blk_lo - sz, cur_lo - 1_i);
                     // As above: cur_hi is captured, not re-read, because the
                     // push has landed by justification time.
-                    auto justify = [&, i, j, cur_hi = cur_hi, target, free_j_lb, free_j_ub, eliminate_forced_axis](
+                    auto justify = [&, i, j, cur_hi = cur_hi, target, free_j_lb, free_j_ub, free_i_size, free_j_size, eliminate_forced_axis](
                                        const ReasonLiterals & reason) -> void {
                         pin_escapes(reason, i, j);
                         eliminate_forced_axis();
                         // Free axis: j entirely before i would put pos_i past
                         // its upper bound (i cannot fit above the blocker) ...
-                        emit_before_pol(free_before, free_size, j, i, free_j_lb, free_pos[i] < cur_hi + 1_i);
+                        emit_before_pol(free_before, j, i, free_j_lb, free_j_size, free_pos[i] < cur_hi + 1_i);
                         // ... so i precedes j, capping pos_i at the blocker's
                         // latest start minus lb(size_i), folded onto the
                         // target: bf -> pos_i <= target.
-                        emit_before_pol(free_before, free_size, i, j, free_pos[i] >= target + 1_i, free_j_ub);
+                        emit_before_pol(free_before, i, j, free_pos[i] >= target + 1_i, free_i_size, free_j_ub);
                     };
                     inference.infer_less_than(logger, free_pos[i], target + 1_i,
                         JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, reason_for(i, j, rv));
