@@ -16,8 +16,9 @@
 > proof. Over a `Disjunctive2D` projection, under any encoding, nothing is
 > installed. That is #1234, owned by
 > [`cumulative.md`](../constraints/cumulative.md). It also shares #1257
-> (silent detection degradation), measured here.
-> Tracked under #871.
+> (silent detection degradation), measured here, and #1267 (the installed
+> makespan initialiser scans the whole candidate horizon), filed from the
+> Codex review. Tracked under #871.
 
 `InferredDisjunctive` reads every posted `Cumulative`, and every axis a
 `Disjunctive2D` publishes as one, as a resource. It builds the graph of tasks
@@ -223,11 +224,29 @@ None. A reified "these tasks are pairwise exclusive" has no use here.
 - **Other presolvers, and order.** It runs in the order the presolvers were
   added. `examples/rcpsp` adds it before `InferredCumulative`. A derived
   constraint is not a posted `Cumulative`, so a later presolver never reads
-  this one's cliques as donors, and this one never reads anyone else's. The
-  cliques it posts do not depend on order. Its **certified makespan bound**
-  does: `solve_with` runs a presolver's initialisers before the next
-  presolver runs, so a makespan an earlier presolver raised is already in
-  `known`, and this one's bound counts only if it beats it. On KSD15_D
+  this one's cliques as donors, and this one never reads anyone else's. So
+  the **donor set** does not depend on order. **What it discovers can**:
+  `solve_with` runs each presolver's initialisers before the next presolver
+  runs, and the pass reads live bounds: through the donor views (a
+  capacity's upper bound at `donor_view.cc:123`, height lower bounds,
+  length upper bounds at `:169`) and directly (start windows,
+  `cumulative_task_window` at `inferred_disjunctive.cc:261`, and length
+  lower bounds at `:263`). An earlier presolver's initialiser can
+  therefore change which pairs conflict.
+  - **Checked** (`tmp/fd-codex-1005/sched/probes/ord.cc`, `7e1c4178`, no
+    makespan named). Three starts in `[0, 5]`, lengths and heights 2, one
+    `Cumulative` with capacity in `[3, 4]`; auxiliaries `a, b ∈ [0, 5]` with
+    `a − b ≤ 2`, and `capacity ≥ 4 ⇒ b − a ≤ −3`. `DifferenceLogic`'s
+    initialiser refutes that guarded negative cycle and sets the capacity
+    to 3.
+  - With `DifferenceLogic` first, this presolver finds 3 conflicting pairs
+    and posts 1 clique. With it after, or absent, it finds 0 and posts 0.
+  - Proofs on and off agree, and the root proofs verify with VeriPB 3.0.2
+    (`--force-checked-deletion`, `VERIFIED NO CONCLUSION`).
+
+  Its **certified makespan bound** depends on order too, separately:
+  a makespan an earlier presolver raised is already in `known`, and this
+  one's bound counts only if it beats it. On KSD15_D
   `j3033_9` (`tmp/fd-sched/inferred_disjunctive/e11/vid.cc`, both with the
   makespan named, 2026-10-05):
   - this presolver alone certifies 361;
@@ -237,10 +256,12 @@ None. A reified "these tasks are pairwise exclusive" has no use here.
 
   The model ends with the same bound either way. Only which block reports it
   changes, and `largest_capacity_bound` stays 361 in this block throughout. The
-  `DifferenceLogic` presolver lifts precedences, not resources. The one place
-  the two meet is the makespan links: `find_makespan_links` reads the posted
-  rows, and their labels stay in the `.opb` whichever propagators
-  `DifferenceLogic` disables. This audit did not test that combination.
+  `DifferenceLogic` presolver lifts precedences, not resources, so it never
+  changes the donor set. It meets this presolver in two places: through its
+  initialiser's bound changes, as above, and through the makespan links.
+  `find_makespan_links` reads the posted rows, and their labels stay in the
+  `.opb` whichever propagators `DifferenceLogic` disables. This audit did not
+  test that second combination.
 - **Candidate merge.** With `InferredCumulative`: no. That presolver lifts
   covers to non-unit coefficients by a knapsack per resource. This one merges
   pairwise at-most-ones, which is scale-free and so works only at unit
@@ -377,6 +398,12 @@ clique size `k`:
 - growth: `O(B·n·k)`;
 - ranking: `O(c log c)` over `c ≤ B` cliques.
 
+That is the pass. What it installs adds, when a makespan is named, one
+makespan initialiser per posted clique. Each runs once at the root, with
+proofs on or off, and scans every candidate bound up to `min(ub(m), last
+window end)`, summing the clique's `k` counted members at each: `O(k · H)` on
+a loose `ub(m)` (`cumulative.md`'s `makespan-bound`, #1267).
+
 Measured at `7e1c4178` (Release, fataepyc-08, 2026-10-05, pinned to one
 core, proofs off, seed 1). The pass alone was timed between two marker
 presolvers (`tmp/fd-sched/inferred_disjunctive/e4/scan.cc`). Task lengths are
@@ -494,7 +521,13 @@ is bounds.
 1. **Propagation side (the pass).** Nothing walks a domain or a horizon. The
    pass reads window bounds (`cumulative_task_window`) and constants. Its work
    is in tasks and appearances, as above. "Reaches for `State`'s per-value
-   iterators nowhere at all" is true of `inferred_disjunctive.cc`.
+   iterators nowhere at all" is true of `inferred_disjunctive.cc`. What it
+   installs is not horizon-free, with a makespan named: each clique's
+   makespan initialiser scans the candidate horizon at the root, proofs on
+   or off (see [Initialisation](#initialisation-and-global-data), #1267).
+   That grows with unused horizon even when the bound and its certificate's
+   window stay small. Its memory counterpart, the installed constraint's
+   slot prefix, is under item 3.
 2. **Reason side.** The pass gives no reasons. The derived constraint's are
    `cumulative.md`'s.
 3. **Proof side.** Per derived time point, the recipe writes
@@ -636,14 +669,33 @@ it enables is certified in the proof, and nothing it writes is an assertion.
   derived constraint then runs one root initialiser that may raise `m`'s lower
   bound. The rule and its certificate are `cumulative.md`'s (the
   `makespan_energy` argument). See also
-  [`certified-makespan-bounds.md`](../certified-makespan-bounds.md).
+  [`certified-makespan-bounds.md`](../certified-makespan-bounds.md). Until
+  #1265 its argument confined every member to `[lo, μ)`: the special case of
+  the one under *Why it is true* below.
 - **Derived mode** — yes. It is an inference, certified in the proof.
-- **Why it is true** — the members run one at a time, so their durations
-  add up within a window that the links confine to before `m`. Hence `m` is
-  at least the earliest start plus the summed least lengths, or better, as
-  the window-energy argument finds.
+- **Why it is true** — the members run one at a time. Suppose `m ≤ μ`.
+  Each counted member is confined to its own start bounds and, where a link
+  `m − s ≥ b` exists, to `s ≤ μ − b`. The window-energy argument counts what
+  each member must run inside `[lo, μ)` from that range, and refutes `μ`
+  when the total exceeds the window's time points (`cumulative.md`'s
+  `makespan-bound`). Where every member is confined wholly inside the
+  window, the bound is at least the earliest window start over all active
+  members (`rows_lo`) plus the summed lengths, and higher where the covered
+  rows have gaps. A member without a link loses only the deadline's
+  confinement: it still counts the overlap its own domain forces, so the
+  bound may or may not weaken. With three length-2 members made pairwise
+  disjoint by one unit-capacity `Cumulative` per pair, starts `x ∈ [0, 2]`
+  and `y, z ∈ [0, 8]`, and only `y` and `z` linked to `m ∈ [0, 10]`, the
+  certified bound is `m ≥ 6`, the same as with `x` linked; widening the
+  unlinked `x` to `[0, 8]` lowers it to `m ≥ 4`. Proofs on and off agree,
+  and the root proofs verify (`tmp/fd-codex-1005/sched/probes/mk.cc`).
+  **With no linked member, nothing is certified on a feasible model**: the
+  energies then do not depend on `m`, so a refuted `μ` would refute the root
+  itself. The same probe with no links certifies nothing.
 - **Proof technique** — `cumulative.md`'s makespan rule. This presolver
-  contributes only the link rows, which the derivation sums.
+  contributes only the link rows; the derivation puts each one it cites
+  (only where `ub(s) > μ − b`) into its own confinement `pol`, not into the
+  final sum.
 - **Neutral?** No: it is a bound push. It is reported only when it beats what
   the links and `m`'s bound already say, and that bound includes anything an
   earlier presolver pushed (see [Relation to other
@@ -680,20 +732,29 @@ it enables is certified in the proof, and nothing it writes is an assertion.
   VeriPB had not finished after 1,800 s, when it was stopped
   (`e11/veripb-timing.log`, one run; VeriPB's own log held only its banner).
 - **Detection failure modes** — a model whose finish rows are not two-term
-  `±1` rows on a plain start gets no link for that task, and the bound loses
-  that task's energy silently. That covers:
-  - an end variable `e = s + d` with `e ≤ m` (the link lands on `e`, which is
-    no member's start);
-  - `m = max(ends)` posted as `ArrayMax`;
-  - a scaled row (`2s − 2m ≤ −2d`);
-  - a three-term row with a variable duration;
-  - a view start;
-  - the precedences lifted into one `DifferenceConstraints`
-    (`rcpsp --variant=global`);
-  - a length that is a variable by type, even a single-valued one
-    (`create_integer_variable(d, d)`). The makespan rule tests
-    `is_constant_variable` (`derived_cumulative.cc:334`), so that member is
-    left out of the energy argument, though its link is found.
+  `±1` rows on a plain start gets no link for that task, silently. The task
+  then loses the deadline's confinement, not its energy: it still counts what
+  its own start bounds force into the window (see *Why it is true*), so the
+  bound may weaken, and with no link on any member nothing is certified on
+  a feasible model. A
+  member the makespan rule does not count at all, one whose length is a
+  variable or whose start is not a plain variable
+  (`derived_cumulative.cc:334`), loses its whole energy, link or not.
+  - **Spellings that lose the link only:**
+    - an end variable `e = s + d` with `e ≤ m` (the link lands on `e`, which
+      is no member's start);
+    - `m = max(ends)` posted as `ArrayMax`;
+    - a scaled row (`2s − 2m ≤ −2d`);
+    - the precedences lifted into one `DifferenceConstraints`
+      (`rcpsp --variant=global`).
+  - **Spellings that leave the member uncounted:**
+    - a view start;
+    - a three-term row with a variable duration, since the duration is a
+      variable;
+    - a length that is a variable by type, even a single-valued one
+      (`create_integer_variable(d, d)`). The makespan rule tests
+      `is_constant_variable`, so that member is left out of the energy
+      argument, though its link is found.
 
   #1257 says the same spellings degrade this presolver
   too. Checked here over all 110 Pack and Pack_d instances with `vid.cc`. The
@@ -940,9 +1001,30 @@ with proofs on above about 200 tasks: the donor recovery it triggers is cubic
 ### CPU performance
 
 Only the pass was measured; see [Initialisation](#initialisation-and-global-data).
-Nothing compares it against another solver. No other solver infers these
-cliques at presolve, and Sidorov's preprocessor is a separate program. #868
-covers cross-solver comparison generally.
+Nothing compares it against another solver, and this audit did not survey
+other solvers. The nearest found, by reading source only (OR-Tools
+`100f66e6`), is CP-SAT:
+- its presolve (`sat/cp_model_presolve.cc`) rewrites a `Cumulative` as a
+  `NoOverlap` when every task's least demand exceeds half the capacity's
+  upper bound (as an `all_different` when every duration is 1 and none is
+  optional). `MergeNoOverlapConstraints` then extends the cliques of
+  unconditional `NoOverlap`s in the graph joining intervals that share one,
+  under a work limit (`merge_no_overlap_work_limit`);
+- when it loads a `Cumulative` (`sat/cumulative.cc`), under
+  `use_disjunctive_constraint_in_cumulative` (on by default), it can add one
+  `Disjunctive`: over the tasks of positive size with more than half the
+  capacity, plus at most one lifted task that conflicts with the smallest of
+  them, when that makes at least two.
+
+The presolve first splits a `Cumulative` into time-disjoint components and
+tests the conversion per component. So CP-SAT can find one conflict clique
+per resource (its tasks above half the capacity, plus at most one lifted),
+and merges cliques of `NoOverlap`s, including resources, or time-disjoint
+components of them, that were disjunctive as a whole. In the
+code read, a clique found inside a resource that is not wholly disjunctive
+stays per resource: nothing combines such conflicts across resources, as
+this pass does. Nothing was run. Sidorov's preprocessor is a separate
+program. #868 covers cross-solver comparison generally.
 
 ### Proof performance
 
@@ -1038,7 +1120,9 @@ from pairwise at-most-ones.
   `(start, presence)`, and its mutation table lacks `ForgetPresence` and
   `ClaimHigherMakespanBound`.
 - [`certified-makespan-bounds.md`](../certified-makespan-bounds.md): the
-  makespan argument and the Pack sweep.
+  makespan argument and the Pack sweep. Until #1265 its argument confined
+  every task to `[lo, μ)`, which is the special case (see the makespan
+  rewrite).
 - [`cumulative-proof-logging.md`](../cumulative-proof-logging.md): the
   flag-bridge and derived-row machinery.
 - [`cumulative.md`](../constraints/cumulative.md): the derived Cumulative's
