@@ -132,7 +132,8 @@ all with between 300 and 675 tasks, exhaust the 20,000 calls, so on that
 collection the budgeted direction is live. On PSPLib it is the lifting
 programmes' state budget that binds instead, and changes the cuts posted: on 47
 of the 477 J90 instances and 55 of the 562 J120 instances that finished in
-#1255's re-sweep.
+#1255's 14-way re-sweep (its table, from an earlier sweep, has 566 J120
+finished).
 
 Implementing it verbatim would be wrong: the estimate is an upper bound only
 while the unlifted coefficients stay at most one, which holds at `π₀ = 1` and

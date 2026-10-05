@@ -268,7 +268,8 @@ The rerun also settles two questions that were open defaults:
   instances, all with between 300 and 675 tasks, exhaust the 20,000 calls, and
   on PSPLib the lifting programmes' own state budget binds and changes the cuts
   posted on 47 of the 477 J90 instances and 55 of the 562 J120 instances that
-  finished in #1255's re-sweep.
+  finished in #1255's 14-way re-sweep (its table, from an earlier sweep,
+  has 566 J120 finished).
 - **Two-member cliques are not worth posting here.** With
   `with_minimum_clique_size(2)`, over Pack in both disjunctive-bearing stages and
   Pack_d in the capacity-one stage (165 runs), the posted set changes on nine of
