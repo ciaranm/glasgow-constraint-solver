@@ -409,6 +409,33 @@ constraints and do not restate it.
   the same decomposition (312,333 nodes each) ours was 3.6× slower per node.
   Proofs run to 1.03M lines and 221 s of VeriPB at 8,917 nodes (1.19M and 390
   to 510 s at the audit), about 96% of them this family's own.
+- [`disjunctive.md`](disjunctive.md) — `Disjunctive`, the unary resource:
+  tasks with variable starts, constant or variable durations and optional
+  presences, strict or non-strict. The OPB encoding is purely pairwise, and
+  sixteen rules are certified against those rows alone: time-tabling,
+  detectable precedences in pairwise and set form, overload checking,
+  edge-finding, and not-first / not-last in two detections. The energetic
+  rules re-encode time inside the proof, and one overload certificate is a
+  proof-only sorting network, `ComparatorNetwork`, which this document
+  describes for `disjunctive_2d.md` too. Two energetic proofs (edge-finding
+  alone, and the time-indexed overload, edge-finding, sweep not-first /
+  not-last and set rule together) pass `cake_pb_cp`'s full verified chain.
+  The findings:
+  - time-tabling's pushes are subsumed by detectable precedences at the
+    fixpoint, and cost 10.7% of the instructions on `ft06`;
+  - the set rule skips fixed tasks, so its fixpoint depends on rule order,
+    which costs it 4.3× its recursions on `ft06`. Edge-finding skips
+    overloaded windows while the overload check is off, which costs it 27×;
+  - not-first / not-last never pushes a task its window contains, and only
+    ever takes Θ as a whole window's contents. So with every rule on, it is
+    weaker than Gecode's `unary` on 197 of 20,000 random machines with the
+    published detection (452 with the sweep detection), and finds no
+    schedule for `la01` at its optimum in 300 s where Gecode needs 200
+    nodes;
+  - time-tabling's start scan is quadratic in the duration;
+  - in the three energetic arms measured, about half the proof is per-time
+    folds, 84 to 99% of which repeat an earlier fold exactly;
+  - every reason names every task.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
