@@ -246,7 +246,19 @@ limitations](#known-limitations).
   variable's difference from the intersection;
 - infers.
 
-That is `O(n)` without holes and `O(Σ intervals)` with them, whatever changed
+Without holes that is `O(n)`. With them, where `I` is the total interval
+count of the domains, the copies are `O(I)` in all, and the `n − 1` merges
+that build the intersection and the `n` `each_interval_minus` walks against
+it are `O(n · I)`. Every
+`contains_any_of` and `in_domain` in a witness search starts from the front
+of the domain it scans, so finding a single witness costs up to `O(I)` per
+removed run, and `O(R · I)` for `R` removed runs; the split path scans from
+the front too. Applying the removals pays the state layer's own
+front-to-back scan (#1160) on top.
+Two variables are enough for the quadratic case: with `A = {0, 3, 6, …, 3K}`
+and `B = 0..3K`, `B` loses `K` runs of two values, and each witness search
+walks `A` from its start, `Θ(K²)` in all (see [Interval
+efficiency](#interval-efficiency)). All of this is paid whatever changed
 since the last call. On the benchmark below, a node whose decision removed one
 value from one variable still copies all `m` domains of its group. Keeping the
 intersection between calls would cost a backtrackable `IntervalSet`. Whether
@@ -338,6 +350,29 @@ per-value iterators.
    - A wider one looks for a single covering witness with `contains_any_of`,
      `n` merge-walks. Otherwise it splits by witness with `each_interval_minus`
      against each variable in turn.
+   - **Per interval is not linear in intervals.** Every one of those witness
+     scans starts at the front of the domain it reads (`IntervalSet::contains`
+     and `contains_any_of`, `interval_set.hh:182–192` and `199–214`), once per
+     removed run. With `A = {0, 3, 6, …, 3K}` and `B = 0..3K`, `B` loses `K`
+     runs of two values, and the `contains_any_of` scans of `A` take `K(K+3)/2`
+     loop iterations: 5,150, 20,300 and 80,600 at `K` = 100, 200 and 400. The
+     one-value path is the same with `A = {0, 2, …, 2K}`, `B = 0..2K` and
+     `in_domain`, also 5,150, 20,300 and 80,600 iterations
+     (`tmp/fd-codex-1005/small/probes/cmpcount.cc`: verbatim copies of the
+     helpers, counting only the scans of `A`). The real one-value loop
+     (`all_equal.cc:180–184`) does not skip the variable being pruned, so with
+     `vars = {B, A}` it also scans `B`'s live domain first, which gains a hole
+     per removal: about double those counts. The whole root call grows the same
+     way: on the two-value-run shape the family's own propagation time is 29,
+     113 and 451 ms at `K` = 4,000, 8,000 and 16,000 (`e2e.cc`,
+     `GCS_PROPAGATOR_STATS=time`, single runs). Of the whole run at 16,000,
+     `perf` puts 19% in the propagator's body, where the scans are inlined, and
+     80% in the state layer, which serves both the carve that builds `A` and
+     the removals from `B` (#1160). This is a worst case, not a measured share
+     of any real instance. The binary-search start #1160 tested in
+     `contains_any_of` would shorten the two-value-run scans; `contains`,
+     behind `in_domain`, is not in that patch, so measuring #1160 should
+     include this consumer and the one-value path.
 
    The width hazard is not a walk but a call count: a same-sign repeat with
    offsets makes about W/2 calls (above).
@@ -430,7 +465,14 @@ literal in the clause names.
   distinct-variable instances and on 97 and 96 with views, every one
   through the bug. An opposite-sign repeat is not `bounds(Z)`; see
   [Robustness](#robustness-and-limits). `all_equal_test` also checks GAC at
-  every node, but on interval domains, apart from two fixed holey shapes.
+  every node. Its initial domains are intervals, apart from two fixed holey
+  shapes, but its brancher makes holes: `reject_random_interval` rejects an
+  interior interval, so later nodes see holey domains. A probe with the same
+  branching pair (`variable_order::random(p, s)`,
+  `value_order::reject_random_interval(s + 1)`) on three variables in `0..3`
+  has a hole at 2 of its 3 trace callbacks for seeds 1, 3, 4 and 5, and at 1
+  of 3 for seed 2 (`tmp/fd-codex-1005/small/probes/holes.cc`). That is a
+  probe of the brancher, not a count inside the test.
 - **Algorithm** — one pass, `O(n)` bounds reads. The bound is the entry
   maximum, not the landed one, which is why it is not a fixpoint over holes.
 - **Why it is true** — every variable equals the witness, and the witness is
@@ -594,15 +636,19 @@ thing.
   `vars[0]` holey, and every domain hole-free once the bounds pass is done.
   Otherwise it needs a repeat through an offset or an opposite-sign view,
   which no test posts: the duplicate shapes are plain repeats over intervals.
-  Every random shape is an interval. In `run_holes_test` all three variables
-  are still holey after the bounds pass, so the hole pass runs. In
+  Every random shape starts as an interval; the holes the brancher cuts later
+  (see rule 1's Strength) did not reach the branch either, by the
+  instrumentation below. In `run_holes_test` all three variables are still
+  holey after the bounds pass, so the hole pass runs. In
   `run_mixed_witness_test`, `vars[0]` is the full interval. The fact-check
   instrumented the one branch where the current test and the fix differ:
   nothing in the full suite (962 tests, caps off), the 90 view-wrap lanes or
   four more seeds reaches it (`tmp/fd-small/factcheck/all_equal/instr/`). The
   bug has been there since the propagator was written (d8c74724, 2026-05-08).
 - **Holes made during search by other constraints.** No test posts anything
-  beside `AllEqual`, apart from `In` at the root.
+  beside `AllEqual`, apart from `In` at the root. Holes made by branching are
+  covered: the tests' brancher rejects interior intervals (see rule 1's
+  Strength).
 - **A far witness over a wide domain,** which is where a multi-hop RUP would
   fail if it were going to. The test's chains are at most four variables
   long, and its widest domain is 21 values (`run_mixed_witness_test`).
