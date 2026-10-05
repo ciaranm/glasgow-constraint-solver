@@ -316,9 +316,11 @@ auto gcs::innards::emit_regular_canonical_run(ProofLogger & logger, const vector
     }
 
     // Pin the state flags to c. One guard per live state flag, with
-    // e -> (st <-> c), each introduced on its own; then a single red sets every
+    // e -> (c -> st), each introduced on its own; then a single red sets every
     // guard, with a witness taking the state flags to c, and dead ones to 0.
-    // Its goals are the OPB's rows over c, derived above.
+    // Its goals are the OPB's rows over c, derived above. The other direction
+    // is not needed: once c picks a state, the OPB's at-most-one on the state
+    // flags clears the rest.
     logger.emit_proof_comment("Regular: canonical run, pin the state flags to it");
     vector<pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> witness;
     WPBSum all_guards;
@@ -331,12 +333,9 @@ auto gcs::innards::emit_regular_canonical_run(ProofLogger & logger, const vector
                 continue;
             }
             auto guard = logger.create_proof_flag("rege");
-            WPBSum forwards = WPBSum{} + 1_i * ! guard + 1_i * ! st[i][q];
-            add_term_to(forwards, 1_i, *c[i][q]);
-            logger.emit_red_proof_line(move(forwards) >= 1_i, {{guard, FalseLiteral{}}}, ProofLevel::Top);
-            WPBSum backwards = WPBSum{} + 1_i * ! guard + 1_i * st[i][q];
-            add_term_to(backwards, 1_i, ! *c[i][q]);
-            logger.emit_red_proof_line(move(backwards) >= 1_i, {{guard, FalseLiteral{}}}, ProofLevel::Top);
+            WPBSum pin = WPBSum{} + 1_i * ! guard + 1_i * st[i][q];
+            add_term_to(pin, 1_i, ! *c[i][q]);
+            logger.emit_red_proof_line(move(pin) >= 1_i, {{guard, FalseLiteral{}}}, ProofLevel::Top);
             witness.emplace_back(st[i][q], *c[i][q]);
             guards.push_back(guard);
             all_guards += 1_i * guard;

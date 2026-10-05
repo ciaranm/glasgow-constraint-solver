@@ -204,8 +204,9 @@ final state. Every other state flag is false in every solution.
      one. Then `recover_am1_from_pairs` turns the pairs into the
      cardinality constraint.
 5. **Pinning.** For each live state flag, a guard `e` with
-   `e ⇒ (state_i_is_q ⇔ c[i][q])`, each introduced on its own by
-   `red … : e -> 0`. Then one `red ∑ e >= N`. Its witness sends every live
+   `e ⇒ (c[i][q] ⇒ state_i_is_q)`, each introduced on its own by
+   `red … : e -> 0`. The other direction is not needed: once `c` picks a
+   state, the OPB's at-most-one clears the other state flags. Then one `red ∑ e >= N`. Its witness sends every live
    state flag to its `c`, every dead one to 0, and every guard to 1.
    - **Its goals:** the OPB's rows over `c`, which step 4 derived.
    - **Why it is sound:** the witness touches only flags outside the
