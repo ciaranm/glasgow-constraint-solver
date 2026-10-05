@@ -12,12 +12,12 @@ using std::string;
 
 // A trivially true row whose coefficients sum to just under 2^63 but whose
 // normalised degree is so negative that the sum less the degree is past 2^63.
-// VeriPB 3.0.2 handles such a row in 64-bit arithmetic, the slack overflows,
-// and it reports a solution that leaves the row satisfiable as conflicting
-// with it. The row writer gives such a row a normalised degree of zero instead
-// (emit_inequality_to.cc), so the solution line here must verify. This is the
-// row from the original report, over a proof-only variable spanning 61 bits
-// and two flags with coefficients near 2^61.
+// VeriPB before MR 233 handled such a row in 64-bit arithmetic, the slack
+// overflowed, and it reported a solution that leaves the row satisfiable as
+// conflicting with it (dev_docs/veripb-facts.md). GCS writes the row as it is,
+// so this checks that the VeriPB in use has the fix: the solution line here
+// must verify. This is the row from the original report, over a proof-only
+// variable spanning 61 bits and two flags with coefficients near 2^61.
 auto main() -> int
 {
     ProofOptions proof_options{"row_slack_test"};

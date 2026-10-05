@@ -269,28 +269,29 @@ Two corrections worth not relapsing into:
 
 ## Rows whose slack passes 2^63
 
-VeriPB 3.0.2 works on a row in 64-bit arithmetic when its coefficients sum to
-less than 2^63, and its slack, the coefficient sum less the normalised degree
-(the degree after flipping negative coefficients), can then overflow. It
-reports a solution as "conflicting with constraint N" when the row is in fact
-satisfiable, so a correct proof is rejected at a `sol`/`solx` line. The row only
-has to be trivially true with a very negative normalised degree, and it does
-not matter whether GCS wrote it or VeriPB derived it by `pol`: an
-`AllDifferentExcept` row half-reified on a false literal, beside two views at
-the full reach the integer range allows, did both (`integer-ranges.md`).
-`row_slack_test` has a minimal case.
+VeriPB before [MR 233](https://gitlab.com/MIAOresearch/software/VeriPB-dev/-/merge_requests/233)
+(VeriPB-dev, a private project; merged October 2026) worked on a row in 64-bit
+arithmetic when its coefficients summed to less than 2^63, and its slack, the
+coefficient sum less the normalised degree (the degree after flipping negative
+coefficients), could then overflow. It reported a solution as "conflicting
+with constraint N" when the row was in fact satisfiable, so a correct proof was
+rejected at a `sol`/`solx` line. The row only had to be trivially true with a
+very negative normalised degree, and it did not matter whether GCS wrote it or
+VeriPB derived it by `pol`: an `AllDifferentExcept` row half-reified on a false
+literal, beside two views at the full reach the integer range allows, did both
+(`integer-ranges.md`). MR 233 only stores a constraint in 64- or 128-bit
+arithmetic when its slack plus one fits too.
 
-Two guards keep GCS clear of it. A row half-reified on a literal that is false
-is written small (`reification_shape`), which is what removes the derived
-rows. And the row writer gives any row in the band a normalised degree of zero
-instead (`emit_inequality_to.cc`), which changes nothing about what it says,
-since such a row is trivially true either way.
+GCS needs a VeriPB with that fix, and has no guard of its own. A build from the
+public VeriPB repository's `main` has it, as CI's does, but the version number
+did not change, so `veripb --version` saying 3.0.2 does not tell you either
+way. `row_slack_test` is the check: it writes the minimal row and fails on a
+VeriPB without the fix.
 
-The fix in VeriPB itself is [MR 233](https://gitlab.com/MIAOresearch/software/VeriPB-dev/-/merge_requests/233)
-on VeriPB-dev (a private project), which only stores a constraint in 64- or
-128-bit arithmetic when its slack plus one fits too. Keep both guards even once
-a release has it: the proofs GCS writes should still check on the VeriPB
-versions people already have.
+GCS does write the false-literal case small (`reification_shape`) anyway. That
+row is vacuous, so a small row says just as much as the full-sized one, and
+the edge-of-range `AllDifferentExcept` shapes in `integer_ranges_test` then
+check without the fix as well.
 
 ## Names and labels
 

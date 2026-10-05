@@ -3021,9 +3021,9 @@ auto NamesAndIDsTracker::reification_shape(const WPBSumLE & ineq, const HalfReif
     // by the maximum contribution instead, which is just as true but is as big
     // as the largest rows the model writes: with two views at full reach in the
     // row, its coefficients summed to within a few of 2^63, and pol steps over
-    // it (the deviewed form) gave VeriPB 3.0.2 rows whose slack overflows its
-    // 64-bit arithmetic, so that it reported a solution as conflicting with
-    // them (dev_docs/integer-ranges.md).
+    // it (the deviewed form) gave rows whose slack overflowed the 64-bit
+    // arithmetic of VeriPB before MR 233, so that it reported a solution as
+    // conflicting with them (dev_docs/veripb-facts.md).
     if (contains_false_literal)
         return ReificationShape{.reif_coefficient = -1_i, .effective_rhs = max_contribution_from_positive_terms};
 
