@@ -4,8 +4,9 @@
 > **Audited** 2026-09-30 at `c9ceea25` ·
 > **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
 > for what it would file. Already open and touching this family: #833 (the
-> large-domain policy), #868 (cross-solver comparisons; this document gives
-> one, by hand). Tracked under #871.
+> large-domain policy), #868 (cross-solver comparisons; this document gives a
+> whole-solve comparison by hand, not the identical-tree one #868 asks for).
+> Tracked under #871.
 
 `In(var, vars, vals)` says that `var` equals one of the constants in `vals` or
 one of the variables in `vars`. One class and one propagator. The encoding is
@@ -22,9 +23,10 @@ Four things to know before touching it.
 - **It is generalised arc consistent, on distinct variables.** Root brute
   force over 18,000 random instances with holes, views and constants finds no
   missing pruning, and the unit test checks GAC at every node. Gecode's
-  `member` never prunes a candidate once posted, so it is weaker. On a search
-  tree where that makes no difference, GCS takes 3.3 to 3.7 times Gecode's
-  time.
+  `member` never prunes a candidate once posted, so it is weaker. On an
+  enumeration where that makes no difference (the same solutions and no
+  failures in either solver, under different branching schemes), GCS takes
+  3.3 to 3.7 times Gecode's time.
 - **Every listed domain is an `In`.** `Problem::create_integer_variable` over a
   vector of values posts one to carve out the holes, whether or not the list
   has any. That covers the C++ API and XCSP3's listed domains; Python's
@@ -457,9 +459,33 @@ instead is the number of **intervals**, and there two things are not linear.
    - *Variable step 1* (`in.cc:225–234`) builds the union by erasing each
      permitted interval and each candidate's intervals from a copy of
      `dom(var)`. `erase_range` scans from the front, and dropping a covered
-     interval shifts the vector (`interval_set.hh:314–352`). So one call is
-     `O((|vals| + Σ intervals(V_i)) × intervals(var))`, quadratic in interval
-     counts.
+     interval shifts the vector (`interval_set.hh:314–352`). The copy is not
+     fixed in size: an erase inside an interval splits it, inserting into the
+     vector, so the copy can gain an interval per erase, and later erases
+     rescan the pieces. With `E` erases (the permitted set's intervals plus
+     `Σ intervals(V_i)`) over a copy that starts with `I₀ = intervals(var)`,
+     the copy never exceeds `I₀ + E` intervals. The scans are then
+     `O(E · (I₀ + E))` steps, and each interval dropped (at most `I₀ + E`) or
+     split off (at most `E`) shifts up to `I₀ + E` entries, so one call's
+     union is `O((I₀ + E)²)`: quadratic in interval counts, both ways round.
+     - *Many erases over one interval.* With `var = 0..3K` and one candidate
+       over `{0, 3, 6, …, 3K}`, the first and last of the `K + 1` erases trim
+       and the other `K − 1` split, so the copy ends with `K` intervals; the
+       scans take 5,051, 20,101 and 80,201 loop iterations at `K` = 100, 200
+       and 400 (`tmp/fd-codex-1005/small/probes/cmpcount.cc`, a verbatim copy
+       of `erase_range`). Each split inserts at the end here, so nothing
+       shifts.
+     - *One erase over many intervals.* A single `erase_range` covering a copy
+       of `I₀` singletons drops each with a vector erase that shifts the tail:
+       0.034, 0.138 and 0.560 s at `I₀` = 1, 2 and 4·10⁴
+       (`tmp/fd-codex-1005/small/factcheck/dropall.cc`). In `In{x, {y, z}}`
+       with `x` over 30,000 even values and `y`, `z` over an interval covering
+       them, `E = 2`, of which only `y`'s erase runs: it empties the copy, so
+       `z`'s is skipped (`in.cc:229–230`). `perf` puts 36% of a 1.73 s root
+       in `erase_range`, which here is that shift (`indrop.cc`).
+
+     Copying the candidates' domains, and applying the removals through the
+     state layer's own front-to-back scan (#1160), come on top.
    - *Step 1 stops early*: it stops copying candidates once nothing is left
      unsupported (`in.cc:229–230`).
    - *Step 2* uses `State::domains_intersect` per candidate
@@ -662,8 +688,10 @@ Facts shared by every rule:
     [Robustness](#robustness-and-limits).
 - **Algorithm** — the union of `vals` and every candidate's domain, erased from
   a copy of `dom(var)`, then one conclusion per remaining run
-  (`in.cc:225–271`). `O((|vals| + Σ intervals(V_i)) × intervals(var))` as
-  written; see [Interval efficiency](#interval-efficiency).
+  (`in.cc:225–271`). `O((I₀ + E)²)` for the union as written, scans and
+  vector shifts together, with `E` the permitted set's intervals plus the
+  candidates' and `I₀` the intervals of `dom(var)`; see [Interval
+  efficiency](#interval-efficiency).
 - **Why it is true** — if `var` were in the run it would equal a constant, and
   none is there, or a candidate, and each candidate is outside the run.
 - **Proof technique** — `RUP sequence`: per candidate `V_j`,
@@ -914,8 +942,9 @@ under rule 2.
     - `elitserien` 2014 `handball11`, 2018 `handball1` and 2023 `handball10`:
       550,467, 488,618 and 156,799 calls, 0.40, 0.36 and 0.11 s.
   - The corpus's listed domains are all FlatZinc, which does not use `In`.
-- **For CPU:** the enumeration below, branching on the candidates first, which
-  gives an identical tree against Gecode.
+- **For CPU:** the enumeration below, branching on the candidates first, on
+  which neither solver fails and both enumerate the same solutions. The trees
+  are not the same: the branching schemes differ (below).
 - **For proof verification:** the same enumeration branching on `var` first,
   which reaches all five rules, at `k = 4` and `D` from 6 to 8.
 
@@ -954,9 +983,13 @@ value where Gecode's `INT_VAL_MIN` branches in two. The drivers are
 | `var` first | variables | 6 | 8 | 1,321,097 | 1,455,553 | 0 | 3,488,409 | 1,508,330 | 588,245 |
 | `var` first | mixed | 6 | 8 | 1,590,009 | 1,091,667 | 0 | 3,690,093 | 1,173,834 | 453,789 |
 
-- **On an identical tree GCS takes 3.5 to 3.7 times Gecode's time** here, and
-  3.3 to 3.6 in the fact-check's re-run (`tmp/fd-small/factcheck/in/bench/cpu.txt`,
-  with every count identical). This is a
+- **Candidates first, GCS takes 3.5 to 3.7 times Gecode's time** for the
+  whole enumeration here, and 3.3 to 3.6 in the fact-check's re-run
+  (`tmp/fd-small/factcheck/in/bench/cpu.txt`, with every count identical to
+  the first run). The two searches have the same solutions and no failures,
+  but not the same tree: GCS's one child per value against Gecode's binary
+  branching gives 1,455,545 recursions against 2,311,919 nodes on the first
+  row, with different intermediate domains and propagation work. This is a
   whole-solve comparison on a benchmark with no failures, so it measures the
   search loop as much as the propagator. By `perf`, the `In` propagator is
   about half of GCS's time on the first row; `copy_of_values` alone is 11%.
