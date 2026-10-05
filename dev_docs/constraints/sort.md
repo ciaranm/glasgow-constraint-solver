@@ -444,7 +444,8 @@ proof. That check runs with proofs off too, which is the cost measured below.
   the root over random domains **with holes** (`ordcheck.cc`, `sort`, 2,000
   instances of up to three and three): no `bounds(Z)` failure on `x` or `y`,
   while `bounds(D)` fails on 83 of them and GAC on 644 (seed 1). `sort_test`
-  checks `bounds(Z)` at every node on interval domains. Mehlhorn and Thiel
+  checks `bounds(Z)` at every node, on domains that start as intervals and
+  gain holes from the test brancher (see [Tests](#tests)). Mehlhorn and Thiel
   prove it, over distinct variables; see [Robustness](#robustness-and-limits)
   for repeats.
 - **Algorithm** — as rule 2's sweeps.
@@ -628,10 +629,10 @@ as rule 5, mirrored.
   for the Hall cases, nested bands, infeasible `y` windows, a rank-line Hall
   violator, #254's degenerate arrays, a duplicate `x = (a, a)`, and eight random
   instances up to five long. Under `solve_for_tests_checking_consistency` with
-  `bounds(Z)` on both `x` and `y` at every node, on interval domains; with and
-  without proofs. Seeded. Its own comment notes that the large-count
-  order-statistic case is **not** exercised, since the harness cannot take the
-  wide domains it needs.
+  `bounds(Z)` on both `x` and `y` at every node, on domains that start as
+  intervals; with and without proofs. Seeded. Its own comment notes that the
+  large-count order-statistic case is **not** exercised, since the harness
+  cannot take the wide domains it needs.
 - **`arg_sort_test`** (`arg_sort_constraint`): distinct values, many ties,
   0- and 1-based, single element, #254's degenerate arrays, negative values,
   separated domains (rule 7), tie-induced rank holes (rule 10), two `ArgSort`s
@@ -656,11 +657,30 @@ while the proofs were written; neither is in the tree.
 **What the tests do not cover.**
 
 - **Views.** No lane mixes them in.
-- **Holes,** for `Sort`'s per-node check. The root probe covers them.
+- **Holey initial domains,** for `Sort`'s per-node check; the root probe
+  covers them. Holes made by branching do reach the check: the shared test
+  brancher rejects random intervals (`value_order::reject_random_interval`),
+  and under the branching pair of `--seed=1` (`variable_order::random(p, 1)`,
+  `reject_random_interval(2)`) a `Sort` with `x` and `y` of length three in
+  `0..3` has a hole at 68 of its 84 trace callbacks, and at 38 to 68 of 70 to
+  84 across seeds 1, 2, 3, 7 and 42 (`holes.cc` and, for the seed range,
+  `holes_seed.cc`, in `tmp/fd-codex-1005/ordering/probes/`: standalone probes,
+  not counts from inside `sort_test`). Both the check and the sortedness
+  propagator read only bounds, so a hole matters there only where a pushed
+  bound lands past it. `sort_test` posts only the one `Sort`, so holes made by
+  another constraint are not exercised (`arg_sort_test`'s two `ArgSort`s
+  share no variable).
 - **`ArgSort` with repeated variables, offsets other than 0 and 1, or `p`
   domains wider than the index range,** in C++; MiniZinc's
   `argsortshapes.mzn` covers all three (a repeat, offsets −3 and 100, wider
-  `p`). **`p` domains with holes** are untested everywhere.
+  `p`). **Holey initial `p` domains** are untested everywhere. Holes in `p`
+  do arise during search, from `ArgSort`'s own propagators and from the test
+  brancher: an `ArgSort` with `x` of length three in `0..3` and `p` in `0..2`
+  has a hole in `p` at 17 of its 103 trace callbacks under the branching
+  pair of `--seed=1` (17 to 26 of 97 to 103 across seeds 1, 2, 3, 7 and 42,
+  `holes_seed.cc`), and at 12 of 21 under in-order smallest-first branching,
+  which makes none itself (`tmp/fd-codex-1005/ordering/probes/holes2.cc`).
+  `arg_sort_test` checks enumeration and proofs there, not consistency.
 - **A reified `sort`,** which MiniZinc still sends to the native builtin.
 - **`n` beyond five,** so neither the `Θ(n³)` root nor the `O(n³)` per-call
   searches show up as cost.
