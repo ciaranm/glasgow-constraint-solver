@@ -1,0 +1,19 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <array id="x" size="[4]"> 0..1 </array>
+    </variables>
+    <constraints>
+        <regular>
+            <list> x[] </list>
+            <transitions>
+                (q0, 0, q0)
+                (q0, 1, q0)
+                (q0, 1, q1)
+                (q1, 0, q1)
+                (q1, 1, q1)
+            </transitions>
+            <start> q0 </start>
+            <final> q1 </final>
+        </regular>
+    </constraints>
+</instance>

@@ -436,13 +436,16 @@ namespace
                 return idx;
             };
 
-            vector<unordered_map<Integer, long>> trans_table;
+            // XCSP3 allows a non-deterministic automaton, with several
+            // transitions on one symbol out of one state, so keep every target
+            // (issue #1204).
+            vector<unordered_map<Integer, set<long>>> trans_table;
             for (const auto & t : transitions) {
                 long from_idx = get_state(t.from);
                 long to_idx = get_state(t.to);
                 if (static_cast<size_t>(from_idx) >= trans_table.size())
                     trans_table.resize(from_idx + 1);
-                trans_table[from_idx].emplace(Integer{t.val}, to_idx);
+                trans_table[from_idx][Integer{t.val}].insert(to_idx);
             }
 
             vector<long> finals;

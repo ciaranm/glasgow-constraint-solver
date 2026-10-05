@@ -97,6 +97,16 @@ namespace gcs
             std::vector<IntegerVariableID> vars, long num_states, std::vector<std::vector<long>> transitions, std::vector<long> final_states);
 
         /**
+         * \brief Constrain that the sequence of variables is accepted by a
+         * possibly non-deterministic automaton: transitions[q] maps each value
+         * to the set of states reachable from q on it, and state 0 is the
+         * start. proof_strategy::Bacchus requires every such set to have at
+         * most one member.
+         */
+        explicit Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, std::set<long>>> transitions,
+            std::vector<long> final_states);
+
+        /**
          * \brief Constrain that the sequence of variables matches the given
          * regular expression. The expression is compiled to an NFA over the
          * contiguous min..max range of the variables' domains.

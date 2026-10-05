@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/require_bounded.hh>
+#include <gcs/constraints/regular/canonical_run.hh>
 #include <gcs/constraints/regular/hints.hh>
 #include <gcs/constraints/regular/regex.hh>
 #include <gcs/constraints/regular/regular.hh>
@@ -411,9 +412,11 @@ namespace
     //     chains plus earlier-layer dead flags), then everything left in
     //     descending layer order (uses OPB forward chains plus later-layer dead
     //     flags).
+    //     Skipped when the automaton is ambiguous, because
+    //     emit_regular_canonical_run() has emitted them already.
     auto emit_top_scaffolding(ProofLogger * const logger, const vector<IntegerVariableID> & vars, const long num_states,
         const vector<unordered_map<Integer, set<long>>> & transitions, const vector<vector<ProofFlag>> & state_at_pos_flags,
-        const State & initial_state, const vector<set<long>> & static_dead) -> void
+        const State & initial_state, const vector<set<long>> & static_dead, bool static_dead_already_emitted) -> void
     {
         auto num_vars = vars.size();
 
@@ -431,6 +434,11 @@ namespace
                 }
             }
         }
+
+        // emit_regular_canonical_run() has already derived every statically
+        // dead state flag.
+        if (static_dead_already_emitted)
+            return;
 
         // Forward-unreachable static dead states, in ascending layer order.
         logger->emit_proof_comment("Regular: forward-unreachable static dead states");
@@ -484,6 +492,12 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> trans
         for (size_t j = 0; j < transitions[i].size(); ++j)
             if (transitions[i][j] != -1L)
                 _transitions[i][Integer(j)].insert(transitions[i][j]);
+    _symbols = symbols_of(_transitions);
+}
+
+Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, set<long>>> t, vector<long> f) :
+    _vars(move(v)), _num_states(n), _transitions(move(t)), _final_states(move(f)), _regex(nullopt)
+{
     _symbols = symbols_of(_transitions);
 }
 
@@ -595,6 +609,8 @@ auto Regular::define_proof_model(ProofModel & model, const State &) -> void
     // state_at_pos_flags[i][q] means "after reading the first i symbols, the
     // automaton's chosen accepting run is in state q". Layer i takes input
     // vars[i] and produces layer i+1, with an extra row for the final state.
+    // Nothing here says which run is chosen when a word has two; for an
+    // ambiguous automaton the proof pins it (canonical_run.hh).
     auto & flags = _bridge->state_at_pos_flags;
     for (size_t idx = 0; idx <= _vars.size(); ++idx) {
         WPBSum exactly_1_true{};
@@ -644,17 +660,26 @@ auto Regular::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 
-    // Top-level scaffolding: per-val backward chains and static dead-state lines,
-    // derived once from the OPB encoding at search root. Pre-populates the
+    // Top-level scaffolding: for an ambiguous automaton the canonical run, then
+    // per-val backward chains and static dead-state lines, derived once from the
+    // OPB encoding at search root. Pre-populates the
     // per-subtree DeadCache so the propagator skips re-emission for
     // statically-dead states. In assertion mode the per-call inferences are
     // asserted under the typed hint, so the scaffolding is wasted output.
     propagators.install_initialiser([vars = _vars, ns = _num_states, t = _transitions, fs = _final_states, bridge = _bridge,
                                         dead_cache_handle = _dead_cache_idx](State & state, auto &, ProofLogger * const logger) -> void {
-        if (! logger || logger->get_assertion_level() != AssertionLevel::Off)
+        if (! logger)
+            return;
+        // An ambiguous automaton's state flags need pinning to one run before
+        // anything else mentions them, whatever the assertion level, because
+        // solution lines depend on it (issue #1203).
+        bool ambiguous = regular_is_ambiguous(vars, t, fs, state);
+        if (ambiguous)
+            emit_regular_canonical_run(*logger, vars, ns, t, fs, bridge->state_at_pos_flags, state);
+        if (logger->get_assertion_level() != AssertionLevel::Off)
             return;
         bridge->static_dead = compute_static_dead(vars, ns, t, fs, state);
-        emit_top_scaffolding(logger, vars, ns, t, bridge->state_at_pos_flags, state, bridge->static_dead);
+        emit_top_scaffolding(logger, vars, ns, t, bridge->state_at_pos_flags, state, bridge->static_dead, ambiguous);
         auto & cache = any_cast<DeadCache &>(state.get_constraint_state(dead_cache_handle));
         for (size_t i = 0; i < bridge->static_dead.size(); ++i)
             cache.dead[i].insert(bridge->static_dead[i].begin(), bridge->static_dead[i].end());
