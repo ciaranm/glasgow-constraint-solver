@@ -177,7 +177,7 @@ add_xcsp_refusal_test(range_tuple_int_max "cannot be told apart from the wildcar
 # The parser's own std::stoi refusing a condition value, which used to abort.
 add_xcsp_refusal_test(range_condition_past_int32 "stoi")
 # Arithmetic over in-range values that does not fit, which used to abort.
-add_xcsp_refusal_test(range_sum_overflow "Integer overflow")
+add_xcsp_refusal_test(range_sum_overflow "does not fit in an Integer")
 add_xcsp_test(slide)
 add_xcsp_test(sum_not_equals)
 # <sum> with ne against a nonzero constant and against a variable. Both used to

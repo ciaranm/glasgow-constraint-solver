@@ -14,6 +14,7 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
+#include <gcs/innards/wide_sum.hh>
 
 #include <gcs/proof.hh>
 #include <util/enumerate.hh>
@@ -92,7 +93,8 @@ namespace
                 // we still don't know whether the condition holds. if we're down to a single unassigned
                 // variable, we might have some information.
                 auto single_unset = sanitised_cv.terms.end();
-                Integer accum = 0_i;
+                // Exact, so that the order the fixed terms come in cannot overflow it.
+                WideSum accum;
                 for (auto i = sanitised_cv.terms.begin(), i_end = sanitised_cv.terms.end(); i != i_end; ++i) {
                     auto val = state.optional_single_value(get_var(*i));
                     if (val)
@@ -123,11 +125,11 @@ namespace
                 }
                 else {
                     // exactly one thing remaining. perhaps the value that would make the equality
-                    // work doesn't occur in its domain?
-                    Integer residual = value - accum;
-                    if (0_i == residual % get_coeff(*single_unset)) {
-                        Integer would_make_equal = residual / get_coeff(*single_unset);
-                        if (! state.in_domain(get_var(*single_unset), would_make_equal)) {
+                    // work doesn't occur in its domain? The residual can be past
+                    // Integer's range and still have an Integer quotient, when the
+                    // coefficient is large.
+                    if (auto would_make_equal = (WideSum{value} - accum).divided_exactly_by(get_coeff(*single_unset))) {
+                        if (! state.in_domain(get_var(*single_unset), *would_make_equal)) {
                             // no way for the remaining variable to take that value, so the condition
                             // has to be false
                             if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
@@ -192,7 +194,7 @@ auto ReifiedLinearEquality::prepare(Propagators &, State & initial_state, ProofM
         auto n_terms = visit([](const auto & cv) { return cv.terms.size(); }, _sanitised);
         auto may_hold = holds_alternative<evaluated_reif::MustHold>(_evaluated_cond) || holds_alternative<evaluated_reif::Undecided>(_evaluated_cond);
         if (may_hold && n_terms >= _incremental_threshold.value_or(default_linear_incremental_threshold()))
-            _incremental_handle = initial_state.add_constraint_state(LinearIncrementalState{n_terms, 0_i});
+            _incremental_handle = initial_state.add_constraint_state(LinearIncrementalState{n_terms, WideSum{}});
     }
 
     return true;
@@ -290,8 +292,11 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                 // reification handling in reify_tabulation; all that is ours
                 // is the base acceptance test over the term positions, and
                 // solving the equality for each term as the determined values.
+                // Summed exactly, so a candidate whose partial sums leave
+                // Integer's range is judged by its total, which is what decides
+                // whether it is a tuple.
                 auto base_accept = [coeff_vars = sanitised_cv, value = _value + modifier](const vector<Integer> & current) -> bool {
-                    Integer actual_value{0_i};
+                    WideSum actual_value;
                     for (const auto & [idx, cv] : enumerate(coeff_vars.terms))
                         actual_value += get_coeff(cv) * current[idx];
                     return actual_value == value;
@@ -307,14 +312,14 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                 for (const auto & [idx, cv] : enumerate(sanitised_cv.terms))
                     determined.push_back({get_var(cv),
                         [coeff_vars = sanitised_cv, value = _value + modifier, idx = idx](const vector<Integer> & current) -> optional<Integer> {
-                            Integer other{0_i};
+                            WideSum other;
                             for (const auto & [jdx, cw] : enumerate(coeff_vars.terms))
                                 if (jdx != idx)
                                     other += get_coeff(cw) * current[jdx];
-                            auto coeff = get_coeff(coeff_vars.terms[idx]);
-                            if ((value - other) % coeff != 0_i)
-                                return nullopt;
-                            return (value - other) / coeff;
+                            // The remainder can be past Integer's range and
+                            // still have an Integer quotient, when the
+                            // coefficient is large.
+                            return (WideSum{value} - other).divided_exactly_by(get_coeff(coeff_vars.terms[idx]));
                         }});
 
                 auto reified = reify_tabulation(_reif_cond, enum_vars, base_accept, move(determined));

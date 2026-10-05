@@ -1,5 +1,6 @@
 #include <gcs/constraints/difference/difference_simplify.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/wide_sum.hh>
 
 #include <algorithm>
 #include <optional>
@@ -112,13 +113,30 @@ auto gcs::innards::simplify_difference_graph(size_t n, const vector<DifferenceSi
     // source's edge set, exactly as the propagator's own passes seed from the
     // current bounds. It both detects root infeasibility and leaves
     // h(v) = wSP(v0, v), which is a valid potential function.
+    //
+    // Every relaxed value is the weight of some walk from v0. Without a negative
+    // cycle each is at least the weight of a shortest *simple* path, which uses
+    // each edge at most once and so weighs at least the sum of the negative
+    // weights. A value below that floor is therefore also sound evidence of a
+    // negative cycle, and stopping there keeps a cycle being relaxed round after
+    // round from running its potentials out of Integer's range first
+    // (dev_docs/integer-ranges.md).
+    WideSum floor;
+    for (auto e : base)
+        if (edges[e].d < 0_i)
+            floor += edges[e].d;
+
     vector<Integer> h(n, 0_i);
     for (size_t round = 0; round <= n; ++round) {
         bool changed = false;
         for (auto e : base) {
-            auto candidate = h[edges[e].from] + edges[e].d;
+            auto candidate = WideSum{h[edges[e].from]} + edges[e].d;
             if (candidate < h[edges[e].to]) {
-                h[edges[e].to] = candidate;
+                if (candidate < floor) {
+                    outcome.base_negative_cycle = true;
+                    return outcome;
+                }
+                h[edges[e].to] = candidate.narrow_or_throw("a difference-logic shortest path");
                 changed = true;
             }
         }
@@ -171,6 +189,12 @@ auto gcs::innards::simplify_difference_graph(size_t n, const vector<DifferenceSi
         count_zero_weight_cycles(n, zero_out, outcome.zero_weight_cycles, outcome.nodes_on_zero_weight_cycles);
     }
 
+    // The lowest potential, which bounds how far a path's real weight can fall
+    // below its reduced distance (see the pruning below).
+    Integer min_h = 0_i;
+    for (auto v : h)
+        min_h = min(min_h, v);
+
     vector<optional<Integer>> dist(n, nullopt);
     vector<optional<size_t>> parent(n, nullopt);
     vector<size_t> touched;
@@ -191,6 +215,22 @@ auto gcs::innards::simplify_difference_graph(size_t n, const vector<DifferenceSi
         }
         touched.clear();
 
+        // The distances from s only matter up to a threshold: an edge s --d--> v
+        // is redundant only if the distance to v is at most d, and a candidate
+        // u --d--> s closes a negative cycle only if the distance to u is at
+        // most -d - 1. A path's real weight is its reduced distance - h(s) +
+        // h(end), at least reduced - h(s) + min_h, and reduced distances only
+        // grow along a path, so once that lower bound passes the threshold
+        // neither the path nor any extension of it can matter. Leaving it
+        // unexplored is then exactly as if it were absent, and keeps a long
+        // chain of heavy edges from summing past Integer's range for nothing.
+        WideSum threshold{Integer::min_value()};
+        for (auto e : edges_from[s])
+            threshold = std::max(threshold, WideSum{edges[e].d});
+        for (auto e : candidates_to[s])
+            threshold = std::max(threshold, -WideSum{edges[e].d} - 1_i);
+        auto beyond_threshold = [&](const WideSum & reduced_distance) { return reduced_distance - h[s] + min_h > threshold; };
+
         dist[s] = 0_i;
         touched.push_back(s);
         queue.emplace(0_i, s);
@@ -201,7 +241,10 @@ auto gcs::innards::simplify_difference_graph(size_t n, const vector<DifferenceSi
                 continue;
             for (auto e : out[v]) {
                 auto w = edges[e].to;
-                auto candidate = reduced_distance + reduced[e];
+                auto wide_candidate = WideSum{reduced_distance} + reduced[e];
+                if (beyond_threshold(wide_candidate))
+                    continue;
+                auto candidate = wide_candidate.narrow_or_throw("a difference-logic shortest path");
                 if (! dist[w] || candidate < *dist[w]) {
                     if (! dist[w])
                         touched.push_back(w);

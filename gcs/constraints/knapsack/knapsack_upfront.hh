@@ -36,6 +36,16 @@ namespace gcs::innards
         std::vector<IntegerVariableID> totals) -> std::shared_ptr<KnapsackUpfrontData>;
 
     /**
+     * Whether every partial sum the upfront strategy's static DAG holds fits in
+     * an Integer: for each row, the sum of every item's largest contribution.
+     * When it does not, the DAG cannot be built at all, which is a limit of the
+     * strategy's scaffolding rather than of the constraint, so Knapsack::prepare()
+     * falls back to the per-call DP when no proof is being written.
+     */
+    [[nodiscard]] auto knapsack_upfront_partial_sums_fit(
+        const State & initial_state, const std::vector<std::vector<Integer>> & coeffs, const std::vector<IntegerVariableID> & vars) -> bool;
+
+    /**
      * \brief Emit the per-equation totals equalities, recording their lines for the
      * propagator's pol steps. Knapsack::define_proof_model() calls this.
      */
