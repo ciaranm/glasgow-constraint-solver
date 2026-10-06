@@ -85,6 +85,7 @@ using std::shared_ptr;
 using std::string;
 using std::to_string;
 using std::vector;
+using std::ranges::any_of;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::println;
@@ -1134,7 +1135,8 @@ auto main(int argc, char * argv[]) -> int
         const vector<string> expected_names{"donors_seen", "tasks", "covers_considered", "lifting_subproblems", "lifting_subproblems_over_budget",
             "cuts_found", "cuts_uncertifiable", "cuts_posted", "non_unit_cuts_posted", "multi_resource_cuts_posted", "restricted_rows_rebuilt",
             "largest_capacity_bound", "certified_makespan_bound", "declined_irreducible_capacity", "donors_with_set_aside_tasks", "converted_heights",
-            "dropped_dominated", "dropped_over_budget", "dropped_over_state_budget", "declined_by_install"};
+            "dropped_dominated", "dropped_over_budget", "dropped_over_state_budget", "declined_by_install", "split_by_disagreeing_length",
+            "makespan_bounds_not_improving"};
         if (names_of(InferredCumulativeStats{}) != expected_names)
             fail("the flat view is [" + joined(names_of(InferredCumulativeStats{})) + "], expected [" + joined(expected_names) +
                 "]. These names are public, so this is a user-visible change and not a tidy-up.");
@@ -1242,6 +1244,82 @@ auto main(int argc, char * argv[]) -> int
                 fail("the Important note does not say what was cut short, or what it costs: " + important[0].text);
 
             println(cerr, "diagnostics: Important note is `{}`", important[0].text);
+        }
+
+        // Ordinary spellings of the same model that cost the makespan bound or
+        // the cross-resource columns, each now saying so in a General note
+        // (#1257), and the canonical spelling saying none of it. The fixture is
+        // lifted_instance_with_spare with a makespan the presolver is told of.
+        {
+            auto spelled = [&](const string & spelling, shared_ptr<InferredCumulativeStats> stats) -> Recorded {
+                const auto instance = lifted_instance_with_spare(13);
+                Problem p;
+                auto makespan = p.create_integer_variable(0_i, Integer{instance.horizon}, "makespan");
+                vector<IntegerVariableID> starts, lengths, other_lengths, heights;
+                for (size_t i = 0; i < instance.demands.size(); ++i) {
+                    starts.push_back(p.create_integer_variable(0_i, Integer{instance.horizon} - instance.lengths[i]));
+                    // A length declared as a variable with one value is the
+                    // same duration, but not a constant by type.
+                    if (spelling == "one_value" || spelling == "split")
+                        lengths.push_back(p.create_integer_variable(instance.lengths[i], instance.lengths[i]));
+                    else
+                        lengths.push_back(constant_variable(instance.lengths[i]));
+                    other_lengths.push_back(spelling == "split"
+                            ? IntegerVariableID{p.create_integer_variable(instance.lengths[i], instance.lengths[i])}
+                            : lengths.back());
+                    heights.push_back(constant_variable(instance.demands[i]));
+                    // An end variable between the start and the makespan, which
+                    // find_makespan_links does not look through.
+                    if (spelling == "end_vars") {
+                        auto end = p.create_integer_variable(0_i, Integer{instance.horizon});
+                        p.post(LinearEquality{WeightedSum{} + 1_i * end + -1_i * starts.back(), instance.lengths[i]});
+                        p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * makespan + -1_i * end, 0_i});
+                    }
+                    else
+                        p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * makespan + -1_i * starts.back(), instance.lengths[i]});
+                }
+                p.post(Cumulative{starts, lengths, heights, constant_variable(instance.capacity)});
+                // A second resource over the same tasks, giving each a length
+                // variable of its own under "split".
+                if (spelling == "split")
+                    p.post(
+                        Cumulative{starts, other_lengths, vector<IntegerVariableID>(starts.size(), constant_variable(1_i)), constant_variable(4_i)});
+                p.add_presolver(InferredCumulative{stats}.with_makespan(makespan));
+                p.minimise(makespan);
+                return solve_recording(p);
+            };
+            auto has_general = [&](const Recorded & recorded, const string & fragment) {
+                return any_of(
+                    notes_at(recorded, StatsLevel::General), [&](const StatsNote & note) { return string::npos != note.text.find(fragment); });
+            };
+            const string unlinked = "have no row saying they finish by the makespan", variable_length = "have a length that is not a constant",
+                         split = "under different length variables";
+
+            auto canonical_stats = make_shared<InferredCumulativeStats>();
+            auto canonical = spelled("canonical", canonical_stats);
+            if (canonical_stats->certified_makespan_bound == 0_i)
+                fail("spellings: the canonical model certified no makespan bound, so it is no control");
+            for (const auto & fragment : {unlinked, variable_length, split})
+                if (has_general(canonical, fragment))
+                    fail("spellings: the canonical model was told `" + fragment + "`");
+
+            auto end_stats = make_shared<InferredCumulativeStats>();
+            auto end_vars = spelled("end_vars", end_stats);
+            if (! has_general(end_vars, unlinked))
+                fail("spellings: an end-variable model was not told its tasks have no makespan row");
+            if (end_stats->certified_makespan_bound != 0_i || end_stats->makespan_bounds_not_improving == 0)
+                fail("spellings: the end-variable model's makespan argument was expected to reach nothing better");
+            if (string::npos == end_stats->summary().find("certified no bound better"))
+                fail("spellings: the end-variable model's summary reports a capacity bound and not why none was certified: " + end_stats->summary());
+
+            auto one_value = spelled("one_value", make_shared<InferredCumulativeStats>());
+            if (! has_general(one_value, variable_length))
+                fail("spellings: a model with one-value length variables was not told the makespan bound leaves them out");
+
+            auto split_stats = make_shared<InferredCumulativeStats>();
+            auto split_lengths = spelled("split", split_stats);
+            if (! has_general(split_lengths, split) || split_stats->split_by_disagreeing_length == 0)
+                fail("spellings: a model whose resources name different length variables was not told its columns are split");
         }
     }
     println(cerr, "the report and the notes say what happened, at the level for who is reading");

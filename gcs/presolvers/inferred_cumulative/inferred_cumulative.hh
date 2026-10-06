@@ -145,6 +145,12 @@ namespace gcs
          */
         Integer certified_makespan_bound{0};
 
+        /// Posted constraints whose makespan argument had tasks to count but
+        /// reached nothing better than the makespan already had --- because
+        /// the model, or a presolver that ran first, had raised it (#1257).
+        /// Why a capacity bound can be reported with no certified bound.
+        std::size_t makespan_bounds_not_improving = 0;
+
         /**
          * \name Why a candidate or a donor was passed over.
          */
@@ -179,6 +185,11 @@ namespace gcs
         /// here is a certificate this could not afford rather than one it could
         /// not find.
         std::size_t dropped_over_state_budget = 0;
+        /// Tasks that appear in more than one posted Cumulative under the same
+        /// start and presence but different length variables, and so are
+        /// different columns: no cut can join those resources over them
+        /// (#1257). Sound, but a spelling of the model costing strength.
+        std::size_t split_by_disagreeing_length = 0;
         std::size_t declined_by_install = 0;
         ///@}
 
@@ -343,6 +354,12 @@ namespace gcs
          * the tasks with no link their energy and makes the bound *weaker*. It
          * is not a promise VeriPB is holding you to, and there is no shape of
          * input here that produces a rejected derivation.
+         *
+         * Such a model is told so, in a General note (#1257): how many of the
+         * posted constraints' tasks have no link row, and how many have a
+         * length that is not a constant by type --- a variable with one value
+         * included --- which the bound leaves out. A summary that reports a
+         * capacity bound with none certified says so too.
          */
         auto with_makespan(IntegerVariableID makespan) -> InferredCumulative &;
 

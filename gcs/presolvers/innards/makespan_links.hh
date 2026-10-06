@@ -6,8 +6,10 @@
 #include <gcs/problem-fwd.hh>
 #include <gcs/variable_id.hh>
 
+#include <cstddef>
 #include <map>
 #include <optional>
+#include <string>
 
 namespace gcs::innards
 {
@@ -47,6 +49,21 @@ namespace gcs::innards
      */
     [[nodiscard]] auto find_makespan_links(const Problem &, const ProofLogger * const, IntegerVariableID makespan)
         -> std::map<IntegerVariableID, makespan_energy::MakespanLink>;
+
+    /**
+     * \brief What a presolver that was given a makespan says about how much of
+     * what it posted the makespan bound can use (#1257), or nothing when all
+     * of it can.
+     *
+     * Of `members` tasks in the posted constraints, `unlinked` have no row
+     * find_makespan_links found, which leaves each only what its own domain
+     * gives, and `variable_length` have a length that is not a constant by
+     * type, which the bound leaves out altogether. Both are spellings of an
+     * ordinary model --- an end variable between the start and the makespan,
+     * a length declared as a one-value variable --- so the bound comes out
+     * weaker, or zero, with nothing else saying why.
+     */
+    [[nodiscard]] auto makespan_coverage_note(std::size_t members, std::size_t unlinked, std::size_t variable_length) -> std::optional<std::string>;
 }
 
 #endif

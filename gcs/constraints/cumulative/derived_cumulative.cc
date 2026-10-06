@@ -351,7 +351,8 @@ auto gcs::innards::install_derived_cumulative(
 
         propagators.install_initialiser(
             [inputs, energy_tasks, energy_presences, makespan = *spec.makespan, capacity = spec.capacity, mutation = spec.makespan_mutation,
-                reached = spec.makespan_bound_reached, rows_lo = std::ranges::min(windows, {}, &CumulativeTaskWindow::lo).lo,
+                reached = spec.makespan_bound_reached, not_improving = spec.makespan_bound_not_improving,
+                rows_lo = std::ranges::min(windows, {}, &CumulativeTaskWindow::lo).lo,
                 derived_stats = spec.stats](const State & state, auto & inference, ProofLogger * const logger) -> void {
                 // An optional task's length x height is guaranteed work only
                 // once it is known present, and at the root it usually is not.
@@ -395,8 +396,11 @@ auto gcs::innards::install_derived_cumulative(
 
                 auto bound =
                     makespan_energy::makespan_energy_bound(counted, capacity, inputs->time_slot_prefix, inputs->time_slot_lo, known, makespan_hi);
-                if (! bound)
+                if (! bound) {
+                    if (not_improving)
+                        not_improving();
                     return;
+                }
 
                 if (reached)
                     reached(bound->bound);

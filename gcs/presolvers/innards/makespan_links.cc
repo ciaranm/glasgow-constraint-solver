@@ -5,6 +5,7 @@
 #include <gcs/problem.hh>
 
 #include <optional>
+#include <string>
 #include <variant>
 
 using namespace gcs;
@@ -12,6 +13,8 @@ using namespace gcs::innards;
 
 using std::map;
 using std::optional;
+using std::string;
+using std::to_string;
 
 auto gcs::innards::find_makespan_links(const Problem & problem, const ProofLogger * const logger, IntegerVariableID makespan)
     -> map<IntegerVariableID, makespan_energy::MakespanLink>
@@ -111,4 +114,19 @@ auto gcs::innards::find_makespan_links(const Problem & problem, const ProofLogge
     }
 
     return links;
+}
+
+auto gcs::innards::makespan_coverage_note(std::size_t members, std::size_t unlinked, std::size_t variable_length) -> optional<string>
+{
+    if (0 == unlinked && 0 == variable_length)
+        return std::nullopt;
+    string text = "of the " + to_string(members) + " tasks in the inferred constraints, ";
+    if (0 != unlinked)
+        text += to_string(unlinked) + " have no row saying they finish by the makespan, which weakens the makespan bound";
+    if (0 != unlinked && 0 != variable_length)
+        text += ", and ";
+    if (0 != variable_length)
+        text += to_string(variable_length) +
+            " have a length that is not a constant, which the makespan bound leaves out altogether (a variable with one value counts here too)";
+    return text;
 }
