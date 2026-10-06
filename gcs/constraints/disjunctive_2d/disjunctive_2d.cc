@@ -687,6 +687,13 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             Triggers projection_triggers;
             for (const auto & start : _projection[time_axis]->starts)
                 projection_triggers.on_bounds.emplace_back(start);
+            // And on a presence being decided, as a posted Cumulative does: the
+            // propagator counts a task only once it is present, so a projection
+            // that waited for a start bound to move missed a rectangle that had
+            // just become present (#1252).
+            for (const auto & presence : _projection[time_axis]->presence)
+                if (presence && ! is_constant_variable(*presence))
+                    projection_triggers.on_instantiated.emplace_back(*presence);
             propagators.install(
                 constraint_id(),
                 [inputs = _projection[time_axis]](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
@@ -903,11 +910,16 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             relaxation_size_floor = move(_relaxation_size_floor), relaxation_row_fits = _relaxation_row_fits,
             overload_cache = std::make_shared<RelaxationOverloadCache>(), mutation = _mutation,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            // Pairwise 2D time-table. The mandatory box of rectangle i is
-            //   [ub(x_i), lb(x_i)+lb(w_i)) x [ub(y_i), lb(y_i)+lb(h_i))
-            // -- the cells it must occupy regardless of where it is placed (a
-            // variable size uses its minimum). Two rectangles whose mandatory
-            // boxes overlap on both axes is infeasible.
+            // Pairwise 2D time-table, in its forbidden-region form. On an axis,
+            // write lst_i = ub(pos_i) and eet_i = lb(pos_i) + lb(size_i) (a
+            // variable size uses its minimum). Rectangle i cannot entirely
+            // precede j on that axis when eet_i > lst_j, and that is exactly
+            // what the before flag's pol below refutes; so when neither can
+            // precede the other, lst_i < eet_j and lst_j < eet_i, the pair
+            // overlaps on that axis whatever the placements. Neither rectangle
+            // needs a mandatory part of its own for that: one whose range of
+            // placements covers the other's mandatory part is caught too
+            // (#1250). Two rectangles that overlap on both axes is infeasible.
             auto wlb = [&](size_t i) { return state.lower_bound(width_var[i]); };
             auto hlb = [&](size_t i) { return state.lower_bound(height_var[i]); };
             auto w_is_var = [&](size_t i) { return ! is_constant_variable(width_var[i]); };
@@ -1004,7 +1016,10 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     continue;
                 auto [lst_xi, eet_xi] = mand(xs[i], wlb(i));
                 auto [lst_yi, eet_yi] = mand(ys[i], hlb(i));
-                if (lst_xi >= eet_xi || lst_yi >= eet_yi)
+                // Non-strict: a rectangle that can still be zero-sized escapes
+                // the separation clause, and its escape is pinned false from
+                // `size >= 1` under the reason, so it has to be at least one.
+                if (! strict && (wlb(i) < 1_i || hlb(i) < 1_i))
                     continue;
                 for (size_t b = a + 1; b < active_rects.size(); ++b) {
                     auto j = active_rects[b];
@@ -1012,10 +1027,10 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         continue;
                     auto [lst_xj, eet_xj] = mand(xs[j], wlb(j));
                     auto [lst_yj, eet_yj] = mand(ys[j], hlb(j));
-                    if (lst_xj >= eet_xj || lst_yj >= eet_yj)
+                    if (! strict && (wlb(j) < 1_i || hlb(j) < 1_i))
                         continue;
-                    auto x_overlap = max(lst_xi, lst_xj) < min(eet_xi, eet_xj);
-                    auto y_overlap = max(lst_yi, lst_yj) < min(eet_yi, eet_yj);
+                    auto x_overlap = lst_xi < eet_xj && lst_xj < eet_xi;
+                    auto y_overlap = lst_yi < eet_yj && lst_yj < eet_yi;
                     // Both undecided: the pair cannot both be there, but that
                     // is a two-literal fact with no single-variable conclusion
                     // to record, so leave it to whichever presence is decided
@@ -1085,14 +1100,14 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 }
             }
 
-            // Pairwise bound pushes. A pair whose mandatory parts overlap on one
-            // axis (the "forced" axis) must separate on the other (the "free"
-            // axis) -- no pair overlaps on both, since the contradiction pass
-            // returned otherwise. So the pushed rectangle is moved clear of the
-            // blocker's mandatory part on the free axis: a 1D single-blocker
+            // Pairwise bound pushes. A pair that overlaps on one axis, in the
+            // sense above (the "forced" axis), must separate on the other (the
+            // "free" axis) -- no pair overlaps on both, since the contradiction
+            // pass returned otherwise. So the pushed rectangle is moved clear of
+            // the blocker's mandatory part on the free axis: a 1D single-blocker
             // disjunctive push. The justification is six pols: two eliminate
-            // the forced-axis precedences (both refuted by the mandatory
-            // overlap), and the free-axis dichotomy is the 1D chain step --
+            // the forced-axis precedences (both refuted by the overlap), and
+            // the free-axis dichotomy is the 1D chain step --
             // the impossible free direction refuted from the pushed bound, the
             // surviving direction folded onto the target order literal's
             // definition row -- so with the escapes pinned the 4-way clause
@@ -1217,8 +1232,13 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     auto [lst_yi, eet_yi] = mand(ys[i], hlb(i));
                     auto [lst_xj, eet_xj] = mand(xs[j], wlb(j));
                     auto [lst_yj, eet_yj] = mand(ys[j], hlb(j));
-                    bool x_overlap = max(lst_xi, lst_xj) < min(eet_xi, eet_xj);
-                    bool y_overlap = max(lst_yi, lst_yj) < min(eet_yi, eet_yj);
+                    // Every escape is pinned, as above. With mandatory parts
+                    // required this was implied: a push needs a size of at
+                    // least one on all four sides anyway.
+                    if (! strict && (wlb(i) < 1_i || hlb(i) < 1_i || wlb(j) < 1_i || hlb(j) < 1_i))
+                        continue;
+                    bool x_overlap = lst_xi < eet_xj && lst_xj < eet_xi;
+                    bool y_overlap = lst_yi < eet_yj && lst_yj < eet_yi;
                     if (x_overlap) {
                         push_axis(false, i, j); // free axis = y
                         push_axis(false, j, i);
