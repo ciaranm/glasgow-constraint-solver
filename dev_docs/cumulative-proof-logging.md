@@ -2005,7 +2005,8 @@ before it, so checking every start checks every peak. Lengths, heights
 and the capacity are all non-negative already, so a checkpoint with
 nothing active is *satisfied* rather than merely vacuous.
 
-`CumulativeEncoding` selects which is written, and since #943 only one
+`innards::CumulativeEncoding` selects which is written (an innards type,
+for tests, since #1238), and since #943 only one
 of them ships. `StartCheckpoint` writes the checkpoints *instead* of the
 per-time family, and is the default --- it arrived once the recovery
 did, since before that an unconverted inference would have had no

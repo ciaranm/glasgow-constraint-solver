@@ -273,7 +273,9 @@ if(GCS_BUILD_TESTS)
     # recovery emits a line veripb accepts, and only the implication check
     # against ground truth rejects it. It is also the only reason the
     # time-indexed emitter is still compiled --- it is a test fixture, not an
-    # encoding, and no solve and no .scp can select it.
+    # encoding, and no .scp can select it. Only innards::CumulativeEncoding
+    # does, through Cumulative::with_encoding or the GCS_CUMULATIVE_ENCODING
+    # diagnostic, which every binary honours (#1238).
     #
     # Mutation lanes do not get the arm. The recovery puts more in the database
     # for unit propagation to reach, so a corrupted proof veripb rejects against
