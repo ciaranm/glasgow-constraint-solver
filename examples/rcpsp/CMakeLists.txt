@@ -123,6 +123,24 @@ add_test(NAME rcpsp_rule_counters_on COMMAND ${CMAKE_COMMAND} -E env GCS_SCHEDUL
 set_tests_properties(rcpsp_rule_counters_on PROPERTIES PASS_REGULAR_EXPRESSION
     "disjunctive_edge_finding_lb: calls=[1-9][0-9]* firings=[1-9][0-9]* already_true=[1-9][0-9]* contradictions=0")
 
+# The same pairing for the elastic overload rungs' own rows (#1236), over
+# Cumulative resources. On this instance each rung refutes thousands of nodes
+# when it is on.
+add_test(NAME rcpsp_rule_counters_elastic_off COMMAND ${CMAKE_COMMAND} -E env GCS_SCHEDULING_RULE_STATS=1
+    $<TARGET_FILE:rcpsp> --size 16 --seed 7)
+set_tests_properties(rcpsp_rule_counters_elastic_off PROPERTIES PASS_REGULAR_EXPRESSION
+    "cumulative_overload_elastic: calls=0 firings=0 already_true=0 contradictions=0")
+
+add_test(NAME rcpsp_rule_counters_elastic_on COMMAND ${CMAKE_COMMAND} -E env GCS_SCHEDULING_RULE_STATS=1
+    $<TARGET_FILE:rcpsp> --size 16 --seed 7 --cumulative-elastic-overload)
+set_tests_properties(rcpsp_rule_counters_elastic_on PROPERTIES PASS_REGULAR_EXPRESSION
+    "cumulative_overload_elastic: calls=[1-9][0-9]* firings=0 already_true=0 contradictions=[1-9][0-9]*")
+
+add_test(NAME rcpsp_rule_counters_knapsack_on COMMAND ${CMAKE_COMMAND} -E env GCS_SCHEDULING_RULE_STATS=1
+    $<TARGET_FILE:rcpsp> --size 16 --seed 7 --cumulative-knapsack-overload)
+set_tests_properties(rcpsp_rule_counters_knapsack_on PROPERTIES PASS_REGULAR_EXPRESSION
+    "cumulative_overload_knapsack: calls=[1-9][0-9]* firings=0 already_true=0 contradictions=[1-9][0-9]*")
+
 # The job-shop reader, where *every* resource has capacity one. This is the only
 # instance format here that posts a Disjunctive per resource, because no RCPSP
 # collection in circulation has a unary resource at all --- which is why the
