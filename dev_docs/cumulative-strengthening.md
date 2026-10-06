@@ -218,7 +218,7 @@ Step 3 has to happen before step 4 and not after: a raise keeps whatever right
 hand side it is given and can raise a coefficient no higher, so a row left on a
 smaller `kappa_t` would neither reach `kappa` nor pin to it.
 
-### Why step 4 is a loop
+### Step 4, by contradiction (#1242)
 
 Given the row `c·a_i + sum_k w_k·a_k <= R` and the at-most-ones tying `i` to each
 `k`, one `pol` raises `c` by `k` while keeping `R`: take `lambda` copies of the
@@ -231,17 +231,27 @@ round through, so the step lands back on `R` exactly when
     k · (T − R)  <  T − c
 ```
 
-That bound is the whole of it. When the rest of the row only just overshoots the
-capacity — `T − R = 1` — one step raises all the way. When it overshoots by half,
-the steps are of size one and the raise costs a `pol` per unit of `kappa`. And no
-single `lambda`, `e`, divisor and set of weakenings does better: asking for the
-whole raise at once forces `(k − 1)·(T − R − 1) < 1`, which is why the loop is
-there and not a tidier one-shot. Hence `with_raise_budget`, which caps the lines
-this may spend on a donor; `raise_steps()` computes the same sequence for the
-budget and for the derivation, since a prediction that disagreed would decline the
-wrong donors.
+When the rest of the row only just overshoots the capacity — `T − R = 1` — one
+step raises all the way. When it overshoots by half, the steps are of size one
+and the raise costs a `pol` per unit of `kappa`. And no single `lambda`, `e`,
+divisor and set of weakenings does better: asking for the whole raise at once
+forces `(k − 1)·(T − R − 1) < 1`. That was a loop, and a budget on the lines it
+could spend, until #1242.
 
-Two ends of the loop are not the loop:
+A proof by contradiction does the whole raise in one rule step, whatever
+`kappa` is: `red` the goal `kappa·a_i + sum_k w_k·a_k <= kappa` with an empty
+witness, and in its subproof
+
+1. add the row `sum_k w_k·a_k <= kappa` to the negated goal and saturate, which
+   leaves `a_i >= 1`;
+2. `rup >= 1`: `a_i = 1` sets every `a_k` to zero through the at-most-ones,
+   which are derived first, and the negated goal then reads
+   `kappa >= kappa + 1`.
+
+So a raise costs one line plus its at-most-ones, which are bounded by the
+tasks present, and there is nothing left to budget.
+
+Two ends of the raise need no subproof:
 
 - `T <= kappa` — everything else fits alongside — needs no division at all. The
   at-most-ones summed *are* the row, at a right hand side of `T`, which one `ia`
@@ -253,11 +263,12 @@ Two ends of the loop are not the loop:
 
 ### What the pin catches, and what nothing catches
 
-Every step above is sound whatever it is fed, so a wrong margin, a wrong step
-size or a missing weakening all land on lines that are true and simply weaker
-than intended. The row's closing `ia` step is what rejects them, and the
-`RaiseTooFast` mutation is exactly that: one step past the bound, the degree
-rounds down instead of up, and every later step compounds it.
+Every step above is sound whatever it is fed, so a wrong margin or a missing
+weakening lands on a line that is true and simply weaker than intended, and the
+row's closing `ia` step is what rejects it. A raise claimed too high is caught
+earlier, by the subproof itself: the `RaiseTooFast` mutation claims the
+coefficient at `kappa + 1`, and with the task on and every other task off the
+negated claim still holds, so the closing RUP is rejected.
 
 What no proof can catch is the *set*. If a task that does not conflict with
 everything is raised anyway, the derivation runs honestly and the row it lands on
@@ -426,8 +437,8 @@ reasoning is on. So:
 7. **Mutations**, each corrupting the *conclusion* rather than the route to it,
    which is what a rule whose content is a number needs: `ClaimOneBetter` claims
    one below the largest reachable load, `BogusDivisor` rounds by a divisor that
-   does not divide every height, `RaiseTooFast` takes one step past the bound the
-   division survives, and `RaiseUnentitled` raises a task that does not qualify.
+   does not divide every height, `RaiseTooFast` claims a raised coefficient one
+   above the strengthened capacity, and `RaiseUnentitled` raises a task that does not qualify.
    VeriPB rejects each.
 
 <!-- vim: set tw=72 spell spelllang=en : -->

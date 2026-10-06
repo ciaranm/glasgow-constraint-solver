@@ -218,7 +218,6 @@ namespace
         optional<CumulativeRules> derived_rules = nullopt;
         CumulativeStrengtheningMutation mutation = cumulative_strengthening_mutation::None{};
         long long budget = 20000;
-        long long raise_budget = 5000;
         shared_ptr<CumulativeStrengtheningStats> stats = nullptr;
     };
 
@@ -237,7 +236,7 @@ namespace
         p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(setup.rules));
         if (setup.presolve) {
             auto presolver = CumulativeStrengthening{setup.stats};
-            presolver.with_dynamic_programming_budget(setup.budget).with_raise_budget(setup.raise_budget).with_proof_mutation(setup.mutation);
+            presolver.with_dynamic_programming_budget(setup.budget).with_proof_mutation(setup.mutation);
             if (setup.derived_rules)
                 presolver.with_rules(*setup.derived_rules);
             p.add_presolver(presolver);
@@ -775,7 +774,7 @@ auto main(int argc, char * argv[]) -> int
             fail("two-raised fixture: raised " + std::to_string(stats->tasks_raised) + " heights, not the two");
         if (stats->capacity_units_removed != 2_i)
             fail("two-raised fixture: took " + std::to_string(stats->capacity_units_removed.raw_value) + " units off the capacity, not the two");
-        println(cerr, "two-raised fixture: {} pol steps over {} raised rows", stats->raise_lines_emitted, stats->rows_with_a_raise);
+        println(cerr, "two-raised fixture: {} raise steps over {} raised rows", stats->raise_lines_emitted, stats->rows_with_a_raise);
     }
 
     // Both halves at once, over a raise that takes several steps.
@@ -792,10 +791,13 @@ auto main(int argc, char * argv[]) -> int
                 std::to_string(stats->capacity_units_removed.raw_value) + " off the capacity, wanting one of each");
         if (proofs && stats->rows_by_dynamic_programming == 0)
             fail("knapsack raise fixture: no row took the dynamic programming path, so it is not exercising both halves");
-        if (proofs && stats->raise_lines_emitted <= stats->rows_with_a_raise)
-            fail("knapsack raise fixture: " + std::to_string(stats->raise_lines_emitted) + " pol steps over " +
-                std::to_string(stats->rows_with_a_raise) + " rows, so no raise took more than one step");
-        println(cerr, "knapsack raise fixture: {} pol steps over {} raised rows", stats->raise_lines_emitted, stats->rows_with_a_raise);
+        // A raise the rest of the row overshoots, which cutting planes alone
+        // walked up a `pol` per step (twenty of them here, two hundred at ten
+        // times the scale): by contradiction it is one step a row (#1242).
+        if (proofs && stats->raise_lines_emitted != stats->rows_with_a_raise)
+            fail("knapsack raise fixture: " + std::to_string(stats->raise_lines_emitted) + " raise steps over " +
+                std::to_string(stats->rows_with_a_raise) + " rows, where each row's single raise should take one");
+        println(cerr, "knapsack raise fixture: {} raise steps over {} raised rows", stats->raise_lines_emitted, stats->rows_with_a_raise);
     }
 
     // The negative control. A capacity the heights can reach exactly is already
@@ -1117,7 +1119,7 @@ auto main(int argc, char * argv[]) -> int
             fail("a task was set aside, against " + what);
 
         check_solutions("raising against " + what, inst, outcome);
-        println(cerr, "raising against {}: {} pol steps over {} raised rows", what, stats->raise_lines_emitted, stats->rows_with_a_raise);
+        println(cerr, "raising against {}: {} raise steps over {} raised rows", what, stats->raise_lines_emitted, stats->rows_with_a_raise);
     }
 
     // What is still declined outright: a capacity that is a *view*, whose bits
@@ -1307,19 +1309,6 @@ auto main(int argc, char * argv[]) -> int
         solve_it(pack, Setup{.budget = 0, .stats = pack_stats}, make_optional("cumulative_strengthening_budget_pack"));
         if (pack_stats->donors_strengthened != 1)
             fail("a zero budget stopped the divisibility derivation, which it does not pay for");
-
-        // And the raising budget, which is a separate knob because it is a
-        // separate cost in different units. Zero stops the fixture that raises
-        // and leaves the two that do not alone.
-        auto raise_stats = make_shared<CumulativeStrengtheningStats>();
-        solve_it(knapsack_raise, Setup{.raise_budget = 0, .stats = raise_stats}, make_optional("cumulative_strengthening_budget_raise"));
-        if (raise_stats->declined_over_raise_budget != 1)
-            fail("a zero raise budget did not stop the raising derivation");
-
-        auto unraised_stats = make_shared<CumulativeStrengtheningStats>();
-        solve_it(pack, Setup{.raise_budget = 0, .stats = unraised_stats}, make_optional("cumulative_strengthening_budget_unraised"));
-        if (unraised_stats->donors_strengthened != 1)
-            fail("a zero raise budget stopped a donor with nothing to raise");
     }
 
     // Nothing above may have reached the OPB.
@@ -1451,10 +1440,10 @@ auto main(int argc, char * argv[]) -> int
             // of six, which it plainly can.
             std::tuple<string, Instance, CumulativeStrengtheningMutation>{
                 "unentitled raise", r1_control, cumulative_strengthening_mutation::RaiseUnentitled{}},
-            // And the step-size rule, which is the arithmetic a rearrangement
-            // of this derivation is most likely to lose: one step too far and
-            // the division rounds the degree down instead of up, leaving a
-            // sound but weaker line that only the row's own pin objects to.
+            // And the raise itself, claimed one coefficient too high: the
+            // proof by contradiction's closing RUP then has nothing to refute,
+            // because with the raised task on and every other task off the
+            // negated claim still holds.
             std::tuple<string, Instance, CumulativeStrengtheningMutation>{
                 "raise too fast", knapsack_raise, cumulative_strengthening_mutation::RaiseTooFast{}}}) {
         const string name = "cumulative_strengthening_mutation";
