@@ -145,6 +145,20 @@ in-range inputs throws then, during search: `DifferenceConstraints`, for
 example, forms Bellman-Ford path sums, and a chain of nine edges of weight
 `-max_bounded_value()` has a path sum past the end of `Integer`.
 
+`Cumulative` (posted, derived, or as `Disjunctive2D`'s projection) is the same
+case on a broader footing, by decision rather than by necessity (#1235, #1223).
+Its energy reasoning multiplies the capacity by a window's width and a task's
+length by its height, and sums the mandatory load over each time point and over
+the horizon, all in `Integer`. A capacity or heights near the top of `S` leave
+room for only a handful of slots: two unit tasks of height `max_bounded_value()`
+at that capacity throw once their starts span nine slots, and solve at eight. It
+throws from the first such product or sum, including a whole-horizon load sum
+that no single window needs, rather than doing the sweep in 128 bits, which
+nothing has needed so far. The `IntegerOverflow` says which quantities are to
+blame and keeps the operation that overflowed, and `integer_ranges_test` pins
+each site with a twin just inside the limit that must solve. Revisit this if an
+application meets it.
+
 What it must not do is throw on a value nothing needs. The commonest way is a
 running sum whose total fits but whose partial sums do not: nine terms at the
 top of the range and nine at the bottom sum to zero, but not in that order. Sum
