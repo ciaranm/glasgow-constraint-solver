@@ -75,10 +75,18 @@ namespace
         sort(states);
         states.erase(unique(states).begin(), states.end());
 
+        // The states are unique now, so "another state" is "another index":
+        // asking it of the indices rather than with `!=` saves comparing every
+        // pair's weights and profit just to learn they are different states,
+        // which was a large part of this quadratic sweep's cost (#1255).
         LiftedCoverCutLayer frontier;
-        for (const auto & state : states)
-            if (! any_of(states, [&](const LiftedCoverCutState & other) { return other != state && covers(other, state); }))
-                frontier.push_back(state);
+        for (size_t i = 0; i < states.size(); ++i) {
+            bool covered = false;
+            for (size_t j = 0; j < states.size() && ! covered; ++j)
+                covered = j != i && covers(states[j], states[i]);
+            if (! covered)
+                frontier.push_back(states[i]);
+        }
         states = move(frontier);
     }
 
