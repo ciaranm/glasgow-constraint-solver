@@ -8,6 +8,7 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <map>
 #include <numeric>
@@ -79,11 +80,6 @@ namespace
         return mask;
     }
 
-    auto is_reachable(const vector<uint64_t> & mask, Integer v) -> bool
-    {
-        return 0 != (mask[static_cast<size_t>(v.raw_value / 64)] & (uint64_t{1} << (v.raw_value % 64)));
-    }
-
     // One reachable partial sum, at one layer: the flags saying the prefix sum
     // is at least it, at most it, and (their conjunction) exactly it, with the
     // two halves of each reification.
@@ -113,10 +109,14 @@ auto gcs::innards::largest_subset_sum_at_most(const vector<Integer> & coefficien
         if (c <= 0_i)
             throw ProofError{"subset sum strengthening needs strictly positive coefficients"};
 
+    // A word at a time from the top: reachable_sums() clears every bit past
+    // the bound, so the highest set bit of the highest non-empty word is the
+    // answer. Scanning value by value was most of the cost of a presolver that
+    // asks this at every stretch of a donor (#1240).
     auto mask = reachable_sums(coefficients, bound);
-    for (Integer v = bound; v >= 0_i; --v)
-        if (is_reachable(mask, v))
-            return v;
+    for (auto w = mask.size(); w-- > 0;)
+        if (0 != mask[w])
+            return Integer{static_cast<long long>(w * 64 + (63 - static_cast<size_t>(std::countl_zero(mask[w]))))};
 
     throw ProofError{"subset sum strengthening: zero is always reachable"};
 }

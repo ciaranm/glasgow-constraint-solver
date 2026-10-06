@@ -168,6 +168,16 @@ rounding path is two `pol` steps and is not budgeted. `CumulativeStrengtheningSt
 counts rows both ways, and the budget fixture asserts the prediction agrees with
 the choice — if it did not, the budget would decline the wrong donors.
 
+Everything the assessment works out depends on a time point only through which
+tasks' windows contain it, so it is worked out once per **stretch** between two
+window edges, of which there are at most `2n`, and the recipe finds the stretch
+holding the time point it is asked for (#1240). Assessing each point of the
+windows' hull instead cost time and memory linear in the horizon, with proofs
+off too: ten times the donor's own cost at a horizon of a million. The budget
+still sums over every time point, as each stretch's cost times its length, so
+the stretches change no decision; the sums saturate just past the budget
+rather than overflow.
+
 ### Every row lands on the declared capacity
 
 A time point whose own `kappa_t` is below `kappa` yields a *stronger* row than
@@ -329,7 +339,8 @@ stop being strengthened in silence:
   shape says only that its presence is false, and is set aside instead.
 - **A capacity too large to subset-sum over.** Unlike everything else here this
   is not about proof size: `kappa` is found with a bitset over the capacity's
-  whole range, rebuilt at every time point, and that runs with proofs off too.
+  whole range, rebuilt for every stretch of time points between two window
+  edges, and that runs with proofs off too.
   A resource measured in thousandths would spend hundreds of megabytes deciding
   whether there was anything to be had. `with_subset_sum_capacity_limit` is the
   knob.

@@ -50,16 +50,23 @@ using std::ranges::all_of;
 using std::ranges::any_of;
 using std::ranges::max_element;
 using std::ranges::sort;
+using std::ranges::unique;
 
 namespace
 {
-    /// What the presolver worked out for one time point: the tasks that can be
-    /// running then, split into the ones that fill the resource on their own
-    /// and the ones that do not, and the largest load the latter can actually
-    /// reach without exceeding the capacity.
+    /// What the presolver worked out for one stretch of time points, `[lo,
+    /// hi]`: the tasks that can be running then, split into the ones that fill
+    /// the resource on their own and the ones that do not, and the largest load
+    /// the latter can actually reach without exceeding the capacity.
+    ///
+    /// A stretch rather than a time point because every answer here depends on
+    /// `t` only through which tasks' windows contain it, and that changes only
+    /// at a window's edge (#1240). Assessing each time point of the hull did the
+    /// same work once per point, with proofs off too, and kept three vectors per
+    /// point: O(horizon) time and memory over a long horizon.
     struct TimePoint
     {
-        Integer t;
+        Integer lo, hi;
         vector<size_t> tasks;
         vector<Integer> heights;
         vector<size_t> full_tasks;
@@ -257,7 +264,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         struct Assessment
         {
             vector<size_t> full_tasks;
-            vector<TimePoint> time_points;
+            vector<TimePoint> stretches;
             Integer kappa = 0_i;
         };
 
@@ -329,14 +336,20 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 sort(full_tasks);
             }
 
-            auto global_lo = t_lo[active_tasks.front()], global_hi = t_hi[active_tasks.front()];
+            // The window edges, which are the only places the set of tasks
+            // that can be running changes: each stretch runs from one edge to
+            // just before the next.
+            vector<Integer> edges;
             for (auto i : active_tasks) {
-                global_lo = min(global_lo, t_lo[i]);
-                global_hi = max(global_hi, t_hi[i]);
+                edges.push_back(t_lo[i]);
+                edges.push_back(t_hi[i] + 1_i);
             }
+            sort(edges);
+            edges.erase(unique(edges).begin(), edges.end());
 
-            for (Integer t = global_lo; t <= global_hi; ++t) {
-                TimePoint point{t, {}, {}, {}, 0_i, false};
+            for (size_t e = 0; e + 1 < edges.size(); ++e) {
+                auto t = edges[e];
+                TimePoint point{t, edges[e + 1] - 1_i, {}, {}, {}, 0_i, false};
                 for (auto i : other_tasks)
                     if (t >= t_lo[i] && t <= t_hi[i]) {
                         point.tasks.push_back(i);
@@ -359,7 +372,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 point.by_division = (divisor > 1_i && divisor * (capacity / divisor) == point.kappa);
 
                 assessment.kappa = max(assessment.kappa, point.kappa);
-                assessment.time_points.push_back(move(point));
+                assessment.stretches.push_back(move(point));
             }
 
             // Every task fills the resource on its own, so the tasks the
@@ -422,7 +435,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 bump(&CumulativeStrengtheningStats::converted_heights);
 
         const auto & full_tasks = assessed->full_tasks;
-        auto & time_points = assessed->time_points;
+        auto & stretches = assessed->stretches;
         auto kappa = assessed->kappa;
 
         // Budget the expensive derivations. The dynamic program has a state per
@@ -431,21 +444,38 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // is a `pol` per step per task per time point, and how many steps a
         // raise takes depends on how far the rest of the row overshoots. Only
         // relevant with proofs on, since with them off no derivation happens.
+        //
+        // Summed over every time point, as a stretch's cost times its length,
+        // which is what it was when each point was assessed on its own. The sums
+        // are only compared against a budget, so they saturate just past it
+        // rather than overflowing over a long horizon.
         if (logger) {
             long long states = 0, raise_lines = 0;
-            for (const auto & point : time_points) {
+            auto add_capped = [](long long & total, long long per_point, long long points, long long limit) {
+                if (per_point <= 0)
+                    return;
+                if (total > limit || points > (limit - total) / per_point)
+                    total = limit + 1;
+                else
+                    total += per_point * points;
+            };
+            for (const auto & point : stretches) {
+                auto points = (point.hi - point.lo + 1_i).raw_value;
                 if (! point.by_division)
-                    states += static_cast<long long>(point.heights.size()) * (capacity.raw_value + 1);
+                    add_capped(
+                        states, static_cast<long long>(point.heights.size()) * (capacity.raw_value + 1), points, _max_dynamic_programming_states);
 
                 // A repeat count rather than an index: each raised task is
                 // raised out of the row the one before it left behind, which is
                 // a kappa heavier, so what varies between the rounds is `total`
                 // and not which task it is.
+                long long raise_lines_here = 0;
                 auto total = std::accumulate(point.heights.begin(), point.heights.end(), 0_i);
                 for (size_t rounds = point.full_tasks.size(); rounds > 0; --rounds) {
-                    raise_lines += raise_step_count(total, kappa);
+                    raise_lines_here += raise_step_count(total, kappa);
                     total += kappa;
                 }
+                add_capped(raise_lines, raise_lines_here, points, _max_raise_lines);
             }
 
             if (states > _max_dynamic_programming_states) {
@@ -470,12 +500,15 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // The recipe needs to find, for each time point, the same tasks and the
         // same flags that the donor's row for that time point is over --- so
         // that the subset sum it strengthens is a subset sum of exactly that
-        // row's coefficients. By value: the recipe is called before this
-        // iteration ends today, but a capture that only works because of that
-        // is one refactor away from being a use-after-free nobody sees.
-        map<Integer, TimePoint> by_time;
-        for (auto & point : time_points)
-            by_time.emplace(point.t, move(point));
+        // row's coefficients. Keyed by where each stretch starts. Owned by the
+        // recipe, not borrowed: it is called before this iteration ends today,
+        // but a capture that only works because of that is one refactor away
+        // from being a use-after-free nobody sees. Shared rather than copied,
+        // since a recipe is copied with the spec it sits in.
+        auto by_start_owned = make_shared<map<Integer, TimePoint>>();
+        for (auto & point : stretches)
+            by_start_owned->emplace(point.lo, move(point));
+        shared_ptr<const map<Integer, TimePoint>> by_start = move(by_start_owned);
 
         auto donor_id = donor.key.id;
         auto heights = view->heights;
@@ -499,10 +532,11 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, starts, view->lengths, derived_heights, view->presences),
             .capacity = kappa,
             .row_donors = {donor.key},
-            .recipe = [donor_id, donor_key = donor.key, view = *view, heights, capacity, kappa, by_time, stats, subset_sum_corruption, raise_too_fast,
+            .recipe = [donor_id, donor_key = donor.key, view = *view, heights, capacity, kappa, by_start, stats, subset_sum_corruption,
+                          raise_too_fast,
                           unentitled_raise](ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
-                auto point = by_time.find(t);
-                if (point == by_time.end())
+                auto point = by_start->upper_bound(t);
+                if (point == by_start->begin() || (--point)->second.hi < t)
                     throw ProofError{"cumulative strengthening: no time point worked out for " + to_string(t.raw_value)};
 
                 // The donor is the only row source, and it wrote a row wherever
