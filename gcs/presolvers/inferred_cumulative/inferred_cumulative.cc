@@ -449,12 +449,20 @@ namespace
     };
 }
 
+namespace
+{
+    // Sidorov's `N_cover` and `N_out`, at the values his main experiments use.
+    // Named because whether a caller moved them decides how loudly a drop is
+    // reported (#1256).
+    constexpr size_t default_max_covers = 100, default_max_posted = 5;
+}
+
 InferredCumulative::InferredCumulative(shared_ptr<InferredCumulativeStats> stats) :
     // Always a block, whether or not anyone asked for one: the default
     // experience was silent because nothing was allocated, not because the
     // channel was wrong.
-    _stats(stats ? move(stats) : make_shared<InferredCumulativeStats>()), _max_covers(100), _max_posted(5), _maximum_capacity(1000),
-    _max_lifting_calls(20000), _max_programme_states(100000),
+    _stats(stats ? move(stats) : make_shared<InferredCumulativeStats>()), _max_covers(default_max_covers), _max_posted(default_max_posted),
+    _maximum_capacity(1000), _max_lifting_calls(20000), _max_programme_states(100000),
     // Energy only: a valid cut holds at every 0/1 point the donor's row allows,
     // so no time-tabling verdict about a single time point can differ.
     _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true}), _mutation(inferred_cumulative_mutation::None{})
@@ -1045,15 +1053,24 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
     }
 
     // The model-level consequence, for a reader who does not know what this
-    // presolver is: a limit stopped it doing what it was asked to do, so the
-    // configuration being run is not the one that was asked for. The figures
-    // and the option that raises them are in the General notes above; this one
-    // names neither, because naming them is what makes a message unreadable to
-    // the person it is for. A constraint that simply does not follow from the
-    // rows is not on this rung: nothing was limited, and there is no knob.
-    if (0 != cuts_unposted_this_run || 0 != cuts_uncertifiable_this_run) {
+    // presolver is: a limit stopped it doing something worth knowing about.
+    // The figures and the option that raises them are in the General notes
+    // above; this one names neither, because naming them is what makes a
+    // message unreadable to the person it is for. A constraint that simply
+    // does not follow from the rows is not on this rung: nothing was limited,
+    // and there is no knob.
+    //
+    // The output budget is the published procedure's own step L5, so at its
+    // default a drop is the procedure working as designed, and on most models
+    // that find anything it drops something: General only, or nearly every
+    // run would be told a limit cost it search speed (#1256). Once a caller has
+    // moved it, a drop is theirs to hear about. The state budget is this
+    // implementation's, not the paper's, and drops a cut the procedure would
+    // have posted, so it is Important whatever its value.
+    auto unposted_counts = 0 != cuts_unposted_this_run && _max_posted != default_max_posted;
+    if (unposted_counts || 0 != cuts_uncertifiable_this_run) {
         string what;
-        if (0 != cuts_unposted_this_run)
+        if (unposted_counts)
             what = to_string(cuts_unposted_this_run) + " inferred constraints were never posted";
         if (0 != cuts_uncertifiable_this_run)
             what += (what.empty() ? string{} : string{", and "}) + to_string(cuts_uncertifiable_this_run) + " were dropped for want of a derivation";

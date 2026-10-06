@@ -1243,6 +1243,27 @@ auto main(int argc, char * argv[]) -> int
 
             println(cerr, "diagnostics: Important note is `{}`", important[0].text);
         }
+
+        // The same budget at its default, which is Sidorov's own step L5: a
+        // drop is the procedure working as published, and most models that
+        // find anything drop something, so General only (#1256).
+        {
+            Problem p;
+            auto stats = make_shared<InferredCumulativeStats>();
+            post(p, Instance{{2_i, 3_i, 4_i, 2_i, 3_i}, {1_i, 2_i, 3_i, 4_i, 1_i}, 7_i, 31, {30, 30, 30, 30, 30}}, Setup{.stats = stats});
+            auto recorded = solve_recording(p);
+            if (0 == stats->dropped_over_budget)
+                fail("the default-budget fixture drops nothing, so it says nothing about the note's level");
+
+            auto has_figures = false;
+            for (const auto & note : notes_at(recorded, StatsLevel::General))
+                if (string::npos != note.text.find("output budget of 5"))
+                    has_figures = true;
+            if (! has_figures)
+                fail("the default output budget's drop is not in any General note");
+            if (! notes_at(recorded, StatsLevel::Important).empty())
+                fail("the output budget at its default raised an Important note");
+        }
     }
     println(cerr, "the report and the notes say what happened, at the level for who is reading");
 

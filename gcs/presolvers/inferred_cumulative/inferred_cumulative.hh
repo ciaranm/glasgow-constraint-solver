@@ -268,6 +268,11 @@ namespace gcs
          * Sidorov's `N_cover` and `N_out`. Every drop is counted, because a
          * budget that quietly swallowed everything is indistinguishable, from
          * the outside, from a resource with nothing to find on it.
+         *
+         * The defaults, 100 and 5, are his. A cut the output budget drops
+         * under its default is a General note only, since it is the
+         * procedure working as published; under a budget the caller has
+         * moved, it also raises an Important one.
          */
         auto with_budgets(std::size_t max_covers, std::size_t max_posted) -> InferredCumulative &;
 
