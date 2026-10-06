@@ -410,11 +410,20 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             triggers.on_instantiated.emplace_back(*_presence[i]);
     }
 
+    // Edge-finding and not-first / not-last skip a window its contained tasks
+    // already overload, because that is a conflict and not a push, and leave
+    // it to the overload check. So either one turns the overload check on too:
+    // without it such a window refuted nothing, and the rules did less on a
+    // stronger state than on a weaker one (#1244).
+    auto rules_in_force = _rules;
+    if (rules_in_force.edge_finding || rules_in_force.not_first_not_last)
+        rules_in_force.overload = true;
+
     propagators.install(
         constraint_id(),
         [starts = move(_starts), lengths = move(_length_vals), energy_lens = move(_energy_lens), length_vars = move(_lengths), zero = move(_zero),
             strict = _strict, active_tasks = move(_active_tasks), before_flags = move(_before_flags), clause_lines = move(_clause_lines),
-            presence = move(_presence), rules = _rules, mutation = _proof_mutation, presence_mutation = _presence_mutation,
+            presence = move(_presence), rules = rules_in_force, mutation = _proof_mutation, presence_mutation = _presence_mutation,
             // The overload certificate's vocabulary, kept across firings when
             // it lives at Top. A shared_ptr rather than a member because the
             // propagator is invoked through a const callable, and the cache is
@@ -1920,15 +1929,22 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         if (min_len(j) == 0_i || ! is_present(j))
                             continue;
                         // A task whose start is already fixed has no bound to
-                        // push, and nothing is lost by leaving it alone: a
-                        // precedence detected between a fixed task and an
-                        // unfixed one is the same precedence read the other way
-                        // round, which pushes the unfixed one and fails there
-                        // if it must; and two fixed tasks that collide both
-                        // have mandatory parts, which is the always-on overlap
-                        // contradiction above.
+                        // push, and for the pairwise rule nothing is lost by
+                        // leaving it alone: a precedence detected between a
+                        // fixed task and an unfixed one is the same precedence
+                        // read the other way round, which pushes the unfixed
+                        // one and fails there if it must; and two fixed tasks
+                        // that collide both have mandatory parts, which is the
+                        // always-on overlap contradiction above.
+                        //
+                        // Not so for the set rule. Predecessors that together
+                        // end after a fixed task's start refute it, and only
+                        // this rule sees that: skipping it made the fixpoint
+                        // depend on whether time-tabling, or the rule's own
+                        // pushes, fixed the task first (#1243). Its push is
+                        // then clipped to one past the upper bound, and fails.
                         auto [cur_lb, cur_ub] = state.bounds(starts[j]);
-                        if (cur_lb == cur_ub)
+                        if (cur_lb == cur_ub && ! rules.detectable_precedences_set)
                             continue;
 
                         // One scan for both pushes: k is a detected
