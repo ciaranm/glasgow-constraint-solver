@@ -64,10 +64,6 @@ namespace
         vector<Integer> heights;
         vector<size_t> full_tasks;
         Integer kappa;
-        /// Whether derive_subset_sum_strengthening() will take its two-step
-        /// divisibility path here, predicted by the same test it applies. Only
-        /// the other path costs anything worth budgeting for.
-        bool by_division;
     };
 
 }
@@ -76,18 +72,11 @@ CumulativeStrengthening::CumulativeStrengthening(shared_ptr<CumulativeStrengthen
     // Always a block, whether or not anyone asked for one: the default
     // experience was silent because nothing was allocated, not because the
     // channel was wrong.
-    _stats(stats ? move(stats) : make_shared<CumulativeStrengtheningStats>()), _max_dynamic_programming_states(20000),
-    _max_subset_sum_capacity(1000000),
+    _stats(stats ? move(stats) : make_shared<CumulativeStrengtheningStats>()), _max_subset_sum_capacity(1000000),
     // Energy rules only: see with_rules(). A derived constraint's time-tabling
     // cannot infer anything its donor's has not, so running it is pure cost.
     _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true}), _mutation(cumulative_strengthening_mutation::None{})
 {
-}
-
-auto CumulativeStrengthening::with_dynamic_programming_budget(long long states) -> CumulativeStrengthening &
-{
-    _max_dynamic_programming_states = states;
-    return *this;
 }
 
 auto CumulativeStrengthening::with_subset_sum_capacity_limit(long long capacity) -> CumulativeStrengthening &
@@ -152,14 +141,24 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         auto unentitled_raise = std::holds_alternative<cumulative_strengthening_mutation::RaiseUnentitled>(_mutation);
 
         // The assessment below subset-sums the heights at every time point, and
-        // that is a bitset of `capacity` bits built from scratch each time. It
-        // runs before any of the proof budgets, and with proofs off none of
-        // them ever runs at all --- so a donor posted in scaled units, with a
-        // capacity in the billions, spends hundreds of megabytes and a sweep of
-        // the whole horizon before anything has decided whether there was a
-        // strengthening to be had. Magnitude is the wrong thing to find that
-        // out with, so decline on it first. It is also what keeps the state
-        // count and the raise arithmetic below inside a `long long`.
+        // that is a bitset of `capacity` bits built from scratch each time, so
+        // a donor posted in scaled units, with a capacity in the billions,
+        // spends hundreds of megabytes and a sweep of the whole horizon before
+        // anything has decided whether there was a strengthening to be had.
+        // Magnitude is the wrong thing to find that out with, so decline on it
+        // first. It is also what keeps the raise arithmetic below inside a
+        // `long long`.
+        //
+        // This is the only limit, and it is decided without asking whether a
+        // proof is being written. There used to be two proof budgets beside it,
+        // on the raise and on the dynamic-programming derivation, which declined
+        // a donor only with proofs on: a proofs-on solve then searched a
+        // weaker model than the same solve with proofs off (#1241). Proofs on
+        // and off must search identically, even where that makes a proof
+        // expensive, so a donor this presolver can assess is strengthened
+        // whatever its derivation costs. The raise is one line now (#1242);
+        // the dynamic program is three flags per reachable partial sum per
+        // item at every time point a firing cites.
         if (capacity > Integer{_max_subset_sum_capacity}) {
             bump(&CumulativeStrengtheningStats::declined_capacity_too_large);
             ++limit_declines_this_run;
@@ -272,7 +271,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             }
 
             for (Integer t = global_lo; t <= global_hi; ++t) {
-                TimePoint point{t, {}, {}, {}, 0_i, false};
+                TimePoint point{t, {}, {}, {}, 0_i};
                 for (auto i : other_tasks)
                     if (t >= t_lo[i] && t <= t_hi[i]) {
                         point.tasks.push_back(i);
@@ -288,11 +287,6 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                     continue;
 
                 point.kappa = largest_subset_sum_at_most(point.heights, capacity);
-
-                auto divisor = 0_i;
-                for (const auto & h : point.heights)
-                    divisor = Integer{std::gcd(divisor.raw_value, h.raw_value)};
-                point.by_division = (divisor > 1_i && divisor * (capacity / divisor) == point.kappa);
 
                 assessment.kappa = max(assessment.kappa, point.kappa);
                 assessment.time_points.push_back(move(point));
@@ -360,27 +354,6 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         const auto & full_tasks = assessed->full_tasks;
         auto & time_points = assessed->time_points;
         auto kappa = assessed->kappa;
-
-        // Budget the expensive derivation. The dynamic program has a state per
-        // reachable partial sum per item, so `items * capacity` bounds it; the
-        // divisibility path is two `pol` steps and needs no budgeting, and nor
-        // does raising, which is one step per task per time point (#1242). Only
-        // relevant with proofs on, since with them off no derivation happens.
-        if (logger) {
-            long long states = 0;
-            for (const auto & point : time_points)
-                if (! point.by_division)
-                    states += static_cast<long long>(point.heights.size()) * (capacity.raw_value + 1);
-
-            if (states > _max_dynamic_programming_states) {
-                bump(&CumulativeStrengtheningStats::declined_over_budget);
-                ++limit_declines_this_run;
-                note(StatsLevel::General, donor.key.id,
-                    "passed over: the derivation would need " + to_string(states) + " dynamic programming states against a budget of " +
-                        to_string(_max_dynamic_programming_states) + ", see with_dynamic_programming_budget");
-                continue;
-            }
-        }
 
         // The recipe needs to find, for each time point, the same tasks and the
         // same flags that the donor's row for that time point is over --- so
@@ -732,7 +705,6 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
 auto CumulativeStrengthening::clone() const -> unique_ptr<Presolver>
 {
     auto result = make_unique<CumulativeStrengthening>(_stats);
-    result->with_dynamic_programming_budget(_max_dynamic_programming_states);
     result->with_subset_sum_capacity_limit(_max_subset_sum_capacity);
     result->with_rules(_rules);
     result->with_proof_mutation(_mutation);
@@ -771,7 +743,6 @@ auto CumulativeStrengtheningStats::entries() const -> vector<StatsEntry>
     add("declined_irreducible_capacity", declined_irreducible_capacity);
     add("declined_infeasible_donor", declined_infeasible_donor);
     add("declined_capacity_too_large", declined_capacity_too_large);
-    add("declined_over_budget", declined_over_budget);
     add("declined_nothing_to_gain", declined_nothing_to_gain);
     add("rows_by_division", rows_by_division);
     add("rows_by_dynamic_programming", rows_by_dynamic_programming);

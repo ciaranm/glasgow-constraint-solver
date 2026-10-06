@@ -51,11 +51,11 @@ namespace gcs
      *     ComponentStats::summary(). It names the model-level thing --- the
      *     constraint, the option the caller passed --- and states the
      *     consequence, without naming the component's internals. "Cumulative
-     *     strengthening was skipped on 2 of 12 constraints because a
-     *     proof-size limit was reached; answers are still correct, but search
-     *     may be slower" is Important. "2 donors passed over, largest needed
-     *     41000 states against a budget of 20000, see
-     *     with_dynamic_programming_budget" is the same fact at General. Both
+     *     strengthening was skipped on 2 of 12 constraints because a size
+     *     limit was reached; answers are still correct, but search may be
+     *     slower" is Important. "passed over: its capacity of 2000000 is
+     *     beyond the subset-sum limit of 1000000, see
+     *     with_subset_sum_capacity_limit" is the same fact at General. Both
      *     exist.
      *   - An Important note therefore renders *without* the component label:
      *     `cumulative_strengthening:` means nothing to the reader it is for.
