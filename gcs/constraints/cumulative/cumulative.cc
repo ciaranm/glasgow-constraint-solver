@@ -126,6 +126,7 @@ namespace
         rule_time_table_ub,
         rule_time_table_overflow,
         rule_presence,
+        rule_time_table_height,
         rule_overload,
         rule_edge_finding_lb,
         rule_edge_finding_ub,
@@ -135,8 +136,8 @@ namespace
     };
 
     RuleInstrumentation cumulative_counters{"cumulative",
-        {"time_table_lb", "time_table_ub", "time_table_overflow", "presence", "overload", "edge_finding_lb", "edge_finding_ub", "not_first",
-            "not_last"}};
+        {"time_table_lb", "time_table_ub", "time_table_overflow", "presence", "time_table_height", "overload", "edge_finding_lb", "edge_finding_ub",
+            "not_first", "not_last"}};
 
     // The variable-height contribution h_i·active is linearised over cake's
     // per-bit contribution flags cc_k (weight 2^k): contrib = Σ 2^k · cc_k.
@@ -1232,16 +1233,16 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // it. The recovery declines a Cumulative it cannot yet speak about (a
     // variable height, an optional task), and the model row is what is left.
     //
-    // The time-table family goes through this --- the overflow contradiction
-    // and both bound pushes --- and so do the overload check's (OC)/(TTOC)
-    // window supply and the (TTHE-OC)/(KAOC) per-time availability lines, the
-    // latter being the only citer that uses a row as the base of a per-point
-    // sub-derivation rather than summing it straight into a pol, and so does
-    // edge-finding's window supply --- and with it TTEF, the energetic form and
-    // our own not-first / not-last, which is certified by edge-finding's
-    // certificate unchanged, and so does the published not-first / not-last,
-    // the only citer that scales the row rather than adding it at one. That is
-    // every citer in this file. What is left is outside it:
+    // The time-table family goes through this --- the overflow contradiction,
+    // both bound pushes and the height rule --- and so do the overload
+    // check's (OC)/(TTOC) window supply and the (TTHE-OC)/(KAOC) per-time
+    // availability lines, the latter being the only citer that uses a row as
+    // the base of a per-point sub-derivation rather than summing it straight
+    // into a pol, and so does edge-finding's window supply --- and with it
+    // TTEF, the energetic form and our own not-first / not-last, which is
+    // certified by edge-finding's certificate unchanged, and so does the
+    // published not-first / not-last, the only citer that scales the row
+    // rather than adding it at one. That is every citer in this file. What is left is outside it:
     // derived_cumulative.cc still looks its donors' rows up by label, which is
     // the rest of #780. A lane whose every rule has moved joins the
     // `startcheckpoint` ctest arm, which is where that progress is measured.
@@ -1687,8 +1688,14 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // it deposits contrib_j + lb(h_j)·Σext ≥ lb(h_j) (vacuous when some ext
     // literal holds, "contrib_j ≥ lb(h_j)" otherwise) and returns that line
     // with coefficient 1.
-    auto pin_pushed = [&](const ReasonLiterals & reason, size_t j_idx, Integer t, const ExtLits & ext,
-                          Integer s_lo_after) -> std::pair<ProofLine, Integer> {
+    //
+    // A variable height can be counted at more than lb(h_j), for the height
+    // rule (#1239), which asks what j would take if it were higher than the
+    // bound it is about to get. Its ext then carries `h_j < counted`, so the
+    // height that pins the contribution is the negated conclusion's rather
+    // than the reason's.
+    auto pin_pushed = [&](const ReasonLiterals & reason, size_t j_idx, Integer t, const ExtLits & ext, Integer s_lo_after,
+                          optional<Integer> counted_height = nullopt) -> std::pair<ProofLine, Integer> {
         auto fj = (t - per_task_t_lo[j_idx]).raw_value;
         logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * before_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
         // s_lo_after + lb(l_j) ≥ t+1 gives after_{j,t} = 1 (under ¬ext
@@ -1699,8 +1706,9 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             reason, plus_ext(WPBSum{} + 1_i * active_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
         if (! h_is_var(j_idx))
             return {active_line, hlb(j_idx)};
+        auto counted = counted_height.value_or(hlb(j_idx));
         auto contrib_line = logger->emit_rup_proof_line_under_reason(
-            reason, plus_ext(contrib_sum_of(contrib_bits(j_idx, fj)), ext, hlb(j_idx)) >= hlb(j_idx), ProofLevel::Temporary);
+            reason, plus_ext(contrib_sum_of(contrib_bits(j_idx, fj)), ext, counted) >= counted, ProofLevel::Temporary);
         return {contrib_line, 1_i};
     };
 
@@ -3062,6 +3070,22 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         ++cumulative_counters[rule_time_table_lb].calls;
         ++cumulative_counters[rule_time_table_ub].calls;
         ++cumulative_counters[rule_presence].calls;
+        ++cumulative_counters[rule_time_table_height].calls;
+
+        // The most load any task is guaranteed to be under, anywhere. A height
+        // that fits on top of it fits everywhere, which is how the height rule
+        // below skips a task without scanning its window. Worked out the first
+        // time a variable height asks, since a constraint with none never
+        // does. The profile is empty when no task can run for any time at all.
+        optional<Integer> max_mand_load_cache;
+        auto max_mand_load = [&]() -> Integer {
+            if (! max_mand_load_cache) {
+                max_mand_load_cache = 0_i;
+                for (auto load : mand_load)
+                    max_mand_load_cache = max(*max_mand_load_cache, load);
+            }
+            return *max_mand_load_cache;
+        };
 
         // One step of a bound-push proof chain: a blocked time t and the
         // tasks (≠ j) whose mandatory parts cover t. Used by both
@@ -3084,12 +3108,15 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         //   ub-push:  ext = {s_j ≤ t − l_j}
         //   falsify:  ext = {s_j ≥ t + 1, present_j = 0}, and just
         //             {present_j = 0} on the final step
+        //   height:   ext = {s_j ≥ t + 1, h_j < counted}, and just
+        //             {h_j < counted} on the final step, with j's
+        //             contribution pinned at `counted` rather than lb(h_j)
         //
         // `emit_intermediate` deposits the ext disjunction as a unit clause under
         // reason — needed for every step except the last (the framework's wrapping
         // RUP closes the final inference).
         auto emit_chain_step = [&](size_t j_idx, Integer t, const vector<size_t> & contributing, const ExtLits & ext, Integer s_lo_after,
-                                   bool emit_intermediate, const ReasonLiterals & reason) -> void {
+                                   bool emit_intermediate, const ReasonLiterals & reason, optional<Integer> counted_height = nullopt) -> void {
             // (a) Pin each task i ≠ j mandatory at t under the reason, and
             // (b) pin the pushed task j under the EXTENDED reason. Then
             // (c) combine all pinned load lines with C_t in one pol. After
@@ -3101,7 +3128,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 auto [line, coeff] = pin_contributor(reason, i, t);
                 pol.add(line, coeff);
             }
-            auto [j_line, j_coeff] = pin_pushed(reason, j_idx, t, ext, s_lo_after);
+            auto [j_line, j_coeff] = pin_pushed(reason, j_idx, t, ext, s_lo_after, counted_height);
             pol.add(j_line, j_coeff);
             pol.emit(*logger, ProofLevel::Temporary);
 
@@ -3116,8 +3143,11 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 continue;
             auto [cur_lb, cur_ub] = state.bounds(starts[j]);
             // A fixed start leaves nothing to push, but an undecided task with a
-            // fixed start can still be shown to have nowhere to go.
-            if (cur_lb == cur_ub && is_present(j))
+            // fixed start can still be shown to have nowhere to go, and a
+            // variable height can still be lowered. Skipping everything else
+            // here, before anything is read, is worth a few percent of a solve.
+            auto fixed_and_present = cur_lb == cur_ub && is_present(j);
+            if (fixed_and_present && ! h_is_var(j))
                 continue;
 
             auto lst_j = cur_ub, eet_j = cur_lb + llb(j);
@@ -3127,6 +3157,10 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             // subtracted out of it.
             auto own_load_at = [&](Integer t) { return is_present(j) && lst_j < eet_j && t >= lst_j && t < eet_j ? hlb(j) : 0_i; };
 
+            // What the other tasks leave free at t, which is how high j could be
+            // there.
+            auto room_at = [&](Integer t) -> Integer { return capacity - (mand_load[(t - t_lo).raw_value] - own_load_at(t)); };
+
             auto fits_at = [&](Integer s) -> bool {
                 for (Integer t = s; t < s + llb(j); ++t)
                     if (mand_load[(t - t_lo).raw_value] - own_load_at(t) + hlb(j) > capacity)
@@ -3134,7 +3168,9 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 return true;
             };
 
-            auto is_blocked_at = [&](Integer t) -> bool { return mand_load[(t - t_lo).raw_value] - own_load_at(t) + hlb(j) > capacity; };
+            // Blocked for j counted at `height`, which is lb(h_j) except to the
+            // height rule.
+            auto is_blocked_at = [&](Integer t, Integer height) -> bool { return height > room_at(t); };
 
             auto contributors_at = [&](Integer t) -> vector<size_t> {
                 vector<size_t> result;
@@ -3161,13 +3197,13 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             // window so the bound advances as far as possible per step. Every
             // step's window contains a blocked time by construction (its running
             // bound does not fit), so the chain always reaches `target`.
-            auto build_lb_chain = [&](Integer target) -> vector<ChainStep> {
+            auto build_lb_chain = [&](Integer target, Integer height) -> vector<ChainStep> {
                 vector<ChainStep> chain;
                 Integer running_bound = cur_lb;
                 while (running_bound < target) {
                     bool found = false;
                     for (Integer t = running_bound + llb(j) - 1_i; t >= running_bound; --t)
-                        if (is_blocked_at(t)) {
+                        if (is_blocked_at(t, height)) {
                             chain.push_back(ChainStep{t, contributors_at(t), running_bound});
                             running_bound = t + 1_i;
                             found = true;
@@ -3178,6 +3214,91 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 }
                 return chain;
             };
+
+            // The height rule (#1239). A present task that runs for at least one
+            // time unit takes its height at every point of wherever it starts, so
+            // it can be no higher than the most room any of its placements
+            // leaves --- and in particular no higher than the capacity, which is
+            // all an empty profile says. Nothing else in this file lowers a
+            // height, so without it a height domain wider than the capacity was
+            // walked one value at a time by search.
+            //
+            // The certificate is presence falsification's, with the height in
+            // the absence's place. Counted at bound + 1, the task has nowhere to
+            // start, and the same lb chain over its whole start domain says so,
+            // one blocked time at a time; each step carries `h_j < bound + 1` as
+            // the alternative to its start having moved on, and the last carries
+            // only that.
+            //
+            // An optional task that is not yet known present is left alone: a
+            // height it may only take if present is a conditional bound, and
+            // there is nowhere to keep one. A fixed start comes through here
+            // too, being the case where the rule is strongest.
+            if (h_is_var(j) && is_present(j) && llb(j) >= 1_i) {
+                auto [h_lo, h_hi] = state.bounds(heights_var[j]);
+                if (h_lo < h_hi && h_hi > capacity - max_mand_load()) {
+                    // The most room any placement leaves, by a sliding minimum
+                    // over j's footprint, stopping as soon as some placement has
+                    // room for h_hi, since then there is nothing to lower. The
+                    // window holds times of strictly increasing room from
+                    // `head` on, so its front is the footprint's tightest time.
+                    optional<Integer> bound;
+                    vector<Integer> window;
+                    size_t head = 0;
+                    Integer next_t = cur_lb;
+                    for (Integer s = cur_lb; s <= cur_ub; ++s) {
+                        for (; next_t < s + llb(j); ++next_t) {
+                            while (window.size() > head && room_at(window.back()) >= room_at(next_t))
+                                window.pop_back();
+                            window.push_back(next_t);
+                        }
+                        while (window[head] < s)
+                            ++head;
+                        if (! bound || room_at(window[head]) > *bound)
+                            bound = room_at(window[head]);
+                        if (*bound >= h_hi)
+                            break;
+                    }
+
+                    // Below lb(h_j) nothing fits at all, and the lb push says
+                    // that already, as a contradiction.
+                    if (*bound >= h_hi || *bound < h_lo)
+                        ++cumulative_counters[rule_time_table_height].already_true;
+                    else {
+                        // The LowerHeightOneTooFar mutation counts the task at
+                        // the bound itself, where some placement still has room,
+                        // so the chain stops short and the claim is false.
+                        auto counted = std::holds_alternative<cumulative_proof_mutation::LowerHeightOneTooFar>(mutation) ? *bound : *bound + 1_i;
+                        auto chain = build_lb_chain(cur_ub + 1_i, counted);
+                        auto justify = [&, j, chain, counted](const ReasonLiterals & reason) -> void {
+                            if (! logger)
+                                return;
+                            logger->emit_proof_comment("cumulative: task " + std::to_string(j) + " has room for a height of at most " +
+                                std::to_string((counted - 1_i).raw_value) + " wherever it starts");
+                            if (std::holds_alternative<cumulative_proof_mutation::HeightEmitNothing>(mutation))
+                                return;
+                            for (size_t step = 0; step < chain.size(); ++step) {
+                                auto last = step + 1 == chain.size();
+                                ExtLits ext;
+                                if (! last)
+                                    ext.push_back(starts[j] > chain[step].t);
+                                ext.push_back(heights_var[j] < counted);
+                                auto contributing = chain[step].contributing;
+                                if (std::holds_alternative<cumulative_proof_mutation::DropHeightContributor>(mutation) && ! contributing.empty())
+                                    contributing.erase(contributing.begin());
+                                emit_chain_step(j, chain[step].t, contributing, ext, chain[step].s_lo_after, ! last, reason, counted);
+                            }
+                        };
+
+                        ++cumulative_counters[rule_time_table_height].firings;
+                        inference.infer_less_than(logger, heights_var[j], counted, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
+                            reason_with_presence());
+                    }
+                }
+            }
+
+            if (fixed_and_present)
+                continue;
 
             if (! is_present(j)) {
                 // Presence falsification. The task is undecided and, if it were
@@ -3199,7 +3320,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 if (new_lb <= cur_ub &&
                     ! (std::holds_alternative<cumulative_presence_mutation::ClaimOneTooFar>(presence_mutation) && new_lb == cur_ub))
                     continue;
-                auto chain = build_lb_chain(cur_ub + 1_i);
+                auto chain = build_lb_chain(cur_ub + 1_i, hlb(j));
                 if (chain.empty())
                     continue;
 
@@ -3242,7 +3363,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             if (new_lb <= cur_lb)
                 ++cumulative_counters[rule_time_table_lb].already_true;
             else {
-                auto chain = build_lb_chain(new_lb);
+                auto chain = build_lb_chain(new_lb, hlb(j));
 
                 auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
                     if (! logger)
@@ -3271,7 +3392,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 while (running_bound > new_ub) {
                     bool found = false;
                     for (Integer t = running_bound; t <= running_bound + llb(j) - 1_i; ++t)
-                        if (is_blocked_at(t)) {
+                        if (is_blocked_at(t, hlb(j))) {
                             chain.push_back(ChainStep{t, contributors_at(t), t - llb(j) + 1_i});
                             running_bound = t - llb(j);
                             found = true;

@@ -173,6 +173,30 @@ namespace gcs::innards
         struct RecoverFromWrongCheckpoint
         {
         };
+
+        /// The height rule (#1239): lower the height's upper bound one further
+        /// than the profile supports, to below the most room some placement
+        /// leaves. Like presence falsification, this rule is conflict-shaped
+        /// --- its chain argues that a task counted at the hypothetical height
+        /// has nowhere to start --- so the test that bites is the one on its
+        /// destination. Necessarily changes the inference.
+        struct LowerHeightOneTooFar
+        {
+        };
+
+        /// The height rule (#1239): emit no chain at all, leaving the
+        /// inference to the framework's wrapping RUP. Not a corruption but a
+        /// control: if VeriPB accepts this, the chain is decoration.
+        struct HeightEmitNothing
+        {
+        };
+
+        /// The height rule (#1239): leave the first contributing task's pin out
+        /// of every chain step, so the profile the hypothetical height was
+        /// blocked by is short by that task's load.
+        struct DropHeightContributor
+        {
+        };
     }
 
     using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
@@ -180,7 +204,9 @@ namespace gcs::innards
         cumulative_proof_mutation::PushOneTooFar, cumulative_proof_mutation::DropProfilePin, cumulative_proof_mutation::DropProfilePins,
         cumulative_proof_mutation::ClaimOneBetterAvailability, cumulative_proof_mutation::StrengthenOneFewer,
         cumulative_proof_mutation::DropEnergeticContributor, cumulative_proof_mutation::PublishedEmitNothing,
-        cumulative_proof_mutation::DropPublishedPin, cumulative_proof_mutation::RecoverFromWrongCheckpoint>;
+        cumulative_proof_mutation::DropPublishedPin, cumulative_proof_mutation::RecoverFromWrongCheckpoint,
+        cumulative_proof_mutation::LowerHeightOneTooFar, cumulative_proof_mutation::HeightEmitNothing,
+        cumulative_proof_mutation::DropHeightContributor>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,

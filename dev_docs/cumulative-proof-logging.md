@@ -18,7 +18,7 @@ This document explains how the `Cumulative` propagator's three inferences are ba
 
     Worth stating plainly,
     because "we can certify cumulative scheduling" is an easy thing to write and a wrong thing to claim.Certified here:
-**time - tabling **(the overflow check and both bound pushes), the ** overload check **and the window - energy lemma under it,
+**time - tabling **(the overflow check, both bound pushes and the height rule), the ** overload check **and the window - energy lemma under it,
     **derived - constraint inference **(capacity strengthening, conflict cliques, lifted cover cuts),
     and**makespan lower bounds ** — over optional tasks and over variable durations,
     heights and capacities.
@@ -1370,6 +1370,73 @@ the verified-encoding chain does not silently match it against
 `cake_pb_cp`'s `cumulative` encoder, which would re-derive a strictly
 weaker set of capacity rows. cake has no optional cumulative encoder, and
 that gap is now named rather than hidden.
+
+## The height rule (#1239)
+
+Every rule above moves a start, or a presence, or reports a conflict. Until
+#1239 nothing lowered a variable height, not even to the capacity, so a height
+domain wider than the resource was walked by search one value at a time: three
+tasks on capacity 5 with one height in `[2, u]` took about 96 recursions per
+value of `u`, 9.6 million at `u = 100,000`.
+
+**The rule.** A task known present, whose length is at least 1, takes its
+height at every point of its footprint `[s, s + lb(l))` wherever it starts. So
+
+    h_j  <=  max over s in [lb(s_j), ub(s_j)] of  min over t in [s, s + lb(l_j)) of  room_j(t)
+
+where `room_j(t) = ub(capacity) - (mand_load[t] - j's own mandatory load at t)`
+is what everyone else leaves. With an empty profile that is the capacity, which
+is all the issue asked for. With a profile it is whatever the roomiest
+placement leaves, which is as much as time-tabling can say. It is computed by a
+sliding minimum over `j`'s footprint, which stops as soon as some placement has
+room for `ub(h_j)`. A task is skipped without a scan when `ub(h_j)` fits on
+top of the largest mandatory load anywhere. The rule runs under
+`CumulativeRules::time_table`, and is counted as the `time_table_height` row.
+
+Two kinds of task are left alone. A task whose length may be zero takes nothing
+anywhere. An optional task not yet known present may take any height at all if
+it turns out absent. A bound that holds only if it is present is a conditional
+bound, and as with the starts there is nowhere to keep one.
+
+**The certificate is presence falsification's.** Counted at `bound + 1`, the
+task has nowhere to start: every placement's footprint has a time with less
+room than that. That is exactly the situation presence falsification argues
+about, with the hypothetical height in the absence's place. The same lb chain
+runs over the task's whole start domain. Each step's line reads "either `j`
+starts later than this, or `h_j < bound + 1`". The last step carries only
+`h_j < bound + 1`, for the same reason the presence chain's last step drops its
+start disjunct.
+
+One thing is new. The pushed task's pin counts its contribution at the
+*hypothetical* height:
+
+    contrib_j + (bound + 1) * Sum ext  >=  bound + 1
+
+Its height bound comes from the negated `h_j < bound + 1` disjunct, not from
+the reason's `lb(h_j)`. This is the same RUP as before, against a different
+order literal on the same variable. `pin_pushed` takes it as an optional
+argument. Only an upper bound moves, and the justification reads only lower bounds
+live. That matters because a justification runs after its push has landed, so
+anything it reads live sees the pushed domains. That shape has been a recurring
+bug in this family.
+
+**What a mutation can catch.** The rule is conflict-shaped, and the presence
+section's lesson applies: corrupt the destination. `LowerHeightOneTooFar`
+claims the bound one lower, where some placement still has room. The chain
+then runs out of blocked times and the wrapping RUP has nothing to close on.
+That lane rejects on the `profile` fixture under both arms.
+
+The two route corruptions, `HeightEmitNothing` and `DropHeightContributor`,
+are a different story. On the hand-made fixtures, unit propagation over the
+start-checkpoint rows closes the conclusion with no chain at all. A task's own
+checkpoint row caps its height directly, and the neighbours' rows relate the
+starts. This is the same thing that retired the presence family's
+`emit_nothing` lane at the encoding flip. A random search was needed to find
+an instance where the chain is load-bearing. Over 303 random root firings, all
+of whose honest proofs verified, `HeightEmitNothing` was rejected on 25 and
+`DropHeightContributor` on 10. The `crowded` fixture in
+`cumulative_height_test.cc` is one of the instances where both are rejected,
+and both lanes run on it under both arms.
 
 ## Edge-finding, and the reason-free window-energy row
 
