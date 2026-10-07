@@ -2152,7 +2152,8 @@ through --- the issue's guard-relativized rendering of a case split whose
 target is a row rather than a clause.
 
 **In the solver.** `recover_cumulative_capacity_row`
-(`gcs/constraints/cumulative/checkpoint_recovery.cc`) is this derivation,
+(`gcs/constraints/cumulative/checkpoint_recovery.cc`) uses this derivation
+as its fallback since #1254, the chain below doing most of the work. The scan is
 keyed on `t` alone and reason-free at `Top`, with the order facts cached
 across time points and the recovered rows cached across citers. Two things
 it does that the hand-written version did not have to:
@@ -2190,6 +2191,121 @@ OPB with every per-time capacity row stripped out --- the only thing that says
 the recovery is not quietly closing one of its rups against the very row it
 claims to be deriving. Both fail loudly if the recovery stops running at all,
 rather than passing vacuously.
+
+### Recovering `C_t` from `C_{t-1}`: the chain (#1254)
+
+The scan above is cubic per time point, and in practice it costs more than
+its table suggests: on `pack001` under `--infer-cumulative`, the 60 points
+the derived cuts cite took about 7,200 lines each. That was 76% of a
+568,680-line proof, and 42 s of VeriPB against 0.38 s under the time-indexed
+test arm. Something that cites many points, as the makespan bound cites every
+point of its window, pays that per point.
+
+**The argument.** Split on which candidate, if any, starts at **exactly**
+`t`:
+- **Nobody does.** Then every task active at `t` was active at `t - 1`, so
+  the load at `t` is at most the load at `t - 1`, which `C_{t-1}` bounds.
+- **`j` does.** Then every task active at `t` is active when `j` starts,
+  so `C^start_j` bounds the load at `t`. This is the scan's case for `j`.
+  "Starts at `t`" is stronger than "latest to have started by `t`", so it
+  needs none of the order facts: no totality, no transitivity, no `e`, no
+  champions.
+
+What is left is quadratic in the candidates, given `C_{t-1}`.
+
+**The steps.** Reason-free, at `Top`:
+
+| step | shape | count |
+|---|---|---|
+| `starts_at_i <-> cb_{i,t} /\ ~cb_{i,t-1}` | two `red` | `m` |
+| `ca_{i,t} -> ca_{i,t-1}` | one `pol`, a flag bridge | `m` |
+| `~cact_{i,t} \/ cact_{i,t-1} \/ starts_at_i` | one `pol`: `cact_{i,t}[r]`, `starts_at_i[f]`, the bridge halved, `cact_{i,t-1}[f]` | `m` |
+| no-start: `C_{t-1}` + the above at `h_i` + `F_t`'s reverse half | one `pol`, unsaturated | 1 |
+| `~cb_{i,t} \/ cb_{j,t-1} \/ sb_{i,j}`, `~ca_{i,t} \/ ~cb_{j,t} \/ sa_{i,j}` | one `pol` each | `2m(m-1)` |
+| `~starts_at_j \/ ~cact_{i,t} \/ sact_{i,j}` | one `pol`: the two above, `sact[f]`, `cact[r]`, `starts_at_j[r]` | `m(m-1)` |
+| case `j`: `C^start_j` + pins + `F_t`'s reverse half | one `pol`, as the scan's | `m` |
+| finish: no-start + each case at `starts_at_j`'s coefficient | one `pol` | 1 |
+
+Some details:
+- **Where `j`'s window opens at `t`.** There is no `cb_{j,t-1}`. Its declared
+  lower bound says it cannot start earlier, through the order literal
+  `s_j >= t`'s defining row in the first `pol`, and the boundary pin closes
+  that literal in the pin. A start with no such pin, such as a view, declines
+  the step, and that point goes to the scan.
+- **The pins are `pol`s, not `rup`s.** That made a large difference.
+  Expressed as `rup`s, the same proof checked in 3.8 s. As `pol`s it checks
+  in 0.64 s. A `rup`'s unit propagation runs over a database that grows
+  with every time point, where a `pol` is arithmetic over the lines it names.
+  The only `rup` a chain step still writes is the no-start pin for a task
+  whose window opens at `t`, which is one of `cact`'s own conjuncts and
+  happens once per task.
+- **The finish weights each case** by `starts_at_j`'s coefficient in the
+  no-start line, so it cancels exactly. Without a previous row, at the base
+  of a chain, the no-start line's degree is `C + 1` rather than one, so the
+  finish divides by it. That needs a constant capacity that is not negative.
+
+**Where it runs.** `recover_cumulative_capacity_row` chains up from the
+nearest point below `t` that is already recovered, or at which no task can be
+active (the base). It looks at most as many points below as there are
+candidates, which is roughly where a run of quadratic steps costs what one
+cubic scan does. Otherwise it scans.
+
+A longer reach measured faster on Pack_d, because the scan's lines are mostly
+`rup`s. With a reach of `m^2`, `pack_d/pack030` checks in 9.4 s against
+14.5 s, and its 18 scans disappear. It was not taken: every extra step
+recovers a row that nothing cites, and those rows in the database were enough
+to let two other rules' mutation fixtures (`cumulative_nfnl_mutation_drop`,
+`cumulative_ttef_mutation_drop`) close their corrupted derivations by unit
+propagation. Turning the scan's own `rup`s into `pol`s would be the better
+fix for the scan's cost. Every row a chain passes through is
+cached. The recovering arm asks for every row in order, so everything after
+the first point chains. The rules ask for what they cite, which is usually a
+window's worth of consecutive points.
+
+**Measured on `pack001`**, the issue's command
+(`--infer-cumulative --deadline 20 --prove`):
+
+| | main | the chain |
+|---|---|---|
+| lines | 568,680 | 155,277 |
+| of which recovery | 432,684 | 88,512 |
+| VeriPB | 42.3 s | **0.64 s** |
+
+**Measured on Pack and Pack_d.** Each instance's certified bound `B` was
+refuted at `B - 1` with `--infer-cumulative --prove`, with VeriPB limited to
+an hour:
+
+| collection | main | the chain |
+|---|---|---|
+| Pack, 55 instances | 52 verify, 36,338 s in all; 3 time out | all 55 verify, 119 s in all, at most 6 s |
+| Pack_d, 50 instances | none: 39 time out, 11 proofs over 6 GB (up to 17 GB) | all 50 verify, median 51 s, at most 222 s, at most 2.15 GB |
+
+On the 52 Pack instances both verify, the median speedup is 261x. The
+slowest Pack_d check is back near August's figure from before #943, 146 s.
+
+All 60 points chain (3 of them bases), none scans. Lines per step are
+about `4m^2`, 1,600 at `m = 21`, which is mostly the three `pol`s per pair.
+The rest of the proof is the presolver's own lifted-cover replay. The
+time-indexed arm, which recovers nothing, still has the smallest proof
+(83,982 lines).
+
+**Tests.**
+- **`cumulative_overload_mutation_chain_drop_previous`** leaves `C_{t-1}`
+  out of the no-start case.
+- **`cumulative_overload_mutation_chain_started_by`** guards each case on
+  "started by `t`" rather than "starts at `t`".
+
+Both are rejected. Both run under the shipped encoding, where the overload
+certificate cites recovered rows and the model has no per-time row. Under
+`both-recovering` the second one verifies, its weakened pins closing by unit
+propagation against the very rows being recovered. That is the leak the leak
+check exists for, so the recovering arm is the wrong place for it.
+`recover_wrong_checkpoint`, which the scan's section says only the
+implication check catches, is now also rejected under the shipped encoding.
+
+Across the suite, the recovery takes every path: 10,565 chain steps, 896
+bases, 524 scans (the inferred-cumulative, strengthening, optional,
+energetic and MiniZinc lanes among them), and 205 declines for a view start.
 
 ### Citing the recovered row: the time-table overflow contradiction
 

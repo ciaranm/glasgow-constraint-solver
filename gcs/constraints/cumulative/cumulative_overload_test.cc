@@ -531,6 +531,10 @@ auto main(int argc, char * argv[]) -> int
             // recovery does not run and the proof comes out honest.
             else if (arg == "--mutate=recover_wrong_checkpoint")
                 mutation = cumulative_proof_mutation::RecoverFromWrongCheckpoint{};
+            else if (arg == "--mutate=chain_drop_previous")
+                mutation = cumulative_proof_mutation::ChainDropPreviousRow{};
+            else if (arg == "--mutate=chain_started_by")
+                mutation = cumulative_proof_mutation::ChainGuardOnStartedBy{};
             else if (arg == "--proof-files-basename" && a + 1 < argc)
                 proof_basename = argv[++a];
         }

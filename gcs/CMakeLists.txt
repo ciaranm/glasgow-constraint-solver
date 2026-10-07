@@ -609,6 +609,18 @@ if(GCS_BUILD_TESTS)
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
             --basename cumulative_overload_mutation_recover_wrong $<TARGET_FILE:cumulative_overload_test>
             --mutate=recover_wrong_checkpoint)
+    # #1254: the chain step's own ingredients. Without the previous row the
+    # no-start case has nothing bounding the load it carries over; with each
+    # case guarded on its task having started by t rather than starting at t,
+    # the pins have no reason to hold. Under the shipped encoding, where the
+    # overload certificate cites recovered rows and the model has no per-time
+    # row for a rup to lean on: under `both-recovering` the second one verifies,
+    # its weakened pins closing against the very rows being recovered.
+    foreach(mutation chain_drop_previous chain_started_by)
+        add_test(NAME cumulative_overload_mutation_${mutation}
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                --basename cumulative_overload_mutation_${mutation} $<TARGET_FILE:cumulative_overload_test> --mutate=${mutation})
+    endforeach()
 
     # And the other half of what the recovering arm has to be held to: that the
     # recovery stands on the start-checkpoint rows *alone*. Every lane above
