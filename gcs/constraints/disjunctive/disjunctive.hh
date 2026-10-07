@@ -268,6 +268,12 @@ namespace gcs
         /// point once a window's pairs have been seen, at the price of a
         /// standing database quadratic in the tasks and linear in the horizon.
         ///
+        /// The window's fold of those rows, the at-most-one over all of its
+        /// tasks at a time point, is kept on the same terms, keyed on the task
+        /// set, their durations and the time (#1246). A firing over a window an
+        /// earlier one saw then cites one row per time point and derives
+        /// nothing.
+        ///
         /// Only has an effect where \ref overload_vocabulary_at keeps the
         /// vocabulary too: nothing within one firing asks for the same pair and
         /// time twice, so all the reuse is across firings.

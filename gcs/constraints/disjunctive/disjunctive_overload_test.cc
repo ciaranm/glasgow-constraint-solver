@@ -32,6 +32,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 #include <version>
@@ -50,6 +51,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
+using std::tuple;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -338,17 +340,17 @@ auto main(int argc, char * argv[]) -> int
     if (proofs) {
         const Instance permutations{{{0, 9}, {0, 9}, {0, 9}, {0, 9}}, {3, 3, 3, 3}};
 
-        auto run = [&](bool cache, const string & name) -> pair<Probe, int> {
+        auto run = [&](bool cache, const string & name) -> tuple<Probe, int, int> {
             DisjunctiveRules rules{.overload = true};
             rules.overload_cache_bridge = cache;
             auto result = probe(permutations, rules, make_optional(name), disjunctive_proof_mutation::None{}, true);
             if (! gcs::test_innards::run_veripb(name + ".opb", name + ".pbp"))
                 fail(name + ": veripb rejected the certificate");
-            return {result, proof_lines(name)};
+            return {result, proof_lines(name), count_markers(name, "clique at-most-one over")};
         };
 
-        auto [cached, cached_lines] = run(true, "disjunctive_overload_cached");
-        auto [derived, derived_lines] = run(false, "disjunctive_overload_uncached");
+        auto [cached, cached_lines, cached_folds] = run(true, "disjunctive_overload_cached");
+        auto [derived, derived_lines, derived_folds] = run(false, "disjunctive_overload_uncached");
 
         if (cached.markers < 2)
             fail("permutations: the rule fired " + std::to_string(cached.markers) + " times, so nothing was there to reuse");
@@ -359,6 +361,14 @@ auto main(int argc, char * argv[]) -> int
         if (cached_lines >= derived_lines)
             fail("permutations: keeping the at-most-ones cost " + std::to_string(cached_lines) + " lines against " + std::to_string(derived_lines) +
                 " for deriving them again");
+        // The folded at-most-ones are kept beside the pairwise ones (#1246),
+        // and a firing over a window an earlier one saw cites them rather than
+        // folding again. Counted by the comment each fold writes.
+        if (cached_folds >= derived_folds)
+            fail("permutations: keeping the folds wrote " + std::to_string(cached_folds) + " of them against " + std::to_string(derived_folds) +
+                " for folding again");
+        println(cerr, "permutations: {} folds kept against {} derived per firing, {} lines against {}", cached_folds, derived_folds, cached_lines,
+            derived_lines);
     }
 
     // Variable durations: three tasks whose durations are variables in [3, 4]
