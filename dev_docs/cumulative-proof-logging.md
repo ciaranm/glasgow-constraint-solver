@@ -1697,7 +1697,10 @@ against plain edge-finding's 39.
 
 **That is the paper claim, now on both encodings.** Where a rule certifies a
 weaker detection than the literature states, the gap is priced rather than
-confessed: 0.6% of the search on `Disjunctive`, under 1% here.
+confessed: 0.6% of the search on `Disjunctive`, under 1% here. (Both figures
+are for the detection asked over the window sweep's sets. Asked over every
+set it can use, it is worth far more on both encodings; see "Which Ω: every
+one", below, and `disjunctive-proof-logging.md`.)
 
 ### Certifying the published condition, by contiguity (#746)
 
@@ -1795,6 +1798,94 @@ accepts, which fails the lane, so the verdict is veripb's either way.
 `PushOneTooFar` had to be wired into this rule's own pushes. Until it was, the
 lane was corrupting an edge-finding firing on the same instance and reporting a
 rejection that said nothing about not-first / not-last.
+
+### Which Ω: every one
+
+The published condition is stated for **any** set `Ω` of tasks other than the
+pushed one. The detection above asked it only of the window sweep's sets: a
+window's whole contents, with a task the window contains skipped. That is
+#1247's and #1249's restriction on the unary side, and it costs the same
+here.
+- **How often.** On 3,000 random instances, a brute force over every `Ω`
+  finds a push missed at 22 of the 2,109 roots that are not refuted outright.
+  10 are on a task inside `Ω`'s window, and 13 need a proper subset of every
+  window holding `Ω`.
+- **What it costs in search.** Over every `Ω`, the search on `data_bl` +
+  `data_pack` takes about 12% fewer recursions (below).
+
+**The complete family.** What an `Ω` claims depends only on its energy, its
+`est` and `lct`, and its `ECT` (for not-first) or `LST` (for not-last). So a
+firing `Ω` lies inside
+`{k ≠ j : est_k ≥ est(Ω), lct_k ≤ lct(Ω), ect_k ≥ ECT(Ω)}`, which has the
+same three figures and at least the energy, so it fires too. Every set worth
+asking about is therefore fixed by three thresholds: an `est` floor `E`, an
+`lct` ceiling `L` and an `ect` floor `F`. That is one more than on the unary
+side, where the window the negated conclusion derives does not depend on
+`est(Ω)`. Here the window is `[est(Ω), lct(Ω))`, so it does, and a sweep over
+all three is quartic.
+
+**The sweep.** The condition is linear in `E`:
+
+```
+max over E of  e(E) + (C − h_j) E   >   C·L − h_j·min(ect_j, L)
+```
+
+So for each `F` and each `L` the left side is a running maximum over the
+`est` floors, kept per distinct height (one slope each), and asking it of a
+task is constant time. That is `O(H·n³)` for `H` distinct heights. Details:
+- **The pushed task's own energy.** A task meeting the floors and the ceiling
+  is left out of the set. Its energy counts only for `E` at or below its own
+  `est`, so the maximum is split there.
+- **Empty sets.** Floors above every member's `est` leave the set empty, and
+  an empty set's figure can be anything, so the maxima stop at the last floor
+  with a member.
+- **The strongest push.** The `ect` floors are taken from the top, so the
+  first that fires for a task is the furthest it can be pushed.
+- **A prefilter.** A firing needs `e(E) > (C − h_j)(L − E)`, the set already
+  overfilling what the resource leaves beside `j`. Asked once at the tallest
+  task in play, this rules a whole step out for everyone.
+- **Arithmetic.** The sweep works in plain arithmetic, with times taken from
+  the earliest `est`, under a bound checked once in `Integer`.
+- **Not-last** is the same code run on the tasks reflected in time
+  (`est' = −lct`, `ect' = −lst`), where its condition reads as not-first's
+  does.
+- **At a firing.** The set is rebuilt and its own `est`, `lct` and `ECT` are
+  asked the condition again before the certificate is written. The floors are
+  no tighter than those figures, so the condition holds over the set itself.
+
+**The certificate does not change.** It already argued over a given `Ω` and
+its own window, and it holds with the pushed task inside that window. The
+window loop keeps only the window-energy detection.
+
+**Measured.**
+- **Roots.** On 13,000 random instances the roots are identical to a naive
+  all-thresholds sweep's. The brute force finds no missed push except 6
+  involving a start of domain `{0, 1}`, which every window rule leaves out
+  because it has no order literals to cite.
+- **Proofs.** On the 83 instances whose root changed, enumeration proofs
+  verify and the solution counts match the rules-off run.
+- **Search, on `data_bl` + `data_pack` at 60 s.** The same 35 instances close
+  as with the window-sweep version.
+  - Over those 35, **0.883x the summed recursions and 0.903x the median**,
+    better on 30 and worse on none.
+  - Wall time is 1.34x that version's, and 0.95x the window-energy
+    detection's.
+  - On `Bl2001`, 8.6G `instructions:u` against 7.0G, for 3% fewer
+    recursions.
+
+The naive quartic sweep reaches the same search at 15x the cost per node and
+closes 28. So the published detection over every `Ω` is worth about a tenth
+of the search, where over the window sweep's sets it was worth under 1%. It
+is still off by default, with `not_first_not_last`.
+
+**Tests.** `cumulative_published_nfnl_test.cc` adds four bound fixtures. In
+each the push is one that everything else certified (time-tabling, the
+overload check, edge-finding and TTEF) does not make, and each fails against
+the window-sweep version:
+- `contained` and `contained_mirror`, a task inside `Ω`'s window;
+- `subset` and `subset_mirror`, a proper subset.
+
+All four are also among the enumeration fixtures.
 
 ## The overload ladder: one certificate, a tighter line per time point (#550)
 

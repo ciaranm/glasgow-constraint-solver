@@ -416,6 +416,27 @@ auto main(int argc, char * argv[]) -> int
     // enumerate. Task 1's upper bound falls 6 -> 4.
     const Instance roomy{{{1, 4}, {0, 6}, {1, 7}}, {{1, 1}, {3, 3}, {5, 5}}, {{1, 1}, {2, 2}, {2, 2}}, 2};
 
+    // Omega need not be a window's whole contents, and the pushed task may lie
+    // inside the window Omega does: the rule is stated over every set of the
+    // other tasks. These were a window sweep's misses, as on the unary side
+    // (#1247, #1249).
+    //
+    // The pushed task inside Omega's window. Capacity 5. Over Omega = {0, 1},
+    // est 1 and lct 11, task 2's start below ECT(Omega) = 6 leaves
+    // 4 + 25 + 5 (6 - 1) = 54 to fit in 5 x 10, so it rises to 6. But every
+    // window holding tasks 0 and 1 holds task 2 as well.
+    const Instance contained{{{4, 9}, {1, 6}, {5, 10}}, {{2, 2}, {5, 5}, {1, 1}}, {{2, 2}, {5, 5}, {5, 5}}, 5};
+    // Its mirror, reflected in time about 12: task 2's upper bound falls to 5.
+    const Instance contained_mirror{{{1, 6}, {1, 6}, {1, 6}}, {{2, 2}, {5, 5}, {1, 1}}, {{2, 2}, {5, 5}, {5, 5}}, 5};
+    // Omega a proper subset of every window holding it. Capacity 5. Over
+    // Omega = {3}, est 2 and lct 11, task 0's start below ECT(Omega) = 6 leaves
+    // 20 + 5 (9 - 2) = 55 to fit in 5 x 9, so it rises to 6. The window
+    // [2, 11) holds task 2 as well, whose ECT of 5 is the window's and claims
+    // nothing; edge-finding and TTEF leave the bound at 5 too.
+    const Instance subset{{{4, 11}, {10, 18}, {4, 7}, {2, 7}}, {{4, 4}, {2, 2}, {1, 1}, {4, 4}}, {{5, 5}, {2, 2}, {5, 5}, {5, 5}}, 5};
+    // Its mirror, reflected about 20: task 0's upper bound falls to 10.
+    const Instance subset_mirror{{{5, 12}, {0, 8}, {12, 15}, {9, 14}}, {{4, 4}, {2, 2}, {1, 1}, {4, 4}}, {{5, 5}, {2, 2}, {5, 5}, {5, 5}}, 5};
+
     // Describe one instance: what edge-finding leaves, what TTEF leaves, and
     // whether the bound it moves to is one a solution sits on. This is how a
     // fixture found by --search gets turned into the numbers written down
@@ -566,8 +587,9 @@ auto main(int argc, char * argv[]) -> int
     // The rule fires, pushes exactly as far as the energy supports, and does so
     // where edge-finding on its own does not. `raises` says which bound the
     // fixture is about, and `task` which task it is about.
-    for (const auto & [name, inst, task, raises, expected] : vector<tuple<string, Instance, size_t, bool, int>>{
-             {"sharp", sharp, 0, true, 6}, {"sharp_mirror", sharp_mirror, 0, false, 1}, {"roomy", roomy, 1, false, 4}}) {
+    for (const auto & [name, inst, task, raises, expected] : vector<tuple<string, Instance, size_t, bool, int>>{{"sharp", sharp, 0, true, 6},
+             {"sharp_mirror", sharp_mirror, 0, false, 1}, {"roomy", roomy, 1, false, 4}, {"contained", contained, 2, true, 6},
+             {"contained_mirror", contained_mirror, 2, false, 5}, {"subset", subset, 0, true, 6}, {"subset_mirror", subset_mirror, 0, false, 10}}) {
         auto off = root_bounds(inst, without_rule, cumulative_proof_mutation::None{}, nullopt);
         auto on =
             root_bounds(inst, with_rule, cumulative_proof_mutation::None{}, proofs ? make_optional("cumulative_published_nfnl_" + name) : nullopt);
@@ -587,6 +609,7 @@ auto main(int argc, char * argv[]) -> int
     // Soundness, over instances small enough to enumerate: the rule may not
     // lose a solution, with or without a proof being written.
     for (const auto & [name, inst] : vector<pair<string, Instance>>{{"sharp", sharp}, {"sharp_mirror", sharp_mirror}, {"roomy", roomy},
+             {"contained", contained}, {"contained_mirror", contained_mirror}, {"subset", subset}, {"subset_mirror", subset_mirror},
              {"tight", Instance{{{0, 3}, {0, 3}, {1, 2}, {0, 5}}, {{2, 2}, {2, 2}, {3, 3}, {2, 2}}, {{1, 1}, {1, 1}, {1, 1}, {1, 1}}, 2}},
              {"mixed_heights", Instance{{{0, 4}, {0, 4}, {1, 2}, {0, 6}}, {{3, 3}, {2, 2}, {4, 4}, {2, 2}}, {{2, 2}, {1, 1}, {1, 1}, {2, 2}}, 3}},
              // #778: task 0's length is a decision variable, so its `after`
