@@ -231,6 +231,15 @@ namespace gcs::innards
         {
         };
 
+        /// Emit no certificate for a published push on a task the window
+        /// contains (#1247), and leave every other firing's alone. Aimed at the
+        /// firing set rather than the derivation, which those firings share:
+        /// a rejected proof says the fixture's contained-task pushes are ones
+        /// the rest of the proof cannot reach, so they are being tested.
+        struct PublishedContainedEmitNothing
+        {
+        };
+
         // Deliberately absent: citing the pushed task's row at the *unclipped*
         // threshold, as if the window contained it. It was written, and it
         // verified. A row derived at a threshold the reason still entails is a
@@ -255,7 +264,7 @@ namespace gcs::innards
         disjunctive_proof_mutation::DropSetPrecedenceClause, disjunctive_proof_mutation::RupSetPrecedenceClause,
         disjunctive_proof_mutation::PublishedEmitNothing, disjunctive_proof_mutation::SkipPublishedFold,
         disjunctive_proof_mutation::DropPublishedEnergy, disjunctive_proof_mutation::DropPublishedClause,
-        disjunctive_proof_mutation::RupPublishedClause>;
+        disjunctive_proof_mutation::RupPublishedClause, disjunctive_proof_mutation::PublishedContainedEmitNothing>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,

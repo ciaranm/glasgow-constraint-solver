@@ -201,6 +201,13 @@ namespace gcs
         /// four and five tasks the published condition fires 1.7x and 1.6x as
         /// often (#757).
         ///
+        /// As published, Theta is taken from the tasks *other than* `j`, so
+        /// `j` may lie inside every window Theta does: there Theta is the
+        /// window's contents less `j` (#1247). The window-energy detection
+        /// gains nothing from that, because a contained task's energy is in
+        /// the window wherever it starts, so it asks only about tasks the
+        /// window does not contain.
+        ///
         /// **Certified**, over the window the negated conclusion derives:
         /// `[ect_j, lct(Theta))` for not-first, whose *left* edge the
         /// conclusion supplies, and `[est(Theta), ub(s_j))` for not-last,

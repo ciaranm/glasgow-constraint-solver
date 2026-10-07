@@ -22,6 +22,10 @@
  * are already contradictory and the whole derivation is the clause plus the
  * reason's row for the bound it contradicts (`shortcut_nf`, `shortcut_nl`).
  *
+ * The rule takes Theta from the tasks other than the pushed one, so that one
+ * can lie inside every window Theta does (#1247): `contained_nf` and
+ * `contained_nl` are pushes nothing else makes but that.
+ *
  * `--search` generates random unary instances, verifies a proof per instance,
  * and checks the rule removes no solutions.
  */
@@ -206,6 +210,19 @@ auto main(int argc, char * argv[]) -> int
     // lst(Theta) - p_0 = 8. Also the bound enumeration gives.
     const Instance shortcut_nl{{{4, 13}, {11, 12}}, {4, 3}};
 
+    // The pushed task inside the window, which is #1247's smallest case. Task 1
+    // has est 3 and lct 10, so every window holding tasks 0 and 2 --- est 0 and
+    // 1, lct 11 --- holds task 1 too, and Theta for task 1 is that window's
+    // contents less task 1 itself. Then the published not-first condition
+    // fires: p(Theta) = 8 > lct(Theta) - ect_1 = 11 - 5, so task 1 cannot go
+    // before both, and its lower bound rises to ect(Theta) = 4. Starting at 3
+    // has no support, so 4 is where enumeration puts it too.
+    const Instance contained_nf{{{0, 7}, {3, 8}, {1, 7}}, {4, 2, 4}};
+
+    // Its mirror, reflected in time about 12: not-last over the same Theta
+    // drops task 1's upper bound to max lst(Theta) - p_1 = 6.
+    const Instance contained_nl{{{1, 8}, {2, 7}, {1, 7}}, {4, 2, 4}};
+
     // One more unit of room in the window and the condition has nothing to
     // claim, so neither fixture above is firing on a technicality.
     const Instance loose{{{3, 9}, {5, 8}, {6, 7}}, {4, 1, 1}};
@@ -224,6 +241,14 @@ auto main(int argc, char * argv[]) -> int
     // own. The two aimed at what is new here hold up much better:
     // `drop_clause` 127 and `rup_clause` 130.
     const Instance mutating{{{6, 14}, {9, 13}, {6, 14}, {0, 4}, {3, 11}, {5, 11}, {2, 11}}, {3, 1, 2, 3, 4, 3, 3}};
+
+    // The `contained_emit_nothing` lane's fixture, which drops only the
+    // certificates of pushes on a task the window contains (#1247). The two
+    // fixtures above for that case are too small to need theirs: the closing
+    // RUP reaches the push from the separation clauses alone. Of 300 instances
+    // from `generate`, 156 made such a push and 134 of those rejected the lane;
+    // this is the first four-task one.
+    const Instance mutating_contained{{{2, 12}, {3, 11}, {4, 9}, {0, 10}}, {4, 4, 1, 4}};
 
     // Mutation mode: emit one deliberately corrupted proof and stop, for
     // run_test_and_expect_verify_failure.bash to hand to veripb.
@@ -244,12 +269,16 @@ auto main(int argc, char * argv[]) -> int
                 mutation = disjunctive_proof_mutation::RupPublishedClause{};
             else if (arg == "--mutate=one_too_far")
                 mutation = disjunctive_proof_mutation::EdgeFindingOneTooFar{};
+            else if (arg == "--mutate=contained_emit_nothing")
+                mutation = disjunctive_proof_mutation::PublishedContainedEmitNothing{};
             else if (arg == "--proof-files-basename" && a + 1 < argc)
                 proof_basename = argv[++a];
         }
 
         if (mutation) {
-            auto result = probe(mutating, published, make_optional(proof_basename), *mutation);
+            auto contained_only = std::holds_alternative<disjunctive_proof_mutation::PublishedContainedEmitNothing>(*mutation);
+            auto result = probe(contained_only ? mutating_contained : mutating, published, make_optional(proof_basename), *mutation, false,
+                contained_only ? "contained" : "disjunctive published not-");
             if (result.markers == 0)
                 fail("mutation mode: no published push was justified, so the proof is empty");
             println(cerr, "wrote a deliberately corrupted proof to {}.pbp", proof_basename);
@@ -354,6 +383,41 @@ auto main(int argc, char * argv[]) -> int
             fail("shortcut_nl: no published marker");
         if (proofs && ! gcs::test_innards::run_veripb("disjunctive_published_nfnl_shortcut_nl.opb", "disjunctive_published_nfnl_shortcut_nl.pbp"))
             fail("shortcut_nl: veripb rejected the certificate");
+    }
+
+    // The pushed task inside Theta's window, both ways round (#1247). Each push
+    // is checked against the rules off, so that it is this rule making it.
+    {
+        auto nf = probe(contained_nf, published, proofs ? make_optional("disjunctive_published_nfnl_contained_nf") : nullopt);
+        if (nf.root_bounds.at(1).first != 4)
+            fail("contained_nf: expected the contained task's lower bound at 4, got " + to_string(nf.root_bounds.at(1).first));
+        if (proofs && nf.markers == 0)
+            fail("contained_nf: no published marker");
+        if (proofs && ! gcs::test_innards::run_veripb("disjunctive_published_nfnl_contained_nf.opb", "disjunctive_published_nfnl_contained_nf.pbp"))
+            fail("contained_nf: veripb rejected the certificate");
+        if (probe(contained_nf, nothing, nullopt).root_bounds.at(1).first >= 4)
+            fail("contained_nf: the bound moved with the rule off, so the fixture says nothing about the rule");
+
+        auto nl = probe(contained_nl, published, proofs ? make_optional("disjunctive_published_nfnl_contained_nl") : nullopt);
+        if (nl.root_bounds.at(1).second != 6)
+            fail("contained_nl: expected the contained task's upper bound at 6, got " + to_string(nl.root_bounds.at(1).second));
+        if (proofs && nl.markers == 0)
+            fail("contained_nl: no published marker");
+        if (proofs && ! gcs::test_innards::run_veripb("disjunctive_published_nfnl_contained_nl.opb", "disjunctive_published_nfnl_contained_nl.pbp"))
+            fail("contained_nl: veripb rejected the certificate");
+        if (probe(contained_nl, nothing, nullopt).root_bounds.at(1).second <= 6)
+            fail("contained_nl: the bound moved with the rule off, so the fixture says nothing about the rule");
+    }
+
+    // The contained lane's fixture, unmutated: it verifies, and it does make a
+    // push on a contained task, so a rejection in that lane is about one.
+    if (proofs) {
+        auto result = probe(mutating_contained, published, make_optional("disjunctive_published_nfnl_mutating_contained"),
+            disjunctive_proof_mutation::None{}, false, "contained");
+        if (result.markers == 0)
+            fail("mutating_contained: no push on a contained task");
+        if (! gcs::test_innards::run_veripb("disjunctive_published_nfnl_mutating_contained.opb", "disjunctive_published_nfnl_mutating_contained.pbp"))
+            fail("mutating_contained: veripb rejected the unmutated proof");
     }
 
     // The margin of one: a single unit more room and there is nothing to claim.
