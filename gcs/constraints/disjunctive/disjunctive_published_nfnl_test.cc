@@ -24,7 +24,9 @@
  *
  * The rule takes Theta from the tasks other than the pushed one, so that one
  * can lie inside every window Theta does (#1247): `contained_nf` and
- * `contained_nl` are pushes nothing else makes but that.
+ * `contained_nl` are pushes nothing else makes but that. And Theta need not
+ * be any window's whole contents (#1249): `subset_nf` and `subset_nl` are
+ * pushes only a proper subset of every window holding Theta can make.
  *
  * `--search` generates random unary instances, verifies a proof per instance,
  * and checks the rule removes no solutions.
@@ -223,6 +225,19 @@ auto main(int argc, char * argv[]) -> int
     // drops task 1's upper bound to max lst(Theta) - p_1 = 6.
     const Instance contained_nl{{{1, 8}, {2, 7}, {1, 7}}, {4, 2, 4}};
 
+    // Theta a proper subset of every window that holds it (#1249). Not-first on
+    // task 1 over Theta = {0, 2}: p(Theta) = 6 > lct(Theta) - ect_1 = 13 - 8,
+    // so task 1 cannot go before both, and its lower bound rises to
+    // min ect(Theta) = 6. But every window holding tasks 0 and 2 starts at or
+    // before 2 and so holds task 3 as well, whose ect of 3 is the window's
+    // min ect and claims nothing. The set the rule wants is the tasks with an
+    // ect of at least 6 and an lct of at most 13.
+    const Instance subset_nf{{{4, 11}, {5, 13}, {2, 8}, {2, 10}}, {2, 3, 4, 1}};
+
+    // Its mirror, reflected in time about 16: not-last drops task 1's upper
+    // bound to max lst(Theta) - p_1 = 7.
+    const Instance subset_nl{{{3, 10}, {0, 8}, {4, 10}, {5, 13}}, {2, 3, 4, 1}};
+
     // One more unit of room in the window and the condition has nothing to
     // claim, so neither fixture above is firing on a technicality.
     const Instance loose{{{3, 9}, {5, 8}, {6, 7}}, {4, 1, 1}};
@@ -232,23 +247,17 @@ auto main(int argc, char * argv[]) -> int
     // finishes the job from whatever a corrupted derivation left behind, which
     // is sound and VeriPB is right to accept.
     //
-    // Scanning generated instances for one where all six lanes are rejected
-    // found this at the eighth try. Over 300 instances, 172 fired the rule at
-    // all and 24 of those rejected every lane; the two most fragile are
-    // `skip_fold` (36 of 172) and `drop_energy` (58), for the same reason
-    // not-first / not-last's own lanes are fragile --- the thresholds are
+    // Rescanned when Theta stopped being a window's whole contents (#1249),
+    // because the previous fixture had no solutions and the stronger rule
+    // refuted it by a route every corruption left standing. Over 300 instances
+    // of five to eight tasks (`generate`, seeded 5), 258 fired the
+    // rule and 32 rejected all seven lanes. The fragile ones are still
+    // `skip_fold` (111 of 258) and `drop_energy` (104), for the same reason
+    // not-first / not-last's own lanes are fragile: the thresholds are
     // `min ect` and `max lst`, which pairwise reasoning can often reach on its
-    // own. The two aimed at what is new here hold up much better:
-    // `drop_clause` 127 and `rup_clause` 130.
-    const Instance mutating{{{6, 14}, {9, 13}, {6, 14}, {0, 4}, {3, 11}, {5, 11}, {2, 11}}, {3, 1, 2, 3, 4, 3, 3}};
-
-    // The `contained_emit_nothing` lane's fixture, which drops only the
-    // certificates of pushes on a task the window contains (#1247). The two
-    // fixtures above for that case are too small to need theirs: the closing
-    // RUP reaches the push from the separation clauses alone. Of 300 instances
-    // from `generate`, 156 made such a push and 134 of those rejected the lane;
-    // this is the first four-task one.
-    const Instance mutating_contained{{{2, 12}, {3, 11}, {4, 9}, {0, 10}}, {4, 4, 1, 4}};
+    // own. This is the first of the 32 with search under it, and it has pushes
+    // on a task meeting its own set's bounds for `contained_emit_nothing`.
+    const Instance mutating{{{6, 15}, {8, 12}, {7, 16}, {2, 12}, {0, 1}, {5, 9}, {7, 12}}, {4, 1, 4, 4, 1, 3, 2}};
 
     // Mutation mode: emit one deliberately corrupted proof and stop, for
     // run_test_and_expect_verify_failure.bash to hand to veripb.
@@ -277,8 +286,8 @@ auto main(int argc, char * argv[]) -> int
 
         if (mutation) {
             auto contained_only = std::holds_alternative<disjunctive_proof_mutation::PublishedContainedEmitNothing>(*mutation);
-            auto result = probe(contained_only ? mutating_contained : mutating, published, make_optional(proof_basename), *mutation, false,
-                contained_only ? "contained" : "disjunctive published not-");
+            auto result = probe(
+                mutating, published, make_optional(proof_basename), *mutation, false, contained_only ? "contained" : "disjunctive published not-");
             if (result.markers == 0)
                 fail("mutation mode: no published push was justified, so the proof is empty");
             println(cerr, "wrote a deliberately corrupted proof to {}.pbp", proof_basename);
@@ -409,15 +418,39 @@ auto main(int argc, char * argv[]) -> int
             fail("contained_nl: the bound moved with the rule off, so the fixture says nothing about the rule");
     }
 
-    // The contained lane's fixture, unmutated: it verifies, and it does make a
-    // push on a contained task, so a rejection in that lane is about one.
+    // Theta a proper subset of every window holding it, both ways round (#1249).
+    {
+        auto nf = probe(subset_nf, published, proofs ? make_optional("disjunctive_published_nfnl_subset_nf") : nullopt);
+        if (nf.root_bounds.at(1).first != 6)
+            fail("subset_nf: expected task 1's lower bound at 6, got " + to_string(nf.root_bounds.at(1).first));
+        if (proofs && nf.markers == 0)
+            fail("subset_nf: no published marker");
+        if (proofs && ! gcs::test_innards::run_veripb("disjunctive_published_nfnl_subset_nf.opb", "disjunctive_published_nfnl_subset_nf.pbp"))
+            fail("subset_nf: veripb rejected the certificate");
+        if (probe(subset_nf, nothing, nullopt).root_bounds.at(1).first >= 6)
+            fail("subset_nf: the bound moved with the rule off, so the fixture says nothing about the rule");
+
+        auto nl = probe(subset_nl, published, proofs ? make_optional("disjunctive_published_nfnl_subset_nl") : nullopt);
+        if (nl.root_bounds.at(1).second != 7)
+            fail("subset_nl: expected task 1's upper bound at 7, got " + to_string(nl.root_bounds.at(1).second));
+        if (proofs && nl.markers == 0)
+            fail("subset_nl: no published marker");
+        if (proofs && ! gcs::test_innards::run_veripb("disjunctive_published_nfnl_subset_nl.opb", "disjunctive_published_nfnl_subset_nl.pbp"))
+            fail("subset_nl: veripb rejected the certificate");
+        if (probe(subset_nl, nothing, nullopt).root_bounds.at(1).second <= 7)
+            fail("subset_nl: the bound moved with the rule off, so the fixture says nothing about the rule");
+    }
+
+    // The mutation fixture, unmutated: it verifies, and it does make a push on a
+    // task meeting its own set's bounds, so a rejection in the
+    // `contained_emit_nothing` lane is about one.
     if (proofs) {
-        auto result = probe(mutating_contained, published, make_optional("disjunctive_published_nfnl_mutating_contained"),
-            disjunctive_proof_mutation::None{}, false, "contained");
+        auto result =
+            probe(mutating, published, make_optional("disjunctive_published_nfnl_mutating"), disjunctive_proof_mutation::None{}, false, "contained");
         if (result.markers == 0)
-            fail("mutating_contained: no push on a contained task");
-        if (! gcs::test_innards::run_veripb("disjunctive_published_nfnl_mutating_contained.opb", "disjunctive_published_nfnl_mutating_contained.pbp"))
-            fail("mutating_contained: veripb rejected the unmutated proof");
+            fail("mutating: no push on a task meeting its own set's bounds");
+        if (! gcs::test_innards::run_veripb("disjunctive_published_nfnl_mutating.opb", "disjunctive_published_nfnl_mutating.pbp"))
+            fail("mutating: veripb rejected the unmutated proof");
     }
 
     // The margin of one: a single unit more room and there is nothing to claim.

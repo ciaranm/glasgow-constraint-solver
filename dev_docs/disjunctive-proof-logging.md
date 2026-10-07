@@ -998,9 +998,9 @@ than the reason carrying it. `DisjunctiveRules::not_first_not_last_published`
 is that detection, over the same sweep, the same contained sets and the
 same thresholds — the condition is the only thing that differs, which is
 what makes the two comparable. (That was true when this section was
-measured. Since #1247 the published detection also asks about a `j` the
-window contains, with `Θ` the window's contents less `j`; see "Θ from the
-other tasks", below. The tables here predate it.)
+measured. Since #1247 and #1249 the published detection asks about every
+`Θ` it can use, over sweeps of its own, and its verdict below no longer
+holds. See "Which Θ: every one", below.)
 
 **Ours is a subset of it, and not by luck.** The window-energy figure
 over `[a, b)` at `s_j = lb(s_j)` is at most `ect_j − a`, so
@@ -1126,84 +1126,151 @@ better: `drop_clause` 127 and `rup_clause` 130. In particular unit
 propagation cannot reach the clause on its own, which is the same
 cross-variable limit `RupOverloadBridge` finds in the bridge.
 
-### Θ from the other tasks (#1247)
+### Which Θ: every one (#1247, #1249)
 
-As published, `Θ` is any set of tasks **other than `j`**. Nothing says
-`j` has to lie outside the window `Θ` does, and in a unary resource it
-often lies inside. The sweep used to skip any `j` the window contains, as
-edge-finding does, and that lost firings. The smallest case has three
-tasks, written `lo,hi,length`: A `0,7,4`, B `3,8,2` and C `1,7,4`. Every
-window holding A and C holds B too. Over `Θ = {A, C}`, `p(Θ) = 8` is more
-than `lct(Θ) − ect_B = 11 − 5`, so B cannot go before both and
-`s_B ≥ 4`. Gecode's `unary` makes that push, and the skip stopped GCS
-from making it.
+As published, `Θ` is **any** set of tasks other than `j`. The detection
+above asked only about the sets the edge-finding sweep enumerates, a
+window `[a, b)`'s whole contents with `j` outside the window. That missed
+two kinds of set.
 
-**The fix.** For a `j` the window contains, the published detection now
-takes `Θ` as the window's contents less `j`.
-- **Thresholds.** `p(Θ)`, `min ect`, `max lst`, `est(Θ)` and `lct(Θ)` are
-  over the other tasks. Each is tracked with its runner-up, so leaving
-  out `j` costs O(1) and the sweep stays cubic.
-- **Coverage.** Every `Θ ⊆ T \ {j}` that is a window's whole contents is
-  some window's contents less `j`, so this is the same as building `j`'s
-  windows over the other tasks.
+- **A `j` the window contains (#1247).** Nothing says `j` has to lie
+  outside the window `Θ` does. Take three tasks, written `lo,hi,length`:
+  A `0,7,4`, B `3,8,2` and C `1,7,4`. Every window holding A and C holds
+  B too. Over `Θ = {A, C}`, `p(Θ) = 8` is more than
+  `lct(Θ) − ect_B = 11 − 5`, so B cannot go before both and `s_B ≥ 4`.
+- **A proper subset of every window holding it (#1249).** Take
+  `4,11,2`, `5,13,3`, `2,8,4` and `2,10,1`. Over `Θ = {0, 2}`,
+  `p(Θ) = 6` is more than `lct(Θ) − ect_1 = 13 − 8`, so `s_1 ≥ 6`. But
+  every window holding tasks 0 and 2 starts at or before 2, so it holds
+  task 3 as well. Task 3's ect of 3 becomes the window's `min ect`, and
+  the push is to 3, which claims nothing. This is what kept GCS from
+  finding a schedule for OR-Library `la01` at its optimum.
 
-**The certificate does not change.** The derivation above never uses
-where `j` lies. It uses only that `j ∉ Θ`, for the pair separation
-clauses between `j` and each `k ∈ Θ`, and `Θ` is passed without `j`.
+**The complete family.** What a `Θ` claims for not-first depends only on
+`p(Θ)`, `lct(Θ)` and `min ect(Θ)`. So take any `Θ` that fires, and put
+`E = min ect(Θ)` and `b = lct(Θ)`. The set `{k ≠ j : ect_k ≥ E, lct_k ≤ b}`
+contains `Θ`, has the same `E` and `b`, and has at least `Θ`'s duration,
+so it fires with the same conclusion. Every not-first firing is therefore
+found by asking about the sets with **an ect floor and an lct ceiling**.
+Not-last's mirror is the sets with **an est floor and an lst ceiling**.
 
-**The window-energy detection gains nothing.** A contained `j` has all of
-its energy inside `[a, b)` wherever it starts. So the window plus `j` is
-overfilled only if the window is overfilled by its whole contents, and
-that is the overload check's case. That detection still skips a
-contained `j`, and its inferences are unchanged: the 20,000-instance
-comparison below gives byte-identical root bounds before and after.
+**The sweeps.** Each family has O(n²) sets, and each is swept the way
+the window sweep is. For each floor, tasks are taken in ceiling order and
+every `j` is asked about each whole set, which is O(n³) per direction.
+- **When `j` meets the set's bounds.** `j` is left out of the set. Each
+  threshold is tracked with its runner-up, so leaving `j` out costs O(1).
+- **What is shared.** The sweeps share `candidates` with edge-finding's
+  but not its windows.
+- **The window loop.** It keeps only the window-energy detection.
+
+**The certificate does not change.** `published_justification` already
+took any `Θ`. For each `k ∈ Θ` it needs only:
+- that `k ≠ j`;
+- for not-first, `lct_k ≤ lct(Θ)` and `ect_k ≥` the conclusion;
+- for not-last, `est_k ≥ est(Θ)` and `lst_k <` the conclusion `+ p_j`.
+
+Every member of either family meets these by construction.
+
+**The window-energy detection is unchanged.** Its argument is an energy
+count over `[a, b)` itself, so its sets really are windows' contents. A
+contained `j` would add all of its energy wherever it starts, which
+overfills the window only if the window's contents already do, and that
+is the overload check's case. Its root bounds on the 20,000 instances
+below are byte-identical before and after.
 
 **What it buys at the root.** The random single-machine instances from
 `disjunctive.md`'s comparison against Gecode 6.3.0's `unary`, every rule
-on, with the published detection:
+on, with the published detection. The columns count roots where GCS is
+weaker than Gecode:
 
-| draw | same as Gecode, before | after | GCS weaker, before | after | GCS stronger |
-|---|---|---|---|---|---|
-| 20,000 instances, seed 7 | 19,784 | 19,957 | 197 | **24** | 19 |
-| 40,000 instances, seed 11 | 39,810 | 39,981 | 175 | **4** | 15 |
+| draw | main | #1247 alone | both |
+|---|---|---|---|
+| 20,000 instances, seed 7 | 197 | 24 | **0** |
+| 40,000 instances, seed 11 | 175 | 4 | **0** |
 
-The 24 left are #1249's: there `Θ` would have to be a proper subset of a
-window's contents. Every root bound on both draws contains every solution
-found by brute-force enumeration. On the 348 instances whose root
-changed, an enumeration proof verifies with every rule on and with the
-published detection alone. The solution counts match those with the rules
-off.
+GCS is now the same as Gecode on 19,981 and 39,984 roots, and stronger
+on the other 19 and 16, as it was on 19 and 15 before.
+- **`la01` at its optimum, 666,** in the job-shop decision model with
+  in-order search. The root is the same as Gecode's on all 50 variables,
+  and as the fact-check's all-subsets reference model's. A schedule is
+  found in **240 recursions**. The issue recorded none on main within
+  300 s, and Gecode needs 200 nodes.
+- **`la03` at 597.** The root is 22 variables tighter than main's and
+  the same as Gecode's. The search is unchanged at 312 recursions, against
+  Gecode's 75, so `la03`'s remaining gap is somewhere else.
+
+**Soundness.**
+- On both draws, every root bound contains every solution found by
+  brute-force enumeration.
+- On every instance whose root changed (348 for #1247, 29 more for
+  #1249), an enumeration proof verifies with every rule on and with the
+  published detection alone, and the solution counts match those with
+  the rules off.
+- The job-shop proofs verify:
+  - `la01` at 666, 5.3M lines and 1,158 published pushes;
+  - `la01` at 665, `la03` at 596 and `ft06` at 54, each refuted at the
+    root;
+  - `la03` at 597 and `ft06` at 55.
 
 **What it buys in search.**
 - **ft06,** `--disjunctive-not-first-not-last-published`: 504,670
-  recursions become **320,059**. For comparison, the window-energy
-  detection takes 539,728.
+  recursions on main, 320,059 with #1247's change alone, and **180,821**
+  with both.
 - **Generated RCPSP,** `--machine-fraction 0.8`, sizes 8–30, seeds 1–3,
-  60 s timeout. Of the 69 instances, 27 close under every arm, and 23 of
-  those need at least a hundred recursions. Over those 23 the change is
-  **1.001x summed, 1.000x median and 1.003x geomean**. It is better on 12,
-  worse on 4, from 0.66x to 2.32x. Propagation counts differ on 67 of the
-  69 instances. That is #757's finding again: more detection, little
-  search.
+  60 s timeout, `tools/scheduling_sweep.py`:
 
-**What it costs.** On ft06 the window-energy rule's search is identical,
-and it executes 1-5% more instructions than main. The amount depends on
-the compiler: GCC gives +1.2% with edge-finding and +4.8% with not-first
-/ not-last, and clang gives −0.7% and +2.6%. The thresholds are
-maintained only when a rule reads them. Giving the window-energy path
-back its old plain minimum and maximum came within 1% of this under
-either compiler. So most of it is code layout rather than work.
+| arm | closed, of 69 |
+|---|---|
+| `dj-off` | 27 |
+| `dj-nfnl` | 27 |
+| `dj-nfnlpub`, before | 27 |
+| **`dj-nfnlpub`** | **64** |
+| `dj-ef` | 31 |
+| `dj-ef+nfnl` | 31 |
+| `dj-ef+nfnlpub`, before | 31 |
+| **`dj-ef+nfnlpub`** | **64** |
 
-**Tests.** `disjunctive_published_nfnl_test.cc` has the case above and
-its mirror as `contained_nf` and `contained_nl`. Both pushes are ones the
-rules-off run does not make, and the fixtures fail against main. They are
-too small to test the certificate: the closing RUP reaches each push from
-the separation clauses alone. That is what the `contained_emit_nothing`
-lane is for. It drops only the certificates of pushes on a contained
-task, and its marker is the word `contained` at the end of the published
-comment. It runs over a generated fixture of its own. Of 300 instances
-from the test's generator, 156 made such a push, and 134 of those
-rejected the lane.
+Over the 23 instances every arm closes in at least a hundred recursions:
+- `dj-nfnlpub` against `dj-nfnl` is **0.004x summed, 0.010x median and
+  0.011x geomean**, better on all 23;
+- `dj-ef+nfnlpub` against `dj-ef` is 0.004x summed, 0.112x median and
+  0.054x geomean, better on 22.
+
+The optimal makespans agree wherever two arms both close. In prove mode,
+all 64 of `dj-nfnlpub`'s optimality proofs verify, the largest at 2.4 GB
+and 1,056 s of VeriPB.
+
+So #757's verdict, above, was about the sets rather than the condition.
+Over windows' whole contents the published condition was worth 0.6%.
+Over every set it can use it is the strongest rule this constraint has.
+It is still off by default, because `not_first_not_last` is.
+
+**What it costs.** These are ft06 `instructions:u` counts against #1247's
+build, with identical search in each pair.
+- **Edge-finding alone:** −0.9%.
+- **Window-energy not-first / not-last:** −5.4%, to within 1% of
+  main's figure, since its loop lost the published bookkeeping.
+- **Edge-finding with the published detection:** **+30%**, 303M to 394M.
+  The published sweeps no longer ride on edge-finding's windows, so a
+  solve where edge-finding does the work pays for two more cubic passes.
+
+**Tests.** `disjunctive_published_nfnl_test.cc` has four fixtures that
+fail against main, each a push that the rules-off run does not make:
+- `contained_nf` and `contained_nl`, #1247's case and its mirror;
+- `subset_nf` and `subset_nl`, #1249's case and its mirror.
+
+All four are too small to test the certificate, because the closing RUP
+reaches each push from the separation clauses alone. The mutation lanes
+use a generated fixture instead.
+- **Why it changed.** The previous mutation fixture had no solutions, and
+  the stronger rule refuted it by a route that every corruption left
+  standing, so four lanes stopped rejecting.
+- **The rescan.** Over 300 instances of five to eight tasks, 258 fired
+  the rule and 32 rejected all seven lanes. The new fixture is the first
+  of those with search under it.
+- **The `contained_emit_nothing` lane.** It drops only the certificates
+  of pushes on a `j` that meets its own set's bounds. Those pushes'
+  published comments end in `contained`.
 
 ## The set-based detectable precedence, measured before it is certified (#754)
 
