@@ -33,7 +33,9 @@ namespace gcs
     struct CumulativeRules
     {
         /// Time-table: the bound pushes away from times the mandatory-part
-        /// load profile blocks.
+        /// load profile blocks, and the height rule, which lowers a present
+        /// task's variable height to the most room any of its placements
+        /// leaves under the capacity.
         ///
         /// The profile's overflow contradiction is *not* switched off with it:
         /// that scan is what checks a fully assigned state, so it runs whatever

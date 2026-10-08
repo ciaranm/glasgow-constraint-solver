@@ -132,8 +132,9 @@ rule that has no sweep.
 ## Which rules
 
 `Cumulative`: `time_table_lb`, `time_table_ub`, `time_table_overflow`,
-`presence`, `overload`, `overload_elastic`, `overload_knapsack`,
-`edge_finding_lb`, `edge_finding_ub`, `not_first`, `not_last`.
+`presence`, `time_table_height`, `overload`, `overload_elastic`,
+`overload_knapsack`, `edge_finding_lb`, `edge_finding_ub`, `not_first`,
+`not_last`.
 
 `Disjunctive`: `mandatory_overlap`, `time_table_lb`, `time_table_ub`,
 `presence`, `detectable_precedences_lb`, `detectable_precedences_ub`,
