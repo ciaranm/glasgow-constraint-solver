@@ -1,12 +1,54 @@
 # `min_max`: a variable is the minimum or the maximum of an array
 
 > **Maturity** production ·
-> **Audited** 2026-09-30 at `c9ceea25` ·
-> **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
-> for what it would file. Already open and touching this family: #833 (the
+> **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1165 ·
+> **Open issues** filed by this audit: #1166 (the per-value entry pass costs
+> the width on every call), #1167 (the single-support rule's reason and proof
+> are per value). Filed from review: #1190 (the result-in-union rule's erases
+> can be quadratic in interval counts). **Fixed since the audit**: #1165 (a
+> result sharing a variable with an entry through a view threw "missing
+> support", or wrote proofs VeriPB rejected), by #1181; see [Re-audit,
+> 2026-10-08](#re-audit-2026-10-08). Already open and touching this family:
+> #1160 (the state layer's interval scans start from the front), #833 (the
 > large-domain policy; this family's audit row is `KnownTrip`), #868
 > (cross-solver comparisons; this document gives a whole-solve comparison by
 > hand, not the identical-tree one #868 asks for). Tracked under #871.
+
+### Re-audit, 2026-10-08
+
+The audit's aliased-view defects are fixed. This pass brings the text into
+line with the fix at `0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1165, a result sharing a variable with an entry through a view | #1181 | three changes in `min_max.cc`, two of them not as this document proposed: the union rule is a lambda, run a second time in the same call when the support scan finds no entry, so the node fails there rather than throwing "missing support" (`min_max.cc:131–194`, `209–220`); rule 4's `rule_out_other_selectors` walks the `result_set` copy (`:241`, `:258`); rule 5's justification walks a copy of the result's domain taken before `infer_not_equal`, with proofs on only (`:348–353`). `min_max_test` gains an aliased-view lane. The summary loses its bullet on it; [Semantics](#semantics), [Variable kinds and views](#variable-kinds-and-views), the idempotence and copy paragraphs, [Robustness and limits](#robustness-and-limits), the entry pass's line numbers, the catalogue's preamble, rules 3 to 5, [Tests](#tests), [Proof-logging gaps](#proof-logging-gaps), [Known limitations](#known-limitations) and [Next steps](#next-steps) item 1 follow |
+
+The shape, a justification reading state after its own push, is the one
+[`constraints.md`](../constraints.md) now describes under Justifications
+(#1205), with this family's #1165 beside #1191 and #1201. #1166, #1167 and
+#1190 are unchanged.
+
+**What was measured again**, at `0a5b4ec6` on fataepyc-10, pinned to cores
+32–39 with the malloc thresholds fixed, with the audit's probes rebuilt
+against main (`tmp/fd871-comments-1008/ordsmall/probes/min_max/`):
+
+- `satthrow.cc`, 20,000 random view-aliased enumerations per direction at
+  seed 2, against brute force;
+- `mmcheck.cc`'s view-aliased proof sweeps, 2,000 instances each, every
+  proof checked with VeriPB 3.0.2 (`--force-checked-deletion`): offsets up
+  to 1 at seeds 11 and 21, and up to 2 and up to 3 at seed 31, both
+  directions (`sweep.sh`);
+- `min_max_test`'s run counts under the default caps, both lanes
+  (`probes/tests/mm.*.txt`).
+
+Not re-taken: the root strength probes, the width and proof-size probes,
+the CPU, proof and challenge-model tables and the profile, all from
+`c9ceea25`. #1181 adds a domain copy per removed value to rule 5 with proofs
+on, kept out of the proofs-off instantiation by `if constexpr`, and a second
+union pass only on the aliased shape. #1181's body measured a fixed-work
+proofs-off enumeration level with `main` in wall time; this pass did not
+re-measure it.
 
 Four posted classes, `ArrayMin`, `ArrayMax`, `Min` and `Max`, over one class,
 `ArrayMinMax`, and one propagator. `Min` and `Max` are the two-entry case.
@@ -17,7 +59,7 @@ to one of them", with a selector flag per entry. The propagator:
 - makes the last entry that can still reach the result equal to it;
 - then makes a per-value pass over the array.
 
-Five things to know before touching it.
+Four things to know before touching it.
 
 - **It is generalised arc consistent on distinct variables, holes included.**
   But the last pass is what buys that, and it costs the width of the domains
@@ -33,19 +75,6 @@ Five things to know before touching it.
     switched off, the same models find 3 to 58 solutions.
   - **Why the audit row trips.** This pass is why the family's large-domain
     audit row is still `KnownTrip`.
-- **A result that shares a variable with an entry through a view breaks
-  it.** `Min{z, y, z − 1}` and `ArrayMin{{z + 1}, z}` are examples.
-  - **A crash.** The propagator can throw `UnexpectedException` ("missing
-    support") where it should fail, which ends the search. That happens on
-    unsatisfiable models, and on satisfiable ones mid-search, before the last
-    solution.
-  - **Rejected proofs.** The per-value pass and the single-support rule both
-    occasionally write a proof VeriPB rejects, in both directions, because
-    their justifications read `state` after the inference has already changed
-    it.
-  - **Who can reach it.** The C++ API and `gcspy` can post the shape. CPMpy
-    can post it over Booleans (`min([b, 1 − b]) == b`), where it is harmless.
-    The three fixes are small, and tested together.
 - **Plainly repeated variables are sound but weaker.** `ArrayMin{x, x} = y`
   does not even reach `bounds(Z)`.
 - **The encoding matches `cake_pb_cp`'s row for row, but it is unlabelled and
@@ -74,7 +103,8 @@ The degenerate cases:
   all-constant arrays with a constant result, true and false (#254).
 - **A repeated variable** is accepted anywhere. With a plain repeat (no view)
   it stays sound and loses strength. The result sharing a variable with an
-  entry through a view is the broken case. See [Robustness and
+  entry through a view was the broken case until #1181; since then it is
+  right, with verifying proofs, on every instance tried. See [Robustness and
   limits](#robustness-and-limits).
 
 ### Concrete constraints and frontend coverage
@@ -117,7 +147,8 @@ The degenerate cases:
     The indexed, tree-list and `*Arg` forms fall through to the parser's
     defaults, which throw. The solver reports `s UNSUPPORTED`, checked for the
     indexed `minimum` (`tmp/fd-small/min_max/xcsp/minargs.xml`). Since the
-    result is always fresh, XCSP3 cannot reach the aliased-view defect.
+    result is always fresh, XCSP3 could not reach the aliased-view defect
+    (#1165, fixed by #1181).
 
 [^cpmpy]: CPMpy's upstream GCS interface, checked 2026-09-30, lists `min` and
     `max` among its supported globals and posts `min(args) == rhs` as
@@ -156,8 +187,10 @@ views wrapped around distinct variables. So do 3,000 random enumerations per
 direction, each position a `±` view with offset `−1..1` of its own variable,
 under the idempotence checker (`tmp/fd-small/min_max/idemv.cc`).
 
-**The exception** is a result that shares a variable with an entry through a
-different view. That is the defect under [Robustness and
+**A result that shares a variable with an entry through a different view**
+was the exception until #1181: it threw, or wrote proofs VeriPB rejected.
+Since #1181 its enumerations and proofs are right on every instance tried; its
+consistency is not checked. See [Robustness and
 limits](#robustness-and-limits).
 
 ### Reification
@@ -279,8 +312,8 @@ claim would be true on distinct variables:
   two-call shape (`tmp/fd-small/min_max/idem.cc`, `idemv.cc`, `idemctl.cc`).
 - **Aliasing.** The machinery ignores a claim when trigger positions alias, so
   a claim would also be safe on repeated variables. The fix for the
-  aliased-view throw relies on the propagator being woken again by its own
-  removals, which holds there either way.
+  aliased-view throw does not rely on a second call: #1181 fails in the same
+  call, by a second union pass.
 
 **Self-disabling.** Never, even once everything is fixed.
 
@@ -288,9 +321,11 @@ claim would be true on distinct variables:
 
 `None.` Nothing persists between calls.
 - **What each call copies:** the result's domain, and each entry's in turn,
-  for the union; the support's and the result's domains again when the
-  single-support rule fires; and `vector scope = vars` for the entry pass, a
-  heap allocation on every call.
+  for the union, and again for the second union pass on the aliased shape;
+  the support's and the result's domains again when the single-support rule
+  fires; `vector scope = vars` for the entry pass, a heap allocation on every
+  call; and, with proofs on only, the result's domain once per value the entry
+  pass removes (`min_max.cc:348–351`, since #1181).
 - **What each call recomputes:** the other entries' limit and the extreme
   value any other entry can supply, for every position.
 - **What maintaining them would buy:** the pass's `n²` factor. That is minor
@@ -339,43 +374,55 @@ and the random ones from −5 to 13.
     duplicate runs.
 - ***A result sharing a variable with an entry through a different view***
   (`Min{z, y, z − 1}`, `ArrayMin{{z + 1}, z}`, `ArrayMin{{y + 1, 1 − x, y + 1},
-  −x}`) breaks two things. Entries sharing a variable with each other through
-  views, the result having its own, are only weaker: 1,500 enumerations per
-  direction all give verifying proofs with no throw, and the root probe finds
-  `bounds(Z)` failing on 1,289 (min) and 1,277 (max) of 3,000 (`mmcheck.cc`,
-  mode `entryviews`).
-  - **The support scan throws.** The union rule removes result values no entry
+  −x}`) broke two things until #1181; since then it is right, with verifying
+  proofs, on every instance tried.
+  Entries sharing a variable with each other through views, the result having
+  its own, are only weaker: 1,500 enumerations per direction all give
+  verifying proofs with no throw, and the root probe finds `bounds(Z)` failing
+  on 1,289 (min) and 1,277 (max) of 3,000 (`mmcheck.cc`, mode `entryviews`,
+  at `c9ceea25`).
+  - **The support scan.** The union rule removes result values no entry
     holds. Those removals also shrink the entry the result shares a variable
     with, so the support scan straight after can find no entry meeting the
-    result, and it throws `UnexpectedException: missing support, bug in
-    MinMaxArray propagator` (`min_max.cc`, line 199).
-    - **The failure it replaces.** It throws where the node should fail. On an
-      unsatisfiable model that is the only answer (`ArrayMin{{z + 1}, z}`).
-    - **On satisfiable models.** It also ends a search early. Over 20,000
-      random instances per direction whose positions are `±` views of shared
-      variables (about 14,000 of them with the result sharing a variable with
-      an entry through a different view), it threw on 44 satisfiable (min) and
-      32 (max), 38 and 28 of them before the last solution (`satthrow.cc`, seed
-      2).
-  - **Two justifications read `state` after their own inference.** The
-    tracker applies an inference before running its justification
-    (`inference_tracker.hh`: rule 5's `infer_not_equal` around line 306,
-    rule 4's `infer_not_in_range` at lines 533–540). So when the variable an
-    inference is on shares a variable with the result, result values the
-    lemmas walk are already gone, their lemmas are never written, and VeriPB
-    rejects the proof. Both directions are affected.
+    result. Since #1181 the union rule is a lambda
+    (`remove_values_no_var_holds`, `min_max.cc:131`), and when the scan finds
+    no support it runs a second time (`:218`): every value left is unheld, so
+    its last removal empties the result and the node fails in the same call,
+    justified as any union removal. A guard throw, "union pass did not wipe
+    out result", follows it (`:219`); #1181 describes it as unreachable.
+    - **Before #1181** the scan threw `UnexpectedException: missing support,
+      bug in MinMaxArray propagator` (`min_max.cc`, line 199 at `c9ceea25`)
+      where the node should fail. On an unsatisfiable model that was the only
+      answer (`ArrayMin{{z + 1}, z}`). Over 20,000 random instances per
+      direction whose positions are `±` views of shared variables (about
+      14,000 of them with the result sharing a variable with an entry through
+      a different view), it threw on 44 satisfiable (min) and 32 (max), 38 and
+      28 of them before the last solution (`satthrow.cc`, seed 2). At
+      `0a5b4ec6` the same 40,000 give the right count, with no throw.
+  - **Two justifications read `state` after their own inference, until
+    #1181.** The tracker applies an inference before running its
+    justification (`inference_tracker.hh`: rule 5's `infer_not_equal` around
+    line 306, rule 4's `infer_not_in_range` at lines 533–540, at `c9ceea25`).
+    So when the variable an inference is on shares a variable with the
+    result, result values the lemmas walked were already gone, their lemmas
+    were never written, and VeriPB rejected the proof, in both directions.
+    Since #1181 rule 5 walks a copy of the result's domain taken before
+    `infer_not_equal` (`min_max.cc:348–353`), and rule 4 walks `result_set`,
+    the copy taken at the start of the rule (`:241`, `:258`). The record, at
+    `c9ceea25`:
     - **The entry pass (rule 5).** `ArrayMin{{y + 1, 1 − x, y + 1}, −x}` with
-      `x ∈ {1, 3, 4}` and `y ∈ {−2, 4}` is rejected at its conclusion.
+      `x ∈ {1, 3, 4}` and `y ∈ {−2, 4}` was rejected at its conclusion.
       `ArrayMax{{−y, 1 − w, y + 1, −1 − w}, y + 2}` with `y ∈ {0, 3, 4}` and
-      `w ∈ {−3, −1, 4}` is rejected too.
-    - **The single-support rule (rule 4).** `rule_out_other_selectors` walks
+      `w ∈ {−3, −1, 4}` was rejected too.
+    - **The single-support rule (rule 4).** `rule_out_other_selectors` walked
       `state` after `infer_not_in_range` on the support, and then the bridge
-      lemma fails. `ArrayMin{{v1 − 2, −v2, 1 − v0}, −v0 − 2}` with `v0 ∈ −3..3`,
-      `v1 ∈ {−3, −2, −1, 4}`, `v2 ∈ {−2, 4}`, and `ArrayMax{{x, y − 2, y},
-      y + 2}` with `x ∈ {−2, 3, 4}`, `y ∈ {−3, −2, 0, 1, 2}`, are rejected.
-      The rule-4 failures found need two views whose offsets differ by at
-      least 2; none has been seen at 1. `ArrayMin{{−x − 1, −y − 4}, −x − 3}`,
-      with `x ∈ 1..5` and `y ∈ {−2, 3, 4}`, is a difference of 2.
+      lemma failed. `ArrayMin{{v1 − 2, −v2, 1 − v0}, −v0 − 2}` with
+      `v0 ∈ −3..3`, `v1 ∈ {−3, −2, −1, 4}`, `v2 ∈ {−2, 4}`, and
+      `ArrayMax{{x, y − 2, y}, y + 2}` with `x ∈ {−2, 3, 4}`,
+      `y ∈ {−3, −2, 0, 1, 2}`, were rejected. The rule-4 failures found need
+      two views whose offsets differ by at least 2; none was seen at 1.
+      `ArrayMin{{−x − 1, −y − 4}, −x − 3}`, with `x ∈ 1..5` and
+      `y ∈ {−2, 3, 4}`, is a difference of 2.
     - **How often.** Rare. Over the random view-aliased sweeps (`mmcheck.cc`,
       views mode, positions `±v + b`):
       - `b ∈ −1..1`, seeds 11 and 21: min rejected 3 of 1,922 and 1 of 1,939;
@@ -383,18 +430,25 @@ and the random ones from −5 to 13.
       - `b ∈ −2..2`, seed 31: min none of 1,919, max 1 of 1,939;
       - `b ∈ −3..3`, seed 31: none of 1,914 and 1,932.
 
-      Every one of these is rule 5's.
-  - **Fixes, three.** Replace the throw by a return, so that the propagator is
-    woken again by its own removals. Capture the result's values before
-    inferring, in rule 5. Walk the pre-inference `result_set` rather than
-    `state` in `rule_out_other_selectors` (rule 4). With all three
-    (`fix-aliased-views.patch`):
-    - the four instances above verify;
-    - 8,000 of 8,000 random proofs verify with view offsets up to 2 and up to
-      3 (seed 31, both directions), with no throw;
-    - the fact-check's own sweep verifies 16,000 of 16,000.
-
-    With only the first two, the rule-4 instances are still rejected.
+      Every one of these was rule 5's. (The denominators leave out the
+      instances that threw.) At `0a5b4ec6` all eight sweeps verify 2,000 of
+      2,000, with no throw
+      (`tmp/fd871-comments-1008/ordsmall/probes/min_max/sweep.sh`).
+    - **All seven instances above** are in `min_max_test` since #1181; see
+      [Tests](#tests).
+  - **The fixes.** The audit proposed three (`fix-aliased-views.patch`): return
+    `Enable` instead of throwing, so that the propagator is woken again by its
+    own removals; capture the result's values before inferring, in rule 5;
+    walk the pre-inference `result_set` in rule 4. With all three, on
+    `c9ceea25`, the four instances above verified, 8,000 of 8,000 random
+    proofs verified with view offsets up to 2 and up to 3 (seed 31, both
+    directions), with no throw, and the fact-check's own sweep verified
+    16,000 of 16,000; with only the first two, the rule-4 instances were
+    still rejected. #1181 took the third as proposed, and differed on the
+    other two: it fails in place by the second union pass, which does not
+    depend on the queue, and it copies the result's domain once per removed
+    value, each copy a step per interval of the result, with proofs on only,
+    where the patch captured the values one by one.
   - **Who can reach it.** The C++ API and `gcspy`:
     - FlatZinc hands min and max only plain variables and constants.
       `fzn_glasgow.cc` does make views, but not into min and max: it recovers a
@@ -450,9 +504,10 @@ rest of the propagation is interval-level.
      (#1166); filed from Codex's review as #1190, beside `In`'s #1162.
    - **Single support:** `domains_intersect` to find the supports, and
      `each_interval_minus` for the runs to remove. Per interval.
-   - **The entry pass (lines 278–325) is per value.** For each position `i`,
-     it walks the result's domain (line 291), with an `in_domain` scan over
-     the other entries per value. It then walks `x_i`'s domain (line 303).
+   - **The entry pass (`min_max.cc:307–370`; 278–325 at `c9ceea25`) is per
+     value.** For each position `i`, it walks the result's domain (line 320),
+     with an `in_domain` scan over the other entries per value. It then walks
+     `x_i`'s domain (line 332).
    - **Cost per call:** `Θ(Σ_i |D(x_i)|)`, plus between `n·|D(result)|` and
      `n²·|D(result)|` steps, whatever it removes.
    - **Measured.** One root call of `ArrayMax` over three entries and a
@@ -461,7 +516,8 @@ rest of the propagation is interval-level.
      at 10⁸ (one run). At `W = 10⁶`: 0.086 s with two entries, 0.249 s
      with six.
    - **The guard.** A guard build of `c9ceea25` trips at line 291, or at line
-     303 when the result is narrow (`wprobe.cc`, modes `root` and `single`).
+     303 when the result is narrow (`wprobe.cc`, modes `root` and `single`);
+     those are lines 320 and 332 at `0a5b4ec6`.
    - **What the pass buys.** It removes nothing on interval domains. Without
      it, the root fixpoint is GAC on all 6,000 random interval instances
      (1,702 of which fail at the root, trivially) and `bounds(D)` on all
@@ -480,7 +536,9 @@ rest of the propagation is interval-level.
      `want_reasons()`, so it costs nothing with proofs off.
    - **The entry pass:** `generic_reason` over the whole scope. It is
      snapshotted before each inference, and so materialised eagerly, only with
-     proofs on, once per removed value. Its hole literals are per run.
+     proofs on, once per removed value. Its hole literals are per run. Since
+     #1181 the justification also copies the result's domain, per interval,
+     once per removed value, with proofs on only.
 3. **The proof side.**
    - **Result in union:** `3n + 1` lines per run, whatever its width.
    - **Single support:** one lemma per other entry and per value of the
@@ -500,7 +558,7 @@ rest of the propagation is interval-level.
      (the union scan)". The union scan has been interval-level since #815, and
      the trip is the entry pass.
    - **What it does not vary:** holes, views, `min`, a narrow result (which
-     reaches line 303 rather than 291), a single-support shape, or proofs. So
+     reaches line 332 rather than 320), a single-support shape, or proofs. So
      the reason and proof sides above are outside it.
    - **The proof-size case:** no row in `"Large domain proof sizes"`.
 
@@ -526,8 +584,9 @@ selector per entry.
 
 **A conflict is not a rule.** It arises when an inference's literal is already
 false. The tracker then asserts `attempted literal ∨ ¬reason` as for a success,
-and the backtrack closes it. No rule calls `contradiction()`. The one place
-that should fail and does not is the aliased-view throw
+and the backtrack closes it. No rule calls `contradiction()`. Until #1181 the
+aliased-view throw was a place that should have failed and did not; since
+#1181 that state fails through rule 3's second pass
 ([Robustness](#robustness-and-limits)).
 
 The shapes below are for `max`; `min` mirrors them.
@@ -584,7 +643,10 @@ The shapes below are for `max`; `min` mirrors them.
   entry holds.
 - **Fires when** — every call, after rules 1 and 2. This is also what bounds
   the result from its loose side: the result's lower bound for `min`, and its
-  upper bound for `max`.
+  upper bound for `max`. Since #1181 it runs a second time in the same call
+  when rule 4's support scan finds no entry meeting the result, which only a
+  result sharing a variable with an entry through a view reaches; that pass
+  empties the result, and the node fails (`min_max.cc:209–220`).
 - **Strength** — as rule 1.
 - **Algorithm** — copy the result's domain, erase each entry's intervals, and
   remove what is left run by run (#815). Each erase scans the copy from the
@@ -641,9 +703,11 @@ The shapes below are for `max`; `min` mirrors them.
   - **The bridge.** With those, the at-least-one row forces `f_s`, and
     `justify_not_in_range_across_equality` bridges `result ∉ [lo, hi]` across
     the now-active equality: two lemmas by Theorem 2.9 with `B = 0`.
-  - **Where the values come from.** `rule_out_other_selectors` reads the
-    result's values from `state` inside the justification, after the
-    inference. That is rule 5's defect again; see Gaps.
+  - **Where the values come from.** `rule_out_other_selectors` walks
+    `result_set`, the copy of the result's domain taken at the start of the
+    rule, from which the reason's `x_k ≠ r` literals were also built
+    (`min_max.cc:241`, `:258`). Until #1181 it read `state` inside the
+    justification, after the inference; see Gaps.
   - **Per run.** `rule_out_other_selectors` runs inside each run's
     justification, so the per-value block is written again for every run.
 - **Reason** — **per value:** `generic_reason(result)` plus `x_k ≠ r` for every
@@ -665,12 +729,11 @@ The shapes below are for `max`; `min` mirrors them.
   46 (the fact-check's `sruns.cc`). The equality literals the reason
   names also need defining. 61 `rup` and 1,288 lines in total at `W = 100`;
   511 and 12,088 at `W = 1,000` (`psize.cc`, mode `single`).
-- **Gaps** — **the justification reads `state` after its own inference.**
-  `rule_out_other_selectors` walks the result's current values, and when the
-  support and the result share a variable through views, the removal from the
-  support has already taken values off the result. Their lemmas are missing,
-  and the bridge lemma is not RUP. Both directions; every failure found has
-  view offsets differing by at least 2, none by 1
+- **Gaps** — `None.` Until #1181, `rule_out_other_selectors` walked the
+  result's current values, and when the support and the result shared a
+  variable through views, the removal from the support had already taken
+  values off the result: their lemmas were missing, and the bridge lemma was
+  not RUP, in both directions, with view offsets differing by at least 2
   ([Robustness](#robustness-and-limits)).
 - **Tightness** — `Not shown.`
 
@@ -700,7 +763,8 @@ The shapes below are for `max`; `min` mirrors them.
   - **So the maximum is `v`.** That needs `v ∈ D(result)` and every other entry
     at most `v`, and one of the two fails.
 - **Proof technique** — `RUP sequence`, ours. For each result value `r` beyond
-  `v`, the justification writes:
+  `v`, in a copy of the result's domain taken before `infer_not_equal` (since
+  #1181, `min_max.cc:348–353`), the justification writes:
   - `x_i ≠ v ∨ result ≠ r ∨ ¬f_k` for every `k`, by Theorem 2.8: `f_k` equates
     `x_k` with the result, and either the reason excludes `r` from `x_k`, or
     `k = i` and `x_i = v ≠ r`;
@@ -724,14 +788,14 @@ The shapes below are for `max`; `min` mirrors them.
   holey result. `max(x, 0) = r`, with `x ∈ 0..W` and `r` over the even values,
   writes 674, 2,544 and 9,884 `rup` lines at `W = 40`, 80 and 160 (`psize.cc`,
   mode `quad`), close to `3W²/8`.
-- **Gaps** — **the justification reads `state` after its own inference.** The
-  values it walks are the result's current ones, and the tracker applies an
-  inference before running its justification. So when `x_i` and the result
-  share a variable through a view, the removal has already taken a value off
-  the result, its lemma group is missing, and the conclusion is not RUP.
-  Both directions: VeriPB rejects 4 of 3,861 random view-aliased `min` proofs
-  and none of 3,906 `max` ones at view offsets up to 1, and 1 `max` of 1,939
-  at offsets up to 2 ([Robustness](#robustness-and-limits)).
+- **Gaps** — `None.` Until #1181 the values it walked were the result's
+  current ones, read after the tracker had applied the inference. So when
+  `x_i` and the result shared a variable through a view, the removal had
+  already taken a value off the result, its lemma group was missing, and the
+  conclusion was not RUP. At `c9ceea25` VeriPB rejected 4 of 3,861 random
+  view-aliased `min` proofs and none of 3,906 `max` ones at view offsets up to
+  1, and 1 `max` of 1,939 at offsets up to 2; at `0a5b4ec6` the same sweeps
+  verify every proof ([Robustness](#robustness-and-limits)).
 - **Tightness** — `Not shown.`
 
 ## Evidence
@@ -753,6 +817,16 @@ The shapes below are for `max`; `min` mirrors them.
   equal to an entry, and the result equal to the second of three entries.
   These are plain variables over `1..5` and `1..4`, under `solve_for_tests`,
   so full enumeration and the proof but no consistency check.
+- **Aliased views,** since #1181, bare lane only, with and without proofs:
+  `run_aliased_view_min_max_test` (`min_max_test.cc:155`, called at
+  300–342). It runs the seven instances under
+  [Robustness](#robustness-and-limits), each under the solver's default
+  branching and under the harness's seeded random branching, then 15 random
+  instances per direction under the random branching: holey domains in
+  `−3..4`, every position `±v + b` with `b ∈ −3..3`, and the result sharing
+  its variable with at least one entry. It checks enumeration against brute
+  force, and the proof, but not consistency. #1181's body reports that each
+  fixed instance failed under default branching on the old code.
 - **The empty array** is checked to throw `InvalidProblemDefinitionException`
   in both directions.
 - **`scp_reader_test`** counts the solutions of `array_min` and `array_max`.
@@ -767,9 +841,11 @@ The shapes below are for `max`; `min` mirrors them.
 
 **Runtime caps.** No lane sets or clears one, and **the default caps fire**. At
 `--seed=1` with `GCS_TEST_MAX_SOLUTIONS=300 GCS_TEST_MAX_RECURSIONS=1500`
-(`c9ceea25`):
-- **The bare lane** truncates 6 of its 176 runs;
-- **`view_mixed`** truncates 6 of 160;
+(`0a5b4ec6`):
+- **The bare lane** truncates 6 of its 264 runs (6 of 176 at `c9ceea25`; the
+  88 added are the aliased-view lane's, none truncated; its 14
+  default-branching runs call `solve_with` directly, outside the caps);
+- **`view_mixed`** truncates 6 of 160, as at `c9ceea25`;
 - **which runs:** in each lane, the `min` direction of two fixed shapes and one
   random one (420, 4,224 and 2,592 solutions), each with and without proofs.
 
@@ -780,9 +856,11 @@ else runs to completion.
 
 **What the tests do not cover.**
 
-- **A result sharing a variable with an entry through a view.** The duplicate
-  runs use plain variables and the view lanes wrap distinct ones, so the throw
-  and the rejected proofs are invisible to the suite.
+- **The consistency of a result sharing a variable with an entry through a
+  view.** Since #1181 the aliased-view lane covers its soundness and proofs;
+  before it, the duplicate runs used plain variables and the view lanes
+  wrapped distinct ones, so the throw and the rejected proofs were invisible
+  to the suite.
 - **The consistency of repeated variables,** deliberately. Plain repeats are
   weaker than `bounds(Z)`.
 - **Width.** Every tested domain is at most 16 wide, and the audit lane does
@@ -951,11 +1029,13 @@ VeriPB run each.*
 
 ### Proof-logging gaps
 
-- **Rules 4 and 5 under a view-aliased result:** each justification reads
-  post-inference state, and VeriPB rejects the proof. See the rules.
-- **The aliased-view throw** is a failure the propagator does not make. It is
-  not a proof gap, since nothing is asserted, but a proof ends there.
-- **Otherwise `None.`** The propagator is the same with proofs on or off.
+`None.` The propagator is the same with proofs on or off, apart from the
+domain copy rule 5's justification takes with proofs on.
+
+Until #1181 there were two, both under a view-aliased result: rules 4 and 5
+read post-inference state, and VeriPB rejected the proof; and the aliased-view
+throw, not a proof gap, since nothing was asserted, ended the proof. See
+rules 4 and 5 and [Robustness](#robustness-and-limits).
 
 ### Known limitations
 
@@ -964,10 +1044,6 @@ VeriPB run each.*
   no progress in a minute, and a time limit can be overshot by the length of
   one call: one call on `2022_tower` takes about a minute, overshooting by
   44 s.
-- **An `ArrayMin`/`ArrayMax` whose result shares a variable with an entry
-  through an offset or negated view** can throw "missing support, bug in
-  MinMaxArray propagator" and end the search, even on a satisfiable model. It
-  can also write a proof VeriPB rejects.
 - **Repeating a plain variable** (`ArrayMin{x, x} = y`) is sound but weaker
   than bounds consistency.
 - **XCSP3's indexed, tree-list and `*Arg` forms** of `minimum` and `maximum`
@@ -976,8 +1052,17 @@ VeriPB run each.*
 
 ### Next steps
 
-1. **Fix the aliased-view defects.** Three changes, tested together
-   (`fix-aliased-views.patch`):
+1. **Fix the aliased-view defects.** **Done by #1181**, which took the rule 4
+   change as proposed and two others differently: the throw became a second
+   union pass in the same call, which fails the node without depending on
+   the queue, and rule 5 copies the result's domain (once per removed value,
+   a step per interval of the result each time, proofs on only) rather than
+   capturing its values, which supersedes the note below
+   about taking them from the reason. The duplicate lane went in as
+   `min_max_test`'s aliased-view lane (offsets up to ±3, negated views on
+   both sides, both branchings for the fixed instances); see [Tests](#tests).
+   Filed as #1165. The proposal, as the audit wrote it: three changes, tested
+   together (`fix-aliased-views.patch`):
    - **The throw.** Return `Enable` where it throws. The propagator claims no
      idempotence, so its own removals wake it, and the next union pass empties
      the result.
