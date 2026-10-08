@@ -118,7 +118,7 @@ namespace
     struct OverloadInstrumentation
     {
         unsigned long long calls = 0, windows_examined = 0, firings = 0, declined = 0, sorted = 0;
-        unsigned long long bridge_derived = 0, bridge_reused = 0;
+        unsigned long long bridge_derived = 0, bridge_reused = 0, fold_derived = 0, fold_reused = 0;
         std::map<size_t, unsigned long long> window_sizes, candidate_counts, declined_sizes;
 
         ~OverloadInstrumentation()
@@ -139,6 +139,8 @@ namespace
             println(std::cerr, "disjunctive_overload_sorted: {}", sorted);
             println(std::cerr, "disjunctive_overload_bridge_derived: {}", bridge_derived);
             println(std::cerr, "disjunctive_overload_bridge_reused: {}", bridge_reused);
+            println(std::cerr, "disjunctive_overload_fold_derived: {}", fold_derived);
+            println(std::cerr, "disjunctive_overload_fold_reused: {}", fold_reused);
             println(std::cerr, "disjunctive_overload_windows_examined: {}", windows_examined);
             println(std::cerr, "disjunctive_overload_window_sizes: {}", histogram(window_sizes));
             println(std::cerr, "disjunctive_overload_declined_sizes: {}", histogram(declined_sizes));
@@ -433,6 +435,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // three things and on nothing else, so they are reusable on exactly
             // the same terms.
             bridge = make_shared<map<tuple<size_t, size_t, long long, long long, long long>, ProofLine>>(),
+            // And the at-most-one each time point's bridges fold into, which
+            // depends on the window's tasks, their durations and the time, and
+            // on nothing else either (#1246).
+            folds = make_shared<map<pair<vector<pair<size_t, long long>>, long long>, ProofLine>>(),
             // Edge-finding's window-energy rows, on the same terms: the row is
             // a fact about the model, so it is keyed on the task, the window,
             // the two guards and the duration it was counted at, and on nothing
@@ -738,29 +744,66 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // the overload check and edge-finding, which want the same rows
             // over the same encoding and differ only in what they add them to.
             //
+            // The fold is kept beside the bridges and on the same terms
+            // (#1246): it says at most one of these tasks occupies time t, which
+            // is about the tasks, their durations and t and about nothing else.
+            // Windows recur across firings far more often than they change ---
+            // on ft06, 84% of edge-finding's folds and 99% of the set-based
+            // detectable precedence's repeated one exactly --- so a fold found
+            // kept needs neither itself nor its time point's bridges derived
+            // again. The key is the task set in sorted order, since the
+            // at-most-one does not care which order its members came in.
+            //
             // Every bridge first and then every fold, rather than interleaved,
             // because that is the order the overload check has always emitted
             // them in and its proofs are diffed against it.
             auto fold_at_most_ones = [&](const vector<size_t> & tasks, Integer lo, Integer hi, bool skip_fold) -> vector<ProofLine> {
+                vector<pair<size_t, long long>> members_key;
+                for (auto i : tasks)
+                    members_key.emplace_back(i, energy_len(i).raw_value);
+                sort(members_key.begin(), members_key.end());
+                auto kept = [&](Integer t) -> optional<ProofLine> {
+                    if (skip_fold || ! rules.overload_cache_bridge)
+                        return nullopt;
+                    if (auto found = folds->find(make_pair(members_key, t.raw_value)); found != folds->end())
+                        return found->second;
+                    return nullopt;
+                };
+
                 map<Integer, vector<vector<ProofLine>>> at_most_ones;
                 for (Integer t = lo; t < hi; ++t) {
+                    if (kept(t))
+                        continue;
                     auto & tri = at_most_ones[t];
                     tri.resize(tasks.size());
                     for (size_t y = 0; y < tasks.size(); ++y)
                         for (size_t x = 0; x < y; ++x)
                             tri[y].push_back(bridge_pair(tasks[x], tasks[y], t));
                 }
-                vector<ProofLine> folds;
+                vector<ProofLine> result;
                 if (skip_fold)
-                    return folds;
-                folds.reserve(static_cast<size_t>((hi - lo).raw_value));
+                    return result;
+                result.reserve(static_cast<size_t>((hi - lo).raw_value));
                 for (Integer t = lo; t < hi; ++t) {
+                    if (auto line = kept(t)) {
+                        ++overload_instrumentation.fold_reused;
+                        result.push_back(*line);
+                        continue;
+                    }
                     vector<ProofLiteralOrFlag> members;
                     for (auto i : tasks)
                         members.push_back(activity_flag(i, t).flag);
-                    folds.push_back(recover_am1_from_pairs(*logger, members, at_most_ones[t], ProofLevel::Temporary));
+                    // At the vocabulary's level when it is to be kept, exactly
+                    // as a bridge is: its premises may be deleted under it,
+                    // and a derivation that has happened does not need them.
+                    ++overload_instrumentation.fold_derived;
+                    auto line = recover_am1_from_pairs(
+                        *logger, members, at_most_ones[t], rules.overload_cache_bridge ? rules.overload_vocabulary_at : ProofLevel::Temporary);
+                    if (rules.overload_cache_bridge)
+                        folds->emplace(make_pair(members_key, t.raw_value), line);
+                    result.push_back(line);
                 }
-                return folds;
+                return result;
             };
 
             // A task in the window occupies at least lb(l) of its time points.
@@ -966,6 +1009,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     if (ProofLevel::Top != rules.overload_vocabulary_at) {
                         activity->clear();
                         bridge->clear();
+                        folds->clear();
                         floors->clear();
                         escapes->clear();
                         guarded->clear();
@@ -1144,6 +1188,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     if (ProofLevel::Top != rules.overload_vocabulary_at) {
                         activity->clear();
                         bridge->clear();
+                        folds->clear();
                         floors->clear();
                         escapes->clear();
                         guarded->clear();
@@ -1331,6 +1376,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     if (ProofLevel::Top != rules.overload_vocabulary_at) {
                         activity->clear();
                         bridge->clear();
+                        folds->clear();
                         floors->clear();
                         escapes->clear();
                         guarded->clear();
@@ -2616,6 +2662,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 if (ProofLevel::Top != rules.overload_vocabulary_at) {
                                     activity->clear();
                                     bridge->clear();
+                                    folds->clear();
                                     floors->clear();
                                     escapes->clear();
                                 }

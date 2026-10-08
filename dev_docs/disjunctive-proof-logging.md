@@ -477,7 +477,8 @@ That is the single most transferable fact about this certificate.
 **(3) The fold.** `recover_am1_from_pairs` turns the `w(w−1)/2` pairwise
 rows at each time point into one at-most-one over the window's activity
 flags. Shared with edge-finding, which wants the same rows over the same
-encoding and differs only in what it adds them to.
+encoding and differs only in what it adds them to. Kept and cited again
+alongside the pairwise rows; see below.
 
 **(4) The energy.** A task in the window occupies at least `lb(l)` of
 its time points: summing its backward rows telescopes, each order
@@ -589,6 +590,33 @@ earlier firing derived. On generated RCPSP the reuse is ~99%:
 
 Rising with instance size, because bigger searches fire more often over
 the same pairs.
+
+The same switch keeps the **fold** (#1246). The at-most-one over a
+window's flags at time `t` is about the window's tasks, their durations
+and `t`, and about nothing else either, so it is keyed on exactly those
+--- the task set sorted, since the at-most-one does not care what order
+its members came in --- and a time point whose fold is kept needs
+neither the fold nor its `w(w−1)/2` bridges looked at again. Windows
+recur far more often than they change. On OR-Library `ft06`, minimised
+with `--unary disjunctive`, 84% of edge-finding's folds and 99% of the
+set-based detectable precedence's repeated an earlier one exactly, and
+keeping them gives:
+
+| rules | proof lines | bytes | VeriPB |
+|---|---|---|---|
+| edge-finding | 595,891 → 224,668 | 29.5 → 14.3 MB | 10.6 → 10.3 s |
+| edge-finding, not-first / not-last, overload | 588,444 → 222,115 | 29.6 → 14.6 MB | 11.9 → 11.4 s |
+| set-based detectable precedence | 4,820,193 → 2,533,995 | 276 → 191 MB | 220 → 226 s |
+
+with the search unchanged. The proof halves, and the checking barely
+moves: VeriPB's `instructions:u` go down 6.5% for edge-finding and *up*
+3.5% for the set-based rule. Profiled, both set-based checks spend about
+60% of their time in unit propagation, which is the RUP steps, and a
+fold is a chain of `pol`s and an `ia` pin, cheap to check. So not
+deriving it again saves bytes rather than checking time. The set-based
+rule's small rise is consistent with the kept folds standing in the
+database that every later RUP propagates over, where re-derived ones
+were deleted on backtrack, but that has not been shown.
 
 ### The crossover, and the measurement it invalidated
 
