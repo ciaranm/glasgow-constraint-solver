@@ -231,11 +231,12 @@ namespace gcs::innards
         {
         };
 
-        /// Emit no certificate for a published push on a task the window
-        /// contains (#1247), and leave every other firing's alone. Aimed at the
-        /// firing set rather than the derivation, which those firings share:
-        /// a rejected proof says the fixture's contained-task pushes are ones
-        /// the rest of the proof cannot reach, so they are being tested.
+        /// Emit no certificate for a published push on a task that meets its
+        /// own set's bounds and so is left out of it (#1247), and leave every
+        /// other firing's alone. Aimed at the firing set rather than the
+        /// derivation, which those firings share: a rejected proof says the
+        /// fixture's pushes of that kind are ones the rest of the proof cannot
+        /// reach, so they are being tested.
         struct PublishedContainedEmitNothing
         {
         };

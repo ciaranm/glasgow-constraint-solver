@@ -104,6 +104,8 @@ ARMS: dict[str, list[str]] = {
                        "--disjunctive-overload-certificate", "sorting-network"],
     "dj-ef+nfnl": ["--unary", "disjunctive", "--machine", "disjunctive", "--disjunctive-edge-finding",
                    "--disjunctive-not-first-not-last"],
+    "dj-ef+nfnlpub": ["--unary", "disjunctive", "--machine", "disjunctive", "--disjunctive-edge-finding",
+                      "--disjunctive-not-first-not-last-published"],
     "dj-ef+dps": ["--unary", "disjunctive", "--machine", "disjunctive", "--disjunctive-edge-finding",
                   "--disjunctive-detectable-precedences-set"],
 }

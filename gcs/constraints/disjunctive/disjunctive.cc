@@ -2364,44 +2364,21 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             continue;
                         auto a = window_starts[w];
 
-                        // min_ect and max_lst are not-first / not-last's
-                        // thresholds, over the same growing contained set the
-                        // energy accumulates over. min_est is est(Theta), which
-                        // the published not-last condition wants and which is
-                        // not `a`: `a` is an est the sweep enumerates, and a
-                        // task holding it need not be contained. max_lct is
-                        // lct(Theta), which is `b` --- except over Theta less
-                        // one of its own tasks, which the published condition
-                        // also asks about. Each with its runner-up, for that,
-                        // and each tracked only when a rule reads it: this is
-                        // edge-finding's sweep too.
-                        Integer energy = 0_i;
-                        Extremum<false> min_ect, min_est;
-                        Extremum<true> max_lst, max_lct;
+                        // min_ect and max_lst are the window-energy not-first
+                        // / not-last's thresholds, over the same growing
+                        // contained set the energy accumulates over. The
+                        // published detection has sweeps of its own, below.
+                        Integer energy = 0_i, min_ect = 0_i, max_lst = 0_i;
                         vector<size_t> inside;
-                        // The same set again, with the bounds the published
-                        // condition's certificate argues about, and only
-                        // collected when something asks for them. Captured here
-                        // rather than read back out of `state` in the
-                        // justification: by then an earlier push has landed and
-                        // the state holds a bound the reason does not support.
-                        vector<PublishedTask> inside_published;
                         for (size_t c = 0; c < candidates.size(); ++c) {
                             if (candidates[c].est < a)
                                 continue;
                             energy += candidates[c].duration;
                             inside.push_back(candidates[c].task);
-                            if (rules.not_first_not_last_published)
-                                inside_published.push_back(PublishedTask{
-                                    candidates[c].task, candidates[c].duration, candidates[c].est, candidates[c].lct - candidates[c].duration});
-                            if (rules.not_first_not_last) {
-                                min_ect.offer(candidates[c].est + candidates[c].duration, candidates[c].task);
-                                max_lst.offer(candidates[c].lct - candidates[c].duration, candidates[c].task);
-                                if (rules.not_first_not_last_published) {
-                                    min_est.offer(candidates[c].est, candidates[c].task);
-                                    max_lct.offer(candidates[c].lct, candidates[c].task);
-                                }
-                            }
+                            min_ect = inside.size() == 1 ? candidates[c].est + candidates[c].duration
+                                                         : min(min_ect, candidates[c].est + candidates[c].duration);
+                            max_lst = inside.size() == 1 ? candidates[c].lct - candidates[c].duration
+                                                         : max(max_lst, candidates[c].lct - candidates[c].duration);
                             auto b = candidates[c].lct;
                             // Candidates are in lct order, so `inside` is every
                             // task the window contains only once the last of a
@@ -2484,39 +2461,17 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             // restricting the start to one side of a threshold
                             // is exactly what makes the hump's minimum say
                             // something.
-                            if (rules.not_first_not_last)
+                            // The published detection does not ask about this
+                            // window: see its own sweeps, after this loop.
+                            if (rules.not_first_not_last && ! rules.not_first_not_last_published)
                                 for (const auto & j : candidates) {
-                                    // A j the window contains is no candidate
-                                    // for the sweep's own detection: all of its
-                                    // energy is in the window wherever it
-                                    // starts, so the window would be overfilled
-                                    // only if Theta alone were, and that is the
-                                    // overload check's. The published condition
-                                    // is another matter, because it takes Theta
-                                    // from the tasks *other* than j (#1247):
-                                    // that j lies inside a window the rest of
-                                    // Theta also lies in says nothing about
-                                    // whether it can go before all of them. So
-                                    // there Theta is the window's contents less
-                                    // j, and the thresholds are the ones over
-                                    // the rest. Every such Theta is some
-                                    // window's contents less j, so asking it of
-                                    // every window is building j's windows over
-                                    // the other tasks, as the rule is stated.
-                                    auto contained = j.est >= a && j.lct <= b;
-                                    if (contained && (! rules.not_first_not_last_published || inside.size() == 1))
+                                    // A j the window contains has all of its
+                                    // energy in the window wherever it starts,
+                                    // so the window plus j is overfilled only if
+                                    // the window is, and that is the overload
+                                    // check's (#1247).
+                                    if (j.est >= a && j.lct <= b)
                                         continue;
-                                    auto theta_energy = contained ? energy - j.duration : energy;
-                                    auto theta_min_ect = min_ect.without(j.task), theta_max_lst = max_lst.without(j.task);
-                                    auto theta_published = [&]() {
-                                        if (! contained)
-                                            return inside_published;
-                                        vector<PublishedTask> result;
-                                        for (const auto & k : inside_published)
-                                            if (k.task != j.task)
-                                                result.push_back(k);
-                                        return result;
-                                    };
 
                                     auto p_j = j.duration;
                                     auto [s_lo, s_hi] = state.bounds(starts[j.task]);
@@ -2538,41 +2493,17 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     // so the row it derives is shared with
                                     // edge-finding's rather than keyed on a
                                     // bound that moves.
-                                    if (rules.not_first && theta_min_ect <= s_lo)
+                                    if (rules.not_first && min_ect <= s_lo)
                                         ++disjunctive_counters[rule_not_first].already_true;
                                     else if (rules.not_first) {
-                                        // The published detection instead, over
-                                        // the narrower window
-                                        // [ect_j, lct(Theta)): under the
-                                        // negated conclusion j is before every
-                                        // contained task, so all of Theta lies
-                                        // in it. Certified over that derived
-                                        // window --- see `published_justification`
-                                        // and DisjunctiveRules::not_first_not_last_published.
-                                        if (rules.not_first_not_last_published) {
-                                            auto ect_j = s_lo + p_j;
-                                            auto lct_theta = max_lct.without(j.task);
-                                            if (theta_energy > lct_theta - ect_j) {
-                                                ++disjunctive_counters[rule_not_first].firings;
-                                                auto justify = published_justification(
-                                                    ect_j, lct_theta, theta_published(), j.task, s_lo, s_hi, p_j, theta_min_ect, true, contained);
-                                                inference.infer_greater_than_or_equal(logger, starts[j.task],
-                                                    one_too_far ? theta_min_ect + 1_i : theta_min_ect,
-                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
-                                            }
-                                        }
-                                        else {
-                                            auto low_guard = min(s_lo, a);
-                                            auto clipped = window_energy::window_energy_bound(
-                                                p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, theta_min_ect - 1_i});
-                                            if (clipped > 0_i && energy + clipped > b - a) {
-                                                ++disjunctive_counters[rule_not_first].firings;
-                                                auto justify =
-                                                    edge_finding_justification(a, b, inside, j.task, low_guard, theta_min_ect, true, "not-first");
-                                                inference.infer_greater_than_or_equal(logger, starts[j.task],
-                                                    one_too_far ? theta_min_ect + 1_i : theta_min_ect,
-                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
-                                            }
+                                        auto low_guard = min(s_lo, a);
+                                        auto clipped = window_energy::window_energy_bound(
+                                            p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, min_ect - 1_i});
+                                        if (clipped > 0_i && energy + clipped > b - a) {
+                                            ++disjunctive_counters[rule_not_first].firings;
+                                            auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, min_ect, true, "not-first");
+                                            inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
+                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
                                         }
                                     }
 
@@ -2584,38 +2515,171 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     // is a bound that moves, so this row is the
                                     // one place the rule cannot share a key with
                                     // edge-finding.
-                                    if (rules.not_last && theta_max_lst - p_j >= s_hi)
+                                    if (rules.not_last && max_lst - p_j >= s_hi)
                                         ++disjunctive_counters[rule_not_last].already_true;
                                     else if (rules.not_last) {
-                                        auto low_guard = theta_max_lst - p_j + 1_i;
-                                        // The mirror, over [est(Theta), ub(s_j)):
-                                        // under the negated conclusion every
-                                        // contained task ends by s_j, so this
-                                        // time it is the window's *right* edge
-                                        // the conclusion supplies.
-                                        if (rules.not_first_not_last_published) {
-                                            auto est_theta = min_est.without(j.task);
-                                            if (theta_energy > s_hi - est_theta) {
-                                                ++disjunctive_counters[rule_not_last].firings;
-                                                auto justify = published_justification(
-                                                    est_theta, s_hi, theta_published(), j.task, s_lo, s_hi, p_j, low_guard, false, contained);
-                                                inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
-                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
-                                            }
-                                        }
-                                        else {
-                                            auto clipped = window_energy::window_energy_bound(
-                                                p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, s_hi});
-                                            if (clipped > 0_i && energy + clipped > b - a) {
-                                                ++disjunctive_counters[rule_not_last].firings;
-                                                auto justify =
-                                                    edge_finding_justification(a, b, inside, j.task, low_guard, s_hi + 1_i, false, "not-last");
-                                                inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
-                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
-                                            }
+                                        auto low_guard = max_lst - p_j + 1_i;
+                                        auto clipped = window_energy::window_energy_bound(
+                                            p_j, a, static_cast<size_t>((b - a).raw_value), a, b, pair{low_guard, s_hi});
+                                        if (clipped > 0_i && energy + clipped > b - a) {
+                                            ++disjunctive_counters[rule_not_last].firings;
+                                            auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, s_hi + 1_i, false, "not-last");
+                                            inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
+                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
                                         }
                                     }
                                 }
+                        }
+                    }
+
+                    // The published not-first / not-last condition (#757),
+                    // over every Theta it can use (#1249).
+                    //
+                    //     p(Theta) > lct(Theta) - ect_j     not-first,  s_j >= min ect(Theta)
+                    //     p(Theta) > ub(s_j) - est(Theta)   not-last,   s_j <  max lst(Theta) - p_j + 1
+                    //
+                    // for any Theta of tasks other than j. Not over windows'
+                    // contents, which is what the sweep above enumerates and
+                    // which misses sets no window holds whole. For not-first,
+                    // what a Theta claims depends only on p(Theta), lct(Theta)
+                    // and min ect(Theta), so a Theta that fires is contained in
+                    // {k != j : ect_k >= min ect(Theta), lct_k <= lct(Theta)},
+                    // which has the same conclusion and the same edges and at
+                    // least the same duration, so fires too. Every Theta worth
+                    // asking about is therefore one of those: an *ect* bound
+                    // below and an lct bound above. Not-last's are the mirror,
+                    // an est bound below and an *lst* bound above. Each family
+                    // is O(n^2) sets, built incrementally as the window sweep's
+                    // are, with an O(n) pass over j per set.
+                    //
+                    // j itself can meet a set's bounds, and is then left out
+                    // of it: Extremum keeps each threshold's runner-up for
+                    // that (#1247).
+                    if (rules.not_first_not_last && rules.not_first_not_last_published) {
+                        auto one_too_far = std::holds_alternative<disjunctive_proof_mutation::EdgeFindingOneTooFar>(mutation);
+
+                        // The members, with the bounds the certificate argues
+                        // about captured now, and without j if it is one.
+                        auto members_without = [](const vector<PublishedTask> & members, bool in, size_t j) {
+                            if (! in)
+                                return members;
+                            vector<PublishedTask> result;
+                            for (const auto & k : members)
+                                if (k.task != j)
+                                    result.push_back(k);
+                            return result;
+                        };
+                        auto as_published = [](const EdgeTask & k) { return PublishedTask{k.task, k.duration, k.est, k.lct - k.duration}; };
+
+                        // Not-first: an ect floor, and an lct ceiling taken in
+                        // order, since candidates are sorted by lct.
+                        if (rules.not_first) {
+                            vector<Integer> thresholds;
+                            for (const auto & c : candidates)
+                                thresholds.push_back(c.est + c.duration);
+                            sort(thresholds);
+                            thresholds.erase(std::unique(thresholds.begin(), thresholds.end()), thresholds.end());
+
+                            for (auto threshold : thresholds) {
+                                auto qualifies = [&](const EdgeTask & k) { return k.est + k.duration >= threshold; };
+                                Integer energy = 0_i;
+                                Extremum<false> min_ect;
+                                Extremum<true> max_lct;
+                                vector<PublishedTask> members;
+                                for (size_t c = 0; c < candidates.size(); ++c) {
+                                    if (! qualifies(candidates[c]))
+                                        continue;
+                                    energy += candidates[c].duration;
+                                    members.push_back(as_published(candidates[c]));
+                                    min_ect.offer(candidates[c].est + candidates[c].duration, candidates[c].task);
+                                    max_lct.offer(candidates[c].lct, candidates[c].task);
+                                    auto ceiling = candidates[c].lct;
+                                    // The set is whole only once every member
+                                    // with this lct has been taken.
+                                    auto more = false;
+                                    for (auto d = c + 1; d < candidates.size() && candidates[d].lct == ceiling && ! more; ++d)
+                                        more = qualifies(candidates[d]);
+                                    if (more)
+                                        continue;
+
+                                    for (const auto & j : candidates) {
+                                        auto in = qualifies(j) && j.lct <= ceiling;
+                                        if (in && members.size() == 1)
+                                            continue;
+                                        auto [s_lo, s_hi] = state.bounds(starts[j.task]);
+                                        auto conclusion = min_ect.without(j.task);
+                                        if (conclusion <= s_lo) {
+                                            ++disjunctive_counters[rule_not_first].already_true;
+                                            continue;
+                                        }
+                                        auto p_j = j.duration;
+                                        auto ect_j = s_lo + p_j;
+                                        auto lct_theta = max_lct.without(j.task);
+                                        if ((in ? energy - p_j : energy) > lct_theta - ect_j) {
+                                            ++disjunctive_counters[rule_not_first].firings;
+                                            auto justify = published_justification(ect_j, lct_theta, members_without(members, in, j.task), j.task,
+                                                s_lo, s_hi, p_j, conclusion, true, in);
+                                            inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? conclusion + 1_i : conclusion,
+                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Not-last, the mirror: an est floor, and an lst
+                        // ceiling taken in order.
+                        if (rules.not_last) {
+                            auto by_lst = candidates;
+                            sort(by_lst, [](const EdgeTask & x, const EdgeTask & y) { return x.lct - x.duration < y.lct - y.duration; });
+                            vector<Integer> thresholds;
+                            for (const auto & c : by_lst)
+                                thresholds.push_back(c.est);
+                            sort(thresholds);
+                            thresholds.erase(std::unique(thresholds.begin(), thresholds.end()), thresholds.end());
+
+                            for (auto threshold : thresholds) {
+                                auto qualifies = [&](const EdgeTask & k) { return k.est >= threshold; };
+                                Integer energy = 0_i;
+                                Extremum<false> min_est;
+                                Extremum<true> max_lst;
+                                vector<PublishedTask> members;
+                                for (size_t c = 0; c < by_lst.size(); ++c) {
+                                    if (! qualifies(by_lst[c]))
+                                        continue;
+                                    energy += by_lst[c].duration;
+                                    members.push_back(as_published(by_lst[c]));
+                                    min_est.offer(by_lst[c].est, by_lst[c].task);
+                                    max_lst.offer(by_lst[c].lct - by_lst[c].duration, by_lst[c].task);
+                                    auto ceiling = by_lst[c].lct - by_lst[c].duration;
+                                    auto more = false;
+                                    for (auto d = c + 1; d < by_lst.size() && by_lst[d].lct - by_lst[d].duration == ceiling && ! more; ++d)
+                                        more = qualifies(by_lst[d]);
+                                    if (more)
+                                        continue;
+
+                                    for (const auto & j : by_lst) {
+                                        auto in = qualifies(j) && j.lct - j.duration <= ceiling;
+                                        if (in && members.size() == 1)
+                                            continue;
+                                        auto [s_lo, s_hi] = state.bounds(starts[j.task]);
+                                        auto p_j = j.duration;
+                                        auto conclusion = max_lst.without(j.task) - p_j + 1_i;
+                                        if (conclusion > s_hi) {
+                                            ++disjunctive_counters[rule_not_last].already_true;
+                                            continue;
+                                        }
+                                        auto est_theta = min_est.without(j.task);
+                                        if ((in ? energy - p_j : energy) > s_hi - est_theta) {
+                                            ++disjunctive_counters[rule_not_last].firings;
+                                            auto justify = published_justification(est_theta, s_hi, members_without(members, in, j.task), j.task,
+                                                s_lo, s_hi, p_j, conclusion, false, in);
+                                            inference.infer_less_than(logger, starts[j.task], one_too_far ? conclusion - 1_i : conclusion,
+                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

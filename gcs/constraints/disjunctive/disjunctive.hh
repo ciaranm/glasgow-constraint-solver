@@ -179,9 +179,10 @@ namespace gcs
         /// `dev_docs/disjunctive-proof-logging.md`.
         ///
         /// The detection is a strict weakening of the rule as published, and
-        /// deliberately so --- see \ref not_first_not_last_published, which
-        /// measures what that weakening costs, and answers: 0.6% of the summed
-        /// recursions, nothing at the median.
+        /// deliberately so --- see \ref not_first_not_last_published. Asked
+        /// over the same windows, the published condition was worth 0.6% of
+        /// the summed recursions (#757); asked over every set it can use, it
+        /// closes twice as many instances (#1249).
         bool not_first_not_last = false;
 
         /// The two halves of \ref not_first_not_last, separately switchable, as
@@ -210,12 +211,16 @@ namespace gcs
         /// four and five tasks the published condition fires 1.7x and 1.6x as
         /// often (#757).
         ///
-        /// As published, Theta is taken from the tasks *other than* `j`, so
-        /// `j` may lie inside every window Theta does: there Theta is the
-        /// window's contents less `j` (#1247). The window-energy detection
-        /// gains nothing from that, because a contained task's energy is in
-        /// the window wherever it starts, so it asks only about tasks the
-        /// window does not contain.
+        /// As published, Theta is any set of tasks other than `j`, and this
+        /// asks about every one that could fire (#1247, #1249), not about the
+        /// windows \ref edge_finding's sweep enumerates. What a Theta claims
+        /// depends only on its duration and two of its bounds, so a firing
+        /// Theta lies inside a set of the same bounds that fires with the same
+        /// conclusion: for not-first, the tasks with an ect of at least
+        /// `min ect(Theta)` and an lct of at most `lct(Theta)`; for not-last,
+        /// those with an est of at least `est(Theta)` and an lst of at most
+        /// `max lst(Theta)`. Those two families are each O(n^2) sets, swept in
+        /// O(n^3), and `j` is left out of a set whose bounds it meets.
         ///
         /// **Certified**, over the window the negated conclusion derives:
         /// `[ect_j, lct(Theta))` for not-first, whose *left* edge the
@@ -236,19 +241,21 @@ namespace gcs
         /// clause plus the reason's row for the bound it contradicts is the
         /// whole derivation, with no energy argument at all.
         ///
-        /// Off by default because it is measurably not worth running, which is
-        /// what this switch established before it was certified:
-        /// **1.6-1.7x the detection is worth 0.6% of the summed recursions and
-        /// nothing at the median**, and a little worse than nothing on top of
-        /// edge-finding. Not for want of firing --- propagation counts differ
-        /// on 64 of 68 instances. See `dev_docs/disjunctive-proof-logging.md`.
+        /// What it is worth depends on which sets it asks about. Over the
+        /// sweep's windows, as #757 measured it, **1.6-1.7x the detection was
+        /// worth 0.6% of the summed recursions and nothing at the median**.
+        /// Over every set (#1249) it is the strongest rule this constraint
+        /// has: on generated unary RCPSP it closes 64 of 69 instances in 60 s,
+        /// against 31 for \ref edge_finding and 27 with neither, at a hundredth
+        /// of the window-energy detection's recursions. See
+        /// `dev_docs/disjunctive-proof-logging.md`. Off by default only
+        /// because \ref not_first_not_last is.
         ///
-        /// That measurement is what the switch was built for, and it prices,
-        /// on the encoding where the gap is cleanest, what #746 asks and
-        /// cannot answer: how much certifying a weaker detection than the
-        /// literature states actually costs. The certificate came afterwards,
-        /// because a solver that cannot prove one of its own rules is a worse
-        /// thing to have than a rule that does not pay for its sweep.
+        /// The #757 measurement is what the switch was built for, and it
+        /// priced, on the encoding where the gap is cleanest, what #746 asks:
+        /// how much certifying a weaker detection than the literature states
+        /// costs. The answer turned out to depend less on the detection than
+        /// on the sets it was asked about.
         bool not_first_not_last_published = false;
 
         /// Refuse an overload conflict whose smallest window holds more than
