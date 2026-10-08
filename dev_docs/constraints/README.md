@@ -165,10 +165,10 @@ constraints and do not restate it.
   `Divide` could not prune a sign-open quotient (#1065, fixed by #1081), an
   aliased `Plus` converges one value per pass (#1068), and large operands
   overflowed rather than saturating (#1064, fixed by #1079; with proofs on,
-  the encoding still stops at 62 bits). Re-audited 2026-09-25, which also
-  corrected the product's strength on `z` from `bounds(Z)` to `bounds(R)`.
-  Its audit also found the engine's per-node state copy costing 58% of
-  `stable-goods` in page faults (#1063).
+  the encoding still stops at 62 bits). Re-audited 2026-09-25 (which also
+  corrected the product's strength on `z` from `bounds(Z)` to `bounds(R)`)
+  and 2026-10-08. Its audit also found the engine's per-node state copy
+  costing 58% of `stable-goods` in page faults (#1063), since fixed by #1113.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
