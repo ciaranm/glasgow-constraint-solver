@@ -705,6 +705,29 @@ auto main(int argc, char * argv[]) -> int
                 fail("the Important note does not say what was cut short: " + important[0].text);
         }
 
+        // The candidate budget at its default, which is the paper's: General
+        // only (#1256). Fifteen tasks that pairwise conflict make 105
+        // candidates, five past it, and growing any of those five can only
+        // find the one clique of all fifteen again, which is #1258's job-shop
+        // shape: an Important note here would be a false alarm as well.
+        {
+            Problem p;
+            auto stats = make_shared<InferredDisjunctiveStats>();
+            post_family(p, 15, 2, 40, Setup{.stats = stats});
+            auto recorded = solve_recording(p);
+            if (0 == stats->dropped_over_candidate_budget)
+                fail("the default-budget fixture leaves no pair ungrown, so it says nothing about the note's level");
+
+            auto has_figures = false;
+            for (const auto & note : notes_at(recorded, StatsLevel::General))
+                if (string::npos != note.text.find("against a budget of 100"))
+                    has_figures = true;
+            if (! has_figures)
+                fail("the default candidate budget's drop is not in any General note");
+            if (! notes_at(recorded, StatsLevel::Important).empty())
+                fail("the candidate budget at its default raised an Important note");
+        }
+
         // Two spellings of the three-task family that cost the makespan bound
         // and the conflicts, each saying so in a General note (#1257): an end
         // variable between start and makespan, which find_makespan_links does

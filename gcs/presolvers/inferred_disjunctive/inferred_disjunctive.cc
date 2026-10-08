@@ -138,11 +138,19 @@ namespace
     }
 }
 
+namespace
+{
+    // The paper's `N_cover` and `N_out`, at its defaults. Named because whether
+    // a caller moved them decides how loudly a drop is reported (#1256, #1258).
+    constexpr size_t default_max_candidates = 100, default_max_posted = 5;
+}
+
 InferredDisjunctive::InferredDisjunctive(shared_ptr<InferredDisjunctiveStats> stats) :
     // Always a block, whether or not anyone asked for one: the default
     // experience was silent because nothing was allocated, not because the
     // channel was wrong.
-    _stats(stats ? move(stats) : make_shared<InferredDisjunctiveStats>()), _max_candidates(100), _max_posted(5), _min_clique_size(3),
+    _stats(stats ? move(stats) : make_shared<InferredDisjunctiveStats>()), _max_candidates(default_max_candidates), _max_posted(default_max_posted),
+    _min_clique_size(3),
     // Energy only: a conflicting pair is already kept apart by the resource
     // that witnesses it, so an inferred constraint's time-tabling is redundant.
     _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true}), _mutation(inferred_disjunctive_mutation::None{})
@@ -798,16 +806,24 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     }
 
     // The model-level consequence, for a reader who does not know what this
-    // presolver is: a limit stopped it doing what it was asked to do, so the
-    // configuration being run is not the one that was asked for. The figures
-    // and the option that raises them are in the General notes above; this one
-    // names neither, because naming them is what makes a message unreadable to
-    // the person it is for.
-    if (0 != pairs_ungrown_this_run || 0 != cliques_unposted_this_run) {
+    // presolver is: a limit stopped it doing something worth knowing about.
+    // The figures and the option that raises them are in the General notes
+    // above; this one names neither, because naming them is what makes a
+    // message unreadable to the person it is for.
+    //
+    // Both budgets are the published procedure's own, so at their defaults a
+    // drop is the procedure working as designed: General only. On a job shop
+    // it would otherwise be a false alarm too, since every ungrown pair can
+    // only regrow its own machine's clique, which is dropped as dominated
+    // (#1258). Once a caller has moved a budget, a drop is theirs to hear
+    // about (#1256).
+    auto ungrown_counts = 0 != pairs_ungrown_this_run && _max_candidates != default_max_candidates;
+    auto unposted_counts = 0 != cliques_unposted_this_run && _max_posted != default_max_posted;
+    if (ungrown_counts || unposted_counts) {
         string what;
-        if (0 != pairs_ungrown_this_run)
+        if (ungrown_counts)
             what = to_string(pairs_ungrown_this_run) + " pairs of tasks were never grown into a clique";
-        if (0 != cliques_unposted_this_run)
+        if (unposted_counts)
             what += (what.empty() ? string{} : string{", and "}) + to_string(cliques_unposted_this_run) + " cliques were found and not posted";
         note(StatsLevel::Important, nullopt,
             "Inferring Disjunctives was cut short because a size limit was reached: " + what +
