@@ -287,6 +287,27 @@ auto main(int argc, char * argv[]) -> int
             fail("mirror: the bound moved with the rule off, so the fixture says nothing about the rule");
     }
 
+    // A window its contained tasks already overload, under time-tabling. Tasks
+    // 0, 3 and 4 need six units in [1, 6), but only once time-tabling has
+    // fixed task 1; edge-finding skips such a window as a conflict rather than
+    // a push, and with the overload check off by default nothing refuted it,
+    // so the root survived with time-tabling on and failed with it off
+    // (#1244). Edge-finding now turns the overload check on, so the order the
+    // rules run in no longer decides it.
+    {
+        const Instance overloaded{{{2, 9}, {6, 10}, {9, 9}, {1, 4}, {1, 8}}, {1, 3, 2, 2, 3}};
+        for (auto time_table : {true, false}) {
+            auto rules = with_ef;
+            rules.time_table = time_table;
+            auto name = string{"disjunctive_edge_finding_overloaded_"} + (time_table ? "tt" : "no_tt");
+            auto result = probe(overloaded, rules, proofs ? make_optional(name) : nullopt);
+            if (! result.refuted_at_root)
+                fail("overloaded: the root survived" + string{time_table ? " with" : " without"} + " time-tabling, though no schedule exists");
+            if (proofs && ! gcs::test_innards::run_veripb(name + ".opb", name + ".pbp"))
+                fail("overloaded: veripb rejected the proof");
+        }
+    }
+
     // The margin of one: widen the window by a single unit and the rule has
     // nothing to say, so neither fixture above is firing on a technicality.
     {

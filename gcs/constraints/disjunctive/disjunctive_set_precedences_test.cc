@@ -268,6 +268,26 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
+    // A task that time-tabling has fixed. Task 1's predecessors {0, 3, 4} need
+    // six units in [1, 6), so the set rule would push it to 7 and refute the
+    // node; but the loop skipped any task whose start was fixed, which is
+    // right for the pairwise rule and not for this one. So the root survived
+    // with time-tabling on, which fixes task 1 first, and failed without it
+    // (#1243). Both now fail.
+    {
+        const Instance fixed{{{2, 9}, {6, 10}, {9, 9}, {1, 4}, {1, 8}}, {1, 3, 2, 2, 3}};
+        for (auto time_table : {true, false}) {
+            auto rules = with_set;
+            rules.time_table = time_table;
+            auto name = string{"disjunctive_set_precedences_fixed_"} + (time_table ? "tt" : "no_tt");
+            auto result = probe(fixed, rules, proofs ? make_optional(name) : nullopt);
+            if (! result.root_bounds.empty() || 0 != result.solutions)
+                fail("fixed: the root survived" + string{time_table ? " with" : " without"} + " time-tabling, though no schedule exists");
+            if (proofs && ! gcs::test_innards::run_veripb(name + ".opb", name + ".pbp"))
+                fail("fixed: veripb rejected the proof");
+        }
+    }
+
     // The lb push, and the control that says nothing else makes it.
     {
         auto on = probe(sharp, with_set, proofs ? make_optional("disjunctive_set_precedences_sharp") : nullopt);
