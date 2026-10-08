@@ -176,6 +176,15 @@ namespace gcs
         /// Run the **published** not-first / not-last detection instead of
         /// \ref not_first_not_last's, over the papers' own window.
         ///
+        /// Asked of every set Omega the condition can use, not of the window
+        /// sweep's: what Omega claims depends on its energy, est, lct and ECT
+        /// (LST for not-last), so the sets worth asking about are those an est
+        /// floor, an lct ceiling and an ect floor pick out, and the condition is
+        /// linear in the est floor, which a running maximum per distinct height
+        /// answers. A task inside Omega's window is left out of Omega rather
+        /// than skipped. See dev_docs/cumulative-proof-logging.md, "Which Omega:
+        /// every one".
+        ///
         /// Schutt &amp; Wolf (CP 2010, Proposition 1) and Kameugne et al.
         /// (CPAIOR 2018, rule (NF)) take the pushed task's overlap at *one end*
         /// of the negated conclusion's start range, and do not clamp it against
@@ -200,8 +209,9 @@ namespace gcs
         /// pseudo-tasks. Neither paper states a standing assumption, and none
         /// is needed.
         ///
-        /// **What the gap is worth**, measured here against
-        /// \ref not_first_not_last over `data_bl` + `data_pack`: **0.991x the
+        /// **What the gap is worth**, measured, before the detection was asked
+        /// of every set, against \ref not_first_not_last over `data_bl` +
+        /// `data_pack`: **0.991x the
         /// summed recursions, 0.999x the median**, better on 23 of the 37
         /// instances every arm closes and worse on none --- and on top of
         /// \ref time_table_edge_finding, 0.999x summed and 1.000x median,
@@ -209,9 +219,11 @@ namespace gcs
         /// 46% of the summed saving. So the gap between the published detection
         /// and the certifiable one is worth **under 1% of the search**, which
         /// is what #757 found on the disjunctive encoding by a different route.
-        /// Neither detection pays for its own sweep: at 60 s both close fewer
-        /// instances than leaving the rule off --- which is why this is off by
-        /// default, and the only reason it is.
+        /// Neither detection paid for its own sweep then: at 60 s both closed
+        /// fewer instances than leaving the rule off. Asked of every set, the
+        /// detection takes 0.883x the summed recursions of that version over
+        /// the 35 instances both close, better on 30 and worse on none, at
+        /// 1.34x its wall time. Off by default, as \ref not_first_not_last is.
         ///
         /// **What the certificate costs.** One row per (contained task, prefix
         /// time) saying a task running earlier is still running at the meeting

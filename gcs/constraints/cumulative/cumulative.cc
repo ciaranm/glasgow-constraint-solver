@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <ranges>
 #include <sstream>
@@ -2331,6 +2332,263 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                        rule_not_first_not_last = rules.not_first_not_last, rule_not_first_not_last_published = rules.not_first_not_last_published,
                        rule_profile_overload = rules.profile_overload, rule_time_table_edge_finding = rules.time_table_edge_finding;
 
+            // The published not-first / not-last condition, over every set
+            // Omega it can use rather than over the windows the sweep below
+            // enumerates (as #1247 and #1249 found on the unary side).
+            //
+            //     e(Omega) + h_j (min(ect_j, lct(Omega)) - est(Omega)) > C (lct(Omega) - est(Omega))
+            //         =>  s_j >= ECT(Omega)                                         not-first
+            //
+            // for any Omega of tasks other than j, and the mirror for not-last.
+            // What Omega claims depends on its energy, its est and lct, and its
+            // ECT, so a firing Omega lies inside {k != j : est_k >= est(Omega),
+            // lct_k <= lct(Omega), ect_k >= ECT(Omega)}, which has the same three
+            // and at least the energy: every set worth asking about is fixed by
+            // an est floor E, an lct ceiling L and an ect floor F. The condition
+            // is linear in E,
+            //
+            //     max over E of  e(E) + (C - h_j) E   >   C L - h_j min(ect_j, L),
+            //
+            // so for each F and each L the left side is a running maximum over
+            // the est thresholds, one per distinct height, and asking it of a
+            // task is constant time. Taking the floors F from the top, the first
+            // that fires for a task is the furthest it can be pushed. Not-last is
+            // the same code run on the tasks reflected in time, where its
+            // condition reads exactly as not-first's does.
+            //
+            // A task the sets contain is left out of them: where j meets the
+            // floors and the ceiling, its energy counts only for E at or below
+            // its own est, so the maximum is split there and j's energy taken
+            // off the lower part.
+            if (rule_not_first_not_last && rule_not_first_not_last_published && ! candidates.empty())
+                for (bool not_first : {true, false}) {
+                    auto & counters = cumulative_counters[not_first ? rule_not_first : rule_not_last];
+                    ++counters.calls;
+
+                    // The tasks, reflected for not-last: est' = -lct, lct' = -est,
+                    // ect' = -lst, and a start s' = -(s + p). Times are then taken
+                    // from the earliest est', which the condition does not notice
+                    // (both sides move by the slope times the shift) and which keeps
+                    // every figure below within the energy plus the capacity times
+                    // the horizon, as the window sweep's are.
+                    auto n = candidates.size();
+                    vector<Integer> o_est(n, 0_i), o_lct(n, 0_i), o_ect(n, 0_i);
+                    for (size_t c = 0; c < n; ++c) {
+                        const auto & k = candidates[c];
+                        o_est[c] = not_first ? k.est : -k.lct;
+                        o_lct[c] = not_first ? k.lct : -k.est;
+                        o_ect[c] = not_first ? k.est + k.length : -(k.lct - k.length);
+                    }
+                    auto origin = *std::min_element(o_est.begin(), o_est.end());
+                    Integer horizon = 0_i, total_energy = 0_i;
+                    for (size_t c = 0; c < n; ++c) {
+                        horizon = max(horizon, o_lct[c] - origin);
+                        total_energy += candidates[c].energy;
+                    }
+                    // Checked once, so the sweep can work in plain arithmetic: every
+                    // figure it forms is at most this in size.
+                    (void)(total_energy + capacity * horizon + capacity * horizon);
+
+                    vector<long long> est(n), lct(n), ect(n), energy(n), height(n), lb(n), ect_now(n);
+                    for (size_t c = 0; c < n; ++c) {
+                        const auto & k = candidates[c];
+                        est[c] = (o_est[c] - origin).raw_value;
+                        lct[c] = (o_lct[c] - origin).raw_value;
+                        ect[c] = (o_ect[c] - origin).raw_value;
+                        energy[c] = k.energy.raw_value;
+                        height[c] = k.height.raw_value;
+                        auto [s_lo, s_hi] = state.bounds(starts[k.task]);
+                        auto o_lb = not_first ? s_lo : -(s_hi + k.length);
+                        lb[c] = (o_lb - origin).raw_value;
+                        ect_now[c] = lb[c] + k.length.raw_value;
+                    }
+                    auto cap = capacity.raw_value;
+
+                    auto distinct = [](vector<long long> v) {
+                        sort(v);
+                        v.erase(std::unique(v.begin(), v.end()), v.end());
+                        return v;
+                    };
+                    auto est_values = distinct(est), ect_values = distinct(ect), height_values = distinct(height);
+                    auto m_count = est_values.size(), h_count = height_values.size();
+                    vector<size_t> est_at(n), height_at(n);
+                    for (size_t c = 0; c < n; ++c) {
+                        est_at[c] = static_cast<size_t>(std::lower_bound(est_values.begin(), est_values.end(), est[c]) - est_values.begin());
+                        height_at[c] =
+                            static_cast<size_t>(std::lower_bound(height_values.begin(), height_values.end(), height[c]) - height_values.begin());
+                    }
+
+                    // Too tall to run beside anything: the conflict is not this
+                    // rule's to find.
+                    vector<bool> done(n, false);
+                    for (size_t c = 0; c < n; ++c)
+                        if (height[c] > cap)
+                            done[c] = true;
+
+                    vector<size_t> by_lct(n);
+                    std::iota(by_lct.begin(), by_lct.end(), size_t{0});
+                    sort(by_lct, [&](size_t x, size_t y) { return lct[x] < lct[y]; });
+
+                    vector<long long> bucket(m_count), suffix_energy(m_count);
+                    // Per slope, one per distinct height, the running maximum of
+                    // e(E_m) + slope E_m from the left and from the right, and
+                    // where it is attained.
+                    vector<long long> prefix_best(h_count * m_count), suffix_best(h_count * m_count);
+                    vector<size_t> prefix_at(h_count * m_count), suffix_at(h_count * m_count);
+                    vector<bool> slope_wanted(h_count);
+                    vector<size_t> in_play;
+
+                    for (auto f_it = ect_values.rbegin(); f_it != ect_values.rend(); ++f_it) {
+                        auto floor_ect = *f_it;
+                        in_play.clear();
+                        long long tallest = 0;
+                        for (size_t c = 0; c < n; ++c)
+                            if (! done[c] && lb[c] < floor_ect) {
+                                in_play.push_back(c);
+                                tallest = std::max(tallest, height[c]);
+                            }
+                        if (in_play.empty())
+                            continue;
+
+                        fill(bucket, 0ll);
+                        for (size_t pos = 0; pos < n; ++pos) {
+                            auto added = by_lct[pos];
+                            if (ect[added] < floor_ect)
+                                continue;
+                            bucket[est_at[added]] += energy[added];
+                            auto ceiling = lct[added];
+                            auto more = false;
+                            for (auto d = pos + 1; d < n && lct[by_lct[d]] == ceiling && ! more; ++d)
+                                more = ect[by_lct[d]] >= floor_ect;
+                            if (more)
+                                continue;
+
+                            long long running = 0;
+                            for (size_t m = m_count; m-- > 0;) {
+                                running += bucket[m];
+                                suffix_energy[m] = running;
+                            }
+                            // An est floor above every member's leaves the set
+                            // empty, and an empty set's figure is its floor times
+                            // the slope, which can be anything: a floor past the
+                            // ceiling would fire on nothing at all. Energy only
+                            // falls as the floor rises, so the floors with a
+                            // member are a prefix, and the maxima stop there.
+                            if (suffix_energy[0] == 0)
+                                continue;
+                            size_t last = 0;
+                            while (last + 1 < m_count && suffix_energy[last + 1] > 0)
+                                ++last;
+
+                            // A firing needs e(E) > (C - h_j)(L - E) at some floor,
+                            // min(ect_j, L) being at most L: the set has to
+                            // overfill what the resource leaves beside j already.
+                            // Easier the taller j is, so asked once at the tallest
+                            // task in play, it rules the whole step out for every
+                            // task --- and most steps are nowhere near an overload.
+                            auto room = cap - tallest;
+                            auto possible = false;
+                            for (size_t m = 0; m <= last && ! possible; ++m)
+                                possible = suffix_energy[m] > room * (ceiling - est_values[m]);
+                            if (! possible)
+                                continue;
+
+                            fill(slope_wanted, false);
+                            for (auto c : in_play)
+                                slope_wanted[height_at[c]] = true;
+                            for (size_t hi = 0; hi < h_count; ++hi) {
+                                if (! slope_wanted[hi])
+                                    continue;
+                                auto slope = cap - height_values[hi];
+                                auto * pb = &prefix_best[hi * m_count];
+                                auto * pa = &prefix_at[hi * m_count];
+                                auto * sb = &suffix_best[hi * m_count];
+                                auto * sa = &suffix_at[hi * m_count];
+                                for (size_t m = 0; m <= last; ++m) {
+                                    auto v = suffix_energy[m] + slope * est_values[m];
+                                    auto better = m == 0 || v > pb[m - 1];
+                                    pb[m] = better ? v : pb[m - 1];
+                                    pa[m] = better ? m : pa[m - 1];
+                                }
+                                for (size_t m = last + 1; m-- > 0;) {
+                                    auto v = suffix_energy[m] + slope * est_values[m];
+                                    auto better = m == last || v > sb[m + 1];
+                                    sb[m] = better ? v : sb[m + 1];
+                                    sa[m] = better ? m : sa[m + 1];
+                                }
+                            }
+
+                            for (auto t : in_play) {
+                                if (done[t])
+                                    continue;
+                                auto base = height_at[t] * m_count;
+                                auto inside = ect[t] >= floor_ect && lct[t] <= ceiling;
+                                long long best;
+                                size_t at;
+                                if (inside) {
+                                    auto own = est_at[t];
+                                    best = prefix_best[base + own] - energy[t];
+                                    at = prefix_at[base + own];
+                                    if (own + 1 <= last && suffix_best[base + own + 1] > best) {
+                                        best = suffix_best[base + own + 1];
+                                        at = suffix_at[base + own + 1];
+                                    }
+                                }
+                                else {
+                                    best = prefix_best[base + last];
+                                    at = prefix_at[base + last];
+                                }
+                                if (best <= cap * ceiling - height[t] * std::min(ect_now[t], ceiling))
+                                    continue;
+
+                                // A firing. The set it fires on, and its own est,
+                                // lct and ect, which are what the certificate
+                                // argues about: the floors and ceiling are no
+                                // tighter than them, so the condition holds over
+                                // the set itself too, and is asked again here, in
+                                // checked arithmetic, to be sure.
+                                auto floor_est = est_values[at];
+                                const auto & j = candidates[t];
+                                vector<PublishedTask> theta;
+                                Integer set_energy = 0_i, set_est = 0_i, set_lct = 0_i, set_ect = 0_i;
+                                for (size_t k = 0; k < n; ++k) {
+                                    if (k == t || est[k] < floor_est || lct[k] > ceiling || ect[k] < floor_ect)
+                                        continue;
+                                    const auto & member = candidates[k];
+                                    set_est = theta.empty() ? o_est[k] : min(set_est, o_est[k]);
+                                    set_lct = theta.empty() ? o_lct[k] : max(set_lct, o_lct[k]);
+                                    set_ect = theta.empty() ? o_ect[k] : min(set_ect, o_ect[k]);
+                                    set_energy += member.energy;
+                                    theta.push_back(PublishedTask{member.task, member.est, member.lct - member.length, member.length});
+                                }
+                                auto o_ect_j = Integer{ect_now[t]} + origin;
+                                if (theta.empty() || Integer{lb[t]} + origin >= set_ect ||
+                                    set_energy + j.height * (min(o_ect_j, set_lct) - set_est) <= capacity * (set_lct - set_est))
+                                    throw UnexpectedException{"Cumulative published not-first / not-last: a set fired that its own figures do not"};
+
+                                done[t] = true;
+                                ++counters.firings;
+                                auto [s_lo, s_hi] = state.bounds(starts[j.task]);
+                                auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
+                                if (not_first) {
+                                    auto justify = published_nfnl_justification(set_est, set_lct, theta, j.task, s_lo, s_hi, set_ect, true);
+                                    inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? set_ect + 1_i : set_ect,
+                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                }
+                                else {
+                                    // Back out of the reflection: the window is
+                                    // [-lct', -est'), and the set's lst is -ect'.
+                                    auto lst = -set_ect;
+                                    auto justify = published_nfnl_justification(-set_lct, -set_est, theta, j.task, s_lo, s_hi, lst, false);
+                                    inference.infer_less_than(logger, starts[j.task], one_too_far ? lst - j.length : lst - j.length + 1_i,
+                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                }
+                                pushed_in_sweep = true;
+                            }
+                        }
+                    }
+                }
+
             for (size_t w = 0; w < window_starts.size(); ++w) {
                 if (w > 0 && window_starts[w] == window_starts[w - 1])
                     continue;
@@ -2346,28 +2604,19 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
 
                 // min_ect and max_lst are not-first / not-last's thresholds, over
                 // the same growing contained set the energy accumulates over.
-                Integer energy = 0_i, inside_mandatory = 0_i, min_ect = 0_i, max_lst = 0_i, min_est = 0_i;
+                Integer energy = 0_i, inside_mandatory = 0_i, min_ect = 0_i, max_lst = 0_i;
                 vector<size_t> inside_tasks;
-                // The same set again, with the bounds the published condition's
-                // certificate argues about, and only collected when something asks
-                // for them. Captured here rather than read back out of `state` in
-                // the justification: by then an earlier push has landed, and the
-                // state holds a bound the reason does not support.
-                vector<PublishedTask> published_theta;
                 for (const auto & c : candidates) {
                     if (c.est < a)
                         continue;
                     energy += c.energy;
                     inside_mandatory += c.mandatory;
                     inside_tasks.push_back(c.task);
-                    if (rule_not_first_not_last_published && logger)
-                        published_theta.push_back(PublishedTask{c.task, c.est, c.lct - c.length, c.length});
                     if (elastic_rules)
                         join_elastic(c);
                     min_ect = inside_tasks.size() == 1 ? c.est + c.length : min(min_ect, c.est + c.length);
                     // The papers' window is the contained set's own [est, lct), not
                     // the swept one: only the published arm below reads this.
-                    min_est = inside_tasks.size() == 1 ? c.est : min(min_est, c.est);
                     max_lst = inside_tasks.size() == 1 ? c.lct - c.length : max(max_lst, c.lct - c.length);
 
                     auto b = c.lct;
@@ -2587,7 +2836,7 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                     // one edge and so does not apply, and the rule above skips it.
                     // Restricting the start to one side of a threshold is exactly
                     // what makes the hump's minimum say something.
-                    if (rule_not_first_not_last && ! inside_tasks.empty() && window_total <= supply) {
+                    if (rule_not_first_not_last && ! rule_not_first_not_last_published && ! inside_tasks.empty() && window_total <= supply) {
                         ++cumulative_counters[rule_not_first].calls;
                         ++cumulative_counters[rule_not_last].calls;
                         for (const auto & j : candidates) {
@@ -2597,41 +2846,6 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                             auto h_j = j.height, p_j = j.length;
                             auto other_energy = window_total - own_contribution(j);
                             auto [s_lo, s_hi] = state.bounds(starts[j.task]);
-
-                            // The published detection instead, verbatim, over the
-                            // papers' own window [est(Omega), lct(Omega)). Their
-                            // term is the overlap at one end of the negated
-                            // conclusion's start range, unclamped against j's far
-                            // bound, so it is neither above nor below what the
-                            // lemma derives --- and it is certified by contiguity
-                            // rather than by that lemma. See
-                            // `published_nfnl_justification`, and
-                            // CumulativeRules::not_first_not_last_published for
-                            // both why it is sound and what it is worth.
-                            if (rule_not_first_not_last_published) {
-                                auto ect_j = s_lo + p_j, lst_j = j.lct - p_j;
-                                auto span = b - min_est;
-                                auto one_too_far = std::holds_alternative<cumulative_proof_mutation::PushOneTooFar>(mutation);
-                                if (s_lo >= min_ect)
-                                    ++cumulative_counters[rule_not_first].already_true;
-                                else if (energy + h_j * (min(ect_j, b) - min_est) > capacity * span) {
-                                    ++cumulative_counters[rule_not_first].firings;
-                                    auto justify = published_nfnl_justification(min_est, b, published_theta, j.task, s_lo, s_hi, min_ect, true);
-                                    inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
-                                    pushed_in_sweep = true;
-                                }
-                                if (max_lst >= j.lct)
-                                    ++cumulative_counters[rule_not_last].already_true;
-                                else if (energy + h_j * (b - max(lst_j, min_est)) > capacity * span) {
-                                    ++cumulative_counters[rule_not_last].firings;
-                                    auto justify = published_nfnl_justification(min_est, b, published_theta, j.task, s_lo, s_hi, max_lst, false);
-                                    inference.infer_less_than(logger, starts[j.task], one_too_far ? max_lst - p_j : max_lst - p_j + 1_i,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
-                                    pushed_in_sweep = true;
-                                }
-                                continue;
-                            }
 
                             // Not-first: refute "j starts before every contained
                             // task has ended". The guarded row's low guard is what
