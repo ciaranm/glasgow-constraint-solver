@@ -5,18 +5,25 @@
 > document describes the code it leaves. Checked again 2026-09-25 at
 > `61112ed0`: since #1030 nothing in the family has changed but
 > `recover_am1`'s comments (#1089). Re-audited 2026-09-26 at `c9ceea25` for
-> #1109 ·
+> #1109. Re-audited 2026-10-08 at `0a5b4ec6` for #1187, #1196, #1199, #1205
+> and #1208 ·
 > **Open issues** filed by this audit: #1028 (`GlobalCardinality`'s default
-> arm), #1029 (`Count` on a constant value of interest). Its wrong answer,
-> #1026 (at `GAC` on an unsorted open cover), is fixed by #1030. Filed since:
-> #1046 (`GlobalCardinality` proofs abort or are rejected when its array holds a
-> constant), by the `inverse` audit. **Fixed since the audit**: #1053
-> (`NValue`'s count-only wakes and its idempotence), filed by review; see
-> [Re-audit](#re-audit-2026-09-26). Already open and touching this family: #843
+> arm), #1029 (`Count` on a constant value of interest). Its wrong answer, #1026
+> (at `GAC` on an unsorted open cover), is fixed by #1030. Filed since and open:
+> #1193 (workflow 2 only: `GlobalCardinality`'s Hall `pol`s and `Among`'s `pol`s
+> over its sum row fail cake's chain on a {0,1} variable with both its values in
+> the set). **Fixed since the audit**: #1053 (`NValue`'s count-only wakes and
+> its idempotence), filed by review; #1046 (`GlobalCardinality` proofs aborted
+> or were rejected when its array held a constant), filed by the `inverse`
+> audit; #1191 and #1197 (`GlobalCardinality` proofs rejected under aliasing),
+> #1200 (a view registered by a constraint posted later; `GlobalCardinality` and
+> `Among`) and #1201 (`Count` proofs rejected under aliasing). See [Re-audit,
+> 2026-09-26](#re-audit-2026-09-26) and [Re-audit,
+> 2026-10-08](#re-audit-2026-10-08). Already open and touching this family: #843
 > (`NValue`'s encoding is per value), #876 (the `GAC` arm has no large-domain
 > row), #488 (`NValue`'s occurrence rows disagree with cake's), #944 (Hall
-> proofs cost values × variables²), #868 (cross-solver). More to file from
-> [Next steps](#next-steps). Tracked under #871.
+> proofs cost values × variables²), #868 (cross-solver). More to file from [Next
+> steps](#next-steps). Tracked under #871.
 
 ### Re-audit, 2026-09-26
 
@@ -32,6 +39,61 @@ between rounds under the claim. `Among` and the other propagators are
 untouched. **No figure was re-measured in this pass**: every figure in the
 document predates this pass, and #1109's own figures are quoted separately,
 labelled as its.
+
+### Re-audit, 2026-10-08
+
+Five fixes to proof bugs in this family have merged since the last pass, none
+of them for an issue this audit filed. This pass brings the text into line with
+them at `0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1046, a constant in `GlobalCardinality`'s array: the capacity side's at-least-one aborted, the demand side's at-most-one could write a bare `0 ≥ 1` | #1187 (2026-10-02) | both arms leave constants out of the Hall and flow `pol`s, and pass `recover_am1` negated atoms `x ≠ v`, the one convention its header now documents: [Variable kinds and views](#variable-kinds-and-views), the [catalogue preamble](#inference-catalogue) and the Proof technique, Proof size and Gaps of rules 20–30, [Tests](#tests), [Proof-logging gaps](#proof-logging-gaps), [Known limitations](#known-limitations), [Next steps](#next-steps) item 1 |
+| #1191, `GlobalCardinality` with a variable and a view of it in the array, or a count among the variables (the magic sequence, which MiniZinc reaches): the Hall justifications ran, and their lazy reasons were materialised, after their own push | #1196 (2026-10-02) | the seven pushing Hall and flow sites go through `infer_hall_before_push` (`global_cardinality/justify.hh:43`), a one-literal `infer_all` with a reason built before the push: [Proof-time state](#proof-time-state), the reasons table under [Interval efficiency](#interval-efficiency), the Reason fields of rules 20–30, [Tests](#tests), [Next steps](#next-steps) item 7 |
+| #1197, a count that is a view of an array variable, with another view of it in the array | #1199 (2026-10-02) | it registered view counts before writing any row; #1208 removed that loop again as redundant, so nothing of #1199's code is left at `0a5b4ec6` but its tests ([Tests](#tests)) |
+| #1200, a view position registered by a constraint posted later: the rows and the proof spelled it differently (`GlobalCardinality` and `Among`, and `BinPacking` outside this family) | #1208 (2026-10-03) | a view is registered as soon as any model row names it, literal or integer term; a view first seen during proof logging still never is (`dev_docs/view-proof-logging.md`): [Variable kinds and views](#variable-kinds-and-views), [Tests](#tests) |
+| #1201, `Count` with `how_many` the value of interest, or either among the positions: the justifications ran after their own push | #1205 (2026-10-03) | the five explicit pushing sites go through `infer_before_push_or_stop` (`count.cc:61`), a one-literal `infer_all` when a proof is being written: [Semantics](#semantics), [Self-disabling](#propagator-inventory), [Proof-time state](#proof-time-state), [Robustness and limits](#robustness-and-limits), [Tests](#tests), [Next steps](#next-steps) item 7 |
+
+The third of the "three things to know" below now summarises the five bugs,
+and [Proof-logging gaps](#proof-logging-gaps) lists them. No rule, family
+encoding or propagation strength changed, and with proofs off #1196 and #1205
+leave search unchanged (their PRs compared solutions, recursions, failures and
+propagations). #1193, found by #1187's review and still open, is recorded under
+[Cake conformity](#cake-conformity). One other commit touched the family's
+code: `3435a4e1` (#1117, #1168, #1188) refuses `Among`'s and
+`GlobalCardinality`'s values outside the bounded integer range at construction,
+recorded under [Semantics](#semantics) and otherwise not re-audited here.
+
+**Corrected from review**, not from a fix:
+
+- [Proof-time state](#proof-time-state) said that at `AssertionLevel::Off` a
+  justification's steps are emitted before any literal of the inference is
+  applied. That holds only for `infer_all`. The single-literal `infer` pushes
+  first and justifies after, at `347e2f8c` as now (the `Literal` overload,
+  `inference_tracker.hh:256` at both), and #1191 and #1201 were that path.
+  `dev_docs/constraints.md:568` now states the rule for both paths.
+- The same paragraph said every explicit rule of `Among` reads the state.
+  Rules 10 and 12 do not (`among.cc:205-215`, `:319-350`).
+- The reasons table under [Interval efficiency](#interval-efficiency), and
+  rule 1, called `Count`'s and `NValue`'s `generic_reason` lazy. With a proof
+  being written it is materialised before each push (`snapshot_reason`,
+  `inference_tracker.hh:103-127`), as it was at `347e2f8c`; it is never
+  materialised with proofs off.
+
+**What was measured again.** At `0a5b4ec6`, on fataepyc-10: the
+`frequency_square 12 --all` proof table under [Proof
+performance](#proof-performance), whose OPB rows, proof lines, `rup` / `pol`
+/ `del` counts, recursions and solutions, and `inferences`-level line and
+assertion counts are all identical to `347e2f8c`'s, with sizes and VeriPB times
+re-taken; and the five family test binaries, run directly at seed 1 with the
+build's default caps, plain, and `count_test`, `among_test` and `n_value_test`
+also under `--view-position=mixed` with and without
+`--late-view-registration`, every proof verifying. **Nothing else was
+re-run.** Every other figure, the CPU tables, the corpus survey, the rule
+counters, the runtime-cap counts and the test-lane proof sizes included, is
+still from `347e2f8c` or from the PR it is attributed to. The test-lane
+figures describe the lanes as they were then: all but `among_test` have gained
+rows since.
 
 Four constraints that count occurrences of values in an array. `Count` counts one
 value, which may be a variable. `Among` counts membership in a fixed set.
@@ -62,11 +124,17 @@ Three things to know before touching it.
   other way round: `BC` explores 1.4 to 13 times as many nodes in the same time
   as `GAC`. `BC`'s proofs have about an eighth as many lines on the one
   instance measured with the same search. The default is #1028.
-- **With proofs on, `GlobalCardinality` over an array holding a constant can
-  abort, or write a proof VeriPB rejects** (#1046), at both levels, and MiniZinc
-  can reach it. It was found after this audit, by the `inverse` one. This
-  audit's own wrong answer, solutions lost at `GAC` on an open constraint whose
-  cover was not ascending (#1026), is fixed by #1030.
+- **Five proof bugs were found after this audit, all at shapes its tests did
+  not post, and all are fixed.** A constant mixed into `GlobalCardinality`'s
+  array (#1046 → #1187); a variable and a view of it, or a count that is one of
+  the variables, in `GlobalCardinality` (#1191 → #1196, #1197 → #1199); a view
+  registered by a constraint posted later (#1200 → #1208); and `Count` with
+  `how_many` the value of interest or either among the positions (#1201 →
+  #1205). MiniZinc reaches #1046, #1201 and #1191's magic sequence. #1191
+  and #1201 were one shape, a justification that reads the state running after
+  its own push; #1197 and #1200 were a view spelled two ways in one proof.
+  This audit's own wrong answer, solutions lost at `GAC` on an open constraint
+  whose cover was not ascending (#1026), is fixed by #1030.
 
 ## What it is
 
@@ -74,10 +142,14 @@ Three things to know before touching it.
 
 - **`Count(vars, y, n)`** — `n = |{i : vars[i] = y}|`. `y` may be a variable.
   Empty `vars` forces `n = 0`. `y` may also appear in `vars`, directly or as a
-  view. No test posts that shape; this audit's differential did, and found
-  nothing wrong (see [Tests](#tests)).
+  view, and `n` may be `y` itself or one of the positions. Proofs over those
+  shapes could be rejected until #1205 (#1201). Since then `count_test` posts
+  `y` among the positions, `n` among the positions, and `n` as `y` or as a view
+  of it, but not `y` among the positions through a view (see [Tests](#tests)).
 - **`Among(vars, S, n)`** — `n = |{i : vars[i] ∈ S}|`, `S` a set of constants.
-  The constructor sorts `S` and removes duplicates. An empty `S`, or empty
+  The constructor sorts `S` and removes duplicates, and since `3435a4e1`
+  refuses a value outside the bounded integer range with `IntegerOverflow`
+  (`among.cc:83`; `dev_docs/integer-ranges.md`). An empty `S`, or empty
   `vars`, forces `n = 0`.
 - **`NValue(n, vars)`** — `n = |{vars[i]}|`, the number of distinct values
   taken. Empty `vars` forces `n = 0`. Note the argument order: `n` comes
@@ -86,13 +158,14 @@ Three things to know before touching it.
   `counts[j] = |{i : vars[i] = values[j]}|`. With `.with_closed()`, every
   variable must also take a cover value. Values outside the cover are free
   otherwise. The cover must be pairwise distinct and the two lists the same
-  length; the constructor throws otherwise (#922), and front ends whose input
-  may repeat a value call `fold_repeated_cover_values()` first and post the
-  `Equals` it returns. The constructor sorts the cover, and the counts with it,
-  for both arms (#1030; at `347e2f8c` only `clone()` sorted it, and only under
-  `BC`). Empty `vars` makes every count zero. An empty cover is no constraint
-  at all when open, and when closed it makes any non-empty `vars`
-  unsatisfiable.
+  length; the constructor throws otherwise (#922), and, since `3435a4e1`, on a
+  cover value outside the bounded integer range (`global_cardinality.cc:74`).
+  Front ends whose input may repeat a value call `fold_repeated_cover_values()`
+  first and post the `Equals` it returns. The constructor sorts the cover, and
+  the counts with it, for both arms (#1030; at `347e2f8c` only `clone()` sorted
+  it, and only under `BC`). Empty `vars` makes every count zero. An empty cover
+  is no constraint at all when open, and when closed it makes any non-empty
+  `vars` unsatisfiable.
 
 ### Concrete constraints and frontend coverage
 
@@ -176,35 +249,71 @@ constants and views. The proof handles views, because every rule speaks in
 `var == v`, `var != v`, bound and range literals, all of which a view has, and
 the encodings name only `var == v` atoms and order atoms. The view lanes
 `count_constraint_view_mixed`, `among_constraint_view_mixed` and
-`n_value_constraint_view_mixed` post mixed views and verify their proofs.
-`GlobalCardinality` has no view lane; this audit ran a differential with repeated
-variables, offset views and negated views in the scope, against brute force, and
-found nothing wrong. See [Tests](#tests).
+`n_value_constraint_view_mixed` post mixed views and verify their proofs, and
+since #1208 each has a `_view_mixed_late` twin that registers every view after
+the constraint. `GlobalCardinality` has no `_view_mixed` lane. At the audit its
+only evidence over views was a differential with repeated variables, offset
+views and negated views in the scope (see [Tests](#tests)), which found nothing
+wrong. Both GCC tests now post aliased views and counts directly.
+
+Three proof bugs over views and aliasing were found after the audit, and all
+are fixed. The answers were right in each; only the proofs were rejected.
+
+- **A variable and a view of it in `GlobalCardinality`'s array, or a count
+  that is one of the variables** (#1191, fixed by #1196). The pushing Hall and
+  flow rules (20, 21, 23, 25, 28, 29, 30) went through the single-literal
+  `infer`, which pushed the literal and then ran the `pol` and materialised the
+  lazy reason, both against the moved state. The magic sequence
+  `global_cardinality(s, 0..n−1, s)` reaches it from MiniZinc. They now go
+  through `infer_hall_before_push`; see [Proof-time
+  state](#proof-time-state).
+- **A count that is a view of an array variable, with another view of it in
+  the array** (#1197, fixed by #1199). The rows written before the count's own
+  row spelled the view through the underlying variable, and the later ones over
+  its own bit vector.
+- **A view position that a constraint posted later registers** (#1200, fixed
+  by #1208). The same two spellings, across constraints: `GlobalCardinality`'s
+  and `Among`'s rows name only a view's eq atoms, which did not register it.
+  #1208 registers a view as soon as any model row names it, literal or integer
+  term. That made #1199's local registration redundant, and #1208 removed it.
+
+`Count` had the first shape's twin with no view needed (#1201, fixed by #1205):
+see [Proof-time state](#proof-time-state).
 
 A family whose facts are all `==`, `!=`, bounds and ranges is outside #882's view
 problem by construction: every literal it states is one a view has.
 
-**Constants in `GlobalCardinality`'s array can break its proofs** (#1046),
-found after this audit by the `inverse` one. With proofs off the answers are
-right. With proofs on there are two faults, at both levels, each only when a
-Hall or flow justification involves the constant:
+**Constants in `GlobalCardinality`'s array broke its proofs until #1187**
+(#1046), found after this audit by the `inverse` one. With proofs off the
+answers were right. With proofs on there were two faults, at both levels, each
+only when a Hall or flow justification involved the constant:
 
-- The capacity-side justifications (rules 20, 22, 23, 26 and 28) ask the names
-  tracker for each confined variable's at-least-one, and the tracker's case for
-  a constant throws `UnimplementedException`, so the solve aborts.
-- The demand-side justifications (rules 21, 24, 25, 27, 29 and 30) build their
+- The capacity-side justifications (rules 20, 22, 23, 26 and 28) asked the
+  names tracker for each confined variable's at-least-one, and the tracker's
+  case for a constant throws `UnimplementedException`, so the solve aborted.
+- The demand-side justifications (rules 21, 24, 25, 27, 29 and 30) built their
   at-most-ones with `recover_am1` over **positive** atoms `X_i = v`. The
   helper's #171 shortcut assumes negated ones: it treats two falsified atoms as
   a violated at-most-one and writes `0 ≥ 1` as a RUP. Over a constant, every
   atom but the constant's own value is false, so with three or more values in
-  the set it writes a bare `rup >= 1;`, which VeriPB rejects. The rejections in
-  #1046's sweep were all at `BC`; the flow arm makes the same call.
+  the set it wrote a bare `rup >= 1;`, which VeriPB rejected. #1046's sweep saw
+  rejections only at `BC`. With the abort fixed, #1187's sweep also found
+  rejections at `GAC`.
 
-`Among` asks the tracker only for non-constant variables, and passes the negated
-atoms the shortcut assumes. `Count` and `NValue` call neither. At the audit,
-the family's tests put constants only in rows where every variable is a
-constant, which are decided at the root without a Hall justification, and that
-is how the audit missed it; see [Tests](#tests).
+**Since #1187, both arms leave constants out of those `pol`s altogether**
+(`global_cardinality/justify.cc:55`, `:96`; `bounds_global_cardinality.cc:247`,
+`:320`, `:347`, `:409`). A constant adds a fixed 0 or 1 to each count row, which
+our OPB folds into the right-hand side, so it has no term for an at-least-one or
+at-most-one to cancel. `confined_count` and `potential_count` still count it.
+And GCC now passes `recover_am1` negated atoms `x ≠ v` (`justify.cc:102`;
+`bounds_global_cardinality.cc:351`, `:415`), the one convention the helper's
+header documents (`innards/recover_am1.hh:17-35`). `Among` already left
+constants out of its at-least-ones and passed negated atoms, which make its
+root at-most-ones over a constant sound; `Count` and `NValue` call neither. At
+the audit, the family's tests put constants only in rows where every variable
+is a constant, which are decided at the root without a Hall justification, and
+that is how the audit missed it; both GCC tests now mix them (see
+[Tests](#tests)).
 
 ### Reification
 
@@ -230,7 +339,8 @@ family: `Among`'s root initialiser and both `GlobalCardinality` arms' demand
 pols. At the audit `Inverse` called it too; #1089 made `Inverse`'s at-most-ones
 lazy, and it no longer does. `all_different`, `disjunctive`, `min_distance`,
 `sort` and `subcircuit` fold their at-most-ones with a different helper,
-`recover_am1_from_pairs` (`innards/proofs/am1_from_pairs.hh`). `recover_am1`'s
+`recover_am1_from_pairs` (`innards/proofs/am1_from_pairs.hh`). Both callers
+pass it negated atoms `x ≠ v`, GCC since #1187. `recover_am1`'s
 complementary-pair derivation exists because of this family (#557), and both
 of its callers can reach it: GCC with several values of one variable, and
 `Among` with one variable's `x ≠ v` over the values of interest. `NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value_over_cover`
@@ -377,11 +487,20 @@ rebuilds from the `.scp`, which is written from the same object.
 | `global_cardinality_gac_{sat,unsat,closed_sat}` | full workflow 2 | `none` | #358 |
 
 All 14 report `OK: full workflow-2 chain passed` at `347e2f8c`, with
-`cake_pb_cp` and `opbdiff` on the path. #488 is the one real divergence rather
-than a shared gap. It shows up as elaboration failures on about 4 in 43
-`n_value_test` instances per seed (measured in #488, not re-measured here),
-none of them among the curated cases. There is no `gac_closed_unsat` case. Every
-case posts its cover ascending, so the chain never saw #1026.
+`cake_pb_cp` and `opbdiff` on the path. Two divergences are real rather than
+shared gaps. #488 shows up as elaboration failures on about 4 in 43
+`n_value_test` instances per seed (measured in #488, not re-measured here), none
+of them among the curated cases. **#1193**, found since by #1187's review and
+open, is the second: our OPB spells a {0,1} variable's eq atoms as its bit and
+cake's as `eq0` / `eq1`. So a `GlobalCardinality` Hall `pol` over such a
+variable with both its values in the set, or an `Among` `pol` over a sum row
+holding such a variable with both its values in `S` (ours writes its two atoms
+as `~b0 + b0`), verifies against our OPB and fails step 3 of the chain against
+cake's. #1193 measured it in 298 of 3,000 GCC instances with {0, 1} in the
+cover. No curated case reaches such a `pol` (#1193's reading), which is why all
+14 pass. At the audit #488 was the only one known. There is no
+`gac_closed_unsat` case. Every case posts its cover ascending, so the chain
+never saw #1026.
 
 ### Proof-time state
 
@@ -402,7 +521,8 @@ case posts its cover ascending, so the chain never saw #1026.
   at-least-ones "over a cover", which are cached and emitted at `Top` the first
   time any family asks for them (see `all_different.md`'s preamble). Every Hall
   and flow justification builds its at-most-ones afresh, at `Temporary`, from
-  pairwise RUPs (`recover_am1`); nothing is cached across firings. That is the
+  pairwise RUPs over negated atoms (`recover_am1`), one per potential variable
+  that is not a constant (#1187); nothing is cached across firings. That is the
   per-value pairwise cost #944 describes, and it is most of the `GAC` arm's
   proof ([Proof performance](#proof-performance)).
 - **Proof-only vectors**: `Count::_flags`, `Among::_sum_line` and
@@ -412,14 +532,44 @@ case posts its cover ascending, so the chain never saw #1026.
   is built in `prepare()`, which **does** run with proofs off, value by value
   over every domain, but only `define_proof_model` reads it.
 - **Justifications read `state`**, not the reason, in every explicit rule of
-  `Count`, `Among` and both GCC arms. They ask `state.in_domain`,
-  `state.domains_intersect` and `state.bounds` which values each variable still
-  has. That is safe for the reason `all_different.md` gives: at
-  `AssertionLevel::Off` the steps are emitted before any literal of the
-  inference is applied, and at every other level no steps are emitted. It would
-  stop being safe in a mode that re-emitted justifications later. The reasons
-  here do state everything the justifications read, so the fix, if one is ever
-  needed, is the one #885 made in `equals`.
+  `Count` and both GCC arms, and in `Among`'s rules 9 and 11. They ask
+  `state.in_domain`, `state.domains_intersect` and `state.bounds` which values
+  each variable still has. That is safe only if they run before their own push,
+  or if the push moves nothing they read (`dev_docs/constraints.md:568`).
+  `infer_all` emits the steps before it applies any literal; the single-literal
+  methods push first and justify after (`inference_tracker.hh:256` for a
+  `Literal`; `:279` for a variable condition and `:540` for
+  `infer_not_in_range`, which are what `Among`'s three sites use). At every
+  assertion level but `Off` no steps are emitted, so none of this arises
+  there.
+  - **`GlobalCardinality`**: since #1196, with a logger, the seven pushing Hall
+    and flow sites (rules 20, 21, 23, 25, 28, 29, 30) make a one-literal
+    `infer_all` with an `ExplicitReason` built before the push
+    (`infer_hall_before_push`, `global_cardinality/justify.hh:43`). The
+    contradictions (rules 22, 24, 26, 27) push nothing first and keep their
+    `LazyReasonOver`. Rules 16–19 are RUPs against reasons gathered before
+    the push. Before #1196 a push could move what the `pol` and the lazy reason
+    then read, when the array held a variable and a view of it or a count was
+    one of the variables, and VeriPB rejected the proof (#1191).
+  - **`Count`**: since #1205, with a logger, the five explicit pushing sites
+    (rules 1, 3, 5, 6, 7) go through `infer_before_push_or_stop` (`count.cc:61`),
+    a one-literal `infer_all`; rule 8 has been an `infer_all` since #996 added
+    it. Without a
+    logger they take the non-throwing `_or_stop` calls as before. The reason is
+    still the whole-scope `generic_reason`, which is materialised before the
+    push when a proof is being written. Before #1205 a push could move a
+    position or `y` that the justification then read, when `n` was `y` or
+    either was among the positions, and VeriPB rejected the proof (#1201).
+  - **`Among`** is the family's one class whose explicit pushes are still
+    single-literal: rules 9, 10 and 12 (`among.cc:202`, `:216`, `:351`; rule 11
+    is an `infer_all`, `:273`). Rules 10 and 12 read no state in their
+    justifications, only the root at-most-ones and what the partition captured
+    before the push. Rule 9's justification names, per must-match variable, the
+    values of `S` it still has, so its push of `n`'s lower bound matters only
+    when `n` is itself a must-match position, directly or through a view.
+    #1205's static audit named `n` among the positions as a suspect, and its
+    random sweep of `Among` found nothing. `run_self_ref_among_test` posts
+    `Among([s, s], S, s)` and verifies. Nothing shows it safe in general.
 
 ## The implementation
 
@@ -464,9 +614,11 @@ case posts its cover ascending, so the chain never saw #1026.
 | GCC bounds | `on_change`: `vars`; `on_bounds`: `counts` | derived | 16–25 | `consistency::BC` (the default) | not claimed | no |
 | GCC flow | `on_change`: `vars`; `on_bounds`: `counts` | derived | 16, 17, 26–30 | `consistency::GAC` | not claimed | no |
 
-**Self-disabling.** `Count` returns `DisableUntilBacktrack` only on its
-failure exits: a `_or_stop` inference that emptied a domain, or the per-value
-loop's `stop`. It never disables itself on success. `Among` disables itself
+**Self-disabling.** `Count` returns `DisableUntilBacktrack` only on its failure
+exits: a `_or_stop` inference that emptied a domain, or the per-value loop's
+`stop`. It never disables itself on success. With a proof being written, a
+contradiction at one of rules 1, 3, 5, 6 and 7 throws from `infer_all` instead
+(#1205), which the propagation loop treats the same way. `Among` disables itself
 until backtrack after rule 11 or rule 12. Either leaves every variable decided
 and the count fixed, so nothing can wake it usefully until something is undone.
 
@@ -618,14 +770,26 @@ correctly. The counts are the interesting half:
   - Aliasing. A repeated variable in the array is tested for `Count`, `Among`
     and `NValue` (`run_dup_*_test`), and the count variable inside the array for
     all three (`run_count_result_in_array_test`, `run_self_ref_among_test`, and
-    since #1109 `run_aliased_count_test`, directly and through `x + c` and
-    `−x + c` views). **The value
-    of interest inside `Count`'s own array is not**: a differential for this
-    audit (value of interest, an offset view of it, or its negation, among the
-    array; 3,000 instances against brute force, 300 with VeriPB) found nothing
-    wrong. **`GlobalCardinality` over repeated variables or views** is not tested
-    either: 6,000 instances against brute force under both arms, open and
-    closed, and 600 with VeriPB, found nothing wrong.
+    since #1109 `n_value_test`'s `run_aliased_count_test`, directly and through
+    `x + c` and `−x + c` views). **The value of interest inside `Count`'s own
+    array, and `n` equal to it**, were not tested at the audit. A differential
+    for this audit (value of interest, an offset view of it, or its negation,
+    among the array; 3,000 instances against brute force, 300 with VeriPB) found
+    nothing wrong, but #1205's sweep of the code before it found proofs rejected
+    in 23 of 4,000 instances with no views at all. Since #1205, `count_test`'s
+    own `run_aliased_count_test` (eight rows) posts `n` as the value of interest
+    or a view of it, and the value of interest among the positions, though not
+    through a view there. Four of its rows put `n` among the positions: one with
+    `n` also the value of interest (`count_test.cc:359`), and three with `n` not
+    it (`:361-363`), one of those with a constant value of interest. #1205's
+    sweep found all four shapes rejected, though
+    `run_count_result_in_array_test` had posted `n` in the array with a constant
+    value since before the audit. Three MiniZinc lanes reach the shapes too.
+    **`GlobalCardinality` over repeated variables or views** was not tested at
+    the audit either: 6,000 instances against brute force under both arms, open
+    and closed, and 600 with VeriPB, found nothing wrong; #1191 and #1197 were
+    found later in those shapes. Since #1196 and #1199 both GCC tests post
+    aliased views, aliased counts and the magic sequence.
   - An unsorted cover at `GAC`: wrong answers, #1026, fixed by #1030.
   - A repeated cover value is rejected by the constructor (#922), and every
     front end folds repeats first.
@@ -687,13 +851,13 @@ class.
 
 | Class | Reason | Literals per | Finding the runs | Guarded on `want_reasons()` |
 |---|---|---|---|---|
-| `Count` | whole-scope `generic_reason`, built once | run (#935) | per run | lazy: materialised only when read |
+| `Count` | whole-scope `generic_reason`, built once | run (#935) | per run | never materialised with proofs off; when a proof is being written, materialised before each push |
 | `Among` | `eager_reason(generic_reason(vars))` **every call**, plus `n`'s bounds | run | per run | **no**: built on every call, with proofs off too |
-| `NValue` | whole-scope `generic_reason`, built once | run | per run | lazy |
+| `NValue` | whole-scope `generic_reason`, built once | run | per run | as `Count` |
 | GCC closed | `NoReason` | — | — | — |
 | GCC per value (16–19) | `var == v` / `var != v` per variable, gathered only when the rule fires | variable | — | by construction: only on firing |
-| GCC Hall and flow, capacity | per confined variable, its bounds plus one range per gap between consecutive Hall values (#936); the cut values' count upper bounds | run | per Hall gap, `O(\|H\|)` | lazy (`LazyReasonOver`) |
-| GCC Hall and flow, demand | `var != v` for every non-potential variable and every Hall value; the cut values' count lower bounds | **value**, bounded by the Hall set | per value, bounded | lazy |
+| GCC Hall and flow, capacity | per confined variable, its bounds plus one range per gap between consecutive Hall values (#936); the cut values' count upper bounds | run | per Hall gap, `O(\|H\|)` | pushing rules: an `ExplicitReason` built before the push, only with a logger and `want_reasons()` (#1196); contradictions: lazy (`LazyReasonOver`) |
+| GCC Hall and flow, demand | `var != v` for every non-potential variable and every Hall value; the cut values' count lower bounds | **value**, bounded by the Hall set | per value, bounded | as the capacity row |
 
 `Among`'s unguarded eager reason is the one hazard on the propagation path. It is
 a per-call cost proportional to the scope's runs, paid whether anyone reads it or
@@ -714,7 +878,8 @@ picks by a variable's kind either.
 - **`NValue`**: two bare RUPs; the width cost is in the encoding.
 - **GCC**: the at-least-ones name the Hall values a variable still has (#939's
   per-firing cover). The at-most-ones are `recover_am1` over the Hall set per
-  potential variable, `C(|H|, 2)` pairwise lines each: in cover values, never
+  potential variable that is not a constant (#1187), `C(|H|, 2)` pairwise
+  lines each: in cover values, never
   domain width, but quadratic, and rebuilt every firing (#944). Rules 25 and 30
   write one justification per removed value, because the pruning is per value.
 
@@ -799,16 +964,20 @@ four. So:
 - the GCC Hall and flow rules (20–30) generalise **JP 3.16 and 3.17** from a
   matching to a flow with capacities. The sum is the same shape, one at-least-one
   per confined variable (capacity side) or one at-most-one per potential
-  variable (demand side), added to the count rows of the cut values. Each count
+  variable (demand side), added to the count rows of the cut values. Since
+  #1187 a constant gets neither, since its term is folded into the count rows,
+  so wherever a rule below says "per confined variable", "per potential
+  variable" or "per supplier", it means the non-constant ones. Each count
   row is resolved against the count's bound (`add_for_literal`) so that its bits
   cancel. The capacity/demand duality and the bound resolution are ours. The
   cited thesis gives no justification procedure for a GCC cut, and the
   procedures below describe this implementation; whether other certifying work
   gives one was not surveyed (see [Prior art](#prior-art)).
 
-**Justifications read `state`**, in every explicit rule. See [Proof-time
-state](#proof-time-state) for why that is safe today and when it would stop
-being.
+**Justifications read `state`**, in every explicit rule but `Among`'s 10 and
+12. See [Proof-time state](#proof-time-state) for which rules emit their steps
+before their push (every explicit pushing rule of `Count` and both GCC arms,
+since #1196 and #1205) and which after (`Among`'s rules 9, 10 and 12).
 
 **The GCC reasons do not always name the whole cut.** The Hall and flow reasons
 (`capacity_reason`, `demand_reason`, `gcc_capacity_reason`,
@@ -871,7 +1040,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   reason. The final RUP against the sum row concludes.
 - **Reason** — the whole scope's `generic_reason`: every variable's domain,
   `y`'s and `n`'s. Not minimal: only the non-meeting variables' domains and
-  `y`'s are needed. Per run; lazy.
+  `y`'s are needed. Per run; materialised before the push when a proof is
+  being written, never with proofs off.
 - **Assertion** — `n ≤ |vars| − k ∨ ¬reason`.
 - **Hint** — `hints::Count`: `originator`.
 - **Offline reconstructibility** — `hinted`. The variables to zero are exactly
@@ -1346,11 +1516,12 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Proof technique** — `pol` then `RUP`, ours, a generalisation of JP 3.16's
   sum. For `v ≠ j` in the run, the `<v>_le` row resolved against `C_v ≤ ub_v`
   by `add_for_literal`; the at-least-one over the run's values each confined
-  variable still has; and `<j>_le`. The result is
+  variable that is not a constant still has; and `<j>_le`. The result is
   `C_j − Σ_{non-confined} X=V ≥ lower`, closed by RUP.
-- **Reason** — `LazyReasonOver`: each confined variable's bounds, plus one range
-  per gap between consecutive run values inside them (#936), and `C_v ≤ ub_v`
-  for the other run values.
+- **Reason** — an `ExplicitReason` built before the push when a proof is
+  being written (`infer_hall_before_push`, #1196; until then `LazyReasonOver`):
+  each confined variable's bounds, plus one range per gap between consecutive
+  run values inside them (#936), and `C_v ≤ ub_v` for the other run values.
 - **Assertion** — `C_j ≥ lower ∨ ¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
 - **Offline reconstructibility** — `hinted`: the confined variables are those
@@ -1364,9 +1535,12 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   it to be.
 - **Proof size** — one `pol` over `(b − a + 1)` count rows, a bound resolution
   for each of the `b − a` others whose count is not a constant, and one
-  at-least-one per confined variable (cached); one RUP.
-- **Gaps** — a constant among the confined variables aborts the proof (#1046),
-  here and in rules 22 and 23, which ask for the same at-least-ones.
+  at-least-one per non-constant confined variable (cached); one RUP.
+- **Gaps** — `None.` Until #1187 a constant among the confined variables
+  aborted the proof (#1046), here and in rules 22 and 23, which ask for the
+  same at-least-ones. Until #1196 this rule's steps ran after its own push,
+  and so did those of rules 21, 23, 25 and 28–30, which VeriPB could reject
+  under aliasing (#1191); see [Proof-time state](#proof-time-state).
 - **Tightness** — `Not shown.`
 
 ### Rule: hall-count-upper
@@ -1382,23 +1556,30 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Why it is true** — the other run values need at least `demand − lb_j` of
   the potential variables, and each variable is one occurrence at most.
 - **Proof technique** — `RUP sequence` and `pol`, ours, JP 3.16's dual. Per
-  potential variable an at-most-one over the run's values, **recovered afresh by
-  `recover_am1` at `Temporary`**: generically `C(b − a + 1, 2)` pairwise RUP
-  lemmas, which `recover_am1` folds with one `pol`; `2(b − a − 1)` pair lemmas for
-  the complementary-pair block scheme (#557), and a bare `0 ≥ 1` RUP with no fold
-  when two or more atoms are `FalseLiteral` (see Gaps, #1046). Then the summing `pol` over those, the
+  potential variable that is not a constant, an at-most-one over the run's
+  values as negated atoms `X ≠ v` (#1187), **recovered afresh by `recover_am1`
+  at `Temporary`**: generically `C(b − a + 1, 2)` pairwise RUP lemmas, which
+  `recover_am1` folds with one `pol`; `2(b − a − 1)` pair lemmas for the
+  complementary-pair block scheme (#557). `recover_am1`'s bare `0 ≥ 1` short
+  cut, for two or more `FalseLiteral` atoms, cannot arise here since #1187: an
+  atom `X ≠ v` is false only for a constant `X = v`, and constants get no
+  at-most-one (see Gaps, #1046). Then the summing `pol` over those, the
   `<v>_ge` rows resolved against `C_v ≥ lb_v` for `v ≠ j`, and `<j>_ge`, and the
   closing RUP.
-- **Reason** — `LazyReasonOver`: `X ≠ v` for every run value and every variable
-  that cannot meet the run, and `C_v ≥ lb_v` for the others.
+- **Reason** — an `ExplicitReason` built before the push when a proof is
+  being written (#1196; until then `LazyReasonOver`): `X ≠ v` for every run
+  value and every variable that cannot meet the run, and `C_v ≥ lb_v` for the
+  others.
 - **Assertion** — `C_j ≤ upper ∨ ¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
 - **Offline reconstructibility** — `hinted`.
 - **Proof size** — `potential · C(|H|, 2)` pairwise lines plus a fold each, then
   a `pol` and a RUP. In **cover values**, quadratic, never width (#944).
-- **Gaps** — a constant among the potential variables can make `recover_am1`
-  write a bare `0 ≥ 1`, which VeriPB rejects (#1046). Rules 24 and 25 build the
-  same at-most-ones, and rules 27, 29 and 30 through `emit_gcc_demand_pol`.
+- **Gaps** — `None.` Until #1187 a constant among the potential variables got
+  an at-most-one over positive atoms, and `recover_am1` could write a bare
+  `0 ≥ 1` that VeriPB rejected (#1046). Rules 24 and 25 built the same
+  at-most-ones, and rules 27, 29 and 30 through `emit_gcc_demand_pol`. Until
+  #1196, #1191 as in rule 20.
 - **Tightness** — `Not shown.`
 
 ### Rule: hall-capacity-violator
@@ -1419,7 +1600,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Why it is true** — pigeonhole: more variables than the run's values can hold
   between them.
 - **Proof technique** — `pol` then `RUP`, as rule 23 without a removal.
-- **Reason** — as rule 23.
+- **Reason** — rule 23's literals, but still `LazyReasonOver`: a
+  contradiction pushes nothing first.
 - **Assertion** — `¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
 - **Offline reconstructibility** — `hinted`.
@@ -1442,16 +1624,18 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   3.17: every `<v>_le` row in the run resolved against `C_v ≤ ub_v`, plus the
   confined variables' at-least-ones, giving
   `Σ_{non-confined, v in run} X=v ≤ 0`.
-- **Reason** — `LazyReasonOver`, the capacity reason (rule 20's, for the whole
-  run). **Re-materialised per removal**: each removal is its own `infer` with
-  its own lazy reason, and nothing is shared across the batch.
+- **Reason** — the capacity reason (rule 20's, for the whole run), an
+  `ExplicitReason` built before the push when a proof is being written (#1196).
+  **Built again per removal**: each removal is its own one-literal `infer_all`
+  with its own reason, and nothing is shared across the batch. Until #1196 it
+  was a `LazyReasonOver`, materialised after each push.
 - **Assertion** — `X_i ≠ v ∨ ¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
 - **Offline reconstructibility** — `hinted`.
 - **Proof size** — **one `pol` per removal**, not per Hall set: the `pol` is
   rebuilt for each `(X_i, v)`.
-- **Gaps** — a constant among the confined variables aborts the proof
-  (#1046), as in rule 20.
+- **Gaps** — `None.` Until #1187, #1046 as in rule 20; until #1196, #1191 as
+  in rule 20.
 - **Tightness** — `Not shown.`
 
 ### Rule: hall-demand-violator
@@ -1468,7 +1652,7 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Why it is true** — pigeonhole, the dual of rule 22.
 - **Proof technique** — `RUP sequence` and `pol`, as rule 25 without a
   removal.
-- **Reason** — as rule 25.
+- **Reason** — rule 25's literals, but still `LazyReasonOver`, as rule 22.
 - **Assertion** — `¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
 - **Offline reconstructibility** — `hinted`.
@@ -1494,15 +1678,17 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   variable an at-most-one over the run's values, **plus `w` for the variable
   being pruned**, recovered afresh as in rule 21: pairwise RUP lemmas, a fold
   `pol`, then the summing `pol` and the closing RUP.
-- **Reason** — the demand reason; lazy, re-materialised per removal.
+- **Reason** — the demand reason, an `ExplicitReason` built again before each
+  removal's push when a proof is being written (#1196; until then lazy,
+  materialised after each push).
 - **Assertion** — `X_i ≠ w ∨ ¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
 - **Offline reconstructibility** — `hinted`.
 - **Proof size** — per removed **value**: `potential · C(|H|, 2)` pairwise lines,
   folds, a `pol` and a RUP. Per value of a domain, so unbounded in width, and
   quadratic in the run.
-- **Gaps** — a constant among the potential variables can make the proof
-  write a bare `0 ≥ 1` (#1046), as in rule 21.
+- **Gaps** — `None.` Until #1187, #1046 as in rule 21; until #1196, #1191 as
+  in rule 20.
 - **Tightness** — `Not shown.`
 
 ### Rule: flow-capacity-violator
@@ -1522,7 +1708,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Why it is true** — as rule 22, for the set found.
 - **Proof technique** — `pol` then `RUP`, by `emit_gcc_capacity_pol`
   (`justify.cc`): the cut values' `<v>_le` rows, their count upper bounds, and
-  the confined variables' at-least-ones over the cut values each still has.
+  the non-constant confined variables' at-least-ones over the cut values each
+  still has.
   JP 3.16's shape with capacities.
 - **Reason** — `gcc_capacity_reason`: confined variables' bounds and gap ranges
   (#936), and the cut values' count upper bounds.
@@ -1533,9 +1720,9 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   counts are not, but a sufficient cut can be read off without a search (see
   the catalogue preamble).
 - **Proof size** — one `pol` and one RUP, plus cached at-least-ones.
-- **Gaps** — a constant among the confined variables aborts the proof (#1046),
-  here and in rule 28, which shares `emit_gcc_capacity_pol`. If neither
-  violator search finds anything, the arm throws
+- **Gaps** — until #1187 a constant among the confined variables aborted the
+  proof (#1046), here and in rule 28, which shares `emit_gcc_capacity_pol`.
+  If neither violator search finds anything, the arm throws
   `UnexpectedException` rather than emit an unjustified contradiction. For a
   closed constraint whose unassigned variable has no cover value left, it
   returns without inferring, and leaves the closed propagator (rule 15) to
@@ -1556,7 +1743,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Why it is true** — as rule 24, for the set found.
 - **Proof technique** — `RUP sequence` and `pol`, by `emit_gcc_demand_pol`: the
   cut values' `<v>_ge` rows and count lower bounds, and an at-most-one over the
-  cut values per supplier, recovered afresh by `recover_am1` as in rule 21
+  cut values per non-constant supplier, recovered afresh by `recover_am1` as in
+  rule 21
   (pairwise RUP lemmas and a fold `pol`; a supplier with one atom gets a single
   vacuous RUP line instead). Then the summing `pol` and the closing RUP.
 - **Reason** — `gcc_demand_reason`: `X ≠ v` for every cut value on every
@@ -1566,9 +1754,11 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 - **Offline reconstructibility** — `hinted`.
 - **Proof size** — `suppliers · C(|cut|, 2)` pairwise lines, folds, a `pol` and
   a RUP.
-- **Gaps** — `emit_gcc_demand_pol` builds the same positive-atom at-most-ones
-  as rule 21, so a constant supplier can make the proof write a bare `0 ≥ 1`
-  (#1046). #1046's sweep saw rejections only at `BC`.
+- **Gaps** — `None.` Until #1187 `emit_gcc_demand_pol` built the same
+  positive-atom at-most-ones as rule 21, so a constant supplier could make the
+  proof write a bare `0 ≥ 1` (#1046). #1046's sweep saw rejections only at
+  `BC`. With the abort fixed, #1187's sweep also found rejections at `GAC`, and
+  #1187 added the smallest such instance as a `GAC` test row.
 - **Tightness** — `Not shown.`
 
 ### Rule: flow-capacity-cut
@@ -1590,7 +1780,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   edge.
 - **Proof technique** — `pol` then `RUP`, by `emit_gcc_capacity_pol` over the
   unreachable values and their confined variables; JP 3.17's shape.
-- **Reason** — `gcc_capacity_reason`, lazy.
+- **Reason** — `gcc_capacity_reason`, an `ExplicitReason` built before the
+  push when a proof is being written (#1196; until then lazy).
 - **Assertion** — `X_i ≠ V_j ∨ ¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
 - **Offline reconstructibility** — `hinted`. The reason names the cut, apart
@@ -1599,8 +1790,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   reconstructor need not rebuild the residual graph to find it.
 - **Proof size** — one `pol` and one RUP per pruning. The cut is rebuilt per
   pruning and not shared across the edges it would explain.
-- **Gaps** — a constant among the confined variables aborts the proof (#1046),
-  as in rule 26.
+- **Gaps** — `None.` Until #1187, #1046 as in rule 26; until #1196, #1191 as
+  in rule 20.
 - **Tightness** — `Not shown.`
 
 ### Rule: flow-demand-cut
@@ -1617,7 +1808,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   need every variable that can supply them, this one included.
 - **Proof technique** — `RUP sequence` and `pol`, by `emit_gcc_demand_pol` as
   rule 27, with the pruned variable's at-most-one extended by the pruned value.
-- **Reason** — `gcc_demand_reason`, lazy.
+- **Reason** — `gcc_demand_reason`, an `ExplicitReason` built before the
+  push when a proof is being written (#1196; until then lazy).
 - **Assertion** — `X_i ≠ V_j ∨ ¬reason`.
 - **Hint** — `hints::GlobalCardinality`.
 - **Offline reconstructibility** — `hinted`.
@@ -1626,7 +1818,8 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   large.** On `frequency_square 12 --all` all 4,916 of the arm's prunings are
   this rule. The bounds arm makes the same prunings with rules 18 and 19, at one
   RUP each.
-- **Gaps** — #1046, as rule 27.
+- **Gaps** — `None.` Until #1187, #1046 as in rule 27; until #1196, #1191 as
+  in rule 20.
 - **Tightness** — `Not shown.`
 
 ### Rule: flow-non-cover-removal
@@ -1646,14 +1839,16 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   take a value outside the cover.
 - **Proof technique** — `RUP sequence` and `pol` per value, by
   `emit_gcc_demand_pol` as rule 29, with the pruned value added.
-- **Reason** — `gcc_demand_reason`, lazy.
+- **Reason** — `gcc_demand_reason`, an `ExplicitReason` built again before
+  each value's push when a proof is being written (#1196; until then lazy).
 - **Assertion** — `X_i ≠ w ∨ ¬reason`, per value.
 - **Hint** — `hints::GlobalCardinality`.
 - **Offline reconstructibility** — `hinted`.
 - **Proof size** — rule 29's per removed **value**, over a whole domain.
   Unbounded in width. Removing the non-cover values as runs, with one
   derivation for the batch, would fix both halves.
-- **Gaps** — #1046, as rule 27. Before #1030 the rule removed cover values on
+- **Gaps** — `None.` Until #1187, #1046 as in rule 27; until #1196, #1191 as
+  in rule 20. Before #1030 the rule removed cover values on
   an unsorted cover, and VeriPB rejected the justification. That was a
   soundness bug in the propagator, which the proof caught; not a gap in the
   logging.
@@ -1667,17 +1862,19 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
 
 | Lane | Harness | Checked consistency | Covers |
 |---|---|---|---|
-| `count_constraint` | `solve_for_tests_checking_consistency` | `y` `GAC`, `n` `BC`, array `GAC` | random rows over `y` variable and constant; #254's degenerate rows; `run_dup_count_test` (a repeated array variable) and `run_count_result_in_array_test` via plain `solve_for_tests` |
-| `count_constraint_view_mixed` | as above, positions wrapped in views | as above | |
+| `count_constraint` | `solve_for_tests_checking_consistency` | `y` `GAC`, `n` `BC`, array `GAC` | random rows over `y` variable and constant; #254's degenerate rows; `run_dup_count_test` (a repeated array variable) and `run_count_result_in_array_test` via plain `solve_for_tests`; from #1205, `count_test`'s own `run_aliased_count_test` (eight rows: `n` as `y` or a view of it, `y` among the positions, `n` among the positions, with constants; plain `solve_for_tests`, no consistency check, under the harness's branching and then the default one) |
+| `count_constraint_view_mixed`, and from #1208 `…_view_mixed_late` | as above, positions wrapped in views; the late lane registers every view after the constraint | as above | |
 | `among_constraint` | `solve_for_tests_checking_consistency` | `n` `GAC`, array `GAC` | random `S` in `[−10, 10]`; #254's rows; `run_dup_among_test`, `run_self_ref_among_test` |
-| `among_constraint_view_mixed` | as above | as above | |
-| `n_value_constraint` | plain `solve_for_tests` | **none** | random rows; constant arrays; `run_dup_n_value_test`; from #1109, `run_aliased_count_test` (`n` an array position or a view of one, three rows needing a second run) |
-| `n_value_constraint_view_mixed` | as above | none | |
-| `bounds_global_cardinality_constraint` | `solve_for_tests_checking_consistency` | array and counts `BC` | fixed rows (Hall sets, holes, spans across zero, #557), #254's rows, 24 random rows |
-| `gac_global_cardinality_constraint` | as above | array `BC`, counts none (#413) | the same shapes at `GAC`; from #1030 also three unsorted-cover rows, and random rows with shuffled covers |
+| `among_constraint_view_mixed`, `…_view_mixed_late` | as above | as above | #1208's PR reports the late lane failing on the proof code before it (#1200) |
+| `n_value_constraint` | plain `solve_for_tests` | **none** | random rows; constant arrays; `run_dup_n_value_test`; from #1109, `n_value_test`'s `run_aliased_count_test` (`n` an array position or a view of one, three rows needing a second run), not the `count_test` function of the same name |
+| `n_value_constraint_view_mixed`, `…_view_mixed_late` | as above | none | |
+| `bounds_global_cardinality_constraint` | `solve_for_tests_checking_consistency` | array and counts `BC` | fixed rows (Hall sets, holes, spans across zero, #557), #254's rows, 24 random rows; from #1187, #1046's two models and a separate block of 24 random rows mixing constants into the array; from #1196, `run_aliased_views_test` (two fixed and 16 random rows over a variable and views of it) and `run_magic_sequence_test` (`n` = 4–7, open and closed); from #1199, `run_aliased_counts_test` (three rows); these three by plain `solve_for_tests`, with no consistency check, under the harness's branching and then the default one |
+| `gac_global_cardinality_constraint` | as above | array `BC`, counts none (#413) | the same shapes at `GAC`, the aliased and magic-sequence lanes likewise unchecked; from #1030 also three unsorted-cover rows, and random rows with shuffled covers; from #1187 a third fixed constant row, the smallest instance a sweep found reaching a constant's at-most-one at `GAC` |
+| `view_registration` (from #1208) | its own | — | #1200's `GlobalCardinality` instance at `BC` and `GAC` with a linear row over its view posted after it, and `maximise(x)` / `minimise(−x)` with `Among` over `−x` among others |
 | `scp_chain_*` (14) | `run_scp_chain.bash` | — | see [Cake conformity](#cake-conformity) |
 | `xcsp_count`, `xcsp_count_among`, `xcsp_n_values`, `xcsp_cardinality{,_occvars,_intervals,_repeated}` | cached solution counts | — | the XCSP3 bindings |
 | `minizinc-{count,countops,among,nvalue,globalcardinality,…closed,…lowup,…repeated,…repeatedclosed}` | `run_minizinc_test.bash`, against Gecode | — | the MiniZinc bindings |
+| `minizinc-{countaliased,countaliasedboth,countaliasedvoi}` (#1205), `minizinc-globalcardinality{constant,constantclosed}` (#1187), `minizinc-globalcardinalitymagic` (#1196) | as above, with proofs and `--fzn-pattern` | — | #1201's, #1046's and #1191's MiniZinc shapes |
 | `large_domain_audit` rows | guard build only | — | see [Interval efficiency](#interval-efficiency) |
 
 The harness's `BC` is `bounds(Z)`: a support need only lie within its partners'
@@ -1705,8 +1902,9 @@ tree.
 preamble.
 
 **Rules the tests reach.** Counted by a local-only counter at every rule site,
-seed 1: `count_test` reaches all eight of `Count`'s rules (rule 5 16 times,
-rule 6 16 times); `among_test` all four; `n_value_test` both;
+seed 1, at `347e2f8c`, before the rows added since; not re-counted.
+`count_test` reaches all eight of `Count`'s rules (rule 5 16 times, rule 6 16
+times); `among_test` all four; `n_value_test` both;
 `gac_global_cardinality_test` rules 15–17 and 26–30. `bounds_global_cardinality_test`
 reaches 15–21, 23 and 25, **and never 22 or 24, over 30 seeds**. Those two are
 unreachable; see their entries.
@@ -1717,28 +1915,39 @@ unreachable; see their entries.
   row built its cover ascending, from a `std::set` or by hand. That is how #1026
   survived from `55783337` in July to this audit. A random differential found
   it in its first 2,000 instances.
-- **A constant among `GlobalCardinality`'s variables.** At the audit, and at
-  `00797a97` where #1046 was found, both GCC tests used constants only in rows
-  where every variable is a constant, which are decided at the root with no
-  Hall justification. No row mixed a constant with variables, which is how
-  #1046 got past this audit. #1030 has since added one such row to the `GAC`
-  test; whether it reaches a justification involving the constants was not
-  checked. In #1046's random sweep, with about a third of the variables
-  constant, 127 of 300 proof-logged runs abort, 8 more are rejected by VeriPB,
-  and 165 verify.
-- **`GlobalCardinality` over repeated variables or views.** There is no GCC view
-  lane. This audit's differential (6,000 instances against brute force, 600 with
-  VeriPB) found nothing, but it is not in the tree.
-- **`Count` with `y` inside its own array**, as itself, an offset view or its
-  negation. The same: differential clean (3,000 plus 300 verified), not in the
-  tree.
+- **A constant among `GlobalCardinality`'s variables**, until #1187. At the
+  audit, and at `00797a97` where #1046 was found, both GCC tests used constants
+  only in rows where every variable is a constant, which are decided at the
+  root with no Hall justification. No row mixed a constant with variables,
+  which is how #1046 got past this audit. #1030 added one such row to the
+  `GAC` test; whether it reached a justification involving the constants was
+  not checked. In #1046's random sweep at `00797a97`, with about a third of the
+  variables constant, 127 of 300 proof-logged runs aborted, 8 more were
+  rejected by VeriPB, and 165 verified. #1187 added #1046's two models to both
+  tests, a third row to the `GAC` one, a block of 24 random mixed rows to
+  each, and two MiniZinc lanes.
+- **`GlobalCardinality` over repeated variables or views**, until #1196 and
+  #1199. This audit's differential (6,000 instances against brute force, 600
+  with VeriPB) found nothing, and was not in the tree; #1191 and #1197 were
+  found later. Both tests now post aliased views, aliased counts and the magic
+  sequence. There is still no GCC `_view_mixed` lane, so no rule is run with
+  every position wrapped.
+- **`Count` with `y` inside its own array**, until #1205. The audit's
+  differential (3,000 plus 300 verified, as itself, an offset view or its
+  negation) was clean and not in the tree; #1201 was found later, with `n` as
+  `y`. `run_aliased_count_test` now posts `y` among the positions as itself
+  only, `n` among the positions, and `n` as `y` or a view of it.
 - **`NValue` has no consistency check at all**, and no test would notice if it
   pruned less. It prunes little enough that this is not much of a gap.
-- **The flow arm's scale.** Every `GAC` test instance has at most four
-  variables and three cover values; the random rows, at most three and two. `frequency_square` is the only larger `GAC`
-  caller, and it is an example, not a ctest lane.
+- **The flow arm's scale.** At the audit every `GAC` test instance had at most
+  four variables and three cover values; the random rows, at most three and
+  two. The rows added since reach seven of each (the magic sequence at
+  `n = 7`), and the mixed-constant rows four variables and five cover values.
+  `frequency_square` is still the only larger `GAC` caller, and it is an
+  example, not a ctest lane.
 - **`|S|` and `m`.** The widest `S` any lane posts is a handful of values, and
-  the largest cover three. Both are where this family's costs are.
+  the largest cover seven (the magic sequence; three at the audit). Both are
+  where this family's costs are.
 - **`Count`'s constant-`y` shape** is tested, but nothing measures its
   per-call cost or its wake count. #1029 had to find it from the corpus.
 - **The MiniZinc shape lanes of #1006** cover `all_different`'s globals only.
@@ -1891,6 +2100,13 @@ solution counts (569 and 282):
 | `GAC` | 4,321 | 86,014 | 3.7 MB | 0.80 s | 0.13 s | 36,001 / 17,009 / 30,149 | 8,040, 4,919 of 5,770 |
 | `BC` | 4,321 | 10,966 | 1.2 MB | 0.45 s | 0.28 s | 5,817 / 899 / 1,216 | 7,951, 4,830 of 5,681 |
 
+**Re-measured at `0a5b4ec6`** (fataepyc-10, pinned, one run each): OPB rows,
+proof lines, the `rup` / `pol` / `del` counts and the `inferences`-level
+columns are identical under both arms, and so are the recursions and
+solutions. The proofs are 3,693,423 and 1,183,863 bytes, still 3.7 and 1.2 MB,
+and VeriPB took 0.77 s and 0.44 s. The solve times were not re-taken. So
+#1187, #1196 and #1208 changed nothing in these two proofs' line counts.
+
 `GAC`'s proof has about 7.8 times as many lines as `BC`'s, is about 3.1 times
 the size in bytes, and takes about 1.8 times as long to check. Those are three
 different outcomes, and "eight times" below always means lines.
@@ -1919,7 +2135,9 @@ are cake's encoding, so #1029 does not touch them.
 `|S| = 1,000` over three variables. It is quadratic in `|S|`, and doubled by a
 proof comment per pair.
 
-**The test lanes at both assertion levels** (seed 1, every proof kept):
+**The test lanes at both assertion levels** (seed 1, every proof kept; at
+`347e2f8c`, and not re-measured; every lane here but `among_test` has gained
+rows since, from #1030, #1109, #1187, #1196, #1199 and #1205):
 
 | Lane | proof lines, `Off` | proof lines, `inferences` | family assertions |
 |---|---|---|---|
@@ -1944,11 +2162,18 @@ solution) were not checked.
 
 ### Proof-logging gaps
 
-**One, found after this audit: #1046.** A constant in `GlobalCardinality`'s
-array can make its Hall and flow justifications abort, or write a line VeriPB
-rejects; see [Variable kinds and views](#variable-kinds-and-views). Apart from
-that, every inference in the family is justified, nothing is asserted, and no
-propagator changes strength when proofs are on. The one thing a proof changes is
+`None` known at `0a5b4ec6`. Five were found after this audit, and all are
+fixed: #1046 (a constant in `GlobalCardinality`'s array, #1187), #1191 and
+#1197 (`GlobalCardinality` under aliasing, #1196 and #1199), #1200 (a view
+registered by a later constraint, #1208) and #1201 (`Count` under aliasing,
+#1205); see [Variable kinds and views](#variable-kinds-and-views) and
+[Proof-time state](#proof-time-state). Every inference in the family is
+justified, nothing is asserted, and no propagator changes strength when proofs
+are on. #1193 is not a gap in this sense: the proofs verify against our OPB,
+and fail only workflow 2's check against cake's (see [Cake
+conformity](#cake-conformity)). Besides the route `Count`'s and GCC's
+pushing rules take (`infer_all` when a proof is being written; see
+[Proof-time state](#proof-time-state)), the one thing a proof changes is
 whether `Among`'s root initialiser runs, and that initialiser only adds
 scaffolding.
 
@@ -1966,10 +2191,10 @@ no `In` has been posted since `76c8eeab`, and it is the closed propagator
 
 ### Known limitations
 
-- **`GlobalCardinality` proofs can break when its array holds a constant**, at
-  both levels (#1046). The solve aborts, or VeriPB rejects the proof, when a
-  Hall or flow justification involves the constant. Proofs off are
-  unaffected. MiniZinc reaches it with a par entry in the array.
+- **Workflow 2 fails on a {0,1} variable** (#1193): `GlobalCardinality`'s Hall
+  `pol`s over one with both its values in the set, and `Among`'s `pol`s over a
+  sum row holding one with both its values in `S`, verify against our OPB but
+  not against cake's.
 - **`GlobalCardinality`'s default is slow on large covers.** Posting it at
   `consistency::GAC` from C++ is faster or level on every multi-value cover
   measured, but gives proofs with about eight times as many lines (#1028). On a
@@ -1996,12 +2221,13 @@ no `In` has been posted since `76c8eeab`, and it is the closed propagator
 
 Ranked by what they buy for what they cost.
 
-1. **#1046 — constants in `GlobalCardinality`'s array.** A proof that aborts
-   or is rejected, reachable from MiniZinc. Two separate fixes: give the
-   tracker's constant case an answer, or keep constants out of the sets the
-   justifications sum; and make `recover_am1`'s shortcut polarity-aware, or
-   convert GCC's calls to the convention it assumes. Then add mixed rows to
-   both tests. (Step 1 used to be #1030, which merged on 2026-09-23.)
+1. **#1046 — constants in `GlobalCardinality`'s array.** **Done by #1187**,
+   which took one option from each pair: it keeps constants out of the sets
+   the justifications sum, rather than giving the tracker's constant case an
+   answer, and converts GCC's calls to the negated convention `recover_am1`'s
+   shortcut assumes, rather than making the shortcut polarity-aware. It added
+   the mixed rows to both tests, and two MiniZinc lanes. (Step 1 used to be
+   #1030, which merged on 2026-09-23.)
 2. **#1029 — make `Count` fast on a constant value of interest.** One pass for
    `must` and `might`, then the bounds and #996's pruning. Watch `n`
    `on_bounds` in that case. The one-value GCC shows 1.4–3.7 times as many nodes
@@ -2048,11 +2274,14 @@ Ranked by what they buy for what they cost.
    instead of one `pol` per removal. Make rules 25 and 30 remove ranges rather
    than values (#876, and the `GlobalCardinality/hall` `KnownTrip`); both need
    a range-shaped justification, which is why #860 left them.
-7. **Tests.** Add a GCC view and aliasing lane. Add `Count` rows with `y` in the
-   array, large-domain rows for the `GAC` arm
-   (#876), and a row varying `|S|` and `m`. The differentials in this audit are
-   the templates. Consider `frequency_square` as a lane at `12 --all`: it is
-   the only larger instance either arm sees.
+7. **Tests.** Add a GCC view and aliasing lane: **partly done** by #1196 and
+   #1199, whose aliased-view, magic-sequence and aliased-count lanes run inside
+   both GCC tests, and by #1208's `view_registration`; there is still no GCC
+   `_view_mixed` lane. Add `Count` rows with `y` in the array: **done by
+   #1205**, as itself, not through a view. Still to do: large-domain rows for
+   the `GAC` arm (#876), and a row varying `|S|` and `m`. The differentials in
+   this audit are the templates. Consider `frequency_square` as a lane at
+   `12 --all`: it is the only larger instance either arm sees.
 8. **Gathering constant `Count`s over one array into one `GlobalCardinality`**
    would add Hall reasoning where `league`, `gfd-schedule` and
    `on-call-rostering` have none. Not measured. If it ever pays, it belongs in a
@@ -2090,7 +2319,10 @@ standard ones.
 
 - [`all_different.md`](all_different.md): the Hall-set proofs this family's
   flow arm generalises, the tracker's cached at-least-ones, and why
-  justifications reading `state` is safe for now.
+  justifications reading `state` are safe under `infer_all`.
+- [`constraints.md`](../constraints.md) (Justifications): when an `emit` that
+  reads the state runs, before or after the push, on the single-literal and
+  `infer_all` paths (#1165, #1191, #1201).
 - [`justification-techniques.md`](../justification-techniques.md): JP 3.16 and
   3.17 and the unit-propagation facts under them.
 - [`large-domains.md`](../large-domains.md): the H1c (`Count`), H2 and H2′
