@@ -1654,15 +1654,34 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // before asking where it could go. An undecided task's
                         // own mandatory part is not in mand_load and must not be
                         // subtracted out of it.
-                        auto fits_at = [&, j](Integer s) -> bool {
-                            for (Integer t = s; t < s + min_len(j); ++t) {
-                                auto load = mand_load[(t - t_lo).raw_value];
-                                if (is_present(j) && lst_j < eet_j && t >= lst_j && t < eet_j)
-                                    --load;
-                                if (load >= 1)
-                                    return false;
-                            }
-                            return true;
+                        //
+                        // A start s fits when nothing blocks [s, s + lb(l_j)).
+                        // What is asked is the first and the last blocked time
+                        // in that window, rather than only whether there is
+                        // one, so that the scans below can jump: every start
+                        // from s up to the last blocked time b covers b too,
+                        // so none of them fits and the next candidate is
+                        // b + 1, and downwards likewise from the first blocked
+                        // time. A start-by-start scan was quadratic in the
+                        // duration over a long blocked span (#1245); the jumps
+                        // find exactly the start it did.
+                        auto blocked_at = [&, j](Integer t) -> bool {
+                            auto load = mand_load[(t - t_lo).raw_value];
+                            if (is_present(j) && lst_j < eet_j && t >= lst_j && t < eet_j)
+                                --load;
+                            return load >= 1;
+                        };
+                        auto last_blocked = [&, j](Integer s) -> optional<Integer> {
+                            for (Integer t = s + min_len(j) - 1_i; t >= s; --t)
+                                if (blocked_at(t))
+                                    return t;
+                            return nullopt;
+                        };
+                        auto first_blocked = [&, j](Integer s) -> optional<Integer> {
+                            for (Integer t = s; t < s + min_len(j); ++t)
+                                if (blocked_at(t))
+                                    return t;
+                            return nullopt;
                         };
 
                         // A blocker for a chain step at running bound `bound`: a
@@ -1718,8 +1737,12 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // final step lands exactly on the inferred bound.
                         auto deepest_end = [](const auto & a, const auto & b) { return a.second > b.second; };
                         auto new_lb = cur_lb;
-                        while (new_lb <= cur_ub && ! fits_at(new_lb))
-                            ++new_lb;
+                        while (new_lb <= cur_ub)
+                            if (auto b = last_blocked(new_lb))
+                                new_lb = *b + 1_i;
+                            else
+                                break;
+                        new_lb = min(new_lb, cur_ub + 1_i);
 
                         if (! is_present(j)) {
                             // Presence falsification. The task is undecided and,
@@ -1841,8 +1864,12 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // the time the blocker must have started), clipped to
                         // new_ub.
                         auto new_ub = cur_ub;
-                        while (new_ub >= cur_lb && ! fits_at(new_ub))
-                            --new_ub;
+                        while (new_ub >= cur_lb)
+                            if (auto b = first_blocked(new_ub))
+                                new_ub = *b - min_len(j);
+                            else
+                                break;
+                        new_ub = max(new_ub, cur_lb - 1_i);
                         if (new_ub >= cur_ub)
                             ++disjunctive_counters[rule_time_table_ub].already_true;
                         else {

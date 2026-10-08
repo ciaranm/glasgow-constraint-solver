@@ -262,6 +262,24 @@ a solver reporting assignments that violate the constraint.
 `{time_table = false}` for exactly this reason — the extra solutions
 would show up there.
 
+**Time-tabling's pushes add nothing once detectable precedences are on**
+(#1245), for a present task with a positive minimum duration. One
+time-tabling step of `j` past a blocker `k` needs `[lb(s_j), lb(s_j) +
+p_j)` to meet `k`'s mandatory part `[ub(s_k), lb(s_k) + p_k)`, so
+`lb(s_j) + p_j > ub(s_k)`. That is exactly detectable precedences'
+condition for `k ≪ j`, which pushes `j` to `lb(s_k) + p_k`, at least
+as far as the step goes. On random instances without optional tasks
+the two rules on and the precedences alone give the same solution and
+recursion counts on every one of 5,000 tried, and on `ft06` turning
+time-tabling off costs about 10.7% fewer instructions for the same
+search. The pushes are kept anyway: the mandatory-overlap check and
+presence falsification need the profile, and the switch covers
+presence falsification too, so with optional tasks it is not a free
+change (130 to 217 of every 1,000 small optional instances search
+differently). Its placement scan jumps past the last blocked time in a
+window rather than trying each start in turn, so a long blocked span
+costs time linear in its length rather than quadratic.
+
 ### Which of the two pols is load-bearing
 
 Both are emitted, and on some instances either one alone suffices:
