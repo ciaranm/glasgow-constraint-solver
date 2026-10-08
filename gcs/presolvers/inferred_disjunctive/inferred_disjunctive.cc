@@ -221,6 +221,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     // resources is one node of the conflict graph.
     vector<Task> tasks;
     map<pair<IntegerVariableID, optional<IntegerVariableID>>, size_t> task_of_start;
+    size_t disagreeing_lengths_this_run = 0;
     vector<Resource> resources;
     DonorViews views;
 
@@ -277,6 +278,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                 // same duration, whatever its bounds come to; two different
                 // ones are not, even where their bounds agree today.
                 bump(&InferredDisjunctiveStats::dropped_disagreeing_length);
+                ++disagreeing_lengths_this_run;
                 continue;
             }
             else if (any_of(tasks[found->second].appearances, [&](const Appearance & a) { return a.donor == donor.key; })) {
@@ -302,6 +304,14 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     }
 
     bump(&InferredDisjunctiveStats::tasks, tasks.size());
+
+    // Counted all along, and said here too: a spelling of the model that
+    // quietly costs conflicts (#1257).
+    if (0 != disagreeing_lengths_this_run)
+        note(StatsLevel::General, nullopt,
+            to_string(disagreeing_lengths_this_run) +
+                " task appearances name a different length variable from the same task's first appearance, so those resources witness "
+                "no conflicts over them; give a duration one variable to let them");
     if (tasks.size() < _min_clique_size)
         return true;
 
@@ -551,6 +561,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
             to_string(cliques_unposted_this_run) + " cliques left unposted, against an output budget of " + to_string(_max_posted) +
                 ", see with_budgets");
 
+    set<size_t> posted_members;
     for (const auto & clique : accepted) {
         // Each member's flags come from its first appearance; the certificate
         // bridges a pair's witness across to those where they differ.
@@ -749,6 +760,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                     if (bound > stats->certified_makespan_bound)
                         stats->certified_makespan_bound = bound;
                 },
+            .makespan_bound_not_improving = [stats = _stats]() { ++stats->makespan_bounds_not_improving; },
             .makespan_mutation = std::holds_alternative<inferred_disjunctive_mutation::ClaimHigherMakespanBound>(_mutation)
                 ? makespan_energy::MakespanEnergyMutation{makespan_energy::makespan_energy_mutation::ClaimHigherBound{}}
                 : makespan_energy::MakespanEnergyMutation{makespan_energy::makespan_energy_mutation::None{}},
@@ -760,6 +772,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         }
 
         bump(&InferredDisjunctiveStats::cliques_posted);
+        posted_members.insert(clique.begin(), clique.end());
         bump(&InferredDisjunctiveStats::clique_members_posted, clique.size());
         auto bound = capacity_bound(clique);
         if (bound > _stats->largest_capacity_bound)
@@ -767,6 +780,20 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         if (logger)
             logger->emit_proof_comment(
                 "presolve disjunctive: inferred a clique of " + to_string(clique.size()) + " tasks, total duration " + to_string(bound.raw_value));
+    }
+
+    // How much of what was posted the makespan bound can use, as
+    // InferredCumulative says it (#1257).
+    if (_makespan && ! posted_members.empty()) {
+        size_t unlinked = 0, variable_length = 0;
+        for (auto i : posted_members) {
+            if (! makespan_links.contains(tasks[i].start))
+                ++unlinked;
+            if (! is_constant_variable(tasks[i].length))
+                ++variable_length;
+        }
+        if (auto text = makespan_coverage_note(posted_members.size(), unlinked, variable_length))
+            note(StatsLevel::General, nullopt, *text);
     }
 
     // How much of this genuinely spanned resources, which is what says a
@@ -832,9 +859,13 @@ auto InferredDisjunctiveStats::summary() const -> std::string
         return "nothing inferred, of " + to_string(conflicting_pairs) + " conflicting pairs over " + to_string(tasks) + " tasks from " +
             to_string(donors_seen) + " posted Cumulative" + (1 == donors_seen ? "" : "s") + " looked at";
 
-    return to_string(cliques_posted) + " clique" + (1 == cliques_posted ? "" : "s") + " posted over " + to_string(clique_members_posted) +
+    auto result = to_string(cliques_posted) + " clique" + (1 == cliques_posted ? "" : "s") + " posted over " + to_string(clique_members_posted) +
         " task appearances, from " + to_string(donors_seen) + " posted Cumulative" + (1 == donors_seen ? "" : "s") +
         ", the best of them worth a makespan bound of " + to_string(largest_capacity_bound.raw_value);
+    // As InferredCumulative says it (#1257).
+    if (0_i == certified_makespan_bound && 0 != makespan_bounds_not_improving)
+        result += ", though its makespan argument certified no bound better than the makespan already had";
+    return result;
 }
 
 auto InferredDisjunctiveStats::entries() const -> vector<StatsEntry>
@@ -863,6 +894,7 @@ auto InferredDisjunctiveStats::entries() const -> vector<StatsEntry>
     add("dropped_disagreeing_length", dropped_disagreeing_length);
     add("dropped_duplicate_appearance", dropped_duplicate_appearance);
     add("declined_by_install", declined_by_install);
+    add("makespan_bounds_not_improving", makespan_bounds_not_improving);
 
     return result;
 }

@@ -47,6 +47,7 @@ using std::to_string;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::any_of;
+using std::ranges::count_if;
 
 namespace
 {
@@ -545,6 +546,9 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
     vector<Donor> donors;
     vector<Task> tasks;
     map<std::tuple<IntegerVariableID, IntegerVariableID, optional<IntegerVariableID>>, size_t> task_of;
+    // The lengths each (start, presence) appears with, to say afterwards how
+    // many tasks a disagreeing length variable split into separate columns.
+    map<pair<IntegerVariableID, optional<IntegerVariableID>>, set<IntegerVariableID>> lengths_of;
 
     for (const auto & donor : cumulative_donors(problem, propagators)) {
         bump(&InferredCumulativeStats::donors_seen);
@@ -598,6 +602,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             // column like any other, its presence a conjunct of every activity
             // flag the rows are over (#1136).
             auto presence = task_presence(view->presences.empty() ? nullopt : std::make_optional(view->presences[i]), "Cumulative").literal;
+            lengths_of[pair{starts[i], presence}].insert(length);
             auto key = std::tuple{starts[i], length, presence};
             auto found = task_of.find(key);
             if (found != task_of.end() && ! tasks[found->second].positions[which]) {
@@ -626,6 +631,19 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
     }
 
     bump(&InferredCumulativeStats::tasks, tasks.size());
+
+    // A column is (start, length, presence), so the same task posted to two
+    // resources with two length variables --- equal in value or not --- is
+    // two columns, and no cut can span those resources over it (#1257).
+    auto split = count_if(lengths_of, [](const auto & entry) { return entry.second.size() > 1; });
+    if (0 != split) {
+        bump(&InferredCumulativeStats::split_by_disagreeing_length, static_cast<size_t>(split));
+        note(StatsLevel::General, nullopt,
+            to_string(split) +
+                " tasks appear in more than one posted Cumulative under different length variables, so each is a separate "
+                "column there and no inferred constraint can span those resources over it; give a duration one variable to "
+                "let it");
+    }
     if (donors.empty() || tasks.size() < 2)
         return true;
 
@@ -802,6 +820,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         accepted.push_back(move(cut));
     }
 
+    set<size_t> posted_members;
     for (const auto & cut : accepted) {
         vector<DerivedCumulativeTask> derived_tasks;
         Recipe recipe{.donors = donors,
@@ -1029,6 +1048,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                     if (bound > stats->certified_makespan_bound)
                         stats->certified_makespan_bound = bound;
                 },
+            .makespan_bound_not_improving = [stats = _stats]() { ++stats->makespan_bounds_not_improving; },
             .makespan_mutation = std::holds_alternative<inferred_cumulative_mutation::ClaimHigherMakespanBound>(_mutation)
                 ? makespan_energy::MakespanEnergyMutation{makespan_energy::makespan_energy_mutation::ClaimHigherBound{}}
                 : makespan_energy::MakespanEnergyMutation{makespan_energy::makespan_energy_mutation::None{}},
@@ -1040,6 +1060,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         }
 
         bump(&InferredCumulativeStats::cuts_posted);
+        posted_members.insert(cut.support.begin(), cut.support.end());
         if (*std::max_element(cut.coefficients.begin(), cut.coefficients.end()) > 1_i)
             bump(&InferredCumulativeStats::non_unit_cuts_posted);
         if (cut.validated->row_indices.size() > 1)
@@ -1050,6 +1071,22 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             logger->emit_proof_comment("presolve lifted cover: inferred a cut over " + to_string(cut.support.size()) + " tasks on " +
                 to_string(cut.validated->row_indices.size()) + " resources with capacity " + to_string(cut.rhs.raw_value) + ", makespan bound " +
                 to_string(cut.bound().raw_value));
+    }
+
+    // How much of what was posted the makespan bound can use, when a makespan
+    // was named: a task with no link row, or a length that is not a constant,
+    // is a spelling of the model that weakens the bound with nothing else
+    // saying why (#1257).
+    if (_makespan && ! posted_members.empty()) {
+        size_t unlinked = 0, variable_length = 0;
+        for (auto i : posted_members) {
+            if (! makespan_links.contains(tasks[i].start))
+                ++unlinked;
+            if (! is_constant_variable(tasks[i].length))
+                ++variable_length;
+        }
+        if (auto text = makespan_coverage_note(posted_members.size(), unlinked, variable_length))
+            note(StatsLevel::General, nullopt, *text);
     }
 
     // The model-level consequence, for a reader who does not know what this
@@ -1110,9 +1147,16 @@ auto InferredCumulativeStats::summary() const -> std::string
         return "nothing inferred, of " + to_string(covers_considered) + " covers over " + to_string(tasks) + " tasks from " + to_string(donors_seen) +
             " posted Cumulative" + (1 == donors_seen ? "" : "s") + " looked at";
 
-    return to_string(cuts_posted) + " constraint" + (1 == cuts_posted ? "" : "s") + " inferred from " + to_string(donors_seen) +
+    auto result = to_string(cuts_posted) + " constraint" + (1 == cuts_posted ? "" : "s") + " inferred from " + to_string(donors_seen) +
         " posted Cumulative" + (1 == donors_seen ? "" : "s") + ", " + to_string(non_unit_cuts_posted) +
         " of them with a coefficient above one, the best worth a makespan bound of " + to_string(largest_capacity_bound.raw_value);
+    // A capacity bound with no certified bound behind it reads like a gap in
+    // the certificate. It is the makespan argument reaching nothing better
+    // than the makespan had: because a presolver that ran first raised it, or
+    // because the notes above say the tasks reached it weakly (#1257).
+    if (0_i == certified_makespan_bound && 0 != makespan_bounds_not_improving)
+        result += ", though its makespan argument certified no bound better than the makespan already had";
+    return result;
 }
 
 auto InferredCumulativeStats::entries() const -> vector<StatsEntry>
@@ -1140,6 +1184,8 @@ auto InferredCumulativeStats::entries() const -> vector<StatsEntry>
     add("dropped_over_budget", dropped_over_budget);
     add("dropped_over_state_budget", dropped_over_state_budget);
     add("declined_by_install", declined_by_install);
+    add("split_by_disagreeing_length", split_by_disagreeing_length);
+    add("makespan_bounds_not_improving", makespan_bounds_not_improving);
 
     return result;
 }

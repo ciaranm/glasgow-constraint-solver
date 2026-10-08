@@ -98,6 +98,12 @@ namespace gcs
          */
         Integer certified_makespan_bound{0};
 
+        /// Posted constraints whose makespan argument had tasks to count but
+        /// reached nothing better than the makespan already had --- because
+        /// the model, or a presolver that ran first, had raised it (#1257).
+        /// Why a capacity bound can be reported with no certified bound.
+        std::size_t makespan_bounds_not_improving = 0;
+
         /// Resources that could only be argued over in part, because a task
         /// could not be argued about at all: a height that is a view, or one
         /// whose lower bound is zero. Such a task takes no part in the conflict
@@ -274,6 +280,12 @@ namespace gcs
          * the tasks with no link their energy and makes the bound *weaker*. It
          * is not a promise VeriPB is holding you to, and there is no shape of
          * input here that produces a rejected derivation.
+         *
+         * Such a model is told so, in a General note (#1257): how many of the
+         * posted constraints' tasks have no link row, and how many have a
+         * length that is not a constant by type --- a variable with one value
+         * included --- which the bound leaves out. A summary that reports a
+         * capacity bound with none certified says so too.
          */
         auto with_makespan(IntegerVariableID makespan) -> InferredDisjunctive &;
 

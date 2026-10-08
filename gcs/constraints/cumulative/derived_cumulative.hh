@@ -218,6 +218,13 @@ namespace gcs::innards
         /// reports.
         std::function<auto(Integer)->void> makespan_bound_reached = {};
 
+        /// Called instead when the energy argument had tasks to count but
+        /// reached no bound better than the makespan already had. That is not
+        /// a failure, but it is why a presolver can report a capacity bound
+        /// and certify no makespan bound from it (#1257): another presolver,
+        /// or the model, may have raised the makespan first.
+        std::function<auto()->void> makespan_bound_not_improving = {};
+
         /// Corrupt the makespan bound's certificate. For tests only, which
         /// assert that VeriPB rejects the result; see MakespanEnergyMutation.
         makespan_energy::MakespanEnergyMutation makespan_mutation = makespan_energy::makespan_energy_mutation::None{};

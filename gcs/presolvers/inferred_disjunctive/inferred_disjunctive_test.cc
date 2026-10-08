@@ -578,7 +578,7 @@ auto main(int argc, char * argv[]) -> int
             "clique_members_posted", "largest_capacity_bound", "certified_makespan_bound", "resources_with_set_aside_tasks", "converted_heights",
             "bridges_derived", "declined_irreducible_capacity", "dropped_too_small", "dropped_subset", "dropped_dominated",
             "dropped_over_candidate_budget", "dropped_over_posting_budget", "dropped_disagreeing_length", "dropped_duplicate_appearance",
-            "declined_by_install"};
+            "declined_by_install", "makespan_bounds_not_improving"};
         if (names_of(InferredDisjunctiveStats{}) != expected_names)
             fail("the flat view is [" + joined(names_of(InferredDisjunctiveStats{})) + "], expected [" + joined(expected_names) +
                 "]. These names are public, so this is a user-visible change and not a tidy-up.");
@@ -726,6 +726,73 @@ auto main(int argc, char * argv[]) -> int
                 fail("the default candidate budget's drop is not in any General note");
             if (! notes_at(recorded, StatsLevel::Important).empty())
                 fail("the candidate budget at its default raised an Important note");
+        }
+
+        // Two spellings of the three-task family that cost the makespan bound
+        // and the conflicts, each saying so in a General note (#1257): an end
+        // variable between start and makespan, which find_makespan_links does
+        // not look through, and one resource naming its own length variables.
+        // The canonical spelling certifies a bound and says neither.
+        {
+            auto spelled = [&](const string & spelling, shared_ptr<InferredDisjunctiveStats> stats) -> Recorded {
+                const int k = 3, length = 2, horizon = 6;
+                Problem p;
+                auto makespan = p.create_integer_variable(0_i, Integer{horizon}, "makespan");
+                vector<IntegerVariableID> starts;
+                for (int i = 0; i < k; ++i) {
+                    starts.push_back(p.create_integer_variable(0_i, Integer{horizon - length}));
+                    if (spelling == "end_vars") {
+                        auto end = p.create_integer_variable(0_i, Integer{horizon});
+                        p.post(LinearEquality{WeightedSum{} + 1_i * end + -1_i * starts.back(), Integer{length}});
+                        p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * makespan + -1_i * end, 0_i});
+                    }
+                    else
+                        p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * makespan + -1_i * starts.back(), Integer{length}});
+                }
+                for (int r = 0; r < k; ++r) {
+                    vector<IntegerVariableID> heights, lengths;
+                    for (int i = 0; i < k; ++i) {
+                        auto in = false;
+                        for (int j = 0; j < k; ++j)
+                            if (i != j && (i + j) % k == r)
+                                in = true;
+                        heights.push_back(constant_variable(in ? 1_i : 0_i));
+                        lengths.push_back(spelling == "split" && r == 1
+                                ? IntegerVariableID{p.create_integer_variable(Integer{length}, Integer{length})}
+                                : IntegerVariableID{constant_variable(Integer{length})});
+                    }
+                    p.post(Cumulative{starts, lengths, heights, constant_variable(1_i)});
+                }
+                p.add_presolver(InferredDisjunctive{stats}.with_makespan(makespan));
+                p.minimise(makespan);
+                return solve_recording(p);
+            };
+            auto has_general = [&](const Recorded & recorded, const string & fragment) {
+                for (const auto & note : notes_at(recorded, StatsLevel::General))
+                    if (string::npos != note.text.find(fragment))
+                        return true;
+                return false;
+            };
+            const string unlinked = "have no row saying they finish by the makespan", disagreeing = "name a different length variable";
+
+            auto canonical_stats = make_shared<InferredDisjunctiveStats>();
+            auto canonical = spelled("canonical", canonical_stats);
+            if (canonical_stats->certified_makespan_bound == 0_i)
+                fail("spellings: the canonical family certified no makespan bound, so it is no control");
+            if (has_general(canonical, unlinked) || has_general(canonical, disagreeing))
+                fail("spellings: the canonical family was told about a spelling it does not have");
+
+            auto end_stats = make_shared<InferredDisjunctiveStats>();
+            auto end_vars = spelled("end_vars", end_stats);
+            if (! has_general(end_vars, unlinked))
+                fail("spellings: an end-variable family was not told its tasks have no makespan row");
+            if (string::npos == end_stats->summary().find("certified no bound better"))
+                fail("spellings: the end-variable family's summary does not say why no bound was certified: " + end_stats->summary());
+
+            auto split_stats = make_shared<InferredDisjunctiveStats>();
+            auto split = spelled("split", split_stats);
+            if (! has_general(split, disagreeing) || split_stats->dropped_disagreeing_length == 0)
+                fail("spellings: a family whose resource names its own length variables was not told so");
         }
     }
     println(cerr, "the report and the notes say what happened, at the level for who is reading");
