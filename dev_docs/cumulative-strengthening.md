@@ -158,25 +158,38 @@ derivations `derive_subset_sum_strengthening` chooses between:
 
 The presolver does not choose between them — the utility picks whichever reaches
 the true largest subset sum, which is always at least as strong as rounding, and
-reports which it took in `SubsetSumStrengthening::by_division`. What the
-presolver does is *predict* the choice, using the same test, so that it can
-budget: the dynamic programme costs three flags per state and a state per
-reachable partial sum per item, per time point, and a donor whose derivation
-would exceed `with_dynamic_programming_budget` is passed over entirely rather
-than producing a great deal of proof for a strengthening worth one unit. The
-rounding path is two `pol` steps and is not budgeted. `CumulativeStrengtheningStats`
-counts rows both ways, and the budget fixture asserts the prediction agrees with
-the choice — if it did not, the budget would decline the wrong donors.
+reports which it took in `SubsetSumStrengthening::by_division`.
+`CumulativeStrengtheningStats` counts rows both ways.
+
+The dynamic programme costs three flags per state and a state per reachable
+partial sum per item, at every time point a firing cites, so a donor with many
+items, a large capacity and a long horizon can write a great deal of proof. That
+is **not budgeted** (#1241). There was a budget, which predicted the choice
+above and passed over a donor whose derivation would exceed it, and it ran only
+with proofs on, since with proofs off no derivation happens. So a proofs-on
+solve searched a weaker model than the same solve with proofs off, and it was a
+poor predictor besides: it charged `items · (C + 1)` states per point, which
+scales with the capacity's magnitude where the derivation does not, and summed
+over every point of the window hull where the rows are derived lazily. On seven
+unit tasks with heights `{18, 18, 17, 17, 17, 17, 17}·s` under `50·s`, it
+declined the donor at `s = 20` and the solve took 182 nodes and 8,405 proof
+lines, against 1 node and 3,446 lines strengthened.
+
+Proofs on and off search identically now, even where that makes a proof
+expensive, and it can be. Sixteen unit tasks with unstructured heights in
+`[1000, 60000]` under a capacity of 213,259 have about as many reachable sums as
+the capacity allows; the strengthening takes 6 units off it, and its derivation
+is 767,000 lines (155 MB, 419 s to check), where the budget's decline wrote
+14,000. That is the price of the rule, and the subset-sum capacity limit, below,
+is the one size limit left: it applies either way, and bounds the states per
+time point at `items · (limit + 1)`.
 
 Everything the assessment works out depends on a time point only through which
 tasks' windows contain it, so it is worked out once per **stretch** between two
 window edges, of which there are at most `2n`, and the recipe finds the stretch
 holding the time point it is asked for (#1240). Assessing each point of the
 windows' hull instead cost time and memory linear in the horizon, with proofs
-off too: ten times the donor's own cost at a horizon of a million. The budget
-still sums over every time point, as each stretch's cost times its length, so
-the stretches change no decision; the sums saturate just past the budget
-rather than overflow.
+off too: ten times the donor's own cost at a horizon of a million.
 
 ### Every row lands on the declared capacity
 
@@ -228,7 +241,7 @@ Step 3 has to happen before step 4 and not after: a raise keeps whatever right
 hand side it is given and can raise a coefficient no higher, so a row left on a
 smaller `kappa_t` would neither reach `kappa` nor pin to it.
 
-### Why step 4 is a loop
+### Step 4, by contradiction (#1242)
 
 Given the row `c·a_i + sum_k w_k·a_k <= R` and the at-most-ones tying `i` to each
 `k`, one `pol` raises `c` by `k` while keeping `R`: take `lambda` copies of the
@@ -241,17 +254,27 @@ round through, so the step lands back on `R` exactly when
     k · (T − R)  <  T − c
 ```
 
-That bound is the whole of it. When the rest of the row only just overshoots the
-capacity — `T − R = 1` — one step raises all the way. When it overshoots by half,
-the steps are of size one and the raise costs a `pol` per unit of `kappa`. And no
-single `lambda`, `e`, divisor and set of weakenings does better: asking for the
-whole raise at once forces `(k − 1)·(T − R − 1) < 1`, which is why the loop is
-there and not a tidier one-shot. Hence `with_raise_budget`, which caps the lines
-this may spend on a donor; `raise_steps()` computes the same sequence for the
-budget and for the derivation, since a prediction that disagreed would decline the
-wrong donors.
+When the rest of the row only just overshoots the capacity — `T − R = 1` — one
+step raises all the way. When it overshoots by half, the steps are of size one
+and the raise costs a `pol` per unit of `kappa`. And no single `lambda`, `e`,
+divisor and set of weakenings does better: asking for the whole raise at once
+forces `(k − 1)·(T − R − 1) < 1`. That was a loop, and a budget on the lines it
+could spend, until #1242.
 
-Two ends of the loop are not the loop:
+A proof by contradiction does the whole raise in one rule step, whatever
+`kappa` is: `red` the goal `kappa·a_i + sum_k w_k·a_k <= kappa` with an empty
+witness, and in its subproof
+
+1. add the row `sum_k w_k·a_k <= kappa` to the negated goal and saturate, which
+   leaves `a_i >= 1`;
+2. `rup >= 1`: `a_i = 1` sets every `a_k` to zero through the at-most-ones,
+   which are derived first, and the negated goal then reads
+   `kappa >= kappa + 1`.
+
+So a raise costs one line plus its at-most-ones, which are bounded by the
+tasks present, and there is nothing left to budget.
+
+Two ends of the raise need no subproof:
 
 - `T <= kappa` — everything else fits alongside — needs no division at all. The
   at-most-ones summed *are* the row, at a right hand side of `T`, which one `ia`
@@ -263,11 +286,12 @@ Two ends of the loop are not the loop:
 
 ### What the pin catches, and what nothing catches
 
-Every step above is sound whatever it is fed, so a wrong margin, a wrong step
-size or a missing weakening all land on lines that are true and simply weaker
-than intended. The row's closing `ia` step is what rejects them, and the
-`RaiseTooFast` mutation is exactly that: one step past the bound, the degree
-rounds down instead of up, and every later step compounds it.
+Every step above is sound whatever it is fed, so a wrong margin or a missing
+weakening lands on a line that is true and simply weaker than intended, and the
+row's closing `ia` step is what rejects it. A raise claimed too high is caught
+earlier, by the subproof itself: the `RaiseTooFast` mutation claims the
+coefficient at `kappa + 1`, and with the task on and every other task off the
+negated claim still holds, so the closing RUP is rejected.
 
 What no proof can catch is the *set*. If a task that does not conflict with
 everything is raised anyway, the derivation runs honestly and the row it lands on
@@ -337,8 +361,8 @@ stop being strengthened in silence:
   makes the donor infeasible on its own — its own propagator's business, and
   not something to build a subset sum around. An *optional* task of the same
   shape says only that its presence is false, and is set aside instead.
-- **A capacity too large to subset-sum over.** Unlike everything else here this
-  is not about proof size: `kappa` is found with a bitset over the capacity's
+- **A capacity too large to subset-sum over.** Not about proof size, like
+  everything else here: `kappa` is found with a bitset over the capacity's
   whole range, rebuilt for every stretch of time points between two window
   edges, and that runs with proofs off too.
   A resource measured in thousandths would spend hundreds of megabytes deciding
@@ -349,8 +373,10 @@ stop being strengthened in silence:
   `InferredDisjunctive` does.
 - **Nothing to gain** — the capacity is already the largest load the tasks can
   reach and no height moves either. The honest and common answer.
-- **The dynamic-programming budget**, and separately **the raise budget** —
-  different costs in different units, so a donor can want one and not the other.
+
+None of these depends on whether a proof is being written. A budget on proof
+size would make a proofs-on solve search a weaker model than a proofs-off one,
+which is why there is none (#1241).
 
 Optional tasks are deliberately **not** on this list. The whole strengthening is
 an argument about the donor's per-time rows, and an optional task's presence is a
@@ -437,8 +463,8 @@ reasoning is on. So:
 7. **Mutations**, each corrupting the *conclusion* rather than the route to it,
    which is what a rule whose content is a number needs: `ClaimOneBetter` claims
    one below the largest reachable load, `BogusDivisor` rounds by a divisor that
-   does not divide every height, `RaiseTooFast` takes one step past the bound the
-   division survives, and `RaiseUnentitled` raises a task that does not qualify.
+   does not divide every height, `RaiseTooFast` claims a raised coefficient one
+   above the strengthened capacity, and `RaiseUnentitled` raises a task that does not qualify.
    VeriPB rejects each.
 
 <!-- vim: set tw=72 spell spelllang=en : -->

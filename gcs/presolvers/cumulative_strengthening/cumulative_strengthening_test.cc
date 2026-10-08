@@ -217,8 +217,6 @@ namespace
         /// shipped.
         optional<CumulativeRules> derived_rules = nullopt;
         CumulativeStrengtheningMutation mutation = cumulative_strengthening_mutation::None{};
-        long long budget = 20000;
-        long long raise_budget = 5000;
         shared_ptr<CumulativeStrengtheningStats> stats = nullptr;
     };
 
@@ -237,7 +235,7 @@ namespace
         p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(setup.rules));
         if (setup.presolve) {
             auto presolver = CumulativeStrengthening{setup.stats};
-            presolver.with_dynamic_programming_budget(setup.budget).with_raise_budget(setup.raise_budget).with_proof_mutation(setup.mutation);
+            presolver.with_proof_mutation(setup.mutation);
             if (setup.derived_rules)
                 presolver.with_rules(*setup.derived_rules);
             p.add_presolver(presolver);
@@ -343,6 +341,21 @@ namespace
             verify_proof_and_clean_up(*proof_name);
 
         return Recorded{move(stats), move(*notes)};
+    }
+
+    /// Search to the first solution, or to the end if there is none: what a
+    /// long-horizon fixture can afford, where enumerating would not finish.
+    auto solve_to_first(const Instance & inst, const Setup & setup, const optional<string> & proof_name) -> Outcome
+    {
+        Problem p;
+        post(p, inst, setup);
+        Outcome outcome;
+        auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return false; }},
+            proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+        outcome.recursions = stats.recursions;
+        if (proof_name)
+            verify_proof_and_clean_up(*proof_name);
+        return outcome;
     }
 
     /// Solve a general instance, collecting the same tuples brute force
@@ -775,7 +788,7 @@ auto main(int argc, char * argv[]) -> int
             fail("two-raised fixture: raised " + std::to_string(stats->tasks_raised) + " heights, not the two");
         if (stats->capacity_units_removed != 2_i)
             fail("two-raised fixture: took " + std::to_string(stats->capacity_units_removed.raw_value) + " units off the capacity, not the two");
-        println(cerr, "two-raised fixture: {} pol steps over {} raised rows", stats->raise_lines_emitted, stats->rows_with_a_raise);
+        println(cerr, "two-raised fixture: {} raise steps over {} raised rows", stats->raise_lines_emitted, stats->rows_with_a_raise);
     }
 
     // Both halves at once, over a raise that takes several steps.
@@ -792,10 +805,13 @@ auto main(int argc, char * argv[]) -> int
                 std::to_string(stats->capacity_units_removed.raw_value) + " off the capacity, wanting one of each");
         if (proofs && stats->rows_by_dynamic_programming == 0)
             fail("knapsack raise fixture: no row took the dynamic programming path, so it is not exercising both halves");
-        if (proofs && stats->raise_lines_emitted <= stats->rows_with_a_raise)
-            fail("knapsack raise fixture: " + std::to_string(stats->raise_lines_emitted) + " pol steps over " +
-                std::to_string(stats->rows_with_a_raise) + " rows, so no raise took more than one step");
-        println(cerr, "knapsack raise fixture: {} pol steps over {} raised rows", stats->raise_lines_emitted, stats->rows_with_a_raise);
+        // A raise the rest of the row overshoots, which cutting planes alone
+        // walked up a `pol` per step (twenty of them here, two hundred at ten
+        // times the scale): by contradiction it is one step a row (#1242).
+        if (proofs && stats->raise_lines_emitted != stats->rows_with_a_raise)
+            fail("knapsack raise fixture: " + std::to_string(stats->raise_lines_emitted) + " raise steps over " +
+                std::to_string(stats->rows_with_a_raise) + " rows, where each row's single raise should take one");
+        println(cerr, "knapsack raise fixture: {} raise steps over {} raised rows", stats->raise_lines_emitted, stats->rows_with_a_raise);
     }
 
     // The negative control. A capacity the heights can reach exactly is already
@@ -1117,7 +1133,7 @@ auto main(int argc, char * argv[]) -> int
             fail("a task was set aside, against " + what);
 
         check_solutions("raising against " + what, inst, outcome);
-        println(cerr, "raising against {}: {} pol steps over {} raised rows", what, stats->raise_lines_emitted, stats->rows_with_a_raise);
+        println(cerr, "raising against {}: {} raise steps over {} raised rows", what, stats->raise_lines_emitted, stats->rows_with_a_raise);
     }
 
     // What is still declined outright: a capacity that is a *view*, whose bits
@@ -1191,10 +1207,9 @@ auto main(int argc, char * argv[]) -> int
     // that is the configuration the whole issue is about. Two declines reach it
     // there, and they sit on either side of the Important rung: a view
     // capacity, which is not a limit and stays at General, and a capacity
-    // beyond the subset-sum limit, which is one. Neither *proof* budget can
-    // reach it --- both are estimates of proof size and are only made when
-    // there is a proof to size --- which is why the budget fixture below is
-    // proofs-on and this pair is not.
+    // beyond the subset-sum limit, which is one. Every decline reaches it with
+    // proofs off, since none of them asks whether a proof is being written
+    // (#1241).
     {
         auto notes = make_shared<vector<StatsNote>>();
 
@@ -1231,10 +1246,8 @@ auto main(int argc, char * argv[]) -> int
 
     // The other side of that rung, and the one path where an ordinary caller
     // --- no proof, no stats_report --- has something written to `cerr`: a
-    // constant capacity beyond the subset-sum limit. It is reachable with
-    // proofs off because the check is deliberately made before any of the proof
-    // budgets, none of which runs without a proof; see the comment above it in
-    // cumulative_strengthening.cc. That makes this the fixture that pins the
+    // constant capacity beyond the subset-sum limit, the one size limit this
+    // presolver has. That makes this the fixture that pins the
     // one behaviour visible to a caller who asked for none of this, so it
     // asserts the *count* of Important notes rather than their presence: a
     // second one here is a solver that has started talking over itself.
@@ -1266,60 +1279,43 @@ auto main(int argc, char * argv[]) -> int
         println(cerr, "diagnostics: proofs-off Important note is `{}`", important[0].text);
     }
 
-    // And the budget declines, which do carry a figure a caller would act on,
-    // reported at both levels: the figures at General, and what it means at
-    // Important. Proofs on, necessarily.
-    if (proofs) {
-        auto recorded = solve_recording(deep_gap, Setup{.budget = 0}, make_optional("cumulative_strengthening_note_budget"));
-
-        auto general = notes_at(recorded, StatsLevel::General);
-        auto has_figures = false;
-        for (const auto & note : general)
-            if (note.constraint && string::npos != note.text.find("dynamic programming states against a budget of 0") &&
-                string::npos == note.text.find("would need 0 dynamic"))
-                has_figures = true;
-        if (! has_figures)
-            fail("the budget decline's figures are not in any General note");
-
-        auto important = notes_at(recorded, StatsLevel::Important);
-        if (important.size() != 1)
-            fail("a budget decline raised " + to_string(important.size()) + " Important notes, not one");
-        if (important[0].constraint)
-            fail("the Important note names a constraint, which is not what it is for");
-        if (string::npos == important[0].text.find("1 of 1 constraints"))
-            fail("the Important note does not say how much was skipped: " + important[0].text);
-
-        println(cerr, "diagnostics: Important note is `{}`", important[0].text);
-    }
-
-    // The budget. Set to zero, the dynamic programming path is unaffordable and
-    // its donor is passed over --- while the divisibility path, which is two pol
-    // steps and not budgeted, keeps working. This is also the check that the
-    // budget is predicted from the same test the derivation applies: if the
-    // prediction disagreed, the pack fixture would be declined too.
-    if (proofs) {
-        auto gap_stats = make_shared<CumulativeStrengtheningStats>();
-        solve_it(deep_gap, Setup{.budget = 0, .stats = gap_stats}, make_optional("cumulative_strengthening_budget_gap"));
-        if (gap_stats->declined_over_budget != 1)
-            fail("a zero budget did not stop the dynamic programming derivation");
-
-        auto pack_stats = make_shared<CumulativeStrengtheningStats>();
-        solve_it(pack, Setup{.budget = 0, .stats = pack_stats}, make_optional("cumulative_strengthening_budget_pack"));
-        if (pack_stats->donors_strengthened != 1)
-            fail("a zero budget stopped the divisibility derivation, which it does not pay for");
-
-        // And the raising budget, which is a separate knob because it is a
-        // separate cost in different units. Zero stops the fixture that raises
-        // and leaves the two that do not alone.
-        auto raise_stats = make_shared<CumulativeStrengtheningStats>();
-        solve_it(knapsack_raise, Setup{.raise_budget = 0, .stats = raise_stats}, make_optional("cumulative_strengthening_budget_raise"));
-        if (raise_stats->declined_over_raise_budget != 1)
-            fail("a zero raise budget did not stop the raising derivation");
-
-        auto unraised_stats = make_shared<CumulativeStrengtheningStats>();
-        solve_it(pack, Setup{.raise_budget = 0, .stats = unraised_stats}, make_optional("cumulative_strengthening_budget_unraised"));
-        if (unraised_stats->donors_strengthened != 1)
-            fail("a zero raise budget stopped a donor with nothing to raise");
+    // Proofs on and off strengthen the same donors and search the same tree
+    // (#1241). There used to be a proof budget that declined a donor only with
+    // a proof being written, charging `items * (capacity + 1)` states at every
+    // time point of the window hull. Each of these was declined by it:
+    //   - the issue's seven unit tasks in scaled units, whose capacity made the
+    //     prediction 21,021 states where the derivation is a few hundred lines
+    //     at any scale, and whose strengthened capacity refutes at the root;
+    //   - deep_gap and a raise over horizons long enough that the sum over
+    //     every point passed the budget, though the rows are derived lazily
+    //     and the proof is a few hundred lines either way.
+    {
+        auto scaled = [](int s) {
+            return Instance{vector<pair<int, int>>(7, {0, 2}), vector<int>(7, 1), {18 * s, 18 * s, 17 * s, 17 * s, 17 * s, 17 * s, 17 * s}, 50 * s};
+        };
+        for (const auto & [name, inst] : {pair<string, Instance>{"scaled_1", scaled(1)}, pair<string, Instance>{"scaled_20", scaled(20)},
+                 pair<string, Instance>{"scaled_100", scaled(100)},
+                 pair<string, Instance>{"deep_gap_long", Instance{{{0, 1000}, {0, 1000}, {0, 1000}}, {2, 2, 2}, {2, 6, 6}, 10}},
+                 pair<string, Instance>{"raise_long", Instance{{{0, 6000}, {0, 6000}, {0, 6000}}, {2, 2, 2}, {5, 4, 2}, 6}}}) {
+            // The recovering arm writes and checks a row at every time point
+            // before search, which over these horizons is a proof of tens of
+            // megabytes whatever the strengthening does. The long fixtures are
+            // the shipped encoding's.
+            const auto * encoding = std::getenv("GCS_CUMULATIVE_ENCODING");
+            auto shipped = ! encoding || ! *encoding || string{encoding} == "start-checkpoint";
+            if (! shipped && inst.start_ranges.front().second > 100)
+                continue;
+            auto off_stats = make_shared<CumulativeStrengtheningStats>(), on_stats = make_shared<CumulativeStrengtheningStats>();
+            auto off = solve_to_first(inst, Setup{.stats = off_stats}, nullopt);
+            auto on =
+                solve_to_first(inst, Setup{.stats = on_stats}, proofs ? make_optional("cumulative_strengthening_proofs_on_off_" + name) : nullopt);
+            if (off_stats->donors_strengthened != 1 || on_stats->donors_strengthened != 1)
+                fail(name + ": strengthened " + to_string(off_stats->donors_strengthened) + " donors with proofs off and " +
+                    to_string(on_stats->donors_strengthened) + " with them on, not one each");
+            if (off.recursions != on.recursions)
+                fail(name + ": " + to_string(off.recursions) + " recursions with proofs off, " + to_string(on.recursions) + " with them on");
+            println(cerr, "proofs on and off: {} strengthened both ways, {} recursions", name, on.recursions);
+        }
     }
 
     // Nothing above may have reached the OPB.
@@ -1451,10 +1447,10 @@ auto main(int argc, char * argv[]) -> int
             // of six, which it plainly can.
             std::tuple<string, Instance, CumulativeStrengtheningMutation>{
                 "unentitled raise", r1_control, cumulative_strengthening_mutation::RaiseUnentitled{}},
-            // And the step-size rule, which is the arithmetic a rearrangement
-            // of this derivation is most likely to lose: one step too far and
-            // the division rounds the degree down instead of up, leaving a
-            // sound but weaker line that only the row's own pin objects to.
+            // And the raise itself, claimed one coefficient too high: the
+            // proof by contradiction's closing RUP then has nothing to refute,
+            // because with the raised task on and every other task off the
+            // negated claim still holds.
             std::tuple<string, Instance, CumulativeStrengtheningMutation>{
                 "raise too fast", knapsack_raise, cumulative_strengthening_mutation::RaiseTooFast{}}}) {
         const string name = "cumulative_strengthening_mutation";

@@ -84,9 +84,10 @@ namespace gcs
          * \name Why a donor was passed over.
          *
          * Broken out because they mean different things to a caller: an
-         * argument this presolver cannot reduce, a proof-size budget a caller
-         * may want to raise, the honest and common answer that there was
-         * nothing to say, and a bug.
+         * argument this presolver cannot reduce, a size limit a caller may want
+         * to raise, the honest and common answer that there was nothing to
+         * say, and a bug. None of them depends on whether a proof is being
+         * written (#1241).
          *
          * What is *not* among them is anything about a task. A variable
          * height, a variable length and an optional task each cost at most the
@@ -111,14 +112,12 @@ namespace gcs
         /// sets it aside instead, so the rest of the donor is still
         /// strengthened.
         std::size_t declined_infeasible_donor = 0;
-        /// Donors whose capacity is too large to subset-sum over. Unlike the
-        /// two below it this one is not about proof size: the assessment itself
-        /// is a bitset of `capacity` bits rebuilt at every time point, so it
-        /// costs whether or not proofs are on, and the cost is the capacity's
-        /// magnitude rather than anything the model says about the tasks.
+        /// Donors whose capacity is too large to subset-sum over. Not about
+        /// proof size: the assessment itself is a bitset of `capacity` bits
+        /// rebuilt at every time point, so it costs whether or not proofs are
+        /// on, and the cost is the capacity's magnitude rather than anything
+        /// the model says about the tasks.
         std::size_t declined_capacity_too_large = 0;
-        std::size_t declined_over_budget = 0;
-        std::size_t declined_over_raise_budget = 0;
         /// The capacity was already the largest load the tasks can reach, and
         /// no height moved either, so there was nothing to strengthen.
         std::size_t declined_nothing_to_gain = 0;
@@ -146,14 +145,11 @@ namespace gcs
          * which some task's height was raised, whatever that took --- including
          * the degenerate case where a raised task is the only one that can run
          * then, and the row is a bare `active <= 1` with no at-most-one behind
-         * it. `raise_lines_emitted` counts the steps that took, which is not
-         * one per raised task --- how
-         * many a raise takes depends on how far the rest of the row overshoots
-         * the capacity, and is the sequence
-         * CumulativeStrengthening::with_raise_budget caps. It does not count
-         * the at-most-ones themselves, nor the implication steps that relax a
-         * row's right hand side, both of which are bounded by the tasks
-         * present rather than by the arithmetic.
+         * it. `raise_lines_emitted` counts the steps that took, which is one
+         * per raised task per row whatever the capacity (#1242). It does not
+         * count the at-most-ones themselves, nor the implication steps that
+         * relax a row's right hand side, both of which are bounded by the
+         * tasks present rather than by the arithmetic.
          */
         ///@{
         std::size_t rows_with_a_raise = 0;
@@ -208,12 +204,11 @@ namespace gcs
      * therefore this one step, and it is what
      * CumulativeStrengtheningStats::tasks_raised counts.
      *
-     * That step is where the proof gets expensive. A raised task's row has to
-     * be built out of at-most-ones taken off the donor's own row --- one per
-     * pair --- and then the task's coefficient walked up to kappa a `pol` at a
-     * time, because cutting planes cannot raise a coefficient to the right hand
-     * side in one division unless the rest of the row barely overshoots it. See
-     * with_raise_budget(), and `dev_docs/cumulative-strengthening.md` for the
+     * A raised task's row is built out of at-most-ones taken off the donor's
+     * own row --- one per pair --- and then the task's coefficient is raised to
+     * kappa in one proof by contradiction, rather than a `pol` at a time, which
+     * cutting planes alone would need whenever the rest of the row overshoots
+     * kappa by much (#1242). See `dev_docs/cumulative-strengthening.md` for the
      * arithmetic.
      *
      * **Do not expect this to make anything faster on its own.** The rules are
@@ -230,8 +225,6 @@ namespace gcs
     {
     private:
         std::shared_ptr<CumulativeStrengtheningStats> _stats;
-        long long _max_dynamic_programming_states;
-        long long _max_raise_lines;
         long long _max_subset_sum_capacity;
         CumulativeRules _rules;
         innards::CumulativeStrengtheningMutation _mutation;
@@ -249,50 +242,15 @@ namespace gcs
         explicit CumulativeStrengthening(std::shared_ptr<CumulativeStrengtheningStats> stats = nullptr);
 
         /**
-         * \brief Cap the size of the dynamic-programming derivation, summed over
-         * a donor's time points, in states.
-         *
-         * The layered dynamic program costs three flags per state and a handful
-         * of lines per transition, so a donor with a large capacity and a long
-         * horizon can produce a great deal of proof for a strengthening worth
-         * one unit. A donor whose derivation would exceed this is passed over
-         * entirely and counted in CumulativeStrengtheningStats::declined_over_budget;
-         * the divisibility path is not budgeted, being two `pol` steps a row.
-         *
-         * The default is meant to be left alone. It exists as a knob so that a
-         * test can set it to zero and watch the dynamic-programming path
-         * disappear while the divisibility one keeps working.
-         */
-        auto with_dynamic_programming_budget(long long states) -> CumulativeStrengthening &;
-
-        /**
-         * \brief Cap the number of proof lines spent raising heights, summed
-         * over a donor's time points and raised tasks.
-         *
-         * A raise is a `pol` per step, and the number of steps depends on how
-         * far the rest of the row overshoots the capacity: a row that only just
-         * overshoots raises in one, and one that overshoots by half pays a line
-         * per unit of the strengthened capacity. So the cost is not something a
-         * caller can read off the model, and a donor whose raising would exceed
-         * this is passed over entirely and counted in
-         * CumulativeStrengtheningStats::declined_over_raise_budget.
-         *
-         * Separate from the dynamic-programming budget because the two buy
-         * different things and are counted in different units: a donor can want
-         * one and not the other, and a test setting either to zero should watch
-         * only its own half disappear.
-         */
-        auto with_raise_budget(long long lines) -> CumulativeStrengthening &;
-
-        /**
          * \brief Cap the capacity this presolver will subset-sum over, and so
          * decline any donor posted with a larger one.
          *
-         * Not a proof budget: the two above bound what a derivation costs, and
-         * this bounds what deciding whether to make one costs. `kappa` is found
-         * with a word-parallel bitset over the capacity's whole range, rebuilt
-         * at every time point of every donor, and that runs with proofs off
-         * too. A capacity in scaled units --- a resource measured in
+         * Not a proof budget, and there is none: this presolver strengthens
+         * the same donors whether or not a proof is being written, however
+         * large the derivation (#1241). This bounds what deciding whether to
+         * strengthen costs. `kappa` is found with a word-parallel bitset over
+         * the capacity's whole range, rebuilt at every time point of every
+         * donor, and that runs with proofs off too. A capacity in scaled units --- a resource measured in
          * thousandths, say --- makes the assessment alone hundreds of megabytes
          * of allocation and a horizon's worth of sweeps, for a strengthening
          * nothing has yet said is worth having.

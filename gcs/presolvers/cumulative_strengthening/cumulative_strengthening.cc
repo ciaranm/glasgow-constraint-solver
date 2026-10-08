@@ -71,94 +71,19 @@ namespace
         vector<Integer> heights;
         vector<size_t> full_tasks;
         Integer kappa;
-        /// Whether derive_subset_sum_strengthening() will take its two-step
-        /// divisibility path here, predicted by the same test it applies. Only
-        /// the other path costs anything worth budgeting for.
-        bool by_division;
     };
 
-    /// The step sizes that raise one task's coefficient from zero to `kappa`,
-    /// in a row whose other coefficients total `total` and whose right hand
-    /// side is `kappa` --- one `pol` each.
-    ///
-    /// Each step is `lambda` copies of the row so far plus the at-most-ones
-    /// tying the task to the row's other terms, weighted by those terms' own
-    /// coefficients, all divided by `lambda + e`. Working out the largest step
-    /// that division survives is the whole of this: the division rounds the
-    /// degree *up*, and the margin it has to round through is `e * (total -
-    /// kappa)`, so a step of `k` lands on the right hand side again exactly
-    /// when `k * (total - kappa) < total - c`. That bound is what is being
-    /// computed here, one step at a time.
-    ///
-    /// So the cost is not uniform. A row whose other tasks only just overshoot
-    /// the capacity raises in a single step; one that overshoots by half gets
-    /// steps of one and pays a `pol` per unit of `kappa`, which is why the
-    /// caller budgets this. Predicting it is arithmetic and needs no proof, so
-    /// the budget and the derivation walk the same steps --- a prediction that
-    /// disagreed would decline the wrong donors.
-    template <typename Step_>
-    auto for_each_raise_step(Integer total, Integer kappa, Step_ && each_step) -> void
-    {
-        // Everything else fits alongside, so the at-most-ones alone say it:
-        // summed, they give the whole row in one `pol`, and there is no
-        // division to survive.
-        if (total <= kappa) {
-            each_step(kappa);
-            return;
-        }
-
-        auto overshoot = total - kappa;
-        for (auto c = 0_i; c < kappa;) {
-            // ceil((total - c) / overshoot) - 1, which is at least one while
-            // `c < kappa`, so this terminates.
-            auto step = min(kappa - c, (total - c + overshoot - 1_i) / overshoot - 1_i);
-            each_step(step);
-            c += step;
-        }
-    }
-
-    /// \ref for_each_raise_step, as the steps themselves.
-    [[nodiscard]] auto raise_steps(Integer total, Integer kappa) -> vector<Integer>
-    {
-        vector<Integer> steps;
-        for_each_raise_step(total, kappa, [&](Integer step) { steps.push_back(step); });
-        return steps;
-    }
-
-    /// \ref for_each_raise_step, as how many there are --- which is all the
-    /// budget wants, and it wants it once per raised task per time point, on
-    /// the path whose whole purpose is to decide cheaply whether the expensive
-    /// one is affordable.
-    [[nodiscard]] auto raise_step_count(Integer total, Integer kappa) -> long long
-    {
-        long long count = 0;
-        for_each_raise_step(total, kappa, [&](Integer) { ++count; });
-        return count;
-    }
 }
 
 CumulativeStrengthening::CumulativeStrengthening(shared_ptr<CumulativeStrengtheningStats> stats) :
     // Always a block, whether or not anyone asked for one: the default
     // experience was silent because nothing was allocated, not because the
     // channel was wrong.
-    _stats(stats ? move(stats) : make_shared<CumulativeStrengtheningStats>()), _max_dynamic_programming_states(20000), _max_raise_lines(5000),
-    _max_subset_sum_capacity(1000000),
+    _stats(stats ? move(stats) : make_shared<CumulativeStrengtheningStats>()), _max_subset_sum_capacity(1000000),
     // Energy rules only: see with_rules(). A derived constraint's time-tabling
     // cannot infer anything its donor's has not, so running it is pure cost.
     _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true}), _mutation(cumulative_strengthening_mutation::None{})
 {
-}
-
-auto CumulativeStrengthening::with_dynamic_programming_budget(long long states) -> CumulativeStrengthening &
-{
-    _max_dynamic_programming_states = states;
-    return *this;
-}
-
-auto CumulativeStrengthening::with_raise_budget(long long lines) -> CumulativeStrengthening &
-{
-    _max_raise_lines = lines;
-    return *this;
 }
 
 auto CumulativeStrengthening::with_subset_sum_capacity_limit(long long capacity) -> CumulativeStrengthening &
@@ -223,14 +148,24 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         auto unentitled_raise = std::holds_alternative<cumulative_strengthening_mutation::RaiseUnentitled>(_mutation);
 
         // The assessment below subset-sums the heights at every time point, and
-        // that is a bitset of `capacity` bits built from scratch each time. It
-        // runs before any of the proof budgets, and with proofs off none of
-        // them ever runs at all --- so a donor posted in scaled units, with a
-        // capacity in the billions, spends hundreds of megabytes and a sweep of
-        // the whole horizon before anything has decided whether there was a
-        // strengthening to be had. Magnitude is the wrong thing to find that
-        // out with, so decline on it first. It is also what keeps the state
-        // count and the raise arithmetic below inside a `long long`.
+        // that is a bitset of `capacity` bits built from scratch each time, so
+        // a donor posted in scaled units, with a capacity in the billions,
+        // spends hundreds of megabytes and a sweep of the whole horizon before
+        // anything has decided whether there was a strengthening to be had.
+        // Magnitude is the wrong thing to find that out with, so decline on it
+        // first. It is also what keeps the raise arithmetic below inside a
+        // `long long`.
+        //
+        // This is the only limit, and it is decided without asking whether a
+        // proof is being written. There used to be two proof budgets beside it,
+        // on the raise and on the dynamic-programming derivation, which declined
+        // a donor only with proofs on: a proofs-on solve then searched a
+        // weaker model than the same solve with proofs off (#1241). Proofs on
+        // and off must search identically, even where that makes a proof
+        // expensive, so a donor this presolver can assess is strengthened
+        // whatever its derivation costs. The raise is one line now (#1242);
+        // the dynamic program is three flags per reachable partial sum per
+        // item at every time point a firing cites.
         if (capacity > Integer{_max_subset_sum_capacity}) {
             bump(&CumulativeStrengtheningStats::declined_capacity_too_large);
             ++limit_declines_this_run;
@@ -349,7 +284,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
 
             for (size_t e = 0; e + 1 < edges.size(); ++e) {
                 auto t = edges[e];
-                TimePoint point{t, edges[e + 1] - 1_i, {}, {}, {}, 0_i, false};
+                TimePoint point{t, edges[e + 1] - 1_i, {}, {}, {}, 0_i};
                 for (auto i : other_tasks)
                     if (t >= t_lo[i] && t <= t_hi[i]) {
                         point.tasks.push_back(i);
@@ -365,11 +300,6 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                     continue;
 
                 point.kappa = largest_subset_sum_at_most(point.heights, capacity);
-
-                auto divisor = 0_i;
-                for (const auto & h : point.heights)
-                    divisor = Integer{std::gcd(divisor.raw_value, h.raw_value)};
-                point.by_division = (divisor > 1_i && divisor * (capacity / divisor) == point.kappa);
 
                 assessment.kappa = max(assessment.kappa, point.kappa);
                 assessment.stretches.push_back(move(point));
@@ -437,65 +367,6 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         const auto & full_tasks = assessed->full_tasks;
         auto & stretches = assessed->stretches;
         auto kappa = assessed->kappa;
-
-        // Budget the expensive derivations. The dynamic program has a state per
-        // reachable partial sum per item, so `items * capacity` bounds it; the
-        // divisibility path is two `pol` steps and needs no budgeting. Raising
-        // is a `pol` per step per task per time point, and how many steps a
-        // raise takes depends on how far the rest of the row overshoots. Only
-        // relevant with proofs on, since with them off no derivation happens.
-        //
-        // Summed over every time point, as a stretch's cost times its length,
-        // which is what it was when each point was assessed on its own. The sums
-        // are only compared against a budget, so they saturate just past it
-        // rather than overflowing over a long horizon.
-        if (logger) {
-            long long states = 0, raise_lines = 0;
-            auto add_capped = [](long long & total, long long per_point, long long points, long long limit) {
-                if (per_point <= 0)
-                    return;
-                if (total > limit || points > (limit - total) / per_point)
-                    total = limit + 1;
-                else
-                    total += per_point * points;
-            };
-            for (const auto & point : stretches) {
-                auto points = (point.hi - point.lo + 1_i).raw_value;
-                if (! point.by_division)
-                    add_capped(
-                        states, static_cast<long long>(point.heights.size()) * (capacity.raw_value + 1), points, _max_dynamic_programming_states);
-
-                // A repeat count rather than an index: each raised task is
-                // raised out of the row the one before it left behind, which is
-                // a kappa heavier, so what varies between the rounds is `total`
-                // and not which task it is.
-                long long raise_lines_here = 0;
-                auto total = std::accumulate(point.heights.begin(), point.heights.end(), 0_i);
-                for (size_t rounds = point.full_tasks.size(); rounds > 0; --rounds) {
-                    raise_lines_here += raise_step_count(total, kappa);
-                    total += kappa;
-                }
-                add_capped(raise_lines, raise_lines_here, points, _max_raise_lines);
-            }
-
-            if (states > _max_dynamic_programming_states) {
-                bump(&CumulativeStrengtheningStats::declined_over_budget);
-                ++limit_declines_this_run;
-                note(StatsLevel::General, donor.key.id,
-                    "passed over: the derivation would need " + to_string(states) + " dynamic programming states against a budget of " +
-                        to_string(_max_dynamic_programming_states) + ", see with_dynamic_programming_budget");
-                continue;
-            }
-
-            if (raise_lines > _max_raise_lines) {
-                bump(&CumulativeStrengtheningStats::declined_over_raise_budget);
-                ++limit_declines_this_run;
-                note(StatsLevel::General, donor.key.id,
-                    "passed over: raising heights would need " + to_string(raise_lines) + " proof lines against a budget of " +
-                        to_string(_max_raise_lines) + ", see with_raise_budget");
-                continue;
-            }
-        }
 
         // The recipe needs to find, for each time point, the same tasks and the
         // same flags that the donor's row for that time point is over --- so
@@ -755,46 +626,38 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                         }
                     }
                     else {
-                        auto steps = raise_steps(total, kappa);
-                        auto raised_to = 0_i;
-                        for (size_t s = 0; s < steps.size(); ++s) {
-                            auto step = steps[s];
-                            if (raise_too_fast && s == 0) {
-                                // Only the first step is corrupted; the rest of
-                                // the sequence then compounds it honestly,
-                                // which is what a step-size rule getting lost
-                                // in a rearrangement would look like.
-                                if (step + 1_i > min(kappa - raised_to, total - raised_to - 1_i))
-                                    throw ProofError{"cumulative strengthening: the raise-too-fast mutation needs a raise with a step to spare, "
-                                                     "and this one does not"};
-                                step += 1_i;
-                            }
-
-                            // `lambda` copies of the row so far, plus each
-                            // at-most-one weighted by its task's coefficient in
-                            // that row, scaled so that the division comes out
-                            // whole on every term but the degree.
-                            //
-                            // `e * weight` is a product of two quantities each
-                            // bounded by the capacity, so it is the capacity
-                            // limit at the top of run() that keeps this inside
-                            // a `long long` --- an unbounded capacity would
-                            // reach it a good deal sooner than anything here
-                            // looks like it could.
-                            auto rest = total - raised_to - step;
-                            auto common = Integer{std::gcd(step.raw_value, rest.raw_value)};
-                            auto e = step / common, lambda = rest / common;
-
-                            PolBuilder raise;
-                            raise.add(row_to_raise_into(), lambda);
-                            for (const auto & [other, weight] : running)
-                                raise.add(at_most_one_between(task, other), e * weight);
-                            raise.divide_by(lambda + e);
-                            row = raise.emit(recipe_logger, ProofLevel::Temporary);
-                            ++stats->raise_lines_emitted;
-
-                            raised_to += step;
-                        }
+                        // The rest overshoots the capacity, so the at-most-ones
+                        // alone do not add up to the row, and cutting planes
+                        // alone raise the coefficient a step at a time --- a
+                        // `pol` per unit of kappa, once the rest overshoots by
+                        // half. By contradiction instead, in one step whatever
+                        // kappa is (#1242): the negated goal plus the row so far
+                        // saturates to `a_task >= 1`, every at-most-one then
+                        // sets its other task to zero, and what is left of the
+                        // negation reads `kappa >= kappa + 1`.
+                        //
+                        // The at-most-ones are derived first, since the closing
+                        // RUP propagates through them. Under the RaiseTooFast
+                        // mutation the claimed coefficient is one too many, the
+                        // negation then survives the propagation, and the RUP
+                        // is rejected.
+                        auto current = row_to_raise_into();
+                        for (const auto & entry : running)
+                            (void)at_most_one_between(task, entry.first);
+                        WPBSum raised;
+                        raised += (raise_too_fast ? kappa + 1_i : kappa) * flag_for(task);
+                        for (const auto & [other, weight] : running)
+                            raised += weight * flag_for(other);
+                        map<ProofGoal, Subproof> subproofs;
+                        subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
+                            // The negated goal is the last line added when the
+                            // subproof opens.
+                            auto negation = sub_logger.get_current_proof_line();
+                            PolBuilder{}.add(negation).add(current).saturate().emit(sub_logger, ProofLevel::Temporary);
+                            sub_logger.emit_rup_proof_line(WPBSum{} >= 1_i, ProofLevel::Temporary);
+                        }});
+                        row = recipe_logger.emit_red_proof_line(move(raised) <= kappa, {}, ProofLevel::Temporary, subproofs);
+                        ++stats->raise_lines_emitted;
                     }
 
                     running.emplace(task, kappa);
@@ -859,8 +722,6 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
 auto CumulativeStrengthening::clone() const -> unique_ptr<Presolver>
 {
     auto result = make_unique<CumulativeStrengthening>(_stats);
-    result->with_dynamic_programming_budget(_max_dynamic_programming_states);
-    result->with_raise_budget(_max_raise_lines);
     result->with_subset_sum_capacity_limit(_max_subset_sum_capacity);
     result->with_rules(_rules);
     result->with_proof_mutation(_mutation);
@@ -899,8 +760,6 @@ auto CumulativeStrengtheningStats::entries() const -> vector<StatsEntry>
     add("declined_irreducible_capacity", declined_irreducible_capacity);
     add("declined_infeasible_donor", declined_infeasible_donor);
     add("declined_capacity_too_large", declined_capacity_too_large);
-    add("declined_over_budget", declined_over_budget);
-    add("declined_over_raise_budget", declined_over_raise_budget);
     add("declined_nothing_to_gain", declined_nothing_to_gain);
     add("rows_by_division", rows_by_division);
     add("rows_by_dynamic_programming", rows_by_dynamic_programming);
