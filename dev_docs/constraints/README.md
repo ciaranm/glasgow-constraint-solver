@@ -339,13 +339,13 @@ constraints and do not restate it.
   minute, one overshoots its time limit by 44 s, and the audit row stays
   `KnownTrip`. Enumerating the same solutions as Gecode, under different
   branching, it takes 12 to 15 times Gecode's time. Other findings:
-  - a result that shares a variable with an entry through a view (only the
-    C++ API and `gcspy` can post a harmful one) makes it throw "missing support" instead
-    of failing, sometimes before the last solution, and occasionally write a
-    proof VeriPB rejects, from two rules and in both directions; three small
-    fixes are tested together;
   - plainly repeated variables fall below `bounds(Z)`;
   - the single-support rule's reason and proof are per value of the result.
+
+  Fixed since the audit, by #1181: a result that shares a variable with an
+  entry through a view (only the C++ API and `gcspy` can post a harmful one)
+  made it throw "missing support" instead of failing, and occasionally write
+  a proof VeriPB rejected; it now fails in place and verifies.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
