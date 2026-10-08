@@ -1,13 +1,41 @@
 # `Increasing`: a sequence is monotone, strictly or not, up or down
 
 > **Maturity** production ·
-> **Audited** 2026-09-29 at `c9ceea25` ·
-> **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
-> for what it would file. Already open and touching this family: #833 (the
-> large-domain policy, which the impossible repeated pair below falls
-> outside), #868 (cross-solver comparisons; this document gives a whole-solve
-> comparison by hand, not #868's identical-tree one).
-> Tracked under #871.
+> **Audited** 2026-09-29 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1146 ·
+> **Open issues** filed by this audit: #1144 (an impossible repeated pair
+> costs the width of its domain). Filed from review of #1178: #1186 (the
+> standard library's reified forms are wrong over an empty array). **Fixed
+> since the audit**: #1146 (MiniZinc's int `decreasing` never reached the
+> family), by #1178; see [Re-audit, 2026-10-08](#re-audit-2026-10-08).
+> Already open and touching this family: #833 (the large-domain policy, which
+> the impossible repeated pair below falls outside), #868 (cross-solver
+> comparisons; this document gives a whole-solve comparison by hand, not
+> #868's identical-tree one). Tracked under #871.
+
+### Re-audit, 2026-10-08
+
+One fix to this family has merged since the audit, in the MiniZinc library
+only. This pass brings the text into line with it at `0a5b4ec6`. No C++ in the
+family has changed since `c9ceea25`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1146, MiniZinc's int `decreasing` never reached the family | #1178 | `redefinitions.mzn` sends an int or enum `decreasing` / `strictly_decreasing` to `increasing` / `strictly_increasing` over the reversed array, and the three dead `fzn_*decreasing*` files are deleted. The summary loses its bullet on it; the [frontend table](#concrete-constraints-and-frontend-coverage) and its `[^mznrev]` footnote, [Reification](#reification), [Tests](#tests), the corpus note in [Benchmarks and examples](#benchmarks-and-examples), [Known limitations](#known-limitations) and [Next steps](#next-steps) item 2 follow. #1186, found by #1178's review, is new under Known limitations |
+
+**What was measured again.** Only MiniZinc's side. The flattening, at
+`0a5b4ec6` with `build/glasgow.msc` on MiniZinc 2.9.7 and 2.10.1, which agree:
+`decreasingtest.mzn` and `strictlydecreasing.mzn` flatten to one
+`glasgow_increasing_int` and one `glasgow_strictly_increasing_int` over the
+reversed array, `decreasingreif.mzn` to three `int_lin_le_reif`, one
+`array_bool_and` and one `bool_clause`, and a model posting `decreasing` and
+`strictly_increasing` with no `include` reaches both builtins
+(`tmp/fd871-comments-1008/ordsmall/probes/mzn/`). #1186's worst case, under
+Known limitations, was also solved and proof-checked. The MiniZinc lanes were
+not run here; #1178's body reports all ten passing on both versions. Every other
+figure (CPU, proof sizes, runtime-cap counts, corpus) is as the first pass and
+the 2026-10-05 review round took it, and was **not** re-taken; the family's C++
+has not changed since `c9ceea25`.
 
 Four posted classes, `Increasing`, `StrictlyIncreasing`, `Decreasing` and
 `StrictlyDecreasing`, over one class, `IncreasingChain`, and one propagator. A
@@ -16,7 +44,7 @@ one ascending sweep. The encoding is the chain of `n − 1` comparisons, and the
 propagator is a forward sweep of lower bounds and a backward sweep of upper
 bounds.
 
-Four things to know before touching it.
+Three things to know before touching it.
 
 - **It is generalised arc consistent, and cheap, on distinct variables.** A
   chain of comparisons at its bounds fixpoint supports every value in every
@@ -33,11 +61,6 @@ Four things to know before touching it.
   `LessThan(x, x)` has contradicted at once since #1088; this family has no
   such check. A repeat with the same sign stays sound and `bounds(D)`; one
   through an opposite-sign view (`x` and `c − x`) is not even `bounds(Z)`.
-- **MiniZinc's int `decreasing` never reaches it.** The standard library has no
-  plain `var int` overload of `decreasing`, so an int array goes to the
-  optional-variable overload and on to a pairwise decomposition; the solver's
-  own `fzn_decreasing_int` is dead code. See [the frontend
-  table](#concrete-constraints-and-frontend-coverage).
 - **No front end can reach a reified form, and no presolver reads it.** The
   chain's rows are difference constraints, but the difference-logic presolver
   recognises only `Comparison` and two-term linear donors, so a model that
@@ -67,37 +90,30 @@ four user-facing classes are thin constructors fixing the two flags.
 |---|---|---|---|---|---|
 | `Increasing` | ✓ `fzn_increasing_int`, `fzn_increasing_bool` | ✓ `ordered` with `le` | ?[^gcspy] | ✓ `increasing` | |
 | `StrictlyIncreasing` | ✓ `fzn_strictly_increasing_int` | ✓ `ordered` with `lt` | ?[^gcspy] | ✓ `strictly_increasing` | |
-| `Decreasing` | int: `frontend gap`, pairwise `int_lin_le`[^mznrev]; bool: ✓ as `Increasing` over the reversed array | ✓ `ordered` with `ge` | ?[^gcspy] | ✓ `decreasing` | |
-| `StrictlyDecreasing` | `frontend gap`, pairwise `int_lin_le`[^mznrev] | ✓ `ordered` with `gt` | ?[^gcspy] | ✓ `strictly_decreasing` | |
+| `Decreasing` | ✓ as `Increasing` over the reversed array: int and enum through `redefinitions.mzn`[^mznrev], bool through the stdlib's own overload | ✓ `ordered` with `ge` | ?[^gcspy] | ✓ `decreasing` | |
+| `StrictlyDecreasing` | ✓ as `StrictlyIncreasing` over the reversed array, through `redefinitions.mzn`[^mznrev] | ✓ `ordered` with `gt` | ?[^gcspy] | ✓ `strictly_decreasing` | |
 | any reified form | `decompose`: the stdlib's `fzn_*_reif` | n/a | — | — | no class exists |
 | `ordered` with `lengths` | n/a | `decompose`: one two-term linear inequality per pair[^xlen] | — | — | not this family |
 
 [^gcspy]: `gcspy` binds none of the four, so CPMpy can reach this family only
     through a decomposition of its own, if at all. Not checked.
 
-[^mznrev]: `minizinc/mznlib/fzn_decreasing_int.mzn` is
-    `glasgow_increasing_int(reverse(x))`, and likewise
-    `fzn_decreasing_bool.mzn` and `fzn_strictly_decreasing_int.mzn`, **but for
-    int arrays nothing selects them.** The standard library's `decreasing` has
-    overloads for `var bool`, `var opt float`, `var opt $$E` and sets, and
-    none for plain `var int`. So an int array takes the `var opt` overload,
-    which calls `increasing(reverse(...))` typed as optional, which goes to the
-    stdlib's `fzn_increasing_int_opt` decomposition and comes out as pairwise
-    `int_lin_le`. Flattening `minizinc/tests/decreasing.mzn` and
-    `strictlydecreasing.mzn` with `build/glasgow.msc` on 2.9.7 and 2.10.1 gives
-    two `int_lin_le` each and no `glasgow_*` call (`tmp/fd-ordering/mzn/`).
-    A bool `decreasing` does reach `glasgow_increasing_bool`, through the
-    stdlib's own `reverse`, not through `fzn_decreasing_bool`. All three
-    `fzn_*decreasing*` files are dead, for different reasons.
-    `fzn_decreasing_int` is reachable only through the deprecated
-    `decreasing_int.mzn`, which does not resolve through `globals.mzn`, and
-    included by name fails to compile on either version (`Cannot open file
-    'fzn_decreasing_int_reif.mzn'`). `fzn_decreasing_bool` is reachable only
-    through `decreasing_bool.mzn`, which fails the same way
-    (`fzn_decreasing_bool_reif.mzn`). `fzn_strictly_decreasing_int` is
-    referenced nowhere in either standard library. So the `Decreasing` classes
-    are reached only from XCSP3, the `.scp` reader and the C++ API. [Next
-    steps](#next-steps) has a tested fix.
+[^mznrev]: Since #1178, `minizinc/mznlib/redefinitions.mzn` (lines 3–23)
+    adds `decreasing` and `strictly_decreasing` overloads for
+    `array [$X] of var $$E: xs`, as `increasing` / `strictly_increasing` over
+    `reverse(array1d(xs))`, so an int or enum array reaches
+    `glasgow_increasing_int` or `glasgow_strictly_increasing_int`. An array of
+    length 0 or 1 is decided `true` at flattening time, because the stdlib's
+    `fzn_increasing_int_reif` takes `min(index_set(...))`, which is undefined
+    on an empty array (#1186). A bool `decreasing` still reaches
+    `glasgow_increasing_bool` through the stdlib's own `var bool` overload. The
+    file includes `increasing.mzn` and `strictly_increasing.mzn`, and is
+    always included, so on this solver all four globals compile without
+    `include "globals.mzn"`, where other solvers reject the model. Before
+    #1178 the stdlib had no plain `var int` overload of `decreasing`, so an
+    int array took the `var opt` one and came out as pairwise `int_lin_le`,
+    and the solver's `fzn_decreasing_int.mzn`, `fzn_decreasing_bool.mzn` and
+    `fzn_strictly_decreasing_int.mzn` were dead; #1178 deleted them.
 
 [^xlen]: `buildConstraintOrdered` with `lengths` posts
     `vars[i] + lengths[i] (op) vars[i + 1]` as a `WeightedSum` inequality per
@@ -129,8 +145,12 @@ proof (`tmp/fd-ordering/probes/fam.cc`, mode `inc_views`), and the test's
 
 `None.` MiniZinc's `increasing_int_reif` and its siblings reach the solver as
 the standard library's decomposition into reified comparisons, before
-flattening, so a flattened model cannot show whether one was written. There is
-no case for a class of its own yet.
+flattening, so a flattened model cannot show whether one was written. A
+reified int `decreasing` takes the same path since #1178, over the reversed
+array, where before it took the `var opt` decomposition. Those stdlib
+decompositions are wrong over an empty array (#1186, upstream's): only
+`redefinitions.mzn`'s length guard keeps an empty int `decreasing` right.
+There is no case for a class of its own yet.
 
 ### Relation to other families
 
@@ -465,10 +485,21 @@ family.
 - **`scp_chain_{increasing,strictly_increasing}_{sat,unsat}`,
   `scp_chain_decreasing_sat`, `scp_chain_strictly_decreasing_unsat`:** see
   [Cake conformity](#cake-conformity).
-- **MiniZinc:** `increasing.mzn` and `strictlyincreasing.mzn`, compared
-  against the reference solver. `decreasing.mzn` and `strictlydecreasing.mzn`
-  run too, but flatten to pairwise `int_lin_le` and never reach this family
-  (see the frontend table).
+- **MiniZinc:** `increasingtest.mzn`, `strictlyincreasing.mzn`,
+  `decreasingtest.mzn` and `strictlydecreasing.mzn` (`increasing.mzn` and
+  `decreasing.mzn` before #1178 renamed them; the ctest names are unchanged),
+  compared against the reference solver. Since #1178 the two descending lanes
+  carry `--fzn-count 1` guards on `glasgow_increasing_int` and
+  `glasgow_strictly_increasing_int` (`minizinc/CMakeLists.txt:345`, `:596`),
+  so they fail if the family stops being reached. #1178 added
+  `minizinc-decreasing-shapes` (int, enum, expression, mixed-literal,
+  negatively indexed 2-D, strict and bool arrays, guarded at 5, 2 and 1 posts
+  of the three builtins), `minizinc-decreasing-reif` (reified and
+  half-reified forms still flatten), `minizinc-decreasing-trivial` (lengths 0
+  and 1 under `<->` and `->`), `minizinc-decreasing-empty-halfnot`, and
+  `minizinc-decreasing-empty-not` and `minizinc-strictlydecreasing-empty-not`
+  (`--unsatisfiable`, settled while flattening, so no proof;
+  `minizinc/CMakeLists.txt:345–364`).
 - **XCSP3:** `ordered_strict.xml`. (`ordered_lengths.xml` exercises the linear
   decomposition, not this family.)
 - **Audit lane:** the `IncreasingChain` row; see [Interval
@@ -500,8 +531,6 @@ increasing_test --seed=1`, and the same with `--view-position=mixed`, at
   runs use `1..5` and plain variables, so the width-proportional cost of an
   impossible repeated pair, and the opposite-sign weakness, are invisible to
   the suite.
-- **MiniZinc's int `decreasing`,** whose tests exercise the stdlib
-  decomposition instead.
 - **The consistency of the repeated shapes**, deliberately: the duplicate runs
   check no level.
 - **Real instances:** none ported.
@@ -511,9 +540,11 @@ increasing_test --seed=1`, and the same with `--view-position=mixed`, at
 - **In the repository:** no example or benchmark posts this family.
 - **Corpus:** 23 `increasing_int` and 5 `increasing_bool` posts across 11 of
   the 285 flattened MiniZinc Challenge models (one instance each;
-  `tmp/fd-ordering/scan_corpus.py`), none of them strict. An int `decreasing`
-  arrives as pairwise `int_lin_le`, so the flattened models cannot say how many
-  were written that way, or count them here. A bool `decreasing` arrives as
+  `tmp/fd-ordering/scan_corpus.py`), none of them strict. That corpus was
+  flattened before #1178, when an int `decreasing` arrived as pairwise
+  `int_lin_le`, so it cannot say how many were written that way, or count them
+  here; a fresh flattening would show them as `glasgow_increasing_int` over a
+  reversed array. A bool `decreasing` arrives as
   `increasing_bool` over the reversed array, so the 5 `increasing_bool` posts
   may include decreasing ones. Chains are 2 to 17
   variables for `int`, up to 65 for `bool`. One more model is missing from that
@@ -626,10 +657,20 @@ with proofs on or off.
   it: `Increasing{x, y, x}` forces `x = y` but does not remove the values of
   one that the other lacks. Through an opposite-sign view (`x` and `c − x`) it
   is weaker still, and can miss that the chain is unsatisfiable.
-- **MiniZinc's int `decreasing` and `strictly_decreasing`** are decomposed
-  pairwise by the standard library and never use this propagator.
-- **A reified `increasing` from MiniZinc** is decomposed into reified
-  comparisons by the standard library.
+- **A reified `increasing` or `decreasing` from MiniZinc** is decomposed into
+  reified comparisons by the standard library, and over an empty array that
+  decomposition is wrong (#1186, upstream's): `r <-> increasing(e)` is
+  unsatisfiable on every solver #1186 tried, and on this solver
+  `r <-> decreasing(e)` over a bool array is too. The worst case is a wrong
+  solution count that proofs do not catch: `not decreasing(e)` over an empty
+  `var bool` array has two solutions on this solver, on 2.9.7 and 2.10.1,
+  where it should be unsatisfiable, and VeriPB verifies the enumeration proof
+  of either flattening, since the flattened model is already wrong. MiniZinc
+  does warn while flattening ("undefined result becomes false in Boolean
+  context", from the stdlib's `fzn_increasing_bool_reif.mzn`) (`0a5b4ec6`;
+  `tmp/fd871-comments-1008/ordsmall/probes/mzn/boolnotdec.mzn`). An int or
+  enum `decreasing` over an empty array is kept right by `redefinitions.mzn`'s
+  length guard.
 - **An `increasing` in a model is invisible to `--difference-logic`,** though
   its rows are exactly difference constraints.
 
@@ -663,7 +704,13 @@ with proofs on or off.
    over the positions between. Filed as #1144. Small; it buys robustness on
    a shape MiniZinc can produce after aliasing, and it should come with a
    wide-domain row in the audit lane.
-2. **Route MiniZinc's `decreasing` to the family.** Append to
+2. **Route MiniZinc's `decreasing` to the family.** **Done by #1178,** much
+   as proposed below, with one addition: the overloads decide an array of
+   length 0 or 1 as `true` at flattening time, which #1178's review found
+   was needed because the stdlib's `_reif` decompositions are wrong over an
+   empty array (#1186). The dead files are deleted and the two test files
+   renamed `increasingtest.mzn` and `decreasingtest.mzn`; see
+   [Tests](#tests). The proposal, as the audit wrote it: append to
    `minizinc/mznlib/redefinitions.mzn`:
    ```
    include "increasing.mzn"; include "strictly_increasing.mzn";
