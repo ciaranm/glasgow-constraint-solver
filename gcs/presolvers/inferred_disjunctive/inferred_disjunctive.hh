@@ -229,6 +229,11 @@ namespace gcs
          * and real proof, so neither is allowed to run away. Every drop is
          * counted, because a budget that quietly swallowed everything is
          * indistinguishable from a model with nothing to find.
+         *
+         * The defaults, 100 and 5, are the paper's. A drop under them is a
+         * General note only, since it is the procedure working as published;
+         * a drop under a budget the caller has moved also raises an
+         * Important one.
          */
         auto with_budgets(std::size_t max_candidates, std::size_t max_posted) -> InferredDisjunctive &;
 
