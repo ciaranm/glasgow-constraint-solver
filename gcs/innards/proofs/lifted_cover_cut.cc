@@ -60,34 +60,94 @@ namespace
         return true;
     }
 
-    /// Drop every state another one already covers, leaving an antichain. The
-    /// state carrying the most is never covered, so the bound the last layer
-    /// reports does not move --- and every state left is still a tuple some 0/1
-    /// point reaches exactly, which is what makes that bound the true optimum
-    /// rather than an over-estimate.
+    /// The next layer's frontier: every state of `left` and `taken` that no
+    /// other state of either covers, sorted and without repeats. `left` is the
+    /// previous layer's frontier, every state leaving the next member out, and
+    /// `taken` the states of it that can take the member, shifted by its
+    /// demands and coefficient.
     ///
-    /// Over one row this is a staircase, and what survives runs strictly upwards
-    /// in both coordinates, which is why a layer then holds at most one state
-    /// per achievable profit. Over several there is no such shape, and the
-    /// budget is what stands in for it.
-    auto reduce_to_frontier(LiftedCoverCutLayer & states) -> void
+    /// Dropping covered states leaves an antichain. The state carrying the
+    /// most is never covered, so the bound the last layer reports does not
+    /// move --- and every state left is still a tuple some 0/1 point reaches
+    /// exactly, which is what makes that bound the true optimum rather than an
+    /// over-estimate.
+    ///
+    /// Over one row this is a staircase, and what survives runs strictly
+    /// upwards in both coordinates, which is why a layer then holds at most one
+    /// state per achievable profit. Over several there is no such shape, and
+    /// the budget is what stands in for it.
+    ///
+    /// The sweep was all pairs over the layer, which on PSPLib J90 and J120 is
+    /// where minutes went (#1255). It need not be. `left` is an antichain, and
+    /// so is `taken`, a shift of part of one; so no state is covered by another
+    /// from its own half, and a state in both halves is covered by nothing.
+    /// What is left to ask is whether a state of one half is covered by one of
+    /// the other with at least its profit, which with each half sorted by
+    /// profit is a prefix of it. The states kept are exactly those the
+    /// all-pairs sweep keeps, in the same order.
+    [[nodiscard]] auto merge_to_frontier(const LiftedCoverCutLayer & left, const LiftedCoverCutLayer & taken) -> LiftedCoverCutLayer
     {
-        sort(states);
-        states.erase(unique(states).begin(), states.end());
+        // Each half flat and most-profitable first, so that "the states with at
+        // least this profit" is a prefix found by binary search, and the test
+        // over it is a tight loop over contiguous weights rather than a walk
+        // through one small vector per state.
+        struct Flat
+        {
+            size_t rows;
+            vector<long long> profits, weights;
+        };
+        auto flatten = [](const LiftedCoverCutLayer & states) {
+            vector<size_t> order(states.size());
+            std::iota(order.begin(), order.end(), size_t{0});
+            sort(order, [&](size_t a, size_t b) { return states[a].profit > states[b].profit; });
+            Flat flat{states.empty() ? 0 : states.front().weights.size(), {}, {}};
+            flat.profits.reserve(states.size());
+            flat.weights.reserve(states.size() * flat.rows);
+            for (auto k : order) {
+                flat.profits.push_back(states[k].profit.raw_value);
+                for (const auto & w : states[k].weights)
+                    flat.weights.push_back(w.raw_value);
+            }
+            return flat;
+        };
+        auto flat_left = flatten(left), flat_taken = flatten(taken);
 
-        // The states are unique now, so "another state" is "another index":
-        // asking it of the indices rather than with `!=` saves comparing every
-        // pair's weights and profit just to learn they are different states,
-        // which was a large part of this quadratic sweep's cost (#1255).
-        LiftedCoverCutLayer frontier;
-        for (size_t i = 0; i < states.size(); ++i) {
-            bool covered = false;
-            for (size_t j = 0; j < states.size() && ! covered; ++j)
-                covered = j != i && covers(states[j], states[i]);
-            if (! covered)
-                frontier.push_back(states[i]);
-        }
-        states = move(frontier);
+        // Is `state` covered by some state of `half` other than itself? Its
+        // twin, if it has one, is no larger and so has to be told apart; but a
+        // state in both halves is covered by nothing, so the first state that
+        // does cover it settles the question. Most tests fail on the first
+        // row, so the test stops at the first row that fails.
+        auto covered_by = [](const LiftedCoverCutState & state, const Flat & half) {
+            auto profit = state.profit.raw_value;
+            auto end = static_cast<size_t>(std::upper_bound(half.profits.begin(), half.profits.end(), profit, [](long long p, long long q) {
+                return p > q;
+            }) - half.profits.begin());
+            auto rows = half.rows;
+            const auto * asked = state.weights.data();
+            for (size_t k = 0; k < end; ++k) {
+                const auto * w = half.weights.data() + k * rows;
+                size_t row = 0;
+                bool equal = half.profits[k] == profit;
+                for (; row < rows && w[row] <= asked[row].raw_value; ++row)
+                    equal = equal && w[row] == asked[row].raw_value;
+                if (row == rows && ! equal)
+                    return true;
+            }
+            return false;
+        };
+
+        vector<LiftedCoverCutState> survivors;
+        survivors.reserve(left.size() + taken.size());
+        for (const auto & state : left)
+            if (! covered_by(state, flat_taken))
+                survivors.push_back(state);
+        for (const auto & state : taken)
+            if (! covered_by(state, flat_left))
+                survivors.push_back(state);
+
+        sort(survivors);
+        survivors.erase(unique(survivors).begin(), survivors.end());
+        return survivors;
     }
 
     /// The rows that can rule something out: everything else admits every subset
@@ -127,10 +187,9 @@ namespace
         size_t states = 1;
 
         for (size_t member = 0; member < coefficients.size(); ++member) {
-            LiftedCoverCutLayer next;
-            for (const auto & state : programme.layers.back()) {
-                next.push_back(state);
-
+            const auto & left = programme.layers.back();
+            LiftedCoverCutLayer taken;
+            for (const auto & state : left) {
                 auto weights = state.weights;
                 auto fits = true;
                 for (size_t row = 0; row < rows && fits; ++row) {
@@ -138,7 +197,7 @@ namespace
                     fits = weights[row] <= capacities[row];
                 }
                 if (fits)
-                    next.push_back(LiftedCoverCutState{move(weights), state.profit + coefficients[member]});
+                    taken.push_back(LiftedCoverCutState{move(weights), state.profit + coefficients[member]});
             }
 
             // Counted and checked *before* the frontier sweep, which is
@@ -151,13 +210,13 @@ namespace
             // moment it holds the most. Nothing real comes near either count:
             // the paper's own programmes are a few hundred states against a
             // budget of a hundred thousand.
-            states += next.size();
+            states += left.size() + taken.size();
             if (states > state_budget) {
                 programme.over_budget = true;
                 return programme;
             }
 
-            reduce_to_frontier(next);
+            auto next = merge_to_frontier(left, taken);
 
             programme.reached_ceiling = any_of(next, [&](const LiftedCoverCutState & state) { return state.profit >= profit_ceiling; });
             programme.layers.push_back(move(next));

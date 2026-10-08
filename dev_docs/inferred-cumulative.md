@@ -341,6 +341,32 @@ small whatever the capacities are. But "measured" is not "bounded", so
 separately from one that does not hold. It is never reached in the test suite,
 and the sweep asserts that.
 
+**Finding the frontier is where the time goes** on 120-task instances (#1255).
+The first version asked every pair of states in a layer whether one covers the
+other. Over four resources about seven states in ten survive, so that is
+quadratic in a layer that does not shrink, and on PSPLib J120 the pass took
+minutes with proofs off.
+
+It now uses the layer's shape. A layer is the previous frontier `A`, which
+leaves the next member out, together with the part of `A` that can take the
+member, shifted by its demands and coefficient. Both halves are antichains, so
+no state is covered by another from its own half, and a state in both halves
+is covered by nothing. So each state is tested only against the other half.
+Within that half, only the states with at least its profit can cover it, and
+with each half sorted by profit those form a prefix. The states kept are
+exactly the ones the all-pairs sweep keeps, in the same order, so the
+certificates, the budget's count and the cuts are all unchanged.
+`lifted_cover_cut_test` compares the two sweeps layer by layer on random
+programmes of up to fourteen members and four rows.
+
+Measured over all 2,040 PSPLib instances with proofs off, every counter and
+note is identical before and after. The pass takes about a third of the
+instructions on J90 and J120. On J120 the slowest instance falls from 412 s to
+83 s, and the 16 instances over two minutes fall to none, measured 48 at a
+time. On `J120_59_6` serially it is 48.7 s against 12.0 s. That is still not
+"well under a second": a layer over four resources stays wide whichever way
+its frontier is found.
+
 The dropped states are never named in the proof. A transition landing on one is
 emitted straight into the state that covers it, which is valid for the same
 reason the drop was. With more than one resource a single state can cover *both*

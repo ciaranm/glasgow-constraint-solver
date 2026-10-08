@@ -132,6 +132,49 @@ namespace
     /// something does has its own case.
     const size_t generous = 100000;
 
+    /// The programme's layers as the frontier sweep was first written, asking
+    /// every pair of states whether one covers the other (#1255). The library
+    /// now asks far fewer, using the shape a layer has, and must keep exactly
+    /// the states this does, in the same order: they are what the certificate
+    /// is written over, and the budget is counted on them.
+    [[nodiscard]] auto all_pairs_layers(const vector<vector<Integer>> & demands, const vector<Integer> & coefficients,
+        const vector<Integer> & capacities) -> vector<LiftedCoverCutLayer>
+    {
+        auto rows = capacities.size();
+        vector<LiftedCoverCutLayer> layers{LiftedCoverCutLayer{LiftedCoverCutState{vector<Integer>(rows, 0_i), 0_i}}};
+        for (size_t member = 0; member < coefficients.size(); ++member) {
+            LiftedCoverCutLayer next;
+            for (const auto & state : layers.back()) {
+                next.push_back(state);
+                auto weights = state.weights;
+                auto fits = true;
+                for (size_t row = 0; row < rows && fits; ++row) {
+                    weights[row] += demands[row][member];
+                    fits = weights[row] <= capacities[row];
+                }
+                if (fits)
+                    next.push_back(LiftedCoverCutState{move(weights), state.profit + coefficients[member]});
+            }
+            std::ranges::sort(next);
+            next.erase(std::ranges::unique(next).begin(), next.end());
+            LiftedCoverCutLayer frontier;
+            for (size_t i = 0; i < next.size(); ++i) {
+                bool covered = false;
+                for (size_t j = 0; j < next.size() && ! covered; ++j) {
+                    if (j == i || next[j].profit < next[i].profit)
+                        continue;
+                    covered = true;
+                    for (size_t row = 0; row < rows && covered; ++row)
+                        covered = next[j].weights[row] <= next[i].weights[row];
+                }
+                if (! covered)
+                    frontier.push_back(next[i]);
+            }
+            layers.push_back(move(frontier));
+        }
+        return layers;
+    }
+
     /// Validate the honest cut, emit its replay against a model with one row per
     /// capacity, pin `claimed_coefficients <= claimed_rhs`, and say whether
     /// veripb agreed. Each row carries one task the cut says nothing about, so
@@ -290,6 +333,8 @@ auto main(int argc, char * argv[]) -> int
                 continue;
             }
             ++validated;
+            if (validity.cut->layers != all_pairs_layers(validity.cut->demands, coefficients, validity.cut->capacities))
+                fail("the programme's frontier differs from the all-pairs one over " + to_string(n) + " members and " + to_string(rows) + " rows");
             if (*std::max_element(coefficients.begin(), coefficients.end()) > 1_i && total > rhs)
                 ++validated_non_unit;
             if (validity.cut->row_indices.size() > 1) {
@@ -318,6 +363,41 @@ auto main(int argc, char * argv[]) -> int
         // thing this file was extended for.
         if (only_together < 10)
             fail("the random corpus found only " + to_string(only_together) + " cuts that need more than one row");
+    }
+
+    // The frontier against the all-pairs one on programmes wide enough for the
+    // shape-based sweep to matter: several rows, many members, and a
+    // right-hand side every point meets, so that every layer is built (#1255).
+    // Small values, so that states tie on profit and on weights.
+    {
+        std::mt19937 rand(*get_seed() + 1);
+        std::uniform_int_distribution<> n_dist(6, 14), rows_dist(2, 4), cap_dist(8, 30), coeff_dist(1, 4);
+        size_t compared = 0, widest = 0;
+        for (size_t trial = 0; trial < 300; ++trial) {
+            auto n = static_cast<size_t>(n_dist(rand));
+            auto rows = static_cast<size_t>(rows_dist(rand));
+            vector<Integer> capacities, coefficients;
+            vector<vector<Integer>> demands(rows);
+            for (size_t row = 0; row < rows; ++row) {
+                capacities.push_back(Integer{cap_dist(rand)});
+                std::uniform_int_distribution<> demand_dist(0, static_cast<int>(capacities[row].raw_value) / 2);
+                for (size_t i = 0; i < n; ++i)
+                    demands[row].push_back(Integer{demand_dist(rand)});
+            }
+            for (size_t i = 0; i < n; ++i)
+                coefficients.push_back(Integer{coeff_dist(rand)});
+            auto total = std::accumulate(coefficients.begin(), coefficients.end(), 0_i);
+
+            auto validity = validate_lifted_cover_cut(demands, coefficients, capacities, total, generous);
+            if (! validity.cut)
+                fail("a cut every point meets was refused");
+            if (validity.cut->layers != all_pairs_layers(validity.cut->demands, coefficients, validity.cut->capacities))
+                fail("the programme's frontier differs from the all-pairs one over " + to_string(n) + " members and " + to_string(rows) + " rows");
+            ++compared;
+            for (const auto & layer : validity.cut->layers)
+                widest = std::max(widest, layer.size());
+        }
+        println(cerr, "{} wide programmes' frontiers match the all-pairs sweep, the widest layer holding {} states", compared, widest);
     }
 
     // Rows that cannot rule anything out are dropped rather than carried as a
