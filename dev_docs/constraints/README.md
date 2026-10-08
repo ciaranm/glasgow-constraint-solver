@@ -96,9 +96,11 @@ constraints and do not restate it.
   family that reaches the most models (250 of 298). Its vocabulary is bounds,
   so one sweep costs terms, never width, but an equality can need a number of
   sweeps linear in the width to reach its fixpoint (#1091), and it reaches only
-  `bounds(R)`. Every bound push names every term's bound, trivial ones
-  included, and a 0.92 s `shortest_path` search writes 15 GB (#1035, fix open
-  as #1055). Three wrong answers, all at the edges and none in the propagator,
+  `bounds(R)`. Bound pushes used to name every term's bound, trivial ones
+  included, so a 0.92 s `shortest_path` search wrote 15 GB (#1035); since
+  #1055 they leave out bounds the bits imply or a pin states (or, above
+  `Links`, would), and that proof is 617 MB. Three wrong answers, all at the
+  edges and none in the propagator,
   all now fixed: an XCSP3 `sum ≠` translation whose wrong `UNSATISFIABLE`
   verified (#1032), constant-condition `If` forms (#1033), and a `gcspy`
   binding posting `≤` for `≥` (#1036). Its inequality's bound pushes are the

@@ -2,19 +2,21 @@
 
 > **Maturity** production ·
 > **Audited** 2026-09-23 at `00797a97`; re-audited 2026-09-25 at `61112ed0`,
-> and for #1108 on 2026-09-26 at `c9ceea25` ·
+> for #1108 on 2026-09-26 at `c9ceea25`, and on 2026-10-08 at `0a5b4ec6` for
+> #1035 (#1055) and the integer-range PRs (#1214, #1215, #1220) ·
 > **Open issues** filed by this audit: #1034 (the incremental propagator's
-> state is a heap allocation per slot per node), #1035 (reasons and
-> justifications name every term's bound, even untouched ones; fix open as
-> #1055), #1042 (the reified equality ignores its bounds), #1043 (tidying,
-> items 4 and 5 left). Filed from review: #1091 (an equality's fixpoint can
-> take a number of sweeps linear in the domain width). Already open and
-> touching this family: #868 (cross-solver), #310 (a range-literal reification
-> condition cannot be written into the model). **Fixed since the audit**: #1032,
-> #1033, #1036, #1043's first three items, and #1103 (filed from review: under
+> state is a heap allocation per slot per node), #1042 (the reified equality
+> ignores its bounds), #1043 (tidying, items 4 and 5 left). Filed from review:
+> #1091 (an equality's fixpoint can take a number of sweeps linear in the
+> domain width). Already open and touching this family: #868 (cross-solver),
+> #310 (a range-literal reification condition cannot be written into the
+> model), and #1225, filed since by the integer-range audit (the same condition
+> throws with proofs on). **Fixed since the audit**: #1032, #1033, #1035,
+> #1036, #1043's first three items, and #1103 (filed from review: under
 > `Tabulated`, a released form built a table); see
-> [Re-audit, 2026-09-25](#re-audit-2026-09-25) and [Re-audit,
-> 2026-09-26](#re-audit-2026-09-26). Tracked under #871.
+> [Re-audit, 2026-09-25](#re-audit-2026-09-25), [Re-audit,
+> 2026-09-26](#re-audit-2026-09-26) and [Re-audit,
+> 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
 
 ### Re-audit, 2026-09-25
 
@@ -28,7 +30,7 @@ first pass got wrong.
 | #1033, constant-condition `If` forms | #1077 | a constant condition is resolved per form, and a false one on `If`/`NotIf` releases the constraint ([Semantics](#semantics)); `linear_constant_test` has a row for each form and constant |
 | #1036, `gcspy`'s `≥` binding | #1073 | it posts `LinearGreaterThanEqualIff`, and `post_linear_less_equal_iff` is registered at last; Python tests exist, but CI does not run them |
 | #1043, tidying | #1075, **items 1–3 only** | the dead `pair<bool, …>` branches are gone, and the two comments are corrected (rule 8, [Options](#options)); item 4 (the idempotence-claim disagreement) and item 5 (folding `linear-slack-waking.md` in) are still open |
-| #1035, trivial reason literals | #1055, **open** | nothing yet: every figure below is from before it, and none of its behaviour is described here as current |
+| #1035, trivial reason literals | #1055, **open** at the time | nothing yet; done in [Re-audit, 2026-10-08](#re-audit-2026-10-08) |
 
 **Corrected from review**, not from a fix:
 
@@ -61,6 +63,42 @@ first re-audit. This pass brings the text into line with it at `c9ceea25`.
 `c9ceea25`. No rule, encoding or proof line changed, and nothing else was
 re-run.
 
+### Re-audit, 2026-10-08
+
+The audit's proof-size issue has been fixed, and the integer-range arc has
+changed what this family accepts and how it sums. This pass brings the text
+into line with both at `0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1035, trivial reason literals | #1055 | the bound pushes' reason leaves out a term at its declared bound when the term's bits imply that bound, when its boundary pin is already a unit, or, above `AssertionLevel::Links`, when it would have been pinned; the `pol`s leave out a bound the bits imply, no longer divide by the changed variable's coefficient, and are not emitted when no bound is added. The three things to know, Shared code, [Proof-time state](#proof-time-state), [Interval efficiency](#interval-efficiency) 2, the JP 3.15 departures, rules 1, 8 and 9, [Tests](#tests), [Benchmarks](#benchmarks-and-examples), [Proof performance](#proof-performance), [Known limitations](#known-limitations), Next step 1, [Prior art](#prior-art) and the [commentary](#developer-commentary) |
+| — (the integer-range arc) | #1214, #1215, #1220 | inputs must lie in `±(2⁶⁰ − 1)`, and a coefficient or right-hand side outside it is refused at construction, as is a condition value past one above the top; the sweeps' running sums are exact 128-bit `WideSum`s, so there only a total that does not fit throws, but the reified inequality's undecided check still sums in `Integer`; the fold state is 24 bytes: [Robustness and limits](#robustness-and-limits), [Mutable state](#mutable-state-and-incrementality), [Tests](#tests), [Known limitations](#known-limitations), Next step 4 |
+| — (#1200, #1206) | #1208 | 14 `…_view_mixed_late` lanes ([Tests](#tests)) |
+| — (front-end integer range) | #1217 | four `lin_strict_*_edge` chain cases ([Cake conformity](#cake-conformity)) |
+
+**Corrected from review**, not from a fix:
+
+- recounting the first pass's own kept `Inferences` proofs, `le` has 173
+  unhinted family assertions, not 174 (`ge`'s 203 and `le_iff`'s 733 stand);
+- the propagator's overflow throw was already an `IntegerOverflow` (an
+  `UnexpectedException` subclass) at `00797a97`, not a bare
+  `UnexpectedException`.
+
+**What was measured again.** At `0a5b4ec6`, Release, fataepyc-10 (boost off),
+pinned with `taskset`, `GLIBC_TUNABLES` raising glibc's mmap and trim
+thresholds: `2008_shortest_path` without proofs and at both assertion levels,
+with VeriPB on both proofs; the `pol` and assertion statistics over the whole of
+those proofs, and the same statistics over the whole of the first pass's kept
+proofs (its figures were from the first 200 and 300 MB); the six test lanes'
+proof lines at seed 1; `pattern-set-mining-k2` default against stateless, one
+run each; rule 3's assertion; `2x − 2y = 1`'s proof lines; the overflow
+shapes, including the partial-sum shape under every reified form and a
+total past `2⁶³`; `generic_reason`'s literals on 0/1 variables; and the lane
+count. **Not re-run**: the CPU table, the corpus share
+survey, the rule counts, the caps, the strength brute force, the reified
+equality's bounds-check experiment, and `2x − 2y + 3z = 1`. Those stay at
+the commits they name.
+
 The linear family is `LinearEquality`, `LinearNotEquals`,
 `LinearLessThanEqual`, `LinearGreaterThanEqual` and their `If`/`Iff` reified
 forms. That is twelve named classes over two base classes,
@@ -78,9 +116,12 @@ Three things to know before touching it.
 - **Its whole vocabulary is bounds.** Every inference but two reads and writes
   bounds, the propagators wake on bounds, and the proof is order literals
   over a bit-sum encoding. So the cost of **one sweep** is proportional to the
-  **number of terms**, never to domain width. That includes the proof: every
-  bound push names every term, which is how a 0.92 s `shortest_path` search
-  writes a 15 GB proof (#1035). **The number of sweeps is another matter**: an
+  **number of terms**, never to domain width. That includes the proof: a bound
+  push names every other term's bound except those already true at the top,
+  because the bits imply them or the declared bound is pinned (above
+  `AssertionLevel::Links`, would be) (#1055). Until then it named every term, which is how a 0.92 s
+  `shortest_path` search wrote a 15 GB proof (#1035); it now writes 617 MB.
+  **The number of sweeps is another matter**: an
   equality alternates two sweeps until one of them moves nothing, and on
   `2x − 2y = 1` over `0..N` that takes a number linear in `N`, inside one call
   (#1091). And with coefficients other than ±1 the equality's bounds are only
@@ -309,7 +350,10 @@ hands off to one, which is `Tabulated` on small domains (see
   the wire as `linear_equality` **under the arithmetic constraint's id**. That
   is the hint naming the procedure, not the family, as `element` found for
   `equals`.
-- `justify_linear_contrapositive` is used only by the gated stages.
+- `justify_linear_contrapositive` is used only by the gated stages. #1055's
+  trimming reaches the stages through both helpers: their `pol`s leave out
+  bounds the bits imply, and the sweep's reasons leave out bounds already at
+  the top. `arithmetic.md` follows it.
 - `tidy_up_linear` and `PositiveOrNegative` are the family's own.
 
 **Presolvers.**
@@ -380,10 +424,15 @@ label. The labels are cake's, and matter to `opbdiff`, except for two:
 | `lin_less_equal_{unsat,sat}`, `lin_greater_equal_unsat` | `strict` |
 | `lin_equals_{minimize,maximize,maximize_neg}_opt` | `strict` |
 | `lin_not_equals_{sat,unsat}` | `strict` |
-| `lin_equals_iff_sat`, `lin_less_equal_iff_sat` | `none` |
+| `lin_strict_{lt,gt}_edge_sat`, `lin_strict_lt_edge_unsat` (since #1217) | `strict` |
+| `lin_equals_iff_sat`, `lin_less_equal_iff_sat`, `lin_strict_lt_edge_iff_sat` (since #1217) | `none` |
 
-Twelve of the fourteen are byte-for-byte label matches with cake. The two
-reified cases are chain-only. No
+Fifteen of the eighteen are byte-for-byte label matches with cake. The three
+reified cases are chain-only. The four `lin_strict_*_edge` cases are `.scp`
+strict inequalities (`lin_less_than`, `lin_greater_than`, `lin_less_than_iff`)
+at the ends of the bounded range, where the reader moves the integer step into
+the sum as a constant (`verified_encodings/scp_cases/CMakeLists.txt:53-60`,
+`:370`). No
 lane covers `If`, `NotIf` or a reified not-equals.
 
 ### Proof-time state
@@ -392,7 +441,16 @@ lane covers `If`, `NotIf` or a reified not-equals.
   root, and every justification line is `ProofLevel::Temporary`.
 - **Order literals are introduced lazily**, one per bound a justification or
   reason names, by the names-and-IDs tracker (the `red` lines in a proof). On a
-  long sum that is every term's current bound, at every inference (#1035).
+  long sum that is every other term's current bound that its bits do not
+  imply, at every bound push: a bound the bits imply, such as a 0/1
+  variable's `≥ 0`, is named by neither the push's `pol` nor its reason, so
+  the bound pushes never introduce it (#1055). Before #1055 they named every
+  term's current bound (#1035). **The other rules were not trimmed**: the
+  not-equals (rules 6 and 7, `propagate.cc:690`, `:704`) and the reified
+  forms' undecided verdicts (rules 8–12, `linear_inequality.cc:305`,
+  `linear_equality.cc:451`) use `generic_reason` over every variable, so on
+  four 0/1 variables `LinearNotEquals` and `LinearEqualityIff` still
+  introduce and cite `x ≥ 0` (measured at `0a5b4ec6`).
 - **The `Tabulated` arm** introduces its selector flags in the proof, at
   install, through `install_tabulation`. It shares the extensional family's
   machinery, which `table.md` will own.
@@ -479,8 +537,9 @@ its bounds-only reading explicitly, because `scope_only` would otherwise read as
 
 **Backtrackable**: `LinearIncrementalState {n_active, fixed_lower}`, one per
 reachable direction at or above the threshold. The engine copies it at every
-search node, as a heap allocation, because 16 bytes exceeds `std::any`'s
-in-place storage (#1034).
+search node, as a heap allocation, because it exceeds `std::any`'s in-place
+storage (#1034). It is 24 bytes since #1220 made `fixed_lower` an exact
+128-bit `WideSum` (`propagate.hh:94-100`); it was 16.
 
 **Not backtrackable, and sound**: the incremental propagator's `active`
 permutation. A fold swaps a newly fixed term to the end of the active prefix
@@ -516,17 +575,59 @@ undecided reified equality or a `Tabulated` equality does not.
 ### Robustness and limits
 
 - **Unbounded domains**: no width limit, since everything is bounds and
-  `BinEnc`. Domains are capped at `Integer::max_bounded_value()` (`2⁶¹`) by the
-  solver, not the family.
+  `BinEnc`. Since #1214 a declared domain must lie in `±(2⁶⁰ − 1)`
+  (`Integer::max_bounded_value()`; it was about `2⁶¹`), and a view's values
+  reach one bit further. That is the solver's rule, not the family's.
+- **Inputs outside that range are refused at construction** (#1215):
+  `require_bounded` checks every coefficient, the right-hand side and the
+  condition's value (`linear_equality.cc:161-163`,
+  `linear_inequality.cc:56-58`). A coefficient of `2⁶⁰` throws `IntegerOverflow`
+  ("a coefficient of a linear constraint is 1152921504606846976, which is
+  outside the supported range"), as does a right-hand side of `2⁶¹`.
+- **Running sums are exact** since #1220: the lower and inverse sums, the
+  incremental `fixed_lower`, `tidy_up_linear`'s constant, the not-equals and
+  undecided-equality accumulators, `Tabulated`'s callbacks and the slack cover
+  are 128-bit `WideSum`s, and there only a total that does not fit throws.
+  Before it, nine terms at the top of the range and nine at the bottom, summed
+  in that order, threw though their total was 0. **One sum was missed**: the
+  reified inequality's undecided check still sums its minimum and maximum in
+  plain `Integer` (`linear_inequality.cc:308-318`), though both are only
+  compared with the right-hand side (`:321`, `:335`), so a 128-bit sum would
+  decide without narrowing. #1220's own shape, nine terms fixed at the top
+  and nine at the bottom with `z ∈ −2..2` and `sum ≤ 0`, has 3 solutions
+  under `LinearLessThanEqual`, but with proofs off every reified inequality
+  form throws: `LinearLessThanEqualIff`, `…If` and a `NotIf` with `Integer
+  overflow: 9223372036854775800 += 1152921504606846975`, and
+  `LinearGreaterThanEqualIff` and `…If` with the mirror. `LinearEqualityIff`
+  on the same shape solves. The same accumulator throws on a maximum past
+  `2⁶³` that only the comparison needs: `LinearLessThanEqualIff` with two
+  terms of coefficient `2⁴⁰` over `0..2²²` throws `Integer overflow:
+  4611686018427387904 += 4611686018427387904` (`:313`). All measured at
+  `0a5b4ec6`. Under `integer-ranges.md` that is a bug: a throw on a value
+  nothing needs. With proofs on, these reified forms throw the model writer's
+  "cannot size the reification constant" first, which is allowed. Unfiled.
+  Solving `c·x = r` uses
+  `WideSum::divided_exactly_by`. The per-term remainder arithmetic is
+  unchanged: saturating it would be unsound.
 - **Overflow**: coefficient × bound products are checked `Integer` arithmetic
-  and **throw** on overflow; they never wrap. With coefficients of `2⁴⁰` and
-  bounds of `2²⁹` to `2³⁰`, the forward sweep throws `Integer overflow` (a
-  lower sum of `2⁷⁰`); so do the reified inequality's undecided check (its
-  maximum sum) and an equality with a negative coefficient, whose forward
-  sweep multiplies it by an upper bound. The model writer diagnoses a
-  row too large to write (#852). **The propagator does not**: its throw is a
-  bare `UnexpectedException` that names no constraint. It needs a coefficient
-  times a bound past `2⁶³`, so it is a limit of the model, not a bug.
+  and **throw** `IntegerOverflow` on overflow; they never wrap. Measured at
+  `0a5b4ec6`: with coefficients of `2⁴⁰` and bounds of `2²⁹` to `2³⁰`, the
+  forward sweep throws `Integer overflow: 1099511627776 * 536870912` (one
+  term's least contribution is `2⁶⁹`); so do the reified inequality's
+  undecided check (its maximum sum) and an equality with a negative
+  coefficient, whose forward sweep multiplies it by an upper bound. With
+  proofs on, the model writer refuses those rows first, before search, with an
+  `IntegerOverflow` that says which quantities may be to blame (#852).
+  **A total past `2⁶³` throws too**, even when every product fits: two terms
+  of coefficient `2⁴⁰` over `[2²², 2²² + 1]` make the `≤` and the equality
+  throw `a sum does not fit in an Integer` (`WideSum::narrow_or_throw`, from
+  the lower sum, `propagate.cc:260`), and with proofs on that throw still
+  comes from the propagator, not the writer. Over `0..2²²` the `≤` and the
+  equality solve. **The propagator's throws name no constraint**, and a
+  total's names no product either. A sweep's product or lower sum past `2⁶³`
+  is a value the sweep needs, so under `integer-ranges.md` it is a limit an
+  arithmetic constraint may have, not a bug; the reified inequality's
+  undecided sums above are the exception.
 - **Negative values and zero**: negative coefficients are first-class
   throughout, and the chain has negative-coefficient and sign-bit lanes. A
   zero coefficient is dropped by `tidy_up_linear`.
@@ -581,16 +682,23 @@ width (#1091).
    terms by their gcd would settle every slow shape above. It would not show
    that every equality converges in a width-independent number of sweeps, and
    nobody has argued that one does.
-2. **Reasons.** One bound literal per term, never per value, and assembly is
-   guarded on `want_reasons()`, so plain search pays nothing. What is wrong
-   with them is not width but **triviality**: every term's bound goes in,
-   including terms still at their initial bound (#1035).
+2. **Reasons.** At most one bound literal per term, never per value, and
+   assembly is guarded on `want_reasons()`, so plain search pays nothing.
+   Since #1055 a bound push leaves out a term still at its declared bound
+   when its bits imply that bound, when its boundary pin is already a unit, or,
+   above `AssertionLevel::Links`, when it would have been pinned
+   (`order_literal_holds_at_top`, `propagate.cc:65-106`). The not-equals and
+   the reified forms' undecided verdicts still name every variable's domain
+   (`generic_reason`). Before #1055, every
+   term's bound went in, and the reasons' problem was that **triviality**,
+   not width (#1035).
 3. **Proofs.** Order literals over `BinEnc`, one `pol` per bound push with one
    term per variable. Width enters each push only through the logarithmic bit
    count, and there is no per-value form, so no width gate. **The number of
    pushes is where width gets in**, through the sweep count above: at
-   `61112ed0`, `2x − 2y = 1` writes 2,420 proof lines at `N = 100` and 24,020
-   at `N = 1000`, in one propagation. The `N = 100` proof verifies
+   `0a5b4ec6`, `2x − 2y = 1` writes 2,408 proof lines at `N = 100` and 24,008
+   at `N = 1000` (2,420 and 24,020 at `61112ed0`, before #1055), in one
+   propagation. The `N = 100` proof verifies
    (`veripb --force-checked-deletion`).
 4. **The audit lane**: `LinearEquality`, `ReifiedLinearEquality` and
    `ReifiedLinearInequality` are all `Clean`, and there is no proof-size row.
@@ -625,7 +733,7 @@ Four facts hold across them.
 **An inequality's bound pushes carry no hint at all.** `propagate_linear` is
 instantiated with `NoHint` for the reified-inequality propagators ("which pass
 no hint"), so in hints-only mode their assertions are bare `a <clause> >= 1;`
-lines: 174 of them in `linear_constraint_le`'s proofs at seed 1, and 203 in
+lines: 173 of them in `linear_constraint_le`'s proofs at seed 1, and 203 in
 `ge`'s. `hints::LinearInequality` exists, and is used only as the base of the
 `cond` hint. **None of the five earlier family documents records an
 unattributed assertion.** An external justifier has to find the row that licenses one by
@@ -637,16 +745,22 @@ this is a search, not missing information: the verdict is `search`, not
 **What licenses them.** Rules 1–3 are **JP 3.15 (linear inequality
 propagation)** and its infeasibility case, from McIlree's thesis. The rest are
 single RUPs against the encoding, or ours, as each entry says. Our JP 3.15
-departs from the thesis in three ways:
+departs from the thesis in four ways:
 
-- it divides the summed line by the changed variable's coefficient and closes
-  by RUP, where the thesis closes by syntactic implication;
+- it closes by RUP on the undivided sum, where the thesis closes by syntactic
+  implication. Until #1055 it divided the summed line by the changed
+  variable's coefficient first; once the other terms cancel, dividing buys
+  unit propagation nothing, and with bits left in the sum, rounding them up
+  would lose the RUP (`justify.cc:52-62`);
+- **it leaves out a bound the term's own bits imply**, such as a 0/1
+  variable's `≥ 0`, and leaves that term's bits in the line instead
+  (`bit_sum_implies`, `justify.cc:45`). Left unassigned, they add as much to
+  the line's maximum as to its degree, so the RUP's slack is never more than
+  with the bound added. The thesis's procedure names every other term's bound,
+  and so did ours until #1055 (#1035);
 - deview mode substitutes each view's underlying variable's bits;
 - the equality's inverse direction cites the `ge` row where the forward cites
   `le`.
-
-Like the thesis's procedure, **it names every other term's bound**, which is
-#1035.
 
 **Justifications mostly read their own snapshot.** The sweeps build the `pol`
 from the `bounds` snapshot the propagator took, which the reason also states.
@@ -694,15 +808,26 @@ the same instances, the same verified proofs.
   take, so `cⱼxⱼ ≤ v − L₋ⱼ`; divide, rounding towards the feasible side.
 - **Proof technique** — `pol` then `RUP`, by **JP 3.15**, with the departures
   above. The row, plus `|cᵢ|` times each other term's bound literal
-  (`add_for_literal`), divided by `|cⱼ|`. Precondition: every other term's bound
-  in the reason is the one the minimum sum used.
+  (`add_for_literal`), skipping a bound the term's bits imply; no division
+  since #1055, and no `pol` at all when nothing was added, because the RUP can
+  use the row as it stands (`justify.cc:14-63`). Precondition: every bound the
+  `pol` adds is the one the minimum sum used.
 - **Reason** — every other term's contributing bound, and the reification
-  condition for a reified form. **Not minimal**: terms still at their initial
-  bound are included (#1035). One literal per term. Guarded on `want_reasons()`.
+  condition for a reified form, except that a term still at its declared bound
+  is left out when its bits imply the bound or its boundary pin is already a
+  unit (#1055); above `AssertionLevel::Links`, where no pins are written, also
+  when it would have been pinned (`names_and_ids_tracker.cc:791-830`). That is
+  safe only because this RUP lists no antecedent lines and nothing cites its
+  line
+  (`propagate.cc:74-82`). Before #1055 every term went in
+  (#1035). **Still not minimal**: a term whose bound has moved goes in
+  whether or not the push needs it. At most one literal per term. Guarded on
+  `want_reasons()`.
 - **Assertion** — the new bound literal, `∨ ¬reason`.
 - **Hint** — `hints::LinearEquality` for an equality, none for an inequality.
 - **Offline reconstructibility** — `hinted` for an equality: the constraint id
-  names the row, and the reason gives every bound JP 3.15 needs.
+  names the row, and the reason, with the declared bounds of the terms it
+  leaves out, gives every bound JP 3.15 needs.
   **`search` for an inequality.** Nothing names the constraint, but the row is
   in the model. A reconstructor finds it by searching the inequalities whose
   scope covers the clause's variables, and runs JP 3.15 against each candidate
@@ -710,11 +835,13 @@ the same instances, the same verified proofs.
   used: any row that licenses the clause will do. The cost is the candidates
   tried. A hint (Next step 3) would make it `hinted` and save that search. It
   would not supply anything that is missing.
-- **Proof size** — one `pol` over `n` rows and `n − 1` bound definitions, one
-  RUP, and a definition for each bound literal not yet introduced. In
-  **terms**, never width, **per push**. The number of pushes an equality's
-  call makes can grow with width (#1091). On `2008_shortest_path`, whose objective sum has
-  about 215 terms, the `pol`s average 656 fields.
+- **Proof size** — at most one `pol`, over the row and up to `n − 1` bound
+  definitions, one RUP, and a definition for each bound literal not yet
+  introduced. In **terms**, never width, **per push**. The number of pushes an
+  equality's call makes can grow with width (#1091). On `2008_shortest_path`,
+  whose objective sum has about 215 terms, the `pol`s average 21.4 fields over
+  the whole `Off` proof at `0a5b4ec6`, against 742.8 at `00797a97`, before
+  #1055 (the first pass's 656 was its first 200 MB).
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
 
@@ -760,8 +887,9 @@ the same instances, the same verified proofs.
   `¬reason`. With `x, y ∈ 0..10`, `x = 3` and `y = 1` posted by `Equals`, and
   `x + y = 3`, the assertion at `AssertionLevel::Inferences` is
   `a 1 ~i[x][ge3] 1 ~i[y][ge1] >= 1`, that is `x < 3 ∨ y < 1`, and a separate
-  backtrack assertion follows (measured at `61112ed0`; the `Off` proof verifies
-  `UNSATISFIABLE`). Compare rules 4, 5 and 7, which really do assert
+  backtrack assertion follows (measured at `61112ed0`, and the same at
+  `0a5b4ec6`; the `Off` proof verifies `UNSATISFIABLE`). Compare rules 4, 5
+  and 7, which really do assert
   `¬reason`: rule 4 calls `contradiction()`, rule 7 `contradiction_or_stop()`,
   and rule 5 infers `FalseLiteral`.
 - **Offline reconstructibility** — as rule 1.
@@ -867,8 +995,9 @@ the same instances, the same verified proofs.
 - **Why it is true** — no assignment within the bounds satisfies `S ≤ v`, so the
   condition that demands it is false.
 - **Proof technique** — `pol` then `RUP`, ours (`justify_cond`): the `c → S ≤ v`
-  row plus every term's contributing bound. It is JP 3.15's shape with the
-  condition left over. It reads `state`. `If` reaches this rule as well as
+  row plus every term's contributing bound, except one the term's bits imply,
+  and no `pol` when nothing is added (#1055; `linear_inequality.cc:68-93`). It
+  is JP 3.15's shape with the condition left over. It reads `state`. `If` reaches this rule as well as
   `Iff` (`linear_constraint_le_if` does 22 times at seed 1), and it licenses
   `¬c` (`set_not_cond_if_must_not_hold`), citing its own row. The comment
   above the verdict said otherwise until #1075 corrected it; the code was
@@ -879,7 +1008,8 @@ the same instances, the same verified proofs.
   terms, the rows and a pointer to `state` for the emitter. Wire:
   `(constraint_id N) (subhint cond)`.
 - **Offline reconstructibility** — `hinted`.
-- **Proof size** — one `pol` over `n + 1` rows, one RUP.
+- **Proof size** — at most one `pol`, over the row and up to `n` bound
+  definitions, and one RUP.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
 
@@ -988,14 +1118,15 @@ the same instances, the same verified proofs.
 
 | Lane | What it checks |
 |---|---|
-| `linear_constraint_{eq,ne,le,ge,le_not}` × `{incremental,stateless}` and their `_if`/`_iff`/`_notif` forms | `linear_test`, random instances of three terms, enumeration against brute force. Consistency is checked only for single-constraint instances: `bounds(Z)` on each term for the inequalities, weaker than the `GAC` they reach (`GAC` for not-equals), **never for `LinearEquality`**, whose `bounds(R)` would not pass a `bounds(Z)` check, and never for the reified equality and not-equals forms; `GAC` for the `Tabulated` rows |
+| `linear_constraint_{eq,ne,le,ge,le_not}` × `{incremental,stateless}` and their `_if`/`_iff`/`_notif` forms | `linear_test`, random instances of three terms, enumeration against brute force. Consistency is checked only for single-constraint instances: `bounds(Z)` on each term for the inequalities, weaker than the `GAC` they reach (`GAC` for not-equals), **never for `LinearEquality`**, whose `bounds(R)` would not pass a `bounds(Z)` check, and never for the reified equality and not-equals forms; `GAC` for the `Tabulated` rows. Since #1220, also a partial-sum case for `eq` (and its `Tabulated` arm), `ne`, `le` and `ge`, at the default threshold and at 0: nine terms fixed at the top of the range and nine at the bottom, then one free over `−2..2`, so a running sum in term order passes `2⁶³` though the total is small (`linear_test.cc:335-400`); with proofs, except for `ne`, whose half-reified rows cannot hold nine such coefficients |
 | `linear_constraint_*_view_mixed` (14) | the same with the terms wrapped in views |
+| `linear_constraint_*_view_mixed_late` (14) | the same, with every view registered by a constraint posted after the one under test (#1208) |
 | `linear_constraint_*_slack` (8) | the inequality forms with slack waking forced on at any length and any cover |
 | `linear_constant_constraint_{incremental,stateless}` | constant and empty sums, and since #1077 every equality form (`If`, `Iff`, `NotEqualsIf`, `NotEqualsIff`) with a `TrueLiteral` and a `FalseLiteral` condition, checking the exact solution set under `BC` and `Tabulated`, with proofs; and since #1108, for a `FalseLiteral` condition only and without proofs, that a released `If`/`NotIf` installs no propagator and makes no propagations under either arm (9 solutions, by `Stats`) |
 | `xcsp_sum_not_equals`, `…_negative`, `…_var` | XCSP3 `<sum>` with `ne`, the last two added by #1074 for a negative bound and a variable operand |
 | `mini_linear_constraint` | a private refined-watch test harness (`MiniLinearGreaterEqual`); posts nothing from this family |
 | `linear_utils_test` | `tidy_up_linear` |
-| `scp_chain_lin_*` (14) | see [Cake conformity](#cake-conformity) |
+| `scp_chain_lin_*` (18) | see [Cake conformity](#cake-conformity) |
 | `minizinc-two-term-lin-{eq,ne,le,le-difference-logic}` | the two-term recovery |
 | `rcpsp_deadline`, `rcpsp_mm_deadline` | linear rows as makespan deadlines |
 
@@ -1003,7 +1134,8 @@ VeriPB runs in every data-driven lane when it is on the path. Every lane is
 seeded. The incremental/stateless split is by `GCS_LINEAR_INCREMENTAL_THRESHOLD`
 in the lane's environment, and the slack lanes set
 `GCS_LINEAR_SLACK_WATCH_THRESHOLD=0` and `…_COVER_PERCENT=100`. All 74 pass at
-`00797a97`; the lane list above is as of `61112ed0`, and was not re-counted.
+`00797a97`. At `0a5b4ec6` the list above is 95 lanes, counted from the build's
+CTest files; they were not run as a suite for that re-audit.
 
 **Runtime caps.** No lane sets or clears one, and **the default caps fire on
 almost every lane**. Measured with a local print over three reseeded runs: 108
@@ -1036,12 +1168,22 @@ slack-watched wake were not counted; the slack lanes force that path on.
 - (No longer uncovered: a constant condition, since #1077, and an XCSP3 `<sum>`
   with `ne` that escapes the old auxiliary's range, since #1074.)
 - **Coefficients other than small ones**: every random instance uses
-  coefficients within a few units, so nothing exercises overflow, the rounding
-  of rule 1's division by a large coefficient, or rule 12's divisibility.
-- **Long sums.** Every `linear_test` instance has three terms. So the
+  coefficients within a few units, and the partial-sum case uses unit ones, so
+  nothing exercises a coefficient-times-bound overflow, the rounding of rule
+  1's division by a large coefficient, or rule 12's divisibility.
+- **Partial sums in the reified forms.** #1220's partial-sum case covers
+  `eq`, `ne`, `le` and `ge`, but no `If`, `NotIf` or `Iff` form, which is why nothing
+  caught the reified inequality's undecided check still summing in `Integer`
+  ([Robustness and limits](#robustness-and-limits)).
+- **Long sums.** Every random `linear_test` instance has three terms; the
+  partial-sum case has nineteen, all but one fixed from the start. So the
   incremental propagator's folding is exercised on three terms at threshold 0,
-  and the slack path only by forcing it. Every instance's reason is short, which
-  is why nothing in the suite would notice #1035.
+  and the slack path only by forcing it. Every random instance's reason is
+  short, which is why nothing in the suite noticed #1035. #1055's mutations
+  show that the suite does exercise the trimming (dropping every reason
+  literal fails 164 tests, every `pol` bound 99, per its body), but **nothing
+  pins its pin condition**: a mutation that drops a declared-bound literal
+  without a pin also passed the whole suite.
 - **Inferences-level attribution.** Nothing checks that an assertion carries a
   hint, which is how the inequality's bare assertions went unnoticed.
 
@@ -1060,11 +1202,17 @@ slack-watched wake were not counted; the slack lanes force that path on.
   `unit-commitment`, `pattern-set-mining` and `nfc`.
 - **For CPU**: `vrp` 2012, `unit-commitment` 2023 and
   `pattern-set-mining-k2` 2012. Between them, the default configuration wins
-  by 1.9–3× or loses by 2.2×, and they give the same solution sequences under
+  by 1.9–3× or loses by 2.2× (at `00797a97`; the loss was 2.3× at
+  `0a5b4ec6`), and they give the same solution sequences under
   every configuration. `shortest_path` 2008 finishes in under a second.
-- **For proofs**: nothing linear-dominated in the corpus is a practical size.
-  `shortest_path` is the smallest that finishes, and its proof is 15 GB (#1035).
-  The test lanes are the only verified proofs.
+- **For proofs**: `shortest_path` 2008 is the smallest linear-dominated model
+  that finishes. Since #1055 its `Off` proof is 617 MB and VeriPB verifies it
+  in 261 s. At `00797a97` it was 15 GB; the first pass stopped VeriPB at 707 s,
+  and #1055's run verified it in about 880 s (indicative: 48 checks in
+  parallel). #1055's body also has larger linear-heavy models at fixed work,
+  among them `vrp` 2011 (2,953.5 → 1,021.1 MB) and `unit-commitment` 2023
+  (2,880.9 → 1,005.0 MB), every proof verifying, five of them only at a
+  smaller K after hitting its 3600 s VeriPB cap in both arms.
 
 ### CPU performance
 
@@ -1105,7 +1253,11 @@ were not compared node by node.
   440,699 nodes in 27.5–27.6 s over three runs, where the default reaches about
   220,000 in 30 s. `perf` puts a quarter of the default run in `malloc` and
   `free` copying the fold states, a thousand of them, since each of its 500
-  long `Iff` inequalities gets two (#1034).
+  long `Iff` inequalities gets two (#1034). **Re-checked at `0a5b4ec6`**,
+  after #1113's epoch reuse and #1220's wider fold state, one run each:
+  stateless finishes 440,699 nodes in 25.6 s, and the default reaches 225,101
+  in 30 s with the same 38 solutions in the same order, about 2.3× slower per
+  node. The `perf` profile was not re-taken.
 - **Slack waking at 128 terms changes nothing** measurable on any model: the
   corpus has almost no constraint that long and loose. That is consistent with
   it shipping off.
@@ -1130,34 +1282,63 @@ either way. So its absence costs nothing measurable here.
 ### Proof performance
 
 **`2008_shortest_path`**: 216 variables in `0..1` and an objective in
-`0..6,778` whose defining equality has about 215 terms; 42,437 nodes.
+`0..6,778` whose defining equality has about 215 terms; all solutions, 42,437
+nodes, 3 solutions, and conclusion `BOUNDS 88 88` in both proof rows. At `0a5b4ec6`,
+fataepyc-10, pinned, one run each; VeriPB 3.0.2 with
+`--force-checked-deletion`, serially on one core:
 
 | | solve | proof | VeriPB |
 |---|---|---|---|
-| proofs off | 0.92 s | — | — |
-| `AssertionLevel::Off` | 106.2 s | 7,343,416 lines, 14.97 GB | not finished after 707 s |
-| `AssertionLevel::Inferences` | 44.1 s | 1,960,330 lines, 9.76 GB | 191 s, `UNDER ASSERTIONS` |
+| proofs off | 0.78 s | — | — |
+| `AssertionLevel::Off` | 13.6 s | 7,340,846 lines, 617 MB | 261 s, `VERIFIED` |
+| `AssertionLevel::Inferences` | 6.9 s | 1,960,330 lines, 474 MB | 8.9 s, `UNDER ASSERTIONS` |
+
+At `00797a97`, before #1055, on fataepyc-09: 0.92 s without proofs; `Off`
+106.2 s, 7,343,416 lines, 14.97 GB, VeriPB not finished after 707 s;
+`Inferences` 44.1 s, 1,960,330 lines, 9.76 GB, VeriPB 191 s. So #1055 left the
+line counts almost unchanged and cut the bytes 24× at `Off` and 21× at
+`Inferences`: each `pol` and each assertion got shorter, and there are as many
+of them. (#1055's own body measured the same 617 MB, at fixed work against
+`00797a97`.)
 
 **Own against shared.** The OPB is 348 constraint rows. The proof is almost all this
-family's bound pushes. In the first 200 MB of the `Off` proof there are 28,171
-`pol`s averaging 656 fields, 28,770 `rup`s and 55,200 `del`s, and one `pol`
-per bound push. In the first 300 MB of the `Inferences` proof, the 62,507
-assertions average 167 literals, and **95.6%** of the literals in the
-`linear_equality` assertions are `~x[ge0]` on a 0/1 variable. That is the clause
-form of a reason literal, `x ≥ 0`, that was true before search started (#1035).
-So the proof's size is set by how many terms each assertion names, not by how
-many assertions there are.
+family's bound pushes, about one `pol` per push. Over the whole proofs, at
+`0a5b4ec6` against the first pass's kept proofs at `00797a97`:
 
-**The test lanes at both assertion levels**, seed 1, every proof kept:
+| | `0a5b4ec6` | `00797a97` |
+|---|---|---|
+| `Off`: `pol`s, fields per `pol` | 1,802,943, 21.4 | 1,803,379, 742.8 |
+| `Off`: `rup`s, `del`s | 1,844,222, 3,645,645 | 1,844,505, 3,645,645 |
+| `Inferences`: `linear_equality` assertions, literals each | 1,801,633, 6.5 | 1,801,633, 187.3 |
+| share of those literals that are `~x[ge0]` | 0.03% | 96.5% |
+
+A `~x[ge0]` literal is the clause form of a reason literal `x ≥ 0` on a 0/1
+variable, true before search started; #1055 removed almost all of them. The
+first pass sampled only the first 200 MB of the `Off` proof (656 fields per
+`pol`) and the first 300 MB of the `Inferences` proof (167 literals over all
+62,507 assertions there, backtracks included; its 59,583 `linear_equality`
+assertions average 171.8; 95.6%).
+So the proof's size was set by how many terms each assertion named, not by how
+many assertions there were, and it still is: the count is the same, and the
+size fell with the names.
+
+**The test lanes at both assertion levels**, `linear_test <mode> --seed=1` at
+the default threshold, every proof kept, at `0a5b4ec6`. The lines leave out
+#1220's partial-sum instances, which did not exist at `00797a97`; the `Off`
+column at `00797a97` is in brackets, and the other two columns are unchanged:
 
 | Lane | lines, `Off` | lines, `Inferences` | family assertions |
 |---|---|---|---|
-| `eq` | 8,429 | 1,365 | 368 `linear_equality` |
-| `eq_iff` | 689,317 | 383,321 | 1,317 `linear_equality`, 388 `linear_not_equals` |
-| `ne` | 337,791 | 190,608 | 192 `linear_not_equals`, 189 `linear_equality` |
-| `le` | 33,014 | 22,333 | **174 unhinted** |
-| `le_iff` | 84,893 | 56,555 | **733 unhinted**, 48 `linear_inequality … cond` |
-| `ge` | 12,338 | 7,119 | **203 unhinted** |
+| `eq` | 8,277 (8,429) | 1,365 | 368 `linear_equality` |
+| `eq_iff` | 689,081 (689,317) | 383,321 | 1,317 `linear_equality`, 388 `linear_not_equals` |
+| `ne` | 337,791 (337,791) | 190,608 | 192 `linear_not_equals`, 189 `linear_equality` |
+| `le` | 32,960 (33,014) | 22,333 | **173 unhinted** |
+| `le_iff` | 84,647 (84,893) | 56,555 | **733 unhinted**, 48 `linear_inequality … cond` |
+| `ge` | 12,248 (12,338) | 7,119 | **203 unhinted** |
+
+#1055 barely moves these: their terms range over a few values either side of
+zero, so few bounds are ones the bits imply. All twelve runs pass, VeriPB on
+the `PATH`.
 
 The rest of each proof is search (`backtrack`, `solx_block`). The core's own
 final `a >= 1;` for an unsatisfiable instance is also unhinted, in these
@@ -1184,16 +1365,30 @@ reification condition cannot be written at all (#310).
   than ±1: an endpoint can survive with no integer support. That is the
   standard behaviour of interval reasoning on a linear equality, not a bug;
   `Tabulated` is the way to get more.
-- **A range-literal reification condition throws with proofs on** (#310). It
-  propagates correctly without them.
-- **Proofs on long sums are very large.** Every bound push names every term, so
-  a 0.92 s `shortest_path` search writes 15 GB (#1035). #1055, open, drops the
-  always-true bounds from the reasons and the `pol`s.
+- **A range-literal reification condition throws with proofs on** (#310,
+  #1225). It propagates correctly without them.
+- **Proofs on long sums are large.** Since #1055 a bound push no longer names
+  the bounds that hold trivially, but its reason still names every other term
+  whose bound has moved, and proof logging multiplies `shortest_path`'s solve time
+  17× at `Off` (13.6 s against 0.78 s) for a 617 MB proof. Before #1055 every
+  term was named, and the same search wrote 15 GB (#1035).
 - **The default incremental threshold can be slower than stateless** by 2.2×
-  on a model with many long reified inequalities (#1034). It is 1.6–3×
-  faster where there are a few long sums.
-- **A coefficient times a bound past `2⁶³` throws** an undiagnosed `Integer
-  overflow` from inside propagation.
+  on a model with many long reified inequalities (#1034; at `00797a97`, and
+  2.3× per node at `0a5b4ec6`). It was 1.6–3× faster where there are a few
+  long sums, at `00797a97`.
+- **A coefficient times a bound, or a sum of them, past `2⁶³` throws**
+  `IntegerOverflow` from inside propagation, naming no constraint (a product's
+  message names the product; a total's names nothing). With proofs on, the
+  model writer refuses a row whose products are too large first; a total
+  past `2⁶³` in the `≤` or the equality still throws from the propagator,
+  while for a reified inequality the writer refuses first. Inputs outside
+  `±(2⁶⁰ − 1)` are refused at construction (#1215).
+- **The reified inequality's undecided check sums in plain `Integer`**
+  (`linear_inequality.cc:308-318`), so every reified inequality form throws,
+  with proofs off, on a partial sum that leaves the range though the total
+  fits, where the unreified forms solve since #1220, and on a maximum past
+  `2⁶³` that only a comparison needs (see [Robustness and
+  limits](#robustness-and-limits)). Unfiled.
 - **A reified equality waits for its last unfixed term** before deciding its
   condition, even when its bounds already exclude the value. This costs nothing
   measurable on the corpus (#1042).
@@ -1204,10 +1399,19 @@ reification condition cannot be written at all (#310).
 Ranked by what they buy for what they cost. The audit's first three (#1032,
 #1036, #1033) are done; see [Re-audit](#re-audit-2026-09-25).
 
-1. **#1035** — drop untouched bounds from the reason, and decide with a
-   proofs consultant whether the `pol` can drop them too. The largest proof-size
-   lever in the family, and on 0/1 sums likely an order of magnitude. **Open as
-   #1055**, which does both halves for this family only.
+1. **#1035** — **Done by #1055**, both halves and for this family only: the
+   reason leaves out a declared bound that the bits imply, that a pin already
+   states, or, above `AssertionLevel::Links`, that would have been pinned, and the `pol` leaves out a bound the bits imply and no longer
+   divides. Both halves went to proofs consultants. On `shortest_path` it was
+   24× in bytes, more than the order of magnitude this item guessed. Doing it
+   centrally, for every constraint's rendered reasons, broke 41 tests. The
+   same filter restricted to the lines `ProofLogger::infer` writes passed all
+   925, and sits on a local branch: #1055's body leaves it as Ciaran's call,
+   since it makes each such RUP depend on pins if it is ever hinted. It also
+   leaves the same shape in `Knapsack`, `BinPacking`, `GlobalCardinality` and
+   difference logic as follow-ups. Not done either: this family's
+   `generic_reason` rules (the not-equals and the undecided verdicts) still
+   name every variable ([Proof-time state](#proof-time-state)).
 2. **#1091** — an equality whose unfixed terms' gcd does not divide what is
    left of `v` takes a number of sweeps linear in the width, at the root or
    after a branch. Checking that gcd per call, before the loop and with its
@@ -1220,9 +1424,10 @@ Ranked by what they buy for what they cost. The audit's first three (#1032,
    inequality, saving the reconstructor a row search; it supplies nothing that
    is missing. Deliberately not filed (Ciaran, 2026-09-23): whether it is worth
    carrying will show up when the justifier work reaches it.
-4. **#1034** — make the fold state fit in `std::any`, make slot copies cheap
-   engine-wide, or allocate an `Iff`'s second direction lazily. Then re-measure
-   `pattern-set-mining-k2`, `unit-commitment` and `vrp` together.
+4. **#1034** — make the fold state fit in `std::any` (harder since #1220 made
+   it 24 bytes), make slot copies cheap engine-wide, or allocate an `Iff`'s
+   second direction lazily. Then re-measure `pattern-set-mining-k2`,
+   `unit-commitment` and `vrp` together.
 5. **Tests**, unfiled:
    - long sums, tens of terms, so folding and reasons have something to do;
    - large coefficients;
@@ -1253,8 +1458,9 @@ fixed terms. Slack-based watching is the pseudo-Boolean "watch enough to cover
 the slack" scheme. `Tabulated` is GAC by enumeration, which is exact and
 exponential. The proof side is JP 3.14 and 3.15 of McIlree's thesis, which
 also sketches them from Gocht et al.'s earlier proof-logging work. What is new
-here is small: the incremental propagator's fold, the deview mode, and dividing
-by the changed variable's coefficient to close by RUP.
+here is small: the incremental propagator's fold, the deview mode, and closing
+by RUP over the undivided sum with the bounds the bits imply left out (#1055;
+until then it divided by the changed variable's coefficient to close by RUP).
 
 ## Further reading
 
@@ -1299,8 +1505,10 @@ different subtrees and still produce the same sequence, and the trees were not
 compared node by node. So the CPU table compares configurations known to
 produce the same solutions, not ones known to search the same tree.
 
-**The proof cost of a long linear constraint is its reasons.** At
-`AssertionLevel::Inferences` there is no justification at all, and
-`shortest_path`'s proof is still 9.8 GB. That is because each assertion
-restates about 170 bound literals, nearly all of them trivially true. Trimming
-justifications would not touch that; trimming reasons does both.
+**The proof cost of a long linear constraint was its reasons.** At
+`AssertionLevel::Inferences` there is no justification at all, and at
+`00797a97` `shortest_path`'s proof was still 9.8 GB, because each
+`linear_equality` assertion restated 187 bound literals on average, nearly
+all of them trivially true. Trimming justifications would not have touched
+that; trimming reasons did both. #1055 did it: those assertions now average
+6.5 literals, and that proof is 474 MB.
