@@ -2,15 +2,61 @@
 
 > **Maturity** production (`LexCompareGreaterThanOrMaybeEqual` and its twelve
 > named forms); benchmarking only (`LexSmartTable`) ·
-> **Audited** 2026-09-29 at `c9ceea25` ·
-> **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
-> for what it would file, first of all a **proof VeriPB rejects**: under the
-> general constructor's `NotIf`, a correct inference of the condition's negation
-> is justified under the wrong half of the condition. Already open and touching
-> this family: #1121
-> (`LexSmartTable`'s hints say `unnamed`), #1128 (`LexSmartTable`'s trees each
-> copy the whole scope), #833 (the large-domain policy), #868 (cross-solver
-> comparisons; this document gives one, by hand). Tracked under #871.
+> **Audited** 2026-09-29 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1137, #1138 and #1121 ·
+> **Open issues** filed by this audit: #1141 (the whole-scope reason built on
+> every call), #1142 (proofs quadratic in the array per inference), #1143 (a
+> variable shared at one position treated as if it could differ). A follow-up
+> #1179 left open: #1185 (the dispatcher should hand the undecided pass the
+> literals it will infer). **Fixed since the audit**: #1137 (a proof VeriPB
+> rejected under `NotIf`), by #1179; #1138 (`LexSmartTable` lost solutions
+> when `vars_1` is the longer), by #1183; #1121 (`LexSmartTable`'s hints said
+> `unnamed`), by #1182; and #1189 (filed from review: an offset view ending at
+> `INT64_MAX` overflowed), by #1214; see [Re-audit,
+> 2026-10-08](#re-audit-2026-10-08). Already open and touching this family:
+> #1128 (`LexSmartTable`'s trees each copy the whole scope), #833 (the
+> large-domain policy), #868 (cross-solver comparisons; this document gives
+> one, by hand). Tracked under #871.
+
+### Re-audit, 2026-10-08
+
+Three fixes to this family have merged since the audit, two for its own
+findings and one for an issue it found already open. This pass brings the
+text into line with them at `0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1137, `NotIf`'s must-hold scaffold under the wrong half of the condition | #1179 | `install_propagators` picks each verdict's scaffold literal from the reification kind (`lex.cc:580–597`), so under `NotIf` the must-hold scaffold is stated under `cond`; `If` and `Iff` get the same literals as before. The summary loses its bullet on it; the [OPB encoding](#opb-encoding)'s `NotIf` note, rule 5's **Proof technique** and **Gaps**, [Tests](#tests) (`NotIf` and `MustNotHold` now run), [Proof-logging gaps](#proof-logging-gaps), [Known limitations](#known-limitations) and [Next steps](#next-steps) item 0 follow |
+| #1138, `LexSmartTable` ignored the lengths | #1183 | `prepare` adds an equal-common-prefix row when `vars_1` is the longer (`lex_smart_table.cc:63–72`), and the header now gives `LexGreaterThan`'s meaning (`lex_smart_table.hh:16–18`). The summary loses its bullet on it; [Semantics](#semantics), [Cake conformity](#cake-conformity) (two chain cases), [the `LexSmartTable` section](#lexsmarttable) (its table re-measured), [Tests](#tests), [Known limitations](#known-limitations) and [Next steps](#next-steps) item 4 follow |
+| #1121, `LexSmartTable`'s hints said `unnamed` | #1182 | `prepare` passes its ID to the child (`lex_smart_table.cc:78`); [the `LexSmartTable` section](#lexsmarttable) and [Tests](#tests) |
+
+#1189, filed from review, is fixed by #1214; [Overflow](#robustness-and-limits)
+was brought into line with it on 2026-10-05 and is not touched here. One more
+change to `lex.cc` since `c9ceea25` is #1215's: the constructor checks the
+reification condition's value against the bounded range
+(`innards::require_bounded`, `lex.cc:477`); [Semantics](#semantics) now says
+so.
+
+**What was measured again**, at `0a5b4ec6` on fataepyc-10, pinned to cores
+32–39 with the malloc thresholds fixed:
+
+- the `LexSmartTable` length table, with the audit's probe rebuilt against
+  main (`tmp/fd871-comments-1008/ordsmall/probes/lexst.cc`), and VeriPB 3.0.2
+  with `--force-checked-deletion` on each of its `LexSmartTable` proofs;
+- the issue's 160-proof `NotIf` sweep (the fact-check's `fc_proofsweep.cc`
+  rebuilt as `ordsmall/probes/proofsweep.cc`, run by `proofsweep.sh`), with
+  the same 40 seeds per cell for `MustNotHold`, `If` and `Iff`, the
+  `notif_holds` repro (`ordsmall/probes/notif_repro.cc`), and the 160 `NotIf`
+  proofs compared byte for byte with the audit build's
+  (`ordsmall/probes/sweepcmp/compare.sh`);
+- `lex_test`'s run counts under the default caps, both lanes, and the
+  uncapped bare lane's time (`ordsmall/probes/tests/`).
+
+Nothing else was re-taken: the strength probes, corpus figures, CPU and proof
+tables are from `c9ceea25` (or the 2026-10-05 review round, where marked).
+#1179 changes only the literal `NotIf`'s must-hold scaffold is stated under,
+and gives `If` and `Iff` the same literals as before, so no inference changes
+in any form.
 
 `LexCompareGreaterThanOrMaybeEqual(vars_1, vars_2, cond, or_equal)` enforces
 `vars_1 >_lex vars_2`, or `≥_lex`, under a reification condition. Twelve
@@ -24,18 +70,8 @@ a short sequence of RUP lemmas. `LexSmartTable`, the other class here, is the
 same constraint written as a [`SmartTable`](smart_table.md) and kept for
 benchmarking.
 
-Five things to know before touching it.
+Three things to know before touching it.
 
-- **Under `NotIf`, VeriPB rejects the proof.** When the condition is open and
-  the bounds show the comparison holds, the solver correctly infers the
-  condition's negation, but states the justifying lemmas under the condition's
-  negation, over rows that `NotIf` half-reifies on the condition itself. So the
-  lemmas are not RUP. No named class exposes `NotIf`; the general constructor
-  and the `.scp` reader (`…_not_if`) do. 50 of 160 random `NotIf` proofs
-  fail: exactly the 50 in which this inference writes its scaffold lemma,
-  which it does when the common prefix is non-empty. Every `If`, `Iff` and
-  `MustNotHold` proof tried verifies. See
-  [Proof-logging gaps](#proof-logging-gaps).
 - **It is generalised arc consistent on distinct variables, holes and unequal
   lengths included**, and slow per call: every call copies both arrays into one
   and materialises a bounds reason over all of them, whether or not anything
@@ -57,10 +93,6 @@ Five things to know before touching it.
   width 10⁷. Lex-leader symmetry breaking shares variables at and across
   positions, and seven corpus models post it with repeated variables, over
   small domains.
-- **`LexSmartTable` ignores the arrays' lengths,** so when `vars_1` is the
-  longer it gives wrong answers: `[a₀, a₁, a₂] >_lex [b₀, b₁]` over `0..2` has
-  135 solutions and it finds 108. Only the C++ API and the `.scp` reader reach
-  it.
 
 ## What it is
 
@@ -76,7 +108,11 @@ case is decided in `vars_1`'s favour; the non-strict form also accepts equality.
 
 The reification condition is any `IntegerVariableCondition`: `If{cond}` means
 `cond ⇒ C`, `Iff{cond}` means `cond ⇔ C`. The general constructor also takes
-`MustNotHold` and `NotIf`, which no named class exposes.
+`MustNotHold` and `NotIf`, which no named class exposes. Since #1215 the
+condition's value (both ends, for a range condition) must lie in
+`±(2⁶⁰ − 1)`, or one past the top, since `x ≤ v` is stored as `x < v + 1`;
+otherwise the constructor throws `IntegerOverflow` (`lex.cc:477`,
+`require_bounded.cc:44–54`).
 
 - **Empty arrays:** `[] ≥_lex []` holds, `[] >_lex []` does not, `[x] >_lex []`
   holds, `[] >_lex [x]` does not (#254 made the empty operand safe).
@@ -85,8 +121,9 @@ The reification condition is any `IntegerVariableCondition`: `If{cond}` means
   `y ≤ z`. See [Robustness and limits](#robustness-and-limits) for what it
   costs.
 
-`LexSmartTable(vars_1, vars_2)` is documented as `vars_1 >_lex vars_2`, but
-means strict lex on the common prefix only: see [its
+`LexSmartTable(vars_1, vars_2)` means `vars_1 >_lex vars_2`, with the same
+unequal-length meaning as `LexGreaterThan` since #1183; before it, the table
+enforced strict lex on the common prefix only. See [its
 section](#lexsmarttable).
 
 ### Concrete constraints and frontend coverage
@@ -197,9 +234,10 @@ side, as cake names them.
 - `Iff{c}`: both directions, the greater one on `c` and the less one (strict
   and non-strict swapped) on `¬c`.
 - `NotIf{c}`: the less direction only, half-reified on `c`; `MustNotHold`
-  builds it unreified (`define_proof_model`). The [`NotIf` proof
-  gap](#proof-logging-gaps) comes from this: its less rows are active under
-  `c`, not `¬c`.
+  builds it unreified (`define_proof_model`). This is why rule 5's scaffold
+  is stated under `c` for `NotIf`: its less rows are active under `c`, not
+  `¬c`. Before #1179 it was stated under `¬c`, and VeriPB rejected the proof
+  (#1137).
 
 **It is definitional:** the flags are defined, not constrained beyond their
 meaning, and the at-least-one row is the constraint. **Size:** about `5n` rows
@@ -223,8 +261,13 @@ encodings still diverge (#358). The writer spells the or-equal forms
 round-trip through the solver's own reader but have no cake counterpart.
 
 `LexSmartTable` writes `lex_smart_table`, cake's keyword, but its OPB is the
-full `SmartTable` encoding, several times the size of cake's rows, so it does
-not chain and has no case.
+full `SmartTable` encoding, several times the size of cake's rows. Since #1183
+it has two chain cases, both `none`, which pin an empty common prefix:
+`lex_smart_table_empty_right_sat` and `lex_smart_table_empty_left_unsat`
+(`verified_encodings/scp_cases/CMakeLists.txt:524–534`). A table of one row
+chains; from two rows on, the elaboration step fails on a per-row selector
+flag (`f[0][t0]`) that cake's OPB names differently, as for the `smart_table`
+cases. #1183 checked that cake builds the same equal-prefix row.
 
 ### Proof-time state
 
@@ -575,20 +618,25 @@ the condition is decided before branching, as in `probes/lexreif.cc`.
 - **Why it is true** — the comparison is decided at `k` for `vars_1`, whatever
   the later positions hold.
 - **Proof technique** — `RUP sequence`, ours, under the negation of the
-  inferred literal: the condition false switches on the *less* direction's
-  at-least-one (half-reified on `¬c`), and the scaffold shows it has no true
-  term. One lemma `¬pref[k+1]` at the separated position (if there is one),
-  then `n` lemmas `¬dec'[k]` over the less direction's decision flags, each
-  under the reason extended with `¬c`. This is `hints::LexUnsatScaffold`'s
-  `emit_justification`. **That is right for `Iff` and wrong for `NotIf`:**
-  under `NotIf` the inferred literal is `¬c`, so the negation to work under is
-  `c`, and the less direction's rows are half-reified on `c`, not `¬c`
-  (`define_proof_model`). The code states the scaffold under `¬c` for both, so
-  under `NotIf` the lemmas are not RUP and VeriPB rejects the proof (see
-  [Proof-logging gaps](#proof-logging-gaps)).
+  inferred literal, which switches on the *less* direction's at-least-one:
+  under `Iff` that is the condition false (the less rows are half-reified on
+  `¬c`), and under `NotIf` the condition true (half-reified on `c`). The
+  scaffold shows that at-least-one has no true term. One lemma `¬pref[k+1]`
+  at the separated position (if there is one), then `n` lemmas `¬dec'[k]`
+  over the less direction's decision flags, each under the reason extended
+  with that literal (`define_proof_model` gives the half-reifications). This
+  is `hints::LexUnsatScaffold`'s `emit_justification`; `install_propagators`
+  picks the literal from the reification kind (`lex.cc:580–597`), which
+  duplicates the dispatcher's policy inside the constraint (#1185 would have
+  the dispatcher hand it over). [`reification.md`](../reification.md) states
+  the rule, under "Justifications can depend on the cond polarity". Before
+  #1179 the scaffold was under `¬c` for both, so under `NotIf` the lemmas
+  were not RUP and VeriPB rejected the proof (#1137; see [Proof-logging
+  gaps](#proof-logging-gaps)).
 - **Reason** — the operands' bounds, without the condition.
-- **Assertion** — `c ∨ ¬reason`. Measured at `Inferences`, `[2, a] >_lex
-  [b, c]` with `b ∈ 0..1`:
+- **Assertion** — `c ∨ ¬reason` under `Iff`, `¬c ∨ ¬reason` under `NotIf`.
+  Measured at `Inferences` under `Iff`, `[2, a] >_lex [b, c]` with
+  `b ∈ 0..1`:
   ```
   a 1 i[cond][b0] 1 ~i[a][ge0] 1 i[a][ge3] 1 ~i[b][ge0] 1 i[b][ge2] 1 ~i[cvar][ge0] 1 i[cvar][ge3] >= 1
     ::lex:((constraint_id _1) (subhint unsat_scaffold));
@@ -600,8 +648,8 @@ the condition is decided before branching, as in `probes/lexreif.cc`.
 - **Offline reconstructibility** — `hinted`. The subhint names the procedure;
   the separated position is readable off the reason.
 - **Proof size** — `n + 1` lemmas of `O(n)` literals.
-- **Gaps** — **under `NotIf`, the justification is wrong and VeriPB rejects
-  it.** The inference itself is right. `None` for `Iff`.
+- **Gaps** — `None.` (Under `NotIf`, a gap until #1179: see
+  [Proof-logging gaps](#proof-logging-gaps).)
 - **Tightness** — `Not shown.`
 
 ### Rule: condition-must-not-hold
@@ -638,8 +686,12 @@ the condition is decided before branching, as in `probes/lexreif.cc`.
 A benchmarking reference: `vars_1 >_lex vars_2` written as a
 [`SmartTable`](smart_table.md) over `vars_1 ++ vars_2`, with one row per
 position `i < n`: `vars_1[j] = vars_2[j]` for `j < i`, and
-`vars_1[i] > vars_2[i]`. Everything about its propagation, proof and cost is the
-`SmartTable` engine's; what is specific to it:
+`vars_1[i] > vars_2[i]`. When `|vars_1| > |vars_2|` there is one more row,
+`vars_1[j] = vars_2[j]` for every `j < n`, the equal common prefix that the
+longer `vars_1` wins on; with `vars_2` empty it has no entries, and every
+assignment matches it (`lex_smart_table.cc:63–72`, since #1183). Everything
+about its propagation, proof and cost is the `SmartTable` engine's; what is
+specific to it:
 
 - **The rows are forests of independent pairs.** Over distinct variables, row
   `i` is `i + 1` one-edge trees, and each tree copies the whole scope's domains
@@ -647,30 +699,34 @@ position `i < n`: `vars_1[j] = vars_2[j]` for `j < i`, and
   account for part of the growth of its lex benchmark ratio in
   [`smart_table.md`](smart_table.md); that document notes the share was not
   isolated.
-- **It ignores the lengths, and so loses solutions when `vars_1` is the
-  longer.** There is no row for the equal-prefix case, so it enforces strict
-  lex on the common prefix only. Measured (`probes/lexst.cc`), over `0..2`:
+- **It agrees with `LexGreaterThan` on unequal lengths since #1183.** Before
+  it there was no equal-prefix row, so it enforced strict lex on the common
+  prefix only and lost every solution that wins on length alone (#1138).
+  Solution counts over `0..2`, at `c9ceea25` (`tmp/fd-ordering/probes/lexst.cc`)
+  and at `0a5b4ec6` (the same probe rebuilt,
+  `tmp/fd871-comments-1008/ordsmall/probes/lexst.cc`):
 
-  | Length of `vars_1` | Length of `vars_2` | `LexGreaterThan` | `LexSmartTable` |
-  |---|---|---|---|
-  | 2 | 2 | 36 | 36 |
-  | 3 | 2 | 135 | **108** |
-  | 2 | 3 | 108 | 108 |
-  | 1 | 0 | 3 | **0** |
+  | Length of `vars_1` | Length of `vars_2` | `LexGreaterThan` | `LexSmartTable`, `c9ceea25` | `LexSmartTable`, `0a5b4ec6` |
+  |---|---|---|---|---|
+  | 2 | 2 | 36 | 36 | 36 |
+  | 3 | 2 | 135 | **108** | 135 |
+  | 2 | 3 | 108 | 108 | 108 |
+  | 1 | 0 | 3 | **0** | 3 |
 
-  The missing 27 are the assignments whose two-long prefixes are equal, where
-  the longer `vars_1` should win. This contradicts its own header's
-  `vars_1 >_lex vars_2` and the propagator class's documented semantics. Only
-  the C++ API and the `.scp` reader can post it (one example,
-  `examples/smart_table_lex`, uses equal lengths), so no front-end model is
-  affected. The proofs verify, against its own OPB: the OPB is the table, and
-  the table is what is wrong.
+  At `0a5b4ec6` the probe also runs `0` against `1`, which has no solution
+  under either class, and every one of its five `LexSmartTable` proofs
+  verifies with VeriPB 3.0.2 (`--force-checked-deletion`). The missing 27 at
+  `c9ceea25` were the assignments whose two-long prefixes are equal. Only the
+  C++ API and the `.scp` reader can post it (one example,
+  `examples/smart_table_lex`, uses equal lengths), so no front-end model was
+  affected.
 - **A variable shared between the arrays can make a row cyclic**, which
   `SmartTable` rejects (#1014): `{a, b} >_lex {b, a}` throws
   `InvalidProblemDefinitionException` when the problem is prepared, as the
   header says.
-- **Its hints say `unnamed`** (#1121), because it does not pass its constraint
-  ID to its child.
+- **Its hints name the posted constraint** since #1182: `prepare` gives the
+  child `SmartTable` its own ID (`lex_smart_table.cc:78`). Before it they said
+  `unnamed` (#1121).
 
 ## Evidence
 
@@ -686,31 +742,45 @@ position `i < n`: `vars_1[j] = vars_2[j]` for `j < i`, and
   Then `If` and `Iff` for each direction over nine shapes (pairs, triples and
   four unequal-length cases, all small positive domains; no arrays of six and
   none of #254's cases), under plain `solve_for_tests`: enumeration and the
-  proof, no consistency check. `NotIf` and `MustNotHold` are not tested. With
-  and without proofs; VeriPB runs when on the path. Seeded.
+  proof, no consistency check. Since #1179, `NotIf` and `MustNotHold` run for
+  each direction over the same nine shapes, through the general constructor
+  (`lex_test.cc:601–610`). With and without proofs; VeriPB runs when on the
+  path. Seeded.
 - **Duplicate-variable runs**, bare lanes only: `lex(xs, xs)` in all four
   directions, a shared first position, and repeats within one array, by
   enumeration over `0..2` and `1..3`.
-- **`scp_chain_lex_*`**, fourteen cases: see [Cake
+- **`scp_chain_lex_*`**, sixteen cases since #1183: the propagator class's
+  fourteen and `LexSmartTable`'s two `lex_smart_table_*`; see [Cake
   conformity](#cake-conformity).
 - **MiniZinc:** `lexless.mzn`, `lexlesseq.mzn`, `lexbool.mzn`, `lexreif.mzn`,
   and the four `lex*unequal.mzn`.
 - **XCSP3:** `lex.xml`, `lex_matrix.xml`.
-- **`LexSmartTable`:** only `smart_table_dup_test`'s cyclic-row rejection, the
-  `smart_table_lex` example (equal lengths) and the audit lane.
-  `smart_table_test`'s `lex_*` modes build their own lex tables rather than
-  posting this class.
+- **`LexSmartTable`:** since #1183, `lex_test` runs the unequal-length and
+  degenerate shapes above through it too, against a brute-force `>`, under
+  `solve_for_tests_checking_gac`, in both lanes (`lex_test.cc:586–590`). That
+  includes four equal-length degenerate shapes (`[]` against `[]`, `[1]`
+  against `[2]`, `[1, 2]` against `[1, 2]`, `[1, 3]` against `[1, 2]`); the
+  pairs, triples and sixes of `run_variant_tests` are not run through it.
+  Also the two chain cases, `smart_table_dup_test`'s cyclic-row rejection
+  and, since #1182, its check that the hints name the posted constraint
+  (`smart_table_dup_test.cc:159–160`), the `smart_table_lex` example (equal
+  lengths) and the audit lane. `smart_table_test`'s `lex_*` modes build their
+  own lex tables rather than posting this class.
 - **Audit lane:** the two rows above.
 
 **Runtime caps.** No lane sets or clears one. The default caps **fire** in both
-lanes: 32 of 368 bare runs and 32 of 352 `view_mixed` runs are truncated, each
+lanes: 32 of 536 bare runs and 32 of 520 `view_mixed` runs are truncated, each
 checking 300 solutions for soundness only. They are the free-domain pairs and
 triples (two `1..6` against two, and three `1..3` or `1..5` against three) and
 all eight arrays-of-six runs (2,016 and 2,080 solutions), up to 7,875 solutions
-(`GCS_TEST_MAX_SOLUTIONS=300 GCS_TEST_MAX_RECURSIONS=1500 lex_test --seed=1`, at
-`c9ceea25`). So the capped run checks GAC at every node of the whole tree only
-on the rest; the arrays of six are checked in full only uncapped. Uncapped, the
-bare lane passes in 18.5 s.
+(`GCS_TEST_MAX_SOLUTIONS=300 GCS_TEST_MAX_RECURSIONS=1500 lex_test --seed=1`,
+and the same with `--view-position=mixed`, at `0a5b4ec6`). That is the same 32
+as at `c9ceea25`, out of 368 and 352: the 168 runs each lane gained, from
+`NotIf`, `MustNotHold` and `LexSmartTable`, all finish under the caps. So the
+capped run checks GAC at every node of the whole tree only on the rest; the
+arrays of six are checked in full only uncapped. Uncapped, the bare lane
+passes in 22.2 s at `0a5b4ec6` (one run, VeriPB on the path), against 18.5 s
+at `c9ceea25`.
 
 **Tightness:** no mutation lane.
 
@@ -729,12 +799,11 @@ bare lane passes in 18.5 s.
   made by another constraint are not exercised.
 - **Strength of the reified forms,** deliberately unchecked, which is how the
   incomplete detection went unrecorded.
-- **`NotIf` and `MustNotHold`,** which is how the rejected `NotIf` proof went
-  unnoticed. No SCP chain case covers them either: cake has no such keyword.
+- **`NotIf` and `MustNotHold` in an SCP chain case:** cake has no such
+  keyword. (`lex_test` has run both since #1179; before it, nothing did, which
+  is how the rejected `NotIf` proof went unnoticed.)
 - **A shared variable over a wide domain,** or a lex-leader shape with a fixed
   point of `σ`, the corpus's own. The duplicate runs are over `0..2`.
-- **`LexSmartTable` on unequal lengths.** Nothing posts it on unequal
-  lengths.
 - **Real instances:** none ported.
 
 ### Benchmarks and examples
@@ -842,7 +911,11 @@ and each fails at a `solx` step, which is generic rather than this family's
 
 ### Proof-logging gaps
 
-**One: under `NotIf`, a correct inference gets a proof VeriPB rejects.**
+`None` since #1179. Every inference is justified at `Off`, and the propagator
+is the same with proofs on or off.
+
+**Until #1179: under `NotIf`, a correct inference got a proof VeriPB
+rejected.** Kept as history; the present tense below describes `c9ceea25`.
 
 - **When.** The general constructor's `reif::NotIf{cond}`, which the `.scp`
   reader also posts for `lex_…_not_if`, with the condition open, when the
@@ -866,14 +939,20 @@ and each fails at a `solx` step, which is generic rather than this family's
     Stating the scaffold under `cond` instead makes all 160 verify
     (`tmp/fd-ordering/factcheck2/lex/lex_notiffix.cc`).
   - `If`, `Iff` and `MustNotHold` verified on every seed tried.
-- **Status.** Filed as #1137, marked a proof failure.
-
-Otherwise every inference is justified at `Off`, and the propagator is the same
-with proofs on or off.
+- **Status.** Filed as #1137, fixed by #1179 (merged 2026-10-02), which
+  states the must-hold scaffold under `cond` for `NotIf` (rule 5). At
+  `0a5b4ec6` the same sweep, rebuilt
+  (`tmp/fd871-comments-1008/ordsmall/probes/proofsweep.cc`), verifies all
+  160 `NotIf` proofs, and all 160 at each of `MustNotHold`, `If` and `Iff`;
+  `notif_holds` verifies with its 18 solutions. The 50 proofs the audit build
+  rejected are exactly the 50 whose proof #1179 changes (28 of the 80
+  non-aliased, 22 of the 80 aliased): the audit build's proofs and main's are
+  byte-identical on the other 110 proofs
+  (`tmp/fd871-comments-1008/ordsmall/probes/sweepcmp/`). #1179's body counts
+  36 of 80 non-aliased by a pattern that also matches enforce-pass lemmas.
 
 ### Known limitations
 
-- **A reified lex under `NotIf` can write a proof VeriPB rejects.**
 - **A lex constraint that repeats a variable propagates less than it could,**
   whether within an array, at one position of both, or across positions. When
   a variable is shared at one position that decides the comparison, it takes
@@ -884,14 +963,15 @@ with proofs on or off.
   equal to the end.
 - **Its proofs grow with the square of the array length per inference,** which
   makes long arrays expensive to verify: 654 MB for 211 inferences at 200.
-- **`LexSmartTable` gives wrong answers when `vars_1` is the longer array.**
 
 ### Next steps
 
-0. **Fix the `NotIf` scaffold.** State the must-hold verdict's scaffold under
-   the negation of the inferred literal: `¬cond` for `Iff`, `cond` for
-   `NotIf`. Add `NotIf` and `MustNotHold` to `lex_test`'s reified runs. Small,
-   and first: it is a proof failure. Filed as #1137.
+0. **Fix the `NotIf` scaffold.** **Done by #1179**, as proposed: the
+   must-hold verdict's scaffold is stated under the negation of the inferred
+   literal, `¬cond` for `Iff` and `cond` for `NotIf`, and `lex_test`'s
+   reified runs gained `NotIf` and `MustNotHold`. It works the literal out
+   from the reification kind inside the constraint; #1185 is the follow-up
+   that would have the dispatcher hand it over. Filed as #1137.
 1. **Build the reason only when it is needed.** Leave it as a deferred
    `bounds_reason`, and build the concatenated scope once, at install, rather
    than per call. The A/B above is the first half, on the same tree: up to 3.0
@@ -915,9 +995,10 @@ with proofs on or off.
    closing RUP actually needs: the `2(n − α)` bound lemmas of rule 1 may reduce
    to one `¬pref[α+1]`. Per the arc's standing rule, which lemmas are needed is
    an empirical question. Filed as #1142, with the table above.
-4. **Fix `LexSmartTable`'s lengths:** add the equal-prefix row when
-   `|vars_1| > |vars_2|` (and for the non-strict reading, if one is wanted), or
-   reject unequal lengths. Small. Filed as #1138.
+4. **Fix `LexSmartTable`'s lengths.** **Done by #1183,** which took the first
+   option: it adds the equal-prefix row when `|vars_1| > |vars_2|`, as cake
+   does, and tests unequal lengths. There is still no non-strict reading.
+   Filed as #1138.
 5. **Complete the reified detection.** Continue past a position whose only
    overlap is equality, as the enforce pass's scan does. Moderate: each verdict
    then needs its own scaffold. Not worth an issue until a reified lex turns up
