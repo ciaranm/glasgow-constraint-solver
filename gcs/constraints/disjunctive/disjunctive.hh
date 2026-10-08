@@ -117,6 +117,9 @@ namespace gcs
         /// recover_am1_from_pairs, and the tasks' energies telescoped against
         /// it. The OPB is untouched: see #730, and \ref overload_vocabulary_at
         /// for where the re-encoding lives.
+        ///
+        /// On whatever this says when \ref edge_finding or
+        /// \ref not_first_not_last is (#1244).
         bool overload = false;
 
         /// Edge-finding: for a window [a, b) and the set Theta of tasks it
@@ -139,6 +142,11 @@ namespace gcs
         ///
         /// Off by default, and for the reason #742 records on the cumulative
         /// side: the sweep is cubic, so it taxes a solve that never fires it.
+        ///
+        /// Turns \ref overload on too, whatever that says. The sweep skips a
+        /// window its contained tasks already overload, which is a conflict
+        /// rather than a push, so without the overload check nothing refuted
+        /// it (#1244).
         bool edge_finding = false;
 
         /// The two halves of \ref edge_finding, separately switchable. Both on
@@ -165,7 +173,8 @@ namespace gcs
         /// window gets instead.
         ///
         /// Shares edge-finding's sweep, so turning this on turns that sweep on
-        /// whether or not \ref edge_finding is set. Off by default for the same
+        /// whether or not \ref edge_finding is set, and turns \ref overload on
+        /// for the same reason \ref edge_finding does. Off by default for the same
         /// reason, and because it is measurably not worth running: see
         /// `dev_docs/disjunctive-proof-logging.md`.
         ///
