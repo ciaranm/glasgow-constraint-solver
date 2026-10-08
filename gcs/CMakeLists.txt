@@ -804,11 +804,13 @@ if(GCS_BUILD_TESTS)
     # (#757). Its own lanes rather than the sweep-window rule's: what is new is
     # the derived two-literal clause, so `drop_clause` and `rup_clause` are the
     # ones that matter and the rest check the pieces it is built on.
+    # `contained_emit_nothing` drops only the pushes on a task the window
+    # contains (#1247), over a fixture of its own.
     add_test(NAME disjunctive_published_nfnl
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_published_nfnl_test>)
     add_test(NAME disjunctive_published_nfnl_search
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_published_nfnl_test> --search 28)
-    foreach(mutation emit_nothing skip_fold drop_energy drop_clause rup_clause one_too_far)
+    foreach(mutation emit_nothing skip_fold drop_energy drop_clause rup_clause one_too_far contained_emit_nothing)
         add_test(NAME disjunctive_published_nfnl_mutation_${mutation}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename disjunctive_published_nfnl_mutation_${mutation} $<TARGET_FILE:disjunctive_published_nfnl_test> --mutate=${mutation})
