@@ -731,8 +731,10 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
     if (encoding == CumulativeEncoding::TimeIndexed)
         return;
 
-    // Start-checkpoint encoding (issue #780), emitted *alongside* the
-    // time-indexed block above rather than instead of it:
+    // Start-checkpoint encoding (issue #780). Under StartCheckpoint, the one
+    // encoding that ships, this is the only capacity block in the model; only
+    // the test-only BothRecovering arm writes it alongside the time-indexed
+    // block above:
     //   for each ordered pair (i, j) of tasks that can raise the profile:
     //     sb_{i,j}   ⇔  starts[i] ≤ starts[j]
     //     sa_{i,j}   ⇔  starts[i] + lengths[i] ≥ starts[j] + 1
@@ -753,15 +755,13 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
     // towards sufficiency, which is why the checkpoints are over _active_tasks
     // and not over every task.
     //
-    // Nothing cites these yet, and no propagator or rule knows they exist.
-    // They are here to be checked against the family that *is* load-bearing
-    // before anything is derived from them: a checkpoint row that says too
-    // much is a solution VeriPB refuses on the `solx` line of any enumeration
-    // test, which is a soundness check the per-time block cannot dodge for
-    // them. What it does not check is sufficiency --- that these imply the
-    // per-time rows --- and that only gets tested as inferences move over.
-    // Deriving the per-time rows from these, and deleting the block above, is
-    // the rest of #780.
+    // No rule cites these rows directly. Every per-time capacity row a rule
+    // cites is derived from them in the proof, by
+    // innards::recover_cumulative_capacity_row, and BothRecovering checks
+    // each recovered row against the one the time-indexed block still writes.
+    // A checkpoint row that says too much is a solution VeriPB refuses on the
+    // `solx` line of any enumeration test; one that says too little leaves a
+    // recovery, and so the inference citing it, unprovable.
     //
     // Not windowed, unlike the block above: every ordered pair gets flags,
     // including pairs that could never be active together. Whether pruning

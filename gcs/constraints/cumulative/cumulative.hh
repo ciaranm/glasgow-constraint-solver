@@ -21,12 +21,14 @@ namespace gcs
     /**
      * \brief Which of Cumulative's propagation rules are enabled.
      *
-     * All three are on by default. Turning one off weakens propagation but
-     * never changes the solutions found, and never changes the OPB encoding:
-     * these select propagation strength only, and exist so that a test can
-     * attribute an inference to the rule that made it (and so that a fixture
-     * can show a rule is load-bearing by watching the search get worse without
-     * it).
+     * Time-tabling and the overload check with its profile strengthening
+     * (\ref time_table, \ref overload and \ref profile_overload) are on by
+     * default, and every other rule is off. Turning one off weakens
+     * propagation but never changes the solutions found, and never changes the
+     * OPB encoding: these select propagation strength only, and exist so that
+     * a test can attribute an inference to the rule that made it (and so that a
+     * fixture can show a rule is load-bearing by watching the search get worse
+     * without it).
      *
      * \ingroup Constraints
      */
@@ -427,9 +429,10 @@ namespace gcs
         explicit Cumulative(std::vector<IntegerVariableID> starts, std::vector<IntegerVariableID> lengths, std::vector<IntegerVariableID> heights,
             std::vector<IntegerVariableID> presences, IntegerVariableID capacity);
 
-        /// Select which propagation rules are enabled (all of them, by
-        /// default). Propagation strength only: the solutions found and the OPB
-        /// encoding are the same whatever is selected.
+        /// Select which propagation rules are enabled (by default, those
+        /// CumulativeRules says are on). Propagation strength only: the
+        /// solutions found and the OPB encoding are the same whatever is
+        /// selected.
         auto with_rules(CumulativeRules rules) -> Cumulative &;
 
         /**

@@ -145,9 +145,9 @@ namespace
         check_results(proof_name, expected, actual);
     }
 
-    // Variable-duration test (strict only — non-strict variable durations are
-    // rejected in prepare for now). Each task has a start range and a duration
-    // spec {lo, hi}; lo == hi is a constant duration, lo < hi a variable one.
+    // Variable-duration test, in strict or non-strict mode. Each task has a
+    // start range and a duration spec {lo, hi}; lo == hi is a constant
+    // duration, lo < hi a variable one.
     // Enumerated variables appear in every solution vector as: starts (task
     // order), then the variable durations (task order).
     auto run_var_disjunctive_test(bool proofs, const string & mode, bool strict, const vector<pair<int, int>> & start_ranges,

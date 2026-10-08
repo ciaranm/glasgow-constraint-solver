@@ -1132,7 +1132,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // "free" axis) -- no pair overlaps on both, since the contradiction
             // pass returned otherwise. So the pushed rectangle is moved clear of
             // the blocker's mandatory part on the free axis: a 1D single-blocker
-            // disjunctive push. The justification is six pols: two eliminate
+            // disjunctive push. The justification is four pols: two eliminate
             // the forced-axis precedences (both refuted by the overlap), and
             // the free-axis dichotomy is the 1D chain step --
             // the impossible free direction refuted from the pushed bound, the

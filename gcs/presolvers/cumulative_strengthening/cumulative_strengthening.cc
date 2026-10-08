@@ -684,10 +684,12 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             // reads.
             //
             // With one exception, which is a restriction rather than a bug: a
-            // proof written with assertions on omits definitions, so a task
-            // with both a variable start and a variable length has no
-            // end-of-task line to pin `after` through and the install declines
-            // for a reason this presolver cannot do anything about.
+            // proof written with assertions on omits definitions, and a decline
+            // there is passed over rather than thrown. The definition this used
+            // to bite on, the end-of-task line a pin of `after` goes through for
+            // a task with both a variable start and a variable length, no longer
+            // reaches here: cumulative_donor_view sets such a task aside when
+            // the donor published no such line.
             if (logger && logger->get_assertion_level() != AssertionLevel::Off)
                 continue;
             throw UnexpectedException{"cumulative strengthening: install_derived_cumulative declined " + as_string(donor_id) +

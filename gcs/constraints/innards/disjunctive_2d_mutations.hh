@@ -27,9 +27,10 @@ namespace gcs::innards
      * that still verifies is a finding about the honest derivation rather than
      * about the mutation.
      *
-     * None of them changes the inference: the same bounds are pushed and the
-     * same solutions reported, so a lane running one of these is asking about
-     * the proof alone.
+     * All but one leave the inference alone: the same bounds are pushed and
+     * the same solutions reported, so a lane running one of these is asking
+     * about the proof alone. The exception is \ref EdgeFindingOneTooFar, which
+     * pushes the bound itself one unit further than the certificate reaches.
      *
      * \ingroup Innards
      */
