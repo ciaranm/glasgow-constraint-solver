@@ -1,14 +1,17 @@
 # Smart table: `SmartTable`
 
 > **Maturity** production (the propagator); nothing in a front end posts it ·
-> **Audited** 2026-09-27 at `c9ceea25` ·
-> **Open issues** filed from this audit: an entry over a variable outside the
-> scope aborts the solve (#1119); a short-reason flag defined on every call and
-> never deleted, 20 times the checking time on an enumeration (#1120);
-> `LexSmartTable` and `AtMostOneSmartTable` hints naming no constraint (#1121).
-> Filed from the review of this audit: building the proof model does up to
-> quadratic work in a unary-entry variable's width (#1127); every tree of a row copies
-> the whole scope's domains on every call (#1128).
+> **Audited** 2026-09-27 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1119 and #1121 ·
+> **Open issues** filed from this audit: a short-reason flag defined on every
+> call and never deleted, 20 times the checking time on an enumeration
+> (#1120). **Fixed since the audit**: #1119 (an entry over a variable outside
+> the scope aborted the solve), by #1213, and #1121 (`LexSmartTable` and
+> `AtMostOneSmartTable` hints named no constraint), by #1182; see [Re-audit,
+> 2026-10-08](#re-audit-2026-10-08). Filed from the review of this audit:
+> building the proof model does up to quadratic work in a unary-entry
+> variable's width (#1127); every tree of a row copies the whole scope's
+> domains on every call (#1128).
 > **Not filed**, and cited below by a short name in italics: a value removal
 > asserted with no reason at the `Definitions`, `Links` and `Inferences`
 > assertion levels, so the hints-only proof asserts false clauses, a defect
@@ -20,9 +23,39 @@
 > rows `KnownTrip`), #364 (incrementality survey), #868 (cross-solver). Tracked
 > under #871.
 
+### Re-audit, 2026-10-08
+
+Two of the audit's issues have been fixed, and two fixes from the `table`
+audit touch this document. This pass brings the text into line with them at
+`0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1119, an entry outside the scope aborts the solve | #1213 | the propagator, its triggers and its reason run over a widened scope: the given one plus every variable an entry names that the scope does not reach, which is cake's semantics. The OPB never read the scope and is unchanged; the `.scp` keeps the scope as given. [Semantics](#semantics), [Cake conformity](#cake-conformity)'s cases, the [propagator inventory](#propagator-inventory), [Interior values](#interior-values-and-optional-pruning), [Robustness and limits](#robustness-and-limits), rule 1, [Tests](#tests), [Known limitations](#known-limitations) and [Next steps](#next-steps) item 3 |
+| #1121, the baselines' hints name no constraint | #1182 | `LexSmartTable` and `AtMostOneSmartTable` pass their ID to the child, so its hints name the posted constraint and its propagator gets that constraint's own index, which can change conflict-weighted search where several unnamed installs used to share one (not measured); [Relation to other families](#relation-to-other-families), the wire inventory, [Tests](#tests) and [Next steps](#next-steps) item 4 |
+| #1117, `Table`'s extreme tuple values (the `table` audit's) | #1215, on #1214's range | a value or set entry outside `S = −(2^60 − 1) .. 2^60 − 1` is refused with `IntegerOverflow` when the `SmartTable` is constructed; [Semantics](#semantics) and [Robustness and limits](#robustness-and-limits) |
+| #1115, `Table`'s overlapping tuples (the `table` audit's) | #1202 | `Table` now has a proof flag per tuple, reified both ways, so the merge note under [Relation to other families](#relation-to-other-families) no longer describes a selector |
+| #1200, views registered after the rows that use them (not this audit's) | #1208 | a unary or set entry is written through its consolidated `inset` flag over `[a ≠ v]` literals, a row that names a view only through its literals; since #1208 that view gets its own bit vector too, and the row is spelled over it. Nothing in the text was stale: [Variable kinds and views](#variable-kinds-and-views) already said literals are stated over the view |
+
+**What was measured again**, at `0a5b4ec6` on fataepyc-10: the degenerate
+shapes of [Semantics](#semantics), by rebuilding the audit's probe
+(`tmp/fd871-comments-1008/tables/probes/st_edge.cc`, a copy of
+`tmp/fd-smarttable/edge/edge.cc`; every proof verifies); the
+`smart_table_constraint_outside_scope` lane and `smart_table_dup_test`, run
+directly; the three chain cases; `gac_outscope.cc`, the fact-check's
+out-of-scope adaptation of the audit's brute-force check (rule 1); and
+`st_view.cc`, the fact-check's unary entry `in_set(x + 1, {2, 4})`, whose
+`inset` rows name `p[0_view_of_x_plus_1][eq…]` with two channel rows to `x`
+(10 solutions, verified). **Nothing else was re-run.** Every other
+figure in the document is still from `c9ceea25`. The propagator itself
+changed only in its scope, which is the given one whenever every entry names
+a scope variable, as in every benchmark and example here; whether the
+widened-scope code moved any timing was not measured.
+
 `SmartTable(X, T)` holds when at least one smart tuple of `T` holds, and a
 smart tuple is a conjunction of unary and binary comparisons and set
-memberships over the variables of `X`. It is Mairy, Deville and Lecoutre's
+memberships over the variables of `X`, and since #1213 over any other
+variable an entry names. It is Mairy, Deville and Lecoutre's
 constraint, with the propagator their paper describes and the proof logging
 McIlree and McCreesh added (CP 2023; McIlree's thesis, Chapter 4). It is the
 engine behind two classes kept as baselines, `LexSmartTable` and
@@ -71,8 +104,13 @@ An entry is one of:
 
 with `op` one of `<`, `≤`, `=`, `≠`, `>`, `≥`. The constraint holds when
 every entry of at least one row holds. A scope variable a row does not mention
-is unrestricted in that row, the wildcard. An entry may name a view of a scope
-variable (`a + 1`, `−a`), and it then constrains the underlying variable.
+is unrestricted in that row, the wildcard, and since #1213 so is a variable
+outside the scope that only another row's entries name. An entry may name a
+view of a variable (`a + 1`, `−a`), and it then constrains the underlying
+variable. Since #1215 every value in a value or set entry must lie in `S`,
+the solver's integer range `−(2^60 − 1) .. 2^60 − 1`
+([`integer-ranges.md`](../integer-ranges.md)); the constructor throws
+`IntegerOverflow` otherwise.
 
 Within a row the binary entries must form a **forest** over the underlying
 variables. The constructor throws `InvalidProblemDefinitionException` for:
@@ -100,11 +138,15 @@ verified):
   generalised arc consistent in the brute-force check below.
 - **An entry over a variable outside the scope**, including a constant
   operand not listed in the scope (`less_than(x, 2_c)` with scope `{x, y}`):
-  **accepted at construction, then the solve aborts** with an uncaught
-  `std::out_of_range` from `unordered_map::at`. From the `.scp` it is a
-  `terminate`. `cake_pb_cp` accepts the same file and encodes the entry
-  (#1119). Listing the constant in the scope works: 18
-  solutions for `x < 2_c`.
+  since #1213, constrained like any other entry, as `cake_pb_cp` already
+  encoded it. `install_propagators` widens the propagator's scope, its
+  triggers and its reason to every variable an entry names
+  (`propagator_scope`, `smart_table.cc:950-973`); the OPB never read the
+  scope. Re-run at `0a5b4ec6`, the three such probes give 9, 9 and 18
+  solutions, as their hand-derived expectations say, and verify; the
+  `outside_scope` lane checks such tables against brute force. Before #1213 they were
+  accepted at construction and the solve aborted with an uncaught
+  `std::out_of_range` (a `terminate` from the `.scp`), #1119.
 
 ### Concrete constraints and frontend coverage
 
@@ -154,7 +196,8 @@ No `with_consistency()`: the propagator is `GAC` and there is no other arm.
 ### Variable kinds and views
 
 The scope takes any `IntegerVariableID`: plain, constant, or a view. Entries
-may name views of scope variables (`a + 1 < b`, `−c ∉ {−1}`), and since #1090
+may name views (`a + 1 < b`, `−c ∉ {−1}`), since #1213 of any variable, not
+only a scope variable, and since #1090
 (closing #238) the propagator keys every domain copy by the underlying
 variable, converting through the view on the way in and out, so every view of
 one variable in a row reads and narrows the same set.
@@ -186,10 +229,21 @@ sensitivity, the rules, the hint, and the findings. The rows they build are the
 thesis's Equation 4.1 and Encoding Procedure 4.3, and are those documents'
 business.
 
-One inheritance is a bug of theirs: they do not pass their constraint ID to the
-child, so every assertion the child makes carries
-`smart_table:((constraint_id unnamed))`. Every other constraint that delegates
-this way calls `set_constraint_id` first (#1121).
+Both pass their constraint ID to the child, calling `set_constraint_id`
+before installing it (`at_most_one.cc:195`, `lex_smart_table.cc:78`), as every
+other constraint that delegates this way does. So the child's hints name the
+posted constraint, and `propagators.install` files the child's propagator
+under the posted constraint's own index (`propagators.cc:702-706`). That index
+keys per-constraint statistics, `disable_propagators_for_constraints`
+(presolver donors), the variable-to-constraint adjacency that weighted degree
+walks (`propagators.cc:752-758`), and the conflict weights of dom/wdeg, CHS
+and the refined weighting (`variable_weighting.cc:155-157`, `:171-241`).
+Before #1182 neither passed its ID: every assertion the child made carried
+`smart_table:((constraint_id unnamed))`, and its propagator shared the one
+index of `CurrentlyUnnamedConstraint` with every other unnamed install, such
+as a second baseline or the `AutoTable` presolver's propagator (#1121). So
+under a conflict-weighted brancher #1182 can change the search of a model
+with more than one unnamed install; that was not measured.
 
 **Posts as children.** Nothing.
 
@@ -204,11 +258,14 @@ runtime tables `AutoTable` and `tabulation.cc` build, share
 In code, through the class itself and the two baselines.
 
 **The candidate merge with `table`, settled: separate.** The family list
-proposed one extensional document. The two share no code, and their encodings
-differ in kind. `Table` has a proof-only integer selector and one row per
-allowed tuple, half reified on the selector's value. `SmartTable` has one proof flag per row and a flag
-per entry, and a different propagation algorithm. They are also reached
-differently: `Table` from every front end, `SmartTable` from none.
+proposed one extensional document. The two share no code. Since #1202 their
+encodings share a shape, one proof flag per row reified both ways under an
+at-least-one, but differ in the entries: `Table`'s are equality literals,
+where `SmartTable` adds a flag per entry. Before #1202 `Table` had a
+proof-only integer selector and one row per allowed tuple, half reified on
+the selector's value. `SmartTable` also has a different propagation
+algorithm. They are also reached differently: `Table` from every front end,
+`SmartTable` from none.
 
 ## The proof model
 
@@ -284,11 +341,16 @@ posted before it.
 |---|---|---|
 | `scp_chain_smart_table_sat` (`{A ≤ B}`, enumerate) | full workflow 2 | `none` |
 | `scp_chain_smart_table_unsat` (two rows each forcing a value out of its domain) | full workflow 2 | `none` |
+| `scp_chain_smart_table_outside_scope_sat` (`((A < C))` over scope `(A B)`, enumerate), since #1213 | full workflow 2 | `none` |
 
-Both chain-verify at `c9ceea25`, and both are deliberately narrow. Cake
+All three chain-verify at `0a5b4ec6`, run by hand with cake on the path
+(`tmp/fd871-comments-1008/tables/probes/chain/`); the first two did at
+`c9ceea25` too. All three are deliberately narrow: #1213's body reports that a
+richer out-of-scope table fails the chain at step 3 just as it does with `C`
+in the scope, which is the gap below, not the scope. Cake
 names the rows and entries differently: `x[_1][k]` for row `k`,
 `x[_1][k_j][slt]` for its entries, and `c[_1][al1]` for the at-least-one row.
-Beyond those two cases, run through `run_scp_chain.bash` at `c9ceea25`
+Beyond the first two cases, run through `run_scp_chain.bash` at `c9ceea25`
 (`tmp/fd-smarttable/scp/`):
 
 | Extra case | Result |
@@ -369,7 +431,7 @@ wontfix on 2026-06-30 (*chain row flags*).
 
 | Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
 |---|---|---|---|---|---|---|
-| the smart-STR propagator | `on_change` on every scope variable | derived | 1, 2 | always | not claimed; is (see below) | no |
+| the smart-STR propagator | `on_change` on every scope variable, and since #1213 on every other variable an entry names | derived | 1, 2 | always | not claimed; is (see below) | no |
 
 **Idempotence.** Not claimed. One call reaches generalised arc consistency: a
 value kept is supported by a solution of some live row whose values were all
@@ -388,8 +450,9 @@ when a row is found dead and restored by the `State` on backtrack. Every call
 rebuilds everything else from the current domains:
 
 - a hash map from each underlying variable to a vector of its values;
-- a copy of that map per tree of every live row, each holding every scope
-  variable, not only the tree's own (#1128);
+- a copy of that map per tree of every live row, each holding every
+  variable of the scope (since #1213 the given scope plus every variable an
+  entry names that it does not reach), not only the tree's own (#1128);
 - the filtered copies, the unsupported sets and the removals.
 
 Every live row is revisited on every call, whatever changed.
@@ -406,9 +469,10 @@ call, are not used.
 
 **What this family offers:** `None.`
 
-**What this family observes:** holes in every scope variable. The propagator
-is generalised arc consistent, so a hole anywhere can remove a row's last
-support for another value, and every scope variable is watched `on_change`.
+**What this family observes:** holes in every scope variable, and in every
+other variable an entry names (since #1213). The propagator is generalised arc
+consistent, so a hole anywhere can remove a row's last support for another
+value, and every one of those variables is watched `on_change`.
 The triggers tell the truth. A variable that appears in a smart table keeps a
 neighbour's interior pruning alive, whatever its entries look like: an
 order-only entry such as `x < y` still loses supports when a hole appears.
@@ -428,19 +492,22 @@ order-only entry such as `x < y` still loses supports when a hole appears.
   check draws domains from `−2` up, value constants from `−2..4` and set values
   from `−3..5`; negated views reach `−6`. The 200 wider tables draw domains
   from `−6` and set values from `−8`.
-- **Degenerate shapes**: see [Semantics](#semantics). The one that fails is an
-  entry outside the scope.
+- **Degenerate shapes**: see [Semantics](#semantics). Since #1213 none fails;
+  an entry outside the scope used to abort the solve (#1119).
 - **Overflow.** The only arithmetic is a view's `−v + c` on domain values and
   the shared layer's `BinEnc` differences for binary entries; nothing
-  multiplies.
+  multiplies. Since #1214 and #1215 every input lies in `S`: domains, view
+  offsets, and the values of value and set entries, which the constructor
+  checks (`smart_table.cc:84-91`).
 
 ### Interval efficiency
 
 **Not fine at any width**: a genuine per-value support scan, with no weaker arm
 behind it.
 
-1. **Propagation.** Each call walks every scope variable's values
-   (`each_value_immutable`) into vectors, copies all of them once per tree of
+1. **Propagation.** Each call walks the values of every variable of the
+   scope as widened by #1213 (`each_value_immutable`) into vectors, copies
+   all of them once per tree of
    each live row (#1128), and sorts, intersects and differences them per entry.
    Everything is proportional to values, not intervals. Nothing here uses
    `IntervalSet` operations.
@@ -510,8 +577,9 @@ calls' lemmas, and nothing in the tree tests it.
 
 **The wire inventory.** One hint, `hints::SmartTable`, wire
 `smart_table:((constraint_id N))`, carrying `originator` (`ConstraintID`) and
-no subhint. Under `LexSmartTable` and `AtMostOneSmartTable` it reads
-`constraint_id unnamed` (#1121).
+no subhint. Under `LexSmartTable` and `AtMostOneSmartTable` it names the
+posted baseline's ID since #1182; before, it read `constraint_id unnamed`
+(#1121).
 
 **What licenses them.** Each removal and each contradiction is a `RUP
 sequence`:
@@ -556,10 +624,11 @@ no search.
 
 (Rule 1.)
 
-- **Infers** — `x ≠ v`, for every value of every scope variable that no live
-  row supports.
-- **Fires when** — the propagator, on any change to a scope variable, when at
-  least one row is still live.
+- **Infers** — `x ≠ v`, for every value of every scope variable, and since
+  #1213 of every other variable an entry names, that no live row supports.
+- **Fires when** — the propagator, on any change to a scope variable or, since
+  #1213, to another variable an entry names, when at least one row is still
+  live.
 - **Strength** — `GAC` on the constraint, over the underlying variables.
   Checked by brute force at every search node
   (`tmp/fd-smarttable/gac/gac_probe.cc`):
@@ -572,7 +641,14 @@ no search.
   - 300 of them with proofs, short reasons on and off, every proof verified.
 
   200 more over wider domains (up to fifteen values) give 0 failures too.
-  `dead_tuple`, `deep_tree` and `views` also check GAC at every node.
+  `dead_tuple`, `deep_tree`, `views` and, since #1213, `outside_scope` also
+  check GAC at every node. **Entries outside the scope**, which aborted at
+  `c9ceea25`: the same 5,000-table check with the scope a random subset of
+  the variables (possibly empty, sometimes a view, a repeat or a constant),
+  and every value of every variable checked, in the scope or not, gives 0
+  failures over 4,171 searching instances at `0a5b4ec6`
+  (`tmp/fd871-comments-1008/tables/probes/gac_outscope.cc`, the fact-check's
+  adaptation, re-run).
 - **Algorithm** — smart STR (Mairy, Deville and Lecoutre 2015):
   - for each live row, filter a copy of the domains over each of its trees,
     leaves up, and mark the row dead if a copy empties;
@@ -621,10 +697,11 @@ no search.
   (Section 4.2.2; the smart-table case is Section 4.1.2), and its precondition is a forest per row. It is also McIlree
   and McCreesh 2023.
 - **Reason** — `generic_reason(vars)`: every scope variable's bounds and its
-  runs of missing values. Not minimal: a row's support depends only on the
-  variables it mentions. With short reasons (the default), the justification
-  and the conclusion are stated under the single literal `sr`, which the call
-  defines to be equivalent to that reason. Per run. Built eagerly, not guarded
+  runs of missing values, over the scope widened by #1213. Not minimal: a
+  row's support depends only on the variables it mentions. With short reasons
+  (the default), the justification and the conclusion are stated under the
+  single literal `sr`, which the call defines to be equivalent to that
+  reason. Per run. Built eagerly, not guarded
   on `want_reasons()`.
 - **Assertion** — what it should be: `x ≠ v ∨ ¬reason`, or `x ≠ v ∨ ¬sr`.
   At `AssertionLevel::Off` that is the conclusion written. **At `Definitions`,
@@ -692,9 +769,10 @@ no search.
 | `smart_table_constraint_degenerate` | no rows, fixed variables both ways, one variable (#254); exact set |
 | `smart_table_constraint_dead_tuple`, `_deep_tree` | #994's two bugs; exact set and GAC at every node |
 | `smart_table_constraint_views`, `_views_view_mixed` | #238's views; exact set and GAC at every node |
-| `smart_table_dup` | the aliasing and cycle rejections (#1014), and `LexSmartTable({a, b}, {b, a})` rejected at solve time |
+| `smart_table_constraint_outside_scope` | since #1213: eight tables whose entries name a variable, a view or a constant outside the scope, an empty scope among them; exact set against brute force, GAC at every node on all three variables, in the scope or not; VeriPB |
+| `smart_table_dup` | the aliasing and cycle rejections (#1014), and `LexSmartTable({a, b}, {b, a})` rejected at solve time; since #1182 also each baseline solved at `AssertionLevel::Inferences`, requiring `smart_table` hints that name the posted constraint (`_1`) and none that says `unnamed` (`smart_table_dup_test.cc:61-89`, `:155-168`) |
 | `smart_table_{small, lex, am1, random}` | the examples, through `run_test_and_verify.bash` |
-| `scp_chain_smart_table_{sat, unsat}` | the cake chain ([Cake conformity](#cake-conformity)) |
+| `scp_chain_smart_table_{sat, unsat, outside_scope_sat}` | the cake chain ([Cake conformity](#cake-conformity)); the third since #1213 |
 
 - **Seeds.** The test's instances are fixed, including the `mixed` view
   wraps, so the seed it announces changes nothing. The `smart_table_random`
@@ -718,9 +796,10 @@ no search.
   brute-force check above covers completeness for random tables, and the
   at-most-one and lex benchmarks below find the same solution counts as their
   native classes.
-- **Any assertion level.** No lane runs `GCS_ASSERTION_LEVEL`, which is how
-  the bare assertions went unnoticed.
-- **Entries outside the scope**: no test, and they crash.
+- **Any assertion level.** No lane checks the assertions at any level, which
+  is how the bare assertions went unnoticed. Since #1182 `smart_table_dup`
+  solves at `AssertionLevel::Inferences`, but it only reads the hints' names;
+  it runs no VeriPB and checks no asserted clause.
 - **Wide domains**: the widest variable in any lane is `−59..58`.
 - **A load-bearing lemma**: only `mixed_same_var` needs one, and no in-tree
   mode needs a lemma from an earlier call (see the catalogue preamble).
@@ -856,8 +935,6 @@ time at this level measures nothing useful.
 
 ### Known limitations
 
-- An entry naming a variable that is not in the scope, or a constant operand
-  not listed in it, aborts the solve (#1119).
 - Two binary entries that close a cycle within a row are rejected, not
   handled.
 - Wide domains are unusable: the propagator walks values, and a unary entry
@@ -878,11 +955,13 @@ time at this level measures nothing useful.
 2. **Make the short-reason flag lazily** (#1120). Small, and
    worth 14 times the checking time on the enumeration measured. While there,
    decide whether to delete it after use, as the commented-out code meant to.
-3. **Reject or absorb out-of-scope entries** (#1119). A
-   choice between a construction-time check and cake's semantics, which treat
-   every named variable as in scope.
+3. **Reject or absorb out-of-scope entries** (#1119). **Done by #1213**, by
+   absorbing them, as cake does: the propagator works over every variable an
+   entry names.
 4. **Pass the constraint ID to the child** in `LexSmartTable` and
-   `AtMostOneSmartTable` (#1121). Two lines.
+   `AtMostOneSmartTable` (#1121). **Done by #1182**, as proposed, which also
+   gives the child's propagator the posted constraint's own index (see
+   [Relation to other families](#relation-to-other-families)).
 5. **Two mutation lanes, each with its control.** One on Example 4.3,
    dropping the tree-filtering lemmas: the fixture needs no search and shows
    the lemmas load-bearing. One that forgets each call's lemmas when the call

@@ -200,13 +200,12 @@ constraints and do not restate it.
   mode: at the `Definitions`, `Links` and `Inferences` levels every removal is
   asserted as a bare unit clause with no reason, and on one enumeration 184 of
   194 are contradicted by later solutions in the same proof. `Circuit` has the
-  same defect from the same change. Also: an entry over a
-  variable outside the scope aborts the solve, and the default short reasons
+  same defect from the same change. Also: the default short reasons
   define a flag on every call, taking one enumeration's checking time from
   0.8 s to 15.9 s. On identical trees it is 8–23 times slower than the native
   `Lex` and `AtMostOne`, about half of it in allocation, hash lookups and map
   helpers. Not merged with
-  `table`: no shared code, and a different encoding.
+  `table`: no shared code, and different entries.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
