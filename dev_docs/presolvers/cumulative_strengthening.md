@@ -1,15 +1,64 @@
 # `cumulative_strengthening`: tighten each `Cumulative` by integrality, as a derived constraint
 
 > **Maturity** experimental: C++ API only, off unless added ·
-> **Audited** 2026-10-04 at `7e1c4178` ·
-> **Open issues** filed by this audit: #1240 (the pass is `O(horizon)`),
-> #1241 (proof budgets), #1242 (raise by contradiction). Already open and
-> touching this presolver: #702 (no `with_makespan`). Shared with the other
+> **Audited** 2026-10-04 at `7e1c4178`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1240, #1241 and #1242 ·
+> **Open issues** filed by this audit: none left open. **Fixed since the
+> audit**: #1240 (the pass was `O(horizon)`), #1241 (proof-only budgets) and
+> #1242 (raise by contradiction); see [Re-audit,
+> 2026-10-08](#re-audit-2026-10-08). Already open and touching this
+> presolver: #702 (no `with_makespan`). Shared with the other
 > derived-Cumulative presolvers and owned by
 > [`cumulative.md`](../constraints/cumulative.md): above `Off`, a proof in
-> which it installs something fails to parse under the default encoding, and
+> which it installs something is rejected under the default encoding, and
 > over a `Disjunctive2D` donor it would strengthen the solve throws (#1234).
 > Tracked under #871 and #976.
+
+### Re-audit, 2026-10-08
+
+All three of the audit's issues were fixed on 2026-10-08. This pass brings the
+text into line with them at `0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1240, the pass walks every time point of the hull | #1281 | the assessment runs once per stretch between window edges, at most `2n − 1` of them, and reads the largest reachable sum a word at a time; the recipe looks its stretch up in a shared map. The five things to know, [Semantics](#semantics) step 3, [Proof-time state](#proof-time-state), [Initialisation](#initialisation-and-global-data) and its tables, [Interior values](#interior-values-and-optional-pruning), [Robustness](#robustness-and-limits), [Interval efficiency](#interval-efficiency), [CPU performance](#cpu-performance), next steps 1 and 8 |
+| #1242, a raise costs lines linear in `kappa` | #1280 | a raise the rest of the row overshoots is one `red` whose subproof is a `pol` and a `rup >= 1`, per raised task per row. `with_raise_budget`, `declined_over_raise_budget` and the step helpers (`for_each_raise_step`, `raise_steps`, `raise_step_count`) are gone. `RaiseTooFast` now claims `kappa + 1` and is rejected at that closing RUP. The five things to know, [raise-a-full-task](#rewrite-raise-a-full-task), the stats table, [Proof performance](#proof-performance), next step 3 |
+| #1241, budgets that apply only with proofs on | #1286, **by removing the budget**, none of the ways next step 2 listed | there is no proof budget, so at `Off` proofs on and off strengthen the same donors and search the same tree. `with_dynamic_programming_budget` and `declined_over_budget` are gone, and `with_subset_sum_capacity_limit` is the one size limit. The price is a derivation of any size: #1286's 767,000-line example. [Options](#options), [Detection](#detection-and-its-failure-modes), [Can it weaken the model?](#can-it-weaken-the-model), [Tests](#tests), [Proof-logging gaps](#proof-logging-gaps), next step 2 |
+
+**Also changed here by a fix elsewhere**: #1290 (#1254) recovers a donor's
+capacity row from the row before it by a chain step. Two things here moved
+with it. Above `Off`, a proof in which this presolver installs something is
+now rejected at `Definitions` and `Links` at a recovery `rup`, where it
+failed to parse at `7e1c4178` ([At assertion levels above
+`Off`](#proof-time-state)); #1234 is still open and still the cause. And the
+recovery of the row a derived constraint cites is now most of the
+presolver's own proof cost on the [Proof performance](#proof-performance)
+families.
+
+**Fixed after `0a5b4ec6`.** #1265 (docs and comments only, merged at
+`86caad24`) rewrote the stale comment at `cumulative_strengthening.cc:686–690`
+and the design note's three inaccuracies this document reported. Those
+passages describe `0a5b4ec6` and say that #1265 changed them after
+`0a5b4ec6`; the audit stays at `0a5b4ec6`.
+
+Nothing about which rows are derived, the division or knapsack derivations or
+the neutrality argument changed. Code citations are refreshed to `0a5b4ec6`
+where they had moved, including the ones outside the presolver
+(`disjunctive_2d.cc`, `difference_graph.cc`, `cumulative.cc`).
+
+**What was measured again**, at `0a5b4ec6` on fataepyc-10, serially on one
+pinned core, with `GLIBC_TUNABLES` mmap threshold 32 MiB and trim threshold
+4 GiB (the audit used 4 GiB for both): the horizon, task-count and capacity
+tables under [Initialisation](#initialisation-and-global-data), the
+fixtures' stats table, `budget.cc` at four scales, the two long-horizon
+probes, `knapsack_raise` scaled ×1 to ×1,000, the mutation lanes' rejection
+points, the energy fixtures and the [Proof performance](#proof-performance)
+table, the assertion-level table (all but the time-indexed arm of its
+nothing-installed row), the `range.cc` edges (unchanged), and one run of the
+test binary with each of `--seed=1` and `--seed=2`. **Not re-run**:
+`varlen.cc`, the `rcpsp` sweep and the fuzz campaign. They stay at
+`7e1c4178`, labelled as such where they appear. #1286's own price figures are
+quoted as its.
 
 `CumulativeStrengthening` is a presolver. It applies Schulz's pre-solving
 strengthenings of a `Cumulative`, as recapped by Cloutier and Quimper (CP 2026,
@@ -35,59 +84,62 @@ through. Five things to know before touching it:
   MiniZinc, not XCSP3, not the `.scp` solver, not `gcspy`, and not any example.
   `examples/rcpsp` has flags for `InferredDisjunctive` and
   `InferredCumulative`, but none for this presolver.
-- **Its own pass walks every time point of the horizon, with proofs off too.**
-  - The cost is `O(H · n)` time and memory over the hull of the task windows,
-    plus a capacity-sized subset sum at every time point.
-  - Measured: 1.1 s and 567 MB at a horizon of 10⁶. The donor alone takes
-    0.03 s and 43 MB.
-  - At 10⁷ it takes 12 s and 5.6 GB.
-  - Every answer depends on the time point only through which tasks can run
-    then, so the stretches between window edges are enough. The derived
-    constraint's row contract already says exactly that. This is #1240.
-- **With proofs on it can do less than with proofs off.** Its two proof
-  budgets only apply when a logger is present.
-  - Both budgets sum a prediction over **every non-empty time point of the
-    window hull**. Rows are derived lazily (one per stretch, plus cited
-    times; #1130), so the prediction grows with the horizon where the proof
-    need not. The sum is a true upper bound, since search can cite a row at
-    any of those points, but a loose one.
-  - The dynamic-programming budget also predicts `items × (C + 1)` states per
-    time point, which grows with the capacity's *magnitude*. The derivation
-    has a state per *reachable* partial sum, and that count does not change
-    when every number is scaled.
-  - **Magnitude.** A seven-task fixture with its heights and capacity
-    multiplied by 20 is declined. The proofs-on search then takes 182 nodes where the proofs-off
-    one refutes at the root. The derivations it refused are three rows of
-    about 427 lines each, the same at ×1, ×5, ×20 and ×100. Declining made the
-    proof *bigger*: 8,405 lines and 0.24 s to check, against 3,446 lines and
-    0.03 s with the budget raised.
-  - **Horizon.** `deep_gap` with starts in `[0, 1000]` is declined with proofs
-    on, though the derivation it needs is one row and a 389-line proof. `r1`
-    with starts in `[0, 6000]` is declined by the raise budget, though its
-    raise is one line. Both come from the fact-check's `budget_h` probes,
-    reproduced here.
-  - This is #1241.
-- **Raising a height costs proof lines in proportion to the capacity's
-  magnitude, and that cost is avoidable.** The raise is a loop of `pol` steps,
-  and in the worst case it takes one step per unit of `kappa`. The
-  `knapsack_raise` fixture scaled ×100 emits 2,000 raise steps. A proof by
-  contradiction reaches the same row in three rule steps (`red`, `pol`,
-  `rup`; six lines of text) whatever `kappa` is. It was checked by hand on
-  VeriPB 3.0.2, and the over-claim is rejected. This is #1242.
-- **Above `AssertionLevel::Off`, a proof in which it installs something fails
-  to parse, under the default encoding.**
+- **Its own pass is per stretch, not per time point (#1240, fixed by
+  #1281).**
+  - It assesses each stretch between window edges once: at most `2n − 1`
+    stretches, each an `O(n)` scan and a capacity-sized subset sum. Every
+    answer depends on the time point only through which tasks can run then,
+    which is what the derived constraint's row contract already says.
+  - Measured at a horizon of 10⁶: 0.05 s and 51 MB, against 0.04 s and 43 MB
+    for the donor alone. At 10⁷ it is 1.5 s and 393 MB, against 0.8 s and
+    317 MB. What is left is horizon-sized, but #1281's profile puts it in
+    the two `Cumulative` propagators' per-call vectors, the donor's and the
+    derived constraint's, not in the presolver.
+  - Before #1281 it walked every integer of the window hull, with proofs off
+    too: 1.1 s and 567 MB at 10⁶, and 12 s and 5.6 GB at 10⁷, at `7e1c4178`.
+- **With proofs on at `Off` it strengthens and searches exactly as with
+  proofs off (#1241, fixed by #1286).** There is no proof budget. The subset-sum
+  capacity limit is the one size limit, and it is decided without asking
+  whether a proof is being written. Above `Off` it can still do less, for a
+  reason that is not a budget: a task with a variable start and a variable
+  length is set aside (see [Can it weaken the
+  model?](#can-it-weaken-the-model)).
+  - Before #1286, two budgets declined donors only when a logger was present.
+    Each summed a prediction over every non-empty point of the window hull,
+    and the dynamic-programming one charged `items × (C + 1)` states per
+    point, so it grew with the capacity's magnitude. At `7e1c4178` a
+    seven-task fixture scaled ×20 was declined, and the proofs-on search took
+    182 nodes and 8,405 lines where the proofs-off one refuted at the root.
+  - At `0a5b4ec6` that fixture is strengthened at every scale from ×1 to
+    ×100, refutes at the root, and its proof is 2,212 lines however it is
+    scaled. Its three knapsack derivations are still about 427 lines each.
+  - **The price is that a proof can be large.** #1286's body measured
+    sixteen unit tasks with unstructured heights in `[1000, 60000]` under a
+    capacity of 213,259: a 767,000-line (155 MB) derivation that took VeriPB
+    419 s and 1.1 GB, where the old budget's decline wrote 14,000 lines.
+- **A raise is one rule step whatever the capacity (#1242, fixed by
+  #1280).** Where the rest of the row overshoots `kappa`, each raised task
+  gets one `red` whose subproof is a `pol` and a `rup >= 1` (six lines of
+  text), after its at-most-ones. `knapsack_raise` emits one raise line per
+  raised row at every scale from ×1 to ×1,000. Before #1280 it was a loop of
+  `pol` steps, up to one per unit of `kappa`: 20, 200 and 2,000 steps at ×1,
+  ×10 and ×100.
+- **Above `AssertionLevel::Off`, a proof in which it installs something is
+  rejected, under the default encoding.** At `Inferences` and `Backtracking`
+  it fails to parse. At `Definitions` and `Links`, since #1290's chain
+  recovery, it parses and is rejected at a recovery `rup`.
   - The cause is owned by [`cumulative.md`](../constraints/cumulative.md)
     (#1234). The donor's start-checkpoint flag
     definitions are emitted only at `Off`, but the recovery of a derived row
     cites them.
   - Confirmed for this presolver on the `r1`, `pack`, `two_full` and
-    `knapsack_raise` fixtures at `Definitions`, `Inferences` and
-    `Backtracking`, and at `Links` too, where the failure is the same parse
-    error. Separately, at `Links` every proof of a satisfiable model is
+    `knapsack_raise` fixtures at all four levels, at `7e1c4178` and again at
+    `0a5b4ec6`. Separately, at `Links` every proof of a satisfiable model is
     rejected at its first `solx` (#1210).
   - **Where it does not happen:**
     - A donor it strengthens nothing on (`nothing_to_gain`, `all_full`) gives a
-      proof that verifies under assertions.
+      proof that verifies under assertions, but for a satisfiable model at
+      `Links` (#1210).
     - Under `GCS_CUMULATIVE_ENCODING=time-indexed`, an encoding nothing ships
       but which the environment can select, the same four fixtures verify
       under assertions.
@@ -100,7 +152,8 @@ through. Five things to know before touching it:
 
 The design note [`cumulative-strengthening.md`](../cumulative-strengthening.md)
 stays as the long note. It holds the arithmetic of `kappa`, the full-task rule,
-the neutrality theorem, and the cutting-planes raise. This document is the
+the neutrality theorem, and the raise, by contradiction since #1242 and in
+cutting planes before it. This document is the
 audit record, and it does not repeat that material.
 
 ## What it is
@@ -135,9 +188,14 @@ For each donor:
    - A task is **full** when, for every other usable task `j`, either the two
      windows are disjoint or `h_i + h_j > C`. A task whose window overlaps
      nobody's is therefore full vacuously.
-   - For every integer `t` in the hull of the windows, `kappa_t` is the
-     largest subset sum at most `C` of the non-full heights whose windows
-     contain `t`.
+   - The window edges, `lo` and `hi + 1` of each usable task's window
+     `[lo, hi]`, are sorted and deduplicated, and each **stretch** between
+     consecutive edges
+     is assessed once (`cumulative_strengthening.cc:277–306`). A stretch
+     where no task can run is skipped. `kappa_t` is the largest subset sum
+     at most `C` of the non-full heights whose windows contain the stretch,
+     so it is the same for every `t` in it. Before #1281 this was done for
+     every integer `t` in the hull.
    - `kappa` is the maximum of the `kappa_t`. A donor where every task is
      full gets `kappa = 0`, and is declined.
    - A donor whose `kappa` equals `C` and which raises no height is declined
@@ -146,11 +204,21 @@ For each donor:
    converted, the donor is assessed again with those tasks set aside. The
    set-aside version wins when it gives a strictly smaller `kappa`, or when
    the converted one had nothing to gain.
-5. **Budget, with proofs on only.**
-   - The dynamic-programming states predicted are
-     `Σ_t [not by division] |items_t| · (C + 1)`, against a budget of 20,000.
-   - The raise steps are those `raise_steps` predicts, against a budget of
-     5,000.
+5. **No budget step.** This was a proofs-on-only budget on the predicted
+   dynamic-programming states (20,000) and raise steps (5,000). #1280 removed
+   the raise budget and #1286 the other, so the step is deleted, not
+   renumbered. Since #1286 nothing between assessment and install asks about
+   the logger at all, as the comment at `cumulative_strengthening.cc:159–168`
+   records. The pass does still consult it in two places, and both change
+   what is strengthened only above `Off`: the donor view (`:139`) sets a
+   variable-start, variable-length task aside (`donor_view.cc:215`), and an
+   install decline is passed over rather than thrown (`:691–692`). The view
+   also consults it at `Off`, with no effect on the strengthening: an encoded
+   task that can never run (length or height fallen to zero, or never
+   present) is put in `set_aside` when a logger is present and skipped
+   without one (`donor_view.cc:185–188`). It is unusable either way, so
+   `kappa` and the search are the same, and only
+   `donors_with_set_aside_tasks` can differ.
 6. **Install** one derived `Cumulative` through `install_derived_cumulative`.
    - It has capacity `kappa` and the donor's tasks, with each full task's
      height set to `kappa`.
@@ -186,8 +254,9 @@ flag that turns it on, per front end.
 front end, and asks whether each should get a flag or whether there should be
 a `--presolve` vocabulary.
 
-[^fe]: Checked by grep at `7e1c4178`. The only callers are its own test,
-`disjunctive_2d_presolver_test.cc` and `cumulative_wide_horizon_test.cc`.
+[^fe]: Checked by grep at `7e1c4178`, and again at `0a5b4ec6`. The only
+callers are its own test, `disjunctive_2d_presolver_test.cc` and
+`cumulative_wide_horizon_test.cc`.
 `fzn-glasgow` and the XCSP3 solver add `DifferenceLogic` only.
 `examples/rcpsp` adds `DifferenceLogic`, `InferredDisjunctive` and
 `InferredCumulative`. The audit's measurements on `rcpsp` used a local
@@ -199,7 +268,7 @@ The donors it reads:
 | Donor | Read as |
 |---|---|
 | `Cumulative` (any of its three constructors) | `cumulative_donor_view`: per-task reduction, as above |
-| `Disjunctive2D`, each axis | the projection `Disjunctive2D` resolves in `prepare()` and publishes from `install_propagators` (`disjunctive_2d.cc:634`, `:683`): every length, height and the capacity already constants (`PublishedCumulativeDonor`); variable sizes enter at their declared floors |
+| `Disjunctive2D`, each axis | the projection `Disjunctive2D` resolves in `prepare()` and publishes from `install_propagators` (`disjunctive_2d.cc:656`, `:705`): every length, height and the capacity already constants (`PublishedCumulativeDonor`); variable sizes enter at their declared floors |
 | `Disjunctive` | not read. A unary resource has nothing to subset-sum |
 | a resource written as linear inequalities | not read |
 
@@ -209,20 +278,17 @@ None of them changes the OPB, and none of them changes what the derived
 constraint *says*. Each one decides only whether a donor is strengthened, and
 which rules the result runs.
 
-- **`with_dynamic_programming_budget(states)`**, default 20,000. This caps the
-  predicted states of the knapsack derivation, summed over every non-empty
-  time point of the window hull. It applies only with proofs on. The prediction grows
-  with the horizon and with the capacity's magnitude, not with the
-  derivation's real size; see [Can it weaken the model?](#can-it-weaken-the-model).
-- **`with_raise_budget(lines)`**, default 5,000. This caps the `pol` steps the
-  raise is predicted to emit, summed over every non-empty time point of the
-  hull. It applies only with proofs on. Like the other budget, it grows with
-  the horizon, where the rows actually derived need not.
 - **`with_subset_sum_capacity_limit(capacity)`**, default 10⁶. A donor whose
   capacity exceeds it is declined before assessment, with proofs on or off.
-  It bounds the *per-time-point* assessment, since the bitset has `C` bits. It
-  does not bound the *total*, which is that cost multiplied by the horizon
-  (#1240).
+  It is the only size limit. It bounds the assessment of each stretch, since
+  the bitset has `C` bits, and since #1281 there are at most `2n − 1`
+  stretches, so it bounds the whole pass too. It does not bound the proof: a
+  knapsack derivation is three flags per reachable partial sum per item, at
+  every row a firing cites.
+- **Removed:** `with_dynamic_programming_budget(states)` (default 20,000) and
+  `with_raise_budget(lines)` (default 5,000). Both applied only with proofs
+  on. #1280 removed the raise budget and #1286 the other (#1241); see [Can it
+  weaken the model?](#can-it-weaken-the-model).
 - **`with_rules(CumulativeRules)`**, default the energy rules only. Time-tabling
   on a derived constraint is provably redundant (see the neutrality argument
   in the design note). The neutrality test turns it back on so that its
@@ -276,7 +342,10 @@ None, and none wanted: a presolver's rewrite is unconditional.
     `cumulative_donors` (`constraints/cumulative/donor_view`).
   - `install_derived_cumulative` and `cumulative_task_window`.
   - The subset-sum utility's only other non-test caller is Cumulative's
-    knapsack overload (KAOC, `cumulative.cc:2844`).
+    knapsack overload (KAOC, `cumulative.cc:3105`). #1281 changed how
+    `largest_subset_sum_at_most` reads its answer off the bitset, a word at a
+    time from the top (`subset_sum_strengthening.cc:116–119`), not what it
+    returns, so KAOC's derivations are as before.
 - **Other presolvers:**
   - `InferredDisjunctive` and `InferredCumulative` read the same donors and
     install the same derived machinery. None of the three reads the others'
@@ -293,7 +362,7 @@ None, and none wanted: a presolver's rewrite is unconditional.
     derived constraints are never donors, so they do not feed it, and it does
     not feed them.
     - **`DifferenceLogic` changes it.** That presolver's initialiser
-      (`difference_graph.cc:1226–1248`, with root simplification at `:360`)
+      (`difference_graph.cc:1261–1283`, with root simplification at `:361`)
       infers `¬cond` for a half-reified edge that cannot hold. A condition can
       be a bound literal on a start, so it can tighten a window before this
       presolver reads it.
@@ -357,7 +426,8 @@ something cites:
     programme with three `ProofFlag`s per state (`ssge`, `ssle`, `sseq`), each
     defined by a `red` pair;
   - the pairwise at-most-ones;
-  - the raise steps.
+  - the raises: one line per raised task per row, a `red` with a two-step
+    subproof where the rest of the row overshoots `kappa` (#1280).
 - **What stays.** One line per row is kept, at `ProofLevel::Top`: the `ia`
   restating the result as `Σ derived_h_i · active_{i,t} ≤ kappa` over the
   donor's flags. It survives for the solve. There is no extra deletion
@@ -377,7 +447,11 @@ something cites:
   with the scaffolding. Enumeration proofs that took the knapsack path verify,
   for example `deep_gap` (24 solutions) and the fuzz campaign below.
 - **Nothing proof-only is indexed by something that dangles with proofs off.**
-  The recipe captures its own copy of the assessment (`by_time`).
+  The recipe holds a `shared_ptr` to the assessment's stretches, `by_start`,
+  a map keyed by where each stretch starts, and finds the stretch holding the
+  `t` it is asked for with `upper_bound` (`cumulative_strengthening.cc:379–382`,
+  `:409–411`). Before #1281 it captured a copy of a map with one entry per
+  time point (`by_time`).
 
 **What the installed machinery asserts in hints-only mode.** The derived
 constraint is installed under `CurrentlyUnnamedConstraint`, so its assertions
@@ -391,33 +465,39 @@ derived in full at every level and are not asserted.
 **At assertion levels above `Off`.** The presolver has no assertion path of its
 own: every rewrite is emitted as a full derivation at every level.
 - **Where it installs something,** under the default start-checkpoint encoding,
-  the proof nevertheless fails to parse at `Definitions`, `Inferences` and
-  `Backtracking`. The recovery of the donor's row cites flag definitions the
-  donor emits only at `Off`. That defect is owned by
-  [`cumulative.md`](../constraints/cumulative.md) (#1234).
-- **At `Links`** the posted-donor runs with an install fail with the same
-  parse error. Without the presolver, or with nothing installed, a
-  satisfiable model is rejected at its first `solx` (#1210; `r1`), while the
-  unsatisfiable `pack` verifies.
+  the proof is nevertheless rejected at every level above `Off`. The recovery
+  of the donor's row cites flag definitions the donor emits only at `Off`.
+  That defect is owned by [`cumulative.md`](../constraints/cumulative.md)
+  (#1234).
+  - At `Inferences` and `Backtracking` the proof fails to parse.
+  - At `Definitions` and `Links` it parses, and is rejected at the row
+    recovery's first `rup`, `~cact ∨ cb` (`r1`, line 23 at `Definitions`),
+    which the omitted definitions leave unimplied. That is #1290's chain
+    recovery; at `7e1c4178` these two levels failed to parse too.
+- **At `Links`**, without the presolver or with nothing installed, a
+  satisfiable model is rejected at its first `solx` (#1210; `r1`,
+  `nothing_to_gain`), while the unsatisfiable `pack` verifies.
 
 Evidence from this audit (`fixtures.cc`) and the cross-document re-check
 (`tmp/fd-sched/factcheck/crossdoc2/fx`, `d2`, and `crossdoc3/fx` for the
-`Links` and nothing-installed rows):
+`Links` and nothing-installed rows), re-run at `0a5b4ec6` for every row but
+the time-indexed arm of the nothing-installed one:
 
 | Fixture | `Off` | `Definitions` | `Links` | `Inferences` | `Backtracking` |
 |---|---|---|---|---|---|
 | `r1`, without the presolver | verified | under assertions | rejected (#1210) | under assertions | under assertions |
-| `r1`, `pack`, `two_full`, `knapsack_raise`, with it | verified | parse error | parse error | parse error | parse error |
+| `r1`, `pack`, `two_full`, `knapsack_raise`, with it | verified | rejected at a recovery `rup` (parse error at `7e1c4178`) | rejected at a recovery `rup` (parse error at `7e1c4178`) | parse error | parse error |
 | the same four, with it, `GCS_CUMULATIVE_ENCODING=time-indexed` | verified | under assertions | `r1` rejected (#1210); the other three under assertions | under assertions | under assertions |
-| `nothing_to_gain`, `all_full`, with it (nothing installed), either encoding | verified | verified (`nothing_to_gain`: nothing asserted) / under assertions (`all_full`) | `all_full` under assertions | under assertions | under assertions |
+| `nothing_to_gain`, `all_full`, with it (nothing installed), either encoding | verified | verified (`nothing_to_gain`: nothing asserted) / under assertions (`all_full`) | `nothing_to_gain` rejected (#1210); `all_full` under assertions | under assertions | under assertions |
 | `bars` (a `Disjunctive2D` projection donor, strengthened), either encoding | verified (816 solutions) | **throws** | **throws** | **throws** | **throws** |
 | `strip` (a `Disjunctive2D` projection donor, nothing posted), either encoding | verified (48 solutions) | under assertions | rejected (#1210) | under assertions | under assertions |
 
-The error is `The label @v[_1][0_0][ca][r] is not assigned to a constraint ID`.
-`InferredCumulative` gives the same errors on all four fixtures.
-`InferredDisjunctive` gives them on `two_full`. On `r1` and `pack` its proofs
-parse, because it installs nothing there: at `Off` it writes no presolve
-comment on either, against 8 on `two_full`.
+The parse error is `The label @v[_1][0_0][ca][r] is not assigned to a
+constraint ID`. `InferredCumulative` gives the same errors on all four
+fixtures. `InferredDisjunctive` gives them on `two_full` and
+`knapsack_raise`. On `r1` and `pack` its proofs are accepted, because it
+installs nothing there: at `Off` it writes no presolve comment on either,
+against 8 on `two_full` and 6 on `knapsack_raise`.
 
 The `bars` row comes from the fact-check's corrected probe, which maps `Links`
 correctly. The copy in this audit's `bars-assert/` ran its `links` case at
@@ -429,47 +509,71 @@ correctly. The copy in this audit's `bars-assert/` ran its `links` case at
 
 The pass itself is the whole of the root cost. There is no initialiser of its
 own.
-- **Per donor:** the view; then an `O(n²)` pairwise full-task test; then,
-  for every integer `t` in the window hull:
+- **Per donor:** the view; then an `O(n²)` pairwise full-task test; then
+  the `2n` window edges, sorted (`cumulative_strengthening.cc:277–283`); then,
+  for each of the at most `2n − 1` stretches between them (`:285–306`):
   - an `O(n)` scan to collect the tasks;
   - `largest_subset_sum_at_most` over a fresh `C`-bit bitset,
     `O(|items| · C / 64)` words;
-  - a downward per-value scan from `C`, which is `O(C − kappa_t)`.
-- **Retained:** a `TimePoint` per non-empty `t`, each holding three vectors.
-  These are moved into `by_time`, a `std::map`, and the recipe then captures a
-  **copy** of that map. So peak memory holds two maps, and the fact-check found
-  the copy to be about 22% of samples at 10⁶. The map is built and copied with
-  proofs off too, where nothing will ever read it.
+  - a downward scan **a word at a time** from the top word for the highest
+    set bit, `O(C / 64)` at worst (`subset_sum_strengthening.cc:116–119`).
+    Before #1281 this scan was per value, `O(C − kappa_t)`, and it ran at
+    every time point.
+- **Retained:** a `TimePoint` per non-empty stretch, holding its bounds and
+  three vectors. They are moved into a `std::map` keyed by each stretch's
+  start, which the recipe shares through a `shared_ptr` rather than copying
+  (`:379–382`). It is built with proofs off too, where nothing reads it, but
+  it has at most `2n − 1` entries. Before #1281 there was an entry per time
+  point, and the recipe copied the map, so the peak held two maps.
 - **Repeated work:** with a converted height the assessment runs twice.
 
 Measured, with proofs off. The probe is `horizon.cc`: three tasks, length 2,
 height 2, capacity 5 → `kappa = 4`, starts in `[0, H]`, stopped at the first
-solution. Release build at `7e1c4178`, fataepyc-08, 2026-10-04, pinned to one
-core, with `GLIBC_TUNABLES` mmap and trim thresholds at 4 GiB:
+solution. Release build at `0a5b4ec6`, fataepyc-10, 2026-10-08, one pinned
+core, serial, `GLIBC_TUNABLES` mmap threshold 32 MiB and trim threshold
+4 GiB:
 
-| `H` | donor alone: s / peak RSS | with presolver: s / peak RSS |
-|---|---|---|
-| 10⁴ | 0.008 / 4.7 MB | 0.010 / 9.3 MB |
-| 10⁵ | 0.003 / 7.7 MB | 0.10 / 60 MB |
-| 10⁶ | 0.031 / 43 MB | 1.10 / 567 MB |
-| 10⁷ | 0.34 / 395 MB | 12.1 / 5.6 GB |
-| 10⁸ | 3.6 / 3.9 GB | not run |
+| `H` | donor alone: `instructions:u` / s / peak RSS | with presolver: `instructions:u` / s / peak RSS | with presolver at `7e1c4178`: s / peak RSS |
+|---|---|---|---|
+| 10⁴ | 2.9 M / < 0.01 / 4.7 MB | 3.6 M / < 0.01 / 4.7 MB | 0.010 / 9.3 MB |
+| 10⁵ | 8.6 M / < 0.01 / 7.8 MB | 14.9 M / < 0.01 / 9.3 MB | 0.10 / 60 MB |
+| 10⁶ | 65 M / 0.04 / 43 MB | 128 M / 0.05 / 51 MB | 1.10 / 567 MB |
+| 10⁷ | 635 M / 0.81 / 317 MB | 1,259 M / 1.5 / 393 MB | 12.1 / 5.6 GB |
+| 10⁸ | not counted / 8.2 / 3.1 GB | not counted / 15.6 / 3.9 GB | not run |
 
-With proofs on at 10⁶ it is the same (1.13 s, 570 MB), and only one capacity
-row is derived. The proof side is lazy (#1130). The assessment is not.
+The windows here all coincide, so there is one stretch, and what the
+presolver adds is no longer the pass. It still roughly doubles the
+horizon-sized cost, and #1281's profile at 10⁷ attributes that to the two
+`Cumulative` propagators' per-call horizon-sized vectors, the donor's and the
+derived constraint's. The `7e1c4178` column was taken with both
+`GLIBC_TUNABLES` thresholds at 4 GiB, and its donor column read 0.34 s and
+395 MB at 10⁷, so compare wall times within a column, not across.
 
-**The donor's own horizon cost is `cumulative.md`'s.** The 10⁸ row shows
-39 bytes per time point, and at 10⁹ the donor alone hits `bad_alloc` under a
-16 GB `ulimit -v`. The presolver multiplies that per-point cost by about 14 in
-memory and 35 in time.
+With proofs on at 10⁶ it is the same (0.06 s, 51 MB), and one capacity row is
+derived (a 133-line proof). The proof side is lazy (#1130), and since #1281
+the assessment is too.
 
-**The task-count and capacity axes**, same build and machine:
-- **Task count:** at `H = 10⁵`, `n = 3 / 10 / 30` take 0.10 / 0.14 / 0.22 s.
+**The donor's own horizon cost is `cumulative.md`'s.** At 10⁸ the donor alone
+peaks at 3,129,716 KiB here, about 32 bytes per time point (3,129,716 ×
+1,024 / 10⁸). The table writes it as 3.1 GB, counting 1,000 KiB to the MB as
+the audit did; the audit's 39 bytes per point at `7e1c4178` was read off its
+table that way (3.9 GB / 10⁸), and is about 40 in bytes. At `7e1c4178` it hit
+`bad_alloc` at 10⁹ under a 16 GB `ulimit -v`; that was not re-run.
+
+**The task-count and capacity axes**, same build and machine, `instructions:u`
+donor alone → with presolver:
+- **Task count:** at `H = 10⁵`, `n = 3 / 10 / 30` go 8.6 → 14.9 M, 21 → 40 M
+  and 62 → 120 M (under 0.02 s each). At `7e1c4178` they took
+  0.10 / 0.14 / 0.22 s with the presolver.
 - **Capacity:** `n = 10`, `C = 999,999`, heights 2, so `kappa = 20`.
-  - `H = 10³` takes 0.59 s.
-  - `H = 10⁴` takes 5.9 s.
-  - That is about 0.6 ms per time point, most of it the downward per-value
-    scan from `C` to `kappa_t`.
+  - `H = 10³`: 2.6 → 4.9 M, under a millisecond. `H = 10⁴`: 3.9 → 7.3 M.
+    At `7e1c4178` these took 0.59 s and 5.9 s, about 0.6 ms per time point,
+    most of it the per-value scan.
+  - That is one stretch. With the starts staggered (`STAGGER=1`, start `i`
+    in `[3i, H + 3i]`), there are 19 stretches, and `H = 10³` goes 2.8 →
+    23.9 M: about a million instructions per stretch at this capacity,
+    whatever the horizon (`H = 10⁶`: 140 → 298 M, against 140 → 279 M
+    unstaggered).
 
 ### Propagator inventory
 
@@ -488,11 +592,13 @@ here.
 
 **The pass:** none. It runs once.
 
-**The recipe:** it holds immutable captures (`by_time`, the view, the heights,
-`kappa`), plus a `shared_ptr` to the stats block. During search it bumps
-`rows_by_division`, `rows_by_dynamic_programming`, `rows_with_a_raise` and
-`raise_lines_emitted` as rows are cited, so those counters grow during the
-solve. That is by design (#1130), but a reader comparing two runs' stats must
+**The recipe:** it holds immutable captures (`by_start`, the stretch map
+shared through a `shared_ptr`, `cumulative_strengthening.cc:379–382` and
+`:406`; the view; the heights; `kappa`), plus a `shared_ptr` to the stats
+block. Before #1281 it captured a copy of the per-time-point map `by_time`.
+During search it bumps `rows_by_division`, `rows_by_dynamic_programming`,
+`rows_with_a_raise` and `raise_lines_emitted` as rows are cited, so those
+counters grow during the solve. That is by design (#1130), but a reader comparing two runs' stats must
 compare at the end of the solve.
 
 The installed propagator's state is `cumulative.md`'s.
@@ -506,7 +612,9 @@ pair.
 - **The pass** reads a start's bounds, a length's upper bound, a height's lower
   bound and a capacity's upper bound. A hole changes none of its answers. A
   start with domain `{0, 10⁶}` gets the window `[0, 10⁶ + l − 1]`, which is
-  sound and costs a million assessment points (#1240).
+  sound. Since #1281 a wide window costs the pass nothing extra, since it adds
+  two edges whatever its width; before it, that window cost a million
+  assessment points (#1240).
 - **The installed propagator** triggers `on_bounds` and `on_instantiated` only,
   so it declares no hole sensitivity. It neither keeps alive nor suppresses
   anyone else's interior pruning. That is honest: its rules read only window
@@ -515,10 +623,13 @@ pair.
 
 ### Robustness and limits
 
-- **Unbounded domains.** The window hull is walked point by point, so a wide
-  start domain is time and memory (#1240). At 10¹² the probe ends in
-  `bad_alloc`, but the donor alone does that too, from 10⁹. Capacity is capped
-  at 10⁶ before any work.
+- **Unbounded domains.** Since #1281 the pass costs a wide start domain two
+  window edges, whatever its width. What stays horizon-sized is the donor's
+  and the derived constraint's propagators (see
+  [Initialisation](#initialisation-and-global-data)); at `7e1c4178` the donor
+  alone hit `bad_alloc` from 10⁹, which was not re-run. Before #1281 the pass
+  walked the hull point by point (#1240). Capacity is capped at 10⁶ before
+  any work.
 - **Negative values and zero.**
   - Starts near `−(2⁶⁰ − 1)` and near `2⁶⁰ − 1` (spans of 5) are strengthened
     and verify (`range.cc`: `bottom_starts`, `top_starts`, 96 solutions each).
@@ -534,10 +645,12 @@ pair.
     and verifies (`huge_height_optional`, 500 solutions).
 - **Overflow.** The capacity limit is what keeps the arithmetic in range.
   - Every `Integer` is checked arithmetic.
-  - The state prediction is `long long`, summed over the horizon. It could
-    only wrap past `9.2 × 10¹⁸ / (n · 10⁶)` time points, which the
-    assessment's memory forbids long before.
-  - In the raise, `e · weight` is at most `C²`, which is 10¹² at the limit.
+  - There is no budget prediction to overflow any more (#1286). Before #1281
+    it was a `long long` summed over every time point.
+  - The raise multiplies nothing since #1280. Its arithmetic is the running
+    total of a row's coefficients (`cumulative_strengthening.cc:597–598`),
+    each at most `C`, so at most `n · 10⁶` at the limit. The cutting-planes
+    loop it replaced reached `e · weight ≤ C²`.
   - At the edges: `huge_capacity` (`C = 2⁶⁰ − 1`) and
     `variable_capacity_huge_ub` are both declined as
     `declined_capacity_too_large`.
@@ -548,7 +661,7 @@ pair.
     proof.
   - At `Definitions`, `Links`, `Inferences` and `Backtracking`, the recipe
     finds no row for the donor at time 0, and throws from
-    `cumulative_strengthening.cc:512`. The message is `unexpected problem:
+    `cumulative_strengthening.cc:417`. The message is `unexpected problem:
     cumulative strengthening: the donor has no capacity row at time 0, which
     cannot happen for a constraint derived over all of its tasks`.
   - So the user gets an exception, not a proof. The same happens under the
@@ -559,7 +672,7 @@ pair.
     encodings (cross-document re-check, `crossdoc2/d2/runs.txt`).
   - Found by the `disjunctive_2d.md` fact-check (`probe5bars.cc`), and
     reproduced here at `7e1c4178` (`bars-assert/`).
-  - It is the same root cause as the parse errors on posted donors: the
+  - It is the same root cause as the rejected proofs on posted donors: the
     donor's machinery is not set up at these levels. It is folded into
     #1234.
 - **Not a presolver problem, but met here.** A `Cumulative` with a variable
@@ -573,23 +686,26 @@ pair.
 
 ### Interval efficiency
 
-The pass is a whole-model scan, which is exactly the shape the presolver
-variant warns about.
+The pass is a whole-model scan, which is the shape the presolver variant warns
+about. Since #1281 it is a scan over the tasks' window edges, not over the
+horizon.
 
 1. **The propagation side (the pass).**
-   - **The horizon.** `for (Integer t = global_lo; t <= global_hi; ++t)` walks
-     every integer in the window hull. Nothing exits early.
-     - It is not bounded by anything but the horizon, and it runs with proofs
-       off.
-     - The interval structure to exploit is plain: every value it computes at
-       `t` depends only on the set of tasks whose windows contain `t`. That
-       set changes only at the `2n` window edges.
-     - The derived constraint already relies on this (its recipe contract,
-       #1130). **#1240.**
+   - **The horizon.** The assessment sorts the `2n` window edges and visits
+     each stretch between consecutive edges once
+     (`cumulative_strengthening.cc:277–306`). Every value it computes at `t`
+     depends only on the set of tasks whose windows contain `t`, and that set
+     changes only at an edge, so this is exact, not an approximation. It is
+     the same structure the derived constraint's recipe contract relies on
+     (#1130). Before #1281 the loop was
+     `for (Integer t = global_lo; t <= global_hi; ++t)` over every integer
+     in the hull (#1240).
    - **The capacity.** `largest_subset_sum_at_most` builds a `C`-bit set
-     word-parallel, then scans downward from `C` **one value at a time**
-     (`for v = bound; v >= 0; --v`). That scan is per value of the capacity
-     range, bounded only by the 10⁶ limit.
+     word-parallel, then finds the highest set bit a word at a time from the
+     top (`subset_sum_strengthening.cc:116–119`). Building the set is
+     `O(|items| · C / 64)` per stretch, bounded by the 10⁶ limit; there is no
+     per-value scan left. Before #1281 the read-off scanned downward from `C`
+     one value at a time.
 2. **The reason side.** None. A presolver gives no reasons.
 3. **The proof side.**
    - **Rows** are one per stretch at install, plus one per cited time point,
@@ -601,18 +717,20 @@ variant warns about.
    - **Knapsack path:** three flags per *reachable* partial sum per item. That
      does not change when every number is scaled: in `budget.cc` each
      derivation is about 427 lines at ×1, ×5, ×20 and ×100.
-   - **Raise:** up to one `pol` per unit of `kappa` per raised task per row
-     (every step is one exactly when the rest of the row totals at least
-     twice `kappa`, `T ≥ 2·kappa`; at `T = 1.5·kappa` it is still about
-     `0.75·kappa` steps).
-     That **is** proportional to the capacity's magnitude.
-     `knapsack_raise` ×1/×10/×100 emits 20/200/2,000 raise steps.
-     **#1242.**
+   - **Raise:** one line per raised task per row, whatever `kappa` is
+     (#1280), plus the pairwise at-most-ones, which are bounded by the tasks
+     present. `knapsack_raise` ×1/×10/×100/×1,000 emits 5 raise lines over
+     5 rows each time, and a 1,492-line proof. Before #1280 it was up to one
+     `pol` per unit of `kappa` per raised task per row: 20/200/2,000 steps at
+     ×1/×10/×100 (#1242).
 4. **The audit lane.** No row in `gcs/large_domain_audit_test.cc` posts this
    presolver. `cumulative_wide_horizon_test` checks the *proof* side over a
    horizon of 10⁵ (names and rows), but not the pass's cost. The width of a
-   start domain and the magnitude of the capacity are both unvaried.
-   [Next steps](#next-steps) has an item.
+   start domain and the magnitude of the capacity are both unvaried. #1281
+   added no row: its body notes that one would not reach the presolver,
+   because `Cumulative` is a `KnownTrip` there
+   (`large_domain_audit_test.cc:761`) and trips in its own `prepare` first.
+   [Next steps](#next-steps) item 8 records that.
 
 ## Rewrite catalogue
 
@@ -635,8 +753,10 @@ Facts common to every entry:
 - **Neutrality** below means time-table neutrality: with the energy rules off
   on both constraints, the solution set and the recursion count are the same
   with and without the rewrite. Those two are what the test compares
-  (`cumulative_strengthening_test.cc:645–650`), and the design note's
-  "node-for-node identical" claims more than that.
+  (`cumulative_strengthening_test.cc:654–663`), and the design note's
+  "node-for-node identical" claimed more than that at `0a5b4ec6`. #1265,
+  merged after `0a5b4ec6`, changed it to "the same solutions in the same
+  number of recursions".
   - The design note proves it.
   - `cumulative_strengthening_presolver` asserts it on four fixtures: `searchy`
     for the capacity, `deep_gap` for the knapsack path, and `r1` and
@@ -665,7 +785,8 @@ Facts common to every entry:
   `n`, `C` and the domains: the `div` family's own contribution is 6 lines per
   row, including the reduced-row `pol` and comments.
 - **Tightness** — **`BogusDivisor` is the only lane on this path.** On
-  `pack`, the `ia` pin rejects it ("not syntactically implied", line 772),
+  `pack`, the `ia` pin rejects it ("not syntactically implied", line 235 at
+  `0a5b4ec6`),
   which is the only thing that can, since the division itself is sound. The
   control is `pack` verified unmutated (markers check). `ClaimOneBetter` on
   `pack` does *not* exercise this path. It claims 5, and since
@@ -687,12 +808,13 @@ Facts common to every entry:
 - **Neutral?** — yes, by the same argument.
 - **Proof size** — proportional to the reachable partial sums times the items,
   which `budget.cc` shows to be scale-invariant: about 427 lines per row for
-  seven tasks. In `own.cc` (`dp` family) the own contribution is 215 lines at `n = 4` and 1,127 at `n = 16`
-  for one row. The *budget's* prediction grows with `C` and with the horizon,
-  which is #1241.
+  seven tasks, at ×1, ×5, ×20 and ×100, re-measured at `0a5b4ec6`. In
+  `own.cc` (`dp` family) the derivation is 215 lines at `n = 4` and 1,127 at
+  `n = 16` for one row. Nothing caps it since #1286 (#1241): the old budget's
+  prediction grew with `C` and with the horizon, not with this.
 - **Tightness** — `ClaimOneBetter` on `pack` lands here, as above. VeriPB
-  rejects it inside the programme, at `rup 1 ~f[308][sseq_7_6] 1 f[309][ssunder] >= 1;`
-  (line 1032). `disjunctive_2d_presolver_test`'s `ClaimOneBetter` on the
+  rejects it inside the programme, at `rup 1 ~f[231][sseq_7_6] 1 f[232][ssunder] >= 1;`
+  (line 495 at `0a5b4ec6`). `disjunctive_2d_presolver_test`'s `ClaimOneBetter` on the
   `bars` projection is on this path too. `subset_sum_strengthening_test`
   covers `ClaimOneBetter`, `BogusDivisor` and `SkipALayer` on the utility
   itself.
@@ -722,7 +844,7 @@ Facts common to every entry:
   `kappa`. That is a raise when `h_i < kappa`, and a **lowering** when
   `h_i > kappa`. For example `{7, 2, 2}` under 8 gives `kappa = 4`, and 7
   comes down to 4. Both directions count in `tasks_raised`
-  (`cumulative_strengthening.cc:807`, which also counts a full task already at
+  (`cumulative_strengthening.cc:704`, which also counts a full task already at
   exactly `kappa`) and in the
   summary's "raising R heights". The fact-check's `neutral.cc` verified both
   directions, and found both time-table neutral. At each `t` the row is
@@ -746,42 +868,57 @@ Facts common to every entry:
      - **`T = 0`**: `RUP` of `kappa · a_i ≤ kappa`.
      - **`T ≤ kappa`**: one `pol` summing the at-most-ones weighted by the
        others' coefficients, then `ia`.
-     - **`T > kappa`**: a loop of `pol`s. Each takes `λ` copies of the row,
-       plus `e · w_k` times each at-most-one, divided by `λ + e`, raising
-       `i`'s coefficient by `k` with `k · (T − R) < T − c`.
-   - Then the closing `ia`. The arithmetic is in the design note. This audit
-     re-derived the step condition independently: the coefficient
-     `(λc + eT)/(λ + e) = c + k` is exact, and the degree lands on `R` iff
-     `k(T − R) < T − c`. The code's `ceil((T − c)/(T − kappa)) − 1` is the
-     largest such `k`.
+     - **`T > kappa`**: since #1280, one `red` of the goal
+       `kappa · a_i + Σ w_k · a_k ≤ kappa` with an empty witness, after the
+       task's at-most-ones (`cumulative_strengthening.cc:628–661`). Its
+       subproof adds the row so far to the negated goal and saturates, which
+       leaves `a_i ≥ 1`, then closes with `rup >= 1`: `a_i = 1` sets every
+       `a_k` to zero through the at-most-ones, and the negation reads
+       `kappa ≥ kappa + 1`. #1280's body records a Fable consult that
+       checked it against VeriPB 3.0.2's source, including that the `pol` is
+       load-bearing.
+   - Then the closing `ia`. The arithmetic is in the design note.
+   - **Before #1280** the `T > kappa` path was a loop of `pol`s, each taking
+     `λ` copies of the row plus `e · w_k` times each at-most-one, divided by
+     `λ + e`, raising `i`'s coefficient by `k` with `k · (T − R) < T − c`.
+     The audit re-derived that step condition independently, and found the
+     code's `ceil((T − c)/(T − kappa)) − 1` to be the largest such `k`.
 - **Neutral?** — yes. The derived profile at a full task's compulsory part is
   `kappa`, which pushes out exactly what the donor's `h_i + h_j > C` pushes
   out (design note). Asserted on `r1` and `knapsack_raise`.
-- **Proof size** — at-most-ones `O(|F_t| · |N_t| + |F_t|²)` per row. Raise
-  steps run from 1, when `T − kappa = 1`, up to `kappa`, when the rest of the
-  row totals at least `2·kappa` (from `for_each_raise_step`,
-  `cumulative_strengthening.cc:92–111`). Between those the count is still
-  linear in `kappa`: `T = 12` at `kappa = 8` takes six. The design note
-  (`cumulative-strengthening.md:235`, "overshoots by half") and the code
-  comment above `for_each_raise_step` put the threshold at an overshoot of
-  half, which is ambiguous, and wrong as naturally read (an overshoot of
-  `kappa/2`); both are outside this stack. Measured: `knapsack_raise` emits 20 steps over
-  5 rows, `two_full` 35 over 5, `full_task_pack` 18 over 3. Scaled ×10 and
-  ×100, `knapsack_raise` emits 200 and 2,000. A proof by contradiction does
-  each raise in three rule steps (six lines of text) whatever `kappa` is
-  (#1242).
-- **Tightness** — two lanes, both rejected at a row's `ia`:
-  - `RaiseTooFast` on `knapsack_raise`, one step past the bound
-    (line 326, "not syntactically implied").
+- **Proof size** — at-most-ones `O(|F_t| · |N_t| + |F_t|²)` per row, and one
+  raise line per full task per row whatever `kappa` is (#1280): a `red` with
+  a `pol` and a `rup` inside, six lines of text, where the rest overshoots.
+  `raise_lines_emitted` counts that line on all three paths
+  (`cumulative_strengthening.cc:607`, `:618`, `:660`). Measured at
+  `0a5b4ec6`: `knapsack_raise` emits 5 over 5 rows, `two_full` 10 over 5,
+  `full_task_pack` 3 over 3, and `knapsack_raise` scaled ×10, ×100 and
+  ×1,000 still 5. **Before #1280** the loop took from 1 step, when
+  `T − kappa = 1`, up to `kappa`, when the rest of the row totals at least
+  `2·kappa`, and was linear in `kappa` between: 20, 35 and 18 steps on those
+  three fixtures at `7e1c4178`, and 200 and 2,000 for `knapsack_raise` at ×10
+  and ×100 (#1242). At `0a5b4ec6` the design note's "overshoots by half",
+  which the audit found ambiguous, described only that loop. #1265, merged
+  after `0a5b4ec6`, replaced it there with "overshoots by at least the right
+  hand side itself — `T ≥ 2·R`". The matching code comment at
+  `cumulative_strengthening.cc:629–633` still says "once the rest overshoots
+  by half", after #1265 too.
+- **Tightness** — two lanes:
+  - `RaiseTooFast` on `knapsack_raise`. Since #1280 it claims the raised
+    coefficient at `kappa + 1` inside the `red`. With the task on and every
+    other task off the negated claim still holds, so VeriPB rejects the
+    subproof's closing `rup >= 1` (line 727 at `0a5b4ec6`). Before #1280 it
+    took one loop step past the bound and was rejected at the row's `ia`.
   - `RaiseUnentitled` on `r1_control`, which raises a task that misses the
     pairwise test by one.
     - Its at-most-one comes out weaker than claimed, and the row's `ia` pin
-      is where VeriPB stops (line 97).
+      is where VeriPB stops (line 72 at `0a5b4ec6`).
     - The derived constraint is genuinely unsound there: with that mutation
       the solve reports 10 of the 24 solutions.
-    - The design note says VeriPB rejects it "only because the conclusion is
-      false". That is right about the cause, but the line that fails is the
-      pin.
+    - At `0a5b4ec6` the design note says VeriPB rejects it "only because the
+      conclusion is false". That is right about the cause, but the line that
+      fails is the pin. #1265, merged after `0a5b4ec6`, rewrote that
+      paragraph to name the failing step.
   - The control for `RaiseTooFast` is `knapsack_raise` verified unmutated. For
     `RaiseUnentitled`, the honest run on `r1_control` declines the donor
     (nothing to gain), so there is no honest derivation to compare.
@@ -833,9 +970,13 @@ What it **finds but turns away**, counted:
 | `declined_irreducible_capacity` | capacity is a view | General note |
 | `declined_capacity_too_large` | `C` above the limit | General note, plus one Important note per run |
 | `declined_infeasible_donor` | a mandatory task's guaranteed demand `> C` | General note |
-| `declined_over_budget` | predicted DP states over budget (proofs on only) | General note, plus Important |
-| `declined_over_raise_budget` | predicted raise steps over budget (proofs on only) | General note, plus Important |
 | `declined_nothing_to_gain` | `kappa = C` and no height moves | Detailed note |
+
+None of these depends on whether a proof is being written. The capacity limit
+is the only decline that raises the `Important` note
+(`cumulative_strengthening.cc:713–717`). Two rows are **deleted**:
+`declined_over_budget` (#1286) and `declined_over_raise_budget` (#1280), the
+proofs-on-only budget declines, which each also raised the `Important` note.
 
 A decline that is **mis-reported**, and a comment that is stale:
 
@@ -845,15 +986,18 @@ A decline that is **mis-reported**, and a comment that is stale:
   false for both. Checked on `all_full` (`{7, 7, 7}` under 8) and `loners`.
   The design note calls the first case a disjunctive, but nothing here counts
   it as one.
-- **A stale comment, not a decline.** The comment after
-  `install_derived_cumulative` (`cumulative_strengthening.cc:789–793`) says
-  that above `Off`, a task with both a variable start and a variable length
-  makes the install decline. It does not: `cumulative_donor_view` sets such a
-  task aside first, and the donor is strengthened over the rest
-  (`donors_with_set_aside_tasks`). If the install did return false there, the
-  `continue` would skip every counter. That branch is unreachable as far as
-  this audit found. The comment is outside this stack. The derived
-  constraint's own proofs-on decline is `cumulative.md`'s.
+- **A stale comment, not a decline** (at `0a5b4ec6`; fixed by #1265 after
+  `0a5b4ec6`). The comment after `install_derived_cumulative`
+  (`cumulative_strengthening.cc:686–690`) says that above `Off`, a task with
+  both a variable start and a variable length makes the install decline. It
+  does not: `cumulative_donor_view` sets such a task aside first, and the
+  donor is strengthened over the rest (`donors_with_set_aside_tasks`).
+  #1265 rewrote the comment: a decline above `Off` is passed over rather
+  than thrown, and the end-of-task case no longer reaches it because
+  `cumulative_donor_view` sets such a task aside. If the install did return
+  false there, the `continue` would skip every counter. That branch is
+  unreachable as far as this audit found. The derived constraint's own
+  proofs-on decline is `cumulative.md`'s.
 
 ## Evidence that it fired
 
@@ -869,15 +1013,16 @@ A decline that is **mis-reported**, and a comment that is stale:
   `% presolve cumulative: strengthened …` comment per donor, plus the per-row
   markers above.
 - **Expected counts on named instances** (`fixtures.cc`, default rules, all
-  solutions, proofs on):
+  solutions, proofs on; re-measured at `0a5b4ec6`, where only the raise
+  column moved, by #1280):
 
 | Instance | `donors_strengthened` | `capacity_units_removed` | `tasks_raised` | rows (division / DP / raised) | `raise_lines_emitted` |
 |---|---|---|---|---|---|
 | `pack` (7 × h3, `C = 8`) | 1 | 2 | 0 | 3 / 0 / 0 | 0 |
 | `deep_gap` (`{2, 6, 6}`, `C = 10`) | 1 | 2 | 0 | 0 / 1 / 0 | 0 |
 | `r1` (`{5, 4, 2}`, `C = 6`) | 1 | 0 | 1 | 0 / 0 / 1 | 1 |
-| `knapsack_raise` (`{1, 3, 4, 6}`, `C = 6`) | 1 | 1 | 1 | 0 / 5 / 5 | 20 |
-| `two_full` (`{7, 7, 3, 3}`, `C = 8`) | 1 | 2 | 2 | 0 / 0 / 5 | 35 |
+| `knapsack_raise` (`{1, 3, 4, 6}`, `C = 6`) | 1 | 1 | 1 | 0 / 5 / 5 | 5 (20 before #1280) |
+| `two_full` (`{7, 7, 3, 3}`, `C = 8`) | 1 | 2 | 2 | 0 / 0 / 5 | 10 (35 before #1280) |
 | `r1_control`, `nothing_to_gain` | 0 (`declined_nothing_to_gain` 1) | 0 | 0 | — | — |
 
   Row counts are rows *cited*, so they depend on the search. The fixtures and
@@ -902,49 +1047,56 @@ A decline that is **mis-reported**, and a comment that is stale:
   posted with all its rules, and the derived constraint only adds.
 - **The pin.** Every row closes with an `ia` to the declared
   `Σ derived_h · active ≤ kappa`. That is the step that catches a sound
-  derivation of the wrong line: `BogusDivisor`, `RaiseTooFast`, and an
-  unentitled raise.
-- **Proofs on against proofs off: yes, it can be weaker with proofs on.** Both
-  budgets apply only with a logger, so a donor strengthened with proofs off
-  can be declined with proofs on.
-  - That would be harmless if the budgets measured what they claim. Neither
-    does: both sum a prediction over every non-empty time point of the hull,
-    and the dynamic-programming one also scales with the capacity's
-    magnitude.
-  - **Magnitude.** `budget.cc` has seven unit tasks, heights
+  derivation of the wrong line: `BogusDivisor` and an unentitled raise. A
+  raise claimed too high (`RaiseTooFast`) is caught earlier since #1280, at
+  the raise's own closing RUP.
+- **Proofs on at `Off` against proofs off: the same, since #1286.** No
+  decline asks whether a proof is being written, so a donor strengthened
+  with proofs off is strengthened with them on at `Off`, and the search is
+  the same. Only `donors_with_set_aside_tasks` can differ, by the
+  zero-length corner under [Semantics](#semantics) step 5.
+  - The test asserts it on #1241's five fixtures: each is strengthened both
+    ways with the same recursions, and its proof verifies
+    (`cumulative_strengthening_test.cc:1282–1319`).
+  - **Magnitude**, re-measured. `budget.cc` has seven unit tasks, heights
     `{18, 18, 17, 17, 17, 17, 17} × s`, capacity `50s`, starts in `[0, 2]`.
-    - At `s = 20`, proofs off refutes at the root (1 node, `kappa = 720`).
-    - Proofs on declines over budget (21,021 predicted states) and searches
-      182 nodes, writing 8,405 lines that take 0.24 s to check.
-    - With the budget raised, the same solve is 1 node, 3,446 lines and
-      0.03 s, of which the three knapsack derivations are about 427 lines
-      each, the same at `s = 1`, 5, 20 and 100.
-    - Both verify UNSATISFIABLE. The budget made the proof bigger.
-  - **Horizon.** These are the fact-check's `budget_h` probes, reproduced
-    here.
-    - `deep_gap` (`{2, 6, 6}`, `C = 10`, length 2) with starts in `[0, 1000]`
-      is strengthened with proofs off and declined over budget with proofs
-      on. With the budget raised it has one knapsack row and a 389-line
-      proof.
-    - `r1` with starts in `[0, 6000]` is declined by the raise budget, though
-      the raise it predicts the cost of is one line.
-    - In both horizon probes the search is the same either way (4
-      recursions), and the declined proof is *smaller* than the strengthened
-      one: 173 against 389 lines for `deep_gap`, 197 against 286 for `r1`.
-      So over a long horizon the budget costs strength only where an energy
-      rule would have used the strengthening. Over a large magnitude it
-      costs both strength and proof size.
-  - **Assertion levels.** Above `Off`, a task with a variable start and a
+    At `s = 1`, 5, 20 and 100 it is strengthened with proofs on and off and
+    refutes at the root (1 node). The proof is 2,212 lines at every scale,
+    of which the three knapsack derivations are about 427 lines each, and
+    VeriPB verifies it UNSATISFIABLE in 0.01 s.
+  - **Horizon**, re-measured with the fact-check's `budget_h` probes, first
+    solution. `deep_gap` (`{2, 6, 6}`, `C = 10`, length 2) with starts in
+    `[0, 1000]` is strengthened both ways, 4 recursions, one knapsack row,
+    and a 261-line proof that verifies. `r1` with starts in `[0, 6000]` is
+    strengthened both ways, 4 recursions, one raise line, 155 lines.
+  - **Before #1286 and #1280**, at `7e1c4178`, two budgets applied only with
+    a logger. Each summed a prediction over every non-empty point of the
+    window hull, and the dynamic-programming one charged `items × (C + 1)`
+    states per point. At `s = 20` it declined (21,021 predicted states), and
+    the proofs-on search took 182 nodes and 8,405 lines (0.24 s to check)
+    against 1 node, 3,446 lines and 0.03 s with the budget raised: the
+    budget made the proof bigger. Both horizon probes were declined with
+    proofs on, `r1` by the raise budget, with the same 4 recursions, and the
+    declined proofs were smaller (173 against 389 lines, 197 against 286).
+  - The fuzz campaign's proofs-on/off comparison, at `7e1c4178`, found no
+    difference. Its driver recorded the derived constraint's
+    `% derived cumulative: declined` markers (`driver.py:110`), but not this
+    presolver's budget declines, which wrote nothing to the proof, so it
+    could not say whether any instance reached a budget (#1241). There is no
+    budget left to reach.
+  - **The price of no budget** is proof size. #1286's body measured sixteen
+    unit tasks with unstructured heights in `[1000, 60000]` under a capacity
+    of 213,259, strengthened by 6: a 767,000-line (155 MB) proof that took
+    VeriPB 419 s and 1.1 GB, where the budget's decline at #1280's head wrote
+    14,000 lines. With proofs off it takes under 1 ms either way.
+- **Across assertion levels: yes, it can be weaker above `Off`.** That is
+  unchanged by the fixes.
+  - Above `Off`, a task with a variable start and a
     variable length is set aside (see [Variable kinds](#variable-kinds-and-views)).
     In the fact-check's `varlen.cc`, `pack` with task 0's length in `[1, 2]`
     takes 1 node with no proof and at `Off`, and 252 nodes at `Definitions`
-    and `Inferences`. Reproduced here. Under the default encoding those
-    proofs fail to parse anyway (#1234).
-  - The fuzz harness's proofs-on/off comparison would flag a budget-driven
-    difference. It found none. Its driver records the derived constraint's
-    `% derived cumulative: declined` markers (`driver.py:110`), but not this
-    presolver's budget declines, which write nothing to the proof. So it is
-    unknown whether any of its instances reached a budget. **#1241.**
+    and `Inferences`. Reproduced at `7e1c4178`, not re-run. Under the
+    default encoding those proofs are rejected anyway (#1234).
 
 ## Evidence
 
@@ -965,19 +1117,27 @@ A decline that is **mis-reported**, and a comment that is stale:
     all-variable-height donors;
   - the view-capacity decline;
   - diagnostics (registration, the levels of notes);
-  - both budgets set to zero;
+  - #1241's five fixtures (`scaled_1`, `scaled_20`, `scaled_100`,
+    `deep_gap_long`, `raise_long`), each solved to its first solution with
+    proofs off and on, which must strengthen both ways with the same
+    recursions and verify. The two long-horizon ones are skipped under the
+    recovering arm, which writes a row at every time point
+    (`cumulative_strengthening_test.cc:1300–1307`). Added by #1286, which
+    removed the two fixtures that set a budget to zero; #1280 removed the
+    zero-raise-budget checks;
   - an OPB-unchanged check;
   - solution preservation against brute force, proofs off, on 60 random
     instances, extended up to 240 until both halves have fired. Heights are
     drawn against each capacity so that full tasks occur. With `--seed=2` it
-    strengthened 18 of 60 and raised 4 heights;
+    strengthened 18 of 60 and raised 4 heights, at `7e1c4178` and again at
+    `0a5b4ec6`;
   - a verified sweep of 25 or more instances until some raise happens;
   - four mutation lanes;
   - marker counts with VeriPB;
   - a negative control whose OPB matches a run without the presolver.
   - Seeded (`establish_and_announce_seed`). The random sweeps use
     `get_seed()`, so `--seed=N` reproduces them. One run with `--seed=1`
-    takes 2.6 s and 27 MB.
+    takes 2.3 s and 15 MB at `0a5b4ec6` (2.6 s and 27 MB at `7e1c4178`).
 - **`disjunctive_2d_presolver`** runs this presolver on `Disjunctive2D`
   projections (`bars`), and runs `ClaimOneBetter` there.
 - **`cumulative_wide_horizon`** checks the *proof* side at a horizon of 10⁵:
@@ -990,7 +1150,8 @@ A decline that is **mis-reported**, and a comment that is stale:
   - `ClaimOneBetter` on `pack`, which runs on the knapsack path (it claims 5,
     and `3 · ⌊8/3⌋ ≠ 5`), and `BogusDivisor` on `pack`, on the division path;
   - `RaiseUnentitled` on `r1_control`;
-  - `RaiseTooFast` on `knapsack_raise`.
+  - `RaiseTooFast` on `knapsack_raise`, which since #1280 claims `kappa + 1`
+    inside the raise's `red` and is rejected at its closing RUP.
   - Controls verify for `pack` and `knapsack_raise`. `r1_control`'s honest run
     has no derivation to control.
 - **Fuzz (this audit).** The scheduling fuzz harness
@@ -1011,8 +1172,8 @@ A decline that is **mis-reported**, and a comment that is stale:
 
 **What the tests do not cover:**
 - **Any assertion level above `Off`.** Wherever it installs something, every
-  level fails under the default encoding (#1234): a parse error
-  over a posted donor, a throw over a `Disjunctive2D` projection.
+  level fails under the default encoding (#1234): a rejected proof over a
+  posted donor, a throw over a `Disjunctive2D` projection.
 - **The pass's cost** at any horizon or capacity. No test times it, and no
   audit-lane row posts the presolver.
 - **`ClaimOneBetter` on the division path, which cannot be tested.** The
@@ -1021,8 +1182,9 @@ A decline that is **mis-reported**, and a comment that is stale:
   (`subset_sum_strengthening.cc:166`). The lanes on `pack` and on
   `bars` in `disjunctive_2d_presolver` both do. Division's tightness rests on
   `BogusDivisor` alone.
-- **A budget decline that changes search with proofs on.** The test sets
-  budgets to zero, and only checks that the decline happens.
+- **Deleted:** "a budget decline that changes search with proofs on". There
+  is no budget since #1286, and the test now asserts the opposite on five
+  fixtures.
 - **The "every task full" or "every task a loner" decline,** which is
   mis-reported, and the set-aside of variable-start, variable-length tasks
   above `Off`.
@@ -1040,18 +1202,25 @@ A decline that is **mis-reported**, and a comment that is stale:
   settings (demand above capacity) cannot be built and gave no instances. The
   size-14 sweep (`rcpsp-sweep/size14.tsv`) fired on 2 of 40. Random demands'
   subset sums reach the capacity.
-- **For CPU benchmarking:** the pass's own cost is the interesting quantity.
-  The `horizon.cc` shape (horizon 10⁶) and the capacity shape (`C ≈ 10⁶`,
-  `H = 10⁴`) are the right sizes.
+- **For CPU benchmarking:** since #1281 the pass's own cost is small, and it
+  scales with the stretches, not the horizon. The capacity shape with
+  staggered starts (`C ≈ 10⁶`, 19 stretches) is the one where it still shows;
+  the `horizon.cc` shape now measures the two `Cumulative` propagators.
 - **For proof verification:** `budget.cc` at scales 1–100 for the knapsack
-  path, and `knapsack_raise` scaled for raises. Never uncapped: the `div`
-  family at `n = 64` writes a 700 MB proof from the donor alone.
+  path, and #1286's sixteen-task example for a derivation of any size. A
+  scaled `knapsack_raise` is no longer interesting: its raise is one line at
+  any scale. Never uncapped: at `7e1c4178` the `div` family at `n = 64`
+  wrote a 700 MB proof from the donor alone (not re-run).
 
 ### CPU performance
 
-**The pass.** See [Initialisation](#initialisation-and-global-data): about
-1.1 µs and 520 bytes per time point at `n = 3`, and about 0.6 ms per time point
-at `C ≈ 10⁶`, `n = 10`.
+**The pass.** See [Initialisation](#initialisation-and-global-data). Since
+#1281 it is per stretch. On `horizon.cc` a run with it still costs about
+twice the donor's horizon-sized cost, which #1281's profile attributes to the
+two `Cumulative` propagators, the derived constraint's as well as the
+donor's, and at `C ≈ 10⁶`, `n = 10` it costs about a million
+instructions per stretch. At `7e1c4178` it was about 1.1 µs and 520 bytes per
+time point at `n = 3`, and about 0.6 ms per time point at `C ≈ 10⁶`.
 
 **The effect on search.** `examples/rcpsp` with a local flag, release build of
 `7e1c4178`, fataepyc-08, 2026-10-04, one pinned core, serial, `GLIBC_TUNABLES`
@@ -1066,8 +1235,9 @@ overload). Size 14, capacity 10, max demand 4, seeds 0–39:
   the two largest took 8.9 s and 62 s either way.
 
 The energy fixtures show the effect it exists for: on `pack`, 182 → 1 node; on
-`full_task_pack`, 39 → 1; on `knapsack_raise` and `two_full`, 5 → 1. That
-measures fixtures built to show it, not a benchmark.
+`full_task_pack`, 39 → 1; on `knapsack_raise` and `two_full`, 5 → 1, at
+`7e1c4178` and again at `0a5b4ec6`. That measures fixtures built to show it,
+not a benchmark.
 
 **Against other solvers:** not measured. No front end reaches the presolver,
 and Gecode, Choco and ACE have no Schulz-style presolve to compare with.
@@ -1080,36 +1250,48 @@ seeds where it fired).
 
 **Own against shared.** `own.cc` installs the derived constraint with its rules
 off, so it derives its install-time rows and never fires. The search is then
-identical to the run without the presolver, and the difference in lines is the
-presolver's own. Families of unit tasks with starts in `[0, ⌈n/2⌉ − 1]`, first
-solution:
+identical to the run without the presolver (the same recursions), and the
+difference in lines is what the presolver costs. Families of unit tasks with
+starts in `[0, ⌈n/2⌉ − 1]`, first solution, re-measured at `0a5b4ec6`, every
+proof verified:
 
-| Family | `n` | lines without | lines with, rules off | own | rows |
-|---|---|---|---|---|---|
-| `div` (h3, `C = 8`) | 4 | 248 | 254 | 6 | 1 (division) |
-| `div` | 16 | 39,228 | 39,234 | 6 | 1 |
-| `dp` (h18/17, `C = 50`) | 4 | 248 | 463 | 215 | 1 (knapsack) |
-| `dp` | 16 | 39,228 | 40,355 | 1,127 | 1 |
-| `raise` (h9 + 4s, `C = 10`) | 4 | 486 | 519 | 33 | 2 (raised, 12 steps) |
+| Family | `n` | lines without | lines with, rules off | difference | of which the derivation | rows |
+|---|---|---|---|---|---|---|
+| `div` (h3, `C = 8`) | 4 | 91 | 169 | 78 | 6 | 1 (division) |
+| `div` | 16 | 1,289 | 2,147 | 858 | 6 | 1 |
+| `dp` (h18/17, `C = 50`) | 4 | 91 | 378 | 287 | 215 | 1 (knapsack) |
+| `dp` | 16 | 1,289 | 3,268 | 1,979 | 1,127 | 1 |
+| `raise` (h9 + 4s, `C = 10`) | 4 | 327 | 361 | 34 | 34 | 2 (raised, 2 raise lines) |
 
-The presolver's own share per derived row is 6 lines on the division path,
-whatever `n` is. On the knapsack path it grows with the items: 215 lines at
-`n = 4` and 1,127 at `n = 16`. Either way it is small against a donor proof
-that goes from 248 to 39,228 lines between 4 and 16 tasks. That growth is
-`cumulative.md`'s.
+"The derivation" counts from the subset-sum comment to the presolver's
+summary comment. The derivations are the same size as at `7e1c4178`: 6 lines
+on the division path whatever `n` is, and on the knapsack path 215 at
+`n = 4` and 1,127 at `n = 16`. What changed is the rest of the difference.
+At `0a5b4ec6` the donor's own search on `div` and `dp` recovers no capacity
+row (its proof has no `% checkpoint recovery` marker), so the recovery of the
+row the derived constraint cites is charged to the presolver: 74 lines at
+`n = 4` and 854 at `n = 16`, as a chain base (#1290), two of which define
+flags the donor's search would otherwise define itself. At `7e1c4178` the
+difference was the derivation alone (6, 6, 215 and 1,127), against donor
+proofs of 248 and 39,228 lines. On `raise` the donor recovers the rows itself,
+so the difference is the derivation, 34 lines for two raised rows where it
+was 33 over 12 raise steps.
 
-`raise` at `n = 16` is the energy differential at scale. Without the presolver,
-and with it but its rules off, the solve had not finished after the 120 s
-timeout, by which point it had written a 15 GB proof. With its default rules
-it refutes at the root: 1 node, 44,522 lines, with 8 raised rows over 64 raise
-steps, and VeriPB verifies UNSATISFIABLE.
+`raise` at `n = 16` is the energy differential at scale. At `7e1c4178`,
+without the presolver, and with it but its rules off, the solve had not
+finished after the 120 s timeout, by which point it had written a 15 GB
+proof; that was not re-run. With its default rules it refutes at the root:
+1 node, 9,065 lines, with 8 raised rows and 8 raise lines, and VeriPB
+verifies UNSATISFIABLE. At `7e1c4178` that proof was 44,522 lines with 64
+raise steps.
 
 **With the energy rules on**, the proof is whatever the search becomes. `pack`
-goes from 8,405 lines (864 KB) and 0.24 s to check to 2,174 lines (144 KB) and
-0.03 s, VeriPB 3.0.2 on the same core.
+goes from 5,811 lines (381 KB) and 0.09 s to check to 940 lines (47 KB) and
+0.01 s, VeriPB 3.0.2 on the same core, at `0a5b4ec6`. At `7e1c4178` it was
+8,405 lines (864 KB) and 0.24 s against 2,174 lines (144 KB) and 0.03 s.
 
 **At the assertion levels:** not measured. Under the default encoding, every
-proof in which it installs something fails to parse (#1234). The
+proof in which it installs something is rejected (#1234). The
 time-indexed arm writes a checkable one, except over a `Disjunctive2D` donor it
 would strengthen (`bars`), where it throws under either encoding. The presolver emits no `a` lines of its own and carries
 no hint type. A hints-only mode would have to decide what its rows become, and
@@ -1120,15 +1302,17 @@ no hint type. A hints-only mode would have to decide what its rows become, and
 ### Proof-logging gaps
 
 - **Unjustified rewrites:** none. Every row is derived and pinned.
-- **Strength changes with proofs on: yes.**
-  - Both budgets, `with_dynamic_programming_budget` and `with_raise_budget`,
-    apply only with proofs on. A donor strengthened with proofs off can be
-    declined with them on (#1241; see
-    [Can it weaken the model?](#can-it-weaken-the-model)).
-  - Across assertion levels, the variable-length set-aside changes it too:
-    252 nodes against 1 on `varlen.cc`.
-- **Assertion levels: unparseable wherever it installs something,** under the
-  default encoding (#1234, not this presolver's code). Over a
+- **Strength changes with proofs on: no, since #1286.** There is no proof
+  budget, so proofs on and off strengthen the same donors (see [Can it weaken
+  the model?](#can-it-weaken-the-model)). Before it, two budgets applied only
+  with proofs on (#1241).
+- **Strength changes across assertion levels: yes.** The variable-length
+  set-aside above `Off` costs 252 nodes against 1 on `varlen.cc` (at
+  `7e1c4178`).
+- **Assertion levels: rejected wherever it installs something,** under the
+  default encoding (#1234, not this presolver's code): a parse error at
+  `Inferences` and `Backtracking`, a rejected recovery `rup` at `Definitions`
+  and `Links`. Over a
   `Disjunctive2D` projection donor that it would strengthen, the solve throws
   rather than writing a proof at all (also #1234).
 
@@ -1136,13 +1320,12 @@ no hint type. A hints-only mode would have to decide what its rows become, and
 
 - Not reachable from any front end. A MiniZinc, XCSP3, `.scp` or `gcspy` user
   cannot turn it on.
-- A long horizon makes the pass slow and memory-hungry even with proofs off:
-  12 s and 5.6 GB at 10⁷ time points. So does a capacity near 10⁶ multiplied
-  by a horizon in the thousands.
-- With proofs on, a donor whose capacity is large, or whose tasks have wide
-  windows, can be passed over ("skipped … because a size limit was
-  reached"), and search may then be weaker than without proofs.
-- Raised heights cost proof lines in proportion to the capacity.
+- A derivation can be large, and nothing caps it. The knapsack path costs
+  three flags per reachable partial sum per item, at every row a firing
+  cites: #1286's sixteen-task example is 767,000 lines and 419 s to check.
+  That is the price of proofs on and off searching identically.
+- A capacity above 10⁶ is declined, with proofs on or off ("skipped … because
+  a size limit was reached").
 - "Every task full" (a disjunctive) and "every task a loner" are reported as
   nothing to gain, and loners make it decline outright where plain subset-sum
   would strengthen.
@@ -1153,73 +1336,48 @@ no hint type. A hints-only mode would have to decide what its rows become, and
 - At an assertion level above `Off`, a task with both a variable start and a
   variable length is set aside. The donor is strengthened over the rest, so
   search can be weaker than at `Off`: 252 nodes against 1 on `varlen.cc`.
-  Under the default encoding every such proof is unparseable anyway.
+  Under the default encoding every such proof is rejected anyway.
 - No `with_makespan` (#702).
 
 ### Next steps
 
-1. **Assess per stretch, not per time point (#1240).** Collect the `2n`
-   window edges, and run the subset sum once per stretch where the set of
-   present tasks changes. Store a stretch map rather than a `TimePoint` per `t`,
-   and do not build `by_time` with proofs off. Scan the bitset downward a word
-   at a time. That is perhaps a day, and it buys the presolver at any horizon:
-   10⁶ points become about `2n` assessments. The recipe contract (#1130)
-   already guarantees the answers are per stretch.
-2. **Budget something closer to what will be derived (#1241).**
-   - **The constraint.** A recipe may decline only at install
-     (`derived_cumulative.hh:150–166`), and a later decline throws. So a
-     budget cannot cost cited points "as they come". Any budget is decided at
-     install, over every row search *might* cite.
-   - **The current sum is a true bound.** Summing per non-empty time point is
-     a true upper bound on that, and a loose one. Summing per stretch bounds
-     only the install-time rows, and gives up the bound on rows cited during
-     search, which can be up to one per hull point.
-   - **Computing the same bound more cheaply:** per stretch, cost one row and
-     multiply by the stretch's length. Every row in a stretch has the same
-     present set, so they are the same size. That gives exactly today's
-     figure without walking the stretch, which belongs with #1240. It
-     keeps the bound, and it keeps the looseness.
-   - **Tightening the bound** needs a different decision, not a different
-     sum, and it is Ciaran's call. One option is a per-stretch budget,
-     documented as bounding only install. The other is to keep the
-     per-point bound and fix only the magnitude part below. That removes the
-     measured case where the budget makes the proof bigger. Over a long
-     horizon a decline then still costs strength wherever an energy rule
-     would have used the strengthening.
-   - The knapsack prediction should count reachable states per layer, not
-     `C + 1`.
-   - The assessment keeps only the final layer's bitset and then discards it,
-     so the count needs either a per-layer popcount while the bitset is built,
-     or a separate pass.
-   - That is small, and it removes the proofs-on/off divergence on scaled and
-     on long-horizon instances.
-   - Alternatively apply the budgets with proofs off too, so that proofs never
-     change search. Ciaran's standing rule ("never weaken a propagator for
-     proof size") argues for the first.
-3. **Raise by proof by contradiction (#1242).** One `red … : : subproof`
-   per raised task per row:
-   - add the row `W ≤ kappa` to the negated goal and saturate, giving
-     `a_i ≥ 1`;
-   - then `rup >= 1`, because the at-most-ones set every other flag to zero.
-   - That is three rule steps (six lines of text) whatever `kappa` is,
-     against up to `kappa` `pol`s. It makes the raise budget unnecessary.
-   - Checked by hand on VeriPB 3.0.2 (`tmp/fd-sched/cumulative_strengthening/pbc`):
-     `kappa = 8`, rest `4 + 4 + 4`. There the loop takes six steps
-     (`raise_steps(12, 8)` is `[2, 2, 1, 1, 1, 1]`), and the fixture
-     `{5, 4, 4, 4}` under 8 emits 12 over 2 rows. Claiming 9 is rejected.
-   - The fact-check confirmed the derivation is valid in general.
+1. **Assess per stretch, not per time point (#1240).** Done by #1281, as
+   proposed: the assessment runs once per stretch between the `2n` window
+   edges, the recipe looks its stretch up in a shared map rather than a
+   copied per-point one, and the bitset is read a word at a time. The map
+   is still built with proofs off, but it has at most `2n − 1` entries.
+2. **Budget something closer to what will be derived (#1241).** Done by
+   #1286, **a different way from any this item listed**. It weighed
+   re-predicting the budget per stretch, fixing only its magnitude part, or
+   applying it with proofs off too. Ciaran's call on #1241 was that proofs on
+   and off must search identically even where that makes a proof expensive,
+   and applying the budget with proofs off would weaken propagation, so the
+   budget was removed instead. Its cost is under [Can it weaken the
+   model?](#can-it-weaken-the-model).
+3. **Raise by proof by contradiction (#1242).** Done by #1280, as proposed:
+   one `red` per raised task per row whose subproof is a saturating `pol` and
+   a `rup >= 1`, which made the raise budget unnecessary, and it was removed
+   with the step helpers. The audit's hand check (`kappa = 8`, rest
+   `4 + 4 + 4`, `tmp/fd-sched/cumulative_strengthening/pbc`) took the loop's
+   six steps to one; #1280's body records a Fable consult against VeriPB
+   3.0.2's source.
 4. **Fix #1234 (owned by `cumulative.md`),** then add an
    assertion-level lane to this test.
 5. **Report the all-full and all-loner declines truthfully,** and decide
    whether a loner is an ordinary task. Small; the code already flags it.
-   Fix the stale comment at `cumulative_strengthening.cc:789–793`.
+   The stale comment at `cumulative_strengthening.cc:686–690` that this item
+   also listed was fixed by #1265, after `0a5b4ec6`.
 6. **A `--strengthen-cumulative` flag on `examples/rcpsp`,** and a front-end
    switch per the propagator-or-decomposition convention. Small, and it buys
    real instances. An RCPSP instance set with tight, structured demands would
    be the benchmark that reaches it.
 7. **`with_makespan` (#702).**
 8. **A large-domain audit row** that posts the presolver with a wide start and
-   a capacity near the limit, timing the pass. It would have caught #1240.
+   a capacity near the limit, timing the pass. Not done, and not as simple as
+   it looked: #1281's body notes that such a row would not reach the
+   presolver, because `Cumulative` is a `KnownTrip` in that test
+   (`large_domain_audit_test.cc:761`) and trips in its own `prepare` first.
+   A row would have to wait for the donor, or the timing go elsewhere.
 
 ## Prior art
 
@@ -1232,7 +1390,8 @@ no hint type. A hints-only mode would have to decide what its rows become, and
   - Chvátal–Gomory rounding for the division path is textbook cutting planes.
   - The layered subset-sum programme is the solver's own
     ([`subset-sum-strengthening.md`](../subset-sum-strengthening.md)).
-  - The raise loop and its step bound are ours (design note).
+  - The raise by contradiction (#1280) is ours, as were the cutting-planes
+    loop it replaced and that loop's step bound (design note).
   - We know of no prior certification of a cumulative *presolve*. What is new
     is posting the strengthening as a derived constraint whose rows are proved
     from the donor's, leaving the model untouched.
@@ -1244,17 +1403,22 @@ no hint type. A hints-only mode would have to decide what its rows become, and
   - The rules and why `kappa` is a maximum.
   - The neutrality theorem, and why the derived constraints ship without
     time-tabling.
-  - The raise arithmetic and its two degenerate ends.
+  - The raise by contradiction, the cutting-planes loop it replaced, and its
+    two degenerate ends.
   - The fixtures, and why `{6, 10, 15}` cannot be one.
   - The restrictions, and the convert-or-set-aside judgement.
-  - Still accurate at `7e1c4178` except in three places, all outside this
-    stack:
-    - the wording noted under raise-a-full-task's Tightness;
+  - #1280, #1281 and #1286 each updated it for their change. At `0a5b4ec6`
+    it was still accurate except in three places, all outside this stack,
+    and **#1265 fixed all three after `0a5b4ec6`**:
+    - the wording noted under raise-a-full-task's Tightness (the
+      `RaiseUnentitled` paragraph now names the failing step);
     - "node-for-node identical", where the test compares solution sets and
-      recursion counts;
+      recursion counts (now "the same solutions in the same number of
+      recursions");
     - "a variable length is not set aside at all", which is false above
-      `Off`, where a variable-start, variable-length task is set aside. Its
-      list of set-aside tasks is incomplete for the same reason.
+      `Off`, where a variable-start, variable-length task is set aside (now
+      "not set aside merely for varying", with the above-`Off` exception and
+      a fuller set-aside list).
 - [`subset-sum-strengthening.md`](../subset-sum-strengthening.md): the two
   derivations and their tests.
 - [`cumulative-proof-logging.md`](../cumulative-proof-logging.md): derived
