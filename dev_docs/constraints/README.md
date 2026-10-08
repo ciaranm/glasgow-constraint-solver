@@ -123,7 +123,7 @@ constraints and do not restate it.
   one-directional `channel` as an injection form with a Hall-set rule of its own,
   which `cake_pb_cp` cannot check (#1047 → #1088). Checking how it called a
   shared helper found a proof bug in `GlobalCardinality`: a constant in the
-  array can make its proofs abort or fail (#1046, still open).
+  array made its proofs abort or fail (#1046, fixed by #1187).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
