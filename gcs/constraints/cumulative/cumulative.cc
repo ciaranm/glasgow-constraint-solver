@@ -7,6 +7,7 @@
 #include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/integer_overflow.hh>
 #include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/bits_encoding.hh>
@@ -1183,7 +1184,34 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+namespace gcs::innards
+{
+    // propagate_cumulative()'s body, which the public entry point wraps.
+    auto propagate_cumulative_unwrapped(const CumulativeInputs &, const State &, auto & inference, ProofLogger * const logger) -> PropagatorState;
+}
+
 auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const State & state, auto & inference, ProofLogger * const logger)
+    -> PropagatorState
+{
+    // The energy reasoning multiplies the capacity by a window's width and a
+    // task's length by its height, and sums loads over time, all in Integer,
+    // which throws when one of those leaves the machine range. Rather than
+    // reason in wider arithmetic, it lets that stand as the error (#1235,
+    // #1223; dev_docs/integer-ranges.md), and says here which quantities are to
+    // blame, keeping the operation that overflowed.
+    try {
+        return propagate_cumulative_unwrapped(inputs, state, inference, logger);
+    }
+    catch (const IntegerOverflow & e) {
+        throw IntegerOverflow{string{"Cumulative: a load or an energy does not fit in an Integer. The energy reasoning multiplies the "
+                                     "capacity by a window's width and a task's length by its height, and sums loads over time, so the "
+                                     "capacity, the heights and the horizon together must leave room for those products; see "
+                                     "dev_docs/integer-ranges.md ("} +
+            e.what() + ")"};
+    }
+}
+
+auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & inputs, const State & state, auto & inference, ProofLogger * const logger)
     -> PropagatorState
 {
     // Named the way the propagator body has always named them, so that what
@@ -2022,7 +2050,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     // assignment was accepted (#1037). Only the bound pushes below are
     // time-tabling's to switch off.
     ++cumulative_counters[rule_time_table_overflow].calls;
-    for (auto idx = 0; idx < range; ++idx)
+    for (long long idx = 0; idx < range; ++idx)
         if (mand_load[idx] > capacity) {
             auto violating_t = t_lo + Integer{idx};
 
@@ -2093,7 +2121,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         if (rules.overload && ! overload_tasks.empty() && is_constant_variable(capacity_var)) {
             ++cumulative_counters[rule_overload].calls;
             vector<Integer> mand_prefix(static_cast<size_t>(range) + 1, 0_i);
-            for (auto idx = 0; idx < range; ++idx)
+            for (long long idx = 0; idx < range; ++idx)
                 mand_prefix[static_cast<size_t>(idx) + 1] = mand_prefix[static_cast<size_t>(idx)] + mand_load[static_cast<size_t>(idx)];
 
             // Mandatory load inside [from, to), over every task.

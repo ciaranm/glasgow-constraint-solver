@@ -68,6 +68,7 @@ using std::cerr;
 using std::function;
 using std::make_optional;
 using std::nullopt;
+using std::optional;
 using std::pair;
 using std::set;
 using std::string;
@@ -599,6 +600,103 @@ namespace
             }
     }
 
+    // Cumulative's energy reasoning works in Integer, so a capacity times a
+    // window's width, a task's length times its height, or the mandatory load
+    // summed over time can leave the machine range on in-range inputs. That is
+    // an IntegerOverflow saying which quantities are to blame, and never a
+    // wrong answer (#1235, #1223); each case has a twin just inside the limit,
+    // which must solve. Every count is by hand, in the comments.
+    auto run_cumulative_energy_test(bool proofs) -> void
+    {
+        struct Case
+        {
+            string name;
+            function<void(Problem &)> post;
+            optional<long long> expected;
+        };
+
+        auto tasks = [](Problem & p, const vector<pair<Integer, Integer>> & starts, Integer length, Integer height, Integer capacity) {
+            vector<IntegerVariableID> s, l, h;
+            for (auto [lo, hi] : starts) {
+                s.push_back(p.create_integer_variable(lo, hi));
+                l.push_back(constant_variable(length));
+                h.push_back(constant_variable(height));
+            }
+            p.post(Cumulative{s, l, h, constant_variable(capacity)});
+        };
+
+        vector<Case> cases{// The overload check's supply, capacity times nine slots: two unit
+            // tasks at the full capacity B take two different slots of 0..8.
+            {"Cumulative supply past Integer", [&](Problem & p) { tasks(p, {{0_i, 8_i}, {0_i, 8_i}}, 1_i, B, B); }, nullopt},
+            // Eight slots fit: 8 * 7 = 56 ordered pairs of different slots.
+            {"Cumulative supply inside Integer", [&](Problem & p) { tasks(p, {{0_i, 7_i}, {0_i, 7_i}}, 1_i, B, B); }, 56},
+            // A task's energy, length times height: 9B. The supply of any
+            // window holding the task overflows too, being at least that
+            // energy at a capacity of B, but the energy is reached first.
+            {"Cumulative task energy past Integer", [&](Problem & p) { tasks(p, {{0_i, 2_i}}, 9_i, B, B); }, nullopt},
+            // 7B fits, and so does the supply over [0, 8): two starts.
+            {"Cumulative task energy inside Integer", [&](Problem & p) { tasks(p, {{0_i, 1_i}}, 7_i, B, B); }, 2},
+            // The mandatory load at time 1, nine tasks of height B: it is past
+            // the capacity, but adding it up leaves Integer first.
+            {"Cumulative mandatory load past Integer", [&](Problem & p) { tasks(p, vector<pair<Integer, Integer>>(9, {0_i, 1_i}), 2_i, B, B); },
+                nullopt},
+            // Eight of them add up, and cannot all run at time 1: none.
+            {"Cumulative mandatory load inside Integer", [&](Problem & p) { tasks(p, vector<pair<Integer, Integer>>(8, {0_i, 1_i}), 2_i, B, B); }, 0},
+            // #1223's: the mandatory load over the whole horizon, 9B, though
+            // no window's is more than B. Tasks 0 and 1 take slots 0 and 1, in
+            // either order, and the other seven are pinned to 2..8.
+            {"Cumulative mandatory prefix past Integer",
+                [&](Problem & p) {
+                    vector<pair<Integer, Integer>> starts{{0_i, 1_i}, {0_i, 1_i}};
+                    for (int i = 2; i < 9; ++i)
+                        starts.emplace_back(Integer{i}, Integer{i});
+                    tasks(p, starts, 1_i, B, B);
+                },
+                nullopt},
+            // Pinned to 2..7 instead, the total is 8B: the same two solutions.
+            {"Cumulative mandatory prefix inside Integer",
+                [&](Problem & p) {
+                    vector<pair<Integer, Integer>> starts{{0_i, 1_i}, {0_i, 1_i}};
+                    for (int i = 2; i < 8; ++i)
+                        starts.emplace_back(Integer{i}, Integer{i});
+                    tasks(p, starts, 1_i, B, B);
+                },
+                2}};
+
+        for (const auto & [name, post, expected] : cases) {
+            println(cerr, "integer ranges: {}{}: expecting {}", name, proofs ? " with proofs" : "",
+                expected ? std::to_string(*expected) + " solutions" : string{"IntegerOverflow"});
+            Problem p;
+            post(p);
+            long long solutions = 0;
+            string proof_name = "integer_ranges_cumulative";
+            try {
+                solve_with(p,
+                    SolveCallbacks{
+                        .solution = [&](const CurrentState &) -> bool {
+                            ++solutions;
+                            return true;
+                        },
+                        .stats_report = silent_stats_report() //
+                    },
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
+            }
+            catch (const innards::IntegerOverflow & e) {
+                if (expected)
+                    throw;
+                if (! string{e.what()}.contains("Cumulative: a load or an energy does not fit in an Integer"))
+                    throw UnexpectedException{name + ": the IntegerOverflow does not say what overflowed: " + e.what()};
+                continue;
+            }
+            if (! expected)
+                throw UnexpectedException{name + ": solved, but was expected to overflow, so this case no longer tests the limit"};
+            if (solutions != *expected)
+                throw UnexpectedException{name + ": found " + std::to_string(solutions) + " solutions, expected " + std::to_string(*expected)};
+            if (proofs)
+                verify_proof_and_clean_up(proof_name);
+        }
+    }
+
     // An objective that is a view at either end of the range, minimised and
     // maximised. A view beyond the range used to be too wide for a bit vector
     // of its own, and the conclusion then claimed a bound that included the
@@ -651,6 +749,7 @@ auto main(int argc, char * argv[]) -> int
         run_min_distance_test(proofs);
         run_auxiliary_tests(proofs);
         run_all_different_except_test(proofs);
+        run_cumulative_energy_test(proofs);
         for (auto c : {A, B})
             for (bool negate : {false, true})
                 for (bool maximise : {false, true})
