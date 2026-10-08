@@ -125,7 +125,7 @@ namespace
             auto rows = half.rows;
             const auto * asked = state.weights.data();
             for (size_t k = 0; k < end; ++k) {
-                const auto * w = &half.weights[k * rows];
+                const auto * w = half.weights.data() + k * rows;
                 size_t row = 0;
                 bool equal = half.profits[k] == profit;
                 for (; row < rows && w[row] <= asked[row].raw_value; ++row)
