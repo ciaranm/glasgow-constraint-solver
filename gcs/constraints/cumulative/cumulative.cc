@@ -128,6 +128,8 @@ namespace
         rule_presence,
         rule_time_table_height,
         rule_overload,
+        rule_overload_elastic,
+        rule_overload_knapsack,
         rule_edge_finding_lb,
         rule_edge_finding_ub,
         rule_not_first,
@@ -136,8 +138,8 @@ namespace
     };
 
     RuleInstrumentation cumulative_counters{"cumulative",
-        {"time_table_lb", "time_table_ub", "time_table_overflow", "presence", "time_table_height", "overload", "edge_finding_lb", "edge_finding_ub",
-            "not_first", "not_last"}};
+        {"time_table_lb", "time_table_ub", "time_table_overflow", "presence", "time_table_height", "overload", "overload_elastic",
+            "overload_knapsack", "edge_finding_lb", "edge_finding_ub", "not_first", "not_last"}};
 
     // The variable-height contribution h_i·active is linearised over cake's
     // per-bit contribution flags cc_k (weight 2^k): contrib = Σ 2^k · cc_k.
@@ -2223,6 +2225,13 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             constexpr auto max_knapsack_capacity = 4096;
             auto knapsack_rule = rules.knapsack_overload && capacity <= Integer{max_knapsack_capacity};
             auto knapsack_words = static_cast<size_t>(capacity.raw_value / 64 + 1);
+            // The elastic rungs have rows of their own (#1236): they refute
+            // windows (TTOC) declined, so their conflicts would otherwise come
+            // off `overload`'s count with nothing to show for them.
+            if (elastic_rules)
+                ++cumulative_counters[rule_overload_elastic].calls;
+            if (knapsack_rule)
+                ++cumulative_counters[rule_overload_knapsack].calls;
             if (elastic_rules)
                 GCS_CHECK_LARGE_DOMAIN("the window a cumulative elastic profile is being sized by", range);
             vector<Integer> optional_height(elastic_rules ? static_cast<size_t>(range) : 0, 0_i);
@@ -2936,6 +2945,9 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                                 pol.emit(*logger, ProofLevel::Temporary);
                             };
 
+                            // Which rung it was, as the proof comment says: (KAOC)
+                            // exactly when the knapsack cap was needed somewhere.
+                            ++cumulative_counters[strengthen.empty() ? rule_overload_elastic : rule_overload_knapsack].contradictions;
                             inference.contradiction(
                                 logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, reason_with_presence());
                             return PropagatorState::DisableUntilBacktrack;
