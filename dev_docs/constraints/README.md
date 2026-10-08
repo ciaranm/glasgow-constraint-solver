@@ -483,20 +483,23 @@ constraints and do not restate it.
     rows are proved from the donor's and pinned by `ia`, so the OPB and the
     `.scp` are untouched, and every rewrite is time-table neutral.
   - **Reachable only from the C++ API.** No front end or example adds it.
-  - **Findings.**
-    - Its own pass walks every time point of the horizon, with proofs off too:
-      12 s and 5.6 GB at 10⁷, against 0.34 s for the donor. Every answer is
-      constant between window edges.
-    - Its proof budgets apply only with proofs on. They are summed over every
-      non-empty time point of the window hull, and the dynamic-programming one also scales
-      with the capacity's magnitude, so neither measures the derivation.
-      Multiplying a fixture's heights and capacity by 20 declines three derivations of about 427 lines,
-      and the proofs-on search takes 182 nodes and a bigger proof, where the
-      proofs-off one refutes at the root.
-    - Raising a height costs up to a `pol` per unit of the capacity, where a
-      proof by contradiction takes three rule steps; checked by hand.
+  - **Findings**, re-audited 2026-10-08 after #1280, #1281 and #1286 fixed
+    the first three.
+    - Its own pass walked every time point of the horizon, with proofs off
+      too: 12 s and 5.6 GB at 10⁷. It is per stretch between window edges
+      since #1281 (#1240), and the pass is no longer what a long horizon
+      costs.
+    - Its proof budgets applied only with proofs on, and their predictions
+      grew with the horizon and the capacity's magnitude, not with the
+      derivation: a fixture scaled by 20 was declined, and the proofs-on
+      search took 182 nodes where the proofs-off one refuted at the root.
+      #1280 and #1286 removed them (#1242, #1241), so at `Off` proofs on and
+      off search identically, at the price of proofs of any size: 767,000
+      lines on #1286's sixteen-task example.
+    - Raising a height cost up to a `pol` per unit of the capacity. Since
+      #1280 it is one proof by contradiction per raised task per row (#1242).
     - Wherever it installs something over a posted donor, like every derived
-      `Cumulative` under the default encoding, its proofs fail to parse at
+      `Cumulative` under the default encoding, its proofs are rejected at
       assertion levels above `Off`. Over a `Disjunctive2D` projection donor
       that it would strengthen it is worse: the other two presolvers decline
       there and their proofs verify, but this one throws and the solve
