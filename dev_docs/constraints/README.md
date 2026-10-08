@@ -214,15 +214,15 @@ constraints and do not restate it.
   own enumeration proofs. Enumerating the same solutions under a different
   branching scheme, it takes 2.5 to 2.7 times Gecode's chain propagator's
   time, and about 10% less than the `n − 1`
-  `LessThan`s it replaces. Findings: MiniZinc's int `decreasing` and
-  `strictly_decreasing` never reach it, because the standard library has no
-  plain `var int` overload to select the solver's own `fzn_decreasing_int`, and
-  all three of its `fzn_*decreasing*` files are dead; a chain that repeats a
-  variable in an impossible order, such as `StrictlyIncreasing{x, x}`, is
-  noticed only after up to W/2 calls on a domain of width W, where
-  `LessThan(x, x)` has contradicted at once since #1088; and a repeat through an
-  opposite-sign view is not even `bounds(Z)`. Not merged with `comparison`: the
-  same row and theorem, but no shared code.
+  `LessThan`s it replaces. Findings: a chain that repeats a variable in an
+  impossible order, such as `StrictlyIncreasing{x, x}`, is noticed only after
+  up to W/2 calls on a domain of width W, where `LessThan(x, x)` has
+  contradicted at once since #1088; and a repeat through an opposite-sign view
+  is not even `bounds(Z)`. MiniZinc's int `decreasing` and
+  `strictly_decreasing` never reached it, and all three `fzn_*decreasing*`
+  files were dead, until #1178 routed them through `increasing` over the
+  reversed array. Not merged with `comparison`: the same row and theorem, but
+  no shared code.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
