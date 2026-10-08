@@ -1067,18 +1067,19 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     if (x_overlap && y_overlap) {
                         auto justify = [&, i, j](const ReasonLiterals & reason) -> void {
                             pin_escapes(reason, i, j);
-                            // The mandatory boxes overlap on both axes, so no
-                            // separating direction is available: for each axis
-                            // and direction, the before flag's [r] row plus
-                            // the mandatory bounds (lb of the preceder's
-                            // position and size, ub of the other's position)
-                            // is infeasible, so four pols force all four flags
-                            // false under the reason and the separation clause
-                            // unit-fails in the framework's closing
-                            // reason-wrapped RUP. That is the 4-way clause plus
-                            // one `present = 0` disjunct per optional rectangle
-                            // (5-way with one, 6-way with both), each presence
-                            // literal then being in the reason.
+                            // The pair overlaps on both axes, in the sense
+                            // above, so no separating direction is available:
+                            // for each axis and direction, the before flag's
+                            // [r] row plus the mandatory bounds (lb of the
+                            // preceder's position and size, ub of the other's
+                            // position) is infeasible, so four pols force all
+                            // four flags false under the reason and the
+                            // separation clause unit-fails in the framework's
+                            // closing reason-wrapped RUP. That is the 4-way
+                            // clause plus one `present = 0` disjunct per
+                            // optional rectangle (5-way with one, 6-way with
+                            // both), each presence literal then being in the
+                            // reason.
                             emit_before_pol(before_x, i, j, lb_lit(xs[i]), lb_lit(width_var[i]), ub_lit(xs[j]));
                             emit_before_pol(before_x, j, i, lb_lit(xs[j]), lb_lit(width_var[j]), ub_lit(xs[i]));
                             emit_before_pol(before_y, i, j, lb_lit(ys[i]), lb_lit(height_var[i]), ub_lit(ys[j]));
@@ -1163,8 +1164,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     return; // a zero-size rectangle spans no cells on this axis
                 // A constant origin has no bound to push, and no order literal
                 // for the certificate to cite. Where a push would have fired
-                // its placement overlaps the blocker's mandatory part on both
-                // axes, which is the pairwise contradiction's to refute.
+                // the pair overlaps on both axes, which is the pairwise
+                // contradiction's to refute.
                 if (is_constant_variable(free_pos[i]))
                     return;
                 auto [cur_lo, cur_hi] = state.bounds(free_pos[i]);
@@ -1194,8 +1195,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 auto forced_i_size = lb_lit(forced_size[i]), forced_j_size = lb_lit(forced_size[j]);
                 auto free_i_size = lb_lit(free_size[i]), free_j_size = lb_lit(free_size[j]);
 
-                // Both forced-axis precedences are refuted by the mandatory
-                // overlap on that axis, exactly as in the contradiction.
+                // Both forced-axis precedences are refuted by the overlap on
+                // that axis, exactly as in the contradiction.
                 auto eliminate_forced_axis = [&, forced_i_lb, forced_i_ub, forced_j_lb, forced_j_ub, forced_i_size, forced_j_size]() -> void {
                     emit_before_pol(forced_before, i, j, forced_i_lb, forced_i_size, forced_j_ub);
                     emit_before_pol(forced_before, j, i, forced_j_lb, forced_j_size, forced_i_ub);
@@ -1294,8 +1295,9 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // height its size on the resource axis, on a resource whose
             // capacity is the extent the set is confined to there. That relaxation
             // sees conflicts the pairwise rule cannot --- three rectangles
-            // sharing a time, no two of whose mandatory boxes overlap, can
-            // still be too tall between them to fit.
+            // sharing a time, none with a mandatory part on the other axis, can
+            // still be too tall between them to fit, and with no mandatory part
+            // on an axis no pair overlaps on it in the pairwise rule's sense.
             //
             // The proof side is what makes it interesting, because the
             // capacity row is not in the OPB and never will be (one encoding

@@ -1516,9 +1516,15 @@ reason).
 Again this is all the scaffolding there is; the justifications are the
 same `emit_before_pol` shape per axis:
 
-- **Contradiction** (mandatory-box overlap on both axes): four pols —
-  one per axis and direction — force all four flags false under the
-  reason; the 4-way clause unit-fails in the closing RUP.
+- **Contradiction** (the pair overlaps on both axes): on an axis, write
+  `lst = ub(pos)` and `eet = lb(pos) + lb(size)`; the pair overlaps
+  there when `lst_i < eet_j` and `lst_j < eet_i`, which is exactly when
+  neither before flag on that axis survives its pol. Neither rectangle
+  needs a mandatory part of its own for that; the forbidden-region form
+  (#1250) also catches one whose range of placements covers the other's
+  mandatory part. Four pols — one per axis and direction — force all
+  four flags false under the reason; the separation clause unit-fails
+  in the closing RUP.
 - **Bound push** (a forced overlap on one axis pushes the other):
   the pair overlaps on the *forced* axis, so two pols refute both
   forced-axis flags exactly as in the contradiction; the *free* axis
@@ -1549,9 +1555,9 @@ justification above a pol over the same rows as before.
 The one new inference is the mirror of the contradiction. An undecided
 rectangle blocks nothing and is pushed nowhere — there is no
 conditional-bounds store, and an unconditional prune would be wrong if
-it turns out absent, exactly as in 1D — but if its mandatory box would
-overlap that of a rectangle known to be *present*, then it cannot be
-present:
+it turns out absent, exactly as in 1D — but if it overlaps a rectangle
+known to be *present* on both axes, in the same sense, then it cannot
+be present:
 
 - **Presence falsification**: the same four pols as the contradiction
   refute all four separating directions, the present partner's
@@ -1590,10 +1596,11 @@ to there. The rule time-tables that Cumulative, on each axis in turn:
 the overflow contradiction, and both bound pushes.
 
 It sees conflicts the pairwise rule cannot. Three rectangles whose
-mandatory time-axis parts share a time, no two of whose mandatory
-*boxes* overlap, can still be too tall between them to fit in the
-window — and with no mandatory part on the resource axis there is
-nothing for the pairwise rule to overlap or to push away from.
+mandatory time-axis parts share a time, none with a mandatory part on
+the resource axis, can still be too tall between them to fit in the
+window — and with no mandatory part on the resource axis no pair
+overlaps there, even in the pairwise rule's forbidden-region sense, and
+there is nothing to push away from.
 
 **Nothing reaches the OPB**, and nothing can: one encoding per
 constraint is the #922/#780 rule, and a capacity row is not something
