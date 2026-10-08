@@ -323,8 +323,10 @@ constraints and do not restate it.
   trigger marks the variable's holes as observed, which keeps other
   constraints' optional interior pruning on. Also: repeated or aliased
   candidates lose `bounds(Z)` and can take W/2 calls to fail; step 1 is
-  quadratic in interval counts; XCSP3's index-free `element` is unsupported;
-  and a constant near a 64-bit limit aborts a proof-logged run.
+  quadratic in interval counts; and XCSP3's index-free `element` is
+  unsupported. Since #1215 a constant outside the solver's integer range is
+  refused at construction, so the 64-bit overflow the audit found with proofs
+  on can no longer be reached.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
