@@ -27,6 +27,8 @@
 
 using namespace gcs;
 
+using gcs::innards::CumulativeEncoding;
+
 using std::cerr;
 using std::cref;
 using std::make_optional;

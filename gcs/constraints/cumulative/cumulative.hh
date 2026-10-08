@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_CUMULATIVE_CUMULATIVE_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/innards/cumulative_encoding.hh>
 #include <gcs/constraints/innards/cumulative_mutations.hh>
 #include <gcs/innards/proofs/constraint_proof_model_data.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -17,72 +18,6 @@
 
 namespace gcs
 {
-    /**
-     * \brief Which OPB encoding a Cumulative writes.
-     *
-     * Unlike \ref CumulativeRules, this *does* change what goes into the OPB.
-     * It changes nothing else: the solutions found, the inferences made and
-     * the certificates emitted are the same whichever is chosen, because
-     * nothing yet derives anything from what the second arm adds.
-     *
-     * \ingroup Constraints
-     */
-    enum class CumulativeEncoding
-    {
-        /// The per-time family alone: three fully reified flags per (task,
-        /// time point) over each task's possible-active window, and one
-        /// capacity row per time point. `O(n x horizon)`, and what every
-        /// inference used to cite.
-        ///
-        /// **Not shipped.** It is kept for one test-only job and is not
-        /// selectable by anything a user runs: \ref BothRecovering needs the
-        /// per-time rows as ground truth. Nothing outside this tree derives it
-        /// any more --- `cake_pb_cp` replaced its time-indexed encoder with a
-        /// start-checkpoint one (CakePB-dev a402078, 2026-09-19) --- so the
-        /// `scp_chain_cumulative*` cases that used to be pinned to it now check
-        /// the shipped encoding against cake's.
-        TimeIndexed,
-
-        /// Both families in the model, and then derive every per-time capacity
-        /// row from the start-checkpoint rows and check it against the row the
-        /// model still carries beside it.
-        ///
-        /// The development arm for the middle of #780, and the answer to "did
-        /// the recovery derive the right thing". A recovery that is *invalid*
-        /// fails where it is emitted; a recovery that is valid but derives the
-        /// *wrong* row --- citing the neighbouring checkpoint, say --- emits a
-        /// perfectly good line, and only the implication check against the
-        /// model's own row rejects it. So the two encodings standing side by
-        /// side buy something here that neither buys alone.
-        ///
-        /// Deliberately eager, which the recovery itself is not meant to be:
-        /// this recovers every row rather than the ones a search cites, so it
-        /// is `O(horizon)` work in the proof and belongs in a test lane rather
-        /// than in a solve. It does nothing for a Cumulative the recovery
-        /// cannot yet speak about --- see
-        /// innards::cumulative_checkpoint_recovery_applies.
-        BothRecovering,
-
-        /// The start-checkpoint family alone, with the per-time block not
-        /// written at all: per ordered pair of active tasks, flags saying
-        /// whether one is running when the other starts, and one capacity row
-        /// per task. `6n(n-1) + n` rows and **no dependence on the horizon**.
-        ///
-        /// **This is the encoding Cumulative ships, and the only one.** Two
-        /// would mean cake had to reproduce our per-constraint choice exactly,
-        /// and a disagreement between the two models shows up as a rejected
-        /// proof rather than as an error.
-        ///
-        /// Every rule cites a per-time capacity row *recovered in the proof*
-        /// rather than read from the model; see
-        /// innards::recover_cumulative_capacity_row. There is no shape to fall
-        /// back for, because a Cumulative the recovery cannot speak about never
-        /// reaches the encoder: no active task makes `prepare()` return false,
-        /// and a height whose bits cannot be cited --- a view --- makes it
-        /// throw.
-        StartCheckpoint
-    };
-
     /**
      * \brief Which of Cumulative's propagation rules are enabled.
      *
@@ -383,7 +318,7 @@ namespace gcs
         // default" is told apart from "asked for the default": the default is
         // the environment's, and resolving it here in the constructor would
         // read it before a test had a chance to set it.
-        std::optional<CumulativeEncoding> _encoding;
+        std::optional<innards::CumulativeEncoding> _encoding;
 
         /// #780: whether every active task's height has bits this encoding can
         /// cite --- constant, or a plain variable (not a view) whose declared
@@ -485,16 +420,19 @@ namespace gcs
 
         /**
          * \brief Select which OPB encoding is written (see
-         * CumulativeEncoding). Proof model only: the solutions found and the
-         * inferences made are the same either way.
+         * innards::CumulativeEncoding). For tests only: only the default,
+         * start-checkpoint, is shipped, and the others write a model
+         * `cake_pb_cp` would not derive. Proof model only: the solutions found
+         * and the inferences made are the same either way.
          *
          * Takes precedence over the `GCS_CUMULATIVE_ENCODING` environment
          * variable, which is what selects the encoding for a constraint that
          * does not call this --- and so is how a whole fixture set is run
          * under the other arm without touching the places it builds its
-         * Cumulatives.
+         * Cumulatives. Every binary linked against the library honours that
+         * variable, so it is a diagnostic, not a setting (#1238).
          */
-        auto with_encoding(CumulativeEncoding encoding) -> Cumulative &;
+        auto with_encoding(innards::CumulativeEncoding encoding) -> Cumulative &;
 
         /// Corrupt one step of the overload check's derivation. For tests
         /// only, which assert that VeriPB rejects the result; see
