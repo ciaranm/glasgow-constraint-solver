@@ -132,8 +132,9 @@ rule that has no sweep.
 ## Which rules
 
 `Cumulative`: `time_table_lb`, `time_table_ub`, `time_table_overflow`,
-`presence`, `time_table_height`, `overload`, `edge_finding_lb`,
-`edge_finding_ub`, `not_first`, `not_last`.
+`presence`, `time_table_height`, `overload`, `overload_elastic`,
+`overload_knapsack`, `edge_finding_lb`, `edge_finding_ub`, `not_first`,
+`not_last`.
 
 `Disjunctive`: `mandatory_overlap`, `time_table_lb`, `time_table_ub`,
 `presence`, `detectable_precedences_lb`, `detectable_precedences_ub`,
@@ -146,6 +147,19 @@ not-first / not-last shares the window-energy one, because a strengthening
 changes what a rule detects rather than where it infers. Only one arm of a
 family can be live in a run, so which arm a row belongs to is settled by the
 run's own flags.
+
+The elastic overload rungs are the exception, and get rows of their own
+(#1236). They are strengthenings of the overload check, but not arms of it: they
+run beside (TTOC) in the same sweep, are tried only on windows (TTOC) has
+declined, and have a certificate and a contradiction of their own. A conflict
+one of them finds is often one (TTOC) would have found on a later window, so
+counted under nothing it simply disappeared from `overload`'s figure. Now
+`overload` counts (TTOC)'s conflicts, `overload_elastic` the horizontally
+elastic rung's (TTHE-OC) and `overload_knapsack` those that needed the knapsack
+cap (KAOC), split exactly as the proof comment's `rule=ttheoc` / `rule=kaoc` is.
+Each rung's `calls` counts the sweeps it was on for; `overload_knapsack`'s stays
+at zero when the capacity is past the knapsack's limit, since the rung is then
+off.
 
 The halves are separate because measuring one half of a symmetric rule and
 doubling has been wrong here before: on `Cumulative` the two came out at 2.2%
