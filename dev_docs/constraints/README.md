@@ -359,9 +359,10 @@ constraints and do not restate it.
   without; the matching bound concludes `z ≤ t − 1` where its own certificate,
   guarded one distance lower, proves `z ≤ t*`, which cuts the tree by 26 to
   52% on 20-site random instances with six positions and by up to 58% with
-  eight; distances near `2⁶³` crash the proof model when `z` can be negative,
-  and through an offset view on `z` crash the propagators too, proofs or not;
-  and its assertions carry no hint.
+  eight; and its assertions carry no hint. Distances near `2⁶³` crashed the
+  proof model when `z` could be negative, and through an offset view on `z`
+  the propagators too; since #1215 and #1214 such distances and offsets are
+  refused at construction.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
