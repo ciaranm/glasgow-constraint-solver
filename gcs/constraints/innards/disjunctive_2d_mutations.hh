@@ -27,9 +27,10 @@ namespace gcs::innards
      * that still verifies is a finding about the honest derivation rather than
      * about the mutation.
      *
-     * None of them changes the inference: the same bounds are pushed and the
-     * same solutions reported, so a lane running one of these is asking about
-     * the proof alone.
+     * All but one leave the inference alone: the same bounds are pushed and
+     * the same solutions reported, so a lane running one of these is asking
+     * about the proof alone. The exception is \ref EdgeFindingOneTooFar, which
+     * pushes the bound itself one unit further than the certificate reaches.
      *
      * \ingroup Innards
      */
@@ -122,8 +123,8 @@ namespace gcs::innards
         };
 
         /// Route B over optional rectangles (#984): leave a present member's
-        /// presence out of the guard. The pair's 6-way clause still carries
-        /// its `[present = 0]` disjunct, and nothing the network's goals offer
+        /// presence out of the guard. The pair's clause still carries its
+        /// `[present = 0]` disjunct, and nothing the network's goals offer
         /// covers it.
         struct SkipPresenceGuard
         {
@@ -131,7 +132,7 @@ namespace gcs::innards
 
         /// The energetic rungs over optional rectangles (#984): define the
         /// activity flag without its presence conjunct. The pair clause the
-        /// flagged row is built from then keeps the 6-way clause's presence
+        /// flagged row is built from then keeps the clause's presence
         /// disjuncts, and does not close.
         struct SkipPresenceConjunct
         {

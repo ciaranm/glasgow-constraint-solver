@@ -106,12 +106,12 @@ every verdict the raised height reaches is one the donor reaches too:
   exactly when something else is compulsory there, which the donor also does.
 
 The useful consequence is a *test*: with the energy rules off on both the donor
-and the derived constraint, the search tree with the presolver must be
-**node-for-node identical** to the one without it. Any difference means the
-strengthening changed what the profile permits, which is the shape an unsound one
-takes, and `cumulative_strengthening_presolver` asserts it on four fixtures —
-two that only move the capacity and two that raise a height — before VeriPB gets
-a say.
+and the derived constraint, the search with the presolver must find **the same
+solutions in the same number of recursions** as the one without it. Any
+difference means the strengthening changed what the profile permits, which is
+the shape an unsound one takes, and `cumulative_strengthening_presolver` asserts
+it on four fixtures — two that only move the capacity and two that raise a
+height — before VeriPB gets a say.
 
 The same theorem, used the other way round, is why the derived constraints ship
 with **time-tabling off**: every time-table inference a derived constraint could
@@ -255,11 +255,12 @@ round through, so the step lands back on `R` exactly when
 ```
 
 When the rest of the row only just overshoots the capacity — `T − R = 1` — one
-step raises all the way. When it overshoots by half, the steps are of size one
-and the raise costs a `pol` per unit of `kappa`. And no single `lambda`, `e`,
-divisor and set of weakenings does better: asking for the whole raise at once
-forces `(k − 1)·(T − R − 1) < 1`. That was a loop, and a budget on the lines it
-could spend, until #1242.
+step raises all the way. When it overshoots by at least the right hand side
+itself — `T ≥ 2·R`, with `R = kappa` here — every step is of size one and the
+raise costs a `pol` per unit of `kappa`. And no single `lambda`, `e`, divisor and
+set of weakenings does better: asking for the whole raise at once forces
+`(k − 1)·(T − R − 1) < 1`. That was a loop, and a budget on the lines it could
+spend, until #1242.
 
 A proof by contradiction does the whole raise in one rule step, whatever
 `kappa` is: `red` the goal `kappa·a_i + sum_k w_k·a_k <= kappa` with an empty
@@ -295,11 +296,14 @@ negated claim still holds, so the closing RUP is rejected.
 
 What no proof can catch is the *set*. If a task that does not conflict with
 everything is raised anyway, the derivation runs honestly and the row it lands on
-is simply not implied by the donor — which VeriPB does reject, but only because
-the conclusion is false, not because anything about the derivation was wrong.
-`RaiseUnentitled` covers it, on the control fixture where the tallest task misses
-the pairwise test by exactly one. `recover_am1_from_row` refuses a set that does
-not overshoot the capacity outright for the same reason:
+is simply not implied by the donor. `RaiseUnentitled` covers it, on the control
+fixture where the tallest task misses the pairwise test by exactly one. There
+`recover_am1_from_row` would refuse a pair that fits, so the mutation reports a
+demand large enough to overshoot by one, which keeps every step legal. VeriPB
+then rejects at the row's closing `ia` step: every step before that is sound and
+lands on a true but weaker line, and what fails is the claim that it implies a
+row which is false — not anything about the derivation. `recover_am1_from_row`
+refuses a set that does not overshoot the capacity outright for the same reason:
 [it cannot be caught later](../gcs/innards/proofs/am1_from_row.hh).
 
 Those at-most-ones all come off *one* donor row, which is the case where
@@ -395,7 +399,11 @@ nor is a variable capacity. `CumulativeDonorView`
 ([`donor_view.hh`](../gcs/constraints/cumulative/donor_view.hh)) reduces a donor
 to the part of itself the argument can be made over, per *task*, and what is left
 as a set-aside is a task that cannot be argued about at all: a height that is a
-view, or one whose lower bound is zero. `donors_with_set_aside_tasks` counts the
+view, or one whose lower bound is zero; an optional task whose guaranteed demand
+alone exceeds the capacity; a task the donor encoded that can no longer load the
+resource, such as one whose length has since fallen to zero; and a task whose
+start and length both vary, when the donor published no line for its `after`
+pins to go through (below). `donors_with_set_aside_tasks` counts the
 donors that had one, because one strengthened over four of its five tasks
 otherwise looks just like one strengthened in full.
 
@@ -417,13 +425,16 @@ mode that fixes its duration and its demand — there is no "without" to lose to
 before conversion such a donor had no usable task at all and was declined
 outright.
 
-A variable **length** is not set aside at all. No length appears in a capacity
-row, so the rows are the same rows; what it costs is the `after` pin, and the
-donor's proof-only end proxy is what that goes through, published for the purpose
-(#685). Such a task therefore keeps its term, its window and its mandatory part
-— which is what earns it a place here, this presolver running the energy rules
-alone and the (TTOC) profile term being the one that can count a task the
-window-energy lemma cannot.
+A variable **length** is not set aside merely for varying. No length appears in
+a capacity row, so the rows are the same rows; what it costs is the `after` pin,
+and the donor's proof-only end proxy is what that goes through, published for the
+purpose (#685). Such a task therefore keeps its term, its window and its
+mandatory part — which is what earns it a place here, this presolver running the
+energy rules alone and the (TTOC) profile term being the one that can count a
+task the window-energy lemma cannot. The exception is a proof written above
+`AssertionLevel::Off`, which omits the definitions and so the line giving the
+end proxy its lower bound: with nothing to pin through, a task whose start varies
+as well as its length is set aside there.
 
 ## Testing it
 
@@ -445,8 +456,9 @@ reasoning is on. So:
    is: which tasks are full, and what `kappa` over the rest comes to. The rule
    turns on the pairwise test, and a fixture that has drifted over the boundary
    is a fixture for the other case.
-3. **Neutrality**, asserted as node-for-node equality under time-tabling alone,
-   on fixtures that raise as well as fixtures that do not.
+3. **Neutrality**, asserted as an identical solution set and recursion count
+   under time-tabling alone, on fixtures that raise as well as fixtures that do
+   not.
 4. **Two energy differentials**: the `pack` fixture, where the capacity rule is
    the only thing that refutes at the root, and the full-task pack, where the
    capacity rule gets nothing and only the raising refutes.

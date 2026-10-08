@@ -10,8 +10,9 @@
  * rule off --- because a green suite says nothing about a rule nothing else
  * fires. The fixtures are built so that the pairwise rule is silent on them by
  * construction: no rectangle has a mandatory part on the resource axis, so
- * there is no mandatory box to overlap and no blocker to be pushed away from,
- * which is exactly the gap the relaxation fills.
+ * no pair overlaps on that axis in the pairwise rule's sense and there is no
+ * blocker to be pushed away from, which is exactly the gap the relaxation
+ * fills.
  *
  * The proof side is the interesting half. The capacity row the argument needs
  * is not in the OPB and never will be, so it is derived per firing: each
@@ -629,8 +630,8 @@ auto main(int argc, char * argv[]) -> int
     // window holding them is eight and they need nine.
     //
     // No rectangle has a mandatory *y* part (latest start 5 is past earliest
-    // end 3), so no mandatory box overlaps another and no pair has a blocker
-    // to be pushed away from: the pairwise rule sees nothing here at all.
+    // end 3), so no pair overlaps on y and no pair has a blocker to be pushed
+    // away from: the pairwise rule sees nothing here at all.
     const Instance sharp{{{0, 2}, {0, 2}, {0, 2}}, {{0, 5}, {0, 5}, {0, 5}}, {3, 3, 3}, {3, 3, 3}};
 
     // Mutation mode: emit one deliberately corrupted proof and stop, for

@@ -15,11 +15,13 @@ coefficients, is [`InferredCumulative`](inferred-cumulative.md).
 
 ## What it does
 
-Tasks are identified by **start variable**, so the same task on two resources is
-one node of the conflict graph. Each candidate pair is grown into a maximal
-clique taking longest-duration first (the unit-coefficient reading of Sidorov's
-lifting order), cliques are ranked by total duration, and anything subsumed by an
-accepted clique or smaller than three members is dropped.
+Tasks are identified by **start variable and presence** (#1136), so the same
+task on two resources is one node of the conflict graph. The same start under a
+different presence, or optional on one resource and mandatory on another, is a
+different node. Each candidate pair is grown into a maximal clique taking
+longest-duration first (the unit-coefficient reading of Sidorov's lifting order),
+cliques are ranked by total duration, and anything subsumed by an accepted clique
+or smaller than three members is dropped.
 
 Three is the floor because a two-task "clique" is just a conflicting pair, which
 the resource witnessing it already rules out — posting one adds a propagator that
@@ -80,7 +82,7 @@ As with [capacity strengthening](cumulative-strengthening.md), the inference
 cannot change a time-table verdict: a conflicting pair is already kept apart by
 whichever resource witnesses it, so the inferred constraint's profile reasoning
 is redundant. It therefore ships with **time-tabling off**, and the test asserts
-node-for-node equality with it turned back on.
+the same solutions in the same number of recursions with it turned back on.
 
 What is new is the *energy* argument over the whole clique. Three pairwise
 incompatible tasks of length two need six units of a five-slot window, and no
@@ -163,11 +165,13 @@ the database and not the bytes, it is not done.
 ## Testing it
 
 The fixture family is built so that no single donor could make the inference: k
-tasks, k resources, pair `(i, j)` conflicting only on resource `(i + j) mod k`,
-every resource posted over all k starts with zero demand for non-members. A root
-refutation there cannot be one of the donors doing the work, and
-`bridges_derived` being non-zero says the certificate genuinely spanned
-resources.
+tasks, k resources, demand one on resource `(i + j) mod k` for both tasks of each
+pair `(i, j)`, every resource posted over all k starts with zero demand for
+non-members. At k = 3, which every proof-logged use of the family takes, that
+is one conflicting pair per resource; at larger k a resource carries every task
+with a partner there, and so every pair among them. A root refutation at k = 3
+cannot be one of the donors doing the work, and `bridges_derived` being non-zero
+says the certificate genuinely spanned resources.
 
 - **The differential**: three tasks of length two into five time points — root
   refutation with the presolver, search without, proof verified.
@@ -175,7 +179,8 @@ resources.
   matching brute force. An inferred constraint has to be harmless where it is not
   decisive.
 - **Solution preservation** at three shapes, against brute force.
-- **Neutrality**, as node-for-node equality under time-tabling alone.
+- **Neutrality**, as an identical solution set and recursion count under
+  time-tabling alone.
 - **Budgets**, on a two-disjoint-edges fixture where the drops are real rather
   than an artefact of there being no candidates.
 - **The capacity bound itself**, asserted as six on the differential fixture —
@@ -185,20 +190,23 @@ resources.
 - **End to end from a file**, as the `rcpsp_dzn_inferred` example test:
   `examples/rcpsp/sample.dzn` is built so each conflicting pair is witnessed by a
   different resource, and its proof is VeriPB-checked like every other example.
-- **Mutations**, on a fixture carrying a *camouflage* task — a fourth task on a
-  capacity-two resource where every pairwise demand sums to exactly two, so it is
-  compatible with everything by exactly one unit. Honestly it stays out of the
-  clique; the mutations force the issue:
+- **Mutations**, the first three on a fixture carrying a *camouflage* task — a
+  fourth task on a capacity-two resource where every pairwise demand sums to
+  exactly two, so it is compatible with everything by exactly one unit. Honestly
+  it stays out of the clique; the mutations force the issue. The last two run on
+  the makespan and optional-task fixtures respectively:
 
   | mutation | what it corrupts |
   |---|---|
   | `ClaimRhsZero` | claims no member may run at all |
   | `BridgeWrongTask` | bridges a task onto the *other* task's flags, so the at-most-one is about a task nothing cornered |
   | `IncludeNonConflicting` | grows the clique with the camouflage task, inventing the conflict record — exactly where an off-by-one in the conflict test lands |
+  | `ClaimHigherMakespanBound` | claims a makespan bound one above what the clique's energy supports |
+  | `ForgetPresence` | posts a clique's optional members as if they were mandatory, so the derived constraint loads the resource with tasks that need not be there (#1136) |
 
-  VeriPB rejects each. All three corrupt the *conclusion* rather than the route,
-  which is what a conflict-shaped derivation requires: the route is where it
-  forgives everything.
+  VeriPB rejects each. All of them corrupt the *conclusion* rather than the
+  route, which is what a conflict-shaped derivation requires: the route is where
+  it forgives everything.
 
 ## The Pack / Pack-d cross-check
 

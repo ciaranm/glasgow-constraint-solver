@@ -53,8 +53,8 @@ every 0/1 point the rows it is lifted from allow satisfies it. So no set of task
 that fits under those resources at one time point fails under the cut at that
 time point,
 and time-tabling, which only ever reasons about one time point, can reach nothing
-new. It therefore ships with **time-tabling off**, and the test asserts
-node-for-node equality with it turned back on.
+new. It therefore ships with **time-tabling off**, and the test asserts the same
+solutions in the same number of recursions with it turned back on.
 
 What is new is the *window* argument, where the two constraints supply and
 consume at different rates and the ratio is what decides.
@@ -126,6 +126,14 @@ a ninetieth percentile of 3111 — and 1159 and 877 before #726 stopped skipping
 covers. The budget is not what stops us on Pack or Pack_d either way, so covers
 his early stop would have abandoned cost us nothing there — which leaves only
 the unbudgeted direction, where lifting them can only help.
+
+That is Pack and Pack_d only. Measured on 2026-10-04, 25 of the la_x instances,
+all with between 300 and 675 tasks, exhaust the 20,000 calls, so on that
+collection the budgeted direction is live. On PSPLib it is the lifting
+programmes' state budget that binds instead, and changes the cuts posted: on 47
+of the 477 J90 instances and 55 of the 562 J120 instances that finished in
+#1255's 14-way re-sweep (its table, from an earlier sweep, has 566 J120
+finished).
 
 Implementing it verbatim would be wrong: the estimate is an upper bound only
 while the unlifted coefficients stay at most one, which holds at `π₀ = 1` and
@@ -403,6 +411,21 @@ build their programmes at install. The verified sweep is a separate pass for exa
 asserts a non-zero restriction count so it cannot quietly stop covering them.
 
 ## Proof size, which is what decided the design
+
+**The figures in this section were measured before #943**, which made
+start-checkpoint the only encoding `Cumulative` writes, and they have not been
+re-measured since. Every row a derived cut cites from a posted `Cumulative`
+donor is now recovered from that donor's checkpoint block in the proof (a
+`Disjunctive2D` projection donor's come from its comparator network instead).
+At first that cost about 7,200 lines a recovery on `pack001`, and on that
+instance #943 alone took the certificate's checking time from 0.79 s to 28.4 s
+(#1254). The recovery chain (#1290) brought it back down: `pack001` under
+`--infer-cumulative --deadline 20 --prove` now checks in 0.64 s, and all 55 Pack
+refutations verify in 119 s; see "Recovering `C_t` from `C_{t-1}`: the chain
+(#1254)" in [`cumulative-proof-logging.md`](cumulative-proof-logging.md). The
+judgement below, that proof size and checking time are not demonstrably a
+problem, rests on the August figures, which have not been re-taken against the
+chain.
 
 Measured, because the estimate that nearly sank this was wrong in both directions
 and the two errors very nearly cancelled. Over a single resource one derived row

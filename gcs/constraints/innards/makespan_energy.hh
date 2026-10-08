@@ -184,10 +184,14 @@ namespace gcs::innards::makespan_energy
      * \brief The strongest makespan lower bound this constraint's energy
      * supports, or nothing when it supports none better than `known_bound`.
      *
-     * A schedule finishing at `mu` confines every task to `[lo, mu)`, where
-     * `lo` is the earliest time any of them can be running. Between them they
-     * need `sum_i height_i * length_i` units of a resource supplying `capacity`
-     * per time point --- and only at the time points the constraint has a
+     * Over a window `[lo, mu)`, where `lo` is the earliest time any task can
+     * be running, each task needs the activity the window-energy lemma
+     * certifies for it there: the overlap with the window its start bounds
+     * force. A task linked to the makespan has its start at most
+     * `mu - link->bound` under a makespan of `mu`; an unlinked one keeps its
+     * own start bounds. Between them they need the sum of those overlaps, each
+     * times its height, in units of a resource supplying `capacity` per time
+     * point --- and only at the time points the constraint has a
      * capacity row for, which is what `time_slot_prefix` counts and why the
      * window's width is not what is divided by. Where the need beats the
      * supply, `mu` is refuted, and the largest refuted `mu` gives the bound.
@@ -216,17 +220,19 @@ namespace gcs::innards::makespan_energy
      *
      * Everything is emitted under `reason` extended with the negated
      * conclusion, so the caller must be inferring `makespan >= bound` with
-     * ThenRUP::Yes: it is that deadline which confines the tasks to the window,
-     * and without it the lemma's end-of-window literals do not hold. The model
-     * has to entail `start + length <= makespan` for every task, or those
-     * literals are not RUP and VeriPB will say so.
+     * ThenRUP::Yes: it is that deadline which confines the linked tasks to
+     * the window, and without it the lemma's end-of-window literals do not
+     * hold for them.
      *
-     * One `pol`, over the capacity rows inside the window and each task's
-     * window energy scaled by its height. Every task's activity terms cancel
-     * against its terms in the rows, leaving a line with nothing but negative
-     * coefficients on the left and a positive right hand side --- a
-     * contradiction exactly when the bound is one \ref makespan_energy_bound
-     * accepted.
+     * Task by task: where a linked task's own domain does not already confine
+     * it, one `pol` adding its link row to the two order literals'
+     * definitions, giving its lemma the deadline as a clause; then that task's
+     * window-energy lemma. Last, one `pol` over the capacity rows inside the
+     * window and each task's window energy scaled by its height. Every task's
+     * activity terms cancel against its terms in the rows, leaving a line with
+     * nothing but negative coefficients on the left and a positive right hand
+     * side --- a contradiction exactly when the bound is one
+     * \ref makespan_energy_bound accepted.
      *
      * \ingroup Innards
      */

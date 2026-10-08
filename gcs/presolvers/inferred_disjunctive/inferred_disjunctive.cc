@@ -217,8 +217,8 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     auto bridge_wrong_task = std::holds_alternative<inferred_disjunctive_mutation::BridgeWrongTask>(_mutation);
     auto include_non_conflicting = std::holds_alternative<inferred_disjunctive_mutation::IncludeNonConflicting>(_mutation);
 
-    // Collect the tasks, keyed by start variable so that the same task on two
-    // resources is one node of the conflict graph.
+    // Collect the tasks, keyed by start variable and presence so that the same
+    // task on two resources is one node of the conflict graph.
     vector<Task> tasks;
     map<pair<IntegerVariableID, optional<IntegerVariableID>>, size_t> task_of_start;
     size_t disagreeing_lengths_this_run = 0;

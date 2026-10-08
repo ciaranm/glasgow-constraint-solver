@@ -636,10 +636,12 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // An activity flag says a task occupies a time point:
             //     act_{i,t} <-> s_i >= t - p_i + 1  AND  s_i < t + 1
             // which is a conjunction of two order literals the encoding
-            // already mints, so it costs two reds and adds nothing to the
-            // model. Cached when it lives at Top, its definition saying
-            // nothing about the search state; the cache is cleared per firing
-            // at Temporary, where backtracking deletes the rows behind it.
+            // already mints, so it costs three reds (a forward row per
+            // conjunct and one backward row, and a fourth for an optional
+            // task's presence conjunct) and adds nothing to the model. Cached
+            // when it lives at Top, its definition saying nothing about the
+            // search state; the cache is cleared per firing at Temporary,
+            // where backtracking deletes the rows behind it.
             //
             // The *duration* is part of the key, not just the task and the
             // time. For a constant duration that changes nothing, but a

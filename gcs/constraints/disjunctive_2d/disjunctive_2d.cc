@@ -608,8 +608,8 @@ auto Disjunctive2D::define_proof_model(ProofModel & model, const State &) -> voi
             // has to know whether a rectangle is optional. In particular the
             // before flags stay reified *unconditionally* on the arithmetic,
             // which is what keeps every justification below a pol over the same
-            // rows as before, and what makes the 4-way clause become 6-way
-            // rather than something new.
+            // rows as before, and what makes the 4-way clause become 5-way (one
+            // optional rectangle) or 6-way (both) rather than something new.
             for (auto r : {i, j})
                 if (_presence[r])
                     clause_sum += 1_i * (*_presence[r] == 0_i);
@@ -1067,15 +1067,19 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     if (x_overlap && y_overlap) {
                         auto justify = [&, i, j](const ReasonLiterals & reason) -> void {
                             pin_escapes(reason, i, j);
-                            // The mandatory boxes overlap on both axes, so no
-                            // separating direction is available: for each axis
-                            // and direction, the before flag's [r] row plus
-                            // the mandatory bounds (lb of the preceder's
-                            // position and size, ub of the other's position)
-                            // is infeasible, so four pols force all four flags
-                            // false under the reason and the 4-way separation
-                            // clause unit-fails in the framework's closing
-                            // reason-wrapped RUP.
+                            // The pair overlaps on both axes, in the sense
+                            // above, so no separating direction is available:
+                            // for each axis and direction, the before flag's
+                            // [r] row plus the mandatory bounds (lb of the
+                            // preceder's position and size, ub of the other's
+                            // position) is infeasible, so four pols force all
+                            // four flags false under the reason and the
+                            // separation clause unit-fails in the framework's
+                            // closing reason-wrapped RUP. That is the 4-way
+                            // clause plus one `present = 0` disjunct per
+                            // optional rectangle (5-way with one, 6-way with
+                            // both), each presence literal then being in the
+                            // reason.
                             emit_before_pol(before_x, i, j, lb_lit(xs[i]), lb_lit(width_var[i]), ub_lit(xs[j]));
                             emit_before_pol(before_x, j, i, lb_lit(xs[j]), lb_lit(width_var[j]), ub_lit(xs[i]));
                             emit_before_pol(before_y, i, j, lb_lit(ys[i]), lb_lit(height_var[i]), ub_lit(ys[j]));
@@ -1101,8 +1105,9 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         // Exactly one is undecided, and it is the one that
                         // cannot be there: the same four pols refute all four
                         // separating directions, and the present one's
-                        // presence literal is in the reason, so the six-way
-                        // clause is left with the undecided one's own
+                        // presence literal, if it has one, is in the reason,
+                        // so the 6-way clause (5-way when the present one is
+                        // mandatory) is left with the undecided one's own
                         // "absent" disjunct and the framework's closing RUP
                         // concludes it. Nothing here is conditional on a
                         // rectangle that might not be present --- the before
@@ -1132,14 +1137,17 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // "free" axis) -- no pair overlaps on both, since the contradiction
             // pass returned otherwise. So the pushed rectangle is moved clear of
             // the blocker's mandatory part on the free axis: a 1D single-blocker
-            // disjunctive push. The justification is six pols: two eliminate
+            // disjunctive push. The justification is four pols: two eliminate
             // the forced-axis precedences (both refuted by the overlap), and
             // the free-axis dichotomy is the 1D chain step --
             // the impossible free direction refuted from the pushed bound, the
             // surviving direction folded onto the target order literal's
-            // definition row -- so with the escapes pinned the 4-way clause
-            // forces the target in the framework's closing RUP. One step
-            // regardless of the blocker's size.
+            // definition row -- so with the escapes pinned the separation
+            // clause forces the target in the framework's closing RUP. That
+            // is the 4-way clause plus one `present = 0` disjunct per optional
+            // rectangle (5-way with one, 6-way with both), whose presence
+            // literals reason_for carries. One step regardless of the
+            // blocker's size.
             //
             // free_is_x selects which axis we push on (the other is the forced
             // axis they overlap on). i is pushed, j blocks.
@@ -1156,8 +1164,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     return; // a zero-size rectangle spans no cells on this axis
                 // A constant origin has no bound to push, and no order literal
                 // for the certificate to cite. Where a push would have fired
-                // its placement overlaps the blocker's mandatory part on both
-                // axes, which is the pairwise contradiction's to refute.
+                // the pair overlaps on both axes, which is the pairwise
+                // contradiction's to refute.
                 if (is_constant_variable(free_pos[i]))
                     return;
                 auto [cur_lo, cur_hi] = state.bounds(free_pos[i]);
@@ -1187,8 +1195,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 auto forced_i_size = lb_lit(forced_size[i]), forced_j_size = lb_lit(forced_size[j]);
                 auto free_i_size = lb_lit(free_size[i]), free_j_size = lb_lit(free_size[j]);
 
-                // Both forced-axis precedences are refuted by the mandatory
-                // overlap on that axis, exactly as in the contradiction.
+                // Both forced-axis precedences are refuted by the overlap on
+                // that axis, exactly as in the contradiction.
                 auto eliminate_forced_axis = [&, forced_i_lb, forced_i_ub, forced_j_lb, forced_j_ub, forced_i_size, forced_j_size]() -> void {
                     emit_before_pol(forced_before, i, j, forced_i_lb, forced_i_size, forced_j_ub);
                     emit_before_pol(forced_before, j, i, forced_j_lb, forced_j_size, forced_i_ub);
@@ -1287,8 +1295,9 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // height its size on the resource axis, on a resource whose
             // capacity is the extent the set is confined to there. That relaxation
             // sees conflicts the pairwise rule cannot --- three rectangles
-            // sharing a time, no two of whose mandatory boxes overlap, can
-            // still be too tall between them to fit.
+            // sharing a time, none with a mandatory part on the other axis, can
+            // still be too tall between them to fit, and with no mandatory part
+            // on an axis no pair overlaps on it in the pairwise rule's sense.
             //
             // The proof side is what makes it interesting, because the
             // capacity row is not in the OPB and never will be (one encoding
@@ -1428,9 +1437,10 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             optional<SimpleCondition> t_size;
                             optional<ProofFlag> escape;
                             /// An optional member's presence: the fact that
-                            /// covers the `[present = 0]` disjunct its 6-way
-                            /// clause brings in, guarded and weakened in like
-                            /// the others (#984). prepare() admits only a plain,
+                            /// covers the `[present = 0]` disjunct it brings
+                            /// into each of its pairs' clauses, guarded and
+                            /// weakened in like the others (#984). prepare()
+                            /// admits only a plain,
                             /// unshared presence variable, so it names one
                             /// literal and names it once. Stated as `!= 0`
                             /// rather than `= 1` so that its negation is the
@@ -1559,9 +1569,9 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                             clause.add(! tracker.xliteral_for_ensuring(*f.t_size), 1_i, tracker);
                                         if (f.escape)
                                             clause.add(*f.escape, 1_i, tracker);
-                                        // The pair's own two presences are in
-                                        // its clause already, as the 6-way
-                                        // clause's disjuncts.
+                                        // The pair's own presences are in its
+                                        // clause already, as its `present = 0`
+                                        // disjuncts.
                                         if (f.present)
                                             clause.add(! tracker.xliteral_for_ensuring(*f.present), 1_i, tracker);
                                     }
@@ -1797,7 +1807,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             logger->emit_red_proof_lines_forward_reifying(WPBSum{} + 1_i * starts_by >= 1_i, flag, ProofLevel::Top);
                         // An optional rectangle is active only if present, as a
                         // Cumulative's optional task is. That is what lets the
-                        // pair's 6-way clause close to the same
+                        // pair's 5- or 6-way clause close to the same
                         // `~act_i + ~act_j + before + before` a mandatory pair
                         // gets, and what keeps the flagged row a model fact.
                         auto conjuncts = WPBSum{} + 1_i * started + 1_i * starts_by;
@@ -2230,10 +2240,12 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 }
             }
 
-            // Strict-mode zero-area rectangles: the mandatory-box pass skips
-            // them (their box is empty), but the declarative ≤-clause still
-            // forbids a zero-area rectangle sitting inside another. Catch that
-            // at an all-fixed leaf, where the encoded clause alone is RUP.
+            // Strict-mode zero-area rectangles: the declarative ≤-clause
+            // forbids a zero-area rectangle sitting inside another. The
+            // pairwise pass used to skip them, their mandatory box being empty;
+            // its forbidden-region test (#1250) no longer does, but this stays
+            // as the backstop. Catch it at an all-fixed leaf, where the encoded
+            // clause alone is RUP.
             // (Non-strict mode never has zero-area rects in active_rects.)
             // (Only meaningful in strict mode; non-strict zero-area rectangles
             // do not constrain anything, so they are never checked here.)

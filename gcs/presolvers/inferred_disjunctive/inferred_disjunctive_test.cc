@@ -3,10 +3,13 @@
  *
  * The fixture family is the one the issue asks for, and it is built so that no
  * single posted Cumulative can make the inference: k tasks and k resources,
- * with the pair (i, j) conflicting only on resource (i + j) mod k. Every
+ * with both tasks of the pair (i, j) given demand one on resource (i + j) mod
+ * k. At k = 3, which every proof-logged use of the family here takes, each
  * resource sees exactly one conflicting pair, so the clique exists only in the
  * union of them --- which is what makes a root refutation here evidence of
- * something, rather than evidence that one of the donors was enough.
+ * something, rather than evidence that one of the donors was enough. At larger
+ * k a resource sees every task with a partner there, and so every pair among
+ * them.
  *
  * The sharp twin is the same instance with one more unit of horizon, where the
  * tasks fit exactly. That has to stay satisfiable with the presolver on, and to
@@ -89,9 +92,12 @@ namespace
     };
 
     /* k tasks of length p, and k resources of capacity one. Resource r carries
-     * demand one for exactly the two tasks i, j with (i + j) mod k == r, and
-     * zero for everyone else --- so it forbids that one pair overlapping and
-     * says nothing about any other.
+     * demand one for every task i with a partner j != i where (i + j) mod k ==
+     * r, and zero for everyone else. At k = 3 that is exactly one pair, so the
+     * resource forbids that pair overlapping and says nothing about any other;
+     * at larger k it is more tasks than two (k - 1 when k is odd; when k is
+     * even, all k on an odd-numbered resource and k - 2 on an even-numbered
+     * one), and the resource forbids every pair among them.
      *
      * Every resource is posted over all k starts, so a task keeps the same
      * position everywhere, and the zero demands drop it out of that resource's

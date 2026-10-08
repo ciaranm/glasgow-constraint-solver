@@ -201,7 +201,8 @@ auto gcs::innards::install_derived_cumulative(
         // would decline, and this whole constraint would go --- with no proof
         // failure to say so, since declining is a supported outcome here. The
         // label is tried first because where it exists it costs nothing, while
-        // a derivation is `O(n^3)` lines. A published donor (#973) has only its
+        // a derivation costs lines: a quadratic chain step, or a cubic scan
+        // where no chain reaches (#1254). A published donor (#973) has only its
         // family, there being no posted Cumulative to have written a row. A
         // donor with nothing at `t` is simply absent: the recipe is what knows
         // whether it needed it.

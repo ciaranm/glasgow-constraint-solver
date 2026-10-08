@@ -47,11 +47,17 @@ namespace gcs
     /**
      * \brief Which of Disjunctive's propagation rules are enabled.
      *
-     * Both are on by default. Turning one off weakens propagation but never
+     * Time-tabling and pairwise detectable precedences are on by default, and
+     * every other rule is off. The direction switches (\ref edge_finding_lb,
+     * \ref edge_finding_ub, \ref not_first, \ref not_last) and \ref
+     * overload_cache_bridge default to true, but do nothing unless a rule that
+     * uses them is on: the bridge serves edge-finding, both not-first /
+     * not-last detections, the set form of detectable precedences and the
+     * overload check. Turning one off weakens propagation but never
      * changes the solutions found, and never changes the OPB encoding: these
      * select propagation strength only, and exist so that a test can attribute
      * an inference to the rule that made it (and so that a fixture can show a
-     * rule is load-bearing by watching the other one fail to make its
+     * rule is load-bearing by watching the others fail to make its
      * inference).
      *
      * \ingroup Constraints
@@ -345,8 +351,7 @@ namespace gcs
      * \brief Disjunctive (1D non-overlap) constraint: tasks with variable
      * origins; the durations may each be variables or constants (constants pass
      * through as ConstantIntegerVariableID). No two tasks may occupy the same
-     * time point. In non-strict mode, durations must currently be constant
-     * (variable non-strict durations are future work).
+     * time point.
      *
      * A task <em>i</em> is active at time <em>t</em> iff
      * <em>starts[i] &le; t &lt; starts[i] + lengths[i]</em>. For every pair of
@@ -363,7 +368,9 @@ namespace gcs
      * tasks &mdash; equivalent to MiniZinc's <code>disjunctive</code> and
      * XCSP3's <code>zeroIgnored = true</code>. With constant durations the
      * distinction is fully resolved at construction; with variable durations a
-     * task may become zero-length during search.
+     * task may become zero-length during search, and in non-strict mode each
+     * such task's separation clauses carry a zero-length escape so that it then
+     * constrains nothing.
      *
      * Tasks may also be <em>optional</em>: the constructor taking a `presences`
      * array makes task <em>i</em> conditional on a {0, 1} variable. A task with
@@ -511,9 +518,10 @@ namespace gcs
         /// can be passed straight through.
         auto with_strict(std::optional<bool> strict = true) -> Disjunctive &;
 
-        /// Select which propagation rules are enabled (all of them, by
-        /// default). Propagation strength only: the solutions found and the OPB
-        /// encoding are the same whatever is selected.
+        /// Select which propagation rules are enabled (by default, those
+        /// DisjunctiveRules says are on). Propagation strength only: the
+        /// solutions found and the OPB encoding are the same whatever is
+        /// selected.
         auto with_rules(DisjunctiveRules rules) -> Disjunctive &;
 
         /// Corrupt one step of the detectable-precedence derivation. For tests

@@ -237,13 +237,15 @@ namespace gcs
      * whole problem rather than one pass per posted constraint, and why the
      * budgets and the output limit are both global.
      *
-     * Restricted to donors with no optional tasks, and for this presolver's own
-     * reason rather than a general one: it draws a cut's members from several
-     * Cumulatives and bridges one donor's flags to another's, and two donors'
-     * activity flags cancel across that bridge only if their presence conjuncts
-     * do too. Variable lengths, heights and capacities are *not* restrictions;
-     * see cumulative_donor_view for what each costs, which is at most a task
-     * rather than a donor.
+     * Donors with optional tasks are taken too (#1136). This presolver draws a
+     * cut's members from several Cumulatives and bridges one donor's flags to
+     * another's, and two donors' activity flags cancel across that bridge only
+     * if their presence conjuncts do too --- so a task is matched across donors
+     * by its presence as well as its start and length, and the same start
+     * under a different presence is a different task. Variable lengths,
+     * heights and capacities are not restrictions either; see
+     * cumulative_donor_view for what each costs, which is at most a task rather
+     * than a donor.
      *
      * Nothing reaches the OPB. Every row of every posted constraint is
      * *derived*, by \ref validate_lifted_cover_cut and

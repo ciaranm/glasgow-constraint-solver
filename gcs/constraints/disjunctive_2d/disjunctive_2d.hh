@@ -51,9 +51,10 @@ namespace gcs
          * duration `w_i` and *height* `h_i`, on a resource whose capacity is
          * the y extent the rectangles are confined to. That is a real
          * `Cumulative`, and it sees conflicts the pairwise rule cannot: three
-         * rectangles whose mandatory x parts share a time, no two of whose
-         * mandatory boxes overlap, can still be too tall between them to fit in
-         * the y window.
+         * rectangles whose mandatory x parts share a time, none with a
+         * mandatory y part, can still be too tall between them to fit in the y
+         * window, and with no mandatory part on an axis no pair overlaps on it
+         * in the pairwise rule's sense.
          *
          * Nothing reaches the OPB --- the relaxation is a consequence of the
          * 4-way separation clause, so it is *derived*, per firing, inside the
@@ -261,13 +262,17 @@ namespace gcs
      * on each separation clause the rectangle takes part in, and nowhere else,
      * so a rectangle posted with <em>presences[i] = 1</em> and one posted
      * without presences at all produce the same OPB. This is the 1D form's
-     * treatment one dimension up: there the 2-way clause becomes 4-way, here
-     * the 4-way clause becomes 6-way.
+     * treatment one dimension up: there the 2-way clause becomes 3- or 4-way,
+     * here the 4-way clause becomes 5- or 6-way, by one disjunct per optional
+     * rectangle in the pair.
      *
      * Propagation is pairwise 2D time-table strength (the analogue of 1D
-     * Disjunctive one dimension up): if two rectangles' mandatory boxes overlap
-     * the constraint is infeasible, and if a pair is forced to overlap in one
-     * dimension their positions are pushed apart in the other. On top of that,
+     * Disjunctive one dimension up), in its forbidden-region form: a pair
+     * overlaps on an axis when each one's latest start there is before the
+     * other's earliest end, so that neither can precede the other. If two
+     * rectangles overlap on both axes the constraint is infeasible, and if a
+     * pair overlaps in one dimension their positions are pushed apart in the
+     * other. On top of that,
      * and off by default, the *cumulative relaxation* time-tables the
      * `Cumulative` each axis projection implies --- see
      * Disjunctive2DRules::cumulative_relaxation --- and, also off by default,
@@ -280,9 +285,9 @@ namespace gcs
      * A rectangle whose presence is still undecided blocks nothing and is
      * pushed nowhere, in either role: a prune that is only valid when the
      * rectangle is there would be wrong if it turns out absent. What it does
-     * get is the one inference that needs no such assumption &mdash; if its
-     * mandatory box would overlap that of a rectangle known to be present,
-     * it cannot be present, and its presence is inferred to be 0.
+     * get is the one inference that needs no such assumption &mdash; if it
+     * overlaps a rectangle known to be present on both axes, in the same
+     * sense, it cannot be present, and its presence is inferred to be 0.
      *
      * \ingroup Constraints
      */

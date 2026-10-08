@@ -1509,20 +1509,30 @@ The same recipe lifts one dimension up to non-overlapping rectangles
 declarative OPB is the `diffn` definition: for each pair and axis `d`,
 `before_{i,j,d} ⇔ pos_{i,d} + size_{i,d} ≤ pos_{j,d}`, plus a single
 **4-way separation clause** per pair
-`before_{i,j,x} + before_{j,i,x} + before_{i,j,y} + before_{j,i,y} ≥ 1`.
+`before_{i,j,x} + before_{j,i,x} + before_{i,j,y} + before_{j,i,y} ≥ 1`
+(one more disjunct per optional rectangle, so 5-way with one and 6-way with
+both; see below, where a present rectangle's presence literal goes into the
+reason). Those counts leave out the non-strict `zw`/`zh` escapes, which
+the pairwise justifications below pin false before they use the clause.
 Again this is all the scaffolding there is; the justifications are the
 same `emit_before_pol` shape per axis:
 
-- **Contradiction** (mandatory-box overlap on both axes): four pols —
-  one per axis and direction — force all four flags false under the
-  reason; the 4-way clause unit-fails in the closing RUP.
+- **Contradiction** (the pair overlaps on both axes): on an axis, write
+  `lst = ub(pos)` and `eet = lb(pos) + lb(size)`; the pair overlaps
+  there when `lst_i < eet_j` and `lst_j < eet_i`, which is exactly when
+  neither before flag on that axis survives its pol. One of the two
+  must have a mandatory part there, but the other need not: the
+  forbidden-region form (#1250) also catches a rectangle whose range of
+  placements covers the other's mandatory part. Four pols — one per
+  axis and direction — force all four flags false under the reason;
+  the separation clause unit-fails in the closing RUP.
 - **Bound push** (a forced overlap on one axis pushes the other):
   the pair overlaps on the *forced* axis, so two pols refute both
   forced-axis flags exactly as in the contradiction; the *free* axis
   is then a single-blocker 1D dichotomy — one pol refutes the
   impossible free direction from the pushed rectangle's captured
   bound, one folds the surviving direction onto the target order
-  literal. Six pols per push, one step regardless of the blocker's
+  literal. Four pols per push, one step regardless of the blocker's
   size (per-pair pushing means there is never a multi-blocker
   chain). The push target is capped to the rectangle's own domain
   (`cur_hi + 1` / `cur_lo − 1`), and zero-size rectangles are
@@ -1537,22 +1547,24 @@ an all-fixed pure-RUP leaf check.
 **Optional rectangles** (#974) lift 1D's treatment (#735) the same way
 the rest of this section does: a `{0, 1}` presence per rectangle,
 carried as one more disjunct on each separation clause it takes part
-in and nowhere else, so the 4-way clause becomes **6-way** and a
-constant-1 presence gives a byte-identical OPB. The before flags stay
+in and nowhere else, so the 4-way clause becomes **5-way** for a pair with one
+optional rectangle and **6-way** for a pair of them, and a constant-1 presence
+gives a byte-identical OPB. The before flags stay
 reified *unconditionally* on the arithmetic, which is what keeps every
 justification above a pol over the same rows as before.
 
 The one new inference is the mirror of the contradiction. An undecided
 rectangle blocks nothing and is pushed nowhere — there is no
 conditional-bounds store, and an unconditional prune would be wrong if
-it turns out absent, exactly as in 1D — but if its mandatory box would
-overlap that of a rectangle known to be *present*, then it cannot be
-present:
+it turns out absent, exactly as in 1D — but if it overlaps a rectangle
+known to be *present* on both axes, in the same sense, then it cannot
+be present:
 
 - **Presence falsification**: the same four pols as the contradiction
   refute all four separating directions, the present partner's
-  presence literal is in the reason, and the 6-way clause is left with
-  the undecided rectangle's own "absent" disjunct, which the closing
+  presence literal (if it is optional) is in the reason, and the 6-way
+  clause, 5-way for a mandatory partner, is left with the undecided
+  rectangle's own "absent" disjunct, which the closing
   RUP concludes. The contradiction and the falsification differ only
   in which literal the clause is left with. With both presences
   undecided nothing follows about either one alone, so the pair is
@@ -1585,10 +1597,11 @@ to there. The rule time-tables that Cumulative, on each axis in turn:
 the overflow contradiction, and both bound pushes.
 
 It sees conflicts the pairwise rule cannot. Three rectangles whose
-mandatory time-axis parts share a time, no two of whose mandatory
-*boxes* overlap, can still be too tall between them to fit in the
-window — and with no mandatory part on the resource axis there is
-nothing for the pairwise rule to overlap or to push away from.
+mandatory time-axis parts share a time, none with a mandatory part on
+the resource axis, can still be too tall between them to fit in the
+window — and with no mandatory part on the resource axis no pair
+overlaps there, even in the pairwise rule's forbidden-region sense, and
+there is nothing to push away from.
 
 **Nothing reaches the OPB**, and nothing can: one encoding per
 constraint is the #922/#780 rule, and a capacity row is not something
@@ -1675,8 +1688,8 @@ in #1039, and each rung decides at the node:
   pushes it, only once it is present. Its presence is then one more fact
   of the certificate: in the reason, in the network's guard at `big()`,
   and weakened into every other pair's clause at 1, exactly as a time
-  bound or a zero-size escape is. The pair's own two presences are
-  already in its clause, as the 6-way clause's disjuncts. The fact is
+  bound or a zero-size escape is. The pair's own presences are already
+  in its clause, as its `present = 0` disjuncts. The fact is
   stated as `present != 0`, not `present = 1`, so that its negation is
   the clause's own literal: they are one PB literal for a `{0, 1}`
   variable but two atoms for a presence with a wider encoding, and the

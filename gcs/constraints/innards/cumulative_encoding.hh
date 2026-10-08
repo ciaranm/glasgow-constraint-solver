@@ -20,10 +20,12 @@ namespace gcs::innards
     /**
      * \brief Which OPB encoding a Cumulative writes.
      *
-     * Unlike \ref CumulativeRules, this *does* change what goes into the OPB.
-     * It changes nothing else: the solutions found, the inferences made and
-     * the certificates emitted are the same whichever is chosen, because
-     * nothing yet derives anything from what the second arm adds.
+     * Unlike \ref CumulativeRules, this *does* change what goes into the OPB,
+     * and so what a certificate cites: under \ref StartCheckpoint every
+     * per-time capacity row an inference needs is recovered in the proof from
+     * the checkpoint rows, where \ref TimeIndexed has it in the model. The
+     * solutions found and the inferences made are the same whichever is
+     * chosen. Only \ref StartCheckpoint ships; the other two are test arms.
      *
      * \ingroup Innards
      */
