@@ -1,12 +1,38 @@
 # `In`: a variable takes one of the listed values, or the value of one of the listed variables
 
 > **Maturity** production ·
-> **Audited** 2026-09-30 at `c9ceea25` ·
+> **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1215 and #1208 ·
 > **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
 > for what it would file. Already open and touching this family: #833 (the
 > large-domain policy), #868 (cross-solver comparisons; this document gives a
 > whole-solve comparison by hand, not the identical-tree one #868 asks for).
-> Tracked under #871.
+> **Fixed since the audit**: the extreme-constant overflow with proofs on,
+> which had no issue of its own, by #1215 (which closed `Table`'s #1117); see
+> [Re-audit, 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
+
+### Re-audit, 2026-10-08
+
+Two fixes from elsewhere touch this family. This pass brings the text into
+line with them at `0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| the extreme-constant overflow (no issue; `Table`'s #1117 is the same band) | #1215, on #1214's range | both constructors that take constants refuse one outside `S = −(2⁶⁰ − 1) .. 2⁶⁰ − 1` with `IntegerOverflow`, and #1214 refuses a declared domain or view offset outside `S`, so the band near `±2⁶³` cannot be reached. [Robustness and limits](#robustness-and-limits) (the overflow findings become history, and the widest range is `S`), [Tests](#tests), [Proof-logging gaps](#proof-logging-gaps), [Known limitations](#known-limitations) and the note closing [Next steps](#next-steps) |
+| #1200, views registered after the rows that use them (not this audit's) | #1208 | a view that a model row names only through its literals now gets its own bit vector too, so a constants-only `In` over a view states its at-least-one over the view's own `=` literals: [Variable kinds and views](#variable-kinds-and-views), and [Tests](#tests) for `view_registration_test`'s `In` over `−x` with an objective |
+
+**What was measured again**, at `0a5b4ec6` on fataepyc-10: the old
+extreme-constant and widest-range probes, which are now refused, and
+proof-logged solves with constants and views at the ends of `S`
+(`tmp/fd871-comments-1008/tables/probes/in_edges.cc`), and a constants-only
+`In` over a view (`in_view.cc`). Nothing else was re-run: every other figure
+is from `c9ceea25`. `in.cc` has changed only by the two range checks and
+their include, so its propagation is the audit's. Every line citation holds
+at `0a5b4ec6`: this pass renumbered those that had moved, each checked
+against the cited code. Every `in.cc` citation the audit made moved down by
+three; the citations into `fzn_glasgow.cc`, `xcsp_glasgow_constraint_solver.cc`,
+`problem.cc`, `constraints_test_utils.hh`, `state.cc` and the patched parser's
+`XCSP3Manager.cc` moved by other amounts.
 
 `In(var, vars, vals)` says that `var` equals one of the constants in `vals` or
 one of the variables in `vars`. One class and one propagator. The encoding is
@@ -62,14 +88,14 @@ Four things to know before touching it.
 constructors, `In(var, vars)` and `In(var, vals)`, leave one list empty.
 
 - **Both lists empty:** unsatisfiable. `prepare()` notes it
-  (`in.cc:100–106`), the OPB row degenerates to `0 ≥ 1`, and the propagator is
-  replaced by an initial contradiction (`in.cc:145–149`).
+  (`in.cc:103–109`), the OPB row degenerates to `0 ≥ 1`, and the propagator is
+  replaced by an initial contradiction (`in.cc:148–152`).
 - **Constants among `vars`:** a `ConstantIntegerVariableID` among the variable
-  candidates is moved into `vals` in `prepare()` (`in.cc:90–95`). A variable
+  candidates is moved into `vals` in `prepare()` (`in.cc:93–98`). A variable
   whose domain happens to be a single value is not folded, because the
   `.scp` still names it and `cake_pb_cp` gives it a flag triple (see [Cake
   conformity](#cake-conformity)).
-- **Duplicate constants** are removed (`in.cc:97–98`). Duplicate *variables*
+- **Duplicate constants** are removed (`in.cc:100–101`). Duplicate *variables*
   are kept, and so are candidates that are views of `var`. See
   [Robustness](#robustness-and-limits).
 - **`var` a constant** is accepted. `In{2, {x0, x1, x2}}` over `1..4`
@@ -86,23 +112,23 @@ constructors, `In(var, vars)` and `In(var, vals)`, leave one list empty.
 | `In`, with variable candidates | ✓ `glasgow_member_int`, `glasgow_member_bool`[^member] | `frontend gap`[^xelem] | ?[^gcspy] | ✓ `in` | |
 | a reified form | `decompose`: the standard library's `int_eq_reif` and `bool_clause_reif`[^reif] | n/a | — | — | no class exists |
 
-[^setin]: `fzn_glasgow.cc:771–788`. A non-empty `set_in` posts two linear
+[^setin]: `fzn_glasgow.cc:800–817`. A non-empty `set_in` posts two linear
     bounds and one `Or{var < l, var ≥ u}` per gap; the empty set posts
     `In{var, {}}`, which the hand-written JSON test `minizinc-emptysetin`
     exercises. A holey *domain* in FlatZinc is decomposed the same way, one
-    `Or` per gap (`fzn_glasgow.cc:474–488`). Flattening `var 1..9: y;
+    `Or` per gap (`fzn_glasgow.cc:504–517`). Flattening `var 1..9: y;
     constraint y in {1, 3, 5};` gives no constraint at all on 2.9.7 or 2.10.1:
     the domain becomes `[[1,1],[3,3],[5,5]]`, and so a gap `Or` each.
 
-[^xdom]: `buildVariableInteger(id, vals)` (`xcsp_glasgow_constraint_solver.cc:161`)
+[^xdom]: `buildVariableInteger(id, vals)` (`xcsp_glasgow_constraint_solver.cc:162`)
     keeps the value list, and the variable is created over it
-    (`:1076`), which posts `In`. `xcsp/tests/sum_not_equals.xml` has one, `0 3`.
+    (`:1080`), which posts `In`. `xcsp/tests/sum_not_equals.xml` has one, `0 3`.
 
 [^xin]: `in(x, {…})` and `notin` in an intension go to a unary `Table` and
-    `NegativeTable` (`xcsp_glasgow_constraint_solver.cc:1805–1820`), not here.
+    `NegativeTable` (`xcsp_glasgow_constraint_solver.cc:1809–1824`), not here.
 
 [^member]: `fzn_member_int.mzn` and `fzn_member_bool.mzn` call the builtins,
-    and `fzn_glasgow.cc:1156–1159` posts `In{var, vars}`. A `par` array
+    and `fzn_glasgow.cc:1185–1188` posts `In{var, vars}`. A `par` array
     arrives as a `glasgow_member_int` over an array of constants
     (`member([1, 3, 5, 3], y)` flattens that way on both versions), which
     `prepare()` folds into `vals`. Flattened on 2.9.7 and 2.10.1, and solved
@@ -149,7 +175,13 @@ flag rows and the range literals are stated over that variable, which is what
 #904 made possible and #874 relied on. So a range conclusion or reason literal
 about a view names a literal that exists, and the bound lemmas cross the flag's
 equality on whichever encoding each operand resolves to (the comment at
-`in.cc:165–174`). The evidence:
+`in.cc:168–177`). Since #1208 that includes a view that a row names only
+through its literals: a constants-only `In` over `x + 3` writes its
+at-least-one over the view's own `=` literals, `@c[_1][al1] 1
+p[0_view_of_x_plus_3][eq4] 1 p[0_view_of_x_plus_3][eq6] >= 1`, with two
+channel rows to `x` (`tmp/fd871-comments-1008/tables/probes/in_view.cc`, at
+`0a5b4ec6`; the proof verifies). Before #1208 such a row spelled the view's
+literals through `x`. The evidence:
 - `in_test`'s `view_mixed` lane wraps every position, `var` and the three
   candidates.
 - 300 random instances with `±1` views on distinct variables all verify (see
@@ -164,7 +196,7 @@ equality on whichever encoding each operand resolves to (the comment at
 ### Relation to other families
 
 - **Decomposes into it:**
-  - every `Problem::create_integer_variable(vector)` (`problem.cc:125`), so
+  - every `Problem::create_integer_variable(vector)` (`problem.cc:156`), so
     every listed domain from the C++ API and XCSP3;
   - MiniZinc's `member`, and `gcspy`'s `post_in` and `post_in_vars`.
 - **Child constraints:** none. (`GlobalCardinality` used to post child `In`s
@@ -203,7 +235,7 @@ for i in 0 .. k-1:
 @c[id][al1]:   Σ_{c ∈ vals} [var = c]  +  Σ_i x[id][i][eq]  ≥ 1
 ```
 
-`define_proof_model()` at `in.cc:111–141`. A constant whose `[var = c]` is
+`define_proof_model()` at `in.cc:114–144`. A constant whose `[var = c]` is
 literally false is dropped from the sum, and one that is literally true is
 folded into the degree. Both happen only when `var` is itself a constant. A
 constant outside `var`'s bounds is kept, as `cake_pb_cp` keeps it.
@@ -228,7 +260,7 @@ posted.
 
 `cake_pb_cp`'s `in` is an equality-literal grid, then its count helper
 (`cencode_count_aux`, which is also what `Count` was conformed to in #354),
-then the `al1` row. (The comment at `in.cc:120–121` calls it literally the
+then the `al1` row. (The comment at `in.cc:123–124` calls it literally the
 count helper, which overstates it: the count helper is only the middle part.)
 Our flags were conformed to it in c347b153. The seven chain cases:
 - `in_const_sat`, `in_two_vars_sat`, `in_two_vars_unsat`, `in_mixed_sat` and
@@ -295,7 +327,7 @@ Checked beyond the suite, on 120 random models (`tmp/fd-small/in/chain/rnd/`,
 
 `prepare()` folds constant candidates into `vals`, sorts and de-duplicates
 `vals`, and flags the empty case. `install_propagators()` builds `vals` once as
-an `IntervalSet` (`in.cc:161–163`). There is no initialiser.
+an `IntervalSet` (`in.cc:164–166`). There is no initialiser.
 
 ### Propagator inventory
 
@@ -334,7 +366,7 @@ A claim would be safe anyway, since the propagator machinery ignores claims
 when positions alias.
 
 **Self-disabling.** `DisableUntilBacktrack` when `var` is fixed to a value in
-`vals` (`in.cc:431–433`). The constants-only branch could disable after its
+`vals` (`in.cc:434–436`). The constants-only branch could disable after its
 first call whatever `var` is, since by then every value left is permitted and
 none can come back. It does not, and that costs `O(|vals| + intervals)` per
 wake for nothing; see [Interval efficiency](#interval-efficiency).
@@ -362,10 +394,14 @@ involved.
 
 **Unbounded domains.** Fine on distinct variables, at any width; see
 [Interval efficiency](#interval-efficiency). A variable over the widest
-supported range, `−2⁶¹ .. 2⁶¹ − 1`, against constants at both ends and 0
-solves with and without proofs (`probes/inovf.cc wide`). So does a candidate
-`y + 2⁶¹` against `x ∈ 0..10`, whose proof verifies as unsatisfiable
-(`viewfar`).
+supported range, all of `S = −(2⁶⁰ − 1) .. 2⁶⁰ − 1` since #1214, against
+constants at both ends and 0 solves with and without proofs, and so does a
+candidate `y + (2⁶⁰ − 1)` against `x ∈ 0..10`, whose proof verifies as
+unsatisfiable (`tmp/fd871-comments-1008/tables/probes/in_edges.cc wideS`,
+`viewB`, at `0a5b4ec6`). At `c9ceea25` the same held over `−2⁶¹ .. 2⁶¹ − 1`
+and for `y + 2⁶¹` (`tmp/fd-small/in/probes/inovf.cc wide`, `viewfar`); both
+are now refused
+when the variable or view is made.
 
 **Negative values and zero.** Tested: `in_test` has `[−3, 3]` against
 `{−2, 0, 2}`, and candidates over `[−2, 2]`. Its random sweep reaches `−3`.
@@ -374,10 +410,10 @@ solves with and without proofs (`probes/inovf.cc wide`). So does a candidate
 - *Empty lists, a singleton `var`, and `var` among its own candidates* are
   covered by the test, per #254. A constant `var` is not: the test's
   `create_integer_variable_or_constant` always returns a variable
-  (`constraints_test_utils.hh:1210–1214`).
+  (`constraints_test_utils.hh:1266–1270`).
 - ***A repeated candidate blocks the single-support rule.*** Step 3 fires only
   when exactly one candidate intersects `dom(var)`, and the scan
-  (`in.cc:306–316`) counts positions, not variables. `In{x, {y, y}}` with
+  (`in.cc:309–319`) counts positions, not variables. `In{x, {y, y}}` with
   `x ∈ 1..2` and `y ∈ 1..10⁶` leaves `y` at all 10⁶ values, where only 1 and 2
   have support: not `bounds(Z)` (`probes/inwide.cc dupsrc`). Gecode's `member`
   removes duplicates at post (`x.unique()`).
@@ -407,45 +443,40 @@ solves with and without proofs (`probes/inovf.cc wide`). So does a candidate
 
 **Overflow.** No arithmetic in `in.cc` can overflow. The `IntervalSet` merges
 add and subtract one at interval ends, but only at ends inside a domain.
-Proofs are the exception: a constant too near either end of the 64-bit range
-throws with proofs on, while the same models solve with proofs off.
-- **With `var ∈ 0..10`** (bisected, `probes/inovf.cc val=…`):
-  - `2⁶³ − 1` throws `IntegerOverflow` (`9223372036854775807 + 1`) in
-    `need_direct_encoding_for` (`names_and_ids_tracker.cc:1084`), which
-    defines `[var = c]` through `var ≥ c + 1`. `2⁶³ − 2` is fine.
-  - Everything from `−2⁶³` to `−2⁶³ + 16` throws. The messages are
-    `IntegerOverflow` (`--9223372036854775808`, `-15 + -9223372036854775807`,
-    and, at `−2⁶³ + 1`, `9223372036854775807 + 1`) or a `ProofError` that the
-    reification constant of a half-reified row is the most negative `Integer`.
-    They come from `need_gevar`'s `−v` and `−v + 1`
-    (`names_and_ids_tracker.cc:1213–1214`), or from `reification_shape`'s
-    addition and its `ProofError` (`:2894`, `:2902`), as the fact-checks
-    traced with gdb.
-  - `−2⁶³ + 17` is fine, and so are the three far constants checked, `2⁶²`,
-    `2⁶³ − 2⁶¹` and `−(2⁶³ − 2⁶¹) − 1`, which verify.
-- **The unsafe band grows with `var`'s encoding**, as the fact-checks found by
-  bisecting further (`tmp/fd-small/factcheck/in/ovfsearch.py`). The first safe
-  constants are:
+Since #1215 both constructors that take constants refuse one outside `S`
+with `IntegerOverflow` (`in.cc:58`, `:67`), with proofs on or off, and #1214
+refuses a declared domain, a listed domain's least or greatest value, or a
+view offset outside `S`. With every input in range, proof-logged solves at
+the ends of `S` verify at `0a5b4ec6`
+(`tmp/fd871-comments-1008/tables/probes/in_edges.cc`):
+- `var ∈ 0..10` against `{A, 5, B}`, and `var ∈ −10..0` against `{A, −5, B}`,
+  where `A` and `B` are the ends of `S`;
+- `var` over all of `S` against `{A, 0, B}` (3 solutions), and with variable
+  candidates over `{A, A + 1}` and `{B − 1, B}` plus the constant `B` (10);
+- a variable candidate with the constants `A` and `B`, a candidate `y + B`
+  against `x ∈ 0..10`, and as `var` the views `x + B` with `x` near `B`, so
+  near `2B` and beyond `S` (a view's one extra bit), and `−x` with `x` near
+  `A`, so near `B`.
 
-  | `var` | lowest safe | highest safe |
-  |---|---|---|
-  | `0..10` | `−2⁶³ + 17` | `2⁶³ − 2` |
-  | `0..1000` | `−2⁶³ + 1025` | `2⁶³ − 2` |
-  | `0..10⁶` | `−2⁶³ + 1,048,577` | `2⁶³ − 2` |
-  | `−10..0` | `−2⁶³ + 17` | `2⁶³ − 1 − 17` |
-  | `±2⁴⁰` | about `−2⁶³ + 2.2·10¹²` | about `2⁶³ − 1 − 2.2·10¹²` |
-  | `−2⁶¹ .. 2⁶¹ − 1` | `−2⁶³ + 2⁶¹ + 1` | `2⁶³ − 1 − (2⁶¹ + 1)` |
+No lane runs a proof-logged `In` with constants at the ends of `S`; these are
+probes.
 
-  Roughly, a constant within about `2^b` of `−2⁶³` throws, where `b` is the
-  number of magnitude bits in `var`'s encoding, not its width: 4 for `0..10`,
-  and 10 for `1000..1010`, whose band is 1025 wide. At the top only `2⁶³ − 1`
-  throws, unless `var` can be negative, when the band there is the same size
-  (`−1000..−990` has 1025 at both ends). The widest `var` throws for any
-  constant beyond about `±6.9·10¹⁸`. (Re-bisected in
-  `tmp/fd-small/factcheck2/in/`.)
-
-Only a model that lists a constant far outside `var`'s own range, near the
-64-bit limits, can meet this. `Table`'s far entries hit the same band (#1117).
+**Before #1214 and #1215** (at `c9ceea25`): constants were not capped, and
+the widest declared range was `−2⁶¹ .. 2⁶¹ − 1`. A constant too near either
+end of the 64-bit range threw with proofs on only, `IntegerOverflow` or a
+`ProofError`, in the literal layer (`need_direct_encoding_for`, `need_gevar`
+and the reification renderer), while the same models solved with proofs off.
+The unsafe band was about `2^b` wide at `−2⁶³`, where `b` is the number of
+magnitude bits in `var`'s encoding, and at `2⁶³ − 1` only `2⁶³ − 1` itself
+unless `var` could be negative; with the widest `var`, any constant beyond
+about `±6.9·10¹⁸` threw (`tmp/fd-small/in/probes/inovf.cc`,
+`tmp/fd-small/factcheck/in/ovfsearch.py`, `tmp/fd-small/factcheck2/in/`).
+Every constant in that band, and every far constant checked (`2⁶²`,
+`2⁶³ − 2⁶¹`, `−(2⁶³ − 2⁶¹) − 1`), lies outside `S`, which ends at about
+`±1.15·10¹⁸`, and is now refused at construction (`in_edges.cc
+maxval|minval|far62`), as are the old `y + 2⁶¹` candidate (`viewfar`) and
+the old widest `var` (`table_edges.cc wideS`, in the same directory).
+`Table`'s far entries hit the same band (#1117), also closed by #1215.
 
 ### Interval efficiency
 
@@ -453,10 +484,10 @@ Only a model that lists a constant far outside `var`'s own range, near the
 instead is the number of **intervals**, and there two things are not linear.
 
 1. **The propagation side.**
-   - *Constants-only step 1* (`in.cc:205–207`): `each_interval_minus` of
+   - *Constants-only step 1* (`in.cc:208–210`): `each_interval_minus` of
      `dom(var)` against the permitted set, a merge, `O(intervals(var) +
      |vals|)`.
-   - *Variable step 1* (`in.cc:225–234`) builds the union by erasing each
+   - *Variable step 1* (`in.cc:228–237`) builds the union by erasing each
      permitted interval and each candidate's intervals from a copy of
      `dom(var)`. `erase_range` scans from the front, and dropping a covered
      interval shifts the vector (`interval_set.hh:314–352`). The copy is not
@@ -481,36 +512,36 @@ instead is the number of **intervals**, and there two things are not linear.
        (`tmp/fd-codex-1005/small/factcheck/dropall.cc`). In `In{x, {y, z}}`
        with `x` over 30,000 even values and `y`, `z` over an interval covering
        them, `E = 2`, of which only `y`'s erase runs: it empties the copy, so
-       `z`'s is skipped (`in.cc:229–230`). `perf` puts 36% of a 1.73 s root
+       `z`'s is skipped (`in.cc:232–233`). `perf` puts 36% of a 1.73 s root
        in `erase_range`, which here is that shift (`indrop.cc`).
 
      Copying the candidates' domains, and applying the removals through the
      state layer's own front-to-back scan (#1160), come on top.
    - *Step 1 stops early*: it stops copying candidates once nothing is left
-     unsupported (`in.cc:229–230`).
+     unsupported (`in.cc:232–233`).
    - *Step 2* uses `State::domains_intersect` per candidate
-     (`in.cc:307–316`), a merge that stops at the first common value. But
-     `const_supports` (`in.cc:319`) is an `any_of` over every constant calling
+     (`in.cc:310–319`), a merge that stops at the first common value. But
+     `const_supports` (`in.cc:322`) is an `any_of` over every constant calling
      `in_domain`, whose `contains` scans `dom(var)`'s intervals from the front:
      `O(|vals| · intervals(var))` per call at worst. It runs in the
      constants-only branch too, where nothing uses it.
-   - *Step 3* (`in.cc:400`) is `each_interval_minus` of the candidate against
+   - *Step 3* (`in.cc:403`) is `each_interval_minus` of the candidate against
      `dom(var)`.
    - There is no `each_value`, `for_each_value` or value loop anywhere in
      `in.cc`.
 2. **The reason side.**
    - Step 1: one literal per candidate per run, `not_in_range(V, lo, hi)`,
-     guarded on `want_reasons()` (`in.cc:237–244`).
+     guarded on `want_reasons()` (`in.cc:240–247`).
    - Step 3: a `generic_reason(var)`, which is per run of `dom(var)`, plus one
      `not_in_range` per other candidate per interval of `dom(var)`, guarded
-     (`in.cc:350–361`).
+     (`in.cc:353–364`).
    - Finding the runs is a walk over intervals in both cases, never over
      values (#874 fixed the per-value spelling of step 3's reason and
      scaffolding).
 3. **The proof side.** Every line is per run or per interval. The form is
    picked by a **width test**: a run of one value takes the `≠` path, since
    `not_in_range` would canonicalise to the same literal and its lemmas would
-   be pure cost (`in.cc:273–278`); anything wider takes the range form. It is
+   be pure cost (`in.cc:276–281`); anything wider takes the range form. It is
    never picked by the kind of a variable.
 4. **The audit lane.** Three rows, all `Clean`:
    - `In`: one variable over the wide range against `{1, 2, 3}`;
@@ -542,7 +573,7 @@ single runs unless marked as medians.
 
 - **`carve` is the state layer, not `In`'s own code.** Profiled, 99% of it is
   `State::change_state_for_not_in_range`. `contains_any_of` and `erase_range`
-  each scan the domain's intervals from the front (`state.cc:250–252`), once
+  each scan the domain's intervals from the front (`state.cc:259–261`), once
   per gap, so `K` gaps cost Θ(K²). `In`'s own merge is linear.
   - With both scans starting at a binary search, `carve` takes 2.1 ms, 6.1 ms
     and 21 ms at 10⁴, 3·10⁴ and 10⁵ (medians of 3). The patch is
@@ -629,7 +660,7 @@ Facts shared by every rule:
   covers three derivations, and a reconstructor tells them apart from the
   baseline context, not from the hint.
 - **The justifications read no `state`** except one. Rule 4's and rule 5's
-  scaffolding asks `state.has_single_value(var)` (`in.cc:373`) to skip the
+  scaffolding asks `state.has_single_value(var)` (`in.cc:376`) to skip the
   per-interval lines, which are redundant when `var` is fixed: the reason's
   `var = w` then gives `¬sel_j` directly. The reason is built from the same
   call's state, so the two agree. It is still a read of `state` inside a
@@ -644,7 +675,7 @@ Facts shared by every rule:
 - **Strength** — `GAC`. It is a unary constraint, and this is its domain
   intersection.
 - **Algorithm** — `each_interval_minus` of `dom(var)` against `vals`, one merge,
-  `O(intervals(var) + |vals|)`; one conclusion per run (`in.cc:185–208`).
+  `O(intervals(var) + |vals|)`; one conclusion per run (`in.cc:188–211`).
 - **Why it is true** — no value in the run is permitted, and there is no
   variable candidate.
 - **Proof technique** — `RUP`. Under `var ∈ [lo, hi]` the order literals
@@ -688,7 +719,7 @@ Facts shared by every rule:
     [Robustness](#robustness-and-limits).
 - **Algorithm** — the union of `vals` and every candidate's domain, erased from
   a copy of `dom(var)`, then one conclusion per remaining run
-  (`in.cc:225–271`). `O((I₀ + E)²)` for the union as written, scans and
+  (`in.cc:228–274`). `O((I₀ + E)²)` for the union as written, scans and
   vector shifts together, with `E` the permitted set's intervals plus the
   candidates' and `I₀` the intervals of `dom(var)`; see [Interval
   efficiency](#interval-efficiency).
@@ -740,7 +771,7 @@ Facts shared by every rule:
   supports.
 - **Fires when** — as rule 2, for a width-one run.
 - **Strength** — as rule 2.
-- **Algorithm** — as rule 2; a width test picks the form (`in.cc:273–297`).
+- **Algorithm** — as rule 2; a width test picks the form (`in.cc:276–300`).
 - **Why it is true** — as rule 2, for a single value.
 - **Proof technique** — `RUP sequence`: per selector `¬sel_j ∨ var ≠ v` under
   the reason, then the conclusion by RUP against `@c[id][al1]`.
@@ -766,7 +797,7 @@ Facts shared by every rule:
 - **Strength** — `GAC` on distinct variables, with rules 2, 3 and 5; see rule 2.
   Gecode's `member` has no counterpart: see [Prior art](#prior-art).
 - **Algorithm** — `each_interval_minus` of `dom(V)` against `dom(var)`
-  (`in.cc:400–418`).
+  (`in.cc:403–421`).
 - **Why it is true** — every other source is unavailable. No constant is in
   `dom(var)`, and every other candidate misses `dom(var)`. So the constraint
   forces `var = V`, and `V` cannot take a value `var` does not have.
@@ -779,7 +810,7 @@ Facts shared by every rule:
   memberships, all ruled out under `sel_j`, empty `dom(var)` against the
   reason's bounds and holes. After that, the conclusion's own two lemmas cross
   `V = var` unguarded, since `@c[id][al1]` now forces `V`'s selector. The
-  conclusion is last, by RUP. `in.cc:368–398` and `:409–415`.
+  conclusion is last, by RUP. `in.cc:371–401` and `:412–418`.
 - **Reason** — the same for every run:
   - `generic_reason(var)`: `var`'s bounds and one literal per hole;
   - `not_in_range(V_j, a, b)` for every other candidate and every interval of
@@ -817,7 +848,7 @@ Facts shared by every rule:
   same condition as rule 4.
 - **Fires when** — as rule 4.
 - **Strength** — as rule 4.
-- **Algorithm** — as rule 4 (`in.cc:420–425`).
+- **Algorithm** — as rule 4 (`in.cc:423–428`).
 - **Why it is true** — as rule 4.
 - **Proof technique** — `RUP sequence`: the same ruling-out of the other
   selectors as rule 4, then the conclusion by RUP. Once `sel_V` is forced,
@@ -886,6 +917,12 @@ Facts shared by every rule:
     table).
 - **XCSP3:** `sum_not_equals.xml`'s listed domain `0 3` posts three `In`s,
   incidentally.
+- **`integer_ranges`** (`integer_ranges_test`), since #1215: an `In` constant
+  one past either end of `S` is refused, and both ends are accepted at
+  construction (`integer_ranges_test.cc:146`). No edge solve posts an `In`.
+- **`view_registration`** (`view_registration_test`), since #1208: `In{−x,
+  {−3, −1, 0}}` under `maximise(x)` and under `minimise(−x)`, checked against
+  a brute-force optimum, with proofs (`view_registration_test.cc:196-198`).
 - **Audit lane:** the three rows under [Interval
   efficiency](#interval-efficiency).
 
@@ -918,7 +955,9 @@ under rule 2.
 - **A constant `var`**, which XCSP3's index-free `element` would post: no row
   and no chain case.
 - **Duplicate constants in the chain**, the one `al1` divergence from cake.
-- **Extreme 64-bit constants with proofs.**
+- **Constants at the ends of `S` with proofs.** Out-of-range constants are
+  refused and tested, but no lane solves an `In` whose constants sit at the
+  ends of `S`; the probes under [Robustness](#robustness-and-limits) do.
 - **Real instances:** none ported.
 
 ### Benchmarks and examples
@@ -1057,9 +1096,9 @@ only `Off` checks the family.
 ### Proof-logging gaps
 
 `None.` Every inference is justified at `Off`, and the propagator is the same
-with proofs on or off. One limitation in the proof model: a constant near a
-64-bit limit (within about `2^b` of `−2⁶³`, or of `2⁶³ − 1` when `var` can be
-negative, where `b` is `var`'s magnitude bits; `2⁶³ − 1` itself always) throws with proofs on only
+with proofs on or off. The one limitation the audit found in the proof model,
+a constant near a 64-bit limit throwing with proofs on only, can no longer be
+reached: since #1215 such a constant is refused at construction
 ([Robustness](#robustness-and-limits)).
 
 ### Known limitations
@@ -1081,9 +1120,9 @@ negative, where `b` is `var`'s magnitude bits; `2⁶³ − 1` itself always) thr
   width to fail.
 - **XCSP3's index-free `element`**, which means exactly this constraint, is
   rejected as unsupported.
-- **A constant near a 64-bit limit** (within about `2^b` of `−2⁶³`, or of
-  `2⁶³ − 1` when `var` can be negative; `2⁶³ − 1` itself always) aborts a proof-logged run; with the
-  widest `var`, that is any constant beyond about `±6.9·10¹⁸`.
+- **A constant outside `S`**, beyond about `±1.15·10¹⁸`, is refused with
+  `IntegerOverflow` when the `In` is constructed (#1215), with proofs on or
+  off.
 
 ### Next steps
 
@@ -1147,7 +1186,7 @@ negative, where `b` is `var`'s magnitude bits; `2⁶³ − 1` itself always) thr
      `In{value, list}` and `In{constant, list}`.
    - That is not the whole job, the fact-check found:
      - an integer list with a variable value throws inside the parser itself
-       (`XCSP3Manager.cc:955–957`);
+       (`XCSP3Manager.cc:956–958`);
      - the `<condition>` form goes to a third callback,
        `(list, XVariable *index = NULL, startIndex, XCondition &)`, which the
        frontend does not override;
@@ -1163,12 +1202,11 @@ negative, where `b` is `var`'s magnitude bits; `2⁶³ − 1` itself always) thr
    always implies. It would then need spelling out in the justification, so
    it is cosmetic at best.
 
-Not worth an issue: the extreme-constant overflow. It needs a model listing a
-constant near a 64-bit limit (within about `2^b` of `−2⁶³`, or of `2⁶³ − 1`
-when `var` can be negative; `2⁶³ − 1` itself always), far outside `var`'s own range, and the fix belongs
-to the literal layer (`need_direct_encoding_for`, `need_gevar` and the
-reification renderer), not here. `Table`'s far entries hit the same band
-(#1117); a comment there would do.
+The extreme-constant overflow, which this audit judged not worth an issue
+and placed in the literal layer, is **resolved by #1215**, a different way:
+the constant is refused at construction, so the literal layer never meets
+it. `Table`'s far entries, which hit the same band (#1117), are refused the
+same way.
 
 ## Prior art
 
