@@ -1,13 +1,34 @@
 # `AtMostOne`: at most one variable of an array takes a given value
 
 > **Maturity** production ·
-> **Audited** 2026-09-30 at `c9ceea25` ·
+> **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1121 ·
 > **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
 > for what it would file. Already open and touching this family: #833 (the
 > large-domain policy, which names this family's walk over the value variable),
-> #1121 (`AtMostOneSmartTable`'s child names no constraint in its hints), and
-> #1128 (`SmartTable`'s per-call copies, which `AtMostOneSmartTable` pays).
-> Tracked under #871.
+> and #1128 (`SmartTable`'s per-call copies, which `AtMostOneSmartTable` pays).
+> **Fixed since the audit**: #1121 (`AtMostOneSmartTable`'s child named no
+> constraint in its hints), by #1182; see [Re-audit,
+> 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
+
+### Re-audit, 2026-10-08
+
+One fix touching this family has merged since the audit. This pass brings
+the text into line with it at `0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1121, `AtMostOneSmartTable`'s child names no constraint (the `smart_table` audit's) | #1182 | `AtMostOneSmartTable::prepare` passes its ID to the child `SmartTable` (`at_most_one.cc:195`), so the child's hints name the posted constraint; the assertion-level paragraph under [Proof performance](#proof-performance), and [Tests](#tests) |
+
+The native `AtMostOne` is unchanged: since `c9ceea25`, `at_most_one.cc`
+differs by that one line only. #1213 (`SmartTable` entries outside the scope)
+changes nothing for `AtMostOneSmartTable`, whose entries all name its own
+scope.
+
+**What was measured again.** Only the `smart` shape of the assertion-level
+probe, at `AssertionLevel::Inferences` and `Off`, at `0a5b4ec6` on
+fataepyc-10 (`tmp/fd871-comments-1008/tables/probes/am1_fam.cc`, a copy of
+`tmp/fd-small/at_most_one/fam.cc`). Every other figure is from `c9ceea25`.
 
 Two classes. `AtMostOne(vars, val)` is a native propagator with a
 `Count`-shaped encoding: a flag per position meaning `vars[i] = val`, and one
@@ -534,6 +555,11 @@ subhint and no payload.
 - **Duplicate-variable runs**, both classes, bare lanes only: `{x, x}`,
   `{x, x, y}` and `{x, y, x}` over `1..3`, under plain `solve_for_tests`, so
   solutions and the proof but no consistency check.
+- **`smart_table_dup`** (`smart_table_dup_test`), since #1182: posts
+  `AtMostOneSmartTable` as a problem's only constraint, solves it at
+  `AssertionLevel::Inferences`, and requires `smart_table` hints that name
+  the posted constraint and none that says `unnamed`
+  (`smart_table_dup_test.cc:162-168`).
 - **`scp_chain_at_most_one_{sat,unsat}`**, and `scp_reader_test`'s enumeration
   and round trip: see [Cake conformity](#cake-conformity).
 - **Audit lane:** the two rows; see [Interval efficiency](#interval-efficiency).
@@ -667,8 +693,11 @@ ASSERTIONS`: every one of this family's inferences is an `a` line there (136 of
 136 at `Definitions` on `var`). At `Links` none is accepted: each fails at a
 `solx` step, which is generic, as the other families' probes show. Of the
 `Inferences` assertions on `var`, 136 of 1,945 carry this family's hint.
-`AtMostOneSmartTable`'s carry `smart_table:((constraint_id unnamed))`
-(#1121).
+`AtMostOneSmartTable`'s carry `smart_table:((constraint_id _1))`, the posted
+constraint's ID, since #1182: on `smart` at `0a5b4ec6`, 136 of the 1,945 `a`
+lines carry it, and none says `unnamed`; before #1182 every `smart_table`
+hint did (#1121). The other `a` lines are the search's own (`backtrack` and
+`solx_block` hints), which never named a constraint.
 
 ## Status, gaps, and next steps
 
