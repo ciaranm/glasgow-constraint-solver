@@ -412,6 +412,72 @@ auto main(int argc, char * argv[]) -> int
                 }
             }
 
+            // The forbidden-region form of the pairwise rule (#1250). A 3x3
+            // square anywhere in x 1..4, y 2..5 overlaps a 3x3 square fixed at
+            // (3, 4) wherever it goes, though it has no mandatory part of its
+            // own on either axis, so the root must fail. With the rule asking
+            // for both mandatory parts, it left every domain as posted and
+            // search found the conflict.
+            {
+                Problem p;
+                vector<IntegerVariableID> xs{p.create_integer_variable(1_i, 4_i), p.create_integer_variable(3_i, 3_i)};
+                vector<IntegerVariableID> ys{p.create_integer_variable(2_i, 5_i), p.create_integer_variable(4_i, 4_i)};
+                vector<IntegerVariableID> sizes(2, constant_variable(3_i));
+                p.post(Disjunctive2D{xs, ys, sizes, sizes}.with_strict(strict));
+                auto name = "disjunctive_2d_" + mode + "_forbidden_region";
+                auto reached_a_node = false;
+                auto stats = solve_with(p,
+                    SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; },
+                        .trace = [&](const CurrentState &) -> bool {
+                            reached_a_node = true;
+                            return true;
+                        }},
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
+                if (reached_a_node || stats.solutions != 0) {
+                    println(cerr, "forbidden region: the root survived, though every placement overlaps");
+                    return EXIT_FAILURE;
+                }
+                if (proofs && ! run_veripb(name + ".opb", name + ".pbp")) {
+                    println(cerr, "forbidden region: veripb rejected the proof");
+                    return EXIT_FAILURE;
+                }
+            }
+
+            // The cumulative projection over optional rectangles has to wake
+            // when a presence is decided, as a posted Cumulative does (#1252).
+            // Three 3x3 rectangles in x 0..2 all cover x = 2, and need 9 of the
+            // 8 rows there, so once search makes all three present the
+            // projection refutes that node on the spot. Waking only on start
+            // bounds, it waited for position branching and failed 4 times
+            // before the first solution.
+            if (strict) {
+                Problem p;
+                vector<IntegerVariableID> xs, ys, presences, positions;
+                for (int r = 0; r < 3; ++r) {
+                    xs.push_back(p.create_integer_variable(0_i, 2_i));
+                    ys.push_back(p.create_integer_variable(0_i, 5_i));
+                    presences.push_back(p.create_integer_variable(0_i, 1_i));
+                    positions.push_back(xs.back());
+                    positions.push_back(ys.back());
+                }
+                vector<IntegerVariableID> sizes(3, constant_variable(3_i));
+                p.post(Disjunctive2D{xs, ys, sizes, sizes, presences}.with_rules(Disjunctive2DRules{.cumulative_projection = CumulativeRules{}}));
+                auto name = "disjunctive_2d_" + mode + "_projection_presence_wake";
+                auto stats = solve_with(p,
+                    SolveCallbacks{.solution = [](const CurrentState &) -> bool { return false; },
+                        .branch = branch_sequence(branch_with(variable_order::in_order(presences), value_order::largest_first()),
+                            branch_with(variable_order::in_order(positions), value_order::smallest_first()))},
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
+                if (stats.solutions != 1 || stats.failures != 0) {
+                    println(cerr, "projection presence wake: expected a first solution with no failures, got {} failures", stats.failures);
+                    return EXIT_FAILURE;
+                }
+                if (proofs && ! run_veripb(name + ".opb", name + ".pbp")) {
+                    println(cerr, "projection presence wake: veripb rejected the proof");
+                    return EXIT_FAILURE;
+                }
+            }
+
             // Two rectangles sharing an x origin, found by a random fuzz
             // campaign under AddressSanitizer. A push's justification runs after
             // the push has landed, and it read the blocker's bounds from the
