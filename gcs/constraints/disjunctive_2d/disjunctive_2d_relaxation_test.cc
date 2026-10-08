@@ -1051,6 +1051,46 @@ auto main(int argc, char * argv[]) -> int
             fail("optional_constant_enumerate: the rule never fired, so constant-present rectangles are being left out");
     }
 
+    // A separation row cancelled down to a variable size's floor, where the
+    // other rectangle's position has a bit worth more than the row's degree:
+    // the first rectangle's x is in {0} and its width a variable in {1}, so
+    // the degree is 1, and the second's x is in [0, 2], with a bit worth 2.
+    // Saturating the row capped that bit at 1, and the comparator network's
+    // gap lemma, which needs it at its own weight, was rejected. Shrunk from a
+    // fuzz campaign. The solver's own branching, rather than the harness's
+    // seeded one, because only some search orders reach a firing that cites
+    // the row.
+    {
+        auto name = "disjunctive_2d_relaxation_floor_row_bits";
+        vector<pair<int, int>> ranges{{0, 2}, {3, 6}, {1, 3}};
+        auto is_satisfying = [&](const vector<int> & vals) {
+            vector<int> x{0, vals[0], 2}, y{5, vals[1], 3}, w{1, vals[2], 2}, h{1, 2, 2};
+            for (int i = 0; i < 3; ++i)
+                for (int j = i + 1; j < 3; ++j)
+                    if (! (x[i] + w[i] <= x[j] || x[j] + w[j] <= x[i] || y[i] + h[i] <= y[j] || y[j] + h[j] <= y[i]))
+                        return false;
+            return true;
+        };
+        set<vector<int>> expected;
+        gcs::test_innards::build_expected(expected, is_satisfying, ranges);
+
+        Problem p;
+        auto x0 = p.create_integer_variable(0_i, 0_i), y0 = p.create_integer_variable(5_i, 5_i);
+        auto x1 = p.create_integer_variable(0_i, 2_i), y1 = p.create_integer_variable(3_i, 6_i);
+        auto x2 = p.create_integer_variable(2_i, 2_i), y2 = p.create_integer_variable(3_i, 3_i);
+        auto w0 = p.create_integer_variable(1_i, 1_i), w1 = p.create_integer_variable(1_i, 3_i);
+        p.post(Disjunctive2D{vector<IntegerVariableID>{x0, x1, x2}, vector<IntegerVariableID>{y0, y1, y2},
+            vector<IntegerVariableID>{w0, w1, constant_variable(2_i)},
+            vector<IntegerVariableID>{constant_variable(1_i), constant_variable(2_i), constant_variable(2_i)}}
+                .with_rules(with));
+        auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
+        if (stats.solutions != expected.size())
+            fail("floor_row_bits: the solution count does not match brute force");
+        if (proofs && ! verify(name))
+            fail("floor_row_bits: veripb rejected the proof");
+    }
+
     // Rectangles sharing a position handle take no part in the rule (their
     // facts would be the same literal twice in one guard), so turning it on
     // must leave such a model exactly as it was. Nothing here fires; what is
