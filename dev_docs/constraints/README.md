@@ -420,22 +420,22 @@ constraints and do not restate it.
   describes for `disjunctive_2d.md` too. Two energetic proofs (edge-finding
   alone, and the time-indexed overload, edge-finding, sweep not-first /
   not-last and set rule together) pass `cake_pb_cp`'s full verified chain.
-  The findings:
+  The audit's findings, all closed on 2026-10-08 (re-audited at `0a5b4ec6`):
   - time-tabling's pushes are subsumed by detectable precedences at the
-    fixpoint, and cost 10.7% of the instructions on `ft06`;
-  - the set rule skips fixed tasks, so its fixpoint depends on rule order,
-    which costs it 4.3× its recursions on `ft06`. Edge-finding skips
-    overloaded windows while the overload check is off, which costs it 27×;
-  - not-first / not-last never pushes a task its window contains, and only
-    ever takes Θ as a whole window's contents. So with every rule on, it is
-    weaker than Gecode's `unary` on 197 of 20,000 random machines with the
-    published detection (452 with the sweep detection), and finds no
-    schedule for `la01` at its optimum in 300 s where Gecode needs 200
-    nodes;
-  - time-tabling's start scan is quadratic in the duration;
-  - in the three energetic arms measured, about half the proof is per-time
-    folds, 84 to 99% of which repeat an earlier fold exactly;
-  - every reason names every task.
+    fixpoint; they stay by decision, and since #1279 their start scan jumps
+    past blocked times rather than being quadratic in the duration. Turning
+    them off now saves 4.7% of the instructions on `ft06`, not 10.7%;
+  - the set rule skipped fixed tasks and edge-finding skipped overloaded
+    windows while the overload check was off, so both depended on rule
+    order. #1275 fixed both;
+  - not-first / not-last never pushed a task its window contains, and only
+    ever took Θ as a whole window's contents. #1288 and #1289 lifted both
+    for the published detection only: with it and every rule on, the root
+    is weaker than Gecode's `unary` on none of 20,000 random machines (452
+    with the sweep detection), and `la01` at its optimum finds a schedule
+    in 240 recursions;
+  - the per-time folds are now kept (#1287), and a reason names only the
+    tasks its certificate cites, except in the window rules (#1283).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
