@@ -1078,6 +1078,40 @@ auto main(int argc, char * argv[]) -> int
         gcs::test_innards::check_results(proofs ? make_optional(string{name}) : nullopt, expected, actual);
     }
 
+    // A position that is also a size takes no part either, for the same
+    // reason (#1253): the first rectangle's height is the third one's y, so
+    // as members both would state a bound on that variable in one guard, and
+    // the network's certificate was rejected. Shrunk from a fuzz campaign; on
+    // the fixed tree, the rectangle whose y is shared is left out and the
+    // proof verifies.
+    {
+        auto name = "disjunctive_2d_relaxation_size_is_position";
+        vector<pair<int, int>> ranges{{0, 1}, {2, 3}};
+        auto is_satisfying = [&](const vector<int> & vals) {
+            vector<int> x{0, 0, vals[0]}, y{4, 1, vals[1]}, w{1, 2, 2}, h{vals[1], 2, 2};
+            for (int i = 0; i < 3; ++i)
+                for (int j = i + 1; j < 3; ++j)
+                    if (! (x[i] + w[i] <= x[j] || x[j] + w[j] <= x[i] || y[i] + h[i] <= y[j] || y[j] + h[j] <= y[i]))
+                        return false;
+            return true;
+        };
+        set<vector<int>> expected, actual;
+        gcs::test_innards::build_expected(expected, is_satisfying, ranges);
+
+        Problem p;
+        auto x0 = p.create_integer_variable(0_i, 0_i), y0 = p.create_integer_variable(4_i, 4_i);
+        auto x1 = p.create_integer_variable(0_i, 0_i), y1 = p.create_integer_variable(1_i, 1_i);
+        auto x2 = p.create_integer_variable(0_i, 1_i), y2 = p.create_integer_variable(2_i, 3_i);
+        auto h1 = p.create_integer_variable(2_i, 2_i);
+        p.post(Disjunctive2D{vector<IntegerVariableID>{x0, x1, x2}, vector<IntegerVariableID>{y0, y1, y2},
+            vector<IntegerVariableID>{constant_variable(1_i), constant_variable(2_i), constant_variable(2_i)},
+            vector<IntegerVariableID>{y2, h1, constant_variable(2_i)}}
+                .with_rules(with));
+        vector<IntegerVariableID> all_vars{x2, y2};
+        gcs::test_innards::solve_for_tests(p, proofs ? make_optional(string{name}) : nullopt, actual, std::tuple{all_vars});
+        gcs::test_innards::check_results(proofs ? make_optional(string{name}) : nullopt, expected, actual);
+    }
+
     // Soundness, which is what a conflict fixture cannot check: enumerate a
     // small instance with the rule on and compare against brute force. A wrong
     // window or a wrong capacity prunes a solution here rather than merely

@@ -441,6 +441,32 @@ auto main(int argc, char * argv[]) -> int
                     return EXIT_FAILURE;
                 }
             }
+
+            // A size that is also a position (#1253). The second rectangle's
+            // width and height are both its own y, so the push that raises y
+            // past the fixed 2x2 square raises its sizes' lower bounds too. The
+            // justification runs after the push has landed, and it read the
+            // size bounds from the state, citing the raised one, which the
+            // reason does not support. y = 3 and y = 4 are the solutions.
+            {
+                Problem p;
+                auto xa = p.create_integer_variable(3_i, 3_i), ya = p.create_integer_variable(1_i, 1_i);
+                auto xb = p.create_integer_variable(3_i, 3_i), yb = p.create_integer_variable(1_i, 4_i);
+                p.post(Disjunctive2D{vector<IntegerVariableID>{xa, xb}, vector<IntegerVariableID>{ya, yb},
+                    vector<IntegerVariableID>{constant_variable(2_i), yb}, vector<IntegerVariableID>{constant_variable(2_i), yb}}
+                        .with_strict(strict));
+                auto name = "disjunctive_2d_" + mode + "_size_is_position";
+                auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }},
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{name}) : nullopt);
+                if (stats.solutions != 2) {
+                    println(cerr, "size is position: expected 2 solutions, got {}", stats.solutions);
+                    return EXIT_FAILURE;
+                }
+                if (proofs && ! run_veripb(name + ".opb", name + ".pbp")) {
+                    println(cerr, "size is position: veripb rejected the proof");
+                    return EXIT_FAILURE;
+                }
+            }
         }
     }
 
