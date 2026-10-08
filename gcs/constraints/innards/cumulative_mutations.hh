@@ -197,6 +197,22 @@ namespace gcs::innards
         struct DropHeightContributor
         {
         };
+
+        /// A time-table run step (#1237): where an upward push's last step is a
+        /// run, claim it reaches one start further than the tasks it cites stay
+        /// mandatory, and push the bound that far with it. The destination is
+        /// what a run step adds, and the only place an over-reach is false:
+        /// every start below the push is ruled out anyway, so one claimed
+        /// further mid-chain is still true. Necessarily changes the inference.
+        struct RunOneTooFar
+        {
+        };
+
+        /// A time-table run step (#1237): leave the first task a run cites out
+        /// of its pol, so the checkpoint row is short by that task's height.
+        struct DropRunContributor
+        {
+        };
     }
 
     using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
@@ -206,7 +222,7 @@ namespace gcs::innards
         cumulative_proof_mutation::DropEnergeticContributor, cumulative_proof_mutation::PublishedEmitNothing,
         cumulative_proof_mutation::DropPublishedPin, cumulative_proof_mutation::RecoverFromWrongCheckpoint,
         cumulative_proof_mutation::LowerHeightOneTooFar, cumulative_proof_mutation::HeightEmitNothing,
-        cumulative_proof_mutation::DropHeightContributor>;
+        cumulative_proof_mutation::DropHeightContributor, cumulative_proof_mutation::RunOneTooFar, cumulative_proof_mutation::DropRunContributor>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,

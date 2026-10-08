@@ -411,6 +411,7 @@ if(GCS_BUILD_TESTS)
     add_executable(derived_cumulative_test constraints/cumulative/derived_cumulative_test.cc)
     add_executable(cumulative_optional_test constraints/cumulative/cumulative_optional_test.cc)
     add_executable(cumulative_height_test constraints/cumulative/cumulative_height_test.cc)
+    add_executable(cumulative_run_test constraints/cumulative/cumulative_run_test.cc)
     add_executable(cumulative_wide_horizon_test constraints/cumulative/cumulative_wide_horizon_test.cc)
     add_executable(difference_test constraints/difference/difference_constraints_test.cc)
     add_executable(disjunctive_test constraints/disjunctive/disjunctive_test.cc)
@@ -480,7 +481,7 @@ if(GCS_BUILD_TESTS)
 
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test bin_packing_test comparison_test
-            count_test cumulative_test cumulative_overload_test cumulative_edge_finding_test cumulative_ttef_test cumulative_energetic_test cumulative_nfnl_test cumulative_published_nfnl_test cumulative_kaoc_test cumulative_optional_test cumulative_height_test cumulative_wide_horizon_test derived_cumulative_test difference_test disjunctive_test disjunctive_optional_test disjunctive_regression_test disjunctive_overload_test disjunctive_edge_finding_test disjunctive_nfnl_test disjunctive_precedences_test disjunctive_set_precedences_test disjunctive_published_nfnl_test disjunctive_2d_test disjunctive_2d_optional_test disjunctive_2d_presolver_test disjunctive_2d_relaxation_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
+            count_test cumulative_test cumulative_overload_test cumulative_edge_finding_test cumulative_ttef_test cumulative_energetic_test cumulative_nfnl_test cumulative_published_nfnl_test cumulative_kaoc_test cumulative_optional_test cumulative_height_test cumulative_run_test cumulative_wide_horizon_test derived_cumulative_test difference_test disjunctive_test disjunctive_optional_test disjunctive_regression_test disjunctive_overload_test disjunctive_edge_finding_test disjunctive_nfnl_test disjunctive_precedences_test disjunctive_set_precedences_test disjunctive_published_nfnl_test disjunctive_2d_test disjunctive_2d_optional_test disjunctive_2d_presolver_test disjunctive_2d_relaxation_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
             logical_test mdd_test min_distance_test min_distance_matching_test min_max_test mini_linear_test multiply_test n_value_test nogoods_test parity_test parity_system_test
             plus_minus_test power_test product_bounds_test product_justify_test wide_product_test reachable_test dag_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test subgraph_test tree_test path_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test view_registration_test integer_ranges_test)
@@ -513,6 +514,13 @@ if(GCS_BUILD_TESTS)
         add_cumulative_test_with_recovery(cumulative_height_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_height_mutation_${mutation} $<TARGET_FILE:cumulative_height_test> --mutate=${mutation})
+    endforeach()
+    # Time-table run steps (#1237).
+    add_cumulative_test_with_recovery(cumulative_run ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_run_test>)
+    foreach(mutation toofar drop)
+        add_cumulative_test_with_recovery(cumulative_run_mutation_${mutation}
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                --basename cumulative_run_mutation_${mutation} $<TARGET_FILE:cumulative_run_test> --mutate=${mutation})
     endforeach()
     add_cumulative_test_with_recovery(cumulative_edge_finding ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_edge_finding_test>)
     # All five still discriminate on the startcheckpoint arm, checked one at a
