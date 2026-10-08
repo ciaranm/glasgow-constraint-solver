@@ -1,18 +1,52 @@
 # Table: `Table` and `NegativeTable`, and the extensional propagator behind them
 
 > **Maturity** production ·
-> **Audited** 2026-09-27 at `c9ceea25` ·
-> **Open issues** filed from this audit: overlapping tuples make the proof's
-> solution lines fail (#1115), a wide domain is still walked value by value on
-> three paths, one of them on every call (#1116), extreme tuple values
-> overflow arithmetic or throw `IntegerOverflow` or a `ProofError`, with
-> proofs and, through a view, without (#1117, plus view and far-entry cases
-> found since), and `table::Auto`
-> no longer picks the faster arm on Renault (#1118). Already open and touching
+> **Audited** 2026-09-27 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1115 and #1117 ·
+> **Open issues** filed from this audit: a wide domain is still walked value
+> by value on three paths, one of them on every call (#1116), and
+> `table::Auto` no longer picks the faster arm on Renault (#1118). **Fixed
+> since the audit**: #1115 (overlapping tuples made the proof's solution
+> lines fail), by #1202, and #1117 (extreme tuple values overflowed
+> arithmetic or threw `IntegerOverflow` or a `ProofError`), by #1215; see
+> [Re-audit, 2026-10-08](#re-audit-2026-10-08). Already open and touching
 > this family: #503 (the engine, which is where the remaining gap to Gecode
 > is), #364 (incrementality survey), #833 (large domains), #131 (a generic
 > watched-clause propagator, which would subsume `NegativeTable`'s), #868
 > (cross-solver). Tracked under #871.
+
+### Re-audit, 2026-10-08
+
+Two of the audit's issues have been fixed, and two fixes from elsewhere
+touch this family. This pass brings the text into line with them at
+`0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1115, overlapping tuples fail the solution line | #1202 | `Table`'s OPB gives each tuple a proof flag reified both ways and adds one labelled at-least-one, with no at-most-one and no two-tuple special case: cake's encoding. The summary loses its first bullet; [Semantics](#semantics), [Variable kinds](#variable-kinds-and-views), the `smart_table` merge note, [OPB encoding](#opb-encoding) (rewritten, with the old selector as history), [Labels](#labels), [Cake conformity](#cake-conformity), [Proof-time state](#proof-time-state), the catalogue's preamble and rule 2, [Tests](#tests), [Proof performance](#proof-performance), [Proof-logging gaps](#proof-logging-gaps), [Known limitations](#known-limitations), [Next steps](#next-steps) items 1, 3, 6 and 9, and [Prior art](#prior-art) |
+| #1117, extreme tuple values | #1215, on #1214's range | a tuple value outside `S = −(2^60 − 1) .. 2^60 − 1` is refused with `IntegerOverflow` when the `Table` or `NegativeTable` is constructed, and #1214 refuses a declared domain or view offset outside `S`; [Semantics](#semantics), [Robustness and limits](#robustness-and-limits) (the overflow findings become history), [Interval efficiency](#interval-efficiency)'s widest domain, [Tests](#tests), the gaps, [Known limitations](#known-limitations) and [Next steps](#next-steps) item 8 |
+| #1200, views registered after the rows that use them (not this audit's) | #1208 | a view that a `Table` row names gets its own bit vector, and its `=` literals are defined over it: [Variable kinds and views](#variable-kinds-and-views) |
+| XCSP3 integers past `int` (no issue) | #1217 | the reader refuses a tuple value past `int`, and `2147483647`, its wildcard; the `<extension>` footnote and [Tests](#tests) |
+
+#1266 (`Regular`'s ambiguous automata) changes nothing here.
+
+**What was measured again**, at `0a5b4ec6` on fataepyc-10: the encoding's
+shape and size (`opbsize.cc`), the degenerate shapes, the old overlap and
+extreme-value repros and their in-range edges, the four chain cases under all
+three `opbdiff` modes, the hand-built dependency sets of Next steps item 3,
+the test caps, and the whole [Proof performance](#proof-performance) table,
+with a same-sitting VeriPB control on the audit's OPB. Probes are under
+`tmp/fd871-comments-1008/tables/probes/`; `raster_edge.cc` and `constpos.cc`
+there come from the fact-check of this pass, and were re-run. **Not re-run**, and still at
+`c9ceea25`: the CPU tables against Gecode and the forced arms, the corpus
+shares, the [Interval efficiency](#interval-efficiency) timings and proof
+sizes, the brute-force GAC checks, the second fact-check's 920-inference
+hint campaign and the link-line counterexample. The propagator has not
+changed since the audit: `extensional_utils.{hh,cc}` differ only in a
+comment, and `table.cc` and `negative_table.cc` only in the constructors'
+range checks and `Table::define_proof_model`. Every line citation holds at
+`0a5b4ec6`: `table.cc`'s are updated, and the other files cited are
+unchanged since the audit, or changed only below the lines cited.
 
 Two constraints over an explicit list of tuples. `Table` requires the variables
 to take one of them, and `NegativeTable` requires them to take none. `Table` is
@@ -23,18 +57,8 @@ document owns that helper, so it owns their propagation rules too.
 `NegativeTable` is a different algorithm entirely: each forbidden tuple is a
 clause, watched by two literals.
 
-Four things to know before touching it.
+Three things to know before touching it.
 
-- **A `Table` whose rows overlap writes proofs VeriPB rejects.** With three or
-  more tuples, a solution that two rows match leaves the proof-only selector
-  undetermined, and the solution line (`solx`, or `soli` on an optimisation
-  model) fails. MiniZinc keeps duplicate rows and
-  XCSP3 allows overlapping wildcard rows, so both front ends reach it. So does
-  a MiniZinc Challenge model: `yumi-static` 2022's proof is rejected at its first
-  solution, and 2023's instance posts duplicate rows too. `cake_pb_cp`'s
-  chain passes on a small duplicate-row case that GCS's own OPB rejects,
-  because cake's encoding reifies each tuple both ways. See [OPB
-  encoding](#opb-encoding).
 - **The algorithm choice is invisible to every front end.** `table::Auto` is the
   default and the only setting MiniZinc, XCSP3 or `gcspy` can reach. It watches
   32 wakes and then switches to a compact table (bitsets) where the live set is
@@ -76,15 +100,20 @@ Four things to know before touching it.
     is unsatisfiable before search starts").
   - **Arity 0** with one empty tuple is no constraint. With no tuples it is
     unsatisfiable, as above.
+  - **Every tuple value must lie in `S`**, the solver's integer range
+    `−(2^60 − 1) .. 2^60 − 1` ([`integer-ranges.md`](../integer-ranges.md)),
+    wildcard tuples included. The constructor throws `IntegerOverflow`
+    otherwise (`table.cc:53`, since #1215), before `prepare()` runs.
   - Tuple values outside a variable's domain are allowed and simply never
-    match. Duplicate tuples and overlapping wildcard rows are allowed, and
-    solve correctly, but see the proof problem above.
+    match. Duplicate tuples and overlapping wildcard rows are allowed, solve
+    correctly, and, since #1202, verify (see [OPB encoding](#opb-encoding)).
   - A variable may appear twice, directly or as a view. The tuples whose two
     positions disagree then never match. That works, but it is weaker than
     generalised arc consistency: see [Propagator inventory](#propagator-inventory).
 - **`NegativeTable(vars, tuples)`** — for every tuple `t`, some `vars[i] ≠ t[i]`.
   A wildcard position never differs, so it can never satisfy the clause.
   - Every tuple must have `k` entries, or `prepare()` throws the same exception.
+  - Every tuple value must lie in `S`, as for `Table` (`negative_table.cc:125`).
   - **No tuples** is no constraint.
   - **An all-wildcard tuple**, or **arity 0 with one empty tuple**, is
     unsatisfiable, and is detected at the root.
@@ -92,6 +121,8 @@ Four things to know before touching it.
 
 All of these were probed with proofs on and VeriPB accepted every one
 (`tmp/fd-table/probes/degen.cc`, 13 shapes). The length mismatch throws.
+Re-run at `0a5b4ec6`, under #1202's encoding, with the same outcome
+(`tmp/fd871-comments-1008/tables/probes/degen.cc`).
 
 ### Concrete constraints and frontend coverage
 
@@ -114,9 +145,16 @@ All of these were probed with proofs on and VeriPB accepted every one
     `Table` or `NegativeTable` over `SharedWildcardTuples`. The `extensionAs`
     callback reuses the previous constraint's tuple object, so a group of
     constraints over one relation shares one tuple list, and its support masks
-    too (see [Initialisation](#initialisation-and-global-data)). The unary
-    form is the same with one column. **No XCSP3 lane exercises any of
-    this**: see [Tests](#tests).
+    too (see [Initialisation](#initialisation-and-global-data)). The parser
+    takes that callback for a `<group>` member only when its variables'
+    domains equal the previous member's (`XCSP3Manager.cc:1415-1429` in the
+    fetched parser). The unary form is the same with one column. Since #1202,
+    `xcsp_extension_overlap` exercises supports, `*`, a `<group>` that takes
+    `extensionAs`, an exact duplicate and the unary form; no lane posts
+    `<conflicts>` (see [Tests](#tests)). Since #1217 the patched parser
+    (`xcsp/xcsp3_parser_integer_overflow.patch`) refuses a tuple value that
+    does not fit in an `int`, and `2147483647`, which it uses for `*`,
+    rather than misreading either.
 
 [^xin]: `in(x, set(…))` and `notin(x, set(…))` inside an `<intension>` post a
     unary `Table` or `NegativeTable` over the set.
@@ -171,14 +209,22 @@ There is no `with_consistency`. `Table` is always generalised arc consistent;
 
 Both accept any `IntegerVariableID`: plain variables, constants and views. A
 constant position works the way a fixed variable does. At the model level a
-tuple entry a constant cannot take gives a row that only forbids the selector
-value, and a matching entry is left out of the row. Both views and constants
-are tested (`table_constraint_view_mixed`, `negative_table_constraint_view_mixed`,
-and a fixed-constant probe here).
+tuple entry a constant cannot take gives that tuple's flag a unit row
+`¬flag ≥ 1` (`table.cc:199-200`), and a matching entry is left out of the
+flag's rows. Both views and constants are tested
+(`table_constraint_view_mixed`, `negative_table_constraint_view_mixed`, and,
+since #1202, `run_constant_table_test`, `table_test.cc:191`, which posts a real
+`ConstantIntegerVariableID` with a tuple it rules out).
 
 **The proof handles views.** Every rule states literals on the positions as
-posted, and the shared literal layer defines a view's `=` literal from its
-underlying variable. The view lanes run with proofs.
+posted. Since #1208, a view that a model row names gets a bit vector of its
+own when the row is written, and its `=` literals are defined over that, with
+two channel rows to the underlying variable: a `Table` over `x + 3` names
+`p[0_view_of_x_plus_3][eq4]` and so on, each defined (rows labelled
+`@po[0][eq4][r]` and `[f]`) over the view's `≥` literals, `p[…][ge4]` and
+`p[…][ge5]`, which are defined in turn over its bits `p[0_view_of_x_plus_3][b…]`
+(`tmp/fd871-comments-1008/tables/probes/enc.cc view`). The view lanes run
+with proofs.
 
 ### Reification
 
@@ -221,10 +267,11 @@ Nothing in the corpus asked for one.
   propagator is exercised directly by all of them.
 
 **The candidate merge with `smart_table` is settled: separate** (Ciaran,
-2026-09-26). `SmartTable` does not use `extensional_utils`. Its encoding is one
-proof flag per smart tuple, over entries that are themselves constraints
-(`<`, `≤`, `=`, `≠`, `>`, `≥`, set membership), where `Table`'s is a proof-only
-selector integer over equality literals. Its propagator is a different
+2026-09-26). `SmartTable` does not use `extensional_utils`. Since #1202 both
+encodings give each tuple one proof flag, reified both ways, under one
+at-least-one; what differs is the entries. `SmartTable`'s are themselves
+constraints (`<`, `≤`, `=`, `≠`, `>`, `≥`, set membership), each with a flag
+of its own, where `Table`'s are equality literals. Its propagator is a different
 algorithm. And it is reached only from the `.scp` reader and as the engine
 underneath `LexSmartTable` and `AtMostOneSmartTable`. It has its own document.
 
@@ -232,68 +279,67 @@ underneath `LexSmartTable` and `AtMostOneSmartTable`. It has its own document.
 
 ### OPB encoding
 
-**`Table`**, for tuples `t_0, …, t_{m-1}` over `vars` of arity `k`, with a
-proof-only selector `s ∈ 0..m-1` in the direct encoding:
+**`Table`**, for tuples `t_0, …, t_{m-1}` over `vars` of arity `k`, with one
+proof flag `f_j` per tuple, named `x[id][j]` (`table.cc:163-211`, since #1202):
 
 ```
-  Σ_j [s = j] ≥ 1                                   at least one tuple
- −Σ_j [s = j] ≥ −1                                  at most one tuple
-  for each tuple j:
-    k·¬[s = j] + Σ_{i : t_j[i] not a wildcard, [x_i = t_j[i]] not constant true} [x_i = t_j[i]] ≥ n_j
-    where n_j is the number of such terms (so each row says s = j ⇒ tuple j matches)
-  for a tuple with an entry a constant position cannot take:   ¬[s = j] ≥ 1
-  with no tuples at all:                                  0 ≥ 1
+  for each tuple j that no constant position rules out, with n_j the number of its entries
+  [x_i = t_j[i]] that are not wildcards and not constant true:
+    @x[id][j][r]   n_j·¬f_j + Σ_i [x_i = t_j[i]] ≥ n_j      f_j ⇒ tuple j matches
+    @x[id][j][f]   f_j + Σ_i ¬[x_i = t_j[i]] ≥ 1            tuple j matches ⇒ f_j
+  for a tuple with an entry a constant position cannot take:   ¬f_j ≥ 1
+  @c[id][al1]      Σ_j f_j ≥ 1                               at least one tuple
+  with no tuples at all:                                     0 ≥ 1
 ```
 
-With exactly two tuples the direct encoding of `s` is a single bit, and the two
-selector rows are replaced by its bounds. The encoding is **definitional**:
-the rows say which tuples are allowed and nothing more. Its size is
-`|T| + 2` rows and `(k + 1)·|T|` terms in the tuple rows, plus `2|T|` in the
-two selector rows. Measured with arity 3 over `0..9`: 10, 100 and 1,000
-tuples give 10, 100 and 1,000 tuple rows. The shared layer's `=` and `≥`
-definitions come to 92, 126 and 126 rows, because they are bounded by
-arity × domain, not by the table (`tmp/fd-table/probes/opbsize.cc`). Nothing
-is proportional to a domain's width. A wildcard row's selector term keeps the
-coefficient `k` where the row's degree counts only its non-wildcard terms. That
-is sound, merely not normalised.
+The `[f]` row is written in normalised form (`−Σ_i [x_i = t_j[i]] + f_j ≥
+1 − n_j`). There is **no at-most-one**, and no special case for two tuples.
+This is `cake_pb_cp`'s table encoding, with its flag names and labels. A
+tuple whose entries are all wildcards or constant true has `n_j = 0`, so its
+`[r]` row is the trivially true `1 ~f_j ≥ 0` (cake writes `0 ~f_j`) and its
+`[f]` row the unit `f_j ≥ 1`. The encoding is **definitional**: the rows say
+which tuples are allowed and nothing more, and every flag is determined by unit propagation on a
+complete assignment, which is what the solution line needs. Its size is
+`2m + 1` rows for the `m` tuples no constant position rules out, plus one
+unit row per tuple one does, with at most `2(k + 1)` terms per such tuple in
+the flag rows and `|T|` in the at-least-one, ruled-out flags included. A
+tuple whose value lies outside a variable's domain can never match either,
+but it gets both halves like any other. Measured at `0a5b4ec6` with arity 3 over `0..9`: 10,
+100 and 1,000 tuples give 20, 200 and 2,000 flag rows plus the at-least-one,
+with 80, 800 and 8,000 terms in the flag rows. The shared layer's `=` and `≥`
+definitions come to 92, 126 and 126 rows, as at `c9ceea25`, because they are
+bounded by arity × domain, not by the table
+(`tmp/fd871-comments-1008/tables/probes/opbsize.cc`, a copy of the audit's
+`tmp/fd-table/probes/opbsize.cc`). Nothing is proportional to a domain's
+width.
 
-**This is not the thesis's Encoding Procedure 3.10.** EP 3.10 reifies each tuple
-flag both ways, `t_j ⇔ Σ_i [x_i = τ_j[i]] ≥ n`, and adds `Σ_j t_j = 1`. That is
-only satisfiable when no two tuples match one assignment: the thesis's `τ` is a
-set, with no wildcards. GCS keeps only the `⇒` half and so accepts overlaps.
-But it leaves the selector **undetermined by unit propagation on a solution**
-when two or more rows match, and with three or more tuples VeriPB's solution
-check (`solx`, or `soli` when optimising) then fails. That is the
-overlapping-tuples finding (#1115).
+**Before #1202** the encoding was a proof-only selector `s ∈ 0..m−1` in the
+direct encoding, an exactly-one over its values, and one row per tuple saying
+only `s = j ⇒ tuple j matches`: `|T| + 2` rows, and with exactly two tuples a
+single selector bit with no selector rows. On a solution that two rows
+matched, with three or more tuples, two selector literals were left
+unassigned by unit propagation, and VeriPB rejected the solution line
+(`solx`, or `soli` when optimising): #1115, found by this audit, with a
+three-row duplicate, a three-row wildcard overlap and an XCSP3 wildcard
+overlap as repros (`tmp/fd-table/probes/duptup.cc`,
+`tmp/fd-table/factcheck/fc_*`, `star2.xml`). At `0a5b4ec6` the same three
+shapes verify (`tmp/fd871-comments-1008/tables/probes/enc.cc dup|wild3`, and
+`star2.xml` through `xcsp_glasgow_constraint_solver --prove`).
 
-**Why three tuples and not two.** With two tuples the selector is one bit, with
-no at-least-one or at-most-one row. Both tuple rows are satisfied by the
-variables' literals whichever value the bit takes, so the solution check
-passes. With three or more, the selector is direct-encoded, and on a doubly
-matched solution two or more selector literals are left unassigned, with
-nothing to propagate them. Then **both** selector rows are unsatisfied under
-the propagated assignment: the at-least-one, and the at-most-one (whose
-normalised form needs all but one of the selector literals false). VeriPB
-names whichever it checks first; on the small duplicate probe that is the
-at-most-one, and swapping the two rows in the OPB moves the reported ID to
-match (`tmp/fd-table/factcheck2/dt_dup_swap.opb`). Probes: a two-row duplicate
-verifies; a three-row duplicate `(1,2) (1,2) (3,3)`, a three-row wildcard
-overlap `(1,*) (1,2) (3,3)`, and an XCSP3 wildcard overlap `(0,*,1) (0,2,*)
-(1,1,1)` are rejected; a duplicate that no solution matches verifies
-(`tmp/fd-table/probes/duptup.cc`, `tmp/fd-table/factcheck/fc_*`).
+**This is the thesis's Encoding Procedure 3.10 without its exactly-one.** EP
+3.10 reifies each tuple flag both ways, `t_j ⇔ Σ_i [x_i = τ_j[i]] ≥ n`, and
+adds `Σ_j t_j = 1`. That is only satisfiable when no two tuples match one
+assignment: the thesis's `τ` is a set, with no wildcards. With the reverse
+halves present, an at-most-one would make an assignment two rows match
+infeasible and lose solutions, which is why there is none. JP 3.3 and 3.4
+use only the forward halves, `f_j ⇒ match`, so every propagation rule
+certifies against them (see [What licenses rules 2–5](#inference-catalogue)).
 
-**Unaffected:** `AutoTable`, whose tuples are distinct full assignments with
-`red` lines reifying each selector value both ways (`auto_table.cc:71-82`);
-the tabulated constraints, whose rows are disjoint (`tabulation.cc:95-160`);
-and `NegativeTable`, which has no auxiliary and verifies with duplicated or
-overlapping forbidden rows.
-
-**Soundness of a fix.** EP 3.10 as published would not do: its `Σ_j t_j = 1`
-together with rows reified both ways makes an assignment two rows match
-infeasible in the OPB, which would lose solutions. cake's encoding (each row
-reified both ways, and an at-least-one only) is the sound full-encoding fix.
-JP 3.3 and 3.4 use only the `⇒` direction, so every propagation rule certifies
-against GCS's rows as they are.
+**#1115 never affected the other tables:** `AutoTable`, whose tuples are distinct
+full assignments with `red` lines reifying each selector value both ways
+(`auto_table.cc:71-82`); the tabulated constraints, whose rows are disjoint
+(`tabulation.cc:95-160`); and `NegativeTable`, which has no auxiliary and
+verifies with duplicated or overlapping forbidden rows.
 
 **`NegativeTable`**, one clause per forbidden tuple:
 
@@ -306,8 +352,10 @@ auxiliary. An all-wildcard tuple is the empty clause.
 
 ### Labels
 
-None used. Neither class labels its rows, and no rule cites one by label. The
-`=` and `≥` literal definitions carry the shared layer's labels.
+Since #1202, `Table` labels its flag rows `@x[id][j][r]` and `@x[id][j][f]`
+and its at-least-one `@c[id][al1]`, cake's labels; the unit row of a tuple a
+constant position rules out is unlabelled. `NegativeTable` labels nothing. No rule cites a row by
+label. The `=` and `≥` literal definitions carry the shared layer's labels.
 
 ### Cake conformity
 
@@ -315,43 +363,54 @@ The `.scp` spellings are `table` and `negative_table`, with each tuple a list
 whose entries are integers or `*`. The solver and `cake_pb_cp` agree on this
 shape exactly.
 
-**The encodings differ, and not benignly for `Table`.**
+**Since #1202 the table rows agree**, except an all-wildcard tuple's trivially
+true `[r]` row (below).
 
-- cake gives each tuple a fully reified flag (`@x[_1][j][f]` and `[r]`) and one
-  at-least-one (`@c[_1][al1]`), with no at-most-one. That is EP 3.10 without
-  the exactly-one, and it tolerates overlapping rows.
-- GCS has one direct-encoded selector with half-reified rows and an
-  exactly-one, unlabelled.
-- For `NegativeTable` the clauses are the same shape, and only the labels
-  differ.
+- `Table`: cake gives each tuple a fully reified flag (`@x[_1][j][r]` and
+  `[f]`) and one at-least-one (`@c[_1][al1]`), with no at-most-one, and so now
+  does GCS, with the same names and labels. Before #1202 GCS had one
+  direct-encoded selector with half-reified rows and an exactly-one,
+  unlabelled.
+- `NegativeTable`: the clauses are the same shape, and only the labels
+  differ: cake labels clause `j` `@c[_1][<j>al1]`, and GCS leaves it
+  unlabelled.
 
 Four chain cases, all registered `none`: `scp_chain_table_sat`,
 `scp_chain_table_unsat`, `scp_chain_negative_table_sat` and
-`scp_chain_negative_table_unsat`. All four pass with cake on the path at
-`c9ceea25`. The registration comment in
-`verified_encodings/scp_cases/CMakeLists.txt` says they stay `none` because of
-#358's literal-ladder divergence. #358 is closed, and the stated reason may be
-stale. Whether `aux` or `strict` would now pass was not tried.
+`scp_chain_negative_table_unsat`. All four pass the full workflow-2 chain at
+`0a5b4ec6`, run by hand with cake on the path
+(`tmp/fd871-comments-1008/tables/probes/chain/`). Since #1202 the registration
+comment in `verified_encodings/scp_cases/CMakeLists.txt` (lines 486-499) no
+longer blames #358. It says the table rows have cake's shape and labels, and
+that what still differs is how variables are written, plus that
+all-wildcard row. Run with `aux` or
+`strict`, each case fails `opbdiff` on one or two rows, all of them `≥`-literal
+definitions for a value at or outside a variable's bounds, which GCS writes
+with a 1 coefficient on the literal where cake writes 0
+(`@i[A][ge0][r] 1 i[A][b0] 2 i[A][b1] 1 ~i[A][ge0] >= 0` against cake's
+`0 ~i[A][ge0]` over `0..2`, and `@i[A][ge4][f]` in `table_unsat`). #1202's
+body adds two causes that its 3,000-instance sweep found and these four cases
+do not reach: an all-wildcard tuple's trivially true row (`1 ~x ≥ 0` against
+cake's `0 ~x ≥ 0`), and a `{0, 1}` variable's `=` literals, which GCS writes
+as its bit (#1193). So the cases stay `none`.
 
-**The chain passes where GCS's own OPB fails.** A three-row table with a
-duplicate row, run through `run_scp_chain.bash`, gives
-`s VERIFIED COMPLETE ENUMERATION OF 2 SOLUTIONS` and a passing chain. Checking
-the same proof against GCS's own `.opb` rejects it at the first solution line. The
-chain lanes therefore cannot catch the overlapping-tuples bug, by
-construction.
+**Before #1202, the chain passed where GCS's own OPB failed.** A three-row
+table with a duplicate row passed `run_scp_chain.bash`, since cake's encoding
+already reified each tuple both ways, while the same proof against GCS's own
+`.opb` was rejected at the first solution line. With the encodings now
+agreeing on the table rows, that gap is closed.
 
 ### Proof-time state
 
-- **`Table`: one proof-only integer per constraint**, `aux_table<id>`, created
-  in `define_proof_model` with no `State`. Its `=` literals are OPB variables
-  named `p[<n>_aux_table<id>][eq<j>]`, or `…[b0]` for a two-tuple table. **No
-  proof line ever cites it**: every rule's RUP goes through it by unit
-  propagation from the variables' literals. It is not in `preserved:`, and it
-  is **determined by unit propagation on a solution only when exactly one row
-  matches**. With two tuples an undetermined bit is harmless, since no row
-  constrains it further; with three or more it fails the solution check (see
-  [OPB encoding](#opb-encoding)). Nothing is emitted at the root and nothing
-  is deleted.
+- **`Table`: one proof flag per tuple**, `x[id][j]`, created in
+  `define_proof_model` with no `State` (since #1202). **No proof line ever
+  cites one**: every rule's RUP goes through the flags by unit propagation
+  from the variables' literals. They are not in `preserved:`, and every flag
+  is **determined by unit propagation on a solution**, through its `[r]` or
+  `[f]` row or its unit row, however many rows the solution matches. Nothing
+  is emitted at the root and nothing is deleted. Before #1202 this was one proof-only integer,
+  `aux_table<id>`, whose `=` literals were left undetermined on a solution
+  that two rows matched, in a table of three or more tuples (#1115).
 - **`NegativeTable`:** none.
 - **`AutoTable`'s table** has a `State` selector, whose identifier is reserved
   before the presolver's search and allocated after it. Its literals are
@@ -365,7 +424,7 @@ construction.
 
 ### Initialisation and global data
 
-**`Table::prepare`** (`table.cc:120-158`) does the following.
+**`Table::prepare`** (`table.cc:123-161`) does the following.
 
 - It checks the tuple lengths and notes an empty table.
 - It creates the live set: dense and position arrays of `|T|` entries, plus one
@@ -490,77 +549,74 @@ not close the gap to Gecode, and it put the remaining time in the engine
 
 ### Robustness and limits
 
-- **Unbounded domains.** Variables are capped at ±2^61, and a wide domain is
-  handled by the root trim: once trimmed, every later walk on that column is
-  bounded by the table. The trim never runs on a column where some tuple has a
-  wildcard, so there the support scan stays proportional to the domain on
-  every call. That and the other two exceptions are in [Interval
-  efficiency](#interval-efficiency).
-  **Tuple values are not capped, and a global cap would be wrong.** The cap applies to
-  underlying variables, not to a posted position: a view `x + 2^62` or a
-  constant `2^62` takes values beyond it. `Table({x + 2^62}, {(2^62),
-  (2^62 + 1)})` over `x ∈ {0, 1}` has two solutions, and its proof verifies. So
-  do a constant position of `2^62` and a view `−x − 2^62`
-  (`tmp/fd-table/codex-r1/extview.cc`). What goes wrong is arithmetic on
-  differences between tuple values and domain values, which assumes they fit
-  (#1117):
-  - a column whose values span more than 2^63 overflows `long long` in the span
-    computation (`extensional_utils.cc:617`), undefined behaviour that UBSan
-    reports; a release build happens to fall back and answer correctly;
-  - a column far from a narrow domain overflows the rasteriser's offset
-    `value − base` (`:677`; UBSan: `808 - -9223372036854775000`, with
-    `x ∈ 0..1000` and eight tuples);
-  - with proofs on, on a plain variable, a tuple entry about 2^63 from one of
-    the variable's bounds throws. The throw happens while
-    `Table::define_proof_model` writes the entry's `≥`-literal definitions
-    (`table.cc:193`, through `need_gevar` and `reification_shape`), before
-    any propagation. **It is not in the root trim**, which is where #1117's
-    body places it; its ±9·10^18 shapes throw in `define_proof_model` too.
-    Over `±2^61`, with a two-value column at `N` (entries `N` and `N + 1`):
-    - `2^61 ≤ N ≤ 2^63 − 2^61 − 3`, above the domain, verifies (UNSAT);
-    - `N` from `2^63 − 2^61 − 2` to `2^63 − 2^61` throws a `ProofError`, "the
-      reification constant for a half-reified row is the most negative
-      Integer";
-    - `N ≥ 2^63 − 2^61 + 1` throws `IntegerOverflow`: at `6.92·10^18`,
-      `-2305843009213693952 + -6920000000000000000`.
+- **Unbounded domains.** A declared domain must lie in `S = −(2^60 − 1) ..
+  2^60 − 1`, and so must a constant and a view's offset, so a position's
+  values reach at most `±(2^61 − 2)` (#1214). A constant position of `±2^62`
+  or `−2^63 + 1` is refused when the constant is made
+  (`tmp/fd871-comments-1008/tables/probes/constpos.cc`, from the
+  fact-check). A wide domain is handled by the root trim: once
+  trimmed, every later walk on that column is bounded by the table. The trim
+  never runs on a column where some tuple has a wildcard, so there the support
+  scan stays proportional to the domain on every call. That and the other two
+  exceptions are in [Interval efficiency](#interval-efficiency).
+- **Tuple values must lie in `S`** (#1215). `Table` and `NegativeTable` call
+  `innards::require_bounded` on every tuple value in their constructors,
+  wildcard tuples included (`table.cc:53`, `negative_table.cc:125`), and throw
+  `IntegerOverflow` for one outside `S`, before `prepare` or
+  `define_proof_model` runs. An out-of-range value is refused, not dropped:
+  it could match a view, and dropping it would hide the caller's mistake
+  ([`integer-ranges.md`](../integer-ranges.md), "Do not narrow the rule by
+  dropping inputs"). A view can still take values past `S`, but no tuple can
+  name them. A value outside `S` from any front end or the C++ API is
+  refused, at the latest by the constructor; XCSP3's patched parser refuses
+  anything wider than an `int` first (#1217).
 
-    Below the domain, `N = −(2^63 − 2^61 − 1)` verifies, `−(2^63 − 2^61)`
-    throws the `ProofError`, and `−(2^63 − 2^61 + 1)` the overflow. Without
-    proofs every one of these correctly finds no solution
-    (`tmp/fd-table/codex-r1/extcrash.cc p<N>`).
+  With every input in range, `extensional_utils.cc`'s arithmetic, unchanged
+  since the audit, cannot overflow: a column's span (`:617`) is at most
+  `2 · (2^60 − 1)`, and the rasteriser's offset `value − base` (`:677`), a
+  position's value less the column's least tuple value, is at most
+  `3 · (2^60 − 1)` in magnitude. That is an argument from the bounds, not a
+  sanitizer run. In-range edges verify: `integer_ranges_test` solves a `Table`
+  whose rows name both ends of `S`, over two positions of three values at one
+  end of `S`, each plain, negated or offset by an end of `S`, in six
+  configurations, against brute force, with and without proofs
+  (`integer_ranges_test.cc:324-336`, since #1214); and at `0a5b4ec6` a plain
+  variable over all of `S` with a two-row column at either end, and views
+  `x + (2^60 − 1)` and `−x − (2^60 − 1)` near their far reach against tuple
+  values at the ends of `S`, all verify
+  (`tmp/fd871-comments-1008/tables/probes/table_edges.cc`). So does the
+  rasteriser's own shape: eight column values clustered at one end of `S`
+  (span 7, so the column is rasterisable and `:677` runs), against
+  `x ∈ 0..1000` (no solution) and against `x` within 1,000 of that end (eight
+  solutions), at both ends, under the default algorithm and a forced
+  `table::CompactTable` (`raster_edge.cc`, from the fact-check; all eight
+  proofs verify). `table_edges.cc`'s `far8top` and `far8bot` shapes, a column
+  spanning `0..6` and one end of `S`, are wider than 64 words, so the
+  rasteriser skips that column (`extensional_utils.cc:617-620`).
 
-  **Found here, beyond #1117's body: views and a far entry also throw.** Each
-  of these is with `x ∈ {0, 1}` (`extcrash.cc a|b|c`):
-  - `Table({x + 2^62}, {(−2^62), (−2^62 + 1)})` throws `Integer overflow:
-    --9223372036854775808` with proofs on, in `Table::define_proof_model`
-    (`table.cc:193`, through `NamesAndIDsTracker::need_gevar`). Without proofs
-    it correctly finds no solution.
-  - `Table({x − 2^62}, {(2^62), (2^62 + 1)})` throws `Integer overflow:
-    4611686018427387904 - -4611686018427387904` **with proofs off too**, in
-    pass 1: `bitmap_feasible` (`extensional_utils.cc:186`, called at `:707`)
-    asks `State::in_domain` about the view, which maps `2^62` back to an
-    underlying value of `2^63`.
-  - `Table({x}, {(−2^63 + 1), (0)})` throws `Integer overflow:
-    9223372036854775807 + 1` with proofs on, in `define_proof_model`. Without
-    proofs it correctly finds its one solution.
-
-  Next step 8's filter would drop the offending rows in all four shapes,
-  including the plain-variable one above, since each such entry lies outside
-  its position's initial bounds. It belongs in `prepare`, before the
-  empty-table check, since `Constraint::install` calls `prepare`, then
-  `define_proof_model`, then `install_propagators`. Shapes `a` and `b` and the
-  plain-variable shape would then be empty tables, which is correct, since
-  none has a solution. Shape `c` keeps its `(0)` row and its one solution.
-
-  MiniZinc, `gcspy`, the `.scp` reader and the C++ API can all pass such a
-  value; XCSP3's parser reads `int` and cannot.
+  **Before #1214 and #1215** (#1117, at `c9ceea25`): variables were capped at
+  `±2^61`, tuple values and view offsets were not capped at all, and
+  arithmetic on differences between tuple values and domain values assumed
+  they fit. A column spanning more than 2^63 overflowed the span computation
+  (UBSan; a release build fell back and answered correctly), and a column far
+  from a narrow domain overflowed the rasteriser's offset. With proofs on, a
+  tuple entry about 2^63 from a plain variable's bound threw a `ProofError`
+  or `IntegerOverflow` in `Table::define_proof_model`, not in the root trim
+  where #1117's body put it. This audit also found a view `x + 2^62` and an
+  entry `−2^63 + 1` throwing with proofs on, and a view `x − 2^62` throwing
+  with proofs off, in pass 1 (`tmp/fd-table/codex-r1/extcrash.cc`). Every
+  one of those inputs is now refused when the view or the `Table` is
+  constructed (`table_edges.cc a|b|c`), and so is the `x + 2^62` control,
+  `Table({x + 2^62}, {(2^62), (2^62 + 1)})`, which used to verify with two
+  solutions (`tmp/fd-table/codex-r1/extview.cc`).
 - **Negative values and zero.** Tested over `[-2, 2]` in both classes.
 - **Degenerate shapes.** See [Semantics](#semantics): every shape probed
   verifies.
 - **A repeated variable.** Correct, with the claim dropped and strength below
   GAC; see [Propagator inventory](#propagator-inventory).
-- **Overflow elsewhere.** The row coefficient is the arity, as an `Integer`.
-  The rasteriser's offset overflow is the extreme-tuple case above.
+- **Overflow elsewhere.** A flag row's coefficient is its count of literal
+  terms, at most the arity, as an `Integer`. The rasteriser's offset is
+  covered above.
 - **Memory.** Support masks are capped at 16M words (128 MB) per tuple set.
   Above that, the compact table declines. The live set, residues and bitmaps are
   linear in the table, or in its column ranges up to 64 words a column.
@@ -619,8 +675,9 @@ not close the gap to Gecode, and it put the remaining time in the engine
      each domain once, on every column it accepts (no wildcard, table range
      at most 4,096 values). Release, 3 variables, 8 tuples: 0.39 s at width
      10^8 and 3.93 s at 10^9 (`probes/wide8.cc`). Over the widest legal
-     domain, ±2^61, that rate means it does not finish in any useful time, with
-     or without proofs, whatever the tuple values.
+     domain, all of `S` (about ±1.15·10^18 since #1214; ±2^61 at the audit),
+     that rate means it does not finish in any useful time, with or without
+     proofs, whatever the tuple values.
      A guard build trips as soon as one call visits more than 100,000 values
      (at width 10^5 and above). A forced `table::CompactTable` never runs the
      trim at all.
@@ -721,14 +778,16 @@ has with `equals`.
 **What licenses rules 2–5.** Each is McIlree's **Justification Procedure 3.3
 (table propagation)** or **3.4 (table infeasibility)**. That is one RUP, under
 the generic reason, against the tuple rows. Negating the conclusion falsifies
-some entry of every tuple, which forces each selector value false through its
-row, and the at-least-one row then conflicts. With two tuples there is no
-at-least-one row: the selector is one bit, and the two rows force it both
-ways. **Every tuple row is in that RUP's dependency set**, not only the rows
-of the tuples that use the removed value, including any row with a wildcard at
-that position. A tuple that uses the value is killed by another atom of the
-reason, and a tuple that does not is killed by the negated conclusion itself.
-Both go through the **literal layer**. That means the `=`, `≥` and
+some entry of every tuple, which forces each tuple's flag false through its
+forward half, `@x[id][j][r]`, and the at-least-one, `@c[id][al1]`, then
+conflicts; a tuple that a constant position rules out has its flag false
+outright. Since
+#1202 this is the same for two tuples as for more. **Every tuple's forward
+half is in that RUP's dependency set**, not only those of the tuples that use
+the removed value, including any row with a wildcard at that position. A
+tuple that uses the value is killed by another atom of the reason, and a
+tuple that does not is killed by the negated conclusion itself. Both go
+through the **literal layer**. That means the `=`, `≥` and
 range-literal definitions and the order-ladder lines between them, including
 those the proof itself has introduced, plus the **link lines** the logger
 derives when it creates a range literal, such as `¬[y = v] ∨ [y ∈ a..b]`. The
@@ -736,10 +795,16 @@ links are themselves RUP from the definitions, but unit propagation over the
 definitions only goes one way: `[y = v]` propagates to `[y ∈ a..b]`, while
 `¬[y ∈ a..b]` does not propagate to `¬[y = v]`. So a reason that states a hole
 as `¬[y ∈ a..b]` needs the links hinted. The `=` definitions
-alone are not enough. The at-most-one row is never needed, and the bound rows
-were not needed in any probe. See [Next steps](#next-steps), item 3, for which
-parts matter how often. The procedures are stated for EP 3.10's fully reified
-encoding, and the argument uses only the `s = j ⇒ match` direction GCS has.
+alone are not enough. The reverse halves, `[f]`, are never needed: one can
+only set its flag true, and only once every entry is already true, when the
+forward half has nothing new to give and, with no at-most-one, nothing
+conflicts; and a flag is only made false by its forward half, which needs
+an entry already false and so satisfies the reverse half, or by a unit row,
+whose tuple has no reverse half. The bound rows were not needed in any
+probe. See [Next steps](#next-steps), item
+3, for which parts matter how often. The procedures are stated for EP 3.10's
+fully reified encoding, and the argument uses only the `f_j ⇒ match`
+direction.
 For `AutoTable` and the tabulated constraints, the rows are the `red` lines
 their builders emit instead of OPB rows. **Theorem 2.6** accounts for stating
 each under a reason. **Theorem 3.3** (complete propagation
@@ -780,7 +845,7 @@ where JP 3.3 states one value.
 - **Why it is true** — a value outside the column's range is in no tuple.
 - **Proof technique** — `RUP`, by JP 3.3 with a bound as the conclusion.
   Negating `x ≥ lo` makes every `[x = v]` with `v ≥ lo` false (Theorem 3.3), so
-  every tuple row forces its selector value false.
+  every tuple's forward half forces its flag false.
 - **Reason** — the generic reason over the scope. It is not minimal: only `x`'s
   own atoms are needed.
 - **Assertion** — `[x ≥ lo] ∨ ¬R`, and `¬[x ≥ hi + 1] ∨ ¬R`.
@@ -949,7 +1014,7 @@ where JP 3.3 states one value.
 
 | Lane | What it covers |
 |---|---|
-| `table_constraint`, `table_constraint_view_mixed` (`table_test`) | hand-written two- and three-variable tables, empty tables, fixed variables (#254), negative values and wildcards, under **all three algorithms**, with **GAC checked at every node** (`solve_for_tests_checking_gac`). In the bare lane only: random four-variable tables of 120 and 400 tuples over `0..7`, which the test's comment names as the only place `Auto` switches mid-search, so that the compact table is handed the live set and later re-seeded from scratch; and two repeated-variable shapes, solutions only |
+| `table_constraint`, `table_constraint_view_mixed` (`table_test`) | hand-written two- and three-variable tables, empty tables, fixed variables (#254), negative values and wildcards, under **all three algorithms**, with **GAC checked at every node** (`solve_for_tests_checking_gac`). Since #1202 also two tables with duplicate rows and two whose wildcard rows overlap, each with solutions two rows match (`table_test.cc:274-277`, `:290-294`). In the bare lane only: `run_constant_table_test` (`:191`), a real constant position that rules out some tuples, with a duplicate row, since #1202, solutions only; random four-variable tables of 120 and 400 tuples over `0..7`, which the test's comment names as the only place `Auto` switches mid-search, so that the compact table is handed the live set and later re-seeded from scratch; and two repeated-variable shapes, solutions only |
 | `negative_table_constraint`, `…_view_mixed` | hand-written tables, duplicates, all-forbidden, fixed variables, wildcards and repeated variables, **solutions only**, which is right, since it is not GAC |
 | `table_shared_tuples_test` | tuple storage shared rather than copied, for both classes; one support-mask set for three compact tables over one tuple set; shared and unshared masks give the same 336 solutions |
 | `tables`, `tables_live`, `tables_compact` | the example under each algorithm, verified. Its tables are under 64 tuples, so `Auto` never switches there |
@@ -957,6 +1022,10 @@ where JP 3.3 states one value.
 | `auto_table`, `table_layout-auto-table`, `skyscrapers-5-autotable`, `auto_table_presolver_test` | the presolver's tables. The three examples verify their proofs; the presolver test is a Catch2 unit test |
 | `scp_chain_{,negative_}table_{sat,unsat}` | see [Cake conformity](#cake-conformity) |
 | `minizinc-tableint`, `minizinc-tablebool` | the MiniZinc glue |
+| `minizinc-tableintduplicates`, `minizinc-tableintduplicatesopt` | since #1202: duplicate rows that every solution matches twice, enumerated (`solx`) and optimised (`soli`), with proofs verified |
+| `xcsp_extension_overlap` | since #1202, the first `<extension>` lane: overlapping wildcard supports and an exact duplicate in a `<group>` whose second member takes `extensionAs`, and a unary extension with a duplicate; solutions against ACE's, and the proof verified |
+| `xcsp_range_tuple_past_int32`, `xcsp_range_tuple_int_max` | since #1217: a support past `int`, and `2147483647`, refused rather than misread |
+| `integer_ranges` (`integer_ranges_test`) | since #1215: a `Table`, wildcard `Table` or `NegativeTable` tuple value one past either end of `S` is refused, and the ends are accepted (`integer_ranges_test.cc:162-164`); since #1214, a `Table` whose rows name both ends of `S`, over positions at one end of `S`, plain, negated or offset by an end of `S`, in six configurations, against brute force, with and without proofs (`:324-336`) |
 | `large_domain_audit_test` rows `Table`, `Table/sparse`, `NegativeTable` | see [Interval efficiency](#interval-efficiency) |
 
 VeriPB runs in the data-driven lanes when it is on the path. The lanes are
@@ -967,17 +1036,21 @@ seeded (`--seed`), and the idempotence-claim checker is on in `table_test`'s.
 without proofs): 300 of 400 solutions checked for soundness only. They fire
 nowhere in `negative_table_test`. Measured with `GCS_TEST_MAX_SOLUTIONS=300
 GCS_TEST_MAX_RECURSIONS=1500 table_test --seed=1` at `c9ceea25`. The Ubuntu CI
-lanes run uncapped.
+lanes run uncapped. Re-run at `0a5b4ec6` with #1202's new rows: the caps
+still fire on those six runs only.
 
 **What the tests do not cover.**
 
-- **Overlapping rows with three or more tuples.** The `tables` example posts
-  overlapping wildcard rows, but no solution of it matches two, so its `solx`
-  lines pass. Nothing else posts a duplicate.
-- **XCSP3 `<extension>`.** There is no `xcsp_*` lane for supports, conflicts,
-  `*` or shared tuples. The only XCSP3 table in the suite is a unary `notin` in
-  `intension_reified.xml`. The table benchmark harness checks `.xml` solution
-  counts, but outside the repository.
+- **XCSP3 `<conflicts>`.** `xcsp_extension_overlap` covers supports, `*`,
+  `extensionAs` and duplicates, but no lane posts a `NegativeTable` from
+  XCSP3 except the unary `notin` in `intension_reified.xml`. The table
+  benchmark harness checks `.xml` solution counts, but outside the
+  repository.
+- **The rasteriser and the compact table at the ends of `S`.** The edge
+  solves post five tuples under the default algorithm, so the rasteriser
+  never runs on them. A rasterisable eight-tuple column at either end of `S`,
+  under the default algorithm and a forced compact table, was probed by hand
+  ([Robustness and limits](#robustness-and-limits)).
 - **Rule 3 with proofs.**
 - **A table of eight or more tuples, a forced compact table, or a column
   holding a wildcard, over a wide domain** (see the audit lane). Nothing
@@ -1013,8 +1086,9 @@ lanes run uncapped.
 **For CPU:** `proteindesign12` (table-bound), `opt-cryptanalysis`, `spot5`, and
 the harness's Crossword and Dubois instances. **For proof verification:**
 `srch_bin_d12_n30_s2` (490 nodes, 15 s to verify) and, as a smoke test,
-`srch_func_k3_n24` (0.04 s). `srch_k5_d5_n12` takes 249 s to verify, so it is
-the one to use for the
+`srch_func_k3_n24` (0.04 s at `c9ceea25`, 0.02 s at `0a5b4ec6`).
+`srch_k5_d5_n12` takes about 250 s to verify (248.8 s at `c9ceea25`, 251.0 s
+at `0a5b4ec6`), so it is the one to use for the
 checker's cost. **Never run a forced `table::CompactTable` over a wide domain
 with proofs on.**
 
@@ -1113,37 +1187,67 @@ to 4.7× and loses 2.2–2.3× to a forced compact table on Renault.
 
 ### Proof performance
 
-`c9ceea25`, fataepyc-09, 2026-09-27. The XCSP3 renderings of three matrix
-instances, all solutions, through `xcsp_glasgow_constraint_solver --prove`.
-Its own search order differs from the harness's, so node counts are this
-front end's. `solve` is the solver's own `SOLVE TIME` with proofs on
-(`tmp/fd-table/proofperf/out_*.txt`, 18:24, in the earlier sitting that may
-have overlapped other work). VeriPB 3.0.2 with
-`--force-checked-deletion`, one core, wall clock, timed in a separate sitting
-on the same machine and day (`tmp/fd-table/factcheck/veripb_times.txt`,
-`proofperf/veripb_func.txt`).
+Re-run at `0a5b4ec6`, fataepyc-10, 2026-10-08, after #1202's encoding
+change. The XCSP3 renderings of three matrix instances, all solutions,
+through `xcsp_glasgow_constraint_solver --prove`, with the assertion level set
+by `GCS_ASSERTION_LEVEL`. Its own search order differs from the harness's,
+so node counts are this front end's. `solve` is the solver's own `SOLVE TIME`
+with proofs on, one run each. VeriPB 3.0.2 with `--force-checked-deletion`,
+wall clock, pinned with `taskset -c 24` and `GLIBC_TUNABLES` (malloc's mmap
+and trim thresholds), one run each
+(`tmp/fd871-comments-1008/tables/probes/proofperf/`).
 
 | instance | nodes | solve | level | lines | bytes | VeriPB |
 |---|---|---|---|---|---|---|
-| `srch_func_k3_n24` (UNSAT) | 3 | 0.023 s | `Off` | 980 | 43 KB | 0.04 s |
-| | | 0.021 s | `Inferences` | 114 | 23 KB | 0.02 s |
-| `srch_bin_d12_n30_s2` (UNSAT) | 490 | 0.19 s | `Off` | 42,435 | 3.2 MB | **15.2 s** |
-| | | 0.20 s | `Inferences` | 27,596 | 3.4 MB | 0.10 s |
-| `srch_k5_d5_n12` (1 solution) | 1,988 | 0.30 s | `Off` | 32,350 | 3.3 MB | **248.8 s** |
-| | | 0.31 s | `Inferences` | 33,165 | 4.1 MB | 0.19 s |
+| `srch_func_k3_n24` (UNSAT) | 3 | 0.037 s | `Off` | 980 | 43 KB | 0.02 s |
+| | | 0.022 s | `Inferences` | 114 | 23 KB | 0.01 s |
+| `srch_bin_d12_n30_s2` (UNSAT) | 490 | 0.19 s | `Off` | 42,435 | 3.2 MB | **15.4 s** |
+| | | 0.20 s | `Inferences` | 27,596 | 3.4 MB | 0.12 s |
+| `srch_k5_d5_n12` (1 solution) | 1,988 | 0.32 s | `Off` | 32,350 | 3.3 MB | **251.0 s** |
+| | | 0.34 s | `Inferences` | 33,165 | 4.1 MB | 0.25 s |
+
+**Every `.pbp` is byte-identical to the audit's** at `c9ceea25`
+(`tmp/fd-table/proofperf/`), so the proof's lines, bytes and the counts below
+are unchanged; #1202's flags are never cited, and on these instances not even
+the later proof-only variables' numbering moved. What changed is the OPB:
+
+| instance | OPB lines, `c9ceea25` | `0a5b4ec6` | OPB bytes, `c9ceea25` | `0a5b4ec6` |
+|---|---|---|---|---|
+| `srch_func_k3_n24` | 3,748 | 6,179 | 411,000 | 508,059 |
+| `srch_bin_d12_n30_s2` | 19,245 | 36,209 | 2,163,947 | 2,559,463 |
+| `srch_k5_d5_n12` | 35,305 | 70,221 | 5,482,234 | 7,853,284 |
+
+These match #1202's own row counts. Checking the audit's OPB and proof again in
+the same sitting, alternating with the new pair on the same core
+(`control.sh`), VeriPB took 14.92 s and 72,556 KB on `srch_bin_d12_n30_s2`
+against 15.37 s and 78,664 KB with the new OPB (+3% time, +8% peak memory),
+and 238.2 s and 119,684 KB on `srch_k5_d5_n12` against 249.0 s and
+146,340 KB (+5%, +22%). One run of each. The fact-check's two further
+alternating pairs on `srch_bin_d12_n30_s2`, in another sitting, gave +4.7%
+and +4.8% time and +8.6% and +8.5% memory
+(`tmp/fd871-comments-1008/tables/factcheck/probes/pp/control_bin.txt`), so
+the time cost there is 3–5%. #1202's body, on the same three
+instances with three runs of the two slow ones, reports 2–3% more time and
+6–18% more memory, and +6.5% time and +14% memory on `yumi-static` 2022.
+At `c9ceea25`, on fataepyc-09, the table read 0.04, 0.02, 15.2, 0.10, 248.8
+and 0.19 s for VeriPB, and 0.023, 0.021, 0.19, 0.20, 0.30 and 0.31 s for
+`solve`.
 
 **Checking dominates.** `srch_k5_d5_n12`'s fully justified proof takes about
-830 times its solve to verify, where the hints-only proof is the same size but
-checks in a fifth of a second. That is the family's largest cost for the paper,
-and it is in the checker, not the proof's size. The likely reason is that each
-RUP has to propagate through every tuple row of an arity-5 table; VeriPB was not
-profiled to confirm it. Every row is in each RUP's dependency set (see [What
+800 times its solve to verify (251.0 s against 0.318 s), where the hints-only
+proof is the same size but
+checks in a quarter of a second. That is the family's largest cost for the
+paper, and it is in the checker, not the proof's size. The likely reason is
+that each RUP has to propagate through every tuple's rows in an arity-5
+table, now both halves of each; VeriPB was not profiled to confirm it.
+Every tuple's forward half is in each RUP's dependency set (see [What
 licenses rules 2–5](#inference-catalogue)), so a hint naming only the tuples
 that use the value is not enough. The levers are a `hinted RUP` over the whole
 dependency set, or per-value support clauses derived once. See [Next
 steps](#next-steps).
 
-**What the `Inferences` proofs assert** (`tmp/fd-table/rules/classify.py`):
+**What the `Inferences` proofs assert** (`tmp/fd-table/rules/classify.py`, on
+the `c9ceea25` proofs, which the `0a5b4ec6` ones equal byte for byte):
 
 | instance | `table` value removals | `table` contradictions | other `a` lines | `table` share of `a` lines |
 |---|---|---|---|---|
@@ -1157,38 +1261,35 @@ steps](#next-steps).
 - 2,242 `red` and 377 `pol` are the shared literal layer;
 - the rest are `core` and `del` bookkeeping and comments.
 
-On the OPB side, the table's own rows grow as `|T| + 2` while the shared
-layer's plateau at arity × domain; see [OPB encoding](#opb-encoding).
+On the OPB side, the table's own rows grow as `2m + 1`, plus a unit row per
+tuple a constant position rules out, while the shared layer's plateau at arity ×
+domain; see [OPB encoding](#opb-encoding).
 
 ## Status, gaps, and next steps
 
 ### Proof-logging gaps
 
-- **Proofs of a `Table` with overlapping rows can be rejected**, at the first
-  solution line (`solx` or `soli`) for a solution two rows match (#1115).
-  No inference goes unjustified. The model's auxiliary is simply not
-  determined.
-- With proofs on, a tuple entry far from its position's domain can abort the
-  solve with `IntegerOverflow` or a `ProofError`, always in
-  `define_proof_model`. That covers #1117's plain-variable shapes, whose body
-  places the throw in the root trim instead, and the view and near-`−2^63`
-  shapes found here. A view can also abort the solve without proofs, in
-  pass 1. See [Robustness and
-  limits](#robustness-and-limits).
 - `AutoTable`'s inferences have no rows and no hint in a hints-only proof. That
   is not a gap, since the full proof justifies them, but it is the one place in
   this family where reconstruction needs a search.
+
+Two gaps this audit found are closed: overlapping rows made the solution line
+fail (#1115, fixed by #1202; see [OPB encoding](#opb-encoding)), and a tuple
+entry far from its position's domain, or a far view, could abort a solve in
+`define_proof_model` or, through a view, in pass 1 (#1117, closed by #1215
+refusing such tuple values, with #1214 refusing such view offsets; see
+[Robustness and limits](#robustness-and-limits)).
 
 Propagation strength does not change with proofs on, for any rule.
 
 ### Known limitations
 
-- A MiniZinc or XCSP3 model whose table has duplicate rows, or overlapping
-  wildcard rows, with three or more tuples, solves correctly, but its proof
-  fails to verify at the first solution that two rows match.
+- A tuple value outside `S` is refused with `IntegerOverflow` when the
+  `Table` or `NegativeTable` is constructed (#1215), even where a view could
+  take it.
 - A `Table` of eight or more tuples, or any `Table` under a forced
   `table::CompactTable`, over a very wide variable spends time proportional to
-  the width once, at the root, and at ±2^61 it does not finish. With
+  the width once, at the root, and over all of `S` it does not finish. With
   `table::CompactTable` forced, whatever the tuple count, it also writes about
   34 proof lines per value, whose size grows with the width.
 - A `Table` whose tuples have a wildcard in a column over a very wide variable
@@ -1205,27 +1306,25 @@ Propagation strength does not change with proofs on, for any rule.
   tree on Crossword, Dubois and the synthetic matrix; #508 put most of that in
   the engine (#503). On Renault its search is 6–47× slower, which posting
   more than makes up for on six instances but not on Renault-small and
-  Renault-small-pos (1.8× end to end).
+  Renault-small-pos (1.8× end to end). Measured at `c9ceea25`.
 - `table::Auto` runs the live set on a table woken only a few times, however
-  large, so Renault-like instances run 2× slower than they could.
+  large, so Renault-like instances run 2× slower than they could (at
+  `c9ceea25`).
 
 ### Next steps
 
-1. **Fix the overlapping-tuples proof failure (#1115).** It is a verification failure on a
-   Challenge model. Three fixes, with different reach:
-   - deduplicate `SimpleTuples` in `prepare`: cheap, and covers MiniZinc
-     (`fzn_glasgow.cc:1236` posts `SimpleTuples`) and `yumi-static`. It covers
-     neither overlapping wildcard rows nor XCSP3's exact duplicates, which
-     arrive as `SharedWildcardTuples`;
-   - reify each row both ways **and drop the at-most-one**, keeping only an
-     at-least-one, which is cake's encoding. It covers wildcards, changes the
-     OPB, and brings GCS's encoding to cake's shape. Reifying both ways while
-     keeping an exactly-one, as EP 3.10 is written, would be **unsound** here:
-     it makes an assignment two rows match infeasible, and loses solutions;
-   - keep the encoding and pin the selector to one matching row at the
-     solution line. That needs the proof-only selector to be nameable there.
-
-   Costs hours; buys correct proofs on real models.
+1. **Fix the overlapping-tuples proof failure (#1115).** **Done by #1202**,
+   by the second of this item's three options: reify each row both ways and
+   keep only an at-least-one, which is cake's encoding (see [OPB
+   encoding](#opb-encoding)). It covers wildcard overlaps, and #1202's body
+   reports `yumi-static` 2022's proof now verifying (`s VERIFIED BOUNDS 242 <=
+   obj <= 735`, from a 60 s run). The first option, deduplicating exact
+   `SimpleTuples` rows in `prepare`, is still open, now as a cost saving
+   rather than a fix: MiniZinc posts `SimpleTuples` (`fzn_glasgow.cc:1265`),
+   and #1202's body counts 1,868 duplicates among the 2,204 rows of
+   `yumi-static`'s six large tables. It would cut OPB rows and propagation
+   work, and would not reach XCSP3's duplicates, which arrive as
+   `SharedWildcardTuples`. Not filed.
 2. **Fix the root-width walks (#1116).** Running the root trim before the
    rasteriser and before the compact dispatch fixes the first two paths. It is
    a small change that closes a guard trip on the default path, and it makes
@@ -1244,13 +1343,14 @@ Propagation strength does not change with proofs on, for any rule.
    domain; a wildcard row already dead at the root; and one lost and
    restored during search. The last is a proposed regression case, not one
    the probes here time on its own.
-3. **Cheaper RUPs for the table rules.** Verification is about 830× solve on
-   an arity-5 table, probably because each unhinted RUP propagates over the
-   whole database. **Every tuple row is in a removal's dependency set**. The
-   rows of the tuples that use the removed value are not enough, because the
-   other rows are what rule their own selectors out under the negated
-   conclusion. Both sound shapes below also need the **literal layer** for the
-   scope:
+3. **Cheaper RUPs for the table rules.** Verification is about 800× solve on
+   an arity-5 table (see [Proof performance](#proof-performance); #1202 made
+   checking slightly slower, not cheaper), probably because each unhinted RUP
+   propagates over the whole database. **Every tuple's forward
+   half is in a removal's dependency set**. Those of the tuples that use the
+   removed value are not enough, because the others are what rule their own
+   flags out under the negated conclusion. Both sound shapes below also need
+   the **literal layer** for the scope:
    - the `=`, `≥` and range-literal definitions, whether in the OPB or
      introduced by a `red` in the proof;
    - the order-ladder lines derived between them;
@@ -1259,7 +1359,8 @@ Propagation strength does not change with proofs on, for any rule.
      definitions, but unit propagation over the definitions cannot get from
      `¬[y ∈ a..b]` to `¬[y = v]` without them.
 
-   The at-most-one row is never needed, and the bound rows were not needed in
+   The reverse halves, `[f]`, are never needed (see [What licenses rules
+   2–5](#inference-catalogue) for why), and the bound rows were not needed in
    any probe. Examples of what each part is for:
    - In `x, y ∈ 0..3` with the tuple `(3, 1)`, removing `y = 1` under `x = 0`
      needs `x ≥ 3 ⇒ x ≥ 1`.
@@ -1271,33 +1372,43 @@ Propagation strength does not change with proofs on, for any rule.
      `¬[y = 2] ∨ [y ∈ 1..2]`.
 
    The two shapes:
-   - **Hint the whole dependency set.** The at-least-one row, every tuple row
-     of this table, and the literal layer. That limits a RUP to one table's
+   - **Hint the whole dependency set.** The at-least-one row, every tuple's
+     forward half in this table, and the literal layer. That limits a RUP to one table's
      rows, rather than every table's in the model.
-   - **Derive a per-value support clause first**, `¬[x = v] ∨ ⋁_{j ∈ supp(x,v)} [s = j]`,
+   - **Derive a per-value support clause first**, `¬[x = v] ∨ ⋁_{j ∈ supp(x,v)} f_j`,
      where `supp(x, v)` holds every tuple with `v` or a wildcard at `x`. Derive
-     it once, from the at-least-one row, the rows of the tuples that do *not*
-     support `x = v`, and the literal layer. It is a static fact about the
-     table, so it can live at `Top`. Each removal of `x = v` then hints only
-     that clause, the rows of the tuples in `supp(x, v)`, and the literal
-     layer. The reason's literals need no hint, since they come from negating
+     it once, from the at-least-one row, the forward halves of the tuples that
+     do *not* support `x = v`, and the literal layer. It is a static fact about
+     the table, so it can live at `Top`. Each removal of `x = v` then hints
+     only that clause, the forward halves of the tuples in `supp(x, v)`, and
+     the literal layer. The reason's literals need no hint, since they come from negating
      the claim.
 
-   Both shapes were checked with VeriPB 3.0.2 on hinted RUPs.
-   - **Hand-built cases.** Codex's Boolean example, and four real GCS tables
-     over `x, y`: `(0,0) (1,0) (1,1) (2,2)` over `0..2`; `(0,0) (1,1) (3,1)
-     (2,2)` over `0..3`; one with a wildcard row over `0..3`; and a two-tuple
-     table. The stated set verifies on all of them. On these cases it fails
-     if you hint only the rows of the tuples using the value, or leave out
-     any one row or the at-least-one row. It also fails if you drop the
-     literal layer from the support clause's second step, or hint the `=`
-     definitions alone (on the `0..3` and wildcard tables). With two tuples
-     the selector is one bit and there is no at-least-one row: the two rows
-     alone conflict, and both are needed.
-   - **The link-line counterexample above.** The set without the link lines
+   Both shapes were checked with VeriPB 3.0.2 on hinted RUPs. Only the
+   hand-built cases were re-checked against #1202's flag rows; everything
+   else in this item is from `c9ceea25`, against the selector rows, where
+   "every tuple row" played the forward halves' part and the selector's
+   at-least-one the `@c[id][al1]` row's.
+   - **Hand-built cases.** Codex's Boolean example (`c9ceea25` only), and four
+     real GCS tables over `x, y`, removing `y = 1` under `x = 0`:
+     `(0,0) (1,0) (1,1) (2,2)` over `0..2`; `(0,0) (1,1) (3,1) (2,2)` over
+     `0..3`; `(0,0) (1,*) (3,1) (2,2)` over `0..3`; and `(0,0) (1,1)` over
+     `0..2`. Re-checked at `0a5b4ec6`
+     (`tmp/fd871-comments-1008/tables/probes/dep.cc` and `depset_flags.py`, a
+     port of `dep2/depset.py`): the stated set verifies on all four. It fails
+     if you hint only the forward halves of the tuples using the value, leave
+     out any one forward half or the at-least-one, or hint the reverse halves
+     in place of the forward ones; adding the reverse halves changes nothing.
+     It also fails if you drop the literal layer from the support clause's
+     second step, or hint the `=` definitions alone (on the two `0..3`
+     tables). The support-clause shape verifies on all four. The two-tuple
+     table now needs its at-least-one like any other; at `c9ceea25` its
+     selector was one bit with no at-least-one row, and the two rows alone
+     conflicted.
+   - **The link-line counterexample above** (`c9ceea25`). The set without the link lines
      fails. Adding the two forward links makes it verify, and the inverse link
      `¬[y ∈ 1..2] ∨ [y = 1] ∨ [y = 2]` alone does not.
-   - **The second fact-check's campaign.** It ran 920 table inferences over
+   - **The second fact-check's campaign** (`c9ceea25`). It ran 920 table inferences over
      226 random instances, with views, negated views, holes, wildcards and
      out-of-domain entries.
      The counts below are from the third fact-check's strict classification
@@ -1335,28 +1446,29 @@ Propagation strength does not change with proofs on, for any rule.
    only when an `Element` under `consistency::Auto` shares a variable with a
    `NegativeTable`. Not measured.
 6. **Add an XCSP3 `<extension>` lane**, covering supports, conflicts, `*` and
-   `extensionAs`, since the front end's biggest table path is untested in the
-   repository.
+   `extensionAs`. **Mostly done by #1202**: `xcsp_extension_overlap` covers
+   supports, `*`, `extensionAs` (through a `<group>`) and duplicates. What is
+   left is a lane for `<conflicts>`.
 7. **Revisit `Auto`'s rule (#1118).** Forced compact
    is 2.2× faster on Renault, where the wake-count gate never lets `Auto`
    decide. A per-wake cost estimate (live tuples × arity against the mask
    build) might separate Renault from Dubois. Costs a benchmarking session;
    buys up to 2× on configuration instances.
-8. **Fix the extreme tuple values (#1117)** (low priority). Drop a row only
-   when one of its entries is impossible for its **actual posted position**.
-   That means outside that position's initial bounds, which for a view or a
-   constant can lie beyond ±2^61. It does not mean outside ±2^61 itself.
-   Do it in `prepare`, before the empty-table check and so before
-   `define_proof_model`. Compute whatever span or offset is still needed with
-   overflow-safe arithmetic. The filter also removes every throw listed under
-   [Robustness and limits](#robustness-and-limits). **A global ±2^61 filter
-   would be unsound**:
-   `Table({x + 2^62}, {(2^62), (2^62 + 1)})` over `x ∈ {0, 1}` has two
-   solutions and a verifying proof, and the filter would leave it with no rows
-   (`tmp/fd-table/codex-r1/extview.cc`, which also covers a constant and a
-   negated view). Keep that model as a control.
+8. **Fix the extreme tuple values (#1117).** **Done by #1215**, a different
+   way from this item's proposal, which was to drop a row whose entry its
+   posted position cannot take, in `prepare`. Instead every input, tuple
+   values and view offsets included, must lie in `S`, and the constructor
+   refuses one outside it with `IntegerOverflow` (see [Robustness and
+   limits](#robustness-and-limits)); nothing is dropped. The item's control,
+   `Table({x + 2^62}, {(2^62), (2^62 + 1)})`, can no longer be built, and
+   `integer_ranges_test`'s `Table` edge solves are the in-range control.
 9. **Cake conformity:** check whether the table chain cases would now pass
-   `aux` or `strict`, since #358, which the registration cites, is closed.
+   `aux` or `strict`, since #358, which the registration cited, is closed.
+   **Answered since #1202**: they do not, and the registration comment now
+   gives the reason, the `≥`-literal definitions at a variable's bounds, not
+   #358 (see [Cake conformity](#cake-conformity), checked by hand at
+   `0a5b4ec6`). That difference is in the shared literal layer, not in this
+   family's rows.
 
 ## Prior art
 
@@ -1378,13 +1490,16 @@ Propagation strength does not change with proofs on, for any rule.
   algorithms exist; none was surveyed here.
 - **Proofs:** McIlree's thesis (2026) gives the table encoding (EP 3.10) and the
   two justification procedures, JP 3.3 and 3.4, which rules 4 and 5 follow
-  exactly and rules 2 and 3 extend to bounds and ranges. GCS's encoding
-  half-reifies EP 3.10's rows, which is what admits overlapping tuples, and
-  also what breaks the solution check when they overlap.
+  exactly and rules 2 and 3 extend to bounds and ranges. Since #1202 GCS's
+  encoding is EP 3.10's rows, reified both ways, with an at-least-one in
+  place of its exactly-one, which is what admits overlapping tuples; it is
+  `cake_pb_cp`'s encoding. Before #1202 GCS half-reified the rows on a
+  selector, which admitted overlaps but broke the solution check when they
+  occurred (#1115).
 - **What is ours:**
   - the root trims (rules 2 and 3) as bound and range conclusions;
-  - the proof-only selector with no solver state (#796), and the observation
-    that no proof line needs to cite it;
+  - an auxiliary with no solver state that no proof line needs to cite:
+    the proof-only selector (#796), and since #1202 the tuples' proof flags;
   - `NegativeTable`'s rules.
 
 ## Further reading
