@@ -519,23 +519,31 @@ constraints and do not restate it.
     building the MiniZinc and XCSP3 shapes by hand. A capacity-one resource
     posted as `Disjunctive` is invisible. Per-resource length variables
     break cross-resource lifting (`L` lower on 87 of 710 instances).
-    Three spellings zero the certified bound on every instance without a
-    note: per-resource length variables, single-value length variables, and
-    end-variable makespan rows. Adding `InferredDisjunctive` first can zero it
-    too, where that presolver's bound already reaches this one's.
-  - **#943's single start-checkpoint encoding cost it heavily.** One donor
-    row's recovery is about 7,200 lines, all kept at `Top`. The reference
-    certificate is 6.8 times the lines and 93 times the checking time of the
-    time-indexed arm, so the August Pack_d sweep no longer checks in
-    reasonable time.
+    Three spellings zero the certified bound on every instance:
+    per-resource length variables, single-value length variables, and
+    end-variable makespan rows. At the audit none of them said so; since
+    #1282 (#1257) each gets a `General` note. Adding `InferredDisjunctive`
+    first can zero it too, where that presolver's bound already reaches this
+    one's, and the summary now says so.
+  - **#943's single start-checkpoint encoding cost it heavily, and #1290 won
+    most of it back** (#1254). One donor row's recovery was about 7,200
+    lines, and the reference certificate 6.8 times the lines and 93 times
+    the checking time of the time-indexed arm. Recovering each row from the
+    one before it takes that certificate from 35.5 s of checking to 0.64 s,
+    and the Pack_d certificates check again.
   - **With a makespan named, the root proof is linear in the makespan
     bound,** so in the task lengths, and its checking time worse than linear.
-  - **The lifting programme's all-pairs frontier sweep** costs up to minutes
-    per PSPLib J90 or J120 instance with proofs off. Its state budget binds
-    on at least 102 of them, changing cuts or dropping ones it could not
-    afford to validate.
-  - **An `Important` note fires on 556 of the 710 instances** for the
-    published procedure's own output budget.
+  - **The lifting programme's frontier sweep** cost up to minutes per PSPLib
+    J90 or J120 instance with proofs off. #1277 and #1291 (#1255) took
+    `J120_59_6` from 57 s to 12 s serially. `J120_19_1`, the slowest
+    measured, now takes 33 s serially (3 to 4 minutes at the audit, partly
+    beside other jobs). Its state budget still binds on at
+    least 102 of them, changing cuts or dropping ones it could not afford to
+    validate, and still counts states rather than comparisons (#1255,
+    open).
+  - **An `Important` note fired on 556 of the 710 instances** for the
+    published procedure's own output budget. Since #1274 (#1256) a drop at
+    the default budget is a `General` note.
   - **Assertion levels.** Above `Off`, under the default start-checkpoint
     encoding, a cut over posted donors gets the proof rejected
     (#1234). Over a `Disjunctive2D` projection donor every cut
