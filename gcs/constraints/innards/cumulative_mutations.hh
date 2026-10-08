@@ -174,6 +174,46 @@ namespace gcs::innards
         {
         };
 
+        /// The height rule (#1239): lower the height's upper bound one further
+        /// than the profile supports, to below the most room some placement
+        /// leaves. Like presence falsification, this rule is conflict-shaped
+        /// --- its chain argues that a task counted at the hypothetical height
+        /// has nowhere to start --- so the test that bites is the one on its
+        /// destination. Necessarily changes the inference.
+        struct LowerHeightOneTooFar
+        {
+        };
+
+        /// The height rule (#1239): emit no chain at all, leaving the
+        /// inference to the framework's wrapping RUP. Not a corruption but a
+        /// control: if VeriPB accepts this, the chain is decoration.
+        struct HeightEmitNothing
+        {
+        };
+
+        /// The height rule (#1239): leave the first contributing task's pin out
+        /// of every chain step, so the profile the hypothetical height was
+        /// blocked by is short by that task's load.
+        struct DropHeightContributor
+        {
+        };
+
+        /// A time-table run step (#1237): where an upward push's last step is a
+        /// run, claim it reaches one start further than the tasks it cites stay
+        /// mandatory, and push the bound that far with it. The destination is
+        /// what a run step adds, and the only place an over-reach is false:
+        /// every start below the push is ruled out anyway, so one claimed
+        /// further mid-chain is still true. Necessarily changes the inference.
+        struct RunOneTooFar
+        {
+        };
+
+        /// A time-table run step (#1237): leave the first task a run cites out
+        /// of its pol, so the checkpoint row is short by that task's height.
+        struct DropRunContributor
+        {
+        };
+
         /// Recover a row by chain without the row for the time point before
         /// (#1254): the case where no task starts at `t` then has nothing
         /// bounding the load it carries over, and should not close. Aimed at
@@ -204,6 +244,8 @@ namespace gcs::innards
         cumulative_proof_mutation::ClaimOneBetterAvailability, cumulative_proof_mutation::StrengthenOneFewer,
         cumulative_proof_mutation::DropEnergeticContributor, cumulative_proof_mutation::PublishedEmitNothing,
         cumulative_proof_mutation::DropPublishedPin, cumulative_proof_mutation::RecoverFromWrongCheckpoint,
+        cumulative_proof_mutation::LowerHeightOneTooFar, cumulative_proof_mutation::HeightEmitNothing,
+        cumulative_proof_mutation::DropHeightContributor, cumulative_proof_mutation::RunOneTooFar, cumulative_proof_mutation::DropRunContributor,
         cumulative_proof_mutation::ChainDropPreviousRow, cumulative_proof_mutation::ChainGuardOnStartedBy>;
 
     /**

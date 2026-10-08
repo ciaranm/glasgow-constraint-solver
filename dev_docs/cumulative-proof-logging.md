@@ -18,7 +18,7 @@ This document explains how the `Cumulative` propagator's three inferences are ba
 
     Worth stating plainly,
     because "we can certify cumulative scheduling" is an easy thing to write and a wrong thing to claim.Certified here:
-**time - tabling **(the overflow check and both bound pushes), the ** overload check **and the window - energy lemma under it,
+**time - tabling **(the overflow check, both bound pushes and the height rule), the ** overload check **and the window - energy lemma under it,
     **derived - constraint inference **(capacity strengthening, conflict cliques, lifted cover cuts),
     and**makespan lower bounds ** — over optional tasks and over variable durations,
     heights and capacities.
@@ -293,6 +293,9 @@ possible:
 the running boundary — but "largest first" / "smallest first" matches
 which end of `s_j` we're tightening.)
 
+Where the pushed task has a start-checkpoint row, a step may instead rule
+out a whole run of starts at once; see "Run steps", below.
+
 ### Edge case: `j` is itself mandatory at some `t`
 
 The blocked-time condition `mand_load[t] + h_j > capacity` requires
@@ -300,6 +303,112 @@ The blocked-time condition `mand_load[t] + h_j > capacity` requires
 inference 1 would already have caught). So blocked `t`'s for `j`
 never include `j`'s own mandatory part; the contributing list never
 mentions `j`; no aliasing in the pol.
+
+### Run steps: a whole run of starts against one row (#1237)
+
+A chain step rules out the starts whose window reaches one blocked time
+point. For a short task that is a handful of starts per step, so a task of
+length 1 pushed across a plateau of width `W` took `W` steps --- and each
+step cites a time point nothing has cited before, which is where most of
+the cost was: the point's flag definitions and the recovery of its `C_t`
+(see "Recovering `C_t` from the checkpoints" below), about 59 proof lines a
+point. A push of 5,000 was 150,000 lines.
+
+The per-time rows cannot do better, since each of them speaks about one
+point. The pushed task's own **start-checkpoint row** can: `C^start_j` says
+the load at the moment `j` starts is within the capacity, *wherever* that
+is. So if some tasks `K`, present and of constant height, all satisfy
+
+```
+ub(s_i) <= lo     and     lb(s_i) + lb(l_i) >= hi       for every i in K
+h_j + Sum_K h_i > capacity
+```
+
+then every start in `[lo, hi)` puts `j` beside all of them and does not
+fit, and one step says so. The step's `pol` is `C^start_j`, plus for each
+`i` in `K` three clauses at `h_i` that cancel `sact_{i,j}` (below), plus
+`j`'s own diagonal term where the encoding minted a flag for it; and what
+is left is dominated by the `ext` literal exactly as in a per-time step,
+which the next step's deposit or the push's wrapping RUP closes. The lb direction runs from
+the running bound `lo = B` and concludes `s_j >= hi`; the ub direction
+runs down from `hi = U + 1` and concludes `s_j < lo`. Either way the
+running bound is one of the two start literals the pins need, and `ext`
+is the other.
+
+**Cancelling a pair term.** The reverse half of `sact_{i,j}` is the
+clause `sact_{i,j} \/ ~sb_{i,j} \/ ~sa_{i,j} [\/ ~present_i]`, so it
+goes into the step's `pol` as it is, beside a clause for each conjunct.
+Those are reified on the *difference* of two starts, which no order
+literal speaks about by itself, so unit propagation cannot reach them from
+the reason the way it reaches a per-time `before_{i,t}`. Each is one
+`pol`: the flag's reverse half, plus the defining halves of the order
+literals that bound the difference (`s_i <= ub(s_i)` and `s_j >= lo` for
+`sb`; `s_i >= lb(s_i)`, `l_i >= lb(l_i)` and `s_j < hi` for `sa`),
+saturated. The starts cancel and leave a clause; added at `h_i` beside the
+`sact` half, `sb` and `sa` cancel too, and what remains of the three is
+`sact_{i,j}` against the reason and the run's two start literals, one of
+which is `ext` and the other the running bound. There is no per-task
+`rup`, which a first version had, spelling out the whole reason once per
+cited task; a Fable consult pointed out the half was already a clause. A
+constant start or length has no literal and is already a number on the
+row. The diagonal's half is a clause too, unless the pushed task's length
+is a variable, which is cancelled the same way against `l_j >= lb(l_j)`
+first. A fixed task's reason is its value, `s_i = c`, rather than its two
+bounds; the order literals cancelled against are reached from that
+through the value's own definition, which the closing RUP propagates.
+
+**Choosing.** At each step the chain asks both kinds of step how far they
+reach, counting nothing past the chain's target, and takes the further,
+and the run on a tie, since it never needs a time point recovered. A run's `K` is taken greedily from the tasks
+mandatory at the running bound: by latest completion going up, by earliest
+latest-start going down, until the heights overflow. So the run reaches the
+first completion (or the last latest-start) among the tasks it keeps, and
+keeps the ones that stay longest. A task too tall for the resource on its
+own takes nothing, and its run reaches the target in one step. The chain
+is now proportional to the profile's plateaus rather than to the distance:
+the issue's push is one step and about 50 lines, flat in the horizon.
+
+**What a run does not speak about**, and leaves to per-time steps: a
+pushed task or cited task of variable height (its contribution bits are on
+the row, and the per-time steps already pin those), which includes every
+chain the height rule builds, below; starts or lengths that
+are views; and any constraint without checkpoint rows of its own, which is
+the time-indexed arm and every derived Cumulative. Presence falsification
+takes runs as a push does, with `present_j = 0` alongside `ext`; a run
+that ends its chain stops at `cur_ub + 1`, so the `s_j < hi` it cancels
+against is the reason's own upper bound.
+
+**Mutations.** `RunOneTooFar` has the last run of an upward push claim one
+start further than its tasks stay mandatory, and pushes the bound that far
+with it; `DropRunContributor` leaves the first cited task out of the
+`pol`. Both are rejected on `cumulative_run_test`'s mutation fixture. Two
+things that do not work, and why:
+
+- Claiming one further on a run *before* the last is not a corruption at
+  all. Every start below the push is ruled out, so the over-reach is true,
+  and the next step's deposit verifies. And claiming it on the last step
+  without moving the push verifies too, since nothing then relies on the
+  claim and the wrapping RUP of the push itself still holds. So the
+  mutation has to move the destination, as presence falsification's
+  `ClaimOneTooFar` does.
+- The drop is *accepted* where the cited task is fixed: a start with one
+  value has its bits settled, so unit propagation over the model reaches
+  `sact_{i,j}` and closes the push without the term. The fixture gives the
+  cited task a start range for that reason.
+
+An optional task whose start is the same variable as a present task's is
+falsified by a run citing that task, whose pair rows name the one variable
+on both sides; `cumulative_run_test` has it as a fixture of its own.
+
+**The scans.** Finding where the push lands used to try each start in
+turn and walk the task's window for each, `O(span x l_j)`. A blocked time
+`t` rules out every start whose window reaches it, so the lb scan goes to
+`t + 1` and the ub scan to `t - l_j`, and walks each time point once:
+`O(span + l_j)`, landing where the old scans did. The profile is still a
+flat array over the horizon, so Cloutier & Quimper's Profile is still the
+open follow-up below. And the chains, which are proof-only, are now built
+only when there is a proof, as are the overflow's contributor list and the
+(TTOC) pins; with proofs off a push pays for the scan alone.
 
 ## The general pattern
 
@@ -1370,6 +1479,73 @@ the verified-encoding chain does not silently match it against
 `cake_pb_cp`'s `cumulative` encoder, which would re-derive a strictly
 weaker set of capacity rows. cake has no optional cumulative encoder, and
 that gap is now named rather than hidden.
+
+## The height rule (#1239)
+
+Every rule above moves a start, or a presence, or reports a conflict. Until
+#1239 nothing lowered a variable height, not even to the capacity, so a height
+domain wider than the resource was walked by search one value at a time: three
+tasks on capacity 5 with one height in `[2, u]` took about 96 recursions per
+value of `u`, 9.6 million at `u = 100,000`.
+
+**The rule.** A task known present, whose length is at least 1, takes its
+height at every point of its footprint `[s, s + lb(l))` wherever it starts. So
+
+    h_j  <=  max over s in [lb(s_j), ub(s_j)] of  min over t in [s, s + lb(l_j)) of  room_j(t)
+
+where `room_j(t) = ub(capacity) - (mand_load[t] - j's own mandatory load at t)`
+is what everyone else leaves. With an empty profile that is the capacity, which
+is all the issue asked for. With a profile it is whatever the roomiest
+placement leaves, which is as much as time-tabling can say. It is computed by a
+sliding minimum over `j`'s footprint, which stops as soon as some placement has
+room for `ub(h_j)`. A task is skipped without a scan when `ub(h_j)` fits on
+top of the largest mandatory load anywhere. The rule runs under
+`CumulativeRules::time_table`, and is counted as the `time_table_height` row.
+
+Two kinds of task are left alone. A task whose length may be zero takes nothing
+anywhere. An optional task not yet known present may take any height at all if
+it turns out absent. A bound that holds only if it is present is a conditional
+bound, and as with the starts there is nowhere to keep one.
+
+**The certificate is presence falsification's.** Counted at `bound + 1`, the
+task has nowhere to start: every placement's footprint has a time with less
+room than that. That is exactly the situation presence falsification argues
+about, with the hypothetical height in the absence's place. The same lb chain
+runs over the task's whole start domain. Each step's line reads "either `j`
+starts later than this, or `h_j < bound + 1`". The last step carries only
+`h_j < bound + 1`, for the same reason the presence chain's last step drops its
+start disjunct.
+
+One thing is new. The pushed task's pin counts its contribution at the
+*hypothetical* height:
+
+    contrib_j + (bound + 1) * Sum ext  >=  bound + 1
+
+Its height bound comes from the negated `h_j < bound + 1` disjunct, not from
+the reason's `lb(h_j)`. This is the same RUP as before, against a different
+order literal on the same variable. `pin_pushed` takes it as an optional
+argument. Only an upper bound moves, and the justification reads only lower bounds
+live. That matters because a justification runs after its push has landed, so
+anything it reads live sees the pushed domains. That shape has been a recurring
+bug in this family.
+
+**What a mutation can catch.** The rule is conflict-shaped, and the presence
+section's lesson applies: corrupt the destination. `LowerHeightOneTooFar`
+claims the bound one lower, where some placement still has room. The chain
+then runs out of blocked times and the wrapping RUP has nothing to close on.
+That lane rejects on the `profile` fixture under both arms.
+
+The two route corruptions, `HeightEmitNothing` and `DropHeightContributor`,
+are a different story. On the hand-made fixtures, unit propagation over the
+start-checkpoint rows closes the conclusion with no chain at all. A task's own
+checkpoint row caps its height directly, and the neighbours' rows relate the
+starts. This is the same thing that retired the presence family's
+`emit_nothing` lane at the encoding flip. A random search was needed to find
+an instance where the chain is load-bearing. Over 303 random root firings, all
+of whose honest proofs verified, `HeightEmitNothing` was rejected on 25 and
+`DropHeightContributor` on 10. The `crowded` fixture in
+`cumulative_height_test.cc` is one of the instances where both are rejected,
+and both lanes run on it under both arms.
 
 ## Edge-finding, and the reason-free window-energy row
 
