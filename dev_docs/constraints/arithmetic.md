@@ -1,7 +1,10 @@
 # Arithmetic: one variable is the sum, difference, product, power, quotient or remainder of two others
 
 > **Maturity** production ·
-> **Audited** 2026-09-24 at `f28fdef8`; re-audited 2026-09-25 at `61112ed0` ·
+> **Audited** 2026-09-24 at `f28fdef8`; re-audited 2026-09-25 at `61112ed0`,
+> and on 2026-10-08 at `0a5b4ec6` for #1063 (#1113), #1055's change to the
+> linear stages, the integer-range PRs (#1214, #1215, #1216), and #1208's
+> lanes ·
 > **Open issues** filed by this audit and still open: #1067 (`Modulus`'s
 > quotient magnitude is not determined by unit propagation on a solution, so
 > its hints-only proofs fail VeriPB's solution check), #1068 (an aliased `Plus`
@@ -9,11 +12,16 @@
 > draft thesis numbering, headers describing the pre-rewrite design, dead
 > fields). Filed by this audit and since fixed: #1064 (corner products threw
 > `IntegerOverflow`; #1079) and #1065 (`Divide` left a sign-open quotient
-> unpruned; #1081). Found here but not this family's: #1063 (the engine's
-> per-node state copy goes back to the kernel on every backtrack, 58% of
-> `stable-goods`' run), and #1056 (the harness's idempotence checker was off
-> in 100 lanes; #1086). Filed from this re-audit: #1102 (a hole at 0 in
-> `Divide`'s quotient does not wake it). Already open and touching this family: #540, #724,
+> unpruned; #1081). Found here but not this family's, both since fixed: #1063
+> (the engine's per-node state copy went back to the kernel on every
+> backtrack, 58% of `stable-goods`' run; #1113), and #1056 (the harness's
+> idempotence checker was off in 100 lanes; #1086). Filed from this re-audit:
+> #1102 (a hole at 0 in `Divide`'s quotient does not wake it). Filed since by
+> the integer-range audit: #1221 (a constant-operand `Multiply` folds `c·offset`,
+> or `c1·c2`, into its linear form, which can throw `IntegerOverflow` or be
+> refused) and #1222 (`Divide` sizes the quotient's magnitude from `q`'s
+> declared domain, so a wide `q` with a divisor of a few bits throws with
+> proofs). Already open and touching this family: #540, #724,
 > #845, #880, #960, #846, #833, #868; #1038, listed here at the first pass, was
 > closed by removing the short-names option (#1087). Tracked under #871.
 
@@ -45,6 +53,32 @@ them was taken again, and #1081's new rules also run for `Modulus` (on the
 divisor), so the `harmony` figures may have moved. `file:line` citations are to
 `f28fdef8` unless they say otherwise.
 
+**Re-audit, 2026-10-08.** The engine issue this audit found has been fixed,
+and two shared changes have reached the family: #1055's trimming of the linear
+helpers its stages run on, and the integer-range arc. What each changed here:
+
+| Issue | Fixed by | What changed in this document |
+|---|---|---|
+| #1063: the per-node state copy went back to the kernel on every backtrack | #1113: `State::backtrack` keeps popped epochs, and `new_epoch` copies into their storage | the three things to know, [CPU performance](#cpu-performance), [Next steps](#next-steps) 3. Copying every domain at every node is still there (#364, #773) |
+| #1035, a linear issue | #1055: the linear `pol`s leave out bounds the bits imply and no longer divide; the sweep's reasons leave out bounds already at the top | [stage-bound](#rule-stage-bound), [stage-gate-refutation](#rule-stage-gate-refutation) |
+| #202 (`power2`), #1189, #1209 | #1214: inputs must lie in `±(2⁶⁰ − 1)`; a row the proof writer cannot size, and `power2` past `2⁶²`, throw `IntegerOverflow` | [Robustness and limits](#robustness-and-limits), [Tests](#tests), [Proof-logging gaps](#proof-logging-gaps), [Known limitations](#known-limitations), [Next steps](#next-steps) 7 |
+| #1117, #1168, #1188 (other families') | #1215: every constraint parameter is checked against the range at construction, including a `LinearEquality`'s right-hand side, which now refuses #1221's two-constant shape | [Robustness and limits](#robustness-and-limits), [Known limitations](#known-limitations) |
+| — (integer-range audit) | #1216: auxiliary variables may reach as far as views; `PowerTable` is built over the underlying variables; the tabulation callbacks reject a candidate whose arithmetic overflows | [Robustness and limits](#robustness-and-limits), [OPB encoding](#opb-encoding), [Tests](#tests) |
+| — (#1200, #1206) | #1208: a `_view_mixed_late` lane beside every `_view_mixed` one | [Tests](#tests) |
+
+**Re-measured at `0a5b4ec6`**, Release, fataepyc-10 (boost off), pinned with
+`taskset`, `GLIBC_TUNABLES` raising glibc's mmap and trim thresholds: the
+overflow and proof-width shapes of [Robustness and limits](#robustness-and-limits),
+with the two whose domains now fall outside the range moved inside it;
+#1221's and #1222's repros, and #1222's shape over divisor widths; and the three [Proof
+performance](#proof-performance) instances at `Off` and `Inferences`, with
+their node counts, proof sizes, VeriPB results (not `train` at `Off`, which did
+not finish in two hours at `f28fdef8`) and assertion counts by wire form.
+**Not re-measured**: #1113's speed-up, whose figures below are its PR's own;
+the `Multiply`-asserted split of the proofs, which needs a local switch; the
+CPU table; and everything else the previous paragraph lists as the first
+pass's.
+
 Six classes over four directories, in two groups that share almost nothing
 but the tabulation machinery. `Plus` and `Minus` are a unit-coefficient
 linear equality of three terms, with a bounds propagator and an interval
@@ -62,8 +96,12 @@ Three things to know before touching it.
   costs 0.28–0.67 µs. On `train` 2014 our search matches Gecode's to within
   0.3% of the nodes, and we are 3.5 times slower, but `Multiply` is 5.8% of our
   propagation time there. On `opd` 2017 and `stable-goods` 2020, all
-  propagation together is 8% and 15% of the run. Much of the rest is the engine
-  copying tens of thousands of domains per node (#1063).
+  propagation together was 8% and 15% of the run at `f28fdef8`. Much of the
+  rest is the engine copying tens of thousands of domains per node (#364,
+  #773). At `f28fdef8` glibc also handed each copy back to the kernel on
+  backtrack (#1063); #1113 removed that share, and its body measures
+  `stable-goods` at 3.6 times the nodes in 20 s and `opd` down from 61.0–61.5 s
+  to 51.8 s.
 - **Its proofs are large, and mostly its own.** A `Multiply` inference costs
   about 70 proof lines on `train` 2014, where its justifications are 55% of the
   proof's lines and 71% of its bytes. A search that takes 1.5 s without proofs
@@ -346,6 +384,9 @@ as `@c[id][<role>le]` / `<role>ge`, gated `≤` rows half-reified on their gate.
 A negative exponent adds `@c[id][nonzero]`, `[base ≥ 1] + [base < 0] ≥ 1`. An
 unrepresentable constant power writes a single `≥ 1` over nothing. A variable
 exponent writes `PowerTable`'s `Table`, `O(|D(base)|·|D(exponent)|)` rows (#845).
+Since #1216 that `Table` is over the variables beneath any views, with each
+tuple value translated back through its view, so that every tuple value lies
+in the input range (`power_table.cc:24-46` and `:69-72` at `0a5b4ec6`).
 
 **`Divide` and `Modulus`**, cake's encoding (`divide_modulus.cc:1083-1182`).
 Both reuse the channel and grid emitters, but not the result channel or
@@ -646,8 +687,16 @@ as unaffected.
   c2, r}`; `Power` with `4 ≤ k ≤ 62` over a base that is not a singleton; `k =
   62` and `63`; `Power{x, k, x}` beyond `k = 2`; an all-constant, constant-zero
   or aliased `Divide` / `Modulus` in the chain.
-- **Overflow.** Re-measured at `61112ed0` with one probe, against the same
-  probe on the `f28fdef8` build; the first pass's figures are kept below it.
+- **Inputs.** Since #1214 every declared domain, constant and view offset must
+  lie in `±(2⁶⁰ − 1)`, and a view's values reach one bit further. Since #1215
+  every constraint parameter must too, checked at construction; this family's
+  classes take only variables, but a constant-operand `Multiply` builds a
+  `LinearEquality`, whose right-hand side is checked. Two of the
+  overflow probe's own shapes are now refused when their variables are created
+  (`z ∈ [0, 2^60]`, and `Power`'s `r ∈ [0, 2^61 − 1]`), so at `0a5b4ec6` the
+  probe uses `2^60 − 1` for both.
+- **Overflow.** Re-measured at `0a5b4ec6` with one probe; the `61112ed0` and
+  `f28fdef8` figures are kept below it.
   - **Since #1079, propagation works at any width.** `product_bounds` and
     `square_bounds` saturate each corner at the end of `Integer`'s range. A
     saturated corner compared with `z`'s representable bounds either excludes
@@ -656,48 +705,87 @@ as unaffected.
     lower corner refutes the node outright (`w ≤ |x|`, which is
     representable), and a bound whose sum would overflow is skipped
     (`sum_if_representable`), since past the end of the range it bounds
-    nothing. Without proofs, every shape below now solves: `Multiply` with
-    `x, y ∈ [0, 2^32 − 1]` and `[0, 2^40]` against `z ∈ [0, 2^60]`, `Modulus`
-    and `Divide` with `x ∈ [0, 10^12]` and `y ∈ [1, 10^7]`, and `Power(x ∈ [0,
-    2^31], 3, r ∈ [0, 2^61 − 1])`. At `f28fdef8` each of those threw
-    `IntegerOverflow` during propagation.
+    nothing. Without proofs, every shape below solves at `0a5b4ec6`, as at
+    `61112ed0`: `Multiply` with `x, y ∈ [0, 2^32 − 1]` and `[0, 2^40]` against
+    `z ∈ [0, 2^60 − 1]`, `Modulus` and `Divide` with `x ∈ [0, 10^12]` and
+    `y ∈ [1, 10^7]`, and `Power(x ∈ [0, 2^31], 3, r ∈ [0, 2^60 − 1])`. At
+    `f28fdef8` each of those threw `IntegerOverflow` during propagation.
   - **With proofs, the proof model still fails first, unchanged by #1079.**
     It sizes the grid's rows by the grid's largest sum, which has to fit in an
     `Integer`. The failure comes out of `solve_with`, when the proof model is
-    built, not out of `Problem::post`. The headers now give the limit as 62
-    bits of combined operand magnitude for `Multiply` (and so per `Power`
-    link), and 63 bits of quotient and divisor magnitude for `Divide` /
-    `Modulus`. Measured:
-    - `Multiply`: two operands of `2^31 − 1` solve with proofs; at `2^31` and
-      `2^32 − 1` it throws a `ProofError` ("cannot size the reification
-      constant for a half-reified row").
-    - `Modulus`, whose quotient magnitude is sized by the dividend: 33-bit
-      `x` with 30-bit `y` solves; 32 + 32 and 34 + 30 throw `ProofError`. So
-      63 bits of **dividend** and divisor.
+    built, not out of `Problem::post`, and since #1214 it is an
+    `IntegerOverflow` ("cannot size the reification constant for a
+    half-reified row"). The headers give the limit as 62 bits of combined
+    operand magnitude for `Multiply` (and so per `Power` link), and 63 bits of
+    quotient and divisor magnitude for `Divide` / `Modulus`. Measured at
+    `0a5b4ec6`, with the same results as at `61112ed0` wherever the shapes
+    are the same:
+    - `Multiply`: operands of 31 + 31, 32 + 30 and 33 + 29 bits solve with
+      proofs; two operands of `2^31` or `2^32 − 1`, and 32 + 31 or 33 + 30
+      bits, throw.
+    - `Modulus`, whose quotient magnitude is sized by the dividend: `x` and
+      `y` of 31 + 31, 32 + 31 and 33 + 30 bits solve; 32 + 32 and 34 + 30
+      throw. So 63 bits of **dividend** and divisor.
     - `Divide`: the dividend counts too, because its remainder rows add `x`
       to the grid sum. With a 31-bit quotient and 31-bit divisor, dividends of
       10, 40 and 60 bits all solve. With a 32-bit quotient and 31-bit divisor,
-      a dividend of up to 32 bits solves, and 33, 36, 40 and 60 bits throw
-      `ProofError`. So the header's 63 holds only for a narrow dividend; in
+      dividends of 20, 30 and 32 bits solve, and 33, 36, 40 and 60 bits
+      throw. So the header's 63 holds only for a narrow dividend; in
       practice about 62.
-    - When the grid would need more than about 64 bits, the error is an
-      `UnimplementedException` from `power2` instead (`Multiply` at `2^40`
-      per operand; `Modulus` with a 40-bit `x` and 31-bit `y`), not the
-      `ProofError` the headers name.
-    The `Divide`, `Modulus` and `Power` shapes above throw `ProofError` with
-    proofs on, identically at `f28fdef8`. The fact-check of this re-audit
-    measured the `Divide` / `Modulus` widths. **This is now the family's only
-    width limit, and it is the proof's, not the propagator's.**
+    - When the grid would need more than about 64 bits, the error comes from
+      `power2` instead (`Multiply` at `2^40` per operand; `Modulus` with a
+      40-bit `x` and 31-bit `y`): since #1214 an `IntegerOverflow`
+      ("power2 63"), until then an `UnimplementedException`.
+    The `Modulus`, `Divide` and `Power` shapes of the first bullet all throw
+    with proofs on, as at `61112ed0` and `f28fdef8`. At `61112ed0` the
+    reification-constant failures were a `ProofError`, which the headers still
+    name. **This is the family's only width limit on in-range inputs apart
+    from #1221 and #1222 below, and it is the proof's, not the propagator's.**
+  - **`Divide` sizes its quotient's magnitude from `q`'s declared domain**
+    (#1222), so the 63-bit limit on quotient and divisor magnitude counts
+    `q`'s declared bits however small `|x|` is: with `x ∈ [10, 11]`, `y ∈
+    [5, 8]` and `q` over the whole range (60 bits), it finds all 8 solutions
+    without proofs and throws `IntegerOverflow` with them, at `0a5b4ec6`. With
+    that `q`, a divisor in `[1, 7]` still solves with proofs and `[1, 8]`
+    throws; with a 59-bit `q`, `[1, 15]` solves and `[1, 16]` throws.
+    `fzn-glasgow` gives an undeclared `var int` the whole range.
+  - **A `Multiply` with a constant operand** (#1221's two shapes): the
+    `LinearEquality` it becomes ends up with a constant built from the
+    inputs: for two constant operands, `multiply.cc:52-53` makes `c1·c2` its
+    right-hand side; for one constant operand over an offset view,
+    `tidy_up_linear` folds `c·offset` into it (`linear/utils.cc:41`; both at
+    `0a5b4ec6`). So
+    `Multiply{−B, x + B, z}` with `x ∈ [−B, −B + 1]`, `B = 2^60 − 1`, throws
+    `Integer overflow: -1152921504606846975 * 1152921504606846975` with and
+    without proofs, where the constraint has two solutions, `z ∈ {0, −B}`;
+    and
+    `Multiply{3, 2^59, z + B}` is refused because the folded right-hand side,
+    `3·2^59`, is outside the range, where there is one solution. That refusal
+    is #1215's right-hand-side check (`linear_equality.cc:162` at
+    `0a5b4ec6`): before #1215 the shape solved and its proof verified, per
+    #1221's body, so it is a regression of the integer-range arc. Both at
+    `0a5b4ec6`.
+  - **Auxiliary variables over views** (#1216). `Divide` / `Modulus`'s operand
+    magnitudes and `Power`'s chain variables range over a view's values,
+    which reach one bit past the declared range. Until #1216 `State` refused
+    them, so an in-range view operand was refused; now an auxiliary may span
+    a quarter of the machine range. `integer_ranges_test` posts `Divide` by
+    `y + B` and into `q + B`, `Modulus` of `x + B` and `Power` into `z + B`,
+    with and without proofs (`integer_ranges_test.cc:350-462` at `0a5b4ec6`).
   - **`Plus` / `Minus`** are unchanged: `Integer`'s checked arithmetic throws
     on overflow, and nothing in either propagator catches it. The
     tabulation's acceptance test uses `add_overflows` / `sub_overflows`, so an
-    overflowing tuple is rejected, not thrown.
-  - **One `Power` edge survives, now documented** (`power.hh`): the
-    constant-exponent path treats no base of magnitude two as having a
-    representable power above `k = 62`, but `(−2)^63 = INT64_MIN` is one.
-    `Power(x ∈ [−2, 2], 63, constant INT64_MIN)` still throws `IntegerOverflow`
-    at `61112ed0`, as at `f28fdef8`; and, unchanged too, the variable-exponent
-    path (`k ∈ [62, 63]`) finds `x = −2`.
+    overflowing tuple is rejected, not thrown. Since #1216 the product group's
+    tabulation callbacks do the same: a candidate whose arithmetic overflows
+    is past `2^62`, outside every domain, and is rejected rather than thrown.
+  - **The `Power` edge that survived #1079 is gone.** The constant-exponent
+    path treats no base of magnitude two as having a representable power above
+    `k = 62`, but `(−2)^63 = INT64_MIN` is one. At `61112ed0`, `Power(x ∈ [−2,
+    2], 63, constant INT64_MIN)` threw `IntegerOverflow`. Since #1214 no
+    constant, declared domain or view can hold `INT64_MIN`, so the shape is
+    refused when the constant is made ("a constant is -9223372036854775808,
+    which is outside the supported range"), and `power.hh` describes a throw
+    that can no longer be reached.
   - **At `f28fdef8`**, before #1079: `Multiply`'s corner products threw once
     `|x|·|y|` could pass 2^63, whatever `z`'s domain (`Integer overflow:
     4294967295 * 4294967295` at `2^32 − 1`, during propagation, where the
@@ -1251,7 +1339,12 @@ Facts that hold across the family:
 - **Proof technique** — the linear family's `pol` then `RUP`, with the gate as
   an extra reason literal. The stages are built directly as `LinearStage`s
   over rows this family's model wrote; no `Linear` constraint is posted.
-- **Reason** — the linear family's, plus the gate literal.
+- **Reason** — the linear family's, plus the gate literal. Since #1055 that
+  leaves out a term at its declared bound when the term's bits imply the
+  bound, when its pin already states it, or, above `AssertionLevel::Links`,
+  when it would have been pinned (see [linear.md](linear.md), rule 1's
+  Reason).
+  How much that removes from the stages' reasons was not measured.
 - **Assertion** — `reason ⇒` a bound on one term.
 - **Hint** — `hints::LinearEquality`: `originator` (`ConstraintID`), the
   `Power`'s, `Divide`'s or `Modulus`'s own id, also for an inequality stage.
@@ -1274,11 +1367,16 @@ Facts that hold across the family:
 - **Algorithm** — the row's least possible left-hand side, in its terms.
 - **Why it is true** — the contrapositive of a half-reified row.
 - **Proof technique** — `pol` (`justify_linear_contrapositive`) then `RUP`.
-- **Reason** — one bound literal per term of the row.
+  Since #1055 the `pol` leaves out a term whose bound its bits imply, and is
+  not emitted when that leaves nothing to add (`justify.cc:65-90` at
+  `0a5b4ec6`).
+- **Reason** — one bound literal per term of the row, built by the stage
+  loop itself (`linear_stages.hh:122-139` at `0a5b4ec6`), so #1055's reason
+  trimming does not reach it.
 - **Assertion** — `reason ⇒ ¬gate`.
 - **Hint** — `hints::LinearEquality`: `originator` (`ConstraintID`).
 - **Offline reconstructibility** — `hinted`, as stage-bound.
-- **Proof size** — one `pol` and one RUP.
+- **Proof size** — at most one `pol`, and one RUP.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
 
@@ -1827,12 +1925,12 @@ Facts that hold across the family:
 
 | Lane | What it covers |
 |---|---|
-| `plus_minus_constraint` (`plus_minus_test`), `…_view_mixed` | hand rows and 10 seeded random rows under `Auto`, **solutions only**; the same plus holey and random holey rows under `GAC` and `Dynamic`, **GAC checked at every node** (`solve_for_tests_checking_consistency`); two rows per tag, GAC-checked except under `BC`. The bare lane only: aliased rows under `Auto` and `GAC`, solutions only, and a directed fallback case |
+| `plus_minus_constraint` (`plus_minus_test`), `…_view_mixed`, `…_view_mixed_late` (since #1208) | hand rows and 10 seeded random rows under `Auto`, **solutions only**; the same plus holey and random holey rows under `GAC` and `Dynamic`, **GAC checked at every node** (`solve_for_tests_checking_consistency`); two rows per tag, GAC-checked except under `BC`. The bare lane only: aliased rows under `Auto` and `GAC`, solutions only, and a directed fallback case |
 | `plus_minus_constraint_dynamic_fallback` | the same binary with `GCS_INTERVAL_PAIRS_THRESHOLD=0`, so every step falls back |
 | `plus_mutation_control`, `plus_mutation_{lemmas,hole_lemmas,window_holes}` | the interval propagator's derivation; see [sum-interval-prune](#rule-sum-interval-prune) |
-| `multiply_constraint` (`multiply_test`), `…_view_mixed` | `Auto`, `BC` and `Tabulated` over small boxes, views, negatives and zero; six aliasing shapes; constant operands and a constant result; wide `Auto` rows; eight random forced-`BC` boxes, four with random view wraps; one forced `Tabulated` box. GAC checked at every node except under `BC`, on the wide rows, on the constant-operand rows and on `x · x = x`, which use plain `solve_for_tests` under every tag |
-| `power_constraint` (`power_test`), `…_view_mixed` | a variable exponent, including negative exponents; `k ∈ {0, 1, 2, 3, −2, 100, −3}` under each tag; views at `k = 2, 3`; `x^2 = x`; pinned `9^19`, `10^20`, `0^0` and `0^−2` |
-| `divide_modulus_constraint` (`divide_modulus_test`), `…_view_mixed` | both classes over signs and aliasing shapes (`x op x = y`, `x op y = x`, `y op x = x`), seeded random rows, and constant-slot, zero-divisor and two-constant rows; GAC checked where tabulation promises it, solutions only on the bounds propagator. **Since #1081**, for both classes under `BC`: seven root-hull fixtures over sign-open or weakly signed operands (eight for `Divide`), each checking that the root bounds are exactly the relation's hull; and four fixtures with a weakly signed dividend and a constant divisor, checking the result's bounds (the harness's `BC`, which is `bounds(Z)`) at every node |
+| `multiply_constraint` (`multiply_test`), `…_view_mixed`, `…_view_mixed_late` (since #1208) | `Auto`, `BC` and `Tabulated` over small boxes, views, negatives and zero; six aliasing shapes; constant operands and a constant result; wide `Auto` rows; eight random forced-`BC` boxes, four with random view wraps; one forced `Tabulated` box. GAC checked at every node except under `BC`, on the wide rows, on the constant-operand rows and on `x · x = x`, which use plain `solve_for_tests` under every tag |
+| `power_constraint` (`power_test`), `…_view_mixed`, `…_view_mixed_late` (since #1208) | a variable exponent, including negative exponents; `k ∈ {0, 1, 2, 3, −2, 100, −3}` under each tag; views at `k = 2, 3`; `x^2 = x`; pinned `9^18` (`9^19` until #1214 moved it inside the range, `power_test.cc:340-345` at `0a5b4ec6`), `10^20`, `0^0` and `0^−2` |
+| `divide_modulus_constraint` (`divide_modulus_test`), `…_view_mixed`, `…_view_mixed_late` (since #1208) | both classes over signs and aliasing shapes (`x op x = y`, `x op y = x`, `y op x = x`), seeded random rows, and constant-slot, zero-divisor and two-constant rows; GAC checked where tabulation promises it, solutions only on the bounds propagator. **Since #1081**, for both classes under `BC`: seven root-hull fixtures over sign-open or weakly signed operands (eight for `Divide`), each checking that the root bounds are exactly the relation's hull; and four fixtures with a weakly signed dividend and a constant divisor, checking the result's bounds (the harness's `BC`, which is `bounds(Z)`) at every node |
 | `product_bounds` | every `product_bounds.hh` function, exhaustively over small ranges, with the quotient filter's known inexactness pinned; since #1079, the saturating corners too |
 | `wide_product` (since #1079) | #1064's shapes for all four product classes, without proofs, each solution checked against a direct listing |
 | `product_justify` | 20 justification-fragment runs over 16 small boxes, each helper's claimed bound restated as a checked `ia` (except the trivial-RUP fragment): the harness for testing one helper at a time |
@@ -1871,9 +1969,14 @@ Facts that hold across the family:
   is only `bounds(R)` (see [product-bounds](#rule-product-bounds)). At
   `f28fdef8` this is how `Divide`'s sign-open weakness (#1065) went unseen.
 - **Operand widths that overflow with proofs on.** `wide_product` and the
-  audit lane's `wide-product` rows run without proofs; nothing tests that
-  solving past the proof limit fails cleanly. (At `f28fdef8` nothing passed
-  30 bits per operand at all; #1079 added both.)
+  audit lane's `wide-product` rows run without proofs (since #1214
+  `wide_product`'s near-`2^60` cases are near `2^59`). Since #1216
+  `integer_ranges_test` runs this family's view and tabulation shapes at the
+  edges of the range with proofs, and accepts `IntegerOverflow` there where the
+  grid does not fit; it checks that a failure is that exception, not that the
+  failure happens, so nothing pins the proof limit itself. (At `f28fdef8`
+  nothing passed 30 bits per operand at all; #1079 added `wide_product` and
+  the rows.)
 - **The assertion levels.** No arithmetic lane runs above `AssertionLevel::Off`,
   which is why `Modulus`'s solution-step failure (#1067) went unseen.
 - **`Multiply`'s bounds proofs in the verified chain**: every `multiply` chain
@@ -1978,16 +2081,28 @@ against Gecode's bounds propagation:
 | `stable-goods` 2020 `s-d16`, 60 s, no solution either way | 33,108, 25,368,983 | — | 257,773, 67,956,473 | — | 37.6%, 0.54 µs |
 | `opd` 2017 `flener_et_al_15_350_100`, to the 17th solution, 3 runs | 43,375, 2,720,224 | 60.1–61.7 s | 22,456, 1,252,279 | 3.19 s | 32.3%, 0.67 µs (from the 60 s stats run) |
 
-**Where the time goes on the big models is not arithmetic.** Propagation, of
-every kind, is 4.9 s of `opd`'s 59.6 s and 9.2 s of `stable-goods`' 59.6 s
-(`GCS_PROPAGATOR_STATS=time`). On `stable-goods`, 34.4 s of the 60 is kernel
-time. `State::new_epoch` copies all 30,231 domains at every node, and glibc
-returns each copy to the kernel on backtrack, so the next node faults it in
-again: 386 minor faults per node. Raising glibc's mmap and trim thresholds
-together, with no code change, gives 3.4 times the nodes in 20 s (three runs
-each way). Filed as #1063, with the profile. `opd` improves less, from
-60.1–61.7 s to 54.8 s, because per-epoch copies of constraint state cost it
-user time too.
+**Where the time went on the big models was not arithmetic.** At
+`f28fdef8`, propagation, of every kind, was 4.9 s of `opd`'s 59.6 s and 9.2 s
+of `stable-goods`' 59.6 s (`GCS_PROPAGATOR_STATS=time`). On `stable-goods`,
+34.4 s of the 60 was kernel time. `State::new_epoch` copies all 30,231 domains
+at every node, and glibc returned each copy to the kernel on backtrack, so the
+next node faulted it in again: 386 minor faults per node. Raising glibc's mmap
+and trim thresholds together, with no code change, gave 3.4 times the nodes in
+20 s (three runs each way). Filed as #1063, with the profile. `opd` improved
+less, from 60.1–61.7 s to 54.8 s, because per-epoch copies of constraint state
+cost it user time too.
+
+**#1113 fixed #1063** (merged 2026-10-03): `State::backtrack` keeps the epochs
+it pops, and `new_epoch` copies into their storage, allocating only when the
+search goes deeper than before. Domains are copy-assigned, reusing each
+`IntervalSet`'s storage, and constraint state is cleared and copy-constructed.
+Search trees are unchanged. #1113's body measured, two runs each, against
+main at `c9e1fc81`: `stable-goods` 2020 `s-d16` reaches 40.9k nodes in 20 s
+instead of 11.4k, with 0.40M page faults instead of 4.4M (the glibc
+workaround gave 39.7k, over three runs), and `opd` 2017's 17 solutions take 51.8 s instead of
+61.0–61.5 s, at the same 10.3 GB peak RSS. Those are #1113's figures, not
+re-measured here, and the two rows in the table above are from before it.
+What is left is copying every domain at every node at all (#364, #773).
 
 **What these benchmarks exercise**: product-bounds and factor-bound, and on
 `ship-schedule`, `opd` and `stable-goods` the tabulation rules. None reaches a
@@ -2017,6 +2132,25 @@ Solving with proofs took 2.1 s (`ship-schedule`) and 37.0 s (`train`) at
 `Off`, against 0.36 s and 1.54 s without (wall time throughout; the proof runs
 were not pinned).
 
+**Re-measured at `0a5b4ec6`**, on the same FlatZinc files, on fataepyc-10,
+pinned, one run each; the node counts are the same in every row:
+
+| instance | level | `.pbp` | verification |
+|---|---|---|---|
+| `ship-schedule` 2014 `3Ships` | `Off` | 935,341 lines, 151 MB | 49.5 s, `VERIFIED`, optimum proved |
+| | `Inferences` | 256,420 lines, 63 MB | 2.3 s, `UNDER ASSERTIONS` |
+| `train` 2014 `instance.14` | `Off` | 19,744,538 lines, 3.62 GB | not run |
+| | `Inferences` | 2,762,927 lines, 869 MB | 16.8 s, `UNDER ASSERTIONS` |
+| `harmony` 2024 `brother` | `Off` | 357,083 lines, 33 MB | 34.6 s, `VERIFIED` |
+| | `Inferences` | 17,665 lines, 2.8 MB | **rejected at its `soli`** (#1067) |
+
+The shared changes since `f28fdef8`, #1055 among them, moved the `Off`
+proofs by under 3% in lines and bytes, and left the `Inferences` line counts
+of `ship-schedule` and `train` unchanged. `harmony`'s OPB is 1,536 lines
+longer at both levels than the first pass's notes record; that was not
+traced. So the `Multiply` split below, which was not
+re-measured, should be close, but it is `f28fdef8`'s.
+
 **`Multiply`'s own share, measured.** A local switch made `Multiply`'s
 inferences assertions (`AssertRatherThanJustifying`) instead of derivations,
 everything else unchanged. The difference is `Multiply`'s derivations:
@@ -2045,6 +2179,11 @@ layers', was not split further.
 | `ship-schedule` 2014 | `multiply` 16,072 (6.5%) | 247,451 | `equals` 96,723, `or` 34,832, `and` 34,594 |
 | `train` 2014 `instance.14` | `multiply` 151,581 (5.7%) | 2,648,646 | `linear_equality` 1,287,318, `comparison` 443,358; and 428,023 with no hint, all from `LinearLessEqualIff` (the linear family's) |
 | `harmony` 2024 | `modulus` 2,302 (14.7%) | 15,608 | `linear_equality` 4,847, `equals` 3,430, `abs` 1,617 |
+
+Recounted at `0a5b4ec6`, `ship-schedule` and `train` are identical in every
+column. `harmony` has 15,624 assertions, `modulus` 2,311, `linear_equality`
+4,848, `equals` 3,431 and `abs` 1,618, over the same 279 nodes; what moved
+them was not traced.
 
 **Per firing, and against width.** The inventory agent measured `Multiply`'s
 derivations on root-only probes at this commit, one firing each; its probe
@@ -2081,7 +2220,8 @@ asserted there. Three gaps sit around that:
   `harmony` 2024 are rejected at a `solx` / `soli`. At `Inferences`, those
   three are the only failures among all 104 SAT chain cases in the
   repository, of every family (at `f28fdef8`; the three `modulus` failures,
-  and the `divide` and `multiply` cases passing, re-checked at `61112ed0`).
+  and the `divide` and `multiply` cases passing, re-checked at `61112ed0`;
+  `harmony`'s rejection re-checked at `0a5b4ec6`).
   **Why unit propagation stalls** is the grid's shape: see [Proof-time
   state](#proof-time-state). And a reconstructor does not have to reproduce
   whatever happened to pin `|q|` in the `Off` proof: any sufficient
@@ -2093,8 +2233,11 @@ asserted there. Three gaps sit around that:
   `Multiply` (and each `Power` link), 63 of dividend and divisor for
   `Modulus`, and for `Divide` 63 of quotient and divisor only while the
   dividend is narrow (about 62 in practice), because the rows' largest sums
-  must fit in an `Integer`; see [Robustness and limits](#robustness-and-limits). The
-  strength of the propagation never changes with proofs.
+  must fit in an `Integer`, and it throws `IntegerOverflow`; see [Robustness
+  and limits](#robustness-and-limits). `Divide` sizes the quotient's
+  magnitude from `q`'s declared width rather than from `|x|`, so a
+  whole-range `q` throws once the divisor has four bits (#1222). The strength of the propagation never
+  changes with proofs.
 - **Hints name the wrong class** for `Power`'s links (`hints::Multiply`) and
   for every stage (`hints::LinearEquality`); see the [catalogue's
   preamble](#inference-catalogue). That is a gap for an external justifier,
@@ -2106,13 +2249,24 @@ asserted there. Three gaps sit around that:
 - **With proofs on, very wide operands cannot be solved**: past 62 bits of
   combined operand magnitude for `Multiply`, 63 of dividend and divisor for
   `Modulus`, and about 62 for `Divide`, whose dividend counts as well as its
-  quotient and divisor. `solve_with` throws when it builds the proof model: a
-  `ProofError`, or an `UnimplementedException` from `power2` once the grid
-  would need more than about 64 bits. Without proofs, the corner products
-  saturate (#1079; #1064 is fixed).
-- **`Power(x, 63, INT64_MIN)` with a constant result throws
-  `IntegerOverflow`**, the one representable power the constant-exponent path
-  misses; now documented in `power.hh`.
+  quotient and divisor. `solve_with` throws `IntegerOverflow` when it builds
+  the proof model, from sizing a row or, once the grid would need more than
+  about 64 bits, from `power2` (until #1214 a `ProofError` or an
+  `UnimplementedException`). Without proofs, the corner products saturate
+  (#1079; #1064 is fixed).
+- **`Divide` with a quotient declared much wider than it can be** throws with
+  proofs on once `q`'s declared bits and the divisor's pass 63, because the
+  quotient's magnitude is sized from `q`'s declared domain rather than from
+  `x` (#1222). An undeclared FlatZinc `var int` quotient is that shape once
+  its divisor can reach 8.
+- **A `Multiply` with a constant operand can throw** on in-range
+  inputs that have solutions, with or without proofs: its `LinearEquality` folds
+  `c·offset`, or `c1·c2` for two constant operands, into a constant that can
+  pass `2^63` or, since #1215's check, the input range (#1221).
+- (No longer a limitation: `Power(x, 63, INT64_MIN)` with a constant result
+  threw `IntegerOverflow` at `61112ed0`, the one representable power the
+  constant-exponent path misses. Since #1214 `INT64_MIN` cannot be a constant,
+  a declared value or a view's value, so the shape cannot be posted.)
 - **`Divide` stops short of the hull** on an operand whose sign is fully
   open, which needs a case split, and on a variable divisor's own bounds; see
   [quotient-sign](#rule-quotient-sign). The weakly signed dividend of #1065
@@ -2152,7 +2306,10 @@ Ranked by what they buy for what they cost.
    not `PowerTable`'s (#845).
 3. **#1063 (the engine's, not this family's):** the largest CPU lever on the
    largest `Multiply` models, 3.4 times the nodes on `stable-goods` from the
-   allocator alone.
+   allocator alone. **Done by #1113**, by reusing popped epochs' storage
+   rather than by the glibc tunables: 3.6 times the nodes in 20 s on
+   `stable-goods`, by its body. Copying every domain at every node remains
+   (#364, #773).
 4. **Shrink `Multiply`'s derivations.** First measure factor-bound's
    unused direction: each firing derives both grid bounds and both result
    channellings and uses one, and the same waste was worth removing from
@@ -2171,9 +2328,16 @@ Ranked by what they buy for what they cost.
    comments and the `none` chain modes' stale reason. Add to it the headers'
    account of the proof limit (`multiply.hh`, `divide_modulus.hh`): they say
    posting throws a `ProofError`, where the throw comes from `solve_with` as
-   the proof model is built, is an `UnimplementedException` from `power2` once
-   the grid needs more than about 64 bits, and, for `Divide`, depends on the
-   dividend's width too.
+   the proof model is built, is an `IntegerOverflow` since #1214 (from
+   `power2` too, once the grid needs more than about 64 bits), and, for
+   `Divide`, depends on the dividend's width too. And `power.hh`'s note on
+   `(−2)^63 = INT64_MIN`, which since #1214 describes a throw no input can
+   reach.
+8. **#1221 and #1222**, from the integer-range audit: give a constant-operand
+   `Multiply` a form that does not fold `c·offset` or `c1·c2` into a
+   constant, and size `Divide`'s quotient magnitude from `x` rather than from
+   `q`'s declaration, as `Modulus` already does. The second changes the OPB,
+   so cake conformity needs checking (#1216's body).
 
 Done since the first pass: **#1064** (saturate the corner products; #1079,
 which also added the large-domain rows the first pass asked for, including the
