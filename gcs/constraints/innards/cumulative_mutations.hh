@@ -213,6 +213,29 @@ namespace gcs::innards
         struct DropRunContributor
         {
         };
+
+        /// Recover a row by chain without the row for the time point before
+        /// (#1254): the case where no task starts at `t` then has nothing
+        /// bounding the load it carries over, and should not close. Aimed at
+        /// the one ingredient the chain adds to the scan's argument. Needs the
+        /// recovery to run, which under the shipped encoding it does wherever a
+        /// rule cites a per-time row.
+        struct ChainDropPreviousRow
+        {
+        };
+
+        /// Guard each case of a chain step on its task having *started by*
+        /// `t`, rather than on its starting at exactly `t` (#1254). Every task
+        /// active at `t` is active when the latest starter starts, not when
+        /// any starter does, so the pins should not close: this checks that
+        /// the case split is on what it says it is.
+        ///
+        /// Only rejected without the per-time block in the model: under
+        /// `both-recovering` a weakened pin closes by unit propagation against
+        /// the very row being recovered.
+        struct ChainGuardOnStartedBy
+        {
+        };
     }
 
     using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
@@ -222,7 +245,8 @@ namespace gcs::innards
         cumulative_proof_mutation::DropEnergeticContributor, cumulative_proof_mutation::PublishedEmitNothing,
         cumulative_proof_mutation::DropPublishedPin, cumulative_proof_mutation::RecoverFromWrongCheckpoint,
         cumulative_proof_mutation::LowerHeightOneTooFar, cumulative_proof_mutation::HeightEmitNothing,
-        cumulative_proof_mutation::DropHeightContributor, cumulative_proof_mutation::RunOneTooFar, cumulative_proof_mutation::DropRunContributor>;
+        cumulative_proof_mutation::DropHeightContributor, cumulative_proof_mutation::RunOneTooFar, cumulative_proof_mutation::DropRunContributor,
+        cumulative_proof_mutation::ChainDropPreviousRow, cumulative_proof_mutation::ChainGuardOnStartedBy>;
 
     /**
      * \brief Deliberate corruptions of the presence-falsification derivation,

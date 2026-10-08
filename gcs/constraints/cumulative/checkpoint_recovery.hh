@@ -128,6 +128,16 @@ namespace gcs::innards
      * Note `j` need not itself be active at `t` --- only started --- which is
      * what keeps the case split off the active set.
      *
+     * That argument is cubic in the candidates, so it is the fallback (#1254).
+     * Where the row for `t - 1` is to hand, or no task can be active at
+     * `t - 1` at all, the row for `t` follows from it by a quadratic step
+     * instead: split on which candidate starts at exactly `t`. If none does,
+     * every task active at `t` was active at `t - 1`; if `j` does, `j`'s
+     * checkpoint row caps the load at `t`. So a row is recovered by chaining
+     * up from the nearest point below it that is already recovered or empty,
+     * when that is near enough to be cheaper than the cubic argument, and every
+     * row the chain passes through is cached.
+     *
      * Nullopt when \ref cumulative_checkpoint_recovery_applies says no, or when
      * no task can be active at `t` at all (there is then no row to recover, and
      * the model has none either).
