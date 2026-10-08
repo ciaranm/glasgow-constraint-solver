@@ -564,8 +564,9 @@ constraints and do not restate it.
   - **No front end reaches it** (#983).
   - **It cannot see a machine written as a `Disjunctive`** or as pairwise
     non-overlap. That halved the conflict graph on 30 generated instances.
-  - **It has nothing to infer on job shops by construction**, yet raises an
-    Important "search may be slower" note there (#1258).
+  - **It has nothing to infer on job shops by construction.** At the audit
+    it still raised an Important "search may be slower" note there (#1258).
+    Since #1274 a drop by a budget at its default is a `General` note only.
   - **Its pass is quadratic in memory**: a 104-byte conflict entry per task
     pair, held about three times over at the peak, so 3.1 GiB at 3,200 tasks.
     With proofs on, each posted clique keeps one copy (#705).
@@ -579,11 +580,13 @@ constraints and do not restate it.
     is installed under any encoding (#1234).
   - **Its certified makespan bound is fragile.** It disappears when the
     lengths are single-valued variables or the finish rows go through end
-    variables (#1257, checked on 110 Pack instances), or
-    when `InferredCumulative` runs first and certifies the same bound.
+    variables (checked on 110 Pack instances), or when `InferredCumulative`
+    runs first and certifies the same bound. Since #1282 (#1257) each of
+    these is reported, by a `General` note or the summary.
   - **With proofs on, the bound's certificate grows with the span of the
-    window**: an 822 MB root proof on Pack_d `pack008`, against 2.8 MB
-    without it.
+    window**: a 133 MB root proof on Pack_d `pack008` that checks in 8 s,
+    against 2.3 MB without it. At the audit, before #1290, it was 822 MB and
+    did not check in 30 minutes.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871

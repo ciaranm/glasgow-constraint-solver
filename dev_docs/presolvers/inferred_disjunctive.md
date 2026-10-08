@@ -2,9 +2,12 @@
 
 > **Maturity** experimental (C++ API and the `rcpsp` example only; no front
 > end reaches it) ·
-> **Audited** 2026-10-04 at `7e1c4178` ·
-> **Open issues** filed by this audit: #1258 (a misleading Important note on
-> job shops). Already open and touching this presolver: #983 (no front end reaches any presolver
+> **Audited** 2026-10-04 at `7e1c4178`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1258 and #1257 ·
+> **Open issues** filed by this audit: none left open. **Fixed since the
+> audit**: #1258 (a misleading Important note on job shops), and #1257, which
+> it shared (silent detection degradation); see [Re-audit,
+> 2026-10-08](#re-audit-2026-10-08). Already open and touching this presolver: #983 (no front end reaches any presolver
 > but `DifferenceLogic`), #705 items 3 and 4 (uncached row reductions in the
 > recipe, and the recipe's whole-model captures, measured here), #706
 > (`dropped_subset` has no fixture; this audit finds it cannot fire on an
@@ -15,10 +18,49 @@
 > donor, under the default start-checkpoint encoding, VeriPB rejects the
 > proof. Over a `Disjunctive2D` projection, under any encoding, nothing is
 > installed. That is #1234, owned by
-> [`cumulative.md`](../constraints/cumulative.md). It also shares #1257
-> (silent detection degradation), measured here, and #1267 (the installed
-> makespan initialiser scans the whole candidate horizon), filed from the
-> Codex review. Tracked under #871.
+> [`cumulative.md`](../constraints/cumulative.md). It also shares #1267 (the
+> installed makespan initialiser scans the whole candidate horizon), filed
+> from the Codex review. Tracked under #871.
+
+### Re-audit, 2026-10-08
+
+Both issues this document tracked as its own have been fixed. This pass brings
+the text into line with them at `0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1258, a false `Important` note on job shops | #1274, **by a different rule from the one next step 4 proposed** | a drop by a budget **at its default** (the paper's `N_cover` and `N_out`) is a `General` note only, and only a budget the caller moved off its default, judged by value, raises `Important`. On `la01` and `ft10` only the `General` note is left. [Options](#options), failure mode 2 under [Detection](#detection-and-its-failure-modes), [Evidence that it fired](#evidence-that-it-fired), [Tests](#tests), next step 4 |
+| #1257, detection losses with no note (shared with `InferredCumulative`) | #1282 | `General` notes for posted members with no makespan link row and for members whose length is not a constant (one-value variables included), and a note on the appearances `dropped_disagreeing_length` already counted; `makespan_bounds_not_improving` and a summary clause when the makespan argument certified nothing better than the makespan had. [Variable kinds](#variable-kinds-and-views), [Relation to other families](#relation-to-other-families), the [makespan rewrite](#rewrite-makespan-bound-from-a-clique)'s detection failure modes, [Known limitations](#known-limitations) |
+
+**Also changed here by a fix elsewhere**: #1290 (#1254) recovers a donor's
+capacity row from the row before it by a chain step, quadratic in the
+candidates, where the scan was cubic. That moved every proof size in this
+document that includes donor-row recovery ([Initialisation](#initialisation-and-global-data)'s
+proofs-on paragraph, the [clique rewrite](#rewrite-clique-to-unary-resource)'s
+table, the makespan rewrite's `pack008` table), and the way a proof above `Off`
+is rejected at `Definitions` ([Proof-time state](#proof-time-state)). #1234 is
+still open and still the cause. #1265 (docs and comments only, merged at
+`86caad24` after `0a5b4ec6`) fixed the design note's two pre-#1136 details
+this document reported; [Further reading](#further-reading) says so, and the
+audit stays at `0a5b4ec6`. No rewrite, derivation or detection rule
+changed: the recipe writes the same lines per time point, re-checked at
+`k = 11` on both families.
+
+**What was measured again**, at `0a5b4ec6` on fataepyc-10, serially on one
+pinned core, with `GLIBC_TUNABLES` mmap threshold 32 MiB and trim threshold
+4 GiB: the job shops' notes; `sample.dzn`'s proof sizes and its assertion
+levels; the two families' whole proofs, and VeriPB at `k = 5` and 11; the
+`pack008` root proofs, with and without the makespan, and VeriPB on all four;
+`pack008`'s spellings and their notes; `j3033_9` in both presolver orders;
+the scan probe's proofs-on span at `n = 50` to 400 and its first-solution
+proof at `n = 100`; the `Disjunctive2D` projection rows at every assertion
+level; and the test binary, both arms, on seeds 1 and 2. VeriPB times on the
+`pack008` roots and the families at `k = 11` are the median of three runs.
+**Not re-run**: the scan probe's
+proofs-off time and memory table, the 110-instance Pack and Pack_d sweeps
+(spellings, budgets, declines), the generated sweep, the `2^30` robustness
+runs, and the order and link probes (`ord.cc`, `mk.cc`). They stay at
+`7e1c4178`.
 
 `InferredDisjunctive` reads every posted `Cumulative`, and every axis a
 `Disjunctive2D` publishes as one, as a resource. It builds the graph of tasks
@@ -55,7 +97,9 @@ Four things to know before touching it.
   `AssertionLevel::Off`.** With the start-checkpoint encoding, at
   `Definitions`, `Inferences` and `Backtracking`, VeriPB rejects every proof
   that contains a derived Cumulative over a posted donor, because the donor's
-  per-time flag definitions are never emitted. Over a `Disjunctive2D`
+  per-time flag definitions are never emitted: at `Inferences` and
+  `Backtracking` as a parse error, and at `Definitions`, since #1290's chain
+  recovery, at a recovery `rup` the missing definitions leave unimplied. Over a `Disjunctive2D`
   projection the presolver installs nothing at those levels (#1234). Those levels are the mode the external justifier is meant to
   consume. Under `GCS_CUMULATIVE_ENCODING=time-indexed` or `both-recovering`,
   `sample.dzn` verifies `UNDER ASSERTIONS` at `Inferences`.
@@ -126,7 +170,7 @@ and a presolver is a solve option, so `glasgow_scp_solver`
 `xcsp_glasgow_constraint_solver` mentions only the `--difference-logic`
 presolver, and on `glasgow_scp_solver` it mentions no presolver. Both
 `fzn-glasgow` and the XCSP3 reader already post `Cumulative` for `cumulative`
-(`fzn_glasgow.cc:989`, `xcsp_glasgow_constraint_solver.cc:613`), so wiring a
+(`fzn_glasgow.cc:1018`, `xcsp_glasgow_constraint_solver.cc:617`), so wiring a
 switch would hand the presolver the right donors. MiniZinc's `disjunctive` and
 `disjunctive_strict` post `Disjunctive`, which it cannot see (below).
 
@@ -140,8 +184,12 @@ the installed constraint runs.
   `least_length` sum, best first, before the prefix is taken, so the budget
   keeps the best pairs rather than the first ones created. Every drop is
   counted. Each budget that is hit reports one `StatsLevel::General` note,
-  with the figures and the option. A run that hit either or both also reports
-  one `StatsLevel::Important` note in words.
+  with the figures and the option. Since #1274 the defaults are named
+  constants (`inferred_disjunctive.cc:145`), and a run also reports one
+  `StatsLevel::Important` note in words only when a budget that dropped
+  something has been moved off its default, judged by value
+  (`:820–830`). Passing the defaults explicitly, as `examples/rcpsp` does,
+  counts as the default. At `7e1c4178` any drop raised it.
 - **`with_minimum_clique_size(k)`**, default 3. A two-member clique is a
   conflicting pair, which its witness already keeps apart. #707 measured
   lowering it to two and found no certified bound moved; the default stands.
@@ -184,7 +232,8 @@ documents. In short, per task:
   is always usable, since it needs no proxy. Separately, any length that is a
   variable *by type*, a single-valued one included, keeps its member out of
   the makespan bound (`derived_cumulative.cc:334`); see the makespan
-  rewrite;
+  rewrite. Since #1282 a `General` note counts the posted members this
+  happens to;
 - **capacity a view**: the whole donor is declined
   (`declined_irreducible_capacity`). A plain-variable capacity is read at its
   upper bound at presolve time.
@@ -230,8 +279,8 @@ None. A reified "these tasks are pairwise exclusive" has no use here.
   runs, and the pass reads live bounds: through the donor views (a
   capacity's upper bound at `donor_view.cc:123`, height lower bounds,
   length upper bounds at `:169`) and directly (start windows,
-  `cumulative_task_window` at `inferred_disjunctive.cc:261`, and length
-  lower bounds at `:263`). An earlier presolver's initialiser can
+  `cumulative_task_window` at `inferred_disjunctive.cc:270`, and length
+  lower bounds at `:272`). An earlier presolver's initialiser can
   therefore change which pairs conflict.
   - **Checked** (`tmp/fd-codex-1005/sched/probes/ord.cc`, `7e1c4178`, no
     makespan named). Three starts in `[0, 5]`, lengths and heights 2, one
@@ -255,7 +304,14 @@ None. A reified "these tasks are pairwise exclusive" has no use here.
   - in the other order, `InferredCumulative`'s is 0 and this one's 361.
 
   The model ends with the same bound either way. Only which block reports it
-  changes, and `largest_capacity_bound` stays 361 in this block throughout. The
+  changes, and `largest_capacity_bound` stays 361 in this block throughout.
+  Re-measured at `0a5b4ec6` with the same results. Since #1282 the block that
+  certifies 0 says why, in its summary, which ends "though its makespan argument certified no bound
+  better than the makespan already had". That clause fires only when the
+  certified bound is 0. `makespan_bounds_not_improving` alone does not say
+  it: it is non-zero in both blocks (2 in this presolver's and 4 in
+  `InferredCumulative`'s with `InferredCumulative` first; 1 and 5 in the
+  other order). The
   `DifferenceLogic` presolver lifts precedences, not resources, so it never
   changes the donor set. It meets this presolver in two places: through its
   initialiser's bound changes, as above, and through the makespan links.
@@ -355,13 +411,17 @@ the donor's definer on first ask, and determined by unit propagation on a
 solution like any donor flag.
 
 **At assertion levels above `Off`, under the default start-checkpoint
-encoding,** the donors' definers are never published (`cumulative.cc:935`
-returns early). So the recovery and the recipe cite labels like
-`@v[_6][0_0][ca][r]` that nothing defines, and VeriPB stops with a syntax
-error. This was reproduced at `7e1c4178` on `examples/rcpsp/sample.dzn`:
-`GCS_ASSERTION_LEVEL=definitions` and `=inferences` both fail with the
-presolver, and both verify `UNDER ASSERTIONS` without it. The unit test fails
-the same way under `GCS_ASSERTION_LEVEL=inferences`. With
+encoding,** the donors' definers are never published (`cumulative.cc:940`
+returns early). So the recovery and the recipe cite flags and labels that
+nothing defines, and VeriPB rejects the proof. At `Inferences` and
+`Backtracking` it stops with a syntax error on a label like
+`@v[_6][0_0][ca][r]`. At `Definitions`, since #1290, the proof parses and is
+rejected at a `rup` of the chain recovery that the undefined flags leave
+unimplied. On `examples/rcpsp/sample.dzn` at `0a5b4ec6`,
+`GCS_ASSERTION_LEVEL=definitions` fails with a checking error at line 17 and
+`=inferences` with the syntax error; both verify `UNDER ASSERTIONS` without
+the presolver. At `7e1c4178` both failed with the syntax error. The unit test fails the same way under
+`GCS_ASSERTION_LEVEL=inferences` (a syntax error, re-run at `0a5b4ec6`). With
 `GCS_CUMULATIVE_ENCODING=time-indexed` or `both-recovering`, where the flags
 are OPB rows, `sample.dzn` with the presolver verifies `UNDER ASSERTIONS` at
 `inferences`. Over a `Disjunctive2D` projection, the derived constraint
@@ -426,8 +486,8 @@ One copy of the matrix at 3,200 tasks is 3,200² × 104 B = 1,016 MiB. The peak
 of 3,148 MiB is about three copies:
 
 - the matrix itself;
-- `auto conflicts = conflict;` (`inferred_disjunctive.cc:569`);
-- the recipe lambda's by-value capture of that copy (`:575`).
+- `auto conflicts = conflict;` (`inferred_disjunctive.cc:588`);
+- the recipe lambda's by-value capture of that copy (`:594`).
 
 The lambda also captures the whole task vector and every donor view. With
 proofs off, `install_derived_cumulative` keeps no recipe
@@ -438,24 +498,36 @@ does. With proofs on, the recipe is kept in the derived constraint's row
 deriver for the whole solve (`derived_cumulative.cc:212`), so each posted
 clique retains one copy and the peak grows to about two plus the number
 posted. That is read from the code; it was not measured at these sizes,
-because proofs on at these sizes cost the cubic recovery below. #705 item 4
-asks for the captures to be trimmed.
+because at `7e1c4178` proofs on at these sizes cost the cubic recovery below.
+#705 item 4 asks for the captures to be trimmed.
 
 With proofs on, the install's probes recover each witness's capacity row at
 one time point per stretch. On a fresh donor that is the first row it has
-recovered, and recovery derives the donor's pairwise order lemmas at `Top`,
-cubic in the donor's task count (`cumulative.md`). On the random shape (lengths
-uniform in 1..4) that
-is 0.19 M proof lines at n = 50, 1.5 M at 100, 11 M at 200 and 52 M (4.2 GB,
-141 s) at 400, all emitted during the presolver's span. 99% of those lines are
-pair-order lemmas. The clique derivations themselves are 178, 695 and 2,528
-lines (n = 50, 100, 200). The donors pay that recovery anyway once they
-justify anything. To the first solution at n = 100 (this probe, seed 1,
-lengths uniform in 1..4,
-`posted` budget 0 against 5), the whole proof was 54.6 M lines without the
-presolver and 52.9 M with it. With lengths in 1..5 instead, the fact-check
-measured 66.7 M and 61.9 M. So the presolver brings the cost forward
-rather than adding it.
+recovered. At `7e1c4178` recovery was the scan, which derives the donor's
+pairwise order lemmas at `Top`, cubic in the donor's task count
+(`cumulative.md`). Since #1290 a row with no task able to run below it is a
+chain base, quadratic in the candidates, provided the donor's capacity is a
+non-negative constant (`checkpoint_recovery.cc:854–855`); with any other
+capacity such a row is still the scan. A row with tasks just below it can
+chain up from a recovered row or a chain base up to one more than its
+candidate count below it (`:868–872`). The probe's capacities are constants, and its rows here were
+all chain bases at `0a5b4ec6`. On the random shape (lengths uniform in 1..4), the lines
+emitted during the presolver's span, and the clique derivations among them:
+
+| `n` | span at `0a5b4ec6` | of which clique derivations | span at `7e1c4178` |
+|--:|--:|--:|--:|
+| 50 | 8,618 | 176 | 0.19 M |
+| 100 | 33,297 | 693 | 1.5 M |
+| 200 | 123,664 | 2,526 | 11 M |
+| 400 | 271,265 (46 MB; the whole solve 7.6 s) | not counted | 52 M (4.2 GB, 141 s) |
+
+At `7e1c4178` 99% of the span's lines were pair-order lemmas. The donors pay
+that recovery anyway once they justify anything. To the first solution at
+`n = 100` (this probe, seed 1, `posted` budget 0 against 5), the whole proof
+is 2,197,543 lines without the presolver and 2,091,114 with it at
+`0a5b4ec6`, and was 54.6 M and 52.9 M at `7e1c4178` (with lengths in 1..5
+instead, the fact-check measured 66.7 M and 61.9 M). So the presolver brings
+the cost forward rather than adding it.
 
 ### Propagator inventory
 
@@ -540,8 +612,8 @@ is bounds.
    never by the horizon (#1130). Over a horizon the installed constraint
    costs memory at install, proofs off: its overload rule's per-time slot
    prefix, 8 bytes per time point (the presolver's span added 513 MiB at a
-   window of about `6.7·10⁷`, and that is kept, since the propagator holds
-   it). That is `cumulative.md`'s structure.
+   window of about `6.7·10⁷` at `7e1c4178`, and that is kept, since the
+   propagator holds it). That is `cumulative.md`'s structure.
 4. **Audit lane.** No row in `gcs/large_domain_audit_test.cc`. The axes no
    test varies are the horizon, the task count past a dozen, and the donor
    kind (no test uses a `Disjunctive2D` donor at the default minimum clique
@@ -606,7 +678,7 @@ it enables is certified in the proof, and nothing it writes is an assertion.
     some `j ≠ i` has `(i + j) mod k = r`. So each resource holds `k − 1`
     tasks at height 1, and every pair among them conflicts there. The witness
     is the first shared resource in posting order
-    (`inferred_disjunctive.cc:309-323`). Resource 0 witnesses
+    (`inferred_disjunctive.cc:327-341`). Resource 0 witnesses
     `(k − 1)(k − 2)/2` pairs, resource 1 witnesses `k − 2`, resource 2
     witnesses one, and the rest witness none (6, 3 and 1 at `k = 5`). Only
     `k − 1` pairs need bridging (`cross_donor_pairs`), and there are `k`
@@ -619,31 +691,38 @@ it enables is certified in the proof, and nothing it writes is an assertion.
     (`tmp/fd-sched/inferred_disjunctive/e8/pairfam.cc`, the fact-check's
     probe).
 
-  Both were measured at `7e1c4178`, fataepyc-08, 2026-10-05. VeriPB 3.0.2
-  ran with `--force-checked-deletion`, pinned, median of three; "—" means
-  not timed. Times vary by around 15% between sessions; the fact-check
-  measured 1.00 s for the pairwise `k = 11`. The whole proof is given:
+  The lines per time point were measured at `7e1c4178` and re-checked at
+  `k = 11` on both families at `0a5b4ec6`, where they are the same: the
+  recipe did not change. The whole proofs did, because #1290 changed the
+  donors' row recovery. VeriPB 3.0.2 ran with `--force-checked-deletion`,
+  pinned; "—" means not timed. At `7e1c4178` (fataepyc-08, 2026-10-05,
+  median of three; times varied by around 15% between sessions, and the
+  fact-check measured 1.00 s for the pairwise `k = 11`) and at `0a5b4ec6`
+  (fataepyc-10; `k = 11` the median of three runs, `k = 5` one run):
 
-  | family | k | time points derived | lines per point | bridges | whole proof | VeriPB |
-  |---|--:|--:|--:|--:|--:|--:|
-  | test file's | 3 | 5 | 15 | 15 | 942 lines | — |
-  | | 5 | 9 | 30 | 45 | 4,945 lines, 327 KB | 0.06 s |
-  | | 7 | 13 | 49 | 91 | 16,584 lines | — |
-  | | 9 | 17 | 72 | 153 | 42,675 lines | — |
-  | | 11 | 21 | 99 | 231 | 92,338 lines, 7.0 MB | 4.6 s |
-  | pairwise | 3 | 5 | 15 | 15 | 942 lines | — |
-  | | 5 | 9 | 60 | 135 | 4,883 lines, 297 KB | 0.04 s |
-  | | 7 | 13 | 133 | 455 | 14,172 lines | — |
-  | | 9 | 17 | 234 | 1,071 | 31,113 lines | — |
-  | | 11 | 21 | 363 | 2,079 | 58,010 lines, 4.1 MB | 0.87 s |
+  | family | k | time points derived | lines per point | bridges | whole proof, `0a5b4ec6` | VeriPB | whole proof, `7e1c4178` | VeriPB |
+  |---|--:|--:|--:|--:|--:|--:|--:|--:|
+  | test file's | 3 | 5 | 15 | 15 | 816 lines | — | 942 lines | — |
+  | | 5 | 9 | 30 | 45 | 3,199 lines, 171 KB | 0.01 s | 4,945 lines, 327 KB | 0.06 s |
+  | | 7 | 13 | 49 | 91 | 8,130 lines | — | 16,584 lines | — |
+  | | 9 | 17 | 72 | 153 | 16,521 lines | — | 42,675 lines | — |
+  | | 11 | 21 | 99 | 231 | 29,284 lines, 1.8 MB | 0.11 s | 92,338 lines, 7.0 MB | 4.6 s |
+  | pairwise | 3 | 5 | 15 | 15 | 816 lines | — | 942 lines | — |
+  | | 5 | 9 | 60 | 135 | 4,183 lines, 227 KB | 0.02 s | 4,883 lines, 297 KB | 0.04 s |
+  | | 7 | 13 | 133 | 455 | 12,114 lines | — | 14,172 lines | — |
+  | | 9 | 17 | 234 | 1,071 | 26,577 lines | — | 31,113 lines | — |
+  | | 11 | 21 | 363 | 2,079 | 49,540 lines, 3.2 MB | 0.19 s | 58,010 lines, 4.1 MB | 0.87 s |
 
-  At `k = 3` the two families coincide. The clique derivations are 2.2% of
-  the k = 11 proof in the test file's family and 13% in the pairwise one. The
-  rest is the donors' row recovery and the solve. On `sample.dzn`, 6
-  derivations of 13.5 lines on average make 81 of the 1,452 lines (5.6%). The
-  whole proof is 1,279 lines without the presolver. The other 92 lines of the
-  difference fall outside the derivations' markers, and this audit did not
-  break them down.
+  At `k = 3` the two families coincide. At `0a5b4ec6` the clique derivations
+  are 7.1% of the `k = 11` proof in the test file's family (2,079 of 29,284)
+  and 15% in the pairwise one (7,623 of 49,540); at `7e1c4178` they were 2.2%
+  and 13%. The rest is the donors' row recovery and the solve. On
+  `sample.dzn`, at `7e1c4178`, 6 derivations of 13.5 lines on average made 81
+  of the 1,452 lines (5.6%), and the whole proof was 1,279 lines without the
+  presolver; the other 92 lines of the difference fell outside the
+  derivations' markers, and that audit did not break them down. At
+  `0a5b4ec6` the whole proof is 1,189 lines with the presolver and 955
+  without, both verified; the share was not re-counted.
 - **Gaps** — none at `Off`. Above `Off`, the whole proof is rejected over a
   posted donor under the default encoding, and over a projection nothing is
   installed under any encoding (#1234).
@@ -706,33 +785,39 @@ it enables is certified in the proof, and nothing it writes is an assertion.
   whatever row recovery its witnesses need. So it is linear in the span of
   the window from the earliest window start to the bound, and not in the
   horizon: a wider declared horizon adds nothing. Nor does it depend on what
-  the propagator ever cites. Measured at `7e1c4178` (fataepyc-08,
-  2026-10-05) on **root proofs**, with the five posted cliques. `vid.cc` with
-  no search argument stops at the root: recursions 1, solutions 0,
-  `conclusion NONE`. The canonical model was used, and the counts were
-  re-measured identically in a second run
-  (`tmp/fd-sched/inferred_disjunctive/e11/root/sizes.log`):
+  the propagator ever cites. Measured on **root proofs**, with the five
+  posted cliques. `vid.cc` with no search argument stops at the root:
+  recursions 1, solutions 0, `conclusion NONE`. The canonical model was used.
+  At `7e1c4178` (fataepyc-08, 2026-10-05) the counts were re-measured
+  identically in a second run (`tmp/fd-sched/inferred_disjunctive/e11/root/sizes.log`);
+  at `0a5b4ec6` (fataepyc-10) the proofs were written once, with the same
+  derived rows (counted by the per-row markers), and each VeriPB time is the
+  median of three runs:
 
-  | instance | certified bound | proof without the makespan named | with it |
-  |---|--:|--:|--:|
-  | Pack `pack008` | 44 | 36,042 lines, 13 derived rows | 351,845 lines, 54 rows |
-  | Pack_d `pack008` | 1274 | 36,048 lines, 13 rows, 2.8 MB | 9,838,751 lines, 1,284 rows, 822 MB |
+  | instance | certified bound | proof without the makespan named | with it | at `7e1c4178`: without / with |
+  |---|--:|--:|--:|--:|
+  | Pack `pack008` | 44 | 22,075 lines, 13 derived rows, 0.21 s | 75,879 lines, 54 rows, 0.40 s | 36,042 / 351,845 lines |
+  | Pack_d `pack008` | 1274 | 30,741 lines, 13 rows, 2.3 MB, 0.76 s | 1,785,382 lines, 1,284 rows, 133 MB, 8.06 s | 36,048 lines, 2.8 MB / 9,838,751 lines, 822 MB |
 
   The two `pack008` files have the same demands and capacities. Pack_d's
   durations are longer on some tasks: 2 against 115, 5 against 288, and so
-  on. The ratios:
-  - Pack_d with the makespan named against without it: 273 times the lines
-    (9,838,751 / 36,048) and 99 times the derived rows (1,284 / 13);
-  - Pack_d against Pack, both with it: 28 times the lines and 24 times the
+  on. The ratios at `0a5b4ec6`:
+  - Pack_d with the makespan named against without it: 58 times the lines
+    (1,785,382 / 30,741) and 99 times the derived rows (1,284 / 13), where
+    at `7e1c4178` it was 273 times the lines;
+  - Pack_d against Pack, both with it: 24 times the lines and 24 times the
     rows (1,284 / 54), because Pack_d's window has that many more time
-    points.
+    points. At `7e1c4178` it was 28 times the lines.
 
-  VeriPB 3.0.2 (`--force-checked-deletion`, pinned) checks Pack_d's root
-  proof without the makespan in 1.5 s (`VERIFIED NO CONCLUSION`). With it,
-  VeriPB had not finished after 1,800 s, when it was stopped
-  (`e11/veripb-timing.log`, one run; VeriPB's own log held only its banner).
+  VeriPB 3.0.2 (`--force-checked-deletion`, pinned) now checks every one of
+  these, the Pack_d proof with the makespan in 8.06 s with 1.1 GB of memory
+  (`VERIFIED NO CONCLUSION`). At `7e1c4178` Pack_d's root proof without the
+  makespan checked in 1.5 s, and with it VeriPB had not finished after
+  1,800 s, when it was stopped (`e11/veripb-timing.log`, one run; VeriPB's
+  own log held only its banner). The difference is #1290's recovery.
 - **Detection failure modes** — a model whose finish rows are not two-term
-  `±1` rows on a plain start gets no link for that task, silently. The task
+  `±1` rows on a plain start gets no link for that task. At `7e1c4178` that
+  was silent; since #1282 a `General` note counts such members (below). The task
   then loses the deadline's confinement, not its energy: it still counts what
   its own start bounds force into the window (see *Why it is true*), so the
   bound may weaken, and with no link on any member nothing is certified on
@@ -756,9 +841,10 @@ it enables is certified in the proof, and nothing it writes is an assertion.
       `is_constant_variable`, so that member is left out of the energy
       argument, though its link is found.
 
-  #1257 says the same spellings degrade this presolver
-  too. Checked here over all 110 Pack and Pack_d instances with `vid.cc`. The
-  canonical model posts on 78 and certifies a bound on 75. Then:
+  #1257 said the same spellings degrade this presolver
+  too. Checked over all 110 Pack and Pack_d instances with `vid.cc` at
+  `7e1c4178` (not re-run). The canonical model posts on 78 and certifies a
+  bound on 75. Then:
   - single-valued length variables shared across resources: the same cliques
     and `L`, and a certified bound on none;
   - end variables `e = s + d` with `m ≥ e`: the same, a certified bound on
@@ -770,15 +856,31 @@ it enables is certified in the proof, and nothing it writes is an assertion.
     presolver *counts* that drop;
   - links written as `LessThanEqual{s + d, m}`: identical to canonical.
 
-  So #1257 applies, apart from its second fix item, which this presolver
-  already has as `dropped_disagreeing_length`.
+  At `7e1c4178` #1257 applied, apart from its second fix item, which this
+  presolver already had as `dropped_disagreeing_length`. **Since #1282 each
+  of these spellings is reported**, by `General` notes from
+  `makespan_coverage_note` (`inferred_disjunctive.cc:784–797`) and one on
+  the dropped appearances (`:308–313`). On `pack008` at `0a5b4ec6` the
+  canonical spelling gets none of them; shared one-value lengths get "of the
+  14 tasks in the inferred constraints, 14 have a length that is not a
+  constant, which the makespan bound leaves out altogether (a variable with
+  one value counts here too)"; end variables get "… 14 have no row saying
+  they finish by the makespan, which weakens the makespan bound"; and
+  per-resource lengths get "38 task appearances name a different length
+  variable from the same task's first appearance, …" as well as the length
+  note. Each still certifies no bound. The notes count members, not which
+  ones, and a view-start member is reported only if it also has no link.
 
-  None is counted. The only symptom is `certified_makespan_bound` falling
-  below `largest_capacity_bound`, which can also happen for geometric
-  reasons. A `certified_makespan_bound` of zero means no bound was pushed.
+  At `7e1c4178` none of this was counted, and the only symptom was
+  `certified_makespan_bound` falling below `largest_capacity_bound`, which
+  can also happen for geometric reasons. Since #1282 a
+  `certified_makespan_bound` of zero with a non-zero
+  `makespan_bounds_not_improving` also ends the summary with "though its
+  makespan argument certified no bound better than the makespan already
+  had". A `certified_makespan_bound` of zero means no bound was pushed.
   Either the energy argument did not beat what the links already say, or no
   task could be counted, as when every member is optional and undecided at
-  the root (`derived_cumulative.cc:379`). The
+  the root (`derived_cumulative.cc:380`). The
   two figures agreed on 53 of 55 Pack instances and 51 of 55 Pack_d (proofs
   off, `rcpsp --dzn`, default `--variant=decomposed`). The disagreements
   (`L` against certified) are:
@@ -818,15 +920,26 @@ on anything else:
    90/225/450 conflicting pairs, 6/5/10 cliques found, 0 posted. Under
    `--unary=disjunctive` the summary is `no posted Cumulative to look at`.
    - On `la01` and `ft10`, the candidate budget leaves 125 and 350 pairs
-     ungrown. The Important note then says "search may be slower", which is
-     false here. In a job shop, two tasks on one machine and every common
-     neighbour of theirs lie on that machine, so growing the pair can only
-     reproduce the machine's own clique, which is dropped as dominated
-     (#1258). That a pair lies inside a capacity-one resource is
-     *not* enough on its own: with two triangles whose every pair has its own
-     capacity-one Cumulative, a candidate budget of 3 leaves the second
-     triangle ungrown, and a budget of 6 posts it (the fact-check's
-     `subset.cc`).
+     ungrown. At `7e1c4178` the Important note then said "search may be
+     slower", which was false here (#1258): in a job shop, two tasks on one
+     machine and every common neighbour of theirs lie on that machine, so
+     growing the pair can only reproduce the machine's own clique, which is
+     dropped as dominated. Since #1274 the default budget's drop is a
+     `General` note only. Re-measured at `0a5b4ec6`: `rcpsp --jss la01.jss
+     --infer-disjunctive --stats` and the same on `ft10` print "125 / 350
+     candidate pairs left ungrown, against a budget of 100, see
+     with_budgets" and no `Important` note; `ft06` drops nothing. With
+     `--infer-disjunctive-candidates 50`, a budget moved off its default,
+     `la01` does raise it ("175 pairs of tasks were never grown into a
+     clique").
+   - That a pair lies inside a capacity-one resource is *not* enough on its
+     own to make an ungrown pair harmless: with two triangles whose every
+     pair has its own capacity-one Cumulative, a candidate budget of 3
+     leaves the second triangle ungrown, and a budget of 6 posts it (the
+     fact-check's `subset.cc`). So a per-pair test would have had to look
+     past the pair (next step 4). #1274 judged by default-ness instead, and
+     a moved budget still raises the note whether or not its drop could
+     matter.
 3. **Task identity is by `(start, presence)`.** The same task through a view
    on one resource is a different node. A different length *variable* for the
    same start drops the later appearance (`dropped_disagreeing_length`), as
@@ -888,7 +1001,9 @@ Expected values on named instances, at `7e1c4178`:
   each). The two collections give the same structural counts:
   - something posted on 39 of 55;
   - the posting budget of 5 reached on 33;
-  - the candidate budget's note on 20;
+  - the candidate budget's `General` note on 20 (at `7e1c4178` an
+    `Important` note came with it; since #1274, at the default budget, none
+    does);
   - `cross_donor_pairs > 0` on only 2 (`pack043`, `pack044`), so the bridges
     are almost never exercised by this benchmark.
 
@@ -941,7 +1056,9 @@ against.
   inferred_disjunctive_test.cc`, `run_test_only.bash`) and its
   **`_recovering`** twin (`GCS_CUMULATIVE_ENCODING=both-recovering`, which
   re-derives the donors' per-time rows and checks them against the time-indexed
-  block). Both pass at `7e1c4178` (0.94 s). Cases:
+  block). Both pass at `7e1c4178` (0.94 s) and at `0a5b4ec6`: the plain
+  arm in 0.74 to 0.80 s and the recovering arm in 0.99 s, on seeds 1 and
+  2. Cases:
   - the differential (a root refutation that no single donor makes),
     `cross_donor_pairs` and `bridges_derived` non-zero, and the capacity bound
     asserted at 6;
@@ -955,6 +1072,14 @@ against.
     plus `ForgetPresence` rejected;
   - the stats names in order, the always-allocate path, caller-handle
     identity, and the note levels for a view-capacity decline and both budgets;
+  - since #1274, the candidate budget at its default: fifteen pairwise
+    conflicting tasks give 105 candidates against 100, and the test expects
+    the `General` note and no `Important` one
+    (`inferred_disjunctive_test.cc:707–729`);
+  - since #1282, the three-task family spelled canonically (no spelling
+    note, a certified bound), with end variables (the link note and the
+    summary clause) and with one resource naming its own lengths (the
+    `dropped_disagreeing_length` note) (`:731–797`);
   - variable arguments, converted height, variable duration, a dominated
     clique, and `pair_both_over`;
   - the OPB byte-identical with and without the presolver;
@@ -980,8 +1105,9 @@ against.
 - any assertion level above `Off`, which is where it breaks (#1234);
 - a real instance whose cliques need bridges, other than `sample.dzn`. Pack
   has cross-donor pairs on two instances of 110;
-- more than about a dozen tasks, so the quadratic memory and the cubic recovery
-  cost are seen by no test;
+- more than about a dozen tasks, so the quadratic memory and the recovery
+  cost are seen by no test (the recovery is a quadratic chain step since
+  #1290, with the cubic scan as its fallback);
 - a wide horizon;
 - a `Disjunctive2D` donor at the default minimum clique size, or mixed with
   posted `Cumulative`s;
@@ -993,10 +1119,12 @@ against.
 `examples/rcpsp` is the only driver. For **CPU** benchmarking of the pass, use
 the scan probe above at a few hundred to a few thousand tasks. A real
 instance's pass is milliseconds: Pack's instances have 15 to 33 tasks. For
-**proof verification**, use `sample.dzn` (1,452 lines, 0.02 s) and the two
-families at k = 5 to 11 (0.04 to 4.6 s; see the clique rewrite's table). Never run the scan probe
-with proofs on above about 200 tasks: the donor recovery it triggers is cubic
-(52 M lines and 4.2 GB at 400).
+**proof verification**, use `sample.dzn` (1,189 lines at `0a5b4ec6`) and the
+two families at k = 5 to 11 (0.01 to 0.19 s at `0a5b4ec6`, 0.04 to 4.6 s at
+`7e1c4178`; see the clique rewrite's table). At `7e1c4178` the scan probe
+with proofs on was not worth running above about 200 tasks, since the donor
+recovery it triggered was cubic (52 M lines and 4.2 GB at 400). Since #1290
+the same run at 400 is 271,265 lines in the presolver's span.
 
 ### CPU performance
 
@@ -1030,10 +1158,12 @@ program. #868 covers cross-solver comparison generally.
 
 See the proof-size table under the clique rewrite. Own against shared, on the
 cross-resource family: the presolver's derivations are `21 × 99 = 2,079` of
-92,338 lines at k = 11 (2.2%), and the rest is the donors and the search. On
-`sample.dzn` they are 81 of 1,452 lines (5.6%), and in the pairwise family
-at k = 11, 13%. Nothing was measured at the
-assertion levels, because none verifies.
+29,284 lines at k = 11 (7.1%) at `0a5b4ec6`, and the rest is the donors and
+the search; in the pairwise family at k = 11 they are 15%. At `7e1c4178`
+they were 2.2% (of 92,338) and 13%, and on `sample.dzn` 81 of 1,452 lines
+(5.6%). The shares rose because #1290 made the donors' row recovery cheaper,
+not because the derivations grew. Nothing was measured at the assertion
+levels, because none verifies.
 
 ## Status, gaps, and next steps
 
@@ -1057,16 +1187,19 @@ on the generated sweep.
   clique keeps one for the whole solve (#705 item 4).
 - "The bound I got is lower than `largest_capacity_bound`": some members had no
   makespan link in a shape `find_makespan_links` matches.
-- "Hints-only proofs fail with a label error" (under the default
-  start-checkpoint encoding), or "with assertions on, a `Disjunctive2D` model
-  gets no cliques" (under any encoding): #1234.
+- "Hints-only proofs are rejected" (under the default start-checkpoint
+  encoding: a label error at `Inferences` and `Backtracking`, and since #1290
+  a failed `rup` at `Definitions`), or "with assertions on, a `Disjunctive2D`
+  model gets no cliques" (under any encoding): #1234.
 - "My model certifies no makespan bound": its lengths are variables (even
-  single-valued ones), or its finish rows go through end variables
-  (#1257). Or an earlier presolver already pushed the
-  same bound.
-- "With proofs on and the makespan named, the proof is huge": the bound's
+  single-valued ones), or its finish rows go through end variables. Since
+  #1282 (#1257) a `General` note says which, and how many members it cost.
+  Or an earlier presolver already pushed the same bound, which the summary
+  now says ("…certified no bound better than the makespan already had").
+- "With proofs on and the makespan named, the proof is big": the bound's
   certificate derives a row at every time point up to it. Pack_d `pack008`
-  writes an 822 MB root proof.
+  writes a 133 MB root proof, which checks in 8 s (822 MB, and not checked in
+  30 minutes, at `7e1c4178`, before #1290).
 
 ### Next steps
 
@@ -1079,14 +1212,15 @@ on the generated sweep.
    per-`(witness, t)` cache in the same change.
 3. **Wire a front-end switch** (#983, a design call about how presolvers are
    exposed). Both readers already post `Cumulative`.
-4. **Fix the Important note's false alarm** (#1258). Small. An
-   ungrown pair is harmless when both tasks *and every common neighbour of
-   theirs* appear at height ≥ 1 on one donor of capacity ≤ 1. Then it can
-   only grow into that donor's own clique, which is dropped as dominated.
-   Raise the note only when some ungrown pair fails that test, or filter
-   such pairs out of the candidate list before the budget is applied. Checking
-   only that the pair itself lies inside such a resource is not enough (see
-   failure mode 2).
+4. **Fix the Important note's false alarm** (#1258). **Done by #1274, by a
+   different rule.** This item proposed testing whether an ungrown pair, and
+   every common neighbour of theirs, lies at height ≥ 1 on one donor of
+   capacity ≤ 1, and raising the note only when some pair failed that test.
+   Ciaran's rule instead was that a drop by a budget at its default (the
+   paper's) is a `General` note only, and only a budget the caller moved off
+   its default raises `Important`. On `la01` and `ft10` only the `General`
+   note is left. A moved budget raises the note whether or not its drop
+   could matter (see failure mode 2).
 5. **Drop `dropped_subset`, or keep it with the mutation as its fixture, and
    answer #706.** Trivial. No honest run can fire it.
 6. **Accept a posted `Disjunctive` as a capacity-one donor.** Large. It needs a
@@ -1115,10 +1249,11 @@ from pairwise at-most-ones.
   covers the conflict graph, ranking, the three-member floor and #707's
   measurement, dominance, the certificate in three steps, the #666 scaffolding
   deletion with its table, the camouflage mutations, and the Pack/Pack_d
-  cross-check against Sidorov's logs (#708). Two details there predate #1136:
-  it says tasks are keyed by start variable alone, where the key is now
-  `(start, presence)`, and its mutation table lacks `ForgetPresence` and
-  `ClaimHigherMakespanBound`.
+  cross-check against Sidorov's logs (#708). At `0a5b4ec6` two details there
+  predate #1136: it says tasks are keyed by start variable alone, where the
+  key is now `(start, presence)`, and its mutation table lacks
+  `ForgetPresence` and `ClaimHigherMakespanBound`. Both were fixed by #1265
+  after `0a5b4ec6`.
 - [`certified-makespan-bounds.md`](../certified-makespan-bounds.md): the
   makespan argument and the Pack sweep. Until #1265 its argument confined
   every task to `[lo, μ)`, which is the special case (see the makespan
