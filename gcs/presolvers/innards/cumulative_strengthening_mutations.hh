@@ -56,11 +56,10 @@ namespace gcs::innards
         {
         };
 
-        /// Take one more than the largest step the division survives, on the
-        /// first step of each raise. The step lands on a sound but weaker line,
-        /// every later step compounds it, and the row's own `ia` pin is what
-        /// rejects. Needs a raise with a step to spare, and throws rather than
-        /// passing quietly if given one that has none.
+        /// Claim a raised task's coefficient at one more than the strengthened
+        /// capacity, in a raise the rest of the row overshoots. With the task
+        /// active and every other task forced off, the negated claim still
+        /// holds, so the proof by contradiction's closing RUP is rejected.
         struct RaiseTooFast
         {
         };
