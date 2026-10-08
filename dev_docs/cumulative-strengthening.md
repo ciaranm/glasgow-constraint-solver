@@ -158,15 +158,31 @@ derivations `derive_subset_sum_strengthening` chooses between:
 
 The presolver does not choose between them — the utility picks whichever reaches
 the true largest subset sum, which is always at least as strong as rounding, and
-reports which it took in `SubsetSumStrengthening::by_division`. What the
-presolver does is *predict* the choice, using the same test, so that it can
-budget: the dynamic programme costs three flags per state and a state per
-reachable partial sum per item, per time point, and a donor whose derivation
-would exceed `with_dynamic_programming_budget` is passed over entirely rather
-than producing a great deal of proof for a strengthening worth one unit. The
-rounding path is two `pol` steps and is not budgeted. `CumulativeStrengtheningStats`
-counts rows both ways, and the budget fixture asserts the prediction agrees with
-the choice — if it did not, the budget would decline the wrong donors.
+reports which it took in `SubsetSumStrengthening::by_division`.
+`CumulativeStrengtheningStats` counts rows both ways.
+
+The dynamic programme costs three flags per state and a state per reachable
+partial sum per item, at every time point a firing cites, so a donor with many
+items, a large capacity and a long horizon can write a great deal of proof. That
+is **not budgeted** (#1241). There was a budget, which predicted the choice
+above and passed over a donor whose derivation would exceed it, and it ran only
+with proofs on, since with proofs off no derivation happens. So a proofs-on
+solve searched a weaker model than the same solve with proofs off, and it was a
+poor predictor besides: it charged `items · (C + 1)` states per point, which
+scales with the capacity's magnitude where the derivation does not, and summed
+over every point of the window hull where the rows are derived lazily. On seven
+unit tasks with heights `{18, 18, 17, 17, 17, 17, 17}·s` under `50·s`, it
+declined the donor at `s = 20` and the solve took 182 nodes and 8,405 proof
+lines, against 1 node and 3,446 lines strengthened.
+
+Proofs on and off search identically now, even where that makes a proof
+expensive, and it can be. Sixteen unit tasks with unstructured heights in
+`[1000, 60000]` under a capacity of 213,259 have about as many reachable sums as
+the capacity allows; the strengthening takes 6 units off it, and its derivation
+is 767,000 lines (155 MB, 419 s to check), where the budget's decline wrote
+14,000. That is the price of the rule, and the subset-sum capacity limit, below,
+is the one size limit left: it applies either way, and bounds the states per
+time point at `items · (limit + 1)`.
 
 ### Every row lands on the declared capacity
 
@@ -338,8 +354,8 @@ stop being strengthened in silence:
   makes the donor infeasible on its own — its own propagator's business, and
   not something to build a subset sum around. An *optional* task of the same
   shape says only that its presence is false, and is set aside instead.
-- **A capacity too large to subset-sum over.** Unlike everything else here this
-  is not about proof size: `kappa` is found with a bitset over the capacity's
+- **A capacity too large to subset-sum over.** Not about proof size, like
+  everything else here: `kappa` is found with a bitset over the capacity's
   whole range, rebuilt at every time point, and that runs with proofs off too.
   A resource measured in thousandths would spend hundreds of megabytes deciding
   whether there was anything to be had. `with_subset_sum_capacity_limit` is the
@@ -349,8 +365,10 @@ stop being strengthened in silence:
   `InferredDisjunctive` does.
 - **Nothing to gain** — the capacity is already the largest load the tasks can
   reach and no height moves either. The honest and common answer.
-- **The dynamic-programming budget**, and separately **the raise budget** —
-  different costs in different units, so a donor can want one and not the other.
+
+None of these depends on whether a proof is being written. A budget on proof
+size would make a proofs-on solve search a weaker model than a proofs-off one,
+which is why there is none (#1241).
 
 Optional tasks are deliberately **not** on this list. The whole strengthening is
 an argument about the donor's per-time rows, and an optional task's presence is a
