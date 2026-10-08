@@ -84,9 +84,12 @@ constraints and do not restate it.
   faster. The audit's headline is a
   wrong answer: the flow arm binary-searched a cover only the bounds arm
   sorted, so an open constraint with an unsorted cover lost solutions (#1026,
-  fixed by #1030). Thirty rules, all justified, two of them unreachable. The
-  `inverse` audit later found that a constant in `GlobalCardinality`'s array
-  breaks its proofs (#1046).
+  fixed by #1030). Thirty rules, all justified, two of them unreachable. Five
+  proof bugs found since, all at shapes the audit's tests did not post, are
+  fixed: a constant in `GlobalCardinality`'s array (#1046, found by the
+  `inverse` audit; #1187), aliasing in `GlobalCardinality` and `Count` (#1191,
+  #1197, #1201) and a view registered by a later constraint (#1200).
+  Re-audited 2026-10-08.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
