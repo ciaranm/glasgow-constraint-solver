@@ -1,14 +1,40 @@
 # `MinDistance`: the smallest distance between any two selected sites
 
 > **Maturity** production ·
-> **Audited** 2026-09-30 at `c9ceea25` ·
-> **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
-> for what it would file. Already open and touching this family: #833 (the
-> large-domain policy), #944 (interval cardinality instead of an at-most-one
-> per value, which names this family's per-site at-most-ones). Tracked under
-> #871. Since fixed: #1168, the overflows, by #1215 (with #1214 for view
-> offsets), which refuse out-of-range inputs at construction; the overflow
-> text below describes `c9ceea25` (see [Next steps](#next-steps), item 3).
+> **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1168 ·
+> **Open issues** filed by this audit: #1169 (the ladder's build is
+> `Θ(L · n²)` with proofs), #1170 (the matching bound concludes less than its
+> certificate proves), #1171 (`z`'s lower bound is never raised before every
+> position is fixed). **Fixed since the audit**: #1168 (the overflows), by
+> #1215, with #1214 for view offsets: out-of-range inputs are refused at
+> construction; see [Re-audit, 2026-10-08](#re-audit-2026-10-08). Already open
+> and touching this family: #833 (the large-domain policy), #944 (interval
+> cardinality instead of an at-most-one per value, which names this family's
+> per-site at-most-ones). Tracked under #871.
+
+### Re-audit, 2026-10-08
+
+One fix to this family has merged since the audit. The status line and next
+step 3 were brought into line with it on 2026-10-05; this pass does the other
+passages, at `0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1168, distances near `2⁶³` crashed the proof model, `CheckOnly`, and every mode through an offset view on `z` | #1215 (with #1214) | the constructor checks every distance and requirement against `±(2⁶⁰ − 1)` and throws `IntegerOverflow` outside it (`min_distance.cc:40–42`); #1214 refuses a view offset, and a declared domain, outside the same range. The propagators and `define_proof_model` are unchanged. The summary loses its bullet on it; [Semantics](#semantics), [Robustness and limits](#robustness-and-limits)' **Overflow** (now history), [Tests](#tests) and [Known limitations](#known-limitations) follow; [Next steps](#next-steps) item 3 already had. `min_distance.cc`'s lines after the constructor moved down by four, and the present-tense citations of it moved with them; those of `scp_reader.cc` and `names_and_ids_tracker.cc`, moved by other merges, are re-pointed at `0a5b4ec6` too, and the Overflow record's are labelled `c9ceea25`'s |
+
+#1117 (`table`), which the Overflow paragraph compared this to, was closed
+by #1215 too.
+
+**What was measured again**, at `0a5b4ec6` on fataepyc-10, pinned to cores
+32–39 with the malloc thresholds fixed: the inputs of the audit's overflow
+shapes, rebuilt as
+`tmp/fd871-comments-1008/ordsmall/probes/min_distance/refuse.cc` (each is now
+refused, below), and `integer_ranges_test`'s `MinDistance` cases
+(two refusals, and 25 edge shapes, each solved with and without proofs, all
+25 proofs verified; `probes/tests/ir.txt`).
+Nothing else was re-taken: no other figure involves an out-of-range input,
+and the family's code is unchanged apart from the constructor's check.
 
 `MinDistance(x, z, D, R, propagation)` says that `z` is the smallest distance
 `D[x_i, x_j]` over all pairs of positions `i < j`, where each `x_i` picks one
@@ -23,7 +49,7 @@ certified. The design and the derivations are in
 [`min-distance-proofs.md`](../min-distance-proofs.md), which stays as this
 family's long note; this document audits it.
 
-Five things to know before touching it.
+Four things to know before touching it.
 
 - **Its strength is partial by design, and one-sided on `z`.** Before every
   position is fixed, nothing raises `z`'s lower bound, not even to `0`: with
@@ -49,12 +75,6 @@ Five things to know before touching it.
   58% with eight (seeds 1–7), and by under 8% with four; every proof it wrote
   verified. Grids, whose rounded distances are consecutive integers, do not
   change. See [Rule: matching-bound](#rule-matching-bound).
-- **Distances near `2⁶³` crash the proof model** when `z`'s lower bound is
-  negative, and `CheckOnly` crashes on a distance of `2⁶³ − 1` with proofs off.
-  For a plain `z` nothing below `2⁶³ − 2⁶¹` is affected. An offset view on `z`
-  moves the threshold by the offset, and then the propagators crash too, with
-  proofs off and in every mode: `z = w − (2⁶³ − 100)` throws from `D = 100`
-  (see [Robustness](#robustness-and-limits)).
 - **Assertions carry no hint.** The family has no `hints.hh`, so its `a` lines
   at the assertion levels name neither the constraint nor the rule. `Links`
   fails here the generic way, at a backtracking RUP, on about 4% of small
@@ -83,9 +103,15 @@ z = min_{0 ≤ i < j < p} D[x_i, x_j]        and, with R,   D[x_i, x_j] ≥ R_ij
 - **`p ≥ 2`**, else `InvalidProblemDefinitionException`, thrown by `prepare()`
   when the problem is solved, not at `post`. So is a non-square, asymmetric,
   empty or negative `D`, a `D` with a non-zero diagonal, and an `R` that is not
-  `p × p` or has a negative entry above the diagonal (`min_distance.cc:48–85`).
+  `p × p` or has a negative entry above the diagonal (`min_distance.cc:52–89`).
   The test's seven rejection cases cover six of these eight checks, squareness
   twice; an empty `D` and `p < 2` are untested (both throw, checked by hand).
+- **Every distance and requirement must lie in `±(2⁶⁰ − 1)`**, the bounded
+  range of [`integer-ranges.md`](../integer-ranges.md), since #1215: the
+  constructor checks them (`min_distance.cc:40–42`) and throws
+  `IntegerOverflow`, at construction rather than in `prepare()`. `z`'s
+  declared domain, and a view's offset on it, must lie in the same range
+  (#1214).
 - **A position's values outside `0..n−1` are removed**, not rejected:
   `prepare()` pins every `x_i` to `0..n−1` with `define_bound`, which writes a
   range row to the OPB only where the declared domain is wider, and removes the
@@ -109,7 +135,7 @@ z = min_{0 ≤ i < j < p} D[x_i, x_j]        and, with R,   D[x_i, x_j] ≥ R_ij
     to `frontend-support-matrix.md`. `examples/p_dispersion` is the only
     in-tree model.
 
-[^scpmode]: `read_min_distance` (`scp_reader.cc:946`) posts at the default,
+[^scpmode]: `read_min_distance` (`scp_reader.cc:957`) posts at the default,
     `ForwardBound`, whatever wrote the file, as the regular variants do; a
     `PairSupportMatch` model read back from its `.scp` propagates differently.
     Its comment calls `Z` "a lower bound on the pairwise distance between the
@@ -238,9 +264,9 @@ side 100,000, so most but not all distances distinct (`mdroot.cc`):
 square of side 100) the ladder is short: 5,544 lines at `n = 50` with 119
 levels.
 
-**Building it is `Θ(L · n²)`.** `witnesses_at(v)` (`min_distance.cc:226`) scans
+**Building it is `Θ(L · n²)`.** `witnesses_at(v)` (`min_distance.cc:230`) scans
 every candidate pair for the distance `v`, and the ladder calls it once per
-level (`:254`), so the build is quadratic in the pairs when every distance is
+level (`:258`), so the build is quadratic in the pairs when every distance is
 distinct; see [Initialisation](#initialisation-and-global-data).
 
 ### Labels
@@ -390,9 +416,24 @@ is tested (`d3_zero`). Negative distances and requirements are rejected.
   with no pairwise support once the alias is counted (2,000 instances, seed 1).
 - **A constant position** is tested. **An empty `x`** is rejected (`p ≥ 2`).
 
-**Overflow.** For a plain `z`, two shapes throw, both needing a distance
-within `2⁶¹` of `2⁶³`. An offset view on `z` moves both thresholds by its
-offset, and adds a third, with proofs off:
+**Overflow.** Nothing reachable now. Since #1215 a distance or requirement
+outside `±(2⁶⁰ − 1)` is refused at construction, and since #1214 so are a
+view offset and a declared domain outside that range. Every shape below needs
+one of those, and at `0a5b4ec6` each is refused with `IntegerOverflow`: a
+distance of `2⁶³ − 16`, `2⁶³ − 1`, `2⁶³ − 2⁶¹`, `2⁶²` or `2⁶⁰`, a `z` over
+`−2⁶¹..2⁶¹ − 1`, and the views `w − (2⁶³ − 100)` and `w − 2⁶²`, while `2⁶⁰ − 1`
+is accepted (`tmp/fd871-comments-1008/ordsmall/probes/min_distance/refuse.cc`).
+At the edge, `integer_ranges_test` solves two positions over two sites at
+distance `2⁶⁰ − 1` in all five modes, with `z` plain over the whole range or a
+view at either end of it (`w ± (2⁶⁰ − 1)`, `−w ± (2⁶⁰ − 1)`), with and without
+proofs, against brute force, and every proof verifies. The propagators and
+`define_proof_model` did not change, so the shapes would come back if the
+range were widened; [Next steps](#next-steps) item 3 lists their fixes.
+
+The audit's record, at `c9ceea25` (its present tense and line numbers are
+that commit's): for a plain `z`, two
+shapes threw, both needing a distance within `2⁶¹` of `2⁶³`. An offset view on
+`z` moved both thresholds by its offset, and added a third, with proofs off:
 - **`define_proof_model`, when `z`'s lower bound is negative.** The ladder
   writes `[z ≥ t]` for every level above `z_lo`, including levels above `z_hi`,
   and reifying a `≥` literal far above a signed bit encoding overflows (from
@@ -407,8 +448,8 @@ offset, and adds a third, with proofs off:
   `IntegerOverflow` from `:249` under `ForwardBound` and `D = 99` verifies (the
   fact-check's `ov.cc`, re-run here; `D = 1000` throws under `PairSupportMatch`
   too); the fact-check also has `z = w − 2⁶²` throwing at `D = 2⁶²` and not at
-  `1.5 · 2⁶¹`. For a plain `z`, with proofs off, this shape does not throw. The
-  same class as #1117 (`table`).
+  `1.5 · 2⁶¹`. For a plain `z`, with proofs off, this shape did not throw. The
+  same class as #1117 (`table`), also closed by #1215.
 - **`CheckOnly`'s pair bound**, `infer_less_than(z, D[a,b] + 1)`
   (`min_distance.cc:328`), overflows at `D[a,b] = 2⁶³ − 1` once both endpoints
   are fixed, **with proofs off too**. The forward propagator's pin does the
@@ -451,7 +492,7 @@ than `n`.
    at-least-one over the variable's whole definition range when that range is
    at most 100 values, and a cover of its still-possible sites above that
    (#939; `at_least_one_cover_threshold = 100_i`,
-   `names_and_ids_tracker.cc:92`, tested at `:668`). The threshold is on the
+   `names_and_ids_tracker.cc:93`, tested at `:681`). The threshold is on the
    declared range: a position declared over more than 100 values gets the
    cover: any instance whose `x` is declared over more than 100 sites
    (`p_dispersion`'s are, from 101 sites up), and a narrower model whose `x` is
@@ -461,7 +502,7 @@ than `n`.
    form; a 120-site random instance under `PairSupportMatch` writes cover-form
    at-least-ones. The gate is on width, except that a variable with no bits, or
    a view the tracker has not registered, always takes the per-value form
-   (`names_and_ids_tracker.cc:677`, `:690`). The encoding is per level, not per
+   (`names_and_ids_tracker.cc:690`, `:703`). The encoding is per level, not per
    value of `z`.
 4. **The audit lane.** One row, `MinDistance`, `Clean`: two positions over
    `{0, 1}` with a wide `z`, under the default mode
@@ -819,7 +860,12 @@ GCS_TEST_MAX_RECURSIONS=1500 min_distance_test --seed=N`, at `c9ceea25`).
 - **Repeated variables.** No spec aliases a position; this audit's sweep did.
 - **A wide `x`,** which only the clamp would see; and `n` beyond 5, so neither
   the `Θ(L · n²)` build nor the `O(p² · n²)` calls show up as cost.
-- **Distances near `2⁶³`,** which crash (see [Robustness](#robustness-and-limits)).
+- **Distances near `2⁶³`** need no test now: they are refused at
+  construction (#1215). `integer_ranges_test` covers the refusal of a
+  distance one past either end of the range (requirements are checked but
+  have no refusal case), and solves at the largest in-range distance in all
+  five modes, with `z` plain or a view at either end, with and without
+  proofs; see [Robustness](#robustness-and-limits).
 - **Strength.** Nothing checks the `…Match` modes' `z` bound beyond the one
   prototype, and nothing checks `ForwardBound`'s forward checking at all, beyond
   the solutions.
@@ -984,10 +1030,6 @@ propagators are the same with proofs on or off.
 - **With proofs, building the model is quadratic in the site pairs** when
   most distances are distinct: 26 s at 600 sites with 82,426 distinct
   distances.
-- **Distances within about `2⁶¹` of `2⁶³` crash** the proof model for a plain
-  `z`, and `CheckOnly` at `2⁶³ − 1`. An offset view on `z` moves the threshold
-  by its offset, and then the propagators crash too, with proofs off, in every
-  mode.
 - **No frontend reaches it,** and no `cake_pb_cp` rule checks its encoding.
 - **Its assertions carry no hint.**
 
