@@ -202,16 +202,18 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
             continue;
         }
 
-        // A variable length is not a set-aside. It leaves the row untouched ---
-        // no length appears in one --- and costs the *pins* instead: `after` is
-        // then reified on the two-variable `start + length`, which no RUP
-        // reaches from the operands' bounds, so pinning it goes through the
-        // donor's proof-only end proxy and through the line giving that proxy
-        // its lower bound. That line is the donor's to publish, and asking for
-        // it is the whole test: a constant start needs no proxy and publishes
-        // none, and a proof written with assertions on omits the definition
-        // along with everything else it asserts. With no logger there is
-        // nothing to pin and nothing to ask.
+        // A variable length is not on its own a reason to set a task aside. It
+        // leaves the row untouched --- no length appears in one --- and costs
+        // the *pins* instead: `after` is then reified on the two-variable
+        // `start + length`, which no RUP reaches from the operands' bounds, so
+        // pinning it goes through the donor's proof-only end proxy and through
+        // the line giving that proxy its lower bound. That line is the donor's
+        // to publish, and asking for it is the whole test: a constant start
+        // needs no proxy and publishes none, and a proof written with
+        // assertions on omits the definition along with everything else it
+        // asserts. So a task whose start and length both vary is set aside
+        // exactly when the donor published no such line. With no logger there
+        // is nothing to pin and nothing to ask.
         if (logger && ! is_constant_variable(length) && ! is_constant_variable(donor.starts()[i]) &&
             ! logger->names_and_ids_tracker().find_derived_line(
                 donor.constraint_id(), ConstraintProofModelData<Cumulative>::end_lower_bound_role(i))) {

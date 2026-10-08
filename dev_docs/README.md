@@ -266,10 +266,10 @@ library. For an introduction to *using* the solver, start with the top-level
   instead (which is both of Schulz's height rules arriving at the same place),
   why raising a coefficient in cutting planes is a loop rather than one
   division, why the rules are *time-table neutral* and how that turns into a
-  node-for-node soundness tripwire, the `ia` step that pins every row to the
-  declared capacity (and is the only thing that catches a sound derivation of
-  the wrong line), and why the deep-gap fixture everyone quotes cannot be a
-  `Cumulative` instance.
+  soundness tripwire comparing solutions and recursion counts, the `ia` step
+  that pins every row to the declared capacity (and is the only thing that
+  catches a sound derivation of the wrong line), and why the deep-gap fixture
+  everyone quotes cannot be a `Cumulative` instance.
 - [Inferring `Disjunctive` constraints across resources](inferred-disjunctive.md) —
   the `InferredDisjunctive` presolver: conflict cliques spanning several posted
   Cumulatives, posted in derived mode. Covers why the cross-resource case is an
@@ -393,10 +393,10 @@ library. For an introduction to *using* the solver, start with the top-level
   survive because they only remove slack the wrapping RUP replaces. Also covers
   `ParitySystemGathering`, the presolver that collects posted `ParityOdd` and
   Boolean `Equals` / `NotEquals` constraints into per-component systems, why a
-  two-literal donor needs two RUP lines where a chain needs a `red` per step, the
-  measured node-for-node tripwire and the strength differentials that say the
-  gathering buys anything at all, and the two API extensions it forced — a
-  published naming *object* for a family of rows, and a `family` on
+  two-literal donor needs two RUP lines where a chain needs a `red` per step,
+  the measured solution-and-recursion tripwire and the strength differentials
+  that say the gathering buys anything at all, and the two API extensions it
+  forced — a published naming *object* for a family of rows, and a `family` on
   `ProofFlagKey`, without which `v[id][1]` and `x[id][1]` had the same key. Read
   before touching `ParityOdd`'s encoding, whose rows the derivation cites.
 - [`MinDistance`: encoding and proofs](min-distance-proofs.md) — the definitional

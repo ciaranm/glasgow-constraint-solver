@@ -1073,9 +1073,11 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             // the mandatory bounds (lb of the preceder's
                             // position and size, ub of the other's position)
                             // is infeasible, so four pols force all four flags
-                            // false under the reason and the 4-way separation
-                            // clause unit-fails in the framework's closing
-                            // reason-wrapped RUP.
+                            // false under the reason and the separation clause
+                            // unit-fails in the framework's closing
+                            // reason-wrapped RUP. That is the 4-way clause, plus
+                            // an "absent" disjunct per optional rectangle, whose
+                            // presence literal is then in the reason.
                             emit_before_pol(before_x, i, j, lb_lit(xs[i]), lb_lit(width_var[i]), ub_lit(xs[j]));
                             emit_before_pol(before_x, j, i, lb_lit(xs[j]), lb_lit(width_var[j]), ub_lit(xs[i]));
                             emit_before_pol(before_y, i, j, lb_lit(ys[i]), lb_lit(height_var[i]), ub_lit(ys[j]));
@@ -1137,9 +1139,11 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // the free-axis dichotomy is the 1D chain step --
             // the impossible free direction refuted from the pushed bound, the
             // surviving direction folded onto the target order literal's
-            // definition row -- so with the escapes pinned the 4-way clause
-            // forces the target in the framework's closing RUP. One step
-            // regardless of the blocker's size.
+            // definition row -- so with the escapes pinned the separation
+            // clause forces the target in the framework's closing RUP. That
+            // is the 4-way clause, plus an "absent" disjunct per optional
+            // rectangle, whose presence literal reason_for then carries. One
+            // step regardless of the blocker's size.
             //
             // free_is_x selects which axis we push on (the other is the forced
             // axis they overlap on). i is pushed, j blocks.

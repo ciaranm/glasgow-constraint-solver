@@ -127,6 +127,12 @@ covers. The budget is not what stops us on Pack or Pack_d either way, so covers
 his early stop would have abandoned cost us nothing there — which leaves only
 the unbudgeted direction, where lifting them can only help.
 
+That is Pack and Pack_d only. Measured on 2026-10-04, 25 of the la_x instances,
+those with 300 to 675 tasks, exhaust the 20,000 calls, so on that collection the
+budgeted direction is live. On PSPLib J90 and J120 it is the lifting
+programmes' state budget that binds instead, and changes the cuts posted
+(#1255).
+
 Implementing it verbatim would be wrong: the estimate is an upper bound only
 while the unlifted coefficients stay at most one, which holds at `π₀ = 1` and
 not in general — `lhs[next] = rhs - v*` can reach `rhs`. Crediting each unlifted

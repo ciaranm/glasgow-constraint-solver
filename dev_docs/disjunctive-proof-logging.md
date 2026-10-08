@@ -1509,7 +1509,9 @@ The same recipe lifts one dimension up to non-overlapping rectangles
 declarative OPB is the `diffn` definition: for each pair and axis `d`,
 `before_{i,j,d} ⇔ pos_{i,d} + size_{i,d} ≤ pos_{j,d}`, plus a single
 **4-way separation clause** per pair
-`before_{i,j,x} + before_{j,i,x} + before_{i,j,y} + before_{j,i,y} ≥ 1`.
+`before_{i,j,x} + before_{j,i,x} + before_{i,j,y} + before_{j,i,y} ≥ 1`
+(6-way with optional rectangles; see below, where a present rectangle's
+presence literal goes into the reason).
 Again this is all the scaffolding there is; the justifications are the
 same `emit_before_pol` shape per axis:
 

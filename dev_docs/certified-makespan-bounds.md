@@ -45,13 +45,19 @@ tasks that precedences keep away from the origin gets a better bound, and every
 time point before that window is a unit of supply the resource never had to
 provide.
 
-**It can be smaller,** or absent. The lemma speaks only about tasks with a
-constant length and height and a start that is a plain variable (see
-`prepare_cumulative_overload_check`); a task it cannot speak about carries none
-of the energy `L` counted. And a window narrow enough to exclude a task's whole
-duration gets only the part that fits — which is why the search starts from what
-the model already implies rather than from the makespan variable's declared
-lower bound. That distinction is not cosmetic: initialisers run before anything
+**It can be smaller,** or absent. The bound speaks only about tasks with a
+constant length and a start that is a plain variable. The window-energy lemma
+itself has counted a variable length at the duration it guarantees since #689
+(see `prepare_cumulative_overload_check`), but this argument builds its rows
+once at the root off a length that has to be a number, so a variable-duration
+task takes part in everything else the derived constraint does and stays out of
+the makespan argument (`install_derived_cumulative`). A height is always a
+number by then: a donor's variable height reaches the derived constraint as the
+demand it guarantees, `lb(h)`, and only that much of it is counted. A task the
+bound cannot speak about carries none of the energy `L` counted. And a window
+narrow enough to exclude a task's whole duration gets only the part that fits —
+which is why the search starts from what the model already implies rather than
+from the makespan variable's declared lower bound. That distinction is not cosmetic: initialisers run before anything
 has propagated, so the makespan's own lower bound is still zero at that point,
 and without it the search settles for a window too narrow to hold every task.
 Sound, and a weaker number than the constraint deserves.
