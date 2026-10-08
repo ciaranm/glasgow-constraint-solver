@@ -335,8 +335,8 @@ namespace
         // on the target is the per-time one, so the conversion is between two
         // bit sums, and it is one `rup` per bit. That is what defining both
         // families as *conjunctions* buys. Bit for bit, cc_{i,t,k} is
-        // `cact_{i,t} /\ bit_k(h_i)` and scc_{i,j,k} is `sact_{i,j} /\
-        // bit_k(h_i)`, over the same height bit, so
+        // `cact_{i,t} /\ bit_k(h_i)` and scc_{i,j,k} is
+        // `sact_{i,j} /\ bit_k(h_i)`, over the same height bit, so
         //
         //     ~guard  \/  ~cc_{i,t,k}  \/  scc_{i,j,k}
         //
