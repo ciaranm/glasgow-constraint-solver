@@ -262,8 +262,9 @@ namespace gcs
      * on each separation clause the rectangle takes part in, and nowhere else,
      * so a rectangle posted with <em>presences[i] = 1</em> and one posted
      * without presences at all produce the same OPB. This is the 1D form's
-     * treatment one dimension up: there the 2-way clause becomes 4-way, here
-     * the 4-way clause becomes 6-way.
+     * treatment one dimension up: there the 2-way clause becomes 3- or 4-way,
+     * here the 4-way clause becomes 5- or 6-way, by one disjunct per optional
+     * rectangle in the pair.
      *
      * Propagation is pairwise 2D time-table strength (the analogue of 1D
      * Disjunctive one dimension up), in its forbidden-region form: a pair

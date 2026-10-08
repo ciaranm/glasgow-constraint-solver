@@ -2240,10 +2240,12 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 }
             }
 
-            // Strict-mode zero-area rectangles: the mandatory-box pass skips
-            // them (their box is empty), but the declarative ≤-clause still
-            // forbids a zero-area rectangle sitting inside another. Catch that
-            // at an all-fixed leaf, where the encoded clause alone is RUP.
+            // Strict-mode zero-area rectangles: the declarative ≤-clause
+            // forbids a zero-area rectangle sitting inside another. The
+            // pairwise pass used to skip them, their mandatory box being empty;
+            // its forbidden-region test (#1250) no longer does, but this stays
+            // as the backstop. Catch it at an all-fixed leaf, where the encoded
+            // clause alone is RUP.
             // (Non-strict mode never has zero-area rects in active_rects.)
             // (Only meaningful in strict mode; non-strict zero-area rectangles
             // do not constrain anything, so they are never checked here.)

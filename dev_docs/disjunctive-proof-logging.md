@@ -1512,19 +1512,20 @@ declarative OPB is the `diffn` definition: for each pair and axis `d`,
 `before_{i,j,x} + before_{j,i,x} + before_{i,j,y} + before_{j,i,y} ≥ 1`
 (one more disjunct per optional rectangle, so 5-way with one and 6-way with
 both; see below, where a present rectangle's presence literal goes into the
-reason).
+reason). Those counts leave out the non-strict `zw`/`zh` escapes, which
+the pairwise justifications below pin false before they use the clause.
 Again this is all the scaffolding there is; the justifications are the
 same `emit_before_pol` shape per axis:
 
 - **Contradiction** (the pair overlaps on both axes): on an axis, write
   `lst = ub(pos)` and `eet = lb(pos) + lb(size)`; the pair overlaps
   there when `lst_i < eet_j` and `lst_j < eet_i`, which is exactly when
-  neither before flag on that axis survives its pol. Neither rectangle
-  needs a mandatory part of its own for that; the forbidden-region form
-  (#1250) also catches one whose range of placements covers the other's
-  mandatory part. Four pols — one per axis and direction — force all
-  four flags false under the reason; the separation clause unit-fails
-  in the closing RUP.
+  neither before flag on that axis survives its pol. One of the two
+  must have a mandatory part there, but the other need not: the
+  forbidden-region form (#1250) also catches a rectangle whose range of
+  placements covers the other's mandatory part. Four pols — one per
+  axis and direction — force all four flags false under the reason;
+  the separation clause unit-fails in the closing RUP.
 - **Bound push** (a forced overlap on one axis pushes the other):
   the pair overlaps on the *forced* axis, so two pols refute both
   forced-axis flags exactly as in the contradiction; the *free* axis

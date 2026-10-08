@@ -755,9 +755,12 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
     // towards sufficiency, which is why the checkpoints are over _active_tasks
     // and not over every task.
     //
-    // No rule cites these rows directly. Under StartCheckpoint every per-time
-    // capacity row a rule cites is derived from them in the proof, by
-    // innards::recover_cumulative_capacity_row. BothRecovering checks each
+    // Under StartCheckpoint every per-time capacity row a rule cites is
+    // derived from them in the proof, by
+    // innards::recover_cumulative_capacity_row. The run steps (#1237) of a
+    // time-table bound push and of a presence falsification are the only
+    // citers of a checkpoint row directly, each against its own task's row.
+    // BothRecovering checks each
     // recovered row against the one the time-indexed block still writes,
     // where the recovery applies at all: over a variable height it declines
     // under that arm (cumulative_checkpoint_recovery_applies), and rules cite
@@ -1260,13 +1263,15 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
     const auto & capacity_lines = inputs.capacity_lines;
 
     // Where a citer gets the row saying the load at `t` is within the capacity.
-    // Under StartCheckpoint, the shipped encoding, it is derived from the
-    // start-checkpoint rows (#780) --- once per time point, cached, and
-    // reason-free at Top, so the second citer of a point pays nothing and
-    // backtracking does not lose it. Under a test arm the recovery can
-    // decline (BothRecovering over a variable height; see
-    // cumulative_checkpoint_recovery_applies), and then the OPB row the
-    // time-indexed block wrote is what is left.
+    // For a posted Cumulative under StartCheckpoint, the shipped encoding, it
+    // is derived from the start-checkpoint rows (#780) --- once per time point,
+    // cached, and reason-free at Top, so the second citer of a point pays
+    // nothing and backtracking does not lose it. Under a test arm the recovery
+    // may not run: TimeIndexed never asks for it, and BothRecovering declines
+    // over a variable height (see cumulative_checkpoint_recovery_applies), and
+    // then the OPB row the time-indexed block wrote is what is left. A
+    // constraint with no rows of its own, a published projection or a derived
+    // Cumulative, takes the last two branches below.
     //
     // The time-table family goes through this --- the overflow contradiction,
     // both bound pushes and the height rule --- and so do the overload check's

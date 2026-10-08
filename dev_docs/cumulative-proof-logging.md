@@ -84,7 +84,9 @@ That was the time-indexed encoding, and it is no longer what the OPB holds.
 Since #780 the only encoding `Cumulative` ships is the start-checkpoint one: the
 per-`(i, t)` flags are defined inside the proof when something first cites them,
 and each `C_t` is derived in the proof from the start-checkpoint rows rather
-than written to the OPB. The inferences below cite the same flags and rows;
+than written to the OPB. The inferences below cite the same flags and rows,
+and the run steps (#1237) of a bound push or a presence falsification also
+cite that task's own start-checkpoint row;
 [The start-checkpoint encoding, beside the time-indexed one
 (#780)](#the-start-checkpoint-encoding-beside-the-time-indexed-one-780) says how
 they come to exist.

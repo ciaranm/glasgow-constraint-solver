@@ -216,9 +216,14 @@ same day with the visited-cover rule removed (issue #726), both with VeriPB
 they have not been re-measured since. Every row a derived cut cites from a
 posted `Cumulative` donor is now recovered from that donor's checkpoint block in
 the proof (a `Disjunctive2D` projection donor's come from its comparator network
-instead), and that made these certificates much larger and much slower to
-check: on `pack001`, #943 alone took VeriPB from 0.79 s to 28.4 s. Issue #1254
-has the measurements.
+instead). At first that made these certificates much larger and much slower to
+check: on `pack001`, #943 alone took VeriPB from 0.79 s to 28.4 s (#1254). The
+recovery chain (#1290) brought them back down, though only the
+`--infer-cumulative` stage has been re-measured, and not as the sweep below
+was run: refuting each instance's certified bound at `B - 1` now verifies in
+119 s in all over Pack's 55 instances, and in at most 222 s on Pack_d's 50. See
+"Recovering `C_t` from `C_{t-1}`: the chain (#1254)" in
+[`cumulative-proof-logging.md`](cumulative-proof-logging.md).
 
 Over both collections in all three stages — 330 runs, no failures — **106 of the
 110 instances get a certified bound**, 105 of them beating the critical path, and

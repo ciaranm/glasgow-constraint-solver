@@ -390,12 +390,16 @@ asserts a non-zero restriction count so it cannot quietly stop covering them.
 start-checkpoint the only encoding `Cumulative` writes, and they have not been
 re-measured since. Every row a derived cut cites from a posted `Cumulative`
 donor is now recovered from that donor's checkpoint block in the proof (a
-`Disjunctive2D` projection donor's come from its comparator network instead), at
-about 7,200 lines a recovery on `pack001`, and
-on that instance #943 alone took the certificate's checking time from 0.79 s to
-28.4 s. Issue #1254 has the measurements. So the judgement below, that proof
-size and checking time are not demonstrably a problem, is a judgement about the
-numbers as they were then.
+`Disjunctive2D` projection donor's come from its comparator network instead).
+At first that cost about 7,200 lines a recovery on `pack001`, and on that
+instance #943 alone took the certificate's checking time from 0.79 s to 28.4 s
+(#1254). The recovery chain (#1290) brought it back down: `pack001` under
+`--infer-cumulative --deadline 20 --prove` now checks in 0.64 s, and all 55 Pack
+refutations verify in 119 s; see "Recovering `C_t` from `C_{t-1}`: the chain
+(#1254)" in [`cumulative-proof-logging.md`](cumulative-proof-logging.md). The
+judgement below, that proof size and checking time are not demonstrably a
+problem, rests on the August figures, which have not been re-taken against the
+chain.
 
 Measured, because the estimate that nearly sank this was wrong in both directions
 and the two errors very nearly cancelled. Over a single resource one derived row

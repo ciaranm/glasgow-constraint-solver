@@ -50,8 +50,10 @@ namespace gcs
      * Time-tabling and pairwise detectable precedences are on by default, and
      * every other rule is off. The direction switches (\ref edge_finding_lb,
      * \ref edge_finding_ub, \ref not_first, \ref not_last) and \ref
-     * overload_cache_bridge default to true, but do nothing unless the rule
-     * they belong to is on. Turning one off weakens propagation but never
+     * overload_cache_bridge default to true, but do nothing unless a rule that
+     * uses them is on: the bridge serves edge-finding, both not-first /
+     * not-last detections, the set form of detectable precedences and the
+     * overload check. Turning one off weakens propagation but never
      * changes the solutions found, and never changes the OPB encoding: these
      * select propagation strength only, and exist so that a test can attribute
      * an inference to the rule that made it (and so that a fixture can show a
