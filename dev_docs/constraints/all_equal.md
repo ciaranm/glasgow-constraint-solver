@@ -1,51 +1,72 @@
 # `AllEqual`: every variable in an array takes the same value
 
 > **Maturity** production ·
-> **Audited** 2026-09-30 at `c9ceea25` ·
-> **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
-> for what it would file, the first of them a wrong-answer bug. Already open
-> and touching this family: #833 (the large-domain policy), #868
+> **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1153 ·
+> **Open issues** filed by this audit: #1154 (a repeat through an offset is
+> slow to fail, and one through an opposite-sign view is not `bounds(Z)`).
+> **Fixed since the audit**: #1153 (wrong answers: the propagator disabled
+> itself too early), by #1180; see [Re-audit, 2026-10-08](#re-audit-2026-10-08).
+> Already open and touching this family: #1160 (the state layer's interval
+> scans start from the front), #833 (the large-domain policy), #868
 > (cross-solver comparisons; this document gives one, by hand). Tracked under
 > #871.
+
+### Re-audit, 2026-10-08
+
+The audit's wrong-answer bug is fixed. This pass brings the text into line
+with the fix at `0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1153, `AllEqual` disabled itself when `vars[0]` was single-valued after a call | #1180 | the pass disables only when the entry bounds meet, `lo == hi` (`all_equal.cc:239–247`), the fix this document proposed; the class comment now says "stronger per call" and "At its fixpoint it is GAC on distinct variables" (`all_equal.hh:14–22`); `all_equal_test` gains `run_disable_test` and `run_search_holes_test`, and MiniZinc the `minizinc-allequal-search-holes` lane. The summary loses its bullet on the bug; [Cake conformity](#cake-conformity), the [propagator inventory](#propagator-inventory) and its self-disabling paragraph, [Robustness and limits](#robustness-and-limits), rule 1's **Strength**, [Tests](#tests), [Proof-logging gaps](#proof-logging-gaps), [Known limitations](#known-limitations) (the bug's record kept there as history) and [Next steps](#next-steps) items 1 and 4 follow |
+
+#1154's behaviour is unchanged: `{x, x + 1}` still takes W/2 calls to fail.
+
+**What was measured again**, at `0a5b4ec6` on fataepyc-10, pinned to cores
+32–39 with the malloc thresholds fixed, with the audit's probes rebuilt
+against main (`tmp/fd871-comments-1008/ordsmall/probes/all_equal/`):
+
+- the root probe `aecheck.cc`, every mode, seeds 1 and 2: each count is
+  identical to the fix build's at `c9ceea25`;
+- `aliaswide.cc`'s repeat shapes at W = 1,000 and 10⁵, without proofs, and
+  `disable.cc`'s cases `a` to `c` and `e` to `j`, each with a VeriPB-checked
+  proof: counts identical to the fix build's;
+- `searchfuzz.cc`, seeds 1 and 2, 3,000 models each in all four modes
+  (interval and holey starting domains, in-order and default search): no
+  wrong count in 24,000;
+- `mzn/small3.mzn` and `mzn/t437i.mzn` on 2.9.7 and 2.10.1, and
+  `xcsp/wrong.xml` and `scp/wrong.scp` with verified proofs;
+- `all_equal_test`'s run, proof and cap counts, both lanes
+  (`probes/tests/ae.*.txt`).
+
+Not re-taken: the CPU and proof tables, the profile, the corpus figures, and
+the multi-hop proof checks (`probes/chainrup.cc`, `probes/proofz.cc`, the
+fact-check's `chainfuzz`), all from `c9ceea25` or the fix build on it. The
+CPU table's "fixed" column is that fix build, which is the change #1180
+landed, not `0a5b4ec6`.
 
 `AllEqual(vars)` says every variable in `vars` takes the same value. It is one
 class with one propagator. The encoding is the chain of `n − 1` consecutive-pair
 equalities. The propagator intersects every domain in one call: first the
 bounds, then, if any domain has a hole, the values themselves.
 
-Four things to know before touching it.
+Three things to know before touching it.
 
-- **It gives wrong answers.** At the end of each call the propagator disables
-  itself if `vars[0]` is single-valued. That test comes *after* its own pruning,
-  but the bounds pass only intersects with the bounds the variables had at
-  entry. `vars[0]` can become single-valued during the call while another
-  position is left unequal to it: holding a different value, or still more
-  than one. The constraint is then switched off with its variables unequal.
-  On distinct variables, or plain repeats, that needs a hole in `vars[0]`
-  inside the entry bounds and no hole left after the bounds pass (otherwise
-  the hole pass would equalise everything). `AllEqual{x, y}` with
-  `x ∈ {1, 3}` and `y ∈ {2, 4}` has no solution, and the solver reports
-  `x = 3, y = 2`. A repeat through an offset or an opposite-sign view needs
-  neither condition: either pass can fix `vars[0]` through its other
-  occurrence, as in `{x, y, x + 1}` or `{x, y, 2 − x}` over intervals. The bug
-  is reachable from the C++ API, the `.scp` reader, XCSP3 and, under search,
-  from MiniZinc. A proof-logged run catches it, because VeriPB rejects the
-  `solx` line. The fix is one line, tested; see
-  [Known limitations](#known-limitations).
-- **Apart from that bug, it is generalised arc consistent on distinct
-  variables**, including views, constants and holes, and on a same-sign
-  repeat. The one exception is an opposite-sign repeat, `{x, c − x}`, which
-  is not even `bounds(Z)`. A same-sign repeat with different offsets, as in
-  `{x, x + 1}`, loses no strength but is slow: it is unsatisfiable, and the
-  propagator takes W/2 calls to notice.
+- **It is generalised arc consistent on distinct variables**, including
+  views, constants and holes, and on a same-sign repeat. The one exception
+  is an opposite-sign repeat, `{x, c − x}`, which is not even `bounds(Z)`. A
+  same-sign repeat with different offsets, as in `{x, x + 1}`, loses no
+  strength but is slow: it is unsatisfiable, and the propagator takes W/2
+  calls to notice.
 - **Its holes matter, and it says so.** It triggers `on_change` on every
   variable and reads every hole, so it keeps other constraints' interior
   pruning alive on its variables.
 - **It is no faster than `n − 1` `Equals`.** On an identical enumeration
   (holey domains, the same tree, no failures) it makes 4.0 to 15.0 times fewer
   propagator calls than the pairwise chain, yet takes from about the same time
-  to 7% *longer*. The class comment's "strictly stronger per pass" is true of
-  propagator calls, not of time. Gecode's `rel(x, IRT_EQ)` is 4.6 to 10.5
+  to 7% *longer*. The class comment's "stronger per call" (`all_equal.hh:16`) is
+  true of propagator calls, not of time. Gecode's `rel(x, IRT_EQ)` is 4.6 to 10.5
   times faster.
 
 ## What it is
@@ -112,7 +133,8 @@ the view's sign or offset. Checked:
 - `AllEqual{x, y + 1, −z + 5}` over `0..6` enumerates its 5 solutions with a
   verifying proof (`tmp/fd-small/all_equal/probes/fam.cc`, mode `views`);
 - 300 random instances with `±1` views, chains of 2 to 8 and holey domains up
-  to 121 wide all verify (`probes/proofz.cc`, on the fix build below);
+  to 121 wide all verify (`probes/proofz.cc`, on the fix build below, which
+  is `c9ceea25` with the change #1180 landed);
 - the test's `view_mixed` lane runs every interval shape with views mixed in.
 
 ### Reification
@@ -182,10 +204,12 @@ labels. `scp_chain_all_equal_sat` (three variables over `0..3`) and
 chain, with `opbdiff` matching every row
 (`verified_encodings/scp_cases/CMakeLists.txt:94–103`, run at `c9ceea25`).
 
-Neither case has a hole, so neither reaches the wrong-answer bug. On
+Neither case has a hole, so neither reached the wrong-answer bug (#1153). On
 `tmp/fd-small/all_equal/scp/wrong.scp` (`x ∈ {1, 5}` through an `in`,
-`y ∈ 0..3`) the chain fails at its step 3: VeriPB rejects the solver's proof
-against cake's OPB. With the fix, it passes.
+`y ∈ 0..3`) the chain failed at its step 3 at `c9ceea25`: VeriPB rejected the
+solver's proof against cake's OPB. With the fix #1180 landed, it passed. At
+`0a5b4ec6` the solver gives the one solution, `x = y = 1`, and VeriPB verifies
+its proof against the solver's own OPB; the chain was not re-run.
 
 ### Proof-time state
 
@@ -213,7 +237,7 @@ no initialiser, and nothing is computed once.
 
 | Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
 |---|---|---|---|---|---|---|
-| the intersection pass | `on_change`, every variable | derived: **every variable** | 1, 2, 3, 4 | always, for two or more variables | never claims; is a fixpoint on intervals, not over holes | yes, when `vars[0]` is single-valued after the call; **wrongly**, see below |
+| the intersection pass | `on_change`, every variable | derived: **every variable** | 1, 2, 3, 4 | always, for two or more variables | never claims; is a fixpoint on intervals, not over holes | yes, when the entry bounds meet (`lo == hi`); see below |
 
 **`on_change` is the honest trigger.** The hole pass reads every domain's holes
 and removes each hole from every other variable, so a hole anywhere can give it
@@ -230,12 +254,15 @@ every variable ends at `[lo, hi]`. The engine calls it again anyway, since
 its own changes wake it. That is 1.38 to 1.45 of its calls per search node
 on the benchmark below.
 
-**Self-disabling, and the bug.** The pass ends with
-`if (state.has_single_value(vars[0])) return DisableUntilBacktrack`
-(`all_equal.cc:242`). Its comment says the chain equalities "will have
-propagated that value to every other var". They have not, when `vars[0]`
-became single-valued during this call. See [Known
-limitations](#known-limitations).
+**Self-disabling.** The pass ends with
+`if (lo == hi) return DisableUntilBacktrack` (`all_equal.cc:246`). `lo` and
+`hi` are the bounds taken at entry, so the bounds pass has just pinned every
+position to `lo`, or contradicted, whatever the aliasing. The comment
+(`all_equal.cc:239–245`) says why the old test was wrong. Until #1180 the pass
+tested `state.has_single_value(vars[0])` after both passes, but either pass
+can fix `vars[0]` part-way through while another position is left unequal to
+it, and the constraint was then switched off with its variables unequal
+(#1153; the record is under [Known limitations](#known-limitations)).
 
 ### Mutable state and incrementality
 
@@ -285,23 +312,23 @@ start anywhere in `−3..5`, and the root probe's domains span `−3..4`.
 **Degenerate shapes.**
 
 - *Empty, singleton, all constant:* covered by the test (#254).
-- *A plain repeat* (`{x, y, x}`) is harmless. With the fix below, the root
-  probe (`probes/aecheck.cc`, mode `alias`) finds GAC on all 6,000 random
-  aliased instances, seeds 1 and 2. On the current code, 1 and 8 of them stop
-  short of GAC, because of the bug.
+- *A plain repeat* (`{x, y, x}`) is harmless. The root probe
+  (`probes/aecheck.cc`, mode `alias`) finds GAC on all 6,000 random aliased
+  instances, seeds 1 and 2, at `0a5b4ec6`. At `c9ceea25`, before #1180, 1 and
+  8 of them stopped short of GAC, because of the bug.
 - ***A same-sign repeat with different offsets costs its width.*** `{x, x + 1}`
   is unsatisfiable, and nothing notices at once. Each call moves both of `x`'s
   bounds in by one, until the domain empties.
-  - With the fix, over `x ∈ 0..W`, `{x, x + 1}` and `{x, y, x + 1}` take
-    W/2 + 1 propagations to fail (50,001 at W = 10⁵), and `{x, x + 2}` takes
-    W/4 + 1 (25,001) (`probes/aliaswide.cc`).
-  - **On the current code it is worse: at even W it gives wrong answers.**
-    After W/2 calls, `x` is fixed at W/2 mid-call. The propagator disables
-    itself, and `{x, x + 1}` reports every value of the free `y` as a
-    solution: 100,001 of them at W = 10⁵. At odd W the domain empties first,
-    and the answer is right.
+  - Over `x ∈ 0..W`, `{x, x + 1}` and `{x, y, x + 1}` take W/2 + 1
+    propagations to fail (50,001 at W = 10⁵), and `{x, x + 2}` takes
+    W/4 + 1 (25,001) (`probes/aliaswide.cc`, at `0a5b4ec6`).
+  - **Before #1180 it was worse: at even W it gave wrong answers.** After
+    W/2 calls, `x` was fixed at W/2 mid-call, the propagator disabled itself,
+    and `{x, x + 1}` reported every value of the free `y` as a solution:
+    100,001 of them at W = 10⁵ on `c9ceea25`. At odd W the domain emptied
+    first, and the answer was right.
   - The root probe's `aliasoffs` mode (repeats with `+1` views and offsets
-    in `−2..2`) finds the fix GAC on all 6,000 instances, with every
+    in `−2..2`) finds GAC on all 6,000 instances at `0a5b4ec6`, with every
     unsatisfiable one failed at the root.
 - ***An opposite-sign repeat is not `bounds(Z)`.*** `{x, c − x}` forces
   `2x = c`, but the bounds pass sees two variables with the same bounds and
@@ -312,16 +339,17 @@ start anywhere in `−3..5`, and the root probe's domains span `−3..4`.
     `y`).
   - The unsatisfiable `{x, W + 1 − x}` takes 100,001 recursions to refute at
     W = 10⁵.
-  - With the fix, the root probe's `aliasviews` mode (`±1` views over
-    repeated variables) finds `bounds(Z)` failing on 455 and 446 of 3,000
-    instances (seeds 1 and 2), and 293 and 318 unsatisfiable instances not
-    failed at the root. On the current code, with the bug on top, it is 871
-    and 842, and 679 and 694.
-  - With the fix it stays sound: once `x` is fixed, `lo > hi` and the pass
-    contradicts. On the current code the two-position `{x, c − x}` is sound
-    too, but add a third position and it gives wrong answers: `{x, y, 2 − x}`
-    over `x ∈ 0..3`, `y ∈ 1..5` reports `(1, 1)` and `(1, 2)`, where only the
-    first is a solution (see [Known limitations](#known-limitations)).
+  - The root probe's `aliasviews` mode (`±1` views over repeated variables)
+    finds `bounds(Z)` failing on 455 and 446 of 3,000 instances (seeds 1 and
+    2), and 293 and 318 unsatisfiable instances not failed at the root, at
+    `0a5b4ec6`. At `c9ceea25`, with the bug on top, it was 871 and 842, and
+    679 and 694.
+  - It stays sound: once `x` is fixed, `lo > hi` and the pass contradicts.
+    Before #1180 the two-position `{x, c − x}` was sound too, but a third
+    position gave wrong answers: `{x, y, 2 − x}` over `x ∈ 0..3`, `y ∈ 1..5`
+    reported `(1, 1)` and `(1, 2)` on `c9ceea25`, where only the first is a
+    solution; at `0a5b4ec6` it reports `(1, 1)` alone (`probes/disable.cc`,
+    case `j`).
 - *Front ends:* MiniZinc cannot produce a view, so `all_equal([x, x + 1])`
   arrives with an auxiliary variable and an `int_lin_eq`. It fails correctly,
   in 1,001 propagations over `0..1000`, as the two constraints hand the bound
@@ -454,19 +482,22 @@ literal in the clause names.
   largest lower bound at entry.
 - **Fires when** — any variable changes, in the bounds pass.
 - **Strength** — `GAC` on distinct variables, together with rules 2 to 4,
-  **once the entailment test is fixed**. With the fix, the root probe
+  since #1180 fixed the entailment test. At `0a5b4ec6` the root probe
   (`probes/aecheck.cc`) finds GAC on every instance:
   - 6,000 each (seeds 1 and 2) with distinct plain variables, with constant
     positions, with plain repeats, with `±1` views and with same-sign
     offset repeats;
   - holes in every mode.
 
-  On the current code the same probe finds GAC failing on 9 and 12
+  At `c9ceea25`, before #1180, the same probe found GAC failing on 9 and 12
   distinct-variable instances and on 97 and 96 with views, every one
   through the bug. An opposite-sign repeat is not `bounds(Z)`; see
   [Robustness](#robustness-and-limits). `all_equal_test` also checks GAC at
-  every node. Its initial domains are intervals, apart from two fixed holey
-  shapes, but its brancher makes holes: `reject_random_interval` rejects an
+  every node. Its initial domains are intervals, apart from five fixed holey
+  shapes (`run_holes_test`, `run_mixed_witness_test`, and since #1180
+  `run_disable_test`'s `holey_first_unsat`, `holey_first_sat` and
+  `holey_first_three`, `all_equal_test.cc:492–494`), but its brancher makes
+  holes: `reject_random_interval` rejects an
   interior interval, so later nodes see holey domains. A probe with the same
   branching pair (`variable_order::random(p, s)`,
   `value_order::reject_random_interval(s + 1)`) on three variables in `0..3`
@@ -609,53 +640,70 @@ literal in the clause names.
     lane only;
   - the #254 collections (empty, single, constant) and five duplicate shapes,
     under plain `solve_for_tests`, so enumeration and the proof but no
-    consistency check.
+    consistency check;
+  - since #1180, bare lane only, `run_disable_test`
+    (`all_equal_test.cc:330`, called at 492–507): brute-forced shapes whose
+    positions are `±var + offset` over listed domains. `holey_first_unsat`,
+    `holey_first_sat` and `holey_first_three` (`vars[0]` holey at the root)
+    run under `solve_for_tests_checking_gac`; `offset_repeat` and
+    `offset_repeat_holey` (`{x, y, x + 1}` over intervals and with
+    `x ∈ {−1, 0, 1, 2, 4, 5}`), `negated_repeat` (`{x, y, 2 − x}`) and
+    `{x, x + 1}` with a free `y` over `0..W` at W = 2, 10 and 11 (11 is the
+    control the old code passed) run as enumeration and proof only;
+  - since #1180, bare lane only, `run_search_holes_test` (`:368`, called at
+    509–513): the audit's search-fuzz trials 437 and 933 and the MiniZinc
+    model, with `NotEquals` and `LinearLessThanEqual` beside the `AllEqual`,
+    under a fixed `in_order` / `smallest_first` branching, since the harness's
+    random brancher may not reach the bug. It calls `solve_with` directly, so
+    it is enumeration and proof only, and the runtime caps do not apply.
 
-  VeriPB runs when it is on the path: 35 proofs in the bare lane and 22 in
-  `view_mixed` at `--seed=1`. The search is the tests' random brancher,
-  seeded (`--seed`).
+  VeriPB runs when it is on the path: 47 proofs in the bare lane and 22 in
+  `view_mixed` at `--seed=1` (35 and 22 at `c9ceea25`; all verify at
+  `0a5b4ec6`). The search is the tests' random brancher, seeded (`--seed`),
+  except in `run_search_holes_test`.
 - **`scp_chain_all_equal_{sat,unsat}`:** see [Cake
   conformity](#cake-conformity).
 - **MiniZinc:** `allequaltest.mzn`, three variables over `1..3`, compared
-  against the reference solver.
+  against the reference solver; and since #1180 `allequalsearchholes.mzn`
+  (lane `minizinc-allequal-search-holes`, `minizinc/CMakeLists.txt:497`, with
+  `--fzn-count 1 glasgow_all_equal_int` and `--reference-std`), which is this
+  document's `mzn/small3.mzn`: 8 solutions, where the bug gave 9.
 - **XCSP3:** `all_equal.xml`, three variables over `0..2`.
 - **Audit lane:** the two rows above.
 
-**Runtime caps.** No lane sets or clears one, and the default caps **cannot
-fire**: the largest expected solution count is 11, and no run gets anywhere near
-1,500 recursions (`GCS_TEST_MAX_SOLUTIONS=300 GCS_TEST_MAX_RECURSIONS=1500
+**Runtime caps.** No lane sets or clears one, and the default caps **do not
+fire**: none of 94 bare runs and 44 `view_mixed` runs is truncated
+(`GCS_TEST_MAX_SOLUTIONS=300 GCS_TEST_MAX_RECURSIONS=1500
 all_equal_test --seed=1`, and the same with `--view-position=mixed`, at
-`c9ceea25`: 70 and 44 runs). So the capped and uncapped runs check the same
-thing.
+`0a5b4ec6`; 70 and 44 runs at `c9ceea25`). The largest expected count among
+the runs the caps apply to is still 11; `run_search_holes_test`'s `trial_437`
+expects 252, but the caps do not reach it. So the capped and uncapped runs
+check the same thing.
 
 **Tightness:** no mutation lane, and no refusal shown by hand.
 
 **What the tests do not cover.**
 
-- **The wrong-answer shape.** On distinct variables or plain repeats it needs
-  `vars[0]` holey, and every domain hole-free once the bounds pass is done.
-  Otherwise it needs a repeat through an offset or an opposite-sign view,
-  which no test posts: the duplicate shapes are plain repeats over intervals.
-  Every random shape starts as an interval; the holes the brancher cuts later
-  (see rule 1's Strength) did not reach the branch either, by the
-  instrumentation below. In `run_holes_test` all three variables are still
-  holey after the bounds pass, so the hole pass runs. In
-  `run_mixed_witness_test`, `vars[0]` is the full interval. The fact-check
-  instrumented the one branch where the current test and the fix differ:
-  nothing in the full suite (962 tests, caps off), the 90 view-wrap lanes or
-  four more seeds reaches it (`tmp/fd-small/factcheck/all_equal/instr/`). The
-  bug has been there since the propagator was written (d8c74724, 2026-05-08).
-- **Holes made during search by other constraints.** No test posts anything
-  beside `AllEqual`, apart from `In` at the root. Holes made by branching are
-  covered: the tests' brancher rejects interior intervals (see rule 1's
-  Strength).
+- **Holes made during search by other constraints**, beyond
+  `run_search_holes_test`'s three fixed models: no randomised test posts
+  anything beside `AllEqual`, apart from `In` at the root. Holes made by
+  branching are covered: the tests' brancher rejects interior intervals (see
+  rule 1's Strength). (The wrong-answer shape is posted since #1180, by
+  `run_disable_test` and `run_search_holes_test`; #1180's mutation check
+  found every new case failing on the old test except the odd-width
+  control. Before it, the fact-check
+  instrumented the branch where the old test and the fix differ, and nothing
+  in the full suite, the 90 view-wrap lanes or four more seeds reached it,
+  `tmp/fd-small/factcheck/all_equal/instr/`. The bug had been there since the
+  propagator was written, d8c74724, 2026-05-08.)
 - **A far witness over a wide domain,** which is where a multi-hop RUP would
   fail if it were going to. The test's chains are at most four variables
   long, and its widest domain is 21 values (`run_mixed_witness_test`).
-- **Repeats with offsets or through views,** and any repeat over a wide
-  domain. The duplicate shapes are plain variables over `1..7`.
+- **Any repeat over a wide domain.** Since #1180, offset and opposite-sign
+  repeats are posted (`x + 1`, `2 − x`), over at most 12 values; the
+  duplicate shapes are plain variables over `1..7`.
 - **The consistency of the repeated shapes**, deliberately: the duplicate runs
-  check no level.
+  and the repeated `run_disable_test` shapes check no level.
 - **Real instances:** none ported.
 
 ### Benchmarks and examples
@@ -675,10 +723,10 @@ thing.
   - It is never a meaningful share of a solve. In 10 s of `yumi-static` 2022
     it makes 17 calls taking about 10 µs (`GCS_PROPAGATOR_STATS=time`; 16 µs
     and 9 µs in two runs). In both runs `ArrayMax` takes 9.7 s of the 10.
-  - The original and fixed builds give the same solution sequence on all
-    three `yumi` models over 60 s, and the fact-check found the diverging
-    branch unreached on those and on `generalized-peacable-queens`, so the
-    bug does not fire there.
+  - Before #1180, the `c9ceea25` build and the fix build gave the same
+    solution sequence on all three `yumi` models over 60 s, and the
+    fact-check found the diverging branch unreached on those and on
+    `generalized-peacable-queens`, so the bug did not fire there.
 - **For CPU:** the enumeration below. It reaches all four rules, has a
   checkable solution count, and gives GCS and Gecode identical trees.
 - **For proof verification:** the same enumeration with two or three groups
@@ -687,7 +735,8 @@ thing.
 ### CPU performance
 
 *Release build of `c9ceea25` (GCC 15.2.0, `-O3 -march=native`), and the same
-plus the entailment fix (`tmp/fd-small/all_equal/fix-entailment.patch`);
+plus the entailment fix (`tmp/fd-small/all_equal/fix-entailment.patch`, the
+change #1180 landed); not re-run at `0a5b4ec6`;
 Gecode 6.3.0, built locally; fataepyc-10, boost off, `numactl` on node 0,
 `taskset -c 9`, `setarch -R`, `GLIBC_TUNABLES` fixing the malloc thresholds;
 median of five runs; wall time of the whole solve, proofs off; 2026-09-30.*
@@ -740,9 +789,10 @@ the "all" columns add the root `NotEquals` calls that carve the holes (195,
 - **GCS is 4.6 to 10.5 times Gecode's time.** At `m = 16`, `D = 1000`, the
   propagator accounts for 2.1 s of a 6.3 s solve (`GCS_PROPAGATOR_STATS=time`).
   The rest is search over 80 wide holey domains.
-- **The fix costs nothing measurable.** The two builds' trees and call counts
-  are identical, and their times are within 1%. That is expected: here the
-  bug's shape never arises, because every group's domains stay equal.
+- **The fix costs nothing measurable.** On `c9ceea25`, the two builds' trees
+  and call counts are identical, and their times are within 1%. That is
+  expected: here the bug's shape never arises, because every group's domains
+  stay equal.
 - **What the benchmark does not exercise:** conflicts (there are none), range
   removals under search (the decisions remove single values), views, repeats
   and holes made by other constraints.
@@ -795,12 +845,27 @@ lists (`holes`, `mixed` and `wide`) are accepted `UNDER ASSERTIONS`.
 `None.` Every inference is justified at `Off`, and the propagator is the same
 with proofs on or off.
 
-The wrong-answer bug is a propagation bug, not a proof gap: the inferences
-it makes are all justified. What it misses is a constraint violation, and a
-proof-logged run exposes that at the `solx` line, where VeriPB answers `The
-given solution is conflicting with constraint …`.
+The wrong-answer bug (#1153, fixed by #1180) was a propagation bug, not a
+proof gap: the inferences it made were all justified. What it missed was a
+constraint violation, and a proof-logged run exposed that at the `solx` line,
+where VeriPB answered `The given solution is conflicting with constraint …`.
 
 ### Known limitations
+
+- **A repeated variable through offsets or an opposite-sign view** is either
+  slow to fail (`{x, x + 1}`: W/2 calls) or not `bounds(Z)` (`{x, c − x}`: no
+  root pruning, and W search nodes to refute when unsatisfiable). Only the C++
+  API can post one.
+- **No faster than `n − 1` `Equals`** on the one benchmark measured, despite
+  far fewer calls.
+- **A reified `all_equal` from MiniZinc** is decomposed pairwise by the
+  standard library, `n(n − 1)/2` reified equalities.
+- **XCSP3's `allEqual` over expressions** answers `s UNSUPPORTED`.
+
+**Fixed since the audit: wrong answers** (#1153, fixed by #1180, which took
+the fix proposed below). The record, as the audit wrote it at `c9ceea25`;
+every shape below gives the right answer at `0a5b4ec6` (see [Re-audit,
+2026-10-08](#re-audit-2026-10-08)):
 
 - **Wrong answers: solutions that violate the constraint.** This happens when
   `vars[0]` becomes single-valued during a call while some other position is
@@ -867,19 +932,13 @@ given solution is conflicting with constraint …`.
     Gecode's `NaryEqDom` has the same shortcut (`x[0].assigned()` →
     subsumed), and is right because its bounds loops restart on every landed
     bound.
-- **A repeated variable through offsets or an opposite-sign view** is either
-  slow to fail (`{x, x + 1}`: W/2 calls) or not `bounds(Z)` (`{x, c − x}`: no
-  root pruning, and W search nodes to refute when unsatisfiable). Only the C++
-  API can post one.
-- **No faster than `n − 1` `Equals`** on the one benchmark measured, despite
-  far fewer calls.
-- **A reified `all_equal` from MiniZinc** is decomposed pairwise by the
-  standard library, `n(n − 1)/2` reified equalities.
-- **XCSP3's `allEqual` over expressions** answers `s UNSUPPORTED`.
 
 ### Next steps
 
-1. **Fix the entailment test.** Replace
+1. **Fix the entailment test.** **Done by #1180,** as proposed, with every
+   regression listed below (`run_disable_test`, `run_search_holes_test` with
+   trials 437 and 933, and `minizinc-allequal-search-holes`), and both
+   comments corrected; see [Tests](#tests). The proposal: replace
    `if (state.has_single_value(vars[0]))` with `if (lo == hi)`, which
    guarantees that the bounds pass has just pinned every variable or
    contradicted. Tested as above (`fix-entailment.patch`). The fix needs
@@ -912,7 +971,9 @@ given solution is conflicting with constraint …`.
    hole pass when the change was a bound, might recover the advantage the
    call counts suggest. This is empirical, and small to try. Not worth an issue
    until it has been tried.
-4. **Correct the stale text elsewhere.** Trivial, and can ride with step 1:
+4. **Correct the stale text elsewhere.** Trivial. Step 1 landed without it:
+   #1180 touched neither file, and at `0a5b4ec6` all three passages below
+   are as described.
    - `large_domain_audit_test.cc:438–449`: the `AllEqual/holes` row's comment,
      including its stale `all_equal.cc:114`;
    - [`large-domains.md`](../large-domains.md), line 664: `all_equal.cc` is
