@@ -1,21 +1,84 @@
 # `Cumulative`: tasks sharing a renewable resource of bounded capacity
 
 > **Maturity** production ·
-> **Audited** 2026-10-04 at `7e1c4178` ·
-> **Open issues** #1223 (an overflow in the overload check's profile sum),
-> #705 (four propagation and proof-size costs, among them the time-table scans
-> being `O(domain × length)`), #742 (edge-finding's `O(n³)` scan), #1126
+> **Audited** 2026-10-04 at `7e1c4178`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1271, #1273, #1278, #1284, #1285, #1290 and #1292 ·
+> **Open issues** #705 (four propagation and proof-size costs; #1285 made its
+> first, the time-table scans, `O(width + length)` rather than
+> `O(width × length)`, but they still visit every time point, and the other
+> three were not re-checked), #742 (edge-finding's `O(n³)` scan), #1126
 > (Cloutier and Quimper's Profile for the elastic rungs), #755 (energetic
 > edge-finding's cache key), #550 (the optional-task interaction of the
 > elastic rungs, parked), #833 (the horizon-sized arrays), #700 and #829 (the
 > makespan bound's window and its `deview` fixture), #868 (cross-solver
 > comparison), #364 (an incremental profile). Filed by this audit: #1234
-> (derived Cumulatives above `AssertionLevel::Off`), #1235 (three more
-> overflow sites), #1236 (the elastic conflicts are not counted), #1237 (a
+> (derived Cumulatives above `AssertionLevel::Off`). Filed from the Codex
+> review: #1267 (the makespan initialiser scans the whole candidate horizon).
+> **Fixed since the audit**: #1223 and #1235 (the overflow sites, now a clear
+> error by decision), #1236 (the elastic conflicts are not counted), #1237 (a
 > time-table push's certificate is linear in the distance), #1238 (the
 > test-only encodings are reachable), #1239 (a variable height's upper bound
-> is never lowered). Filed from the Codex review: #1267 (the makespan
-> initialiser scans the whole candidate horizon). Tracked under #871 and #976.
+> is never lowered), and #1254 (the recovery is cubic per time point, filed
+> by the `inferred_cumulative` audit); see
+> [Re-audit, 2026-10-08](#re-audit-2026-10-08). Tracked under #871 and #976.
+
+### Re-audit, 2026-10-08
+
+Seven `Cumulative` PRs merged between the audit and `0a5b4ec6`, closing five of
+the six issues it filed (#1234 is still open), #1223, and #1254. This pass brings the text into line with them.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1223, #1235: four sites throw `IntegerOverflow` on in-range inputs | #1271 | Decided the other way from the audit's next step 2: no wider arithmetic, a clear error. `propagate_cumulative` rethrows with a message naming the quantities, and `integer_ranges_test` pins each site. [Robustness and limits](#robustness-and-limits) (Overflow), [Tests](#tests), [Known limitations](#known-limitations), [Next steps](#next-steps) item 2 |
+| #1236: the elastic and knapsack conflicts are not counted | #1273 | Two rows, `overload_elastic` and `overload_knapsack`. The two rules' **Gaps**, [Tests](#tests), Next steps item 3 |
+| #1238: the test-only encodings are reachable | #1278 | `CumulativeEncoding` moves into the innards; `GCS_CUMULATIVE_ENCODING` stays, by decision, as a documented diagnostic. [Options](#options), Known limitations, Next steps items 5 and 11 |
+| #1239: a variable height's upper bound is never lowered | #1284 | A new rule, [`time-table-height`](#rule-time-table-height), under `time_table`. [Options](#options), [Variable kinds and views](#variable-kinds-and-views), the catalogue's order and hint counts, Known limitations, Next steps item 6 |
+| #1237: a push's certificate is linear in the distance | #1285 | Run steps against the pushed task's checkpoint row, scans that jump a blocked time, and proof-only data built only with a logger. The fourth thing to know, [Mutable state](#mutable-state-and-incrementality), [Interval efficiency](#interval-efficiency), `time-table-lower`, `time-table-upper`, `presence-falsification`, Tests, [Benchmarks](#benchmarks-and-examples), Known limitations, Next steps item 4. #705's first item is narrowed, not closed |
+| #1254: the recovery is cubic per time point (filed by the `inferred_cumulative` audit) | #1290 | A quadratic chain step from the row below, with the scan as the fallback. The first thing to know, [Proof-time state](#proof-time-state), Interval efficiency, [The derived constraint](#the-derived-constraint), `makespan-bound`'s proof size, Tests (two lanes) |
+| — (no issue): the published not-first / not-last detection asked only the window sweep's sets | #1292 | [`published-not-first`](#rule-published-not-first) and `published-not-last` rewritten, the catalogue's order, `not-first`'s `if`, and a fifth overflow site under that rule (Robustness and limits) |
+
+Other merges touch text here without changing `Cumulative`: #1282 (the
+inferred presolvers now note a one-value length variable, which
+`makespan-bound` still leaves out), and #1280, #1281 and #1286
+(`CumulativeStrengthening`), after which the #1234 symptoms on `bars` were
+re-run and stand. Every `cumulative.cc` citation was moved to `0a5b4ec6`.
+#1276 gave `Disjunctive2D`'s projection presence triggers, which this document
+does not describe. #1265 (docs and comments only) merged after `0a5b4ec6`, at
+`86caad24`: it fixed three of the stale comments in next step 11 and both
+out-of-document items, which this pass records as done. At `0a5b4ec6` the
+first failure of #1234's proofs at `Definitions` and `Links` is a rejected
+`rup` in the chain base at `t = 0` of #1290's recovery, where the audit recorded a syntax
+error; the cause, undefined flags, is the same.
+
+**Found in this pass.** Not caused by the fixes: two `gcs/CMakeLists.txt`
+comments are stale (Next steps item 11), one of which #1278's correction
+missed. Caused by one: #1292's sweep is a fifth overflow site, with no lane.
+
+**What was measured again**, at `0a5b4ec6` (Release, GCC 15.2, fataepyc-10,
+2026-10-08, serial, pinned to one core, malloc thresholds fixed; probes in
+`tmp/fd871-comments-1008/cumulative/probes/`):
+- the horizon probes (`hz.cc`: the blocked push's proof at four horizons and
+  two lengths, its proofs-off time and `instructions:u`, and the free
+  horizon's first-solution proof), with `hzv.cc` added for a push that takes
+  per-time steps;
+- the variable-height probe (`vh.cc`), the overflow repros and `pubovf.cc`;
+- the [proof performance](#proof-performance) table's rows, the `Bl2004`
+  breakdown and the scaling instance;
+- the rule counters on `Bl2014`, `Bl2004` and `Bl2019`;
+- the ladder's default, `not_first_not_last` and published arms on `data_bl`
+  ([CPU performance](#cpu-performance));
+- the fourteen test binaries, capped and uncapped, and the lane counts;
+- the #1234 reproductions, the time-indexed `cap_` count, and the scaled
+  makespan fixture's lines.
+
+**Not re-measured**, and labelled with `7e1c4178` where they stand: the other
+five ladder arms, the comparison against Gecode, the wide-horizon time and
+memory figures (the fact-check's re-run of the `10⁶` and `10⁷` rows, 43 ms and
+42.4 MiB and 0.79 s and 309 MiB, is quoted beside them), the edge-finding cache and TTEF pin figures from the header and
+#733, the fact-check's `:935` counterfactual, and the timing ranges of the
+first pass's three proof runs. Figures quoted from a fixing PR are attributed
+to it. A re-measured figure reflects everything that changed on `main` since
+`7e1c4178`, not only these PRs.
 
 `Cumulative(s, d, r, b)` says that at every time point the summed demand of
 the tasks running then is at most the capacity, where task `i` runs over
@@ -35,9 +98,13 @@ Five things to know before touching it.
   (#780). Per ordered pair of tasks there are three flags saying whether `i` is
   running when `j` starts, and per task there is one row capping the load at
   that start. That is `6n(n − 1) + n` rows, and no row mentions a time point.
-  Every rule still argues over per-time capacity rows `C_t`, which are
-  **recovered inside the proof** from the checkpoint rows, the first time
-  something cites them, at about `2m³` lines for `m` tasks that can run at `t`.
+  Every rule except the time-table run steps (#1285), which cite the pushed
+  task's own checkpoint row, still argues over per-time capacity rows `C_t`.
+  Those are **recovered inside the proof** from the checkpoint rows, the first
+  time something cites them. Since #1290, a row is recovered from the row for
+  `t − 1` by a quadratic chain step, about `4m²` lines for `m` tasks that can
+  run at `t`, whenever a recovered row (or a point no task can reach) lies
+  within about `m` points below. Otherwise the cubic scan, about `2m³` lines, runs.
   The per-(task, time) flags those rows mention are named and defined lazily
   too (#1111). Nothing about a time point is written up front.
 - **Only time-tabling and the overload check (with its profile term) are on
@@ -50,19 +117,31 @@ Five things to know before touching it.
   is materialised lazily, so proofs-off pays nothing. But it is not minimal,
   and an external justifier has to trim it.
 - **The cost is horizon-shaped, not domain-shaped.** The propagator builds an
-  array over the current span of the tasks' windows on every call. The
-  time-table bound scans walk start values one at a time, testing each over
-  the task's length (#705). One time-table push's certificate is a chain whose
-  length is the push distance over the task's length. At length 1 and a push
-  of 5,000 that is one inference with 295,048 lines, 24.6 MB and 10.3 s of
-  VeriPB, measured below. None of this shows on scheduling benchmarks, whose
-  horizons are short.
+  array over the current span of the tasks' windows on every call. Since
+  #1285 the time-table bound scans visit each time point they cross once,
+  `O(width + length)` per task, where before they tested every start over the
+  task's length (#705). A push's certificate takes one **run step** per
+  stretch of starts that the same tasks' mandatory parts block, against the
+  pushed task's own checkpoint row. The push that cost 295,048 lines, 24.6 MB
+  and 10.3 s of VeriPB at `7e1c4178` (length 1, a distance of 5,000) is now a
+  63-line proof, and so is every push of the same probe from 500 to 500,000,
+  measured below.
+  Per-time steps, one per blocked time crossed, remain wherever a run cannot
+  speak: a task of variable height (so every chain of the height rule), a
+  start or length that is a view, and any constraint without checkpoint rows
+  of its own (derived Cumulatives, `Disjunctive2D`'s projections and the
+  test-only time-indexed arm). There a push is still linear in its distance.
+  None of this shows on scheduling benchmarks, whose horizons are short.
 - **At `Definitions`, `Inferences` and `Backtracking`, a derived Cumulative
-  over a posted `Cumulative` makes the proof unreadable**, under the shipped
+  over a posted `Cumulative` gets the proof rejected**, under the shipped
   start-checkpoint encoding, whenever a presolver actually installs one. The
   donor publishes its row deriver at every level but its flag definer only at
   `Off`. So a recovered row cites flags that were never defined, and VeriPB
-  stops with a syntax error.
+  rejects the proof. On `sample.dzn` at `0a5b4ec6` that is a syntax error (an
+  undefined `@v[..][ca][r]` label) at `Inferences` and `Backtracking`, and at
+  `Definitions` (and `Links`) a rejected `rup ~cact ∨ cb` in the chain base
+  at `t = 0` of #1290's recovery (`recover_by_chain` with no previous row). At `7e1c4178` the audit recorded a syntax error
+  at all three levels.
   - Under the test-only `time-indexed` encoding the derived rows build on the
     donor's model rows instead, and the same runs verify `UNDER ASSERTIONS`.
   - A presolver that strengthens nothing installs nothing, and its proof
@@ -76,7 +155,7 @@ Five things to know before touching it.
     where it finds something to strengthen, `CumulativeStrengthening` instead
     **throws a `ProofError`**, printed as "unexpected problem: cumulative
     strengthening: the donor has no capacity row at time 0, which cannot
-    happen…" (`cumulative_strengthening.cc:512`), so the solve aborts.
+    happen…" (`cumulative_strengthening.cc:417`), so the solve aborts.
     On that test's `strip` instance it posts nothing and does not throw.
   - Lifting the one gate is not enough. A variable height's order literal is
     then cited and never defined at `Inferences` (#1210's class).
@@ -165,7 +244,7 @@ and their defaults:
 
 | Flag | Default | Rule(s) it enables | Why that default |
 |---|---|---|---|
-| `time_table` | on | `time-table-lower`, `time-table-upper`, `presence-falsification` | the standard |
+| `time_table` | on | `time-table-lower`, `time-table-upper`, `presence-falsification`, `time-table-height` (#1284) | the standard |
 | `overload` | on | `overload`; **and the window sweep every rule below runs in** | cheap, quadratic sweep |
 | `profile_overload` | on | `overload-profile` | (TTOC); needs `overload` |
 | `elastic_overload` | **off** | `overload-elastic` | (TTHE-OC); `O(n²·horizon)` sweep (#1126); needs `overload` |
@@ -178,7 +257,7 @@ and their defaults:
 
 **Every rule below `profile_overload` runs inside the overload sweep**, which
 is gated on `overload`, a constant capacity, and at least one eligible task
-(`cumulative.cc:2093`). With `overload` off, edge-finding, not-first / not-last
+(`cumulative.cc:2134`). With `overload` off, edge-finding, not-first / not-last
 and the elastic rungs never run whatever their own flags say. On a
 library-level replica of `Bl2019`
 (`tmp/fd-sched/factcheck/cumulative/rules/bl.cc`, re-run), `overload` off with
@@ -194,14 +273,18 @@ library, `not_first_not_last` alone fires with edge-finding's calls at 0, and
 makes the propagator a checker at a fully assigned state, and gating it
 accepted an overloaded assignment once (#1037).
 
-The doc comment on `CumulativeRules` still says "All three are on by default",
-from when there were three. It is stale. Which defaults are *right* is out of
-this arc's scope (Ciaran, 2026-09-20: what matters is that every technique is
+The doc comment on `CumulativeRules` still says "All three are on by default"
+(`cumulative.hh:24`) at `0a5b4ec6`, from when there were three. #1265 fixed it
+after `0a5b4ec6`. Which
+defaults are *right* is out of this arc's scope (Ciaran, 2026-09-20: what matters is that every technique is
 certified, not which are worth having), but the ladder below measures them.
 
-**`with_encoding(CumulativeEncoding)`**, and the `GCS_CUMULATIVE_ENCODING`
-environment variable it overrides, **do** change the OPB. There are three
-arms:
+**`with_encoding(innards::CumulativeEncoding)`**, and the
+`GCS_CUMULATIVE_ENCODING` environment variable it overrides, **do** change the
+OPB. Since #1278 the type is `gcs::innards::CumulativeEncoding`
+(`gcs/constraints/innards/cumulative_encoding.hh`), in the innards beside the
+mutations, and `with_encoding` is documented as for tests only. There are
+three arms:
 
 - `StartCheckpoint`, the default and the only one that ships.
 - `TimeIndexed`, the old per-time block.
@@ -211,16 +294,19 @@ arms:
 The rule is one encoding per constraint, because `cake_pb_cp` re-derives the
 OPB from the `.scp` and cannot follow a per-constraint choice. The other two
 arms exist only as test fixtures, and the `BothRecovering` arm is the only
-thing that catches a recovery which derives a valid but wrong row. The header,
-`gcs/CMakeLists.txt` and the arm's ctest comment all say no solve can select
-them. **That is not quite true.** Both are public API, and the environment
-variable is read by every binary.
+thing that catches a recovery which derives a valid but wrong row. **The
+environment variable still selects them in every binary**, by decision
+(Ciaran, 2026-10-06, quoted in #1278: only one encoding is to be kept in the
+long term, but for now the type moves into the innards and the variable stays,
+to simplify testing). The new header and `gcs/CMakeLists.txt:276-278` call it a
+diagnostic. One CMake comment still says what the audit found false: the one
+above `add_cumulative_test_with_recovery` says "no solve and no .scp can
+select it" (`gcs/CMakeLists.txt:325-326`).
 `GCS_CUMULATIVE_ENCODING=time-indexed ./build/rcpsp --prove` writes the per-time
 block (18 `cap_` rows on `examples/rcpsp/sample.dzn`, against 8 checkpoint rows
-by default), and the proof verifies against its own OPB. Nothing is unsound.
-But a user can produce a model that cake would not reproduce, and
-`with_encoding` belongs in `innards` beside the mutations
-([Next steps](#next-steps)).
+by default, re-checked at `0a5b4ec6`), and the proof verifies against its own
+OPB. Nothing is unsound, but whoever sets the variable writes a model cake
+would not reproduce.
 
 **`with_proof_mutation` and `with_presence_mutation`** corrupt one step of a
 derivation. They are for tests only, and their types live in `innards` (#669).
@@ -243,10 +329,11 @@ There is no `with_consistency()`, and no `consistency::` tag applies.
   `s + l`, which no RUP reaches from the operands' bounds. So the proof
   introduces an `end = s + l` proxy, inside the proof only, and pins through it.
 - **Heights.** A view height **throws `UnimplementedException` with proofs
-  on** (`cumulative.cc:370`): a view has no bits of its own for the
+  on** (`cumulative.cc:375`): a view has no bits of its own for the
   checkpoint encoding's contribution conjunctions. With proofs off a view
-  height works. Neither frontend produces one. A variable height is counted at
-  its lower bound throughout.
+  height works. Neither frontend produces one. Every rule counts a variable
+  height at its lower bound, and since #1284
+  [`time-table-height`](#rule-time-table-height) lowers its upper bound.
 - **Capacity** may be a variable or a view. The overload family and
   edge-finding run only when it is a **constant**. With a variable capacity
   the conflict `pol` would be left with a `(b − a)·capacity` term over the
@@ -366,8 +453,8 @@ Labels other code actually cites:
 
 | Label / key | Rows | Cited by |
 |---|---|---|
-| `scap_<j>` (`checkpoint_row_role`) | the checkpoint rows | the checkpoint recovery; and `cake_pb_cp`'s chain, which resolves our citations against its OPB by these labels |
-| `sb` / `sa` / `sact` keys `(i, j)`, `scc` keys `(i, j, k)` | the pairwise flags | the recovery; cake (same names) |
+| `scap_<j>` (`checkpoint_row_role`) | the checkpoint rows | the checkpoint recovery; the run steps of time-table pushes and presence falsification (#1285, `cumulative.cc:3388-3395`, `3474`, `3811-3816`); and `cake_pb_cp`'s chain, which resolves our citations against its OPB by these labels |
+| `sb` / `sa` / `sact` keys `(i, j)`, `scc` keys `(i, j, k)` | the pairwise flags | the recovery; the same run steps' `sb` / `sa` / `sact` (#1285, `cumulative.cc:3396-3446`); cake (same names) |
 | `cb` / `ca` / `cact` keys `(i, t)`, `cc` keys `(i, t, k)` | per-time flags, **proof-only** under the shipped encoding | every rule; derived Cumulatives and `Disjunctive2D` by key |
 | `cap` (`capacity_row_family`) | the deriver of recovered `C_t` | derived Cumulatives (`find_or_derive_line_in_family`) |
 | `<i>_<t>_cge` (`contribution_ge_row_role`) | a variable height's "contribution ≥ height" row, published as a **derived** line under the shipped encoding | the energy rules; `recover_constant_argument_row` |
@@ -431,11 +518,27 @@ What the proof contains, and how an external tool finds it.
     `end ≥ t + 1 → after` for an end-proxy task.
   - **Recovered rows.** `C_t` is derived from the checkpoint rows the first
     time any citer asks for `t`, reason-free at `Top`, and cached per
-    constraint (`CheckpointRecoveryCache`). The time-free order facts
-    (totality `sb_{i,j} ∨ sb_{j,i}`, and transitivity) are derived once and
-    shared by every `t`. Each recovery introduces its own proof flags, labelled
-    `ckpe`, `ckpw`, `ckpn` and `ckpf`. On `Bl2004` these were 15,650 of the
-    proof's 19,668 `red` steps.
+    constraint (`CheckpointRecoveryCache`). Since #1290 there are two
+    derivations (`recover_cumulative_capacity_row`,
+    `checkpoint_recovery.cc:841-900`):
+    - **a chain step** from `C_{t−1}` (`recover_by_chain`), a case split on
+      which task, if any, starts at exactly `t`. It is taken when a recovered
+      row, or a point no task can reach under a constant non-negative
+      capacity, lies within about `m` points below `t` (`m` being the tasks that can
+      run at `t`). Every row between is recovered on the way and cached,
+      whether or not anything cites it. Its flags are labelled `ckps`;
+    - **the scan** (`recover_by_scan`), a case split on which task is the
+      latest to have started by `t`, otherwise, and wherever a step declines
+      (a task whose window opens at `t` with a view start, or with no
+      boundary pin for its order literal). The time-free
+      order facts it needs (totality `sb_{i,j} ∨ sb_{j,i}`, and transitivity)
+      are derived once and shared by every `t`. Its flags are labelled
+      `ckpe`, `ckpw` and `ckpn`.
+
+    Both literalise the target row through a `ckpf` flag. On `Bl2004` the
+    recovery flags were 15,650 of the proof's 19,668 `red` steps at
+    `7e1c4178`. At `0a5b4ec6` they are 1,376 of 5,496 (912 of them `ckps`),
+    with 53 rows recovered by a chain step and 2 by the scan.
   - **Guarded window-energy rows** for the edge-finding family are derived at
     `Top` the first time a `(task, window, guards, length)` key is needed, and
     cited from then on. The cache is per constraint and never pruned.
@@ -483,8 +586,8 @@ What the proof contains, and how an external tool finds it.
 
 No root cost dominates on a scheduling-shaped instance. On a `0..10⁹` horizon
 the root's and each call's horizon-sized arrays (`8 × 10⁹` bytes each) cost
-time and memory. Three free tasks reach a first solution in 77.5 s, at a
-29.8 GiB peak, on this 2 TB machine (`hz.cc free`). How the arrays fail
+time and memory. Three free tasks reached a first solution in 77.5 s, at a
+29.8 GiB peak, on this 2 TB machine (`hz.cc free`, `7e1c4178`; not re-run). How the arrays fail
 depends on the span and on whether the process runs under a memory limit:
 - **One array exceeds what the kernel will commit** (roughly RAM plus swap,
   under default overcommit). The allocation throws `std::bad_alloc`, as at
@@ -539,7 +642,10 @@ current bounds:
 - the overload sweep's prefix sums, `O(span)`;
 - for the elastic rungs, a per-time-point height array (and a bitset for
   KAOC), reset per window, `O(n² · span)`;
-- the time-table scans, `O(n · width · length)`.
+- the time-table scans, `O(n · (width + length))` since #1285 (before it,
+  `O(n · width · length)`), plus the height rule's sliding minimum,
+  `O(width + length)` per present task of variable height that it does not
+  skip.
 
 #364 (the incrementality survey) lists the profile as the highest-payoff
 algorithmic target. It would be maintained across calls with an
@@ -576,7 +682,9 @@ truth.
 - **Unbounded domains.** Not supported in practice. Both the root and every
   call allocate arrays sized by the horizon (see
   [Interval efficiency](#interval-efficiency)). Three free tasks, proofs off,
-  to a first solution:
+  to a first solution, at `7e1c4178` (fataepyc-08). The fact-check re-ran the
+  first two rows at `0a5b4ec6`: 43 ms and 42.4 MiB, and 0.79 s and 309 MiB.
+  The others were not re-run.
 
   | horizon | time | peak memory |
   |---|---|---|
@@ -604,40 +712,64 @@ truth.
   A view **height** throws with proofs on. The energy rules exclude any task
   whose start is not a plain variable with an order encoding (a constant
   start, a view start, a `{0, 1}` start), whose length is a view or a
-  `{0, 1}` variable, or whose height is a view (`cumulative.cc:481`; reachable
+  `{0, 1}` variable, or whose height is a view (`cumulative.cc:486`; reachable
   only with proofs off, since a view height throws with them). That is weaker,
   not wrong.
-- **Overflow.** The integer range policy (inputs within `±(2⁶⁰ − 1)`) does not
-  hold here: in-range inputs reach `IntegerOverflow`. Four sites are known,
-  all checked arithmetic, so each throws rather than wrapping. Write
-  `B = 2⁶⁰ − 1`. Three of the four throw on **feasible** single-task
-  instances:
-  - `mand_prefix` (#1223, `cumulative.cc:2097`): one task of length 9, height
+- **Overflow.** In-range inputs (within `±(2⁶⁰ − 1)`) can reach
+  `IntegerOverflow`, and since #1271 that is **by decision** (Ciaran,
+  2026-10-06, quoted in #1271): no 128-bit arithmetic without an application
+  that needs it, a clear error rather than a wrong answer, and a revisit if an
+  application meets the limit. `dev_docs/integer-ranges.md` records
+  `Cumulative` as a deliberate exception to its rule. Every site is checked
+  arithmetic, so each throws rather than wrapping. `propagate_cumulative`, the
+  entry point posted and derived Cumulatives and `Disjunctive2D`'s projections
+  all share, rethrows the exception as "Cumulative: a load or an energy does
+  not fit in an Integer. …", keeping the original operation in brackets
+  (`cumulative.cc:1197-1216`). Write `B = 2⁶⁰ − 1`. Three of the first four
+  sites throw on **feasible** single-task instances, and every repro below
+  throws the new message at `0a5b4ec6`:
+  - `mand_prefix` (#1223, `cumulative.cc:2138`): one task of length 9, height
     `B`, capacity `B`, start a *variable* with domain `{0}` throws `9223372036854775800 +
-    1152921504606846975`. With `constant_variable(0_i)` as the start, it
-    solves, as #1223 notes. #1223's own repro uses nine unit tasks;
-  - the candidate energy `p × h` (`cumulative.cc:2142`): one task of length 9,
+    1152921504606846975`, and at length 8 it solves. With
+    `constant_variable(0_i)` as the start, it solved at `7e1c4178`, as #1223
+    notes (not re-run). #1223's own repro uses nine unit tasks;
+  - the candidate energy `p × h` (`cumulative.cc:2183`): one task of length 9,
     height `B`, capacity `B`, start in `[0, 100]` throws `9 *
     1152921504606846975`;
-  - the overload sweep's `supply = capacity × width` (`cumulative.cc:2338`),
+  - the overload sweep's `supply = capacity × width` (`cumulative.cc:2634`),
     which depends only on the capacity and the window's slot count. One
     height-1 task with capacity `2⁴⁰` and start in `[0, 2²³]` throws
     `1099511627776 * 8388609`, and at `[0, 2²²]` it solves. With heights and
     capacity `B`, a window of 9 slots is enough: two unit tasks with starts
     in `[0, 8]` throw `* 9`, and in `[0, 7]` they solve;
-  - the profile `mand_load[t] += lb(h)` (`cumulative.cc:2013`): nine
+  - the profile `mand_load[t] += lb(h)` (`cumulative.cc:2052`): nine
     overlapping height-`B` tasks at capacity `B` throw instead of reporting
-    UNSAT. Eight report UNSAT, and the proof verifies.
+    UNSAT. Eight report UNSAT, and the proof verifies;
+  - **a fifth, added by #1292, only when the published detection runs**
+    (`not_first_not_last` and `not_first_not_last_published` both on, with
+    `overload` and a constant capacity).
+    The published sweep checks `total energy + 2 × capacity × horizon` once,
+    so that it can run in plain arithmetic (`cumulative.cc:2400`). That is
+    about twice the window sweep's largest supply, so with the rule on the
+    limit is lower: two unit tasks of height `B` at capacity `B` throw once
+    their starts span `[0, 3]`, where the default rules solve up to `[0, 7]`.
+    One such task alone throws at `[0, 3]` and solves at `[0, 2]`
+    (`pubovf.cc`). The message is the same, since the sweep is inside the
+    wrapper.
 
-  The last three, and the single-task `mand_prefix` repro, are #1235, filed
-  beside #1223 (repros in
-  `tmp/fd-sched/cumulative/overflow/`, plus `supply2.cc` in
-  `tmp/fd-sched/factcheck/cumulative/overflow/`, whose copies of
-  `energy2.cc` and `energy3.cc` carry an outdated "(UNSAT)" comment). Lengths near `2⁶⁰` fail
-  differently, on the horizon arrays (`std::length_error` or
-  `std::bad_alloc`, the overflow ledger's F3). The KAOC bitset is capped at a capacity of 4,096
-  (`max_knapsack_capacity`). Above that, KAOC quietly degrades to TTHE-OC,
-  which is a weakening, documented at the site.
+  `integer_ranges_test` pins the first four sites since #1271, each beside a
+  twin just inside the limit that must solve, with and without proofs
+  (`integer_ranges_test.cc:603-698`). It does not turn on the published rule,
+  so nothing pins the fifth. #1235 (the supply, energy and profile sites, and
+  the single-task `mand_prefix` repro) was filed beside #1223, and #1271
+  closed both by making the error clear. Repros: `tmp/fd-sched/cumulative/overflow/`
+  and `supply2.cc` in `tmp/fd-sched/factcheck/cumulative/overflow/`, copied
+  and re-run with `pubovf.cc` in `tmp/fd871-comments-1008/cumulative/probes/`
+  (`overflow.out`). Lengths near `2⁶⁰` fail differently, on the horizon arrays
+  (`std::length_error` or `std::bad_alloc`, the overflow ledger's F3). The
+  KAOC bitset is capped at a capacity of 4,096 (`max_knapsack_capacity`).
+  Above that, KAOC quietly degrades to TTHE-OC, which is a weakening,
+  documented at the site.
 
 ### Interval efficiency
 
@@ -655,26 +787,29 @@ axis the four questions are answered on.
    - The overload sweep's `mand_prefix`: `O(span)` per call.
    - The elastic rungs reset a per-time array, and a `capacity/64`-word bitset
      per time point, for every window: `O(n² · span)` (#1126).
-   - **The time-table bound scans** walk start values one at a time from
-     `lb(s_j)` (and from `ub(s_j)`), each test `fits_at(s)` walking `d_j`
-     points. That is `O(width × d_j)` per task per call (#705, item 1). A
-     single push over a blocked prefix of `H/2` took 333 ms at `H = 10⁶` and
-     `d = 1` (proofs off). The profile has plateaus, and a competitive
-     time-tabler jumps them.
-   - **The chain construction for a push runs with proofs off.** Its output
-     is used only by the justification, but it is built eagerly, before the
-     inference, whether or not anything will read it:
-     - `build_lb_chain` (`cumulative.cc:3164-3180`, called at 3202 and 3245)
-       and the ub chain built inline at 3269-3282, with `contributors_at`
-       costing `O(n)` per step;
-     - the (TTOC) `pins` vector (`2944-2965`), one entry per compulsory
-       `(task, t)` in the window;
-     - the overflow's `contributing` list.
-
-     A long push therefore costs `O(steps × n)` extra on the propagation path
-     with no proof to write. It is not guarded on `want_reasons()` or on a
-     logger, unlike the energetic contributors and the published rule's
-     `theta`, which are.
+   - **The time-table bound scans** walk time points, not starts, since
+     #1285: a blocked time `t` rules out every start whose window reaches it,
+     so the lb scan jumps to `t + 1` and the ub scan to `t − d_j`
+     (`cumulative.cc:3571-3575`, `3860-3864`). Each visits every time point
+     it crosses once, `O(width + d_j)` per task per call, where it was
+     `O(width × d_j)` (#705, item 1). A single push over a blocked prefix of
+     `H/2` took 333 ms at `H = 10⁶` and `d = 1` at `7e1c4178` (proofs off).
+     At `0a5b4ec6` the same probe's solve takes 43 to 44 ms over three runs,
+     and the whole process 153.1M `instructions:u`. The scans still visit every point rather than
+     every plateau of the profile.
+   - **The height rule's sliding minimum**, per present task of variable
+     height, `O(width + d_j)`, stopping at the first placement with room for
+     `ub(h_j)`. It is skipped without a scan when `ub(h_j)` fits on top of the
+     largest mandatory load anywhere (`cumulative.cc:3695-3719`).
+   - **The chain construction for a push now runs only with a logger**
+     (#1285). The chains (`cumulative.cc:3730`, `3788`, `3831`, `3876`), the
+     (TTOC) `pins` vector (`3209-3230`) and the overflow's `contributing`
+     list (`2070-2080`) are each built only when there is a proof to write.
+     Before #1285 all three were built with proofs off too, at `O(steps × n)`
+     extra for a long push. The published rule's `theta` is now built at each
+     firing whether or not there is a logger, because the firing re-checks
+     the set's own figures against the condition before anything is pushed
+     (`cumulative.cc:2562-2577`).
    - **The derived makespan initialiser's candidate scan**, on a derived
      constraint that names a makespan: once, at the root, every time point
      from `rows_lo` up to `min(ub(M), last window end)`, at `O(n)` each, with
@@ -682,9 +817,9 @@ axis the four questions are answered on.
      bound found (#1267; see [`makespan-bound`](#rule-makespan-bound)).
 
    No site uses an interval primitive. None needs one for correctness, since
-   the domains are not read as sets. What is missing is plateau-jumping over the
-   profile and, for the makespan scan, event-based candidates or a stopping
-   bound (#1267).
+   the domains are not read as sets. What is missing is a profile kept as
+   plateaus rather than as a flat array (#364, #1126) and, for the makespan
+   scan, event-based candidates or a stopping bound (#1267).
 2. **The reason side.** The reason is `generic_reason` over every scoped
    variable. It is one or two bound literals per variable, plus one
    `not_in_range` literal per **run** of holes (never per value), plus a
@@ -698,9 +833,10 @@ axis the four questions are answered on.
      touched. It covers every posted start, including tasks dropped as
      inactive and undecided optional tasks.
 
-   The reason itself is lazy, but the proof-only *data* the justifications
-   capture is not (the chains and pin lists above), and that is the part of
-   this question the family fails.
+   The reason itself is lazy, and since #1285 so is the proof-only *data* the
+   time-table and (TTOC) justifications capture (the chains and pin lists
+   above). At `7e1c4178` that data was built eagerly, which was the part of
+   this question the family failed.
 3. **The proof side.** This is where the per-time-point cost is.
    - **Every rule's certificate sums capacity rows over the time points it
      argues about.** The overload family cites `C_t` for every `t` in the
@@ -710,33 +846,44 @@ axis the four questions are answered on.
      None of it has a width gate, and there is no interval form. The arguments
      are per-time-point by nature: a capacity row is a statement about one
      instant.
-   - **The first citation of a time point** pays for its recovery (about
-     `2m³` lines, `m` = tasks with a flag at `t`; 74 to 467 lines at `m = 3`
-     to `6`, from the design note) and for its flags' definitions (6 `red`
-     per task). Both are cached per constraint.
-   - **A time-table push's chain has one step per blocked time it crosses**,
-     advancing at most `d_j` per step, so its length is between
-     `distance/d_j` and `distance`. At `d_j = 1` it is linear in the push
-     distance, about 59 lines per unit (`hz.cc blocked`). At a push of 500,
-     each unit's 59 lines are:
-     - 30 `red` lines: 12 flag definitions for the two tasks' newly cited
-       time point, 16 recovery definitions, and 2 shared order-literal
-       definitions;
-     - about 13 `rup`, 10 `pol`, 4 `core` and 2 `del` lines.
-
+   - **The first citation of a time point** pays for its recovery and for
+     its flags' definitions (6 `red` per task), both cached per constraint.
+     The recovery is a chain step from the row below, about `4m²` lines
+     (`m` = tasks with a flag at `t`), where one is in reach, and otherwise
+     the scan, about `2m³` lines (74 to 467 lines at `m = 3` to `6`, from
+     the design note). #1290's body measured a chain step at about 1,600
+     lines at 21 candidates on `pack001`, against about 7,200 for the scan.
+   - **A time-table push's chain** takes, at each step, whichever reaches
+     further of a **run step** (one `pol` over the pushed task's checkpoint
+     row, ruling out every start up to the first completion among the tasks
+     it cites) and a **per-time step** (one blocked time, advancing at most
+     `d_j`). So it is proportional to the profile's plateaus, not to the
+     distance, wherever runs apply. On `hz.cc blocked` (a task of length
+     `H/2` fixed at 0 on capacity 1, and a task of length `d_j` pushed past
+     it), re-run at `0a5b4ec6`, the whole proof is one run step and 63
+     lines, and VeriPB checks it in under 0.01 s, at `H` = `10³`, `10⁴`,
+     `10⁵` and `10⁶` and at `d_j` = 1 and 100. At `7e1c4178` the same pushes
+     were 29,548 lines (2.2 MB) at a push of 500, 295,048 lines (24.6 MB,
+     10.3 s of VeriPB) at 5,000, and 2,950,048 lines (268.8 MB, VeriPB
+     unfinished after 24 minutes) at 50,000; 343 and 2,998 lines at
+     `d_j = 100`.
+   - **Where a run cannot speak, the chain is still one step per blocked
+     time**, between `distance/d_j` and `distance` steps: a task of variable
+     height (every chain of the height rule among them), a view, or a
+     constraint without checkpoint rows. Given the pushed task a height that
+     is a variable of domain `{1}` (`hzv.cc`), the same probe takes per-time
+     steps and is 29,559 lines (2.1 MB) at a push of 500 and 59,059 at 1,000,
+     about 59 lines per unit, the `7e1c4178` rate. Each unit is about 22
+     `red` lines (14 flag definitions for the newly cited point, 6 recovery
+     flags and 2 order literals), 18 `pol`, 12 `rup`, 4 `core` and 2 `del`.
      Most of that is the first citation of a new time point, not the chain
-     step's own `3k + 5` lines. The measured proofs:
-     - 29,548 lines / 2.2 MB for a push of 500;
-     - 295,048 lines / 24.6 MB / 10.3 s of VeriPB for a push of 5,000;
-     - 2,950,048 lines / 268.8 MB for a push of 50,000, with VeriPB still
-       running after 24 minutes;
-     - at `d_j = 100` the same pushes cost 343 and 2,998 lines.
-
-     That is the family's one emission that is proportional to a *distance*
-     rather than to the instant being argued about.
+     step's own `3k + 5` lines. That is the family's one emission that is
+     proportional to a *distance* rather than to the instant being argued
+     about.
    - The **encoding** is free of the horizon (`Θ(n² log H)` terms), which is
      #780's result. With proofs on and a free horizon of `10⁶`, a first
-     solution's proof is 173 lines, the same as at `10³`.
+     solution's proof is 81 lines at `0a5b4ec6`, the same as at `10³` (173
+     at both at `7e1c4178`).
 4. **The audit lane.** `gcs/large_domain_audit_test.cc` has one row,
    `"Cumulative"`, pinned **`KnownTrip`**. Its comment reads "H3: the overload
    check's arrays are sized by the horizon": three tasks of length 2 over wide
@@ -749,9 +896,10 @@ axis the four questions are answered on.
    - the time-table scans, which it never reaches, because it trips first;
    - proofs on.
 
-   It has no `"Large domain proof sizes"` row. So the chain-length cost above
-   and #705's scan are invisible to the lane, and [Next steps](#next-steps)
-   has an item.
+   It has no `"Large domain proof sizes"` row, and #1285 did not add one, so
+   the per-time chain cost above and the scans are invisible to the lane.
+   #1285's `cumulative_run_test` is what pins the run steps instead: per
+   fixture, the pushed bounds, the run-step count and a proof-line bound.
 
 `Fine at any width` is **not** this family's answer on any of the four. It is
 fine at scheduling widths: the benchmarks below have horizons of a few dozen.
@@ -766,10 +914,14 @@ Facts true of every rule:
   [The derived constraint](#the-derived-constraint)).
 - **Order inside one call:**
   1. the profile and `time-table-overflow`;
-  2. one window sweep doing edge-finding, then not-first / not-last, then the
-     elastic rungs, then the overload check (OC/TTOC), per window `[a, b)`
-     with `a` an earliest start and `b` a latest completion;
-  3. the time-table pushes and presence falsification.
+  2. with the published detection on, its own sweep over every `Ω`
+     (`published-not-first` and `published-not-last`, #1292), before the
+     window loop;
+  3. one window sweep doing edge-finding, then the window-energy not-first /
+     not-last, then the elastic rungs, then the overload check (OC/TTOC), per
+     window `[a, b)` with `a` an earliest start and `b` a latest completion;
+  4. per task, `time-table-height`, then presence falsification or the
+     time-table pushes.
 - **The reason** is `generic_reason` over every posted start (inactive and
   undecided tasks included), the capacity if variable, every variable height
   and length, plus `p_i = 1` for every task known present. It is the same for
@@ -780,9 +932,9 @@ Facts true of every rule:
   constraint), donor-derived rows (derived constraint), or a projection's
   family (`Disjunctive2D`), through one `capacity_row(t)` accessor. Under the
   test-only arms they are model rows.
-- **Hints.** Twelve of the seventeen rules (the time-table family, presence
-  falsification, edge-finding and its forms, and both not-first / not-last
-  detections) carry `hints::Cumulative`, wire form
+- **Hints.** Thirteen of the eighteen rules (the time-table family with the
+  height rule, presence falsification, edge-finding and its forms, and both
+  not-first / not-last detections) carry `hints::Cumulative`, wire form
   `cumulative:((constraint_id <id>))`. The four overload rules carry
   `hints::CumulativeOverload`, `cumulative:((constraint_id <id>) (subhint
   overload))`. The makespan bound carries `hints::CumulativeMakespan`,
@@ -805,13 +957,15 @@ Facts true of every rule:
   constraint (that is NP-hard), so every **Strength** is `partial`, with what
   the rule achieves said in words. `GAC`, `bounds(Z)` and the others are not
   claimed anywhere.
-- **Tightness.** 41 ctest lanes run a corrupted derivation and expect VeriPB to
-  reject it. Four of them are twins on the `BothRecovering` arm, and one
+- **Tightness.** 53 ctest lanes run a corrupted derivation and expect VeriPB to
+  reject it (41 at `7e1c4178`). Nine of them are twins on the `BothRecovering`
+  arm, and one
   (`cumulative_overload_mutation_recover_wrong_checkpoint_recovering`) runs only there. They are listed
-  per rule. **Seven lanes were deleted at the encoding flip** (2026-09-12),
+  per rule. Two of the 53, added by #1290, corrupt the recovery's chain step
+  under the overload certificate, and are listed under `overload`. **Seven lanes were deleted at the encoding flip** (2026-09-12),
   because under the shipped encoding the corrupted step is no longer
   load-bearing: unit propagation over the checkpoint rows supplies what the
-  step did (`gcs/CMakeLists.txt:683-699`). The certificates still emit those
+  step did (`gcs/CMakeLists.txt:717-733`). The certificates still emit those
   steps.
 
 ### Rule: time-table-overflow
@@ -850,7 +1004,8 @@ Facts true of every rule:
   `O(span)`. That needs no guess, since the reason carries every bound, but
   nothing names `t`, or the rule. The derivation also needs `C_t`, which
   under the shipped encoding is a recovery from the checkpoint rows
-  (`O(m³)` lines, a fixed procedure).
+  (since #1290 mostly a chain step of about `4m²` lines, with the `O(m³)` scan
+  as the fallback; a fixed procedure either way).
 - **Proof size** — `3k + 1` lines per firing for `k` contributing tasks (one
   more per variable height). The first firing at a `t` pays the recovery and
   the flags' definitions, cached thereafter.
@@ -867,66 +1022,100 @@ Facts true of every rule:
 - **Strength** — `partial`: time-table consistency on `lb(s_j)`. The new bound
   is the first start at which `j`, at its guaranteed height and length, fits
   under the other tasks' compulsory parts.
-- **Algorithm** — scans `s` upward, testing `fits_at(s)` over `[s, s + lb(d_j))`.
-  That is `O((new_lb − lb) × lb(d_j))` time points (#705). Then it builds the
-  chain: from the running bound, take the **largest** blocked `t` in
-  `[running, running + lb(d_j) − 1]` and jump past it.
+- **Algorithm** — scans time points upward from `lb(s_j)`, and a blocked
+  time `t` moves the candidate start to `t + 1`, until a window
+  `[s, s + lb(d_j))` has no blocked time (#1285, `cumulative.cc:3571-3575`).
+  That is `O((new_lb − lb) + lb(d_j))` time points; at `7e1c4178` it tested
+  every start over the task's length, `O((new_lb − lb) × lb(d_j))` (#705).
+  Then, with a logger only, it builds the chain (`build_lb_chain`,
+  `cumulative.cc:3643-3674`). At each step it takes whichever reaches
+  further, the run winning a tie:
+  - a **per-time step**: the **largest** blocked `t` in
+    `[running, running + lb(d_j) − 1]`, jumping past it;
+  - a **run step**: the tasks mandatory at the running bound, taken by latest
+    completion until they and `j` overflow the capacity, which rule out every
+    start up to the first completion among them. Only where `j` and the
+    cited tasks have constant heights and plain or constant starts and
+    lengths, and the constraint has checkpoint rows of its own.
 - **Why it is true** — if `s_j ≤ t` for a blocked `t` with
   `running ≤ t < running + d_j`, then, given `s_j ≥ running`, `j` runs at `t`,
-  and the load there exceeds the capacity. So `s_j > t`. Each step moves the
-  lower bound strictly upward, and the steps reach the first fitting start.
+  and the load there exceeds the capacity. So `s_j > t`. For a run `[lo, hi)`,
+  every cited task runs over all of it whatever its start, so `j` starting
+  anywhere in it runs beside all of them at its own start, which its
+  checkpoint row forbids. Each step moves the lower bound strictly upward, and
+  the steps reach the first fitting start.
 - **Proof technique** — `RUP sequence` under an extended reason (the
-  "chained bound pushes" of the design note). Per step:
+  "chained bound pushes" of the design note). Per per-time step:
   - pin each contributing task active at `t` (three `RUP`s);
   - pin `j` active at `t` under the reason **extended by** `s_j ≤ t`, which
     with the running bound puts `j` at `t`. Each of its lines carries the
     negation `[s_j ≥ t+1]` as a disjunct, so it reads
-    `[s_j ≥ t+1] ∨ active_j,t` (`pin_pushed`, `cumulative.cc:1690`);
+    `[s_j ≥ t+1] ∨ active_j,t` (`pin_pushed`, `cumulative.cc:1728`);
   - one `pol` adds them to `C_t`, dominated by `(load − capacity)·[s_j ≥
     t+1]`;
   - except at the last step, one `RUP` deposits `s_j ≥ t + 1` under the reason
     for the next step's unit propagation.
 
-  The wrapping RUP closes the last step. Ours, from the design note's
-  derivation.
+  A run step is one `pol` over `j`'s checkpoint row `scap_j`: per cited task
+  `i`, the reverse half of `sact_{i,j}` and two saturated `pol`s cancelling
+  `sb_{i,j}` and `sa_{i,j}` against the bounds that put `i` before and still
+  running, all at `h_i`, plus `j`'s diagonal term where one was minted. What
+  is left is dominated by `[s_j ≥ hi]` (`emit_chain_step`,
+  `cumulative.cc:3464-3522`; the design note's "Run steps"). The wrapping RUP
+  closes the last step. Ours, from the design note's derivations.
 - **Reason** — whole-scope. Minimally, `j`'s lower bound and the
-  contributors' bounds at each blocked time.
+  contributors' bounds at each blocked time or run.
 - **Assertion** — `[s_j ≥ new_lb] ∨ ¬reason`.
 - **Hint** — `hints::Cumulative`. No payload.
 - **Offline reconstructibility** — `search`. Recompute the profile from the
   reason's bounds and replay the chain, which is a fixed procedure once the
   rule is known. Nothing says it is this rule rather than edge-finding's. One
   candidate check per rule family, polynomial.
-- **Proof size** — per step `3k + 3 + 2` lines (`k` contributors), and the
-  number of steps is between `(new_lb − lb)/lb(d_j)` and `new_lb − lb`. So it
-  is **linear in the push distance in time points** when `d_j` is short:
-  about 59 lines per unit at `d_j = 1`, counting lazy definitions and
-  recoveries, which is 295,048 lines for one push of 5,000
-  (`tmp/fd-sched/cumulative/horizon/`, `7e1c4178`).
+- **Proof size** — a per-time step is `3k + 3 + 2` lines (`k` contributors),
+  plus the first citation of its time point. A run step is `2k + 1` lines
+  (one more for a variable-length `j`) plus a deposit and a proof comment,
+  and cites no time point, so it pays no recovery or flag definition. With
+  runs, the steps number about the
+  profile's plateaus crossed: one push of 5,000 at `d_j = 1` is a 63-line
+  proof at `0a5b4ec6`, against 295,048 lines at `7e1c4178`
+  (`hz.cc blocked`; see [Interval efficiency](#interval-efficiency)). With
+  per-time steps only, there are between `(new_lb − lb)/lb(d_j)` and
+  `new_lb − lb`, which is **linear in the push distance** when `d_j` is
+  short: about 59 lines per unit at `d_j = 1`, counting lazy definitions and
+  recoveries, at both commits.
 - **Gaps** — None.
-- **Tightness** — Not shown by a dedicated lane. The presence lane below
-  replays the same chain.
+- **Tightness** — The run steps have `cumulative_run_mutation_{toofar,
+  drop}` (#1285; claim the last run one start further and push the bound with
+  it; leave the first cited task out of the run's `pol`), each with a
+  `_recovering` twin. The per-time steps have no dedicated lane. The presence
+  lane below replays the same chain.
 
 ### Rule: time-table-upper
 
 - **Infers** — `s_j ≤ new_ub`, the mirror of `time-table-lower`.
 - **Fires when** — as `time-table-lower`, scanning down from `ub(s_j)`.
 - **Strength** — `partial`: time-table consistency on `ub(s_j)`.
-- **Algorithm** — the mirror. The chain takes the **smallest** blocked `t` in
-  `[running, running + lb(d_j) − 1]`, and each step turns it into
-  `s_j ≤ t − lb(d_j)`.
+- **Algorithm** — the mirror. The scan walks down from the top of
+  `ub(s_j)`'s window, and a blocked `t` moves the candidate to `t − lb(d_j)`
+  (`cumulative.cc:3860-3864`). The chain, built inline with a logger only
+  (`3874-3900`), takes the further of a per-time step, the **smallest**
+  blocked `t` in `[running, running + lb(d_j) − 1]` turned into
+  `s_j ≤ t − lb(d_j)`, and a run step down to the latest start among the
+  tasks it cites, taken by earliest latest start.
 - **Why it is true** — if `s_j ≥ t − d_j + 1` for a blocked `t ≥ running`,
-  and `s_j ≤ running`, then `j` runs at `t`.
+  and `s_j ≤ running`, then `j` runs at `t`. A run is the mirror of
+  `time-table-lower`'s.
 - **Proof technique** — as `time-table-lower`, with the reason extended by
   `s_j ≥ t − lb(d_j) + 1`, so each pin carries `[s_j < t − lb(d_j) + 1]` as
-  its disjunct.
+  its disjunct, and a run step's `pol` dominated by `[s_j < lo]`.
 - **Reason** — whole-scope.
 - **Assertion** — `[s_j < new_ub + 1] ∨ ¬reason`.
 - **Hint** — `hints::Cumulative`.
 - **Offline reconstructibility** — `search`, as `time-table-lower`.
-- **Proof size** — as `time-table-lower`, in the push distance.
+- **Proof size** — as `time-table-lower`: proportional to the plateaus
+  crossed where runs apply, and to the push distance where they do not.
 - **Gaps** — None.
-- **Tightness** — Not shown.
+- **Tightness** — Not shown. The run mutation lanes push upward only.
 
 ### Rule: presence-falsification
 
@@ -936,15 +1125,19 @@ Facts true of every rule:
 - **Strength** — `partial`: the presence half of time-table consistency. The
   undecided task's own bounds are never pruned (there is no conditional-bounds
   store; see [Known limitations](#known-limitations)).
-- **Algorithm** — the `time-table-lower` scan over the whole domain, then its
-  chain to `ub(s_j) + 1`. `O(width × lb(d_j))`.
+- **Algorithm** — the `time-table-lower` scan over the whole domain, then
+  (with a logger) its chain to `ub(s_j) + 1`, run steps included.
+  `O(width + lb(d_j))` since #1285 (`O(width × lb(d_j))` before).
 - **Why it is true** — if `j` were present it would have to start somewhere
   in its domain, and every start overloads some time point.
 - **Proof technique** — `RUP sequence`: the `time-table-lower` chain with
   `p_j = 0` carried as an extra disjunct on every line ("`j` starts later, or
   `j` is not here"). The start disjunct is dropped on the last step, whose
-  blocked time is at or past `ub(s_j)`. Under the shipped encoding the chain
-  is **no longer load-bearing on the test fixtures**: `EmitNothing` (no chain
+  blocked time is at or past `ub(s_j)`; a run that ends the chain stops at
+  `ub(s_j) + 1`, where the same holds. A run cites `j`'s checkpoint row, which
+  is sound for an optional `j` (#1285's Fable consult; the design note's "Run
+  steps"). Under the shipped encoding the chain is **no longer load-bearing
+  on the test fixtures**: `EmitNothing` (no chain
   at all) and `WrongTask` (the chain about another task) both verify, because
   unit propagation over the checkpoint rows already reaches the conclusion.
   Both lanes were deleted at the flip.
@@ -963,6 +1156,67 @@ Facts true of every rule:
   recovering twin): fire where exactly one placement still fits. VeriPB
   rejects it under every encoding. `wrong_task` and `emit_nothing` were
   deleted at the flip (see above).
+
+### Rule: time-table-height
+
+New since the audit (#1284, for #1239).
+
+- **Infers** — `h_j ≤ bound`, a lower upper bound on a present task's
+  variable height, where
+  `bound = max over s ∈ [lb(s_j), ub(s_j)] of min over t ∈ [s, s + lb(d_j)) of room_j(t)`
+  and `room_j(t) = ub(capacity) − (mand_load(t) − j's own mandatory load at t)`.
+- **Fires when** — `time_table` on (default), `j`'s height is not a constant,
+  `j` is known present, `lb(d_j) ≥ 1`, `lb(h_j) < ub(h_j)`, `ub(h_j)` does not
+  fit on top of the largest mandatory load anywhere, and
+  `lb(h_j) ≤ bound < ub(h_j)` (`cumulative.cc:3695-3755`). Below `lb(h_j)`
+  nothing fits at all, and the lb push says so as a contradiction. Counted as
+  the `time_table_height` row; `already_true` counts a scan that lowers
+  nothing. A task whose length may be zero and an undecided optional task
+  are left alone: a bound that holds only if the task is present is a
+  conditional bound, and there is nowhere to keep one.
+- **Strength** — `partial`: as much as time-tabling says about the height.
+  With an empty profile it is the capacity.
+- **Algorithm** — a sliding minimum of `room_j` over `j`'s footprint, start by
+  start, stopping at the first placement with room for `ub(h_j)`:
+  `O(width + lb(d_j))`. Then, with a logger only, the `time-table-lower` chain
+  over the whole start domain with `j` counted at `bound + 1`. That chain is
+  per-time steps only, since a task of variable height takes no run steps.
+- **Why it is true** — a present task with length at least 1 takes its height
+  at every point of `[s, s + lb(d_j))` wherever it starts, so it can be no
+  higher than the room its tightest time leaves, and no higher than the best
+  such room over its possible starts.
+- **Proof technique** — `RUP sequence`: presence falsification's chain with
+  `h_j < bound + 1` in the absence's place. Each step reads "either `j`
+  starts later than this, or `h_j < bound + 1`", and the last carries only
+  the height. The one new piece is that `pin_pushed` counts `j`'s
+  contribution at the hypothetical height `bound + 1`, from the negated
+  disjunct, rather than at the reason's `lb(h_j)`. Only an upper bound moves,
+  and the justification reads only lower bounds live. Ours (the design
+  note's "The height rule (#1239)").
+- **Reason** — whole-scope.
+- **Assertion** — `[h_j < bound + 1] ∨ ¬reason`.
+- **Hint** — `hints::Cumulative`.
+- **Offline reconstructibility** — `offline`, as presence falsification: no
+  other rule here lowers a height, and the chain is a fixed procedure from
+  the reason's bounds.
+- **Proof size** — as presence falsification over the whole start domain,
+  with per-time steps only: linear in the domain's width at short lengths.
+- **Gaps** — None.
+- **Tightness** — `cumulative_height_mutation_{toofar, emit_nothing, drop}`,
+  each with a `_recovering` twin. `toofar` claims the bound one lower, on the
+  `profile` fixture. `emit_nothing` and `drop` (no chain; one contributor
+  left out) need the `crowded` fixture, which a random search found: on the
+  hand-made ones unit propagation over the checkpoint rows closes the
+  conclusion without a chain (`cumulative_height_test.cc:302-325`).
+- **Measured** — the audit's probe (three tasks of length 2 over starts
+  `0..4`, heights 2, 2 and `[2, u]`, capacity 5; `vh.cc`, rebuilt against
+  `0a5b4ec6`) enumerates its 252 solutions in 389 recursions at `u` = 5, 6,
+  10, `10³` and `10⁵`, where `7e1c4178` took 1,002 at `u = 10`, 96,042 at
+  `u = 10³` and 9,600,042 at `u = 10⁵`. At `u = 3` it is 277 recursions, as
+  #1284's body has for main before it. #1284's body also reports identical
+  search on constant-height instances, and on PSPLIB multi-mode `j10`/`j20`
+  (60 s, proofs off) the same 1,006 instances closing, with 296 taking fewer
+  recursions and none more.
 
 ### Rule: overload
 
@@ -1008,7 +1262,10 @@ Facts true of every rule:
 - **Tightness** — `cumulative_overload_mutation_{energy, capacity, window}`
   (overstate a task's window energy; omit the last capacity line; derive the
   lemma one point short). All are twinned onto the recovering arm.
-  `cumulative_overload_mutation_recover_wrong_checkpoint_recovering` corrupts the recovery under it.
+  `cumulative_overload_mutation_recover_wrong_checkpoint_recovering` corrupts the recovery under it,
+  and since #1290 `cumulative_overload_mutation_chain_{drop_previous,
+  started_by}` corrupt the recovery's chain step (shipped encoding only; see
+  [Tests](#tests)).
 
 ### Rule: overload-profile
 
@@ -1036,7 +1293,8 @@ Facts true of every rule:
 - **Gaps** — None. A pin claiming load the arithmetic never used would be
   accepted: the reason context is contradictory by then, and every RUP under
   it is vacuous. So the pin set is kept exactly to what `F` counted, by
-  construction (`cumulative.cc:2944-2965`), and no lane can check it.
+  construction (`cumulative.cc:3209-3230`, built only with a logger since
+  #1285), and no lane can check it.
 - **Tightness** — Not shown separately. The `overload` lanes run with the
   profile on.
 
@@ -1067,7 +1325,7 @@ Facts true of every rule:
   instead the items' literal axioms summed, with no row. It is weighed against
   each contained task's window-energy line, with its compulsory times weakened
   out. A self-check throws `ProofError` if the `pol`'s arithmetic disagrees
-  with the detection (`cumulative.cc:2919`).
+  with the detection (`cumulative.cc:3180`).
 - **Reason** — whole-scope.
 - **Assertion** — `¬reason`.
 - **Hint** — `hints::CumulativeOverload`.
@@ -1075,10 +1333,13 @@ Facts true of every rule:
   per-time-point caps, recomputed from the reason.
 - **Proof size** — one availability `pol` per time point of the window (plus
   its pins), plus the energy lines. Linear in width × tasks.
-- **Gaps** — None. **Not counted** by `GCS_SCHEDULING_RULE_STATS`: neither
-  this rule nor `overload-knapsack` increments any counter (Bl2014's
-  `overload` contradictions fall from 1,406 to 289 when it is on, and nothing
-  else rises). [Next steps](#next-steps).
+- **Gaps** — None. **Counted** since #1273 as the `overload_elastic` row of
+  `GCS_SCHEDULING_RULE_STATS`, whose `calls` counts the sweeps the rung was on
+  for. At `7e1c4178` neither elastic rung incremented any counter: Bl2014's
+  `overload` contradictions fell from 1,406 to 289 with this rule on, and
+  nothing rose. #1273's body has 289 `overload` and 1,372 `overload_elastic`
+  contradictions there. On `Bl2019` at `Inferences`, re-run at `0a5b4ec6`, the
+  45 overload-hinted `a` lines are the rows' 41 + 4.
 - **Tightness** — `cumulative_kaoc_mutation_<fixture>_capacity` (omit a
   capacity line) on three fixtures. All three run KAOC and strengthen a time
   point, so **no lane targets an unstrengthened (TTHE-OC) certificate**. This
@@ -1108,7 +1369,7 @@ Facts true of every rule:
   and reachable partial sum, three reified flags (`redundance`) and clauses
   from their halves (`RUP`), ending in an at-least-one that dominates the
   strengthened line. A self-check throws if the strengthened bound is not the
-  one the detection counted on (`cumulative.cc:2847`).
+  one the detection counted on (`cumulative.cc:3108`).
 - **Reason** — whole-scope. The reason must also go into every RUP of the DP,
   because the source line was derived under it.
 - **Assertion** — `¬reason`.
@@ -1121,7 +1382,10 @@ Facts true of every rule:
   `O(items × C)` flags in the worst case. That is pseudo-polynomial in the
   capacity, which is why the strengthening is applied only where needed.
 - **Gaps** — None. The 4,096 cap degrades it to `overload-elastic` silently,
-  which is documented at the site.
+  which is documented at the site. Counted since #1273 as the
+  `overload_knapsack` row, which takes a conflict exactly when the knapsack
+  cap was needed at some time point (the proof comment's `rule=kaoc`); its
+  `calls` stay 0 past the cap.
 - **Tightness** — `cumulative_kaoc_mutation_<fixture>_{claim_one_better,
   strengthen_one_fewer, capacity}` on three fixtures (`cloutier_ex2`,
   `dp_path`, `compulsory`): claim one better than the subset sum; strengthen
@@ -1275,10 +1539,11 @@ Facts true of every rule:
   far. Measured over the benchmark set, every firing is on a spanning task
   (header).
 - **Algorithm** — in the window sweep, after the edge-finding block
-  (which starts at `cumulative.cc:2445`), in its own `if` at 2553, `O(n)` per
-  window over
-  all candidates. That raises the per-node cost: 3.43× the default arm's
-  median instructions per recursion, below.
+  (which starts at `cumulative.cc:2741`), in its own `if` at 2849, `O(n)` per
+  window over all candidates. Since #1292 that `if` is skipped when
+  `not_first_not_last_published` is on, whose detection has its own sweep.
+  That raises the per-node cost: 3.43× the default arm's median instructions
+  per recursion at `7e1c4178`, below.
 - **Why it is true** — if `j` started before every contained task had ended,
   it would overlap the window by at least its clipped energy, which does not
   fit.
@@ -1317,15 +1582,40 @@ Facts true of every rule:
 - **Infers** — `s_j ≥ ECT(Ω)`, under the **published** detection: Schutt and
   Wolf (CP 2010, Proposition 1) and Kameugne et al. (CPAIOR 2018, rule NF).
 - **Fires when** — `not_first_not_last`, `not_first_not_last_published` and
-  `overload` on. The published flag switches `not_first_not_last`'s detection
-  to this one, and does nothing on its own (`cumulative.cc:2553`). Then `e(Ω) + h_j · (min(ect_j, lct(Ω)) − est(Ω)) >
-  C · (lct(Ω) − est(Ω))` over the contained set's own window
-  `[est(Ω), lct(Ω))`, while `lb(s_j) < ECT(Ω)`.
-- **Strength** — `partial`. Incomparable with `not-first`: each fires where
-  the other does not. It is worth under 1% of the search over `not-first`
-  (0.991× summed recursions on `data_bl` + `data_pack`, header).
-- **Algorithm** — as `not-first`, with `O(|Ω|)` captured per window when a
-  logger is present.
+  `overload` on, and a constant capacity. The published flag switches
+  `not_first_not_last`'s detection to this one, and does nothing on its own
+  (`cumulative.cc:2373`). Then, for **any** set `Ω` of eligible present tasks
+  other than `j`, `e(Ω) + h_j · (min(ect_j, lct(Ω)) − est(Ω)) >
+  C · (lct(Ω) − est(Ω))` over `Ω`'s own window `[est(Ω), lct(Ω))`, while
+  `lb(s_j) < ECT(Ω)`. `j` may lie inside that window. Until #1292 it was
+  asked only of the window sweep's sets (a window's whole contents), and a
+  task the window contained was skipped.
+- **Strength** — `partial`. At `7e1c4178` it was incomparable with
+  `not-first`, each firing where the other did not, and worth under 1% of the
+  search over it (0.991× summed recursions on `data_bl` + `data_pack`,
+  header). Asked of every `Ω`, #1292's body measures 0.883× the summed
+  recursions of the window-sweep version over the 35 instances both close
+  (`data_bl` + `data_pack`, 60 s), better on 30 and worse on none, at 1.34×
+  its wall time and 0.95× the window-energy detection's. Re-run here on
+  `data_bl` alone at 30 s ([CPU performance](#cpu-performance)): 0.865× its
+  own `7e1c4178` summed recursions on the 33 both close, and 0.849× the
+  window-energy detection's on the 32 both close at `0a5b4ec6`, worse on
+  none. Whether it is still incomparable with `not-first` was not
+  re-checked. On #1292's random
+  instances a brute force over every `Ω` finds no missed root push except
+  six involving a `{0, 1}` start, which no window rule takes.
+- **Algorithm** — its own sweep before the window loop
+  (`cumulative.cc:2345-2600`), not the window loop. What `Ω` claims depends
+  only on its energy, `est`, `lct` and `ECT`, so the sets worth asking about
+  are fixed by an `est` floor, an `lct` ceiling and an `ect` floor. The
+  condition is linear in the `est` floor, so for each `ect` floor (from the
+  top) and each `lct` ceiling, a running maximum per distinct height answers
+  it for every task in constant time: `O(H·n³)` for `H` distinct heights. A
+  task meeting the floors and ceiling is left out of the set by splitting the
+  maximum at its own `est`. At a firing the set is rebuilt and the condition
+  asked again with its own figures, in checked arithmetic, before anything is
+  pushed; a mismatch throws (`2562-2580`). The design note's "Which Ω: every
+  one" has the derivation.
 - **Why it is true** — **contiguity**, not window energy (#746).
   - If `s_j < ECT(Ω)`, every task in `Ω` has `ect ≥ ECT(Ω)`, so any of them
     running before `ECT(Ω)` is still running at `ECT(Ω) − 1`.
@@ -1360,10 +1650,11 @@ Facts true of every rule:
 ### Rule: published-not-last
 
 - **Infers** — `s_j < LST(Ω) − p_j + 1`, the published mirror.
-- **Fires when** — as `published-not-first`, with `max_lst < lct_j` and the
-  mirrored inequality.
+- **Fires when** — as `published-not-first`, with the mirrored inequality,
+  over every `Ω` since #1292.
 - **Strength** — `partial`, the mirror.
-- **Algorithm** — the same.
+- **Algorithm** — the same sweep, run on the tasks reflected in time
+  (`est' = −lct`, `ect' = −lst`), where the condition reads as not-first's.
 - **Why it is true** — contiguity over the suffix, at `LST(Ω)`.
 - **Proof technique** — the same chain, walking down.
 - **Reason** — whole-scope.
@@ -1387,6 +1678,9 @@ Facts true of every rule:
   `SimpleIntegerVariableID` and whose length is constant
   (`derived_cumulative.cc:334`). "Constant" is `is_constant_variable`, a type
   test, so a length variable whose domain is a single value is not counted.
+  Since #1282 the two inferred presolvers say so in a note when it happens
+  (`makespan_coverage_note`, `makespan_links.cc:119-130`); the length is
+  still not counted.
   An undecided optional task counts as absent.
 - **Strength** — `partial`: an energy lower bound on one variable. It is
   Sidorov's `L`, sometimes better (it divides by the rows actually present,
@@ -1455,12 +1749,14 @@ Facts true of every rule:
 - **Proof size** — one `pol` over `|window|` rows, plus at most `n`
   window-energy derivations and at most `n` confinement `pol`s. The window
   runs from `rows_lo` to `μ`. `rows_lo` is the minimum window start over **all** the derived constraint's
-  active tasks, counted or not (`derived_cumulative.cc:137-139`, `:354`). So
+  active tasks, counted or not (`derived_cumulative.cc:137-139`, `:355`). So
   the cost is linear in `μ − rows_lo`, the bound measured from the earliest
   active window, and so in the task lengths, not in the horizon. Each of those rows is a donor row recovered at its first citation,
   at `Top`; on [`inferred_cumulative.md`](../presolvers/inferred_cumulative.md)'s
-  scaled fixture the whole root proof grows by about 357 lines per time unit
-  of the bound.
+  scaled fixture (`hz2.cc`) the whole root proof grows by about 297 lines per
+  time unit of the bound at `0a5b4ec6`: 31,361 lines at a bound of 105 and
+  311,891 at 1,050, both verifying. It was about 357 at `7e1c4178`, before
+  #1290's chain recovery.
 - **Gaps** — None. With proofs on, the derived constraint may decline at
   install (see [Proof-logging gaps](#proof-logging-gaps)).
 - **Tightness** — `rcpsp_dzn_inferred_cumulative_mutated` and
@@ -1495,7 +1791,9 @@ the part a reader of the presolver documents needs.
   and deleting a model row changes the problem.
 - **Donor rows.** A posted donor has no `cap_<t>` row under the shipped
   encoding, so the recipe's row comes from the donor's `cap` family, which is
-  the checkpoint recovery (`O(m³)` lines per first cited point). A published
+  the checkpoint recovery: since #1290 a quadratic chain step per first cited
+  point where the row below is in reach, and otherwise the `O(m³)` scan. A
+  published
   donor (a `Disjunctive2D` axis, #973) has only its family.
 - **`cumulative_donor_view`** reduces a posted donor to constant arguments per
   task. It sets aside a task with a view height, a height that guarantees
@@ -1516,11 +1814,12 @@ the part a reader of the presolver documents needs.
 
 ### Tests
 
-- **Twelve test binaries, all verifying.** The binaries are `cumulative_test`, `_overload_test`, `_edge_finding_test`,
+- **Fourteen test binaries, all verifying.** The binaries are `cumulative_test`, `_overload_test`, `_edge_finding_test`,
   `_ttef_test`, `_energetic_test`, `_nfnl_test`, `_published_nfnl_test`,
-  `_kaoc_test`, `_optional_test`, `_wide_horizon_test`, `derived_cumulative_test`
-  and `subset_sum_strengthening_test`.
-  - Nine compare `solve_for_tests` against a brute-force checker. None uses
+  `_kaoc_test`, `_optional_test`, `_height_test` (#1284), `_run_test` (#1285),
+  `_wide_horizon_test`, `derived_cumulative_test` and
+  `subset_sum_strengthening_test`.
+  - Eleven compare `solve_for_tests` against a brute-force checker. None uses
     `solve_for_tests_checking_gac`, rightly, since no rule claims a
     consistency. `derived_cumulative_test`, `cumulative_wide_horizon_test` and
     `subset_sum_strengthening_test` make no `solve_for_tests` call: they check
@@ -1532,27 +1831,39 @@ the part a reader of the presolver documents needs.
     exception: its seed defaults to a fixed 1.
   - `cumulative_test` also sweeps view-wrapped positions (`[w0_pall]`
     labels), and has view and mixed lanes.
-- **108 ctest lanes for this family** (`ctest -N` at `7e1c4178`; the
-  presolvers' own lanes, such as `cumulative_strengthening_presolver` and its
-  `_recovering` twin, belong to their documents and are not counted here.
-  Of the `rcpsp` example's lanes only `rcpsp_dzn_inferred_cumulative_mutated`
-  is counted, since its mutation targets `makespan-bound`. The others also
-  post a Cumulative but are not counted, `rcpsp_mm_energetic` (energetic
-  edge-finding on) among them):
-  - 21 modes of the twelve binaries (`subset_sum_strengthening_test`'s one
+- **124 ctest lanes for this family** at `0a5b4ec6`, counted from the
+  Release build's `CTestTestfile.cmake` files, against 108 by `ctest -N` at
+  `7e1c4178`. The presolvers' own lanes, such as
+  `cumulative_strengthening_presolver` and its `_recovering` twin, belong to
+  their documents and are not counted here, and neither is
+  `integer_ranges`. Of the `rcpsp` example's lanes only
+  `rcpsp_dzn_inferred_cumulative_mutated` is counted, since its mutation
+  targets `makespan-bound`. The others also post a Cumulative but are not
+  counted, `rcpsp_mm_energetic` (energetic edge-finding on) and #1273's three
+  `rcpsp_rule_counters_{elastic_off, elastic_on, knapsack_on}` lanes among
+  them. The 124:
+  - 23 modes of the fourteen binaries (`subset_sum_strengthening_test`'s one
     lane included);
-  - **23 `_recovering` lanes** on the test-only `BothRecovering` arm, which
+  - **30 `_recovering` lanes** on the test-only `BothRecovering` arm, which
     checks every recovered row against the model row standing beside it,
     not counting the example's `cumulative_encoding_both_recovering`
-    (counted with the example below). Twenty-two are twins of a bare lane of
+    (counted with the example below). Twenty-nine are twins of a bare lane of
     the same name, `derived_cumulative_recovering` among them;
     `cumulative_overload_mutation_recover_wrong_checkpoint_recovering` has no
-    bare partner. Five of
-    the 23 are also among the 41 mutation lanes below: the four mutation
+    bare partner. Ten of
+    the 30 are also among the 53 mutation lanes below: the nine mutation
     twins, and `cumulative_overload_mutation_recover_wrong_checkpoint_recovering`;
-  - **41 mutation lanes** (`run_test_and_expect_verify_failure.bash`), listed
-    per rule above. Four are `BothRecovering` twins and one,
-    `cumulative_overload_mutation_recover_wrong_checkpoint_recovering`, runs only on that arm;
+  - **53 mutation lanes** (`run_test_and_expect_verify_failure.bash`), listed
+    per rule above. Nine are `BothRecovering` twins and one,
+    `cumulative_overload_mutation_recover_wrong_checkpoint_recovering`, runs only on that arm.
+    New since `7e1c4178`: the height rule's three and the run steps' two
+    (#1284, #1285), each with a twin, and #1290's
+    `cumulative_overload_mutation_chain_{drop_previous, started_by}`, which
+    corrupt the recovery's chain step under the overload certificate (leave
+    `C_{t−1}` out of the no-start case; guard each case on "started by `t`"
+    rather than "starts at `t`"). Those two run only on the shipped encoding,
+    since under `both-recovering` the second verifies against the very rows
+    being recovered (`gcs/CMakeLists.txt:630-641`);
   - **8 `cumulative_checkpoint_recovery_*` leak checks**, four `.scp` cases in
     two modes. `whole` rechecks a `BothRecovering` proof against an OPB with
     every per-time row stripped, so the recovery cannot be closing against the
@@ -1567,15 +1878,19 @@ the part a reader of the presolver documents needs.
   - `rcpsp_dzn_inferred_cumulative_mutated`.
 - **Runtime caps.** Every lane runs under the suite-wide caps (300 solutions,
   1,500 recursions) unless the build sets `GCS_TEST_CAP_DEFAULTS=OFF`, as the
-  two Ubuntu CI lanes do. **The caps fire on two binaries**, run with the
-  default environment for this audit: `cumulative_test` (10 truncated runs,
-  "300 of ≤ 400 solutions checked sound" and similar) and
-  `cumulative_overload_test` (10). The other ten never reach a cap. The counts
-  depend on the seed: the fact-check saw 11 for `cumulative_overload_test` at
-  `--seed=7`. The
-  results reported here come from **uncapped** runs of all twelve, pinned,
-  from `tmp/fd-sched/cumulative/suite/`, with no environment caps. All passed,
-  in 0.3 to 4.2 s each.
+  two Ubuntu CI lanes do. **The caps fire on four binaries** at `0a5b4ec6`,
+  run with the caps set and a fresh seed each: `cumulative_test` (10
+  truncated runs, "300 of <= 345 solutions checked sound" and similar),
+  `cumulative_overload_test` (9), `cumulative_height_test` (6) and
+  `cumulative_run_test` (26). The other ten never reach a cap. The counts
+  depend on the seed: at `7e1c4178` this audit saw 10 for
+  `cumulative_overload_test` and the fact-check 11 at `--seed=7`. The
+  results reported here come from **uncapped** runs of all fourteen, serial
+  on one pinned core, with no environment caps
+  (`tmp/fd871-comments-1008/cumulative/probes/meas/suite.tsv`). All passed,
+  in 0.2 to 3.5 s each; the VeriPB rejections in `derived_cumulative_test`'s
+  and `subset_sum_strengthening_test`'s output are their in-binary mutation
+  checks, as expected.
 - **Tightness harness.** The mutation lanes have a **control**: every mutated
   fixture's honest twin runs in the same binary's ordinary mode and verifies.
   `PublishedEmitNothing` and the deleted presence `EmitNothing` are the
@@ -1590,27 +1905,36 @@ the part a reader of the presolver documents needs.
 - **Any assertion level above `Off`** with a derived Cumulative (#1234).
   - **Posted donor.** Under the shipped encoding, the proof is rejected
     whenever a constraint was installed: at `Inferences` the presolver and
-    derived tests abort with VeriPB syntax errors.
+    derived tests abort with VeriPB syntax errors (at `7e1c4178`; not re-run).
   - **`Disjunctive2D` donor.** At `Definitions`, `Inferences` and
     `Backtracking`, two presolvers decline and the proof verifies, so only a
     posting-count check sees it. The strengthening presolver throws a
     `ProofError` on `bars`.
-  - **At `Links`,** a posted-donor proof with an install fails with
-    #1234's parse error. Otherwise every proof of a satisfiable model is rejected at its first `solx` (#1210), including the
+  - **At `Links`,** a posted-donor proof with an install fails at #1234's
+    undefined flags: a parse error at `7e1c4178`, and at `0a5b4ec6` on
+    `sample.dzn` a rejected `rup` in the recovery's chain base. Otherwise every proof of a satisfiable model is rejected at its first `solx` (#1210), including the
     projection runs where nothing was posted; unsatisfiable models verify.
 
   No lane sets `GCS_ASSERTION_LEVEL`.
-- **Wide horizons, other than the name count.** `cumulative_wide_horizon_test`
-  asserts at most 200 per-time names on a `10⁵` horizon (for #1111 and #1130).
-  It does not time anything, and the large-domain lane trips in `prepare`
-  before any rule runs. The chain-length cost and #705's scans are unmeasured
-  by the suite.
-- **Inputs near the range policy's edge.** `B`-sized heights and capacity
-  throw (#1235, #1223), and no lane has them.
-- **Elastic and knapsack firing counts.** Neither rung is counted, so a fixture
-  cannot assert that it fired, except through a proof comment.
-- **`with_encoding` from a user.** Nothing checks that a frontend run never
-  writes the per-time block.
+- **Wide horizons, other than the name count and the run steps.**
+  `cumulative_wide_horizon_test` asserts at most 200 per-time names on a
+  `10⁵` horizon (for #1111 and #1130). Since #1285, `cumulative_run_test`
+  bounds the proof of a push of 5,000 over a 10,001-value start domain at one
+  run step and 200 lines (`long_push`, `cumulative_run_test.cc:305`, `393`),
+  and of its mirror. Neither times anything, the large-domain lane trips in
+  `prepare` before any rule runs, and the per-time chain's cost (variable
+  heights, views, derived constraints) is unmeasured by the suite.
+- **Inputs near the range policy's edge,** for one site. Since #1271,
+  `integer_ranges_test` pins the four overflow sites the audit found, each
+  beside a twin just inside the limit, with and without proofs. The fifth,
+  #1292's check in the published detection's sweep, has no lane.
+- **Elastic and knapsack firing counts** were a gap at `7e1c4178`. #1273
+  closed it: the `overload_elastic` and `overload_knapsack` rows exist, and
+  `rcpsp_rule_counters_{elastic_off, elastic_on, knapsack_on}` assert them on
+  `rcpsp --size 16 --seed 7`.
+- **`with_encoding` and `GCS_CUMULATIVE_ENCODING` from a user.** Nothing
+  checks that a frontend run never writes the per-time block. Since #1278 the
+  variable is documented as a diagnostic, by decision.
 - **Derived-constraint declines with proofs on but not off.** Propagation can
   differ between the two (see [Proof-logging gaps](#proof-logging-gaps)), and
   no lane compares node counts across them on a declining shape.
@@ -1636,13 +1960,16 @@ the part a reader of the presolver documents needs.
   which is enough to compare arms without timeouts. `data_pack` is the
   standard harder companion. Multi-mode `j10`/`j20` are needed for variable
   lengths and heights.
-- **For proof verification:** `Bl2019` (203 nodes, 64k lines, 1.6 to 3.6 s
-  of VeriPB) and `Bl2011` (687 nodes, 104k lines, 6.4 to 12.7 s) are cheap. `Bl2004`
-  (8,917 nodes, 1.19M lines, 381 MB, 390 to 510 s) is the largest a routine run
-  should attempt. Anything needing `10⁵` nodes is out of reach (see below).
-- **Never run uncapped:** the `hz.cc blocked` probe at `d = 1` past a few
-  thousand time points with proofs on. One push of 50,000 writes a 268.8 MB
-  proof that had not finished verifying after 24 minutes.
+- **For proof verification:** `Bl2019` (203 nodes, 39k lines, 0.45 s of
+  VeriPB at `0a5b4ec6`) and `Bl2011` (687 nodes, 84k lines, 3.7 s) are cheap.
+  `Bl2004` (8,917 nodes, 1.03M lines, 284 MB, 221 s) is the largest a routine
+  run should attempt. Anything needing `10⁵` nodes is out of reach (see
+  below).
+- **Never run uncapped:** a push that takes per-time steps, at `d = 1` past a
+  few thousand time points with proofs on (`hzv.cc`, a variable height). At
+  `7e1c4178` that was also `hz.cc blocked`, whose push of 50,000 wrote a
+  268.8 MB proof that had not finished verifying after 24 minutes. Since #1285
+  `hz.cc blocked` is a 63-line proof at any horizon.
 
 ### CPU performance
 
@@ -1669,6 +1996,35 @@ closed**. Every arm that closed an instance found the same optimum.
 Ratios are to the default arm, per instance for the medians. The `+` arms
 include `edge_finding`. Raw data: `tmp/fd-sched/cumulative/bench/`.
 
+**Three arms re-run at `0a5b4ec6`** (the same 40 instances, flags, cap and
+tunables; fataepyc-10, 2026-10-08, one job at a time on one pinned core;
+`tmp/fd871-comments-1008/cumulative/probes/meas/ladder.tsv`). Against
+`7e1c4178`'s runs of the same arm, on the instances both closed:
+- **default**: the same 33 closed, with **identical recursions and optima on
+  all 33**, at 0.991× the summed `instructions:u` (median 0.983×);
+- **`+ not_first_not_last`**: identical recursions and optima on the 30 both
+  closed, at 0.989× the instructions. It closes 32 now, against 30;
+- **`+ not_first_not_last_published`**, asked of every `Ω` since #1292: the
+  same 33 closed and the same optima, at **0.865× the summed recursions**
+  (median 0.886×), better on 29 and worse on none, at 1.000× the summed
+  instructions (median 1.022×).
+
+Over the 32 instances all three close at `0a5b4ec6`:
+
+| arm | closed | Σ recursions | median recursions | Σ instructions | Σ wall | median instr./recursion |
+|---|---|---|---|---|---|---|
+| default (TT + OC + TTOC) | 33 | 2,727,525 (1.000) | 1.000 | 449.3 G (1.000) | 60.4 s | 1.000 |
+| `+ not_first_not_last` | 32 | 0.439 | 0.709 | 2.051 | 1.991 | 3.555 |
+| `+ not_first_not_last_published` | 33 | 0.372 | 0.619 | 1.488 | 1.972 | 3.146 |
+
+The published detection now takes 0.849× the window-energy detection's
+summed recursions over those 32 (median 0.890×, better on 28, worse on
+none), at 0.725× its instructions. These rows are not comparable with the
+first table's: the instance set differs (32 against 30), and that run had
+twenty jobs at once. The other five arms were not re-run; their recursions
+should be unchanged, since #1285 and #1284 report identical search on
+constant heights, but their instruction ratios are `7e1c4178`'s.
+
 Two readings, and both need the caveat that this is one instance family under
 one search.
 
@@ -1678,9 +2034,9 @@ one search.
   anything fires" and from #742's 1.5× tax, which were measured at *identical
   search*. Here the search shrinks by more than the sweep costs.
 - **Per node, every strengthening costs more than the default.** In median
-  instructions per recursion: `energetic_edge_finding` 4.3×,
+  instructions per recursion at `7e1c4178`: `energetic_edge_finding` 4.3×,
   `not_first_not_last` 3.4× (and fewer instances closed), the published
-  detection 2.5×, KAOC 2.1×, the elastic rung 1.8×, TTEF 1.6× and plain
+  detection 2.5× (3.1× over every `Ω` at `0a5b4ec6`), KAOC 2.1×, the elastic rung 1.8×, TTEF 1.6× and plain
   edge-finding 1.2×. Where the total still falls, it is because the search
   shrinks by more. That is in line with each flag's documented reason for
   being off. The `+` arms run through `examples/rcpsp`, whose flags imply
@@ -1728,64 +2084,76 @@ this run is a single sample.
 ### Proof performance
 
 `examples/rcpsp --dzn ... --prove`, `veripb --force-checked-deletion`,
-VeriPB 3.0.2, same build and machine, 2026-10-04 and 05. All 48 proofs
-verify. Line, byte and `a` counts are deterministic, and the fact-check
-reproduced every one. **Times are not.** The machine was shared with other
-audits, at a load average of 56 to 71 on 192 cores, and proofs were written
-to NFS. The times come from three runs:
-
-- this audit's sweep, run 20-wide and pinned (`proof/proof.tsv`);
-- a sequential re-run on one pinned core (`proof/quiet/`);
-- the fact-check's run.
-
-They disagree by up to 2.3× for VeriPB, and by up to 10× for the proof-writing
-solve. The table gives each default row's range, and the strengthened arms'
-times from the sweep only. Read the ratio column as an order of magnitude.
+VeriPB 3.0.2. **Re-run at `0a5b4ec6`** on fataepyc-10, 2026-10-08, one run
+each, serial on one pinned core, malloc thresholds fixed, proofs written to
+`/cluster`. All twelve proofs verify (the `Inferences` ones `UNDER
+ASSERTIONS`). Nodes, OPB lines and every `Inferences` column are identical to
+`7e1c4178`'s; the `Off` proofs shrank, mostly from #1285's run steps and
+#1290's chain recovery, though anything else on `main` since then also counts.
+Line, byte and `a` counts are deterministic; times are single samples on a
+lightly loaded machine (load average about 6 on 192 cores).
 
 | instance, arm | nodes | OPB lines | proof lines (`Off`) | proof size | VeriPB | solve w/ proof | VeriPB / solve | proof lines (`Inferences`) | `a` lines | of them Cumulative's |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Bl2019, default | 203 | 2,176 | 64,147 | 6.3 MB | 1.6–3.6 s | 0.12–1.15 s | ~3–26× | 1,834 | 1,401 | 151 (11%) |
-| Bl2011, default | 687 | 1,801 | 103,936 | 15.9 MB | 6.4–12.7 s | 0.19–1.12 s | ~9–67× | 5,641 | 4,071 | 995 (24%) |
-| Bl2004, default | 8,917 | 3,398 | 1,187,088 | 380.7 MB | 390–510 s | 4.7–14.2 s | ~36–92× | 75,763 | 49,524 | 36,262 (73%) |
-| Bl2004, TTEF | 6,812 | 3,398 | 1,437,309 | 544.5 MB | 355.7 s | 7.74 s | 46× | 80,515 | 60,462 | 50,047 (83%) |
-| Bl2004, energetic | 6,215 | 3,398 | 1,308,132 | 435.2 MB | 209.6 s | 7.26 s | 29× | 75,913 | 57,651 | 48,162 (84%) |
-| Bl2004, KAOC | 8,779 | 3,398 | 1,327,749 | 423.6 MB | 432.3 s | 6.67 s | 65× | 72,177 | 46,352 | 33,440 (72%) |
+| Bl2019, default | 203 | 2,176 | 39,374 | 3.7 MB | 0.45 s | 0.08 s | ~6× | 1,834 | 1,401 | 151 (11%) |
+| Bl2011, default | 687 | 1,801 | 83,520 | 12.1 MB | 3.66 s | 0.16 s | ~23× | 5,641 | 4,071 | 995 (24%) |
+| Bl2004, default | 8,917 | 3,398 | 1,031,991 | 284.4 MB | 221.3 s | 2.41 s | ~92× | 75,763 | 49,524 | 36,262 (73%) |
+| Bl2004, TTEF | 6,812 | 3,398 | 1,322,506 | 480.9 MB | 274.0 s | 3.64 s | ~75× | 80,515 | 60,462 | 50,047 (83%) |
+| Bl2004, energetic | 6,215 | 3,398 | 1,198,554 | 377.9 MB | 143.1 s | 3.75 s | ~38× | 75,913 | 57,651 | 48,162 (84%) |
+| Bl2004, KAOC | 8,779 | 3,398 | 1,187,018 | 339.3 MB | 228.5 s | 3.05 s | ~75× | 72,177 | 46,352 | 33,440 (72%) |
+
+At `7e1c4178` (2026-10-04 and 05, fataepyc-08, a load average of 56 to 71,
+proofs on NFS, times from three runs that disagreed by up to 2.3× for VeriPB
+and 10× for the solve) the `Off` columns were: Bl2019 64,147 lines, 6.3 MB,
+1.6–3.6 s; Bl2011 103,936, 15.9 MB, 6.4–12.7 s; Bl2004 1,187,088, 380.7 MB,
+390–510 s; TTEF 1,437,309, 544.5 MB, 355.7 s; energetic 1,308,132, 435.2 MB,
+209.6 s; KAOC 1,327,749, 423.6 MB, 432.3 s. The two commits' times were taken
+under different load, so only the line and byte counts compare directly. Read
+the ratio column as an order of magnitude.
 
 The OPB is the same in every arm: the encoding does not depend on the rules.
 
-**Own against shared, on Bl2004 default.**
+**Own against shared, on Bl2004 default**, at `0a5b4ec6` (`7e1c4178`'s in
+brackets).
 
-- **Every line by kind.** 711,484 `rup`, 354,203 `pol`, 90,243 `del`, 19,668
-  `red`, 9,895 comments, 1,583 `core`.
+- **Every line by kind.** 489,770 `rup` (711,484), 421,813 `pol` (354,203),
+  90,261 `del` (90,243), 5,496 `red` (19,668), 23,056 comments (9,895; 13,106
+  run-step comments and 55 recovery comments are new), 1,583 `core` (1,583).
 - **The `red` steps by what they define.**
-  - Cumulative's own per-time flags: 990 each of `cb`, `ca` and `cact`.
-  - Cumulative's checkpoint recovery: 15,650 (`ckpe` 9,044, `ckpw` 5,512, `ckpn`
-    990, `ckpf` 104).
-  - The shared order and equality literal definitions: **1,048** (`≥`: 610
-    on starts and 20 on the makespan; `=`: 410 on starts and 8 on the
-    makespan).
+  - Cumulative's own per-time flags: 1,024 each of `cb`, `ca` and `cact`
+    (990 each).
+  - Cumulative's checkpoint recovery: 1,376 (15,650): `ckps` 912, `ckpe` 196,
+    `ckpw` 128, `ckpf` 110, `ckpn` 30. 53 rows came by a chain step and 2 by
+    the scan.
+  - The shared order and equality literal definitions: **1,048**, as before
+    (`≥`: 630; `=`: 418, on the starts and the makespan).
 - **The assertion-level difference.** At `Inferences` the same search writes
   75,763 lines. Of the 49,524 assertions, 13,262 belong to the precedence rows
   and the objective. Each of those is at most a line or two when justified, so
   replacing Cumulative's 36,262 assertions with their justifications accounts
-  for about 1.10M of the 1.19M lines.
-- **So about 31 lines per Cumulative inference**, and about 95% of the proof is
-  this family's own. That includes the lazy flag definitions and recoveries,
-  which the first citation of a time point pays. The shared literal layers are
-  under 1%.
+  for about 0.96M of the 1.03M lines (1.11M of 1.19M at `7e1c4178`).
+- **So about 26 lines per Cumulative inference** (31 at `7e1c4178`). The
+  `Inferences` proof's lines other than Cumulative's assertions are 39,501,
+  about 4% of the `Off` proof, so about 96% of it is this family's own. That
+  includes the lazy flag definitions and recoveries, which the first citation
+  of a time point pays. The shared literal layers are about 0.1%.
 - **Scaling.** On a generated single-resource instance (`--size 8 --seed 5
   --density 0.1 --resources 1 --capacity 4 --max-demand 3 --machine-fraction
   0 --max-duration D`, for `D` = 2, 4, 8, 16 and 32), the cost per Cumulative
-  inference settles at **71 to 75 lines** once `D ≥ 8`. Below that it is 246
-  at `D = 2` (11 inferences, so mostly the first-citation costs) and 84 at
-  `D = 4`. The flag and recovery `red` counts grow linearly with the horizon:
-  540 → 5,924 and 408 → 4,490. That is the first-citation cost being paid at
-  more distinct time points.
+  inference (the `Off` proof's lines less the `Inferences` proof's, over
+  Cumulative's `a` lines) is **43 to 47 lines** once `D ≥ 4` at `0a5b4ec6`,
+  and 156 at `D = 2` (11 inferences, so mostly the first-citation costs).
+  At `7e1c4178` it settled at 71 to 75 once `D ≥ 8`, with 246 at `D = 2` and
+  84 at `D = 4`. The search is the same at both commits (30 to 368
+  recursions). The flag and recovery `red` counts still grow with the
+  horizon, but the recovery's far less: flag plus recovery 170 → 1,934, of
+  which recovery 38 → 776, where it was 540 → 5,924 and 408 → 4,490.
 
-**Too large to verify.** Bl2004's 381 MB proof took 390 to 510 s to check. A `data_bl` instance needing `10⁵` nodes or more (Bl2002, Bl2003,
+**Too large to verify.** Bl2004's 284 MB proof took 221 s to check at
+`0a5b4ec6`. A `data_bl` instance needing `10⁵` nodes or more (Bl2002, Bl2003,
 Bl2007, Bl2012) would write proofs of several GB, and was not attempted.
-Verification costing tens of times the proof-writing solve is the family's
-headline cost. These timings cannot pin the ratio more closely than that.
+Verification costing tens of times the proof-writing solve is still the
+family's headline cost.
 
 **What an external justifier consumes.**
 
@@ -1795,8 +2163,11 @@ headline cost. These timings cannot pin the ratio more closely than that.
   On Bl2004 default that is 35,288 and 974. The rule counters agree exactly:
   30,522 time-table pushes, 4,766 overflow contradictions and 974 overload
   contradictions.
-- The `Inferences` proof is 6% of the `Off` proof's lines and of its bytes
-  (22.8 MB against 380.7 MB), and verifies in 0.5 s.
+- The `Inferences` proof is 7% of the `Off` proof's lines and 8% of its bytes
+  at `0a5b4ec6` (22.8 MB against 284.4 MB), and verifies in 0.6 s. At
+  `7e1c4178` it was 6% of both (against 380.7 MB).
+- The counts above, and the rule counters, re-run at `0a5b4ec6`, are the same
+  as at `7e1c4178`.
 - **But only with no derived Cumulative**, which is #1234.
 
 ## Status, gaps, and next steps
@@ -1805,19 +2176,29 @@ headline cost. These timings cannot pin the ratio more closely than that.
 
 - **None in the derivations.** Every inference of every rule is justified, at
   `AssertionLevel::Off`, with no `a` oracle anywhere.
-- **The proof cannot be read at `Definitions`, `Inferences` or
+- **The proof is rejected at `Definitions`, `Inferences` and
   `Backtracking` when a derived Cumulative is installed over a posted
   `Cumulative` under the shipped start-checkpoint encoding** (#1234). The
   donor's row family is published at every level, but its flag definer only
-  at `Off`, so the recovery cites undefined labels.
+  at `Off`, so the recovery cites undefined flags and labels.
   - Reproduced on `examples/rcpsp/sample.dzn` with `--infer-cumulative` or
     `--infer-disjunctive` at `definitions`, `inferences` and `backtracking`,
-    and in four test binaries at `definitions` and `inferences`.
+    and in four test binaries at `definitions` and `inferences`. Re-checked
+    at `0a5b4ec6` for both flags: a syntax error at `inferences` and
+    `backtracking`, and at `definitions` and `links` a checking error at the
+    `rup 1 ~v[_6][0_0][cact] 1 v[_6][0_0][cb] >= 1` that follows
+    `% checkpoint recovery by chain t=0 m=2 base`. The
+    `Off` runs verify, and the `time-indexed` run at `inferences` verifies
+    `UNDER ASSERTIONS`.
   - With `GCS_CUMULATIVE_ENCODING=time-indexed` the same `sample.dzn` runs
     verify `UNDER ASSERTIONS`, and so do the cross-document re-check's
     `CumulativeStrengthening` and `InferredCumulative` runs on four fixtures at
-    all three levels. Under the shipped encoding those runs give the syntax
-    error. Under that encoding the rows are model rows, found by label before
+    all three levels. Under the shipped encoding those runs gave the syntax
+    error at `7e1c4178` (2026-10-05). The fact-check re-ran them at
+    `0a5b4ec6` (`r1`, `pack`, `two_full`, `knapsack_raise`, both presolvers):
+    as on `sample.dzn`, all eight give a checking error at `definitions`, at
+    the same chain-base `rup`, and a syntax error at `inferences`. Under the
+    time-indexed encoding the rows are model rows, found by label before
     any recovery is asked for.
   - A presolver that installs nothing (strengthening on `nothing_to_gain` and
     `all_full`) verifies.
@@ -1826,12 +2207,12 @@ headline cost. These timings cannot pin the ratio more closely than that.
 
   A hints-only proof with a presolver on is therefore unusable today, on the
   encoding that ships.
-  - Lifting that one gate is not enough. With `cumulative.cc:935` changed to
+  - Lifting that one gate is not enough. With `cumulative.cc:940` changed to
     `if (! logger)`, `inferred_cumulative_presolver_test --seed=1` at
     `Inferences` still fails, at `rup 1 i[h3][ge1] >= 1`: a variable height's
     order literal is cited and never defined at that level, which is #1210's
-    class (the fact-check's counterfactual,
-    `tmp/fd-sched/factcheck/cumulative/a1/cf/`).
+    class (the fact-check's counterfactual at `7e1c4178`, the gate then at
+    `:935`, `tmp/fd-sched/factcheck/cumulative/a1/cf/`; not re-run).
   - Over a `Disjunctive2D` donor the symptom is different, either a silent
     decline or a `ProofError` (see the next item but one).
 - **The derived constraint's strength changes with proofs on.** With proofs
@@ -1865,7 +2246,7 @@ headline cost. These timings cannot pin the ratio more closely than that.
     and `Backtracking` it **throws a `ProofError`**, whose `what()` reads
     `unexpected problem: cumulative strengthening: the donor has no capacity
     row at time 0, which cannot happen for a constraint derived over all of
-    its tasks` (`cumulative_strengthening.cc:512`; `ProofError` adds the
+    its tasks` (`cumulative_strengthening.cc:417`; `ProofError` adds the
     prefix, `proof_error.cc:8`). The solve aborts. On the strip it posts
     nothing and verifies;
   - all of this is the same under `time-indexed`. The proofs verify `UNDER
@@ -1875,7 +2256,11 @@ headline cost. These timings cannot pin the ratio more closely than that.
     nothing.
 
   The cross-document re-check, `tmp/fd-sched/factcheck/crossdoc2/d2/runs.txt`,
-  has the full grid.
+  has the full grid. Re-run on `bars` at `0a5b4ec6` (`probe5bars.cc`), after
+  #1280, #1281 and #1286 changed `CumulativeStrengthening` and #1276 the
+  projection's triggers: the strengthening presolver posts 1 (816 solutions)
+  with proofs off and at `Off` and throws the same `ProofError` at the three
+  levels above, and `InferredCumulative` posts 1 at `Off` and 0 above.
 - **The posted constraint's strength never changes with proofs.** Every
   arithmetic decision reads the windows rather than the (empty with proofs off)
   flag vectors, and the reason is lazy.
@@ -1893,16 +2278,19 @@ headline cost. These timings cannot pin the ratio more closely than that.
   window-sweep rule also needs `overload` on, whatever its own flag says.
 - **A view height cannot be proof-logged** (`UnimplementedException` with
   proofs on), though no frontend produces one.
-- **No rule lowers a variable height's upper bound**, not even to the
-  capacity. Search walks the height's values one at a time: three tasks of
-  length 2 over starts `0..4`, heights `2`, `2` and `[2, u]`, capacity 5,
-  take 1,002 recursions at `u = 10`, 96,042 at `u = 10³` and 9,600,042 at
-  `u = 10⁵`, all for the same 252 solutions (heights above 5 have none).
-  Measured at `7e1c4178` on fataepyc-08, 2026-10-05
-  (`tmp/fd-sched/cumulative/vh/vh.cc`, from the `cumulative_strengthening`
-  audit). #1239.
+- **A variable height's upper bound is lowered only for a present task.**
+  Until #1284 no rule lowered it at all, not even to the capacity, and search
+  walked the height's values one at a time: three tasks of length 2 over
+  starts `0..4`, heights `2`, `2` and `[2, u]`, capacity 5, took 1,002
+  recursions at `u = 10`, 96,042 at `u = 10³` and 9,600,042 at `u = 10⁵`, all
+  for the same 252 solutions (heights above 5 have none). Measured at
+  `7e1c4178` on fataepyc-08, 2026-10-05 (`tmp/fd-sched/cumulative/vh/vh.cc`,
+  from the `cumulative_strengthening` audit). #1239. At `0a5b4ec6`
+  [`time-table-height`](#rule-time-table-height) takes it to 389 at every
+  such `u`. An undecided optional task's height, and that of a task whose
+  length may be zero, are still never lowered.
 - **Wide horizons are expensive in time and memory on every call.** One first
-  solution over `0..10⁹` took 77.5 s and 29.8 GiB. `0..10¹²` throws
+  solution over `0..10⁹` took 77.5 s and 29.8 GiB at `7e1c4178`. `0..10¹²` throws
   `std::bad_alloc`, with or without a memory limit. Spans the kernel will
   commit but cannot fill get the process OOM-killed: under a memory limit
   such as a Slurm allocation, any span past the limit; without one, arrays
@@ -1912,12 +2300,19 @@ headline cost. These timings cannot pin the ratio more closely than that.
   horizon** once at the root, proofs on or off: `O(n)` per time point up to
   `min(ub(M), last window end)`, however small the bound it finds (#1267).
 - **Large heights, capacities and windows throw `IntegerOverflow`** at four
-  sites, within the integer range policy. Three of them throw on feasible
-  single-task instances.
-- **Time-tabling is not plateau-jumping**, and edge-finding is cubic. Both are
-  correct but slow at scale (#705, #742).
+  sites, within the integer range policy, and at a fifth when the published
+  detection runs (`not_first_not_last` and `not_first_not_last_published`
+  both on, with `overload` and a constant capacity). Three of the four throw on feasible
+  single-task instances. Since #1271 this is a decision, and the message says
+  which quantities are to blame.
+- **Time-tabling has no incremental profile**, and edge-finding is cubic.
+  Since #1285 the scans jump past blocked times and a push is certified a run
+  of starts per step, but the profile is still a flat array rebuilt on every
+  call, the scans still visit every time point, and per-time steps remain for
+  variable heights, views and derived constraints (#705, #364, #742).
 - **`cumulative_optional` is outside the cake chain**, and a user who sets
-  `GCS_CUMULATIVE_ENCODING` writes a model cake would not reproduce.
+  `GCS_CUMULATIVE_ENCODING` writes a model cake would not reproduce. Since
+  #1278 the variable is documented as a diagnostic.
 
 ### Next steps
 
@@ -1944,34 +2339,40 @@ Ranked by what they buy against what they cost.
    capacity × width`, at the candidate energy `p × h` and at the profile sum,
    four sites with #1223's. Fix them together with a window product or
    `__int128` intermediates, and a profile sum that stops at the capacity.
-   Small.
+   Small. **Decided the other way by #1271**: no window product and no
+   `__int128` (Ciaran, 2026-10-06). The sites still throw, now with a message
+   naming the quantities, `integer_ranges_test` pins each, and
+   `integer-ranges.md` records the exception. Revisit if an application meets
+   the limit. #1292's fifth site has no lane yet.
 3. **Count the elastic and knapsack conflicts** in
-   `GCS_SCHEDULING_RULE_STATS` (#1236). Each is a one-line increment on the
-   elastic branch's `contradiction`, perhaps as its own row. Without it, the
-   ladder's `overload` row reads as if those rungs did nothing. On `Bl2019`
-   with the elastic rung at `Inferences` there are 45 overload-hinted `a`
-   lines and the counter says 41. `rule-counters.md` names two wiring bugs:
-   "a row with contradictions and no calls, or firings and no counter". A
-   contradiction that no row counts is the same kind of hole, though not one
-   that sentence names.
+   `GCS_SCHEDULING_RULE_STATS` (#1236). **Done by #1273**, as two rows of
+   their own, `overload_elastic` and `overload_knapsack`, listed in
+   `rule-counters.md`, with three `rcpsp` lanes asserting them. On `Bl2019`
+   with the elastic rung at `Inferences`, the 45 overload-hinted `a` lines are
+   now 41 + 4 in the rows.
 4. **Give the large-domain lane a row that reaches the time-table scans and a
-   proof-size row for a long push** (#1237), say `d = 1` and a push of
-   `10³`. That makes #705's scan and the chain's linear proof visible, so that
-   a plateau-jumping time-tabler (#705, item 1) has a before-and-after. The
-   chain itself could advance by whole blocked runs when one contributing set
-   covers the run, which would make a push's certificate proportional to the
-   profile's plateaus rather than to the distance. That is unmeasured, and a
-   design question.
+   proof-size row for a long push** (#1237), and let the chain advance by
+   whole blocked runs when one contributing set covers the run. **Done by
+   #1285**, for the chain, as the item suggested: run steps against the
+   pushed task's checkpoint row, and scans that jump a blocked time. The
+   large-domain rows were not added. Its tests are `cumulative_run_test`
+   (pushed bounds, run-step counts and proof-line bounds per fixture) and the
+   `cumulative_run_mutation_{toofar, drop}` lanes. What is left is the
+   per-time chain where runs do not apply, and a profile kept as plateaus
+   (#364, #1126).
 5. **Move `with_encoding` and `CumulativeEncoding` into `innards`** (#1238),
    beside the mutations, and stop reading `GCS_CUMULATIVE_ENCODING` outside
-   test builds, or at least say in the header that any binary reads it. Small.
-   It closes the one way a user can write an OPB cake would not derive.
-6. **Bound a variable height by the capacity** (#1239). A present task
-   with `lb(length) ≥ 1` is active at its start, so `h ≤ ub(capacity)`, and
-   more generally `h ≤ ub(capacity) − (other mandatory load)` wherever its
-   mandatory part lies. Cheap on the propagation side; the certificate needs
-   writing, since the start is not fixed. Removes the search over height values
-   above the bound, which is linear in how far the domain overshoots it.
+   test builds, or at least say in the header that any binary reads it.
+   **Done by #1278**, keeping the variable (Ciaran, 2026-10-06): the type is
+   `gcs::innards::CumulativeEncoding`, and the headers and one CMake comment
+   now call the variable a diagnostic every binary honours. A second CMake
+   comment still says no solve can select the arms (item 11).
+6. **Bound a variable height by the capacity** (#1239). **Done by #1284**, in
+   the general form the item named: [`time-table-height`](#rule-time-table-height)
+   lowers a present task's height to the most room any of its placements
+   leaves under the profile, which is the capacity when the profile is empty.
+   Its certificate is presence falsification's chain over the whole start
+   domain.
 7. **Use `bounds_reason` instead of `generic_reason`.** Every rule reads only
    bounds, so stating holes only makes a non-minimal reason larger.
    Proof-neutral on contiguous domains. Measure on an instance with holed
@@ -1979,7 +2380,7 @@ Ranked by what they buy against what they cost.
 8. **Prune or bound the `Top` caches on long solves.** The guarded-energy map
    is keyed on moving bounds under the energetic rule (#755). Measure memory
    first; nothing here says it binds.
-9. **Hints with a payload.** Twelve rules share one bare hint. The window, the
+9. **Hints with a payload.** Thirteen rules share one bare hint. The window, the
    rule and the time point would turn most `search` verdicts into `hinted`.
    Per the standing rule, that is for the justifier to show is needed, not for
    an issue now.
@@ -1990,9 +2391,17 @@ Ranked by what they buy against what they cost.
     with proofs off by every derived constraint that names a makespan. The
     regression should vary the unused horizon at a fixed bound.
 11. **Tidy stale comments.** The `CumulativeRules` "All three are on"
-    comment; `define_proof_model`'s "emitted alongside the time-indexed block"
-    and "Nothing cites these yet" (`cumulative.cc:729-764`), both from before
-    the flip.
+    comment (`cumulative.hh:24`); `define_proof_model`'s "emitted alongside
+    the time-indexed block" and "Nothing cites these yet"
+    (`cumulative.cc:734-769`), both from before the flip. **Done by #1265**
+    for all three, the `cumulative.hh` comment included, merged after
+    `0a5b4ec6` (`86caad24`). Still open, in
+    `gcs/CMakeLists.txt`, which #1265 did not touch: the comment above
+    `add_cumulative_test_with_recovery`, which still says "no solve and no
+    .scp can select it" (`:325-326`) after #1278 corrected its twin at
+    `:276-278`; and "Mutation lanes do not get the arm … The one exception is
+    registered by hand below" (`:280-285`), though nine mutation lanes have
+    `_recovering` twins (four already at `7e1c4178`).
 
 Out of this document but found here:
 
@@ -2001,7 +2410,8 @@ Out of this document but found here:
   and are unreadable.
 - The same section still says KAOC is "not here", though it is certified (#550).
 
-Both are an out-of-stack docs fix.
+Both were an out-of-stack docs fix, and #1265 made both after `0a5b4ec6`
+(`86caad24`).
 
 ## Prior art
 
@@ -2031,7 +2441,10 @@ Both are an out-of-stack docs fix.
   are recovered on demand.
 - **Novel here.**
   - The window-energy lemma and its guarded form.
-  - The start-checkpoint encoding and the in-proof recovery of `C_t`.
+  - The start-checkpoint encoding and the in-proof recovery of `C_t`, by a
+    chain step from `C_{t−1}` since #1290.
+  - The time-table run step, which certifies a whole run of blocked starts
+    against the pushed task's own checkpoint row (#1285).
   - Derived (implied) Cumulatives that write nothing to the model.
   - The contiguity certificate for published not-first / not-last.
 
@@ -2039,11 +2452,12 @@ Both are an out-of-stack docs fix.
 
 - [`cumulative-proof-logging.md`](../cumulative-proof-logging.md) is the long
   design note. It has every derivation step by step: the chained bound
-  pushes, the window-energy lemma, the derived constraints, optional tasks,
-  each rung of the overload ladder and edge-finding family, the
-  start-checkpoint encoding and its recovery (with line costs), and the open
-  follow-ups. **Read with care:** its opening section is format-mangled and
-  partly stale (see Next steps).
+  pushes and their run steps, the height rule, the window-energy lemma, the
+  derived constraints, optional tasks, each rung of the overload ladder and
+  edge-finding family, the published not-first / not-last over every `Ω`
+  ("Which Ω: every one"), the start-checkpoint encoding and its recovery by
+  scan and by chain (with line costs), and the open follow-ups. At `0a5b4ec6` its opening section is format-mangled and
+  partly stale; #1265 (`86caad24`) restored it (see Next steps).
 - [`certified-makespan-bounds.md`](../certified-makespan-bounds.md): the
   makespan energy bound, where it differs from Sidorov's `L`, and why the
   deadline is a `pol`. Until #1265 its argument confined every task to

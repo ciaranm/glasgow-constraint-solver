@@ -371,40 +371,44 @@ constraints and do not restate it.
   not-first / not-last in our detection and the published one. Every
   inference is proved, under the one shipped encoding: start-checkpoint,
   `6n(n − 1) + n` rows and no time point in the model. The per-time capacity
-  rows every rule argues over are recovered inside the proof the first time
-  something cites them. The same propagator runs the derived Cumulatives that
-  three presolvers install, and each axis of a `Disjunctive2D`, so this
-  document also covers that runtime machinery.
+  rows every rule but the time-table run steps argues over are recovered
+  inside the proof the first time something cites them, since #1290 mostly
+  by a quadratic chain step from the row below. The same propagator runs the
+  derived Cumulatives that three presolvers install, and each axis of a
+  `Disjunctive2D`, so this document also covers that runtime machinery.
   [`cumulative-proof-logging.md`](../cumulative-proof-logging.md) stays as the
-  long note.
+  long note. Re-audited 2026-10-08 for #1271, #1273, #1278, #1284, #1285,
+  #1290 and #1292.
 
   Findings:
   - at `Definitions`, `Inferences` and `Backtracking`, a derived Cumulative
-    installed over a posted donor makes the proof unreadable under the
+    installed over a posted donor gets the proof rejected under the
     shipped start-checkpoint encoding, because the donor publishes its row
     deriver at every level but its flag definer only at `Off`. The test-only
     time-indexed encoding verifies. Over a `Disjunctive2D` donor, two
     presolvers decline and the proof verifies, and `CumulativeStrengthening`
     throws a `ProofError` where it has something to strengthen;
-  - inputs within the integer range policy throw `IntegerOverflow` at three
-    sites besides #1223. Two of them, and #1223's, throw on feasible
-    single-task instances;
-  - one time-table push's certificate is linear in the push distance at short
-    task lengths. A push of 5,000 at length 1 is 295,048 lines and 10.3 s of
-    VeriPB, invisible to the large-domain lane. The chain is built even with
-    proofs off;
-  - no rule lowers a variable height's upper bound, not even to the
-    capacity, so search walks the height's values one at a time;
-  - the elastic and knapsack conflicts are not counted by the rule counters;
-  - the test-only encodings are reachable from any binary through an
-    environment variable.
+  - inputs within the integer range policy throw `IntegerOverflow` at four
+    sites, three of them on feasible single-task instances. Since #1271 that
+    is a clear error by decision (no 128-bit arithmetic), and
+    `integer_ranges_test` pins each site. #1292's published not-first /
+    not-last sweep adds a fifth when that detection runs, with a lower limit
+    and no lane;
+  - fixed since the audit: a push's certificate was linear in its distance
+    (295,048 lines for a push of 5,000; one 63-line proof since #1285's run
+    steps, though per-time steps remain for variable heights, views and
+    derived constraints), and its chain was built even with proofs off
+    (#1285 builds it only for a proof); no rule lowered a variable height (#1284); the
+    elastic and knapsack conflicts were not counted (#1273); and the
+    test-only encodings were public API (#1278, which keeps the environment
+    variable as a diagnostic).
 
-  On `data_bl`, edge-finding and TTEF halve the default's instruction count
-  under the example's search. Against Gecode the default is the stronger
-  propagator (7 to 34× fewer nodes), and with both solvers on the same
-  decomposition (312,333 nodes each) ours is 3.6× slower per node. Proofs run
-  to 1.19M lines and 390 to 510 s of VeriPB at 8,917 nodes, about 95% of them
-  this family's own.
+  On `data_bl` at the audit, edge-finding and TTEF halved the default's
+  instruction count under the example's search. Against Gecode the default is
+  the stronger propagator (7 to 34× fewer nodes), and with both solvers on
+  the same decomposition (312,333 nodes each) ours was 3.6× slower per node.
+  Proofs run to 1.03M lines and 221 s of VeriPB at 8,917 nodes (1.19M and 390
+  to 510 s at the audit), about 96% of them this family's own.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
