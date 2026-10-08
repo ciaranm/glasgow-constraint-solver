@@ -2,24 +2,83 @@
 
 > **Maturity** production (the pairwise rule); experimental (the cumulative
 > relaxation, off by default and reachable from the C++ API only) ·
-> **Audited** 2026-10-04 at `7e1c4178` ·
+> **Audited** 2026-10-04 at `7e1c4178`; re-audited 2026-10-08 at `0a5b4ec6`
+> for #1223, #1250 to #1253 and #1270 ·
 > **Open issues** #975 (the k-D scope position), #976 (the scheduling
 > tracker), #868 (cross-solver comparison; this document gives one, by hand),
 > #833 (the large-domain policy, through the projection's horizon arrays),
-> #1223 (an overflow in `Cumulative`'s overload check, which the projection
-> runs), and from this audit #1253 (a size that is also a position gives
-> proofs VeriPB rejects), #1250 (the pairwise rule's overlap test), #1251
-> (MiniZinc `diffn` with negative sizes), #1252 (the projection's wake-ups) and
-> #1234 (presolvers over a projection donor above `AssertionLevel::Off`, shared
-> with `cumulative.md`). See [Next steps](#next-steps). PR #1232 (merged
-> 2026-10-04) made two of this family's coverage checks seed-independent.
-> Tracked under #871.
+> and from this audit #1234 (presolvers over a projection donor above
+> `AssertionLevel::Off`, shared with `cumulative.md`). Filed since, after
+> `0a5b4ec6`: #1293 (no test pins #1269's counting of sizes as position
+> uses). **Fixed since the
+> audit**: #1253 (a size that is also a position gave proofs VeriPB rejected)
+> by #1269; #1250 (the pairwise rule's overlap test) and #1252 (the
+> projection's wake-ups) by #1276; #1251 (MiniZinc `diffn` with negative
+> sizes) by #1272, which documents the error; #1223 (an overflow in
+> `Cumulative`'s overload check, which the projection runs) by #1271, which
+> makes it a clear error; and a route B rejection with a variable resource
+> size that had no issue, by #1270. See [Re-audit,
+> 2026-10-08](#re-audit-2026-10-08) and [Next steps](#next-steps). PR #1232
+> (merged 2026-10-04) made two of this family's coverage checks
+> seed-independent. Tracked under #871.
+
+### Re-audit, 2026-10-08
+
+Five PRs on 2026-10-08 fixed or decided everything this audit filed for the
+family except #1234. This pass brings the text into line with them at
+`0a5b4ec6`. Code citations are now at `0a5b4ec6`.
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1253, a size that is also a position | #1269 | the push captures size literals before it lands, and `prepare()` counts sizes as position uses: the summary, [Variable kinds](#variable-kinds-and-views), [Robustness](#robustness-and-limits), the pairwise push's and route B's **Gaps**, [Tests](#tests), gaps, limitations, next step 0 |
+| none (route B's floor row) | #1270 | `separation_at_floor` puts back the other position's bits that saturation capped: route B's **Gaps**, gaps, [Tests](#tests) |
+| #1250, the pairwise overlap test | #1276 | the forbidden-region test, in the contradiction, the presence falsification and the push's forced axis, with a non-strict size gate: the summary, `pairwise-*` and `zero-area-leaf`, [Robustness](#robustness-and-limits), the CPU and proof tables, next step 1 |
+| #1252, the projection's wake-ups | #1276 | `on_instantiated` on each projected member's variable presence: the [inventory](#propagator-inventory), `projection`, [Tests](#tests), next step 2 |
+| #1251, negative sizes from MiniZinc | #1272 (documented) | the frontend footnote, limitations, next step 8 |
+| #1223, `Cumulative`'s overflow through the projection | #1271 (a clear error) | [Robustness](#robustness-and-limits) |
+
+**Found in this pass**, not from a comment: since #1276 strict zero-area
+rectangles take part in the pairwise rule, in the contradiction and in pushes,
+so `zero-area-leaf` is mostly subsumed and its code comment was stale at
+`0a5b4ec6` (#1265, merged after it, rewrites the comment). #1265 also rewrites
+the other 2-D text that #1276 left describing mandatory boxes: the class
+comment in `disjunctive_2d.hh`, several comments in `disjunctive_2d.cc`, the
+relaxation test's header and `frontend-support-matrix.md`'s noOverlap
+footnote; and it corrects "6-way" to "5-way with one optional rectangle, 6-way
+with two" in the code and the design note, except one comment in
+`disjunctive_2d_optional_test.cc`.
+
+**What was measured again.** At `0a5b4ec6`, on fataepyc-10, with timings
+taken one run at a time on one pinned core, and with the probes in
+`tmp/fd871-comments-1008/disjunctive/probes/2d/` (the fact-check's
+`pushz.cc` is in `probes/fc/`):
+- the `examples/squares` proof table, its line classes and its
+  `Inferences` table, and `shikaku`;
+- the static-branching arms (`sqio_in.cc`), the `smallest_first()`
+  pairwise counts (`sqio.cc`) and `fzn-glasgow` through MiniZinc;
+- the `bz2d.cc` brute-force roots for the pairwise rule, the wake probe, the
+  presolver-over-projection probes (`strip` and `bars`), the audit's aliasing
+  fuzz, and two probes for strict zero-area rectangles, `zero.cc` and the
+  fact-check's `pushz.cc`;
+- the twelve `disjunctive_2d*` test lanes, uncapped, each at one random
+  seed, the 23 mutation lanes and the three probe tests (not the
+  `squares`, `shikaku`, MiniZinc or XCSP3 lanes);
+- the merge comment's coverage claim about `size_is_position`, on rebuilt
+  objects (see [Tests](#tests)).
+
+**Not re-measured**, and still at `7e1c4178`: Gecode's own runs, the
+projection's RSS on wide axes, the unbounded-domain probe, the manual
+cake chain, the assertion-shape `a` lines quoted in the catalogue (#1269 and
+#1276 change no reason), the caps counts, and the root-strength figures other
+than `bz2d`'s pairwise and route B rows. Figures quoted from a fixing PR
+are attributed to it.
 
 `Disjunctive2D` is `diffn`: rectangles with variable origins and constant or
 variable sizes, no two of which may share area. It has one OPB encoding: a
 reified "before" flag per ordered pair and axis, and a separation clause per
-pair. Every inference is justified against that encoding, except where a size
-variable is also a position (#1253). By default the only
+pair. Every inference is justified against that encoding; the one exception
+at `7e1c4178`, a size variable that is also a position (#1253), is fixed by
+#1269. By default the only
 propagation is a pairwise rule. Behind `Disjunctive2DRules` it carries the 2-D
 **cumulative relaxation**, which projects the rectangles onto one axis and
 reasons about the `Cumulative` the projection implies. The relaxation comes in
@@ -33,42 +92,36 @@ design and every derivation are in
 [`disjunctive-proof-logging.md`](../disjunctive-proof-logging.md), which stays
 as the long note; this document audits it.
 
-Six things to know before touching it.
+Five things to know before touching it.
 
-- **A size that is also a position gives proofs VeriPB rejects**, with default
-  rules and from MiniZinc (`diffn([3,3],[1,yb],[2,yb],[2,yb])`). The answers
-  are right. The pairwise push captures its position literals before the push
-  lands, but reads each size's lower bound from the state inside the
-  justification, so when the size is the pushed position it cites a bound the
-  reason does not support. Route B's admission test counts shared positions but
-  not sizes that are positions, so it admits the same shape and its certificate
-  is rejected too. #1253.
-- **The default rule is weaker than "pairwise".** Two rectangles count as
-  overlapping on an axis only when **both** have a mandatory part there and the
-  parts intersect. The certificate needs only `ub(pos_i) < lb(pos_j) +
-  lb(size_j)` and `ub(pos_j) < lb(pos_i) + lb(size_i)`. So a rectangle whose
-  every placement covers another's compulsory part, but which has no mandatory
-  part of its own, is never pushed. Two 3×3 squares, one fixed at `(3, 4)` and
-  one with `x ∈ [1, 4]` and `y ∈ [2, 5]`, cannot be placed at all, and the root
-  fixpoint is the posted domains. The wider test certifies with the same pols,
-  and a prototype of it passes every Disjunctive2D test. Its search effect is
-  large on shikaku (312 → 10 recursions on `human --autotable`) and small on
-  square packing. #1250.
+- **The default rule is pairwise, in its forbidden-region form** (#1250, fixed
+  by #1276). Two rectangles count as overlapping on an axis when neither can
+  precede the other there: `ub(pos_i) < lb(pos_j) + lb(size_j)` and
+  `ub(pos_j) < lb(pos_i) + lb(size_i)`. One of them must then have a
+  mandatory part there, but the other need not, and the test is exactly what the
+  certificate's pols refute, so the proof code did not change (the proofs
+  themselves did, since the search did). At `7e1c4178` both
+  rectangles needed mandatory parts that intersected, so two 3×3 squares, one
+  fixed at `(3, 4)` and one with `x ∈ [1, 4]` and `y ∈ [2, 5]`, kept their
+  posted domains at the root. The root now fails (the `forbidden_region`
+  fixture). The search effect is large on shikaku (312 → 10 recursions on
+  `human --autotable`) and small on square packing.
 - **Gecode's `nooverlap` is much stronger than the default here.** Under the
   same static branching through MiniZinc, Gecode searches 4.3M nodes where
   `fzn-glasgow` searches 41.5M on one square packing, and Gecode fails a 28-in-25
   area packing at the root where `fzn-glasgow` searches 109,043 nodes. No
   frontend can turn the relaxation on, and with it on, under the same
   branching, the same instances close in 1 to 9,221 recursions (an enumeration
-  of 4,608 packings is the largest).
+  of 4,608 packings is the largest). `fzn-glasgow`'s counts are the same at
+  `0a5b4ec6`: #1250's fix does not change them.
 - **Route B and route A are proof designs as much as propagators.** Route B's
   certificate is per firing, at `Temporary`, so its proofs grow with the number
-  of firings: 751 MB on a 4,608-solution enumeration. The projection caches a
-  capacity row per time point at `Top` and cites it from every rule: 43 MB on
-  the same enumeration (route A, which caches too, writes 546 MB). But the
-  cached rows appear to make those proofs **slower** to check, 111 s and 141 s
-  against route B's 54 s; the mechanism is untested. Smaller is not faster
-  here.
+  of firings: 630 MB on a 4,608-solution enumeration at `0a5b4ec6` (751 MB
+  at `7e1c4178`). The projection caches a capacity row per time point at
+  `Top` and cites it from every rule: 49 MB on the same enumeration (route
+  A, which caches too, writes 545 MB). But the cached rows appear to make
+  those proofs **slower** to check, 68 s and 107 s against route B's 46 s;
+  the mechanism is untested. Smaller is not faster here.
 - **The relaxation is admitted from the model, never the state.** Membership,
   the resource window, the declared size floors and whether a row's network
   fits are all settled in `prepare()`. That keeps proofs-on and proofs-off runs
@@ -141,7 +194,10 @@ MiniZinc's standard-library `diffn` and refused by `Disjunctive2D`: on
 `var -1..2` widths, Chuffed (the standard decomposition) and a brute force of
 the library's predicate find 1,224 solutions, Gecode finds 657 (it restricts
 sizes to be non-negative), and `fzn-glasgow` reports `=====ERROR=====`
-("widths must be non-negative"). #1251. The zero-width strict case agrees
+("widths must be non-negative"). That is deliberate: #1272 closed #1251 by
+documenting it, in `frontend-support-matrix.md`'s noOverlap footnote and in
+comments in both `fzn_diffn*.mzn` files, with `size >= 0` in the model as
+the remedy. The zero-width strict case agrees
 across all three (3 solutions on the probe `zero.mzn`).
 
 [^xcsp]: `xcsp/xcsp_glasgow_constraint_solver.cc`, the two
@@ -195,9 +251,10 @@ frontend can reach it.
 (`gcs/constraints/innards/disjunctive_2d_mutations.hh`). It corrupts route A,
 route B or the projection's row certificate. All but one leave the inference
 alone. `EdgeFindingOneTooFar` infers a bound one unit further than the
-certificate reaches (`disjunctive_2d.cc:2170-2177`). So the header's claim that
+certificate reaches (`disjunctive_2d.cc:2220-2227`). So the header's claim that
 "none of them changes the inference" (`disjunctive_2d_mutations.hh:30`) is
-wrong, which is an out-of-stack comment fix.
+wrong at `0a5b4ec6`. #1265, a comments-only PR merged after it, corrects
+it.
 
 There is no `with_consistency()`: the family has no `consistency::` tags.
 
@@ -207,21 +264,27 @@ Positions, sizes and presences are `IntegerVariableID`s, and so may be
 constants and views. The pairwise rule accepts all of them: its certificates
 cite order-literal definitions, which views have. What the relaxation admits
 is narrower, and is settled per rectangle and per axis in `prepare()`
-(`disjunctive_2d.cc:357-417`). Both positions and any variable size must be
+(`disjunctive_2d.cc:376-439`). Both positions and any variable size must be
 **plain variables**, because route B names their literals in a guard and
 weakens with them. The resource-axis position must be non-negative, with
-`ub + floor < 2⁴⁰`. The resource-axis size needs a declared floor of at least
-1. A presence must be a plain variable that no other rectangle shares, and a
-position must be one no other rectangle uses. A rectangle that fails any test
-takes no part in the relaxation on that axis, which only weakens it. The
-projection then also needs a positive declared time-axis size, and an axis
-whose resource window fails `ComparatorNetwork::fits_optional_tasks` (from
-zero, ending at 2³¹ or later) runs no route A rule and no projection.
+`ub + floor < 2⁴⁰`. The resource-axis size needs a declared floor of at
+least 1. A presence must be a plain variable that no other rectangle
+shares, and a position must be one no other rectangle uses, as a
+position, and that no rectangle, this one included, uses as a size, since
+#1269 (`:378-386`). A rectangle that fails any test takes no part in the
+relaxation on that axis, which only weakens it. The projection then also needs a positive declared
+time-axis size, and an axis whose resource window fails
+`ComparatorNetwork::fits_optional_tasks` (from zero, ending at 2³¹ or later)
+runs no route A rule and no projection.
 
-The proof handles everything the propagator accepts, with one exception: a
-size variable that is also a position, its own or another rectangle's (#1253).
-The pairwise push and route B then write proofs VeriPB rejects. No rule is
-weakened when proofs are on.
+The proof handles everything the propagator accepts. At `7e1c4178` it did
+not where a size variable was also a position, its own or another
+rectangle's (#1253): the pairwise push and route B wrote proofs VeriPB
+rejected. #1269 fixed both halves. The push reads each size's lower-bound
+literal before it lands, as it already did the positions', and a size
+counts as a use of a position, so route B, and route A and the projection,
+which share its members, leave such a rectangle out. No rule is weakened
+when proofs are on.
 
 ### Reification
 
@@ -359,7 +422,7 @@ are derivable from cake's OPB as well as ours, though no suite lane says so.
   start-checkpoint `Cumulative` does (#1111), and a derived-line family per axis
   (`projx`, `projy`). That family derives the capacity row at `t` the first
   time something cites it and caches it at `Top`. **Both are published only at
-  `AssertionLevel::Off`** (`disjunctive_2d.cc:706`). See #1234
+  `AssertionLevel::Off`** (`disjunctive_2d.cc:735`). See #1234
   and [A projection as a presolver donor](#a-projection-as-a-presolver-donor)
   for what that does to a presolver.
 - **At `Temporary`:** every pairwise pol, route B's whole certificate
@@ -387,7 +450,7 @@ relaxation's members per axis, the resource windows, the declared floors and
 whether each axis's row network fits. It also builds each axis's projection
 `CumulativeInputs`. That last build is `O(n)` unless `cumulative_projection`
 has the overload check on: then `prepare_cumulative_overload_check` sizes a
-prefix array by the **time axis's declared span** (`cumulative.cc:500-512`).
+prefix array by the **time axis's declared span** (`cumulative.cc:505-517`).
 `define_proof_model` writes the `O(n²)` encoding.
 
 `install_propagators` publishes each fitting axis as a donor (always), installs
@@ -403,7 +466,7 @@ array is the root cost that does dominate on a wide time axis; see
 | Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
 |---|---|---|---|---|---|---|
 | main | `on_bounds`: every active rectangle's `x`, `y`, and each variable `w`, `h`; `on_instantiated`: each variable presence | derived | `pairwise-*`, `zero-area-leaf`, `relaxation-*` | always; the relaxation rules by `Disjunctive2DRules` | not claimed | until backtrack, after a contradiction |
-| projection, one per axis | `on_bounds`: that axis's projected starts | derived | `projection` (`Cumulative`'s rules) | `cumulative_projection` set, and the axis's window fits | not claimed (`Cumulative`'s) | as `Cumulative` |
+| projection, one per axis | `on_bounds`: that axis's projected starts; `on_instantiated`: each projected member's variable presence (#1276) | derived | `projection` (`Cumulative`'s rules) | `cumulative_projection` set, and the axis's window fits | not claimed (`Cumulative`'s) | as `Cumulative` |
 | projection initialiser | — | — | none (definitions, derived rows) | a projection resolved on either axis; a logger at `AssertionLevel::Off` | n/a | n/a |
 
 - **Self-disabling.** The main propagator returns `DisableUntilBacktrack` after
@@ -413,13 +476,15 @@ array is the root cost that does dominate on a wide time axis; see
   revisit pairs it has passed, so a push late in a pass can create work for an
   earlier pair. This audit did not build an instance showing a second call
   doing more.
-- **The projection does not wake on presences.** Its triggers are the projected
-  starts only. A posted `Cumulative` also wakes on `on_instantiated` for each
-  presence (`cumulative.cc:919-922`), because a task joins the profile only
-  once present. So an optional rectangle that becomes present is not seen until
-  some start bound moves. On the `sharp` fixture with every rectangle optional,
-  branching on presences first, the projection takes 37,245 recursions and 4
-  failures. With the trigger added it takes 37,240 and 0. #1252.
+- **The projection wakes on presences** (`disjunctive_2d.cc:712-718`), as a
+  posted `Cumulative` does (`cumulative.cc:924-927`), because a task joins
+  the profile only once present. At `7e1c4178` its triggers were the
+  projected starts only, so an optional rectangle that became present was
+  not seen until some start bound moved (#1252, fixed by #1276). On the
+  `sharp` fixture with every rectangle optional, branching on presences
+  first, the projection took 37,245 recursions and 4 failures then, and
+  takes 37,240 and 0 at `0a5b4ec6` (`probe3.cc`), with the same 29,160
+  solutions.
 
 ### Mutable state and incrementality
 
@@ -455,23 +520,50 @@ too. The declarations are the triggers' own, and they tell the truth. So a
   for a window from zero means ending before 2³¹.
 - **Negative values and zero.** Negative positions are fine: the
   `disjunctive_2d_test` fixtures `neg` and `neg_wide` cover them. Negative sizes
-  throw (above, and #1251). Zero sizes are the strict / non-strict split. In
-  strict mode a zero-area rectangle has no mandatory box, so the pairwise rule
-  skips it, and `zero-area-leaf` catches one inside another once both are
-  fixed. A zero-size rectangle is skipped on the axis it spans nothing on, and
-  the relaxation drops a rectangle whose declared floor is 0 on the axis that
-  needs it.
+  throw (above, and #1251). Zero sizes are the strict / non-strict split.
+  - **Strict.** Since #1276 the pairwise rule has no size gate in strict
+    mode, so a zero-area rectangle takes part before it is fixed. On its
+    zero axis the forbidden-region test holds when every placement lies
+    strictly inside the other's mandatory part; on the other axis the usual
+    overlap test applies.
+    - The contradiction: a 0×1 rectangle with `x ∈ [1, 2]`, `y = 1`
+      against a fixed 3×3 at the origin now fails at the root, where at
+      `7e1c4178` it survived to search (`zero.cc`, proof verified).
+    - Pushes, on its non-zero axis and as a blocker there: a 0×2 rectangle
+      at `x = 1` with `y ∈ [0, 4]` against the same 3×3 has `y` pushed to
+      `[3, 4]` at the root, where at `7e1c4178` it stayed `[0, 4]`
+      (fact-check probe `pushz.cc`, re-run here, proof verified).
+    - A push still skips a rectangle on the axis it would push when its
+      size's lower bound there is zero (`disjunctive_2d.cc:1154-1156`).
+
+    At `7e1c4178` a zero-area rectangle had no mandatory box and the rule
+    skipped it, leaving [zero-area-leaf](#rule-zero-area-leaf) to catch it
+    once both were fixed.
+  - **Non-strict.** A pair is skipped unless both rectangles have every
+    size's lower bound at least 1 (`:1049`, `:1057`, `:1268`), since the
+    escapes are pinned false from `size ≥ 1` under the reason.
+
+  The relaxation drops a rectangle whose declared floor is 0 on the axis
+  that needs it.
 - **Degenerate shapes.**
   - Fewer than two rectangles: nothing is installed.
   - An aliased position (two rectangles sharing `x`): the pairwise rule takes
     it, captures every position bound before a push lands and cites the
     captured literals, and `disjunctive_2d_test`'s `dup` lane enumerates it. The
     relaxation excludes both rectangles.
-  - **A size that is also a position** is not handled. The push does not
-    capture size bounds, and route B does not count sizes as uses, so both
-    write proofs VeriPB rejects (#1253). An aliasing fuzz
-    (`tmp/fd-sched/factcheck/disjunctive_2d/alias/alias.cc`) gives one or
-    two rejections in every 40 to 150 aliased instances.
+  - **A size that is also a position**, its own or another rectangle's: the
+    pairwise rule takes it, capturing the size literals with the position
+    literals before a push lands, and the relaxation excludes the rectangle
+    whose position is shared (#1269). At `7e1c4178` neither half held, and
+    both wrote proofs VeriPB rejected (#1253). The audit's aliasing fuzz
+    (`alias.cc`) gave one or two rejections in every 40 to 150 aliased
+    instances then. Re-run at `0a5b4ec6` with
+    150 instances per seed, seeds 7 to 11, over the pairwise, route B,
+    route A and projection arms in strict mode and the pairwise arm
+    non-strict, all 3,750 proofs verify and every solution count matches
+    brute force. The fixtures are `size_is_position` in `disjunctive_2d_test`
+    and `disjunctive_2d_relaxation_test`; the second no longer pins the
+    admission half (#1293, and [Tests](#tests)).
   - A constant origin: no push, and the overlap is refuted instead
     (`constant_origin` fixture).
   - A presence shared between rectangles: the pairwise rule takes it, and the
@@ -480,11 +572,20 @@ too. The declarations are the triggers' own, and they tell the truth. So a
   load total is at most `n · 2⁴⁰`. Route A forms `H · (b − a)` with
   `product_if_representable` and its sums with `sum_if_representable`, and
   declines a window whose supply is past `Integer` (#1083). Every product past
-  that gate is at most the supply. The projection runs `Cumulative`'s overload
-  check, whose profile prefix sum can overflow (#1223). Through a projection
-  that needs a time-axis span above 2³², since the resource window is capped
-  near 2³¹. At that span the horizon arrays exhaust memory first, so this audit
-  could not reach #1223 that way.
+  that gate is at most the supply. The projection runs `Cumulative`'s
+  propagator, whose checked arithmetic can overflow on in-range inputs: at
+  four sites #1223 and #1235 found, the overload check's profile prefix sum
+  among them, and since #1292 at a fifth, the published not-first /
+  not-last sweep's one up-front check (`cumulative.cc:2400`, reached only
+  with `not_first_not_last_published`). Since #1271 an overflow there
+  throws `IntegerOverflow` with a message naming the capacity, heights and
+  horizon
+  (`cumulative.cc:1206-1215`), through the projection too
+  (`disjunctive_2d.cc:722`): a clear error, by decision, rather than 128-bit
+  arithmetic. Through a projection the prefix sum needs a time-axis span
+  above 2³², since the resource window is capped near 2³¹. At that span the
+  horizon arrays exhaust memory first, so this audit could not reach #1223
+  that way.
 
 ### Interval efficiency
 
@@ -503,7 +604,7 @@ too. The declarations are the triggers' own, and they tell the truth. So a
      call.
    - **The projection: a horizon walk.** It is `propagate_cumulative`, which
      allocates `mand_load` over the current span of the tasks' windows on every
-     call (`cumulative.cc:2001-2002`) and walks it. With overload on (the
+     call (`cumulative.cc:2040-2041`) and walks it. With overload on (the
      `CumulativeRules` default) its `prepare` also sizes a prefix array by the
      declared span.
      - Four rectangles fixed side by side on `x`, each `2^k` wide, with
@@ -532,7 +633,7 @@ too. The declarations are the triggers' own, and they tell the truth. So a
      lines: the four derivations, and four literal-layer `pol`s (each followed
      by `core id -1`). The latter are order-chain links between two order
      literals on one variable (`make_pol_chain_line`,
-     `names_and_ids_tracker.cc:1384-1388`), and the derivations do not cite them.
+     `names_and_ids_tracker.cc:1385-1389`), and the derivations do not cite them.
      Each line has the operands' bits as terms.
    - **Route B.** The network is `O(|S|³)` in the set, and logarithmic in the
      window through the wire width. Separately, each new `(variable, time)` pair
@@ -597,16 +698,23 @@ Facts true of every rule:
 
 - **Infers** — a contradiction.
 - **Fires when** — the main propagator's first pass finds two present
-  rectangles whose mandatory boxes intersect on both axes. The mandatory part on
-  an axis is `[ub(pos), lb(pos) + lb(size))`.
-- **Strength** — `partial`: pairwise intersection of compulsory parts. It is
+  rectangles that overlap on both axes in the forbidden-region sense: on an
+  axis, neither can precede the other, `ub(pos_i) < lb(pos_j) + lb(size_j)`
+  and `ub(pos_j) < lb(pos_i) + lb(size_i)` (`disjunctive_2d.cc:1059-1060`).
+  In non-strict mode both rectangles need every size's lower bound at least
+  1 (`:1049`, `:1057`). Since #1276; at `7e1c4178` both needed mandatory
+  parts on each axis, `[ub(pos), lb(pos) + lb(size))`, and these had to
+  intersect (#1250).
+- **Strength** — `partial`: pairwise, by forbidden regions. It is
   not `bounds(Z)` even on two rectangles. Over 1,500 random two-rectangle
-  instances, 24 non-failed roots have an unsupported bound (`bz2d.cc`, seed 1).
-  The instance in the summary is unsatisfiable and the root does not fail. #1250
-  widens the test to the forbidden-region condition.
+  instances (`bz2d.cc`, seed 1, strict, constant sizes), 11 of 1,484
+  non-failed roots have an unsupported bound at `0a5b4ec6`, against 24 of
+  1,485 at `7e1c4178`; at three rectangles it is 54 against 114. The instance
+  in the summary is now refuted at the root.
 - **Algorithm** — `O(n²)` pairs, `O(1)` each.
-- **Why it is true** — in every placement a rectangle covers its mandatory box,
-  so two intersecting boxes are two rectangles sharing a cell.
+- **Why it is true** — on each axis neither rectangle can end before the
+  other starts, whatever their placements, so the pair can be separated in no
+  direction.
 - **Proof technique** — `pol`, four of them: for each axis and direction, the
   before flag's `[r]` row, plus the order-literal definitions of `pos_i ≥
   lb(pos_i)`, `pos_j < ub(pos_j) + 1` and, for a variable size, `size_i ≥
@@ -630,10 +738,11 @@ Facts true of every rule:
   `pol` lines plus the RUP on the probe.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.` No lane corrupts the pairwise derivation. The
-  design note records a one-off check, not re-run here: deleting these pols
-  failed `disjunctive_2d_test`'s `d1` lane. It also records that in the
-  presence-falsification role (below) the pols were never load-bearing on the
-  test shapes.
+  `forbidden_region` fixture checks only that the root fails and the proof
+  verifies. The design note records a one-off check, not re-run here: deleting
+  these pols failed `disjunctive_2d_test`'s `d1` lane. It also records that in
+  the presence-falsification role (below) the pols were never load-bearing on
+  the test shapes.
 
 ### Rule: pairwise-absent
 
@@ -646,9 +755,11 @@ Facts true of every rule:
   `k` is absent.
 - **Why it is true** — if `k` were present, the pair would overlap.
 - **Proof technique** — as `pairwise-overlap`: the same four `pol`s, then the
-  closing `RUP` leaves the six-way clause with `k`'s `[p_k = 0]` disjunct.
-- **Reason** — as `pairwise-overlap`. The present partner's `p = 1` is in it,
-  and `k`'s presence is not.
+  closing `RUP` leaves the separation clause, 6-way with both rectangles
+  optional and 5-way when the present partner is not, with `k`'s
+  `[p_k = 0]` disjunct.
+- **Reason** — as `pairwise-overlap`. The present partner's `p = 1`, if it is
+  optional, is in it, and `k`'s presence is not.
 - **Assertion** — `[p_k = 0] ∨ ¬reason`. Measured:
   `a 1 ~i[_5][b0] 1 ~i[_1][eq0] 1 ~i[_2][eq0] 1 ~i[_3][ge0] … >= 1::disjunctive_2d:…`.
   The conclusion is the presence's single bit.
@@ -665,13 +776,15 @@ Facts true of every rule:
 
 - **Infers** — `pos_i ≥ min(blk_hi, ub(pos_i) + 1)` on the free axis, where
   `blk_hi = lb(pos_j) + lb(size_j)` is the blocker's mandatory end.
-- **Fires when** — the main propagator's second pass: both rectangles present,
-  their mandatory parts intersect on one axis (the forced axis), the blocker `j`
-  has a mandatory part on the other (free) axis, and `i` at its current lower
-  bound would overlap that part. A zero-size `i` on the free axis, and a
-  constant `pos_i`, are skipped.
-- **Strength** — `partial`, as `pairwise-overlap`. #1250's wider forced-axis
-  test applies here too.
+- **Fires when** — the main propagator's second pass: both rectangles
+  present, they overlap on one axis (the forced axis) in `pairwise-overlap`'s
+  sense (`disjunctive_2d.cc:1270-1271`), the blocker `j` has a mandatory part
+  on the other (free) axis, and `i` at its current lower bound would overlap
+  that part (`:1200`). In non-strict mode all four sizes need a lower bound
+  of at least 1 (`:1268`). An `i` whose free-axis size has lower bound 0,
+  and a constant `pos_i`, are skipped. At `7e1c4178` the forced axis needed
+  both mandatory parts (#1250, fixed by #1276).
+- **Strength** — `partial`, as `pairwise-overlap`.
 - **Algorithm** — `O(1)` per ordered pair and axis, `O(n²)` per call.
 - **Why it is true** — the pair cannot separate on the forced axis. With `pos_i
   ≥ cur_lo > ub(pos_j) − lb(size_i)`, `i` cannot end before `j` starts on the free
@@ -679,11 +792,13 @@ Facts true of every rule:
 - **Proof technique** — `pol`, four:
   - two refuting the forced axis's before flags, as in `pairwise-overlap`;
   - one refuting `before_{i,j}` on the free axis from `pos_i ≥ cur_lo`, a
-    literal captured before the push lands;
+    literal captured before the push lands, as every position and size
+    literal the pols cite is (`:1184-1188`);
   - one folding `before_{j,i}` onto the target's definition row.
 
-  Then the closing `RUP`. The comments in `disjunctive_2d.cc` and the design
-  note say "six pols"; the code emits four.
+  Then the closing `RUP`. At `0a5b4ec6` the comments in `disjunctive_2d.cc`
+  and the design note say "six pols"; the code emits four. #1265, merged
+  after it, corrects both.
 - **Reason** — `generic_reason` over both rectangles' positions and variable
   sizes, plus presence literals. The pushed position's own bounds are in it.
 - **Assertion** — `[pos_i ≥ target] ∨ ¬reason`. Measured, `x_B ∈ [1, 5]` pushed
@@ -693,11 +808,12 @@ Facts true of every rule:
   axis is forced is a choice of two.
 - **Proof size** — four `pol`s and one RUP, constant in width and in the
   blocker's size.
-- **Gaps** — **A rejected proof** when a size variable is also a position
-  (#1253). The justification reads `size ≥ lb(size)` from the state after the
-  push has landed, so if the size is the pushed position, the pol cites a bound
-  the reason does not support. Positions are captured, sizes are not
-  (`disjunctive_2d.cc:940-941`). The answers stay correct.
+- **Gaps** — `None.` At `7e1c4178` the justification read `size ≥ lb(size)`
+  from the state after the push had landed, so when the size was the pushed
+  position the pol cited a bound the reason did not support, and VeriPB
+  rejected the proof (#1253). #1269 passes the size literal into
+  `emit_before_pol` (`:962`), read before the push; the `size_is_position`
+  fixture in both modes pins it.
 - **Tightness** — `Not shown`, by a lane. The design note's one-off check above
   covers the push role too.
 
@@ -719,19 +835,31 @@ Facts true of every rule:
 ### Rule: zero-area-leaf
 
 - **Infers** — a contradiction.
-- **Fires when** — strict mode only: a present, fully fixed rectangle with zero
-  width or height, and a present, fully fixed other rectangle, are not
-  separated.
-- **Strength** — `checker` for strict zero-area rectangles. Before both are
-  fixed, nothing is inferred about them.
+- **Fires when** — strict mode only: a present, fully fixed rectangle with
+  zero width or height, and a present, fully fixed other rectangle, are not
+  separated (`disjunctive_2d.cc:2233-2240`). **It is now mostly subsumed.**
+  For a fixed pair, `pairwise-overlap`'s test since #1276 is exactly that the
+  separation clause is violated, and in strict mode it has no size gate, so
+  the contradiction pass, which runs first in each call, refutes such a pair.
+  By reading, this check is left with a pair that a push later in the same
+  call has just fixed. A zero-width rectangle fixed at `(1, 1)` inside a fixed
+  3×3 is now refuted with the pairwise pols, where at `7e1c4178` this rule's
+  bare RUP did it (`zero.cc`). At `0a5b4ec6` the code comment above it still
+  says the pairwise pass skips zero-area rectangles; #1265, merged after it,
+  rewrites it to call this check a backstop.
+- **Strength** — `checker` for strict zero-area rectangles. At `7e1c4178`
+  nothing was inferred about them before both were fixed;
+  see [Robustness and limits](#robustness-and-limits) for what the pairwise
+  rule now infers.
 - **Algorithm** — `O(n²)` per call, over fixed rectangles.
 - **Why it is true** — strict `diffn`: a zero-area rectangle still may not lie
   inside another.
 - **Proof technique** — `RUP` (`JustifyUsingRUP`). Every before flag of the pair
   is false by its reification under the fixed values, so the clause fails.
 - **Reason** — `generic_reason` over the pair's variables, all fixed.
-- **Assertion** — `¬reason`. Measured, a zero-width rectangle at `(1, 1)` inside
-  a fixed 3×3: `a 1 ~i[_3][eq1] 1 ~i[_4][eq1] 1 ~i[_1][eq0] 1 ~i[_2][eq0] >= 1::disjunctive_2d:…`.
+- **Assertion** — `¬reason`. Measured at `7e1c4178`, a zero-width rectangle
+  at `(1, 1)` inside a fixed 3×3:
+  `a 1 ~i[_3][eq1] 1 ~i[_4][eq1] 1 ~i[_1][eq0] 1 ~i[_2][eq0] >= 1::disjunctive_2d:…`.
 - **Hint** — `hints::Disjunctive2D`.
 - **Offline reconstructibility** — `offline` once the rule is known; `search`
   under the shared hint.
@@ -748,7 +876,9 @@ Facts true of every rule:
   than the window they span, `max(ub(r) + floor) − min(lb(r))`.
 - **Strength** — `partial`: time-tabling on the projection, over the mandatory
   set, with each resource size at its declared floor. Brute force over 1,500
-  three-rectangle instances still finds 74 roots with an unsupported bound.
+  three-rectangle instances still finds 45 roots with an unsupported bound
+  at `0a5b4ec6`, of 1,461 non-failed (`bz2d.cc`, seed 1); 74 at `7e1c4178`,
+  before the pairwise rule beside it widened.
 - **Algorithm** — per axis, `O(n)` event points × `O(n)` per load, `O(n²)`.
 - **Why it is true** — the members all cover `t`, so no two can be separated on
   the time axis. By the separation, every pair is separated on the resource
@@ -784,10 +914,19 @@ Facts true of every rule:
   pair-refutation `pol`s and a weakening per pair. That is logarithmic in the
   window, through the wire width. Not measured per firing here. (The design
   note's `1.4 KB·n³` is route A's flagged row, not this certificate.)
-- **Gaps** — **A rejected proof** when a size variable is also a position.
-  `prepare()` counts shared positions (`position_uses`, `disjunctive_2d.cc:359-365`)
-  but not sizes, so such a rectangle is admitted, and its network certificate is
-  rejected (#1253).
+- **Gaps** — `None.` Two were fixed since `7e1c4178`:
+  - **A size variable that is also a position** (#1253). `prepare()` counted
+    shared positions but not sizes, so such a rectangle was admitted, and its
+    network certificate was rejected. #1269 counts each variable size as a
+    use of a position (`position_uses`, `disjunctive_2d.cc:378-386`), so the
+    rectangle whose position it is takes no part.
+  - **A variable resource-axis size, with no aliasing** (#1270, no issue).
+    `separation_at_floor` saturates the floor-cancelled separation row, which
+    capped the other position's bits above the row's degree, and the
+    network's certificate was rejected. They are now put back with literal
+    axioms (`disjunctive_2d.cc:147-149`). The route A rows and the
+    projection's rows use the same function. The `floor_row_bits` fixture
+    pins it.
 - **Tightness** — Shown. `emit_nothing` (the control), `skip_refutation` and
   `skip_guard_weakening` are each rejected on `sharp`. `skip_presence_guard` is
   rejected on `sharp` with presences fixed to 1. `skip_resource_floor` and
@@ -963,8 +1102,9 @@ Facts true of every rule:
   `cumulative.md`'s catalogue, under `CumulativeRules`.
 - **Fires when** — `cumulative_projection` is set, the axis's window fits, and
   at least two of its members have a positive declared time-axis floor
-  (`disjunctive_2d.cc:472-478`). It wakes on the projected starts' bounds only
-  (#1252).
+  (`disjunctive_2d.cc:494-500`). It wakes on the projected starts' bounds
+  and, since #1276, when a variable presence is decided (`:712-718`); at
+  `7e1c4178` it woke on the starts only (#1252).
 - **Strength** — `partial`, as each `Cumulative` rule, over tasks of constant
   length and height (the declared floors) on a constant capacity `H`.
 - **Algorithm** — `Cumulative`'s, including its horizon arrays (see
@@ -1036,13 +1176,15 @@ definer are not published at those levels.
   `InferredCumulative` posts 5 cuts against 0. At `Inferences`,
   `InferredDisjunctive` reports `declined_by_install = 1` and
   `InferredCumulative` reports 5, one per cut
-  (`tmp/fd-sched/factcheck2/disjunctive_2d/bars/probe5.cc`). Every proof verifies.
+  (`tmp/fd-sched/factcheck2/disjunctive_2d/bars/probe5.cc`). Every proof
+  verifies. Re-run at `0a5b4ec6` with the same counts.
 - **`CumulativeStrengthening` throws.** On the presolver test's `bars` instance
   (three 1×2 bars, `x ∈ [0, 2]`, `y ∈ [0, 3]`), it posts one derived constraint
   with no proof and at `Off` (816 solutions). At `Definitions`, `Inferences`
   and `Backtracking` the solve throws `unexpected problem: cumulative strengthening: the donor has no
   capacity row at time 0, which cannot happen for a constraint derived over all
-  of its tasks` (`cumulative_strengthening.cc:512`). It throws at `Links`
+  of its tasks` (`cumulative_strengthening.cc:417` at `0a5b4ec6`, where the
+  same probe throws the same message at the same three levels). It throws at `Links`
   too, as `cumulative_strengthening.md` measures. It throws **only where it
   would strengthen something**. On `strip` it posts nothing at any level, with
   proofs off as well, and its proof verifies at `Definitions`, `Inferences`
@@ -1068,13 +1210,20 @@ depends on the proof options.
   not GAC, so there is no per-node GAC check.
   `disjunctive_2d_optional_constraint_{strict,nonstrict,falsify}` do the same
   for optional rectangles, the last counting falsification markers.
+  Fixtures added since `7e1c4178`: `size_is_position` (#1269), and
+  `forbidden_region`, both modes, and `projection_presence_wake`, strict
+  (#1276).
 - **Relaxation lanes.** `disjunctive_2d_relaxation` runs every fixture with a
   **control**, the same instance one rule down, which must not reach the bound.
   Then the random sweeps: `…_search` 24 instances and `…_overload_search`,
   `…_edge_finding_search`, `…_ttef_search` and `disjunctive_2d_projection_search`
   16 each. These enumerate against brute force and verify every proof.
+  Fixtures added since `7e1c4178`: `floor_row_bits` (#1270), under the
+  solver's own branching, and `size_is_position` (#1269).
 - **23 mutation lanes** (`disjunctive_2d_relaxation_mutation_*`), all rejected
-  when re-run for this audit. `disjunctive_2d_presolver` covers the donors.
+  when re-run for this audit, and again at `0a5b4ec6`. At `0a5b4ec6` the
+  twelve `disjunctive_2d*` test lanes pass uncapped, each at one random
+  seed, as do the three probe tests. `disjunctive_2d_presolver` covers the donors.
 - **Probes.**
   - `route_a_probe_test`: the flagged row, derived outright.
   - `route_b_probe_test`: a guarded certificate, with a satisfiable control one
@@ -1114,12 +1263,19 @@ depends on the proof options.
 
 **What the tests do not cover.**
 
-- **Sizes aliased to positions.** No lane posts a size that is also a position,
-  which is how #1253's rejected proofs survived. The `dup` lane shares a
-  position between two rectangles only.
-
-- **Strength.** No lane compares the pairwise rule against a forbidden-region
-  bound, which is how #1250's gap survived. The controls check that a rule
+- **Route B's admission of a size that is also a position** (#1293, filed
+  after `0a5b4ec6`). Both `size_is_position` fixtures exist since #1269, but
+  neither needs sizes to be counted as position uses any more. With the sizes
+  loop deleted from `prepare()` (`disjunctive_2d.cc:382-384`), the relaxation
+  test passes on seeds 1 to 8, and so do `disjunctive_2d_test` in both modes,
+  the optional test's three modes, the presolver test and the five relaxation
+  search sweeps at seed 1. With #1270's fix taken out as well, and the
+  `floor_row_bits` fixture, which then fails first, disabled, the relaxation
+  fixture is rejected at `pbp:304` on seeds 1 to 3, so what it catches is the
+  floor-row bug. These were checks on rebuilt objects for this re-audit, not
+  lanes.
+- **Strength.** Only `forbidden_region` compares the pairwise rule against a
+  forbidden-region bound, on one instance. The controls check that a rule
   fires, not what it misses.
 - **The pairwise derivation.** It has no mutation lane at all.
 - **Assertion levels.** Nothing runs at any assertion level above `Off`. Under
@@ -1133,7 +1289,9 @@ depends on the proof options.
   the projection on a wide axis.
 - **Frontends.** No frontend lane exercises zero sizes in MiniZinc against the
   standard library rather than Gecode, or negative sizes.
-- **Wake-ups.** No test measures the projection's triggers (#1252).
+- **Wake-ups.** `projection_presence_wake` (#1276) checks the presence
+  trigger on one instance, by its failure count; nothing else measures the
+  projection's triggers.
 
 ### Benchmarks and examples
 
@@ -1147,8 +1305,8 @@ depends on the proof options.
   `3³,2³,1³ in 7×6` is 41.5M recursions and four minutes, so a good stress for
   the pairwise rule. Under `examples/squares`' own search it is 14,875.
 - **Proofs.** `3,2,2,2,1⁴ in 5×5` enumerated (4,608 packings) is the right size:
-  every arm is under 13 s to solve and 2.5 minutes to verify, and the proofs
-  span 35 to 751 MB.
+  at `0a5b4ec6` every arm is under 2 minutes to verify, and the proofs span
+  35 to 630 MB.
 - **`perfect21`** must never run without `--timeout`.
 - **The corpus.** MiniZinc Challenge `diffn` models reach only the pairwise
   rule. This audit did not survey them.
@@ -1172,45 +1330,60 @@ compared under one static branching, not one search tree.
 | 3³,2³,1³ in 7×6 | 4,304,721 / 2,152,361 / 7.5 s | 41,539,667 / 41,539,666 / 239 s |
 
 Gecode's `nooverlap` sees 2.6 to 22 times fewer nodes than the default rule,
-and refutes `area` with no search.
+and refutes `area` with no search. Re-run at `0a5b4ec6` on fataepyc-10,
+`fzn-glasgow` gives the same nodes and failures on all five, so #1250's fix
+changes nothing on them under this branching; its times there are 0.63 s,
+41 ms, 3.7 s, 10.6 s and 292 s. Gecode was not re-run.
 
 **Within GCS, by arm, under the same branching.** `fzn-glasgow` maps
 `indomain_min` to the binary `value_order::smallest_in()` (`x = min` or
-`x ≠ min`, `fzn_glasgow.cc:1325`). The probe `sqio_in.cc` posts the same model
+`x ≠ min`, `fzn_glasgow.cc:1354-1355`). The probe `sqio_in.cc` posts the same model
 in C++ with that branching. It reproduces `fzn-glasgow`'s pairwise counts
-exactly (109,043, 8,603 and 526,155 recursions) and runs each rule arm under it.
-Proofs were off, `GLIBC_TUNABLES` was pinned, and the build was `7e1c4178`
-(Release, GCC 15.2) on fataepyc-08, 2026-10-05. The pairwise column ran with
-other cells alongside, one per core, on an otherwise quiet machine. The four
-rule columns are the best of three serial runs on core 60. **Recursions are
+exactly and runs each rule arm under it. Proofs were off, `GLIBC_TUNABLES`
+was pinned, and the build was `0a5b4ec6` (Release, GCC 15.2) on
+fataepyc-10, 2026-10-08, one run at a time on one pinned core: the pairwise
+column once, and the four rule columns the best of three. **Recursions are
 the comparison.** The route A arm is `cumulative_relaxation`,
 `relaxation_overload` and `relaxation_time_table_edge_finding`, without
-`relaxation_edge_finding`. With `relaxation_edge_finding` also on, the
-counts are identical (1, 55, 9,221, 67 and 197).
+`relaxation_edge_finding`. At `7e1c4178`, with `relaxation_edge_finding`
+also on, the counts were identical (1, 55, 9,221, 67 and 197); that was not
+re-run.
 
 | instance | pairwise | route B | route A (with route B) | projection, default | projection, all |
 |---|---|---|---|---|---|
-| `area`: 7×2 in 5×5 | 109,043 / 0.55 s | 55 / 1.1 ms | 1 / 0.16 ms | 1 / 0.18 ms | 1 / 0.19 ms |
-| 5×2 in 5×5 | 8,603 / 35 ms | 55 / 0.8 ms | 55 / 1.1 ms | 55 / 0.5 ms | 55 / 0.7 ms |
-| 3,2,2,2,1⁴ in 5×5 (enumerate) | 526,155 / 2.8 s | 9,221 / 0.20 s | 9,221 / 0.38 s | 9,221 / 0.12 s | 9,221 / 0.22 s |
-| 3²,2⁴,1² in 6×6 | 1,643,255 / 8.6 s | 71 / 2.1 ms | 67 / 1.9 ms | 71 / 0.8 ms | 29 / 0.6 ms |
-| 3³,2³,1³ in 7×6 | 41,539,667 / 234 s | 203 / 7.5 ms | 197 / 7.3 ms | 203 / 2.2 ms | 153 / 2.8 ms |
+| `area`: 7×2 in 5×5 | 109,043 / 0.62 s | 55 / 1.2 ms | 1 / 0.17 ms | 1 / 0.19 ms | 1 / 0.22 ms |
+| 5×2 in 5×5 | 8,603 / 41 ms | 55 / 0.8 ms | 55 / 1.1 ms | 55 / 0.5 ms | 55 / 0.8 ms |
+| 3,2,2,2,1⁴ in 5×5 (enumerate) | 526,155 / 3.5 s | 9,221 / 0.23 s | 9,221 / 0.40 s | 9,221 / 0.15 s | 9,221 / 0.32 s |
+| 3²,2⁴,1² in 6×6 | 1,643,255 / 10.6 s | 71 / 2.2 ms | 67 / 2.0 ms | 71 / 0.9 ms | 9 / 0.4 ms |
+| 3³,2³,1³ in 7×6 | 41,539,667 / 291 s | 203 / 7.9 ms | 197 / 7.6 ms | 203 / 2.3 ms | 153 / 4.1 ms |
 
-GCS's relaxation arms see far fewer nodes than Gecode, but no frontend can turn
-them on. With the multi-way `smallest_first()` instead (`sqio.cc`, 2026-10-04,
-under load) the pairwise counts are 97,021, 7,677, 550,504, 1,976,221 and
-52,520,046. The relaxation arms are similar in size but not the same trees.
-Under `examples/squares`' own `dom_then_deg` search the pairwise rule takes
-14,875 recursions on 7×6, not 41.5M (see the proof table below). #1250's
-wider pairwise test is the obvious first step to closing the default gap. It
-changes these square packings little, since a square rarely covers another's
-compulsory part without one of its own.
+Every recursion count is the same as at `7e1c4178` (on fataepyc-08, whose
+times were lower, so times are not compared across the two) except 6×6 under
+the projection with every `Cumulative` rule on, which was 29. This re-audit
+did not separate #1276's share of that from the `Cumulative` changes merged
+since (#1284, #1285,
+#1290, #1292).
+
+GCS's relaxation arms see far fewer nodes than Gecode, but no frontend can
+turn them on. With the multi-way `smallest_first()` instead (`sqio.cc`) the
+pairwise counts are 97,021, 7,677, 550,504, 1,976,221 and 52,520,046, the same
+at `0a5b4ec6` (re-run serially) as at `7e1c4178`. The relaxation arms are
+similar in size but not the same trees. Under `examples/squares`' own
+`dom_then_deg` search the pairwise rule takes 14,875 recursions on 7×6, not
+41.5M (see the proof table below). #1250's wider pairwise test, which #1276
+merged, changes none of the pairwise counts under either static branching
+(the one relaxation change there, 6×6 with every `Cumulative` rule, is
+above). Under the example's own
+search it changes the enumeration (40,297 → 40,189 recursions pairwise) and
+some relaxation arms (see the proof table). The changes are small, since a
+square rarely covers another's compulsory part without one of its own.
 
 **On variable sizes** (`examples/shikaku`, its own `dom_then_deg` search,
-recursions): `small` 23, `small --autotable` 19, `human` 2,270,
-`human --autotable` 312. With #1250's prototype these are 9, 1, 2,793 and 10.
-The `human` row grows because the heuristic branches differently once domains
-are smaller.
+recursions): `small` 9, `small --autotable` 1, `human` 2,793,
+`human --autotable` 10 at `0a5b4ec6`, as #1250's prototype gave; at
+`7e1c4178` they were 23, 19, 2,270 and 312. #1276's body gives the same for
+three of them. The `human` row grows because the heuristic branches
+differently once domains are smaller.
 
 **What these benchmarks do not exercise.**
 - Optional rectangles.
@@ -1220,29 +1393,51 @@ are smaller.
 
 Under the static branching, route A beats route B by a few recursions on 6×6
 and 7×6 (67 against 71, 197 against 203). The projection with every
-`Cumulative` rule on is smaller again (29 and 153). The design note attributes
+`Cumulative` rule on is smaller again (9 and 153). The design note attributes
 the projection's 6×6 gain under the example's own search to the knapsack rung
 alone; that split was not re-measured here.
 
 ### Proof performance
 
-All figures below are at `7e1c4178`, fataepyc-08, 2026-10-04, using
+All figures below are at `0a5b4ec6`, fataepyc-10, 2026-10-08, using
 `examples/squares` with its own `dom_then_deg` search and `--prove`. Proofs are
-checked by `veripb --force-checked-deletion`; every one verified. The verification
-times were taken with 24 VeriPB processes running at once, one per core. The
-recursions and sizes match the design note's table exactly.
+checked by `veripb --force-checked-deletion`; every one verified, one at a
+time on one pinned core. At `7e1c4178` the check times were taken with 24
+VeriPB processes running at once, so the two sets of times are not
+comparable; the old figures are given below the table.
 
 | instance | pairwise | route B | route A | projection, default | projection, all |
 |---|---|---|---|---|---|
-| `area` | 101,221 rec / 145.4 MB / 19.9 s | 53 / 12.9 MB / 0.8 s | 1 / 2.26 MB / 0.2 s | 1 / 2.28 MB / 0.2 s | 1 / 2.28 MB / 0.2 s |
-| 9×2 in 5×7 | 19,158,497, proofs off (165 s) | 637 / 328.2 MB / 19.4 s | 1 / 4.63 MB / 0.3 s | 1 / 4.65 MB / 0.3 s | 1 / 4.65 MB / 0.3 s |
-| 3,2,2,2,1⁴ in 5×5, 4,608 packings | 40,297 / 34.7 MB / 10.1 s | 10,513 / 751.1 MB / 53.7 s | 10,513 / 546.4 MB / 141.5 s | 10,513 / 62.3 MB / 126.3 s | 10,513 / 43.2 MB / 111.4 s |
-| 3²,2⁴,1² in 6×6 | 11,313 / 7.62 MB / 1.6 s | 225 / 64.6 MB / 4.2 s | 225 / 37.9 MB / 2.6 s | 265 / 10.4 MB / 1.4 s | 29 / 8.36 MB / 0.6 s |
-| 3³,2³,1³ in 7×6 | 14,875 / 10.6 MB / 2.3 s | 29 / 12.5 MB / 0.8 s | 29 / 9.60 MB / 0.7 s | 29 / 5.01 MB / 0.4 s | 29 / 5.98 MB / 0.5 s |
+| `area` | 101,221 rec / 145.4 MB / 19.5 s | 53 / 12.9 MB / 0.7 s | 1 / 2.26 MB / 0.1 s | 1 / 2.28 MB / 0.1 s | 1 / 2.33 MB / 0.1 s |
+| 9×2 in 5×7 | 19,158,497, proofs off (191 s) | 637 / 328.2 MB / 19.3 s | 1 / 4.63 MB / 0.3 s | 1 / 4.65 MB / 0.3 s | 1 / 4.75 MB / 0.3 s |
+| 3,2,2,2,1⁴ in 5×5, 4,608 packings | 40,189 / 34.6 MB / 9.5 s | 10,485 / 629.6 MB / 45.5 s | 10,485 / 545.4 MB / 106.6 s | 10,485 / 61.1 MB / 81.1 s | 10,485 / 48.7 MB / 68.3 s |
+| 3²,2⁴,1² in 6×6 | 11,313 / 7.61 MB / 1.5 s | 225 / 35.7 MB / 2.2 s | 225 / 36.9 MB / 2.3 s | 225 / 9.91 MB / 1.0 s | 13 / 4.16 MB / 0.2 s |
+| 3³,2³,1³ in 7×6 | 14,875 / 10.6 MB / 2.1 s | 29 / 12.5 MB / 0.8 s | 29 / 9.60 MB / 0.6 s | 29 / 5.01 MB / 0.3 s | 29 / 6.00 MB / 0.4 s |
 
-**Size and checking time come apart.** On the enumeration, route B's 751 MB
-verifies in 54 s, and route A's 546 MB and the projection's 43 to 62 MB take
-111 to 141 s. A proof-size table alone would rank these arms backwards for
+At `7e1c4178` the cells that differ were:
+- `area`: the full projection 2.28 MB;
+- 9×2: the full projection 4.65 MB;
+- the enumeration: 40,297 recursions and 34.7 MB pairwise, and 10,513
+  recursions in every other arm, with route B 751.1 MB (53.7 s), route A
+  546.4 MB (141.5 s), the default projection 62.3 MB (126.3 s) and the
+  full one 43.2 MB (111.4 s);
+- 6×6: pairwise 7.62 MB, route B 64.6 MB, route A 37.9 MB, the default
+  projection 265 recursions and 10.4 MB, and the full one 29 recursions and
+  8.36 MB;
+- 7×6: the full projection 5.98 MB;
+- and every check time, taken then under load.
+
+The audit's prototype of #1250 gave the 40,189, 10,485 and 225 recursions
+and route B's 35.7 and 630 MB, so those changes are #1276's. The full
+projection's changes (6×6 from 29 recursions to 13, and its proof sizes)
+were not separated from the `Cumulative` changes merged since. The 9×2
+pairwise solve time, 165 s at `7e1c4178`, ran with other work on other
+cores. The design note's
+table is still `7e1c4178`'s.
+
+**Size and checking time come apart.** On the enumeration, route B's 630 MB
+verifies in 46 s, and route A's 545 MB and the projection's 49 to 61 MB take
+68 to 107 s. A proof-size table alone would rank these arms backwards for
 checking. **A hypothesis, not tested here:** route B's certificates are
 `Temporary` and deleted at once, while route A's and the projection's rows are
 cached at `Top`, so their live database keeps growing and every RUP propagates
@@ -1253,17 +1448,22 @@ over more of it.
 `red` definitions of `ge` and `eq` atoms and their unit pins, and as search
 each `rup` after a backtrack comment and each `solx`. Everything else that
 derives is this family's own, including `Cumulative`'s certificates under the
-projection.
+projection. At `0a5b4ec6`:
 
 | proof | own | literal layer | search | deletions |
 |---|---|---|---|---|
 | `area`, pairwise | 118.5 MB (81%) | 0.02 MB | 12.2 MB | 13.1 MB |
 | `area`, route B | 12.7 MB (98%) | 0.01 MB | 0.0 | 0.2 MB |
-| 6×6, pairwise | 5.35 MB (70%) | 0.02 MB | 1.39 MB | 0.69 MB |
-| 6×6, route B | 63.4 MB (98%) | 0.02 MB | 0.01 MB | 1.0 MB |
-| enumeration, pairwise | 23.5 MB (68%) | 0.02 MB | 7.35 MB | 2.9 MB |
-| enumeration, route B | 735.7 MB (98%) | 0.03 MB | 2.3 MB | 12.1 MB |
-| enumeration, projection all | 39.5 MB (91%) | 0.03 MB | 2.3 MB | 1.0 MB |
+| 6×6, pairwise | 5.34 MB (70%) | 0.02 MB | 1.39 MB | 0.69 MB |
+| 6×6, route B | 35.0 MB (98%) | 0.02 MB | 0.01 MB | 0.6 MB |
+| enumeration, pairwise | 23.5 MB (68%) | 0.02 MB | 7.34 MB | 2.9 MB |
+| enumeration, route B | 616.2 MB (98%) | 0.03 MB | 2.3 MB | 10.3 MB |
+| enumeration, projection all | 44.9 MB (92%) | 0.03 MB | 2.3 MB | 1.1 MB |
+
+At `7e1c4178` the cells that differ were: 6×6 pairwise own 5.35 MB; 6×6
+route B own 63.4 MB and deletions 1.0 MB; the enumeration's pairwise search
+7.35 MB, route B own 735.7 MB and deletions 12.1 MB, and full projection
+own 39.5 MB (91%) and deletions 1.0 MB.
 
 At these widths (domains of at most six values) the literal layer is
 negligible: under 400 lines per proof. The family's own derivations are 68% to
@@ -1272,24 +1472,32 @@ rule's own lines stay constant per firing and the layer grows with each new
 bound.
 
 **At `AssertionLevel::Inferences`** (`GCS_ASSERTION_LEVEL=inferences`, same
-instances, same commit):
+instances, at `0a5b4ec6`; check times serial, so the `Off` column is the
+table above's):
 
 | proof | size: `Off` → `Inferences` | `a` lines in total | carrying `disjunctive_2d` | carrying `cumulative` | check time: `Off` → `Inferences` |
 |---|---|---|---|---|---|
-| `area`, pairwise | 145.4 MB → 70.7 MB | 517,614 | 416,392 (80%) | 0 | 19.9 s → 1.8 s |
-| `area`, route B | 12.9 MB → 48.7 KB | 246 | 192 | 0 | 0.8 s → 0.05 s |
-| 6×6, pairwise | 7.62 MB → 4.44 MB | 31,094 | 19,780 (64%) | 0 | 1.6 s → 0.16 s |
-| 6×6, route B | 64.6 MB → 371 KB | 2,022 | 1,796 | 0 | 4.2 s → 0.06 s |
-| 6×6, route A | 37.9 MB → 288 KB | 1,658 | 1,432 | 0 | 2.6 s → 0.06 s |
-| 6×6, projection all | 8.36 MB → 20.4 KB | 108 | 8 | 70 | 0.6 s → 0.05 s |
-| enumeration, pairwise | 34.7 MB → 22.5 MB | 129,999 | 85,094 (65%) | 0 | 10.1 s → 1.6 s |
-| enumeration, route B | 751.1 MB → 10.2 MB | 45,585 | 30,464 | 0 | 53.7 s → 1.2 s |
-| enumeration, route A | 546.4 MB → 9.8 MB | 43,565 | 28,444 | 0 | 141.5 s → 1.2 s |
-| enumeration, projection all | 43.2 MB → 9.5 MB | 39,921 | 6,078 | 18,722 | 111.4 s → 1.2 s |
+| `area`, pairwise | 145.4 MB → 70.7 MB | 517,614 | 416,392 (80%) | 0 | 19.5 s → 1.9 s |
+| `area`, route B | 12.9 MB → 48.7 KB | 246 | 192 | 0 | 0.7 s → < 0.01 s |
+| 6×6, pairwise | 7.61 MB → 4.44 MB | 31,094 | 19,780 (64%) | 0 | 1.5 s → 0.12 s |
+| 6×6, route B | 35.7 MB → 321 KB | 1,942 | 1,716 | 0 | 2.2 s → 0.01 s |
+| 6×6, route A | 36.9 MB → 272 KB | 1,562 | 1,336 | 0 | 2.3 s → 0.01 s |
+| 6×6, projection all | 4.16 MB → 6.5 KB | 36 | 0 | 22 | 0.2 s → < 0.01 s |
+| enumeration, pairwise | 34.6 MB → 22.4 MB | 129,750 | 84,953 (65%) | 0 | 9.5 s → 1.5 s |
+| enumeration, route B | 629.6 MB → 9.8 MB | 44,424 | 29,331 | 0 | 45.5 s → 1.1 s |
+| enumeration, route A | 545.4 MB → 9.8 MB | 43,464 | 28,371 | 0 | 106.6 s → 1.2 s |
+| enumeration, projection all | 48.7 MB → 9.7 MB | 40,934 | 6,329 | 19,512 | 68.3 s → 1.2 s |
+
+At `7e1c4178` (check times with 24 processes at once) the rows that differ
+were: 6×6 route B 371 KB, 2,022 and 1,796; route A 288 KB, 1,658 and
+1,432; projection all 20.4 KB, 108, 8 and 70; and the enumeration's
+pairwise 22.5 MB, 129,999 and 85,094, route B 10.2 MB, 45,585 and 30,464,
+route A 43,565 and 28,444 lines, and projection all 9.5 MB, 39,921, 6,078
+and 18,722.
 
 All are `s UNDER ASSERTIONS`. The pairwise rule's assertions save least
 (35% to 51% of the bytes), since its derivations are a few `pol`s each. The
-relaxation's save 78% (the projection's enumeration, whose `Cumulative`
+relaxation's save 80% (the projection's enumeration, whose `Cumulative`
 assertions remain) to 99.8%.
 Every `disjunctive_2d` assertion has one wire form, so the split by wire form
 is the table's two columns.
@@ -1298,14 +1506,14 @@ is the table's two columns.
 
 ### Proof-logging gaps
 
-- **A rejected proof when a size variable is also a position** (#1253). The
-  pairwise push and route B both write certificates VeriPB rejects. The answers
-  are correct, and the shape is reachable from MiniZinc. This is the one place
-  where an inference is made and not certified.
-- Otherwise, every inference is justified, no `a` line is emitted at
+- None. Every inference is justified, no `a` line is emitted at
   `AssertionLevel::Off`, and no rule is weakened when proofs are on. The
   relaxation's membership, windows and floors are settled from the model so that
-  proofs-on and proofs-off runs agree.
+  proofs-on and proofs-off runs agree. At `7e1c4178` there were two
+  exceptions, both rejected proofs with correct answers, and both route B's
+  in part: a size variable that is also a position (#1253, fixed by #1269),
+  and a variable resource-axis size whose floor row lost its other
+  position's high bits (fixed by #1270, which had no issue).
 - **The proof options change what the presolvers do with a projection**
   (#1234). Above `Off`, two of them install nothing, and
   `CumulativeStrengthening` throws wherever it would strengthen something. That
@@ -1313,13 +1521,11 @@ is the table's two columns.
 
 ### Known limitations
 
-- "VeriPB rejects my `diffn` proof": a size shares a variable with a position
-  (#1253).
 - "My `diffn` model searches far more than Gecode": the default rule is
-  pairwise over compulsory parts only, and narrower than that (#1250). No
-  frontend reaches the relaxation.
-- "`fzn-glasgow` errors on my `diffn`" with a size that can be negative
-  (#1251).
+  pairwise, by forbidden regions (#1276), and Gecode's `nooverlap` reasons
+  about more than pairs. No frontend reaches the relaxation.
+- "`fzn-glasgow` errors on my `diffn`" with a size that can be negative: by
+  decision, documented by #1272 (#1251). Add `size >= 0` to the model.
 - "Optional rectangles from MiniZinc": not possible, since there is no
   `var opt` `diffn`. Use the API or `.scp`.
 - "My 3-D packing is slow": `diffn_k` decomposes (#975).
@@ -1333,13 +1539,12 @@ is the table's two columns.
 
 ### Next steps
 
-0. **Fix the aliased-size proofs** (#1253). Capture each size's lower-bound
-   literal with the position literals before the push, and count sizes as uses
-   in route B's admission test. Cheap, and it is the only rejected proof this
-   audit found.
+0. **Fix the aliased-size proofs** (#1253). Done by #1269, as proposed.
+   #1270 then fixed a second route B rejection, with no aliasing, found by
+   #1269's fuzz.
 1. **Widen the pairwise overlap test to the forbidden-region condition**
-   (#1250). It is two lines per loop, plus a non-strict `size ≥ 1` gate for
-   the escape pins, and no proof change. Measured:
+   (#1250). Done by #1276, as proposed, with the non-strict gate, and on
+   the push pass's forced axis too. Measured on the audit's prototype:
    - Across eight random shapes, the roots with an unsupported bound fall by
      10% to 57%.
    - The fall is largest on constant sizes, strict or non-strict: 114 → 54 for
@@ -1349,12 +1554,14 @@ is the table's two columns.
    - Shikaku `human --autotable` goes from 312 recursions to 10.
    - Every test and proof passes.
 
-   Cheap, and it buys the default rule.
-2. **Make the projection wake on presences** (#1252). One loop. It buys a
-   little propagation with optional rectangles.
+   At `0a5b4ec6` the bz2d counts are 24 → 11 and 114 → 54 for two and three
+   strict rectangles, and shikaku is 9, 1, 2,793 and 10, as the prototype
+   gave.
+2. **Make the projection wake on presences** (#1252). Done by #1276, as
+   proposed.
 3. **Settle the assertion-level behaviour with `cumulative.md`**
    (#1234). The same gate decides both, and
-   whichever fix lands there should cover `disjunctive_2d.cc:706`.
+   whichever fix lands there should cover `disjunctive_2d.cc:735`.
 4. **Add a subhint per rule.** Thirteen rules under one wire form make every
    rule `search`. A `(subhint …)` field would make them `hinted`. Cheap.
 5. **Give the large-domain audit a row with `cumulative_projection`** (and with
@@ -1368,14 +1575,18 @@ is the table's two columns.
    bounds, and the generic reason carries every gap. Cheap; it makes the
    reasons smaller on holey domains, and needs a proof diff to confirm nothing
    else read the gaps.
-8. **Decide negative sizes in MiniZinc** (#1251): post `size ≥ 0` as Gecode
-   does, decompose, or document.
+8. **Decide negative sizes in MiniZinc** (#1251). Decided: document. #1272
+   records the error in `frontend-support-matrix.md`'s noOverlap footnote
+   and in both `fzn_diffn*.mzn` files.
 9. **A span-flat certificate for route A** remains open (design note, open
    follow-ups). The cap is the only answer today.
 10. **A cake encoder for the optional forms**, which waits for the next batch of
     requests to cake upstream, as `cumulative_optional` does.
 11. **Fix the stale comments**: "six pols" per push, in the code and the note,
-    is four.
+    is four; and since #1276 the zero-area leaf check's comment that the
+    pairwise pass skips zero-area rectangles (`disjunctive_2d.cc:2233-2236`).
+    Done by #1265, merged after `0a5b4ec6`, with the mutations header's
+    "none of them changes the inference".
 
 ## Prior art
 
@@ -1415,7 +1626,10 @@ is the table's two columns.
   cap (#1098), edge-finding's closed-form threshold, TTEF's never-load-bearing
   pins, the variable-size floors on both axes, the projection (#973) and the
   donor. Everything above is audited against it. Its tables were re-measured
-  here and match.
+  at `7e1c4178` and matched. At `0a5b4ec6` it still describes the pairwise
+  rule with mandatory boxes and "six pols", which #1265, merged after it,
+  corrects. #1276 changed several of its `squares` figures (see [Proof
+  performance](#proof-performance)), and those were not updated.
 - [`cumulative-proof-logging.md`](../cumulative-proof-logging.md): the two
   `CumulativeInputs` fields the projection added, and what `Cumulative`'s
   certificates cite.
