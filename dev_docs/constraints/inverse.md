@@ -1,15 +1,17 @@
 # Inverse: two arrays that are each other's inverse permutation
 
 > **Maturity** production ·
-> **Audited** 2026-09-23 at `00797a97`; re-audited 2026-09-25 at `61112ed0` ·
+> **Audited** 2026-09-23 at `00797a97`; re-audited 2026-09-25 at `61112ed0`;
+> re-audited 2026-10-08 at `0a5b4ec6` for #1187 ·
 > **Open issues** filed by this audit: #1048 (8–10× slower than Gecode at equal
 > node counts). Filed by this audit and since fixed: #1047 and #1049; see
-> [Re-audit](#re-audit-2026-09-25). Found here but not this family's: #1046
-> (`GlobalCardinality` proofs break on a constant in the array), still open.
-> Already open and touching this family: #522 (the generalised arc consistent
-> `AllDifferent` rebuilds its components every wake), #944 (Hall proofs cost
-> one pairwise at-most-one per value), #364 (incremental propagators). Tracked
-> under #871.
+> [Re-audit, 2026-09-25](#re-audit-2026-09-25). Found here but not this
+> family's, and **fixed since**: #1046 (`GlobalCardinality` proofs broke on a
+> constant in the array), by #1187; see [Re-audit,
+> 2026-10-08](#re-audit-2026-10-08). Already open and touching this family:
+> #522 (the generalised arc consistent `AllDifferent` rebuilds its components
+> every wake), #944 (Hall proofs cost one pairwise at-most-one per value), #364
+> (incremental propagators). Tracked under #871.
 
 `Inverse(x, y)` says that `x` and `y` are inverse permutations of each other's
 index sets: `x[i] = j` exactly when `y[j] = i`. Since #1088 it also takes a
@@ -48,6 +50,25 @@ Those are the only two commits under `gcs/constraints/inverse` since
 the test harness refuse to run with its idempotence checker off, and #1087
 (a8dd8c33), which removes the short proof-name option. Neither changes anything
 here; see [Propagator inventory](#propagator-inventory) for the first.
+
+### Re-audit, 2026-10-08
+
+One fix has merged that this document described as open: #1046, which this
+audit found in another family. Nothing under `gcs/constraints/inverse/` has
+changed since `61112ed0` except the integer-range check on its two starts
+(`3435a4e1`, #1117, #1168, #1188), which this pass does not cover. In CMake,
+#1208 added an `inverse_constraint_view_mixed_late` lane, now listed under
+[Tests](#tests).
+
+| Issue | Fixed by | What changed here |
+|---|---|---|
+| #1046: `GlobalCardinality` passed `recover_am1` positive atoms, and over a constant its #171 short cut wrote a `0 ≥ 1` VeriPB rejected; its capacity side also aborted on a constant | #1187 (64890e5f) | `recover_am1`'s header now documents one convention, negated atoms `x ≠ v` (`innards/recover_am1.hh:17-35`), and both remaining callers, `Among` and `GlobalCardinality`, use it; GCC also leaves constants out of those at-most-ones. The paragraph on [the polarity of `recover_am1`'s atoms](#rule-hall-set-deletion), [Next steps](#next-steps) item 1, and [Developer commentary](#developer-commentary) |
+
+**What was measured again.** Nothing of the figures. `Inverse` does not call
+`recover_am1`, and #1187 changed no code it runs. The one check run at
+`0a5b4ec6` is the new lane's configuration: `inverse_test --seed=1
+--view-position=mixed --late-view-registration` passes, every proof
+verifying (78).
 
 Three things to know before touching it.
 
@@ -703,13 +724,16 @@ Until #1089 `Inverse` passed `recover_am1` the atoms `x[k] ≠ v` and pairwise
 lines `x[a] ≠ v + x[b] ≠ v ≥ 1`, and got back `Σ x[k] ≠ v ≥ n − 1`, which is
 the at-most-one. `Among` does the same. `recover_am1`'s header documented only
 the opposite convention (atoms `aₖ`, pairwise lines `¬aᵢ + ¬aⱼ ≥ 1`), and
-`GlobalCardinality` uses that one. The helper's #171 shortcut, which emits
+`GlobalCardinality` used that one. The helper's #171 shortcut, which emits
 `0 ≥ 1` when two atoms are false, is only right for the negated convention.
-`GlobalCardinality`'s bounds arm, over a constant, can reach it, and then emits
-a line VeriPB rejects (#1046, found by this audit). #1089 moved `Inverse` off
+`GlobalCardinality`, over a constant, could reach it, and then emitted a line
+VeriPB rejected (#1046, found by this audit). #1089 moved `Inverse` off
 `recover_am1` and corrected the header to describe both conventions and say
-which one the shortcut needs. **#1046 itself is still open**: the header now
-states the constraint, but `GlobalCardinality` still breaks it.
+which one the shortcut needs. **#1187 fixed #1046** (merged 2026-10-02):
+`GlobalCardinality` now passes negated atoms too, and leaves constants out of
+its at-most-ones altogether. The header now documents the negated convention
+only, as the one every caller uses (`innards/recover_am1.hh:17-35`), so
+`recover_am1` no longer has two conventions in use.
 
 ### Rule: hall-violator
 
@@ -903,6 +927,7 @@ states the constraint, but `GlobalCardinality` still breaks it.
 |---|---|
 | `inverse_constraint` | `inverse_test`. Since #1088: 39 instances, each at starts `(0, 0)` and at one shifted pair, with and without proofs, under `solve_for_tests_checking_gac`, so `GAC` at every node. They are 23 fixed rows (13 bijections, and 10 injections, including the #1047 instance, an empty `x`, and four Hall-set rows that make rule 7 load-bearing), 8 random bijections of 2–4 entries and 8 random injections of 1–3 entries into one or two more. Then seven aliased cases without the `GAC` check: repeats in `x` and in `y` in both forms, an involution, and two and three views of one variable. And the longer-first constructor throw |
 | `inverse_constraint_view_mixed` | the same, positions wrapped in views of fresh variables; the aliased cases run in the bare configuration only |
+| `inverse_constraint_view_mixed_late` | from #1208: the view-wrapped run with every view registered by a constraint posted after `Inverse` (`--late-view-registration`) |
 | `exception_test` | a first array longer than the second throws at construction |
 | `solve_test` | a repeated variable in `x` reports its `StatsNote` |
 | `scp_chain_inverse_sat`, `scp_chain_inverse_offsets_sat`, `scp_chain_inverse_aliased_unsat` | see [Cake conformity](#cake-conformity) |
@@ -1130,10 +1155,13 @@ never through the verified chain.
 Ranked by what they buy for what they cost.
 
 1. **#1046** — not this family's, but found here: `GlobalCardinality` proofs
-   can abort (both arms) or be rejected (the bounds arm) when its array holds a
-   constant, in 135 of 300 random instances (at `00797a97`). It is reachable
-   from MiniZinc, and it is the most serious finding of this audit. #1089
-   documented the constraint in `recover_am1`'s header but did not fix it.
+   could abort (both arms) or be rejected when its array held a constant, in
+   135 of 300 random instances (at `00797a97`). It was reachable from MiniZinc,
+   and it was the most serious finding of this audit. #1089 documented the
+   constraint in `recover_am1`'s header but did not fix it. **Done by #1187**:
+   GCC converted to the negated convention and leaves constants out of its
+   Hall `pol`s. With the abort fixed, its sweep also found rejections at the
+   flow arm.
 2. **#1048** — walk intervals (18%, and it removes this family's only per-value
    iteration), then make the channel incremental and push-based, and skip `GAC`
    runs that cannot find anything. Re-measure on the four `black-hole` instances
@@ -1146,7 +1174,7 @@ Ranked by what they buy for what they cost.
    post it. That is a change to `cake_pb_cp`, not to this repository. Unfiled.
 
 Done since the first audit: #1047 (#1088) and #1049 (#1089); see the
-[re-audit](#re-audit-2026-09-25).
+[re-audit](#re-audit-2026-09-25). And #1046 (#1187), item 1.
 
 ## Prior art
 
@@ -1183,9 +1211,10 @@ the injection form, which leaves that entry of `y` unconstrained.
 ## Developer commentary
 
 **Checking a helper's callers found a bug in another family.** Reading how
-`Inverse` called `recover_am1` (it no longer does) showed that its three callers disagree about the
-atoms' polarity, and the helper's shortcut for two false atoms is right for only
-one of them. A 300-seed sweep of `GlobalCardinality` with constants in its
+`Inverse` called `recover_am1` (it no longer does) showed that its three
+callers disagreed about the atoms' polarity, and the helper's shortcut for two
+false atoms was right for only one of them. Since #1187 the two remaining
+callers agree. A 300-seed sweep of `GlobalCardinality` with constants in its
 array then found the wrong `0 ≥ 1` in 8 runs, and an unrelated missing case
 (an at-least-one over a constant) aborting 127 more. The counting audit had
 read every rule of that constraint and missed both, because its tests put
