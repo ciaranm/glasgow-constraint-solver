@@ -292,7 +292,8 @@ length 1 pushed across a plateau of width `W` took `W` steps --- and each
 step cites a time point nothing has cited before, which is where most of
 the cost was: the point's flag definitions and the recovery of its `C_t`
 (see "Recovering `C_t` from the checkpoints" below), about 59 proof lines a
-point. A push of 5,000 was 150,000 lines.
+point. #1237's probe pushes a task of length 1 by 5,000 (`H = 10,000`),
+and its proof was 295,048 lines at `7e1c4178`.
 
 The per-time rows cannot do better, since each of them speaks about one
 point. The pushed task's own **start-checkpoint row** can: `C^start_j` says
@@ -346,7 +347,9 @@ first completion (or the last latest-start) among the tasks it keeps, and
 keeps the ones that stay longest. A task too tall for the resource on its
 own takes nothing, and its run reaches the target in one step. The chain
 is now proportional to the profile's plateaus rather than to the distance:
-the issue's push is one step and about 50 lines, flat in the horizon.
+the issue's push is one step, 41 lines from its comment to its deletions in
+a 63-line proof, the same at every `H` from 10³ to 10⁶ (measured at
+`86caad24`).
 
 **What a run does not speak about**, and leaves to per-time steps: a
 pushed task or cited task of variable height (its contribution bits are on

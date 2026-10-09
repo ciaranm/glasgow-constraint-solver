@@ -631,6 +631,14 @@ rule's small rise is consistent with the kept folds standing in the
 database that every later RUP propagates over, where re-derived ones
 were deleted on backtrack, but that has not been shown.
 
+The table was measured on #1287's branch, before #1275 and #1283 were
+merged: its edge-finding row ran without the overload check, which
+`edge_finding` now turns on, and its set-based row with the set rule still
+skipping a task whose start was fixed (#1243). At `0a5b4ec6`, #1260's
+re-audit of the same `ft06` runs gives edge-finding, now with the overload
+check, 222,313 lines and 13.7 MB, and the set-based rule, whose tree is now
+17,195 recursions rather than 58,579, 1,366,208 lines and 98.3 MB.
+
 ### The crossover, and the measurement it invalidated
 
 `DisjunctiveRules::overload_certificate` is
@@ -834,6 +842,12 @@ proof line, which is why there is one code path and not two.
 
 ### What it is worth, and which half is worth it
 
+**Measured when this section was written** (58703e9d, 2026-08-17), and not
+re-taken since. Edge-finding then ran without the overload check. Since
+#1275 `edge_finding` turns that check on (#1244), so every arm but `off`
+below would now run it too; on `ft06` with a deadline of 55 that took
+edge-finding's search from 758 recursions to 28 (#1275's body).
+
 Generated RCPSP with a unary machine (`--machine-fraction 0.8`, without
 which hardly any resource has capacity one and the rule never fires),
 sizes 8–30, 68 instances at a 60 s timeout. Ratios are over the 36
@@ -992,6 +1006,12 @@ fixture that makes its mutations bite.
 
 ### What it is worth: it fires everywhere and buys nothing
 
+**Measured when this section was written** (f3c5d90f, 2026-08-18), and not
+re-taken since. Like `edge_finding`, `not_first_not_last` has turned the
+overload check on since #1275, so every arm below but `off` would now run it.
+The verdict is about the window-energy detection; the published one has
+been a different matter since #1289 (see "Which Θ: every one", below).
+
 The same generated RCPSP as edge-finding's table above, and deliberately the
 same 68 instances and the same 60 s timeout, so the two are read together. Six
 arms, because "against nothing" is not the question a reader has: this rule
@@ -1094,7 +1114,9 @@ as the two tables above, so all three read together:
 | **ef + nfnl published** | **ef** | **1.026x** | **1.000x** | **1.036x** | 4/36 | 46/68 |
 
 Three of those rows reproduce the earlier tables to the digit, which is
-the check that the runs are comparable. **That 1.6-1.7× detection gap
+the check that the runs are comparable. (Like them, this table predates
+#1275, so its arms ran without the overload check that `edge_finding` and
+`not_first_not_last` now turn on.) **That 1.6-1.7× detection gap
 buys 0.6% of the summed recursions and nothing at all at the median.** It
 is not that the stronger detection sits idle — propagation counts differ
 on **64 of 68** instances, and it changes the search on 21 of the 36 — but
@@ -1359,7 +1381,10 @@ came back yes, so it **is** certified — see below.
 A rule that removed a solution would measure as a large win, so the
 sweep cannot make this check. Both left-cut scans were transcribed back
 out of the propagator and every push reaching past the pairwise target
-checked against a **full enumeration** of its instance's solutions:
+checked against a **full enumeration** of its instance's solutions. This
+was at 767c14a1 (2026-08-18), when the propagator skipped a task whose
+start was already fixed; since #1275 the set rule keeps one (#1243), and
+the counts have not been re-taken:
 
 | draw | pushes | past the pairwise target | removed a solution |
 |---|---|---|---|
@@ -1369,7 +1394,11 @@ checked against a **full enumeration** of its instance's solutions:
 
 ### And unlike #757 it is worth building
 
-The same 68 instances and 60 s timeout as the tables above:
+The same 68 instances and 60 s timeout as the tables above, measured at
+767c14a1 and not re-taken since #1275: the set rule then skipped a fixed
+task, and the `ef` arms ran without the overload check. On `ft06` with an
+infeasible deadline of 54, #1275 took the set rule's tree from 53,944
+recursions to 12,574 (#1275's body).
 
 | arm | against | summed | median | geomean | better | closed |
 |---|---|---|---|---|---|---|
@@ -2106,8 +2135,10 @@ did with proofs. Its fourth instance hit #1024: the elastic rungs threw
 after an edge-finding push earlier in the same sweep. That is fixed in
 #1025, and this branch carries the fix.
 
-**Measured on `examples/squares`**, enumerating (`--all`). Each cell gives
-recursions / proof size, and every proof verifies. "Route A" is
+**Measured on `examples/squares`**, enumerating (`--all`), at `86caad24`
+(re-measured for this table; #1261's re-audit had the same figures at
+`0a5b4ec6`). Each cell gives recursions / proof size, and every proof
+verifies (VeriPB 3.0.2, `--force-checked-deletion`). "Route A" is
 `--relaxation --relaxation-overload --relaxation-ttef`: route B's
 time-tabling plus the route A rungs. The two projection arms are
 `--projection default` (time-tabling and (OC)/(TTOC)) and
@@ -2117,20 +2148,31 @@ time-tabling plus the route A rungs. The two projection arms are
 |---|---|---|---|---|---|
 | `area` (7×2 in 5×5) | 101,221 / 145 MB | 53 / 12.9 MB | 1 / 2.3 MB | 1 / 2.3 MB | 1 / 2.3 MB |
 | 9×2 in 5×7 | 19.2M, no proof | 637 / 328 MB | 1 / 4.6 MB | 1 / 4.7 MB | 1 / 4.7 MB |
-| 3,2,2,2,1⁴ in 5×5 (4,608 packings) | 40,297 / 34.7 MB | 10,513 / 751 MB | 10,513 / 546 MB | 10,513 / 62.3 MB | 10,513 / 43.2 MB |
-| 3²,2⁴,1² in 6×6 | 11,313 / 7.6 MB | 225 / 64.6 MB | 225 / 37.9 MB | 265 / 10.4 MB | **29** / 8.4 MB |
+| 3,2,2,2,1⁴ in 5×5 (4,608 packings) | 40,189 / 34.6 MB | 10,485 / 630 MB | 10,485 / 545 MB | 10,485 / 61.1 MB | 10,485 / 48.7 MB |
+| 3²,2⁴,1² in 6×6 | 11,313 / 7.6 MB | 225 / 35.7 MB | 225 / 36.9 MB | 225 / 9.9 MB | **13** / 4.2 MB |
 | 3³,2³,1³ in 7×6 | 14,875 / 10.6 MB | 29 / 12.5 MB | 29 / 9.6 MB | 29 / 5.0 MB | 29 / 6.0 MB |
+
+When this section was written (1be0a34b), the cells that differ were: the
+enumeration's 40,297 / 34.7 MB pairwise and 10,513 recursions in every
+other arm, at 751 MB, 546 MB, 62.3 MB and 43.2 MB; and on 6×6, route B's
+64.6 MB, route A's 37.9 MB, and the projection's 265 / 10.4 MB by default
+and 29 / 8.4 MB with every rule. Since then #1276 has changed the pairwise
+rule every arm runs, and the scheduling merges have changed `Cumulative`'s
+rules; which change moved which cell has not been separated.
 
 Two things stand out. The projection's proofs are much smaller wherever
 the relaxation fires a lot. Its rows are cached at Top and cited by
-every rule, where route B derives a certificate per firing: 546 MB
-against 43 MB on the enumeration. And with every rule on, the 6×6
-instance's tree drops from 225 to 29. That is the first search the
-energetic ladder has bought on this family, and it is the **knapsack
-rung (KAOC)** alone: time-tabling and (OC)/(TTOC) give 265, adding
-KAOC gives 29, and elastic overload, edge-finding, TTEF, energetic
-edge-finding and both not-first / not-last each give 241–265. Edge-finding
-and TTEF alone bought none (above).
+every rule, where route B derives a certificate per firing: 545 MB
+against 49 MB on the enumeration. And with every rule on, the 6×6
+instance's tree drops from 225 to 13. That is the first search the
+energetic ladder has bought on this family, and most of it is the
+**knapsack rung (KAOC)**: time-tabling and (OC)/(TTOC) give 225, adding
+KAOC alone gives 29, adding the published not-first / not-last alone
+gives 57, and elastic overload, edge-finding, TTEF, energetic
+edge-finding and the window-energy not-first / not-last each give 225.
+(When this section was written, before #1292 made the published detection
+ask about every Ω, the default gave 265, KAOC 29, and every other rung
+241–265.) Edge-finding and TTEF alone bought none (above).
 
 Tested by:
 - **Fixtures.** `sharp` by time-tabling alone, `area` by the overload
