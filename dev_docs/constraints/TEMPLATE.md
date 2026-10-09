@@ -861,6 +861,16 @@ the entry. A derivation that exists but is expensive to find, even one whose
 only known route is to re-run the solver's own search, is `search`, with that
 cost named. Hard-to-find is `search`; impossible-without-help is `solver-side`.
 
+**A fixed case split is not a search.** Sometimes the clause alone is not RUP,
+but a case split whose cases the model itself fixes always derives it: one RUP
+`C ∨ ¬x[u]` per value flag of a one-hot variable, then `C` by RUP against its
+at-least-one row, with every case guaranteed to succeed. That rule is
+`offline`, even though the procedure can take more lines than the solver's own
+derivation and plain RUP sometimes suffices. `search` is for derivations that
+need something found, not enumerated: a licensing row, a witness, a combination
+of rows. [`reachable.md`](reachable.md)'s open-root forcings (rules 7 to 10)
+are the example; their entries argue the guarantee.
+
 The `solver-side` rules are exactly the list of things the external tool cannot
 rebuild, and therefore exactly what a hints-only GCS mode has to carry. The
 `search` rules are the list of places where a hint would save work, and are
@@ -1011,7 +1021,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `nogoods.md` | `nogoods/` | search machinery rather than a posted constraint; notes `restarts-nogoods-weighting.md`, `refined-triggers.md` |
 | `parity.md` | `parity/` | **written**. `ParityOdd`, and the GF(2) system propagator in `gf2_system.{hh,cc}` that the `parity_system_gathering` presolver installs; note `parity-system.md` |
 | `path.md` | `path/` | |
-| `reachable.md` | `reachable/` | |
+| `reachable.md` | `reachable/` | **written**. `Reachable` and `DReachable`, which `connected` / `dconnected` reach through the stdlib and `Tree` / `Path` post as a child; owns the unfolding encoding, the propagator and its forcing. `connectivity-proofs.md` stays, shared with `dag`; `Reachable`, `Subgraph` and `Dag` each carry their own copy of the subgraph rows and rules, and each document records its own; filed #1305, #1312, #1316 |
 | `regular.md` | `regular/` | existing note `regular.md` |
 | `seq_precede_chain.md` | `seq_precede_chain/` | **written**. Delegates to `value_precede` after a clamp; this document covers the clamp and the delegation |
 | `smart_table.md` | `smart_table/` | **written**. `SmartTable`, and the engine under `LexSmartTable` and `AtMostOneSmartTable`. The candidate merge with `table`, settled: separate. No shared code, and a flag per row and per entry against `Table`'s proof-only selector |
