@@ -17,7 +17,9 @@
 > comparisons; this document gives one, by hand), #1006 (MiniZinc shape
 > lanes), #364 (incrementality survey). Filed since: #1326 (`SubCircuit`'s
 > pigeonhole grows with a wide-declared successor's declared width; see
-> [Known limitations](#known-limitations)).
+> [Known limitations](#known-limitations)) and #1327 (`Circuit`'s `SCC` walk
+> recurses once per level and overflows the native stack on large instances;
+> see [Robustness](#robustness-and-limits)).
 > **Not filed, by decision**: `Circuit`'s `SCC` propagator asserts three of its
 > rules as bare unit clauses at the `Definitions`, `Links` and `Inferences`
 > assertion levels, the defect `smart_table` has from the same commit
@@ -40,16 +42,20 @@ they were built and what they cost.
 
 Four things to know before touching it.
 
-- **It finds the right answers everywhere this audit looked, bar one crash,
+- **It finds the right answers everywhere this audit looked, bar two crashes,
   and one option makes its proof wrong.** Random holey instances up to six
   nodes, with constants, offset views and values outside `0..n-1`, through
   every algorithm and option: no lost and no spurious solution in 2,000 trials
   per configuration. MiniZinc on both versions, XCSP3 against ACE and the
-  `.scp` reader agree with their references at two nodes and more. The crash
-  is the empty array: `Circuit{}` segfaults under its default algorithm and
-  fails on an integer overflow whenever a proof is written (#1307).
+  `.scp` reader agree with their references at two nodes and more. The first
+  crash is the empty array: `Circuit{}` segfaults under its default algorithm
+  and fails on an integer overflow whenever a proof is written (#1307).
   `SubCircuit{}` is fine, and MiniZinc guards the shape before it reaches
-  either. The wrong proof is `Circuit`'s `SCC` with
+  either. The second is size: `Circuit`'s default `SCC` walk recurses once
+  per level of its depth-first tree, and with an 8 MiB stack it segfaults
+  during root propagation, proofs off, from about 7,700 nodes on a fixed ring
+  and at 10,000 nodes on every domain shape tried (#1327). The wrong proof is
+  `Circuit`'s `SCC` with
   `with_prune_skip(false)`: the answers stay right, but the certificates of
   *fix required* and *no back edge* assume skip edges are already pruned, and
   VeriPB rejects them when a skip edge is what makes the argument fail (13 of
@@ -341,9 +347,46 @@ each equality as a `≤` and a `≥` row half-reified on the edge literal. The
 rather than simplified. **Definitional**: on a full assignment, unit
 propagation from `pos[0] = 0` fixes every `pos` along the cycle through 0, and
 fails exactly when that cycle is short, which is the thesis's argument for
-checking (§6.3). **Size**: `n²` row pairs of `O(log n)` terms, the clique, and
-`n` position variables of `⌈log₂ n⌉` bits. It does not grow with domain width,
-because every successor's range is `0..n-1`.
+checking (§6.3). **Size**: the row count is fixed by `n`, but not every
+row's term count is. The `n²` position row pairs carry one or two position
+variables of `⌈log₂ n⌉` bits and one edge literal, at most `2⌈log₂ n⌉ + 1`
+terms, whatever the successors' declared domains. The rest grows with the
+logarithm of the **declared** width, because `prepare()`'s `define_bound` to
+`0..n-1` narrows each successor's domain but not its bit encoding, which keeps
+the `b` bits of the declared range: the clique is `n(n−1)` rows of `2b + 1`
+terms; the edge literals `succ[i] = j` that the position rows are the first to
+name are defined in the `.opb` through about `2n(n+1)` greater-or-equal rows of
+`b + 1` terms (plus `2n²` equality rows of three); each successor declared
+wider than `0..n-1` gets a clamp row of `b` terms per side it exceeds; and
+each successor's own two declaration rows, which every model has, are over
+the same `b` bits. In all,
+`O(n²)` rows and `O(n²(log n + b))` terms. Measured at `86caad24` (2026-10-09,
+fataepyc-10; `tmp/fd-graph/codex/circuit/opbwidth/`, stopped at the root, so
+that the `.opb` is the model alone; it is the same size under both
+algorithms), on five successors declared `0..4`, `0..99`, `0..9999`,
+`0..999999999` and `0..2⁶⁰−1`:
+
+| Declared range | `.opb` bytes | Clique row | Literal definition row | Clamp rows |
+|---|---:|---:|---:|---:|
+| `0..4` | 17,474 | 7 terms | 4 terms | 0 |
+| `0..99` | 24,114 | 15 | 8 | 5 |
+| `0..9999` | 37,204 | 29 | 15 | 5 |
+| `0..999999999` | 74,279 | 61 | 31 | 5 |
+| `0..2⁶⁰−1` | 167,584 | 121 | 61 | 5 |
+
+The family's 70 rows (20 clique, 50 position) are the same rows in all five,
+and every position row has the same terms in all five. At 12 nodes the `.opb` is
+116,898 bytes at `0..11` and 903,726 at `0..2⁶⁰−1`. Every root proof verified
+(VeriPB 3.0.2, `--force-checked-deletion`). This is the model. The proof
+written during search is a separate question, and `Circuit`'s does not grow
+with the declared width: enumerating six nodes (120 solutions, 206
+recursions) writes 2,280 proof lines under `Prevent` declared `0..5` and
+2,334 declared `0..99`, `0..9999` or `0..999999999` alike, and 3,104 and
+3,158 under `SCC`, all verifying; the 54 extra lines are the fixed cost of a
+declaration wider than the node range (the clamp), not growth with the width
+(`tmp/fd-graph/codex/circuit/searchwidth/`, same revision, date and machine).
+`SubCircuit`'s does ([Interval efficiency](#interval-efficiency), point 3;
+#1326).
 
 **`SubCircuit`**, this solver's (`subcircuit.cc:1084–1208`). `pos[i]` over
 `0..n-1` (`p[<k>_subpos]`), and `L = Σᵢ [succ[i] ≠ i]` the tour length as a sum
@@ -374,8 +417,21 @@ that a closed cycle can bound `L` in a bounded derivation, not because the
 meaning needs them. **Size**: anchored, `n(n-1)` row-pair families, `n − 1` of
 them wrap rows, each `n` terms longer than a step row for carrying `L`;
 unanchored, `2n(n-1)` families, half of them wrap rows, plus `n` first flags. So `O(n²)` rows either way, with `O(n³)`
-terms unanchored and `O(n² log n)` anchored, the step rows carrying
-bit-encoded positions. Independent of width.
+position-row terms unanchored and `O(n² log n)` anchored, the step rows
+carrying bit-encoded positions. Those rows, the `first` flags and the
+`off_pos` rows do not depend on the successors' declared width; the clique,
+the edge-literal definitions, the clamp rows and the declaration rows do,
+logarithmically, exactly as for `Circuit` above, which adds `O(n² b)` terms for `b` declared bits. With
+a tour size, the `tour_size` rows also carry `k`'s own bits: 8 terms at five
+nodes with `k` declared `0..5`, 65 at `0..2⁶⁰−1`. Measured as for `Circuit`,
+five successors from `0..4` to `0..2⁶⁰−1`: unanchored, 29,654 to 179,764
+bytes, with the family's 120 rows (20 clique, 80 step and wrap, 5
+`first_pos`, 5 `off_pos`, 10 `first` definitions) unchanged in count and in
+every term count but the clique's; anchored (node 0 declared `1..`), 18,306
+to 168,416; at 12 nodes, unanchored, 234,033 bytes at `0..11` and 1,020,861 at
+`0..2⁶⁰−1`. All verified at the root. #1326's growth is different in kind:
+linear in the declared width, in the proof `subcircuit::SCC` writes during
+search, while the `.opb` grows only as above.
 
 ### Labels
 
@@ -457,7 +513,9 @@ constraint-state slot is copied at every search node. `SubCircuit::prepare()`
 also settles the anchor, `O(n)` domain lookups.
 
 `define_proof_model()` writes the encoding above, `O(n²)` rows; `SubCircuit`'s
-unanchored form `O(n³)` terms. Nothing else is computed at the root, and no
+unanchored form `O(n³)` terms, and both `O(n² b)` more over the successors'
+`b` declared bits (see [OPB encoding](#opb-encoding)). Nothing else is
+computed at the root, and no
 shape makes the root dominate: at `n = 108` (`cvrp`) the `.opb` is written
 once, and every per-call cost is below.
 
@@ -544,7 +602,9 @@ observed only through its bounds.
 ### Robustness and limits
 
 **Unbounded domains.** Fine for propagation: `prepare()` narrows every
-successor to `0..n-1`, so no width survives into search, and `circuit_test` and
+successor to `0..n-1`, so no width survives into search (the `.opb` keeps the
+declared bit width, logarithmically; see [OPB encoding](#opb-encoding)), and
+`circuit_test` and
 `subcircuit_test` each run a lane whose declared domains reach two either
 side. A tour size's domain is not narrowed and need not be: only its bounds
 are read, and the fuzz used sizes from −1 to `n + 1` with every proof
@@ -580,6 +640,41 @@ correct (the differential above).
 - *Constants:* see [Variable kinds](#variable-kinds-and-views).
 - *`with_required_node()` on an interior hole:* rejected, #1228.
 
+**Recursion depth: `Circuit`'s `SCC` overflows the native stack on large
+instances (#1327).** `explore` (`circuit_scc.cc:940`) is Tarjan's walk written
+recursively: it calls itself at `:954` for each unvisited successor, entered
+from `check_sccs` at `:1006`, so the stack holds one frame per level of the
+depth-first tree, up to `n` deep, and nothing bounds it. On the audit build
+(GCC 15.2, Release, x86-64; `86caad24`, 2026-10-09, fataepyc-10;
+`tmp/fd-graph/codex/circuit/stack/ring.cc`), proofs off, with an 8 MiB stack:
+
+- a fixed ring, `succ[i]` the constant `(i + 1) mod n`, gives its one solution
+  in one recursion up to about 7,700 nodes, the exact point varying run to
+  run with stack placement: in ten runs each, 7,650 always succeeded, 7,695
+  succeeded nine times (seven in the fact-check's ten), and 7,720 never; at
+  10,000 nodes it segfaults with 8 MiB and solves with 16 MiB;
+- unfixed domains segfault before the first root trace callback at 10,000
+  nodes and reach it at 5,000, both with two successors each,
+  `{i + 1, i + 2} mod n`, and with every successor over `0..n-1`; so this is
+  root propagation on any long walk, not a fixed-input shortcut that is
+  missing;
+- `gdb` stops in `explore`, at the function entry `:940` in most runs (`:950`
+  in one, depending on which allocation overflows), with every frame below it
+  at the recursive call on `:954`;
+- `Prevent` reaches the same points at 10,000 nodes on 8 MiB in all three
+  shapes, and solves a fixed 40,000-node ring that `SCC` segfaults on; so do
+  `SubCircuit` under `Prevent` and under `SCC` (anchored on node 0), at
+  10,000 nodes in both the fixed and two-successor shapes.
+
+The threshold is about 1.1 KB of stack per level on this build, and will
+differ with compiler, flags and platform. It is not #1085, which is search
+depth (these runs make at most one recursion), nor #1307, the empty array.
+MiniZinc (`fzn_glasgow.cc:947`), the `.scp` reader (`scp_reader.cc:1174`) and
+`gcspy` (`gcspy.cc:325`) all post the default `SCC`; XCSP3's `<circuit>` posts
+`SubCircuit`. With proofs on the encoding is `Θ(n²)` rows, so no proof was
+tried at this size. An explicit stack of traversal frames removes the
+dependence.
+
 **Overflow.** Nothing to guard: every successor value and position in
 either encoding is at most `n` in magnitude, the wrap rows' coefficients are
 1, and the shifted-position flags multiply by `n`. The tour size is the
@@ -592,7 +687,12 @@ through the views MiniZinc posts, whose offsets are index-set minima.
 **Fine at any width for propagation, because no width survives the root;
 not for `SubCircuit`'s `SCC` proofs.** Every successor is
 `define_bound`-ed to `0..n-1`, so a successor's domain has at most `n` values
-and every per-value loop here is bounded by the node count. The large-domain
+and every per-value loop here is bounded by the node count. The model is in
+between: nothing in the `.opb` is per value, but the clique and the
+edge-literal definitions are written over each successor's declared bits,
+which the clamp does not shorten, so the `.opb` grows with the logarithm of
+the declared width (about 9.6 times the bytes from `0..4` to `0..2⁶⁰−1` at
+five nodes; [OPB encoding](#opb-encoding)). The large-domain
 lane pins both rows `NoWidePosition` at `86caad24`; see point 4. This holds
 for propagation, not for every proof: a successor declared wide makes
 `SubCircuit`'s pigeonhole name every declared value (point 3).
@@ -602,7 +702,9 @@ for propagation, not for every proof: a successor declared wide makes
    (`each_value_mutable`, `each_value_immutable` over successors);
    `SubCircuit`'s reachability layers, reverse graph and candidate snapshot
    (`for_each_walkable_value`); and the value consistent pass. None is over a
-   domain wider than the array.
+   domain wider than the array. The Tarjan walk is recursive, so its stack
+   depth is up to `n` whatever the width (#1327; see
+   [Robustness](#robustness-and-limits)).
 2. **The reason side.** Every reason is `generic_reason` over the whole
    successor array (plus the size, for the tour-size rules), one literal per
    fixed variable and two bounds plus one per hole run otherwise, and found one
@@ -623,8 +725,10 @@ for propagation, not for every proof: a successor declared wide makes
    grows linearly in the declared width: on five nodes with two unreachable
    from the anchor, 452 proof lines at the node range, then 5,257, 50,257 and
    500,257 at declared widths of 100, 1,000 and 10,000, with the same four
-   solutions and seven recursions and the same `.opb`; those at 100 and 1,000
-   verify (#1326, measured for PR #1302's review at
+   solutions and seven recursions, and an `.opb` of 208 lines at the node
+   range and 213 at 100 and 1,000 (the five clamp rows), whose bytes grow only
+   with the bit width (18,704, 25,616 and 31,050, re-run for this review);
+   those at 100 and 1,000 verify (#1326, measured for PR #1302's review at
    `86caad24`). Neither the guarded audit lane (point 4) nor a root-level
    proof survey sees it. Filed as #1326; PR #1302 records it in a
    comment and in `large-domains.md`. The fix is to name only the node values,
@@ -882,8 +986,10 @@ written; they are cited per rule as history, not as lanes.
 - **Tightness** — `Not shown.`
 
 The remaining `Circuit` rules run only under `SCC`, from one depth-first walk
-from node 0 (`check_sccs`, `explore`), which is Gecode's and Francis and
-Stuckey's: Tarjan's lowlinks, the subtrees hanging off the root, and
+from node 0 (`check_sccs`, `explore`; recursive, one native frame per tree
+level, which overflows an 8 MiB stack from about 7,700 nodes, #1327), which is
+Gecode's and Francis and Stuckey's: Tarjan's lowlinks, the subtrees hanging
+off the root, and
 Carlsson's condition that each subtree after the first has a back edge into
 the one before. All seven share one certificate, the thesis's `ReachTooSmall`
 (JP 6.20, with Subprocedures 6.7 to 6.14 and 6.18 to 6.19): from a vertex `w`
@@ -1444,6 +1550,9 @@ seeded.
   does, nor checks the root fixpoint against GAC.
 - **The empty `Circuit`**, which crashes (#1307).
   `subcircuit_test` has the empty case; `circuit_test` stops at one node.
+- **A deep `SCC` walk.** Nothing in tree runs a `Circuit` large enough to
+  overflow `explore`'s recursion (#1327); a fixed ring of a few tens of
+  thousands of nodes, checked at the root, would pin it.
 - **The assertion levels.** No lane runs any of this family at
   `Definitions`, `Links` or `Inferences` and checks the asserted clauses,
   which is how rules 10 to 12's bare units went unnoticed.
@@ -1570,7 +1679,8 @@ Hamiltonian enumeration above, 30% arcs, seed 1, with proofs.*
 | 14 | `SCC` | 710,536 | 54.47 MB | 43.5 s | 47.07 MB | 6.70 s | 11,966 / 82,282 |
 | 14 | `Prevent` | 230,935 | 15.48 MB | 20.0 s | 20.65 MB | 5.16 s | 15,174 / 84,809 |
 
-The `.opb` is 117 KB at 12 nodes and 162 KB at 14. Every `Off` proof
+The `.opb` is 117 KB at 12 nodes and 162 KB at 14, with the successors
+declared over the node range. Every `Off` proof
 verifies; every `Inferences` one is accepted under assertions. The assertion
 column counts the `a` lines carrying each hint, both under this constraint's
 ID; the rest are 5,330 to 18,557 backtracks, one `solx_block` per solution,
@@ -1654,6 +1764,9 @@ different harness. They are not re-measured here.
 
 - **A `Circuit` over an empty array crashes the solver,** under the default
   algorithm, and under either algorithm with a proof (#1307).
+- **A large `Circuit` crashes the solver under the default `SCC`,** proofs
+  off, at the root: the recursive walk overflows an 8 MiB stack from about
+  7,700 nodes on the audit build (#1327). `Prevent` does not.
 - **`Circuit` with `with_prune_skip(false)` can write a proof VeriPB rejects**
   (#1306).
 - **A one-node `circuit` is satisfiable** in Glasgow, Gecode and `cake_pb_cp`,
@@ -1681,34 +1794,40 @@ different harness. They are not re-measured here.
 1. **Fix the empty `Circuit`** (#1307). Install nothing but the
    always-true case when `succ` is empty, in `prepare`, `define_proof_model`
    and `install_propagators`, as `SubCircuit` does, and add `n = 0` to
-   `circuit_test`. Small; the only crash this audit found.
-2. **Make rules 8 and 10 safe without prune skip** (#1306).
+   `circuit_test`. Small.
+2. **Make `explore` iterative** (#1327). Replace the recursion at
+   `circuit_scc.cc:954` with an explicit stack of frames (node, position in
+   its successor walk, and the back edges found so far), so the depth is
+   heap-bounded; the walk's order, and so every inference and proof line,
+   should stay the same, which a proof diff on the existing lanes checks.
+   Add a root-only lane on a fixed ring of a few tens of thousands of nodes.
+3. **Make rules 8 and 10 safe without prune skip** (#1306).
    Either run them only when `prune_skip` is on, as JP 6.16 and 6.17's
    preconditions require, or prune the skip edges in the proof (the rule 11
    and 12 derivations) whenever rule 8 or 10 needs them, even with the option
    off. The first is a one-line guard and weakens propagation under that
    option; the second keeps it. Add a lane with prune skip off on an instance
    where a skip edge is the only way out of a subtree, such as #1306's.
-3. **Build the `SCC` reason only when a proof will read it, and define the
+4. **Build the `SCC` reason only when a proof will read it, and define the
    short-reason flag on first use** (#1317). Both are a few
    lines in `circuit_scc.cc`; the A/B above is the evidence: up to 13.7% fewer
    instructions with proofs off at equal recursion and propagation counts, and
    half the proof at 14
    nodes. Per #907's lesson, it wants a proof diff, which the A/B already
    shows is limited to the flag lines.
-4. **Pass the reason in rules 10 to 12's assertion path** (*assertion
+5. **Pass the reason in rules 10 to 12's assertion path** (*assertion
    reasons*), when the hints-only mode is taken up; two lines, and the same
    finding as `smart_table`'s. Add a lane running this family at
    `GCS_ASSERTION_LEVEL=Inferences` with a check that no asserted clause is
    falsified by a later `solx` (`probes/assertcheck.py` is one).
-5. **Remove or implement the three dead `Circuit` setters, and fix the stale
+6. **Remove or implement the three dead `Circuit` setters, and fix the stale
    `SubCircuit` comments** (#1318). Removing is an
    API change; implementing prune within means JP 6.6.
-6. **Decide the one-node semantics** (#1319): either make
+7. **Decide the one-node semantics** (#1319): either make
    `fzn_circuit.mzn` return `false` at one node, as the standard library
    does, or record the divergence as deliberate; and have the XCSP3 binding
    answer unsatisfiable for a one-node `<circuit>` without a size.
-7. **#1228**: the issue's three directions (remove a vector-built domain's
+8. **#1228**: the issue's three directions (remove a vector-built domain's
    holes from the initial state, read the declared value set, or check after
    `In` has run) all address the C++ route. MiniZinc's set domains arrive as
    an interval plus `Or` constraints, so only the first, extended to those
@@ -1716,14 +1835,14 @@ different harness. They are not re-measured here.
    would reach them. The anchor choice also fixes the encoding, which is
    written before any propagation, so "after `In` has run" would need the
    check to move without the anchor search.
-8. **Make the `Circuit` scenario tests assert what they fire**, for instance by
+9. **Make the `Circuit` scenario tests assert what they fire**, for instance by
    counting the rule's proof comment, and bring holey random domains into an
    in-tree enumeration lane. Moderate.
-9. **The per-call cost of `SCC` beyond the reason**: the per-node vectors in
+10. **The per-call cost of `SCC` beyond the reason**: the per-node vectors in
    `explore` and the coroutine domain walks. A profile item, worth measuring
    against Gecode's propagator, which does the same work in about a sixth of
    the time per node.
-10. **Name only the node values in `SubCircuit`'s pigeonhole** (#1326): the counting needs every node value, not every declared
+11. **Name only the node values in `SubCircuit`'s pigeonhole** (#1326): the counting needs every node value, not every declared
     value, so either the range `0..n-1` or #939's cover form keyed on the node
     values. Small; when done, the comment at `subcircuit.cc:546–548` and
     `large-domains.md`'s `subcircuit` paragraph change with it, and a
