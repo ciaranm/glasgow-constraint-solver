@@ -781,20 +781,20 @@ is the part worth reading carefully:
 |---|---|
 | `Clean` | has a position where a wide domain is meaningful, and survives one |
 | `KnownTrip` | likewise, and does not. This is the work #833 is about |
-| `NoWidePosition` | no variable it takes can meaningfully be wide — successors index an array, Booleans are `{0,1}`. Structural immunity, not a working fallback |
+| `NoWidePosition` | no variable it takes can meaningfully be wide — the graph family's node and edge selectors must be declared `0..1`, and `And`, `Or` and `ParityOdd` read a variable as the one literal `v != 0` however wide it is. Structural immunity, not a working fallback |
 | `HazardNotReached` | the source has a per-value site, but this probe does not reach it. **Not** a clean bill of health: a gap in the probe. No row uses this today — every *known* gap has been closed — but the outcome stays, because it is what to reach for rather than guessing when a probe cannot get at a site. "Known" is load-bearing: `Element`'s index-support rule was an unreached site for as long as the table had `Element` rows, and was never labelled this, because a gap nobody has thought of looks exactly like no gap (#900) |
 
 ### Where we stand
 
-93 constraint probes, plus 20 heuristic ones in the second table. The lane
+127 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
 | **KnownTrip** (20) | `Plus/many-intervals-gac` (the exact interval arm over two operands of 400 intervals, which `Dynamic` exists to cap), `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (58) | the arithmetic family (with five rows of its own for `Abs`, four for its interior holes, two of them view-wrapped, and one for a constant `v2` (#1080); one each for `Plus`' and `Minus`' `consistency::GAC` arm over holey operands; `Plus/many-intervals` under `Auto`; and four `wide-product` rows, for `Multiply`, `Divide`, `Modulus` and `Power`, whose bound products would overflow without #1079's saturation), comparison, equality, linear, `AllDifferent` under `VC` and under `BC`, `AllDifferentExcept` with a variable posted twice (#1004), `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among` contiguous and holey, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
-| **NoWidePosition** (15) | the graph and permutation family, and the Boolean constraints |
+| **Clean** (102) | the arithmetic family (with five rows of its own for `Abs`, four for its interior holes, two of them view-wrapped, and one for a constant `v2` (#1080); one each for `Plus`' and `Minus`' `consistency::GAC` arm over holey operands; `Plus/many-intervals` under `Auto`; and four `wide-product` rows, for `Multiply`, `Divide`, `Modulus` and `Power`, whose bound products would overflow without #1079's saturation), comparison, equality, linear, `AllDifferent` under `VC` and under `BC`, `AllDifferentExcept` with a variable posted twice (#1004), `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among` contiguous and holey, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods`; and every index-valued position, declared wide (below) |
+| **NoWidePosition** (5) | `And`, `Or`, `ParityOdd`, `Subgraph` and `Dag`: Booleans only |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`
 and `Element` started as `KnownTrip` and are now `Clean`, by the interval
@@ -808,6 +808,27 @@ which is two range removals however wide the domain is. **A second per-value sit
 remains** in its Hall reasoning, which the original probe could not reach — one
 cover value means there is no multi-value hall — so it now has a row of its own
 rather than being covered by association.
+
+**An index-valued position is `Clean`, not `NoWidePosition`.** A successor, a
+graph root or endpoint, an `Element` index, and an entry of `Inverse`,
+`SymmetricAllDifferent` or `ArgSort` can only ever take an array's worth of
+values, so these rows used to be `NoWidePosition` and probed over the index
+range itself. But a model may declare such a position wide, and the constraint
+then `define_bound()`s it down — which installs an initialiser, so the bound
+lands when the root is propagated and everything `prepare()` and installation
+read off the variable is still the declared width. Each of these is now probed
+three ways (`index_shapes` in the test): over `0..10^9`, over the whole declared
+range `±(2^60 − 1)`, and over `0..10^9` with a hole inside the index range.
+`Circuit`, `SubCircuit`, `Inverse` (bijection and injection), `SymmetricAllDifferent`,
+`Tree`, `DTree`, `Path`, `DPath`, `Reachable` and `DReachable` moved over, and
+`Element`, `ArgSort` and `MinDistance` gained `wide-index` rows; `SeqPrecedeChain`
+is not index-valued but is bounded the same way, and is probed the same way. All
+of them survive. What remains `NoWidePosition` is genuinely so: the graph
+family's node and edge selectors are refused at `prepare()` if declared wider
+than `0..1` (which leaves `Subgraph` and `Dag` nothing else to declare), and
+`And`, `Or` and `ParityOdd` read a variable as one literal, `v != 0`, however
+wide it is declared. `BinPacking`'s item variables are index-valued too, but
+their declaration is likewise refused if it is wider than the bins.
 
 **Whether an operand is *wrapped* is an axis of its own, and for a long time no
 probe in this lane used it.** `Element/view-result` (#924) was the first row to

@@ -25,12 +25,24 @@
  *                      health. Turning one of these into a Clean or a KnownTrip
  *                      means building a sharper probe, and is tracked as a gap.
  *   NoWidePosition  -- no variable this constraint takes can meaningfully be
- *                      wide: successor variables index an array, Boolean
- *                      variables are {0,1}. Probed at its widest legal domain
- *                      and required to be clean, but a pass here is a weaker
- *                      statement than a Clean, and the label records that so a
- *                      reader does not mistake structural immunity for a
- *                      fallback that works.
+ *                      wide: it either refuses a wide declaration outright
+ *                      (the node and edge selectors of the graph family must
+ *                      be declared 0 or 1), or reads the variable as the one
+ *                      literal v != 0 however wide it is (And, Or, ParityOdd).
+ *                      Probed at its widest legal domain and required to be
+ *                      clean, but a pass here is a weaker statement than a
+ *                      Clean, and the label records that so a reader does not
+ *                      mistake structural immunity for a fallback that works.
+ *
+ * An *index-valued* position -- a successor, a graph root or endpoint, an
+ * Element index, an Inverse, SymmetricAllDifferent or ArgSort entry -- is not
+ * NoWidePosition, although only an array's worth of its values can ever be
+ * taken. A model may still declare it wide, and the constraint define_bound()s
+ * it to the index range, which installs an *initialiser*: the bound lands when
+ * the root is propagated, so everything prepare() and installation read off
+ * the variable is still the declared width. Those rows declare the position
+ * wide (see index_shapes) and are pinned Clean, so that work proportional to
+ * the declared width is caught there rather than assumed impossible.
  *
  * With the guard off this file still builds and runs, and every probe passes
  * trivially without the guard's checks -- so it also serves as a cheap "does
@@ -178,6 +190,59 @@ namespace
         vector<IntegerVariableID> result;
         for (int i = 0; i < n; ++i)
             result.push_back(p.create_integer_variable(lo, hi));
+        return result;
+    }
+
+    /* The three declarations an index-valued position is probed at: the
+     * audit's 0..probe_width, the whole range a domain may be declared over,
+     * and 0..probe_width with a hole inside the index range, so that the
+     * domain the constraint is left with after its define_bound() has a hole
+     * in it too. The full-range shape does not follow probe_width, so the
+     * proof survey sees it at the same width at both of its sizes.
+     */
+    enum class IndexShape
+    {
+        Wide,
+        FullRange,
+        Holey
+    };
+
+    struct IndexShapeCase
+    {
+        string suffix;
+        IndexShape shape;
+    };
+
+    auto index_shapes() -> vector<IndexShapeCase>
+    {
+        return {{"", IndexShape::Wide}, {"/full-range", IndexShape::FullRange}, {"/holey", IndexShape::Holey}};
+    }
+
+    // An index-valued variable declared in the given shape. The hole is a
+    // value inside the index range, chosen by the caller so that the instance
+    // stays satisfiable and the probe reaches more than a root contradiction.
+    auto index_var(Problem & p, IndexShape shape, Integer hole) -> IntegerVariableID
+    {
+        switch (shape) {
+            using enum IndexShape;
+        case Wide: return wide_var(p);
+        case FullRange: return p.create_integer_variable(Integer::min_bounded_value(), Integer::max_bounded_value());
+        case Holey: {
+            auto v = wide_var(p);
+            p.post(NotEquals{v, ConstantIntegerVariableID{hole}});
+            return v;
+        }
+        }
+        return wide_var(p);
+    }
+
+    // n index-valued variables over 0..n-1, entry i with its hole at
+    // (i + 2) mod n, which every row below leaves satisfiable.
+    auto index_vars(Problem & p, IndexShape shape, int n) -> vector<IntegerVariableID>
+    {
+        vector<IntegerVariableID> result;
+        for (int i = 0; i < n; ++i)
+            result.push_back(index_var(p, shape, Integer{(i + 2) % n}));
         return result;
     }
 
@@ -399,17 +464,19 @@ namespace
             p.post(LinearLessThanEqual{WeightedSum{} + 1_i * v[0] + 1_i * v[1] + -1_i * v[2], 0_i});
         });
 
-        // --- Logical and parity: {0,1} variables only.
+        // --- Logical and parity. These read each variable as the one literal
+        // v != 0, so a wide declaration is accepted and means nothing more than
+        // a {0,1} one: probed wide, because that is the widest legal domain.
         add("And", Expect::NoWidePosition, [](Problem & p) {
-            auto v = narrow(p, 3, 0_i, 1_i);
+            auto v = wide(p, 3);
             p.post(And{v});
         });
         add("Or", Expect::NoWidePosition, [](Problem & p) {
-            auto v = narrow(p, 3, 0_i, 1_i);
+            auto v = wide(p, 3);
             p.post(Or{v});
         });
         add("ParityOdd", Expect::NoWidePosition, [](Problem & p) {
-            auto v = narrow(p, 3, 0_i, 1_i);
+            auto v = wide(p, 3);
             p.post(ParityOdd{v});
         });
 
@@ -432,7 +499,12 @@ namespace
             auto x = wide_var(p);
             p.post(AllDifferentExcept{{x, x, narrow(p, 1, 0_i, 3_i).front()}, {0_i}});
         });
-        add("SymmetricAllDifferent", Expect::NoWidePosition, [](Problem & p) { p.post(SymmetricAllDifferent{narrow(p, 4, 0_i, 3_i)}); });
+        for (const auto & c : index_shapes())
+            add("SymmetricAllDifferent" + c.suffix, Expect::Clean, [shape = c.shape](Problem & p) {
+                // Each value names another entry, so it is index-valued: see the
+                // graph and permutation section below.
+                p.post(SymmetricAllDifferent{index_vars(p, shape, 4)});
+            });
         add("AllEqual", Expect::Clean, [](Problem & p) { p.post(AllEqual{wide(p, 3)}); });
         add("AllEqual/holes", Expect::Clean, [](Problem & p) {
             // all_equal.cc:114 prunes every variable to the intersection of all
@@ -595,7 +667,14 @@ namespace
             p.post(In{v, vector<IntegerVariableID>{covers, above}});
         });
         add("ValuePrecede", Expect::Clean, [](Problem & p) { p.post(ValuePrecede{1_i, 2_i, wide(p, 4)}); });
-        add("SeqPrecedeChain", Expect::Clean, [](Problem & p) { p.post(SeqPrecedeChain{narrow(p, 4, 0_i, 3_i)}); });
+        for (const auto & c : index_shapes())
+            add("SeqPrecedeChain" + c.suffix, Expect::Clean, [shape = c.shape](Problem & p) {
+                // Not index-valued, but bounded the same way: no value above the
+                // number of variables can be used, and prepare() define_bound()s
+                // the upper bound there. Below it, a full-range declaration
+                // stays wide.
+                p.post(SeqPrecedeChain{index_vars(p, shape, 4)});
+            });
 
         // --- Min / max / element.
         add("ArrayMinMax", Expect::KnownTrip, [](Problem & p) {
@@ -673,6 +752,14 @@ namespace
                 p.post(NotEquals{e, ConstantIntegerVariableID{5_i}});
             p.post(Element{result, p.create_integer_variable(0_i, 2_i), entries});
         });
+        for (const auto & c : index_shapes())
+            add("Element/wide-index" + c.suffix, Expect::Clean, [shape = c.shape](Problem & p) {
+                // The index declared wide, which every row above keeps to the
+                // array's own range. prepare() define_bound()s it to that range,
+                // so this asks whether anything reads the declared width first.
+                auto result = p.create_integer_variable(0_i, 5_i);
+                p.post(Element{result, index_var(p, shape, 1_i), narrow(p, 3, 1_i, 3_i)});
+            });
 
         // --- Ordering.
         add("IncreasingChain", Expect::Clean, [](Problem & p) { p.post(Increasing{wide(p, 4)}); });
@@ -692,6 +779,13 @@ namespace
             auto x = wide(p, 3);
             p.post(ArgSort{x, narrow(p, 3, 0_i, 2_i)});
         });
+        for (const auto & c : index_shapes())
+            add("ArgSort/wide-index" + c.suffix, Expect::Clean, [shape = c.shape](Problem & p) {
+                // The permutation declared wide as well as the values: prepare()
+                // define_bound()s it to the positions of x.
+                auto x = wide(p, 3);
+                p.post(ArgSort{x, index_vars(p, shape, 3)});
+            });
 
         // --- Extensional.
         add("Table", Expect::Clean, [](Problem & p) {
@@ -786,49 +880,74 @@ namespace
             p.post(Knapsack{vector<Integer>{1_i, 2_i, 3_i}, vector<Integer>{1_i, 2_i, 3_i}, v, totals[0], totals[1]});
         });
 
-        // --- Graph and permutation constraints. Every variable indexes into an
-        // array of nodes, so none of them can meaningfully be wide.
-        add("Circuit", Expect::NoWidePosition, [](Problem & p) { p.post(Circuit{narrow(p, 4, 0_i, 3_i)}); });
-        add("SubCircuit", Expect::NoWidePosition, [](Problem & p) { p.post(SubCircuit{narrow(p, 4, 0_i, 3_i)}); });
-        add("Inverse", Expect::NoWidePosition, [](Problem & p) { p.post(Inverse{narrow(p, 3, 0_i, 2_i), narrow(p, 3, 0_i, 2_i)}); });
+        // --- Graph and permutation constraints. Every successor, root,
+        // endpoint and permutation entry here names a node, so only 0..n-1 of
+        // its values can ever be taken -- but a model may declare it wider, and
+        // the constraint then define_bound()s it to the node range. That bound
+        // is an initialiser, which lands at the root rather than at
+        // installation, so these rows declare each such position in every
+        // index shape and are pinned Clean: nothing may walk the declared width
+        // on the way to the bound. The node and edge selectors are different:
+        // prepare() refuses any declaration wider than 0..1, so Subgraph and
+        // Dag, which take nothing else, are NoWidePosition.
+        for (const auto & c : index_shapes()) {
+            auto shape = c.shape;
+            add("Circuit" + c.suffix, Expect::Clean, [shape](Problem & p) { p.post(Circuit{index_vars(p, shape, 4)}); });
+            add("SubCircuit" + c.suffix, Expect::Clean, [shape](Problem & p) { p.post(SubCircuit{index_vars(p, shape, 4)}); });
+            add("Inverse" + c.suffix, Expect::Clean, [shape](Problem & p) { p.post(Inverse{index_vars(p, shape, 3), index_vars(p, shape, 3)}); });
+            add("Inverse/injection" + c.suffix, Expect::Clean, [shape](Problem & p) {
+                // A shorter x leaves an entry of y that no entry of x names, and
+                // that entry may take any value at all: prepare() bounds x to
+                // y's indices and leaves y alone, so y here is wide for real.
+                p.post(Inverse{index_vars(p, shape, 2), index_vars(p, shape, 3)});
+            });
+        }
         add("Subgraph", Expect::NoWidePosition, [](Problem & p) {
             auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
             p.post(Subgraph{{{0, 1}, {1, 2}}, ns, es});
         });
-        add("Tree", Expect::NoWidePosition, [](Problem & p) {
-            auto r = p.create_integer_variable(0_i, 2_i);
-            auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
-            p.post(Tree{{{0, 1}, {1, 2}}, r, ns, es});
-        });
-        add("DTree", Expect::NoWidePosition, [](Problem & p) {
-            auto r = p.create_integer_variable(0_i, 2_i);
-            auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
-            p.post(DTree{{{0, 1}, {1, 2}}, r, ns, es});
-        });
-        add("Path", Expect::NoWidePosition, [](Problem & p) {
-            auto r = p.create_integer_variable(0_i, 2_i), t = p.create_integer_variable(0_i, 2_i);
-            auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
-            p.post(Path{{{0, 1}, {1, 2}}, r, t, ns, es});
-        });
-        add("DPath", Expect::NoWidePosition, [](Problem & p) {
-            auto r = p.create_integer_variable(0_i, 2_i), t = p.create_integer_variable(0_i, 2_i);
-            auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
-            p.post(DPath{{{0, 1}, {1, 2}}, r, t, ns, es});
-        });
+        for (const auto & c : index_shapes()) {
+            auto shape = c.shape;
+            // The root, start and end are all given a hole at the middle node,
+            // which leaves both ends of the path 0 - 1 - 2 for them.
+            add("Tree" + c.suffix, Expect::Clean, [shape](Problem & p) {
+                auto r = index_var(p, shape, 1_i);
+                auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
+                p.post(Tree{{{0, 1}, {1, 2}}, r, ns, es});
+            });
+            add("DTree" + c.suffix, Expect::Clean, [shape](Problem & p) {
+                auto r = index_var(p, shape, 1_i);
+                auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
+                p.post(DTree{{{0, 1}, {1, 2}}, r, ns, es});
+            });
+            add("Path" + c.suffix, Expect::Clean, [shape](Problem & p) {
+                auto r = index_var(p, shape, 1_i), t = index_var(p, shape, 1_i);
+                auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
+                p.post(Path{{{0, 1}, {1, 2}}, r, t, ns, es});
+            });
+            add("DPath" + c.suffix, Expect::Clean, [shape](Problem & p) {
+                auto r = index_var(p, shape, 1_i), t = index_var(p, shape, 1_i);
+                auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
+                p.post(DPath{{{0, 1}, {1, 2}}, r, t, ns, es});
+            });
+        }
         add("Dag", Expect::NoWidePosition, [](Problem & p) {
             auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 3, 0_i, 1_i);
             p.post(Dag{{{0, 1}, {1, 2}, {2, 0}}, ns, es});
         });
-        add("Reachable", Expect::NoWidePosition, [](Problem & p) {
-            auto r = p.create_integer_variable(0_i, 2_i);
-            auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
-            p.post(Reachable{{{0, 1}, {1, 2}}, r, ns, es});
-        });
-        add("DReachable", Expect::NoWidePosition, [](Problem & p) {
-            auto r = p.create_integer_variable(0_i, 2_i);
-            auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
-            p.post(DReachable{{{0, 1}, {1, 2}}, r, ns, es});
-        });
+        for (const auto & c : index_shapes()) {
+            auto shape = c.shape;
+            add("Reachable" + c.suffix, Expect::Clean, [shape](Problem & p) {
+                auto r = index_var(p, shape, 1_i);
+                auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
+                p.post(Reachable{{{0, 1}, {1, 2}}, r, ns, es});
+            });
+            add("DReachable" + c.suffix, Expect::Clean, [shape](Problem & p) {
+                auto r = index_var(p, shape, 1_i);
+                auto ns = narrow(p, 3, 0_i, 1_i), es = narrow(p, 2, 0_i, 1_i);
+                p.post(DReachable{{{0, 1}, {1, 2}}, r, ns, es});
+            });
+        }
 
         // --- The remaining two take a wide position and reason about it by bounds.
         add("DifferenceConstraints", Expect::Clean, [](Problem & p) {
@@ -841,14 +960,23 @@ namespace
         });
 
         add("MinDistance", Expect::Clean, [](Problem & p) {
-            // Its per-value loops are all over the *position* variables, and
-            // prepare() define_bound()s those to 0..n-1 of the distance matrix
-            // (min_distance.cc:92-93), so they cannot be wide. The wide position
-            // here is the objective z, which it reasons about by bounds.
+            // Its per-value loops are all over the *position* variables, whose
+            // values index the distance matrix. The wide position here is the
+            // objective z, which it reasons about by bounds; the rows below
+            // declare the positions wide as well.
             auto x = narrow(p, 2, 0_i, 1_i);
             auto z = wide_var(p);
             p.post(MinDistance{x, z, MinDistance::Matrix{{0_i, 1_i}, {1_i, 0_i}}});
         });
+        for (const auto & c : index_shapes())
+            add("MinDistance/wide-index" + c.suffix, Expect::Clean, [shape = c.shape](Problem & p) {
+                // prepare() define_bound()s the positions to 0..n-1 of the
+                // matrix, which lands at the root, after installation has seen
+                // the declared width.
+                auto x = index_vars(p, shape, 2);
+                auto z = wide_var(p);
+                p.post(MinDistance{x, z, MinDistance::Matrix{{0_i, 1_i}, {1_i, 0_i}}});
+            });
 
         return probes;
     }
