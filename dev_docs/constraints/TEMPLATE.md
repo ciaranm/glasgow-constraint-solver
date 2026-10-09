@@ -998,7 +998,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `abs.md` | `abs/` | **written**. The candidate merge into `arithmetic`, settled: separate. The view-proof gap that first kept it apart has closed; it shares no code or encoding with the product family |
 | `at_most_one.md` | `at_most_one/` | **written**. `AtMostOne`, and `AtMostOneSmartTable`, whose engine is `smart_table`'s. Not merged with `counting`: the meaning of `Count` with a counter in `0..1`, but no shared code |
 | `bin_packing.md` | `bin_packing/` | existing note `bin-packing.md` |
-| `circuit.md` | `circuit/` | includes subcircuit |
+| `circuit.md` | `circuit/` | **written**. `Circuit` and `SubCircuit`, one document: they share the directory, the hint header and `all_different`'s value consistent pass and clique, and no propagator or position encoding. `subcircuit-proof-logging.md` stays as the long note. No shared code or encoding with `path`, `tree`, `dag`, `reachable` or `subgraph`, whose reachability proofs use `connectivity-proofs.md`'s unfolding instead of a labelling |
 | `counting.md` | `count/`, `among/`, `global_cardinality/`, `n_value/` | **written**. The candidate merge, settled: four classes (`Count`, `Among`, `NValue`, `GlobalCardinality` at `BC` and `GAC`), no shared propagation code and four encodings, so one document and no code merge |
 | `comparison.md` | `comparison/` | **written**. Twelve classes over `ReifiedCompareLessThanOrMaybeEqual`; **not** merged with `equals` — same reified-dispatcher pattern, no shared code, separate encodings |
 | `equals.md` | `equals/` | **written** — the pilot. `Equals`, `NotEquals` and the four reified forms |

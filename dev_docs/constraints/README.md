@@ -659,6 +659,27 @@ constraints and do not restate it.
   empty graph is a solver error through MiniZinc where the standard library says
   unsatisfiable (#1305).
 - [`path.md`](path.md) — `Path` and `DPath`, MiniZinc's `path` and `dpath`: a decomposition with rows of its own. It posts a `Reachable` / `DReachable` child from the start and a `LinearEquality` child for `Σ es = Σ ns − 1`, both under its own ID. It adds a handful of degree and endpoint rows, enforced by the `graph_rules` propagator it shares with `DTree`. Every inference of its own is one RUP against its row, of at most five literals except for a degree overflow, which names every selected edge at the node. No code or encoding is shared with `circuit`. The audit found it sound everywhere it looked: 28,000 random root checks with full enumerations at one seed (and again at a second in an independent re-run), 1,200 random proofs, every MiniZinc route on both versions, and the `.scp` route, all against Gecode. The one exception is an empty node set, which errors from MiniZinc's `int` spelling instead of reporting unsatisfiable (#1305), as the rooted `reachable` and `tree` do. It is far from GAC, chiefly because nothing states the **degree lower bound**: posting it as redundant rows cuts a 5 × 5 grid path enumeration from 887,711 nodes to 26,481 (#1313). Its own rows are at most `5n` against the unfolding's `Θ(n(n + m))`, and they cost 2 to 3% of VeriPB's checking time against the child's 51 to 59%. Rules 4 and 5 are not GAC on a row with limit at least 1 and a repeated term, such as an undirected self loop or an aliased selector. While both ends are open, the `loop` rule cannot fire backwards, whether the ends are one variable or two. The cardinality row turns out to be implied by the rest, and `Holes affect` over-reports `end`.
+- [`circuit.md`](circuit.md) — `Circuit` and `SubCircuit`: two classes, two
+  position-labelling encodings, five propagators and a root contradiction,
+  sharing only the value consistent all-different pass and its clique with
+  `all_different`. Twenty-three rules; `Circuit`'s are McIlree, McCreesh and
+  Nordström's published procedures (a telescope for short cycles,
+  `ReachTooSmall` for every strongly-connected-component rule), `SubCircuit`'s
+  this solver's own, with `subcircuit-proof-logging.md` as the long note.
+  Fuzzed against a brute force through every algorithm and option, and against
+  Gecode, the MiniZinc decomposition, ACE and the `.scp` reader, it found no
+  wrong answer at two nodes or more. But `Circuit` over an empty array crashes
+  (#1307); a one-node `circuit` is satisfiable where MiniZinc's own
+  decomposition says not (#1319); and with prune skip switched off VeriPB can
+  reject the `SCC` proof, because two of its published certificates assume the
+  skip edges are already pruned (#1306). The default `SCC` propagator builds a
+  whole-scope reason on every call with proofs off (up to 14% of the
+  instructions, at equal recursion and propagation counts), and with proofs a
+  short-reason flag on every call (half a 14-node proof; #1317). Its *fix
+  required* and *prune skip* rules assert bare units at the assertion levels,
+  left unfiled by decision, as in `smart_table`. Three of `Circuit`'s setters
+  do nothing (#1318). A successor declared wide makes `SubCircuit`'s `SCC`
+  proofs grow with the declared width, held for Ciaran.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
