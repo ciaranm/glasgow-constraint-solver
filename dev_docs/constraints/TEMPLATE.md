@@ -1020,7 +1020,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `min_max.md` | `min_max/` | **written**. `ArrayMin`, `ArrayMax`, `Min` and `Max` over one `ArrayMinMax`; `Min` and `Max` are its two-entry case |
 | `nogoods.md` | `nogoods/` | search machinery rather than a posted constraint; notes `restarts-nogoods-weighting.md`, `refined-triggers.md` |
 | `parity.md` | `parity/` | **written**. `ParityOdd`, and the GF(2) system propagator in `gf2_system.{hh,cc}` that the `parity_system_gathering` presolver installs; note `parity-system.md` |
-| `path.md` | `path/` | |
+| `path.md` | `path/` | **written**. `Path` and `DPath`, posted as a `Reachable` / `DReachable` child plus a `LinearEquality` child plus their own degree and endpoint rows. The rows and their propagator are `innards/graph_rules`, shared with `DTree` and catalogued here; `tree.md` owns `DTree`'s use of it. The child's rules and the unfolding are in `reachable.md`. Nothing is shared with `circuit`. `connectivity-proofs.md` stays as the long note |
 | `reachable.md` | `reachable/` | **written**. `Reachable` and `DReachable`, which `connected` / `dconnected` reach through the stdlib and `Tree` / `Path` post as a child; owns the unfolding encoding, the propagator and its forcing. `connectivity-proofs.md` stays, shared with `dag`; `Reachable`, `Subgraph` and `Dag` each carry their own copy of the subgraph rows and rules, and each document records its own; filed #1305, #1312, #1316 |
 | `regular.md` | `regular/` | existing note `regular.md` |
 | `seq_precede_chain.md` | `seq_precede_chain/` | **written**. Delegates to `value_precede` after a clamp; this document covers the clamp and the delegation |
