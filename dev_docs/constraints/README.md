@@ -679,7 +679,7 @@ constraints and do not restate it.
   required* and *prune skip* rules assert bare units at the assertion levels,
   left unfiled by decision, as in `smart_table`. Three of `Circuit`'s setters
   do nothing (#1318). A successor declared wide makes `SubCircuit`'s `SCC`
-  proofs grow with the declared width, held for Ciaran.
+  proofs grow with the declared width (#1326).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871

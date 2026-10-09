@@ -15,9 +15,9 @@
 > this family: #1228 (`with_required_node()` rejects an anchor whose own index
 > is an interior hole), #833 (the large-domain policy), #868 (cross-solver
 > comparisons; this document gives one, by hand), #1006 (MiniZinc shape
-> lanes), #364 (incrementality survey). **Held, not filed** (Ciaran to decide):
-> `SubCircuit`'s pigeonhole grows with a wide-declared successor's declared
-> width (see [Known limitations](#known-limitations)).
+> lanes), #364 (incrementality survey). Filed since: #1326 (`SubCircuit`'s
+> pigeonhole grows with a wide-declared successor's declared width; see
+> [Known limitations](#known-limitations)).
 > **Not filed, by decision**: `Circuit`'s `SCC` propagator asserts three of its
 > rules as bare unit clauses at the `Definitions`, `Links` and `Inferences`
 > assertion levels, the defect `smart_table` has from the same commit
@@ -624,9 +624,9 @@ for propagation, not for every proof: a successor declared wide makes
    from the anchor, 452 proof lines at the node range, then 5,257, 50,257 and
    500,257 at declared widths of 100, 1,000 and 10,000, with the same four
    solutions and seven recursions and the same `.opb`; those at 100 and 1,000
-   verify (`tmp/fd-graph/file/E16.txt`, measured for PR #1302's review at
+   verify (#1326, measured for PR #1302's review at
    `86caad24`). Neither the guarded audit lane (point 4) nor a root-level
-   proof survey sees it. Unfiled (held for Ciaran); PR #1302 records it in a
+   proof survey sees it. Filed as #1326; PR #1302 records it in a
    comment and in `large-domains.md`. The fix is to name only the node values,
    or use #939's cover form.
 4. **The audit lane.** Two rows, `Circuit` and `SubCircuit` over four plain
@@ -1212,7 +1212,7 @@ solver's, and their soundness is argued in **Why it is true** and in the note.
   the pigeonhole has a term per value of its **declared** range, so a
   successor declared wide makes the proof grow linearly in the declared width
   during search (see [Interval efficiency](#interval-efficiency), point 3;
-  unfiled, held for Ciaran).
+  #1326).
 - **Gaps** — `None.`
 - **Tightness** — `Not shown` as a lane. Historically, a plain `RUP` in place
   of the walk, and dropping the pigeonhole, were both rejected.
@@ -1639,7 +1639,7 @@ different harness. They are not re-measured here.
   each successor, so the proof grows linearly in the declared width during
   search (500,257 lines at a declared width of 10,000 against 452 at the node
   range). Neither the guarded audit lane nor a root-level survey sees it.
-  Unfiled (held for Ciaran); PR #1302 records it in a comment and in
+  Filed as #1326; PR #1302 records it in a comment and in
   `large-domains.md`.
 - **Assertion levels:** rules 10 to 12 assert bare unit clauses at
   `Definitions`, `Links` and `Inferences`; the clauses are not consequences of
@@ -1668,7 +1668,7 @@ different harness. They are not re-measured here.
   `with_enable_comments()` do nothing** (#1318).
 - **A `SubCircuit` successor declared wide makes `SCC` proofs grow with the
   declared width**, during search, though propagation is unaffected
-  (unfiled, held for Ciaran; [Interval efficiency](#interval-efficiency),
+  (#1326; [Interval efficiency](#interval-efficiency),
   point 3).
 - **Neither class is generalised arc consistent**, and `SubCircuit` does not
   infer that a tour size cannot be 1.
@@ -1723,8 +1723,7 @@ different harness. They are not re-measured here.
    `explore` and the coroutine domain walks. A profile item, worth measuring
    against Gecode's propagator, which does the same work in about a sixth of
    the time per node.
-10. **Name only the node values in `SubCircuit`'s pigeonhole** (unfiled, held
-    for Ciaran): the counting needs every node value, not every declared
+10. **Name only the node values in `SubCircuit`'s pigeonhole** (#1326): the counting needs every node value, not every declared
     value, so either the range `0..n-1` or #939's cover form keyed on the node
     values. Small; when done, the comment at `subcircuit.cc:546–548` and
     `large-domains.md`'s `subcircuit` paragraph change with it, and a
