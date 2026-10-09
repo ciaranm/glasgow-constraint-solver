@@ -624,6 +624,22 @@ constraints and do not restate it.
   nodes × (nodes + edges) per strongly connected component, so even one
   400-node cycle is 52 MB of OPB. `connectivity-proofs.md` stays as the design note, shared with
   `reachable.md`.
+- [`subgraph.md`](subgraph.md) — `Subgraph`, MiniZinc's `subgraph`: a selected
+  edge has both its endpoints selected. Two clause rows per edge, one
+  propagator, two rules, each a one-line RUP against its row, and generalised
+  arc consistent on the node and edge variables unless a variable appears in two
+  positions with opposite signs, which only the C++ API can post (brute force
+  on 24,000 random instances). Its rows and its propagation loop are copied,
+  not shared, into `Reachable` and `Dag`; nothing calls this class, and no corpus
+  model posts it. The audit found a wrong answer in the front end: the
+  four-argument MiniZinc spelling over an empty node array computes the minimum
+  of an empty index set and comes out unsatisfiable, as `fzn_dag.mzn` does
+  (#1303). And the class costs more than the decomposition it stands in for:
+  every call rescans every edge, so a 5×5 grid model through MiniZinc takes
+  11.0 s against the stdlib clauses' 6.9 s on the same nodes, and a path of
+  10,000 edges with 12 undecided is 9.4 times slower; a candidate with one
+  propagator per edge, disabled once its edge is decided or entailed, is as fast as
+  the decomposition or slightly faster, with fewer calls (#1311).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
