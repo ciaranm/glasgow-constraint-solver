@@ -394,9 +394,12 @@ namespace
         });
         add("Power/wide-product", Expect::Clean, [](Problem & p) {
             // A cube: the chain's second link multiplies a result-sized
-            // auxiliary by the base.
+            // auxiliary by the base. The result is 0..10^18 at the audit's
+            // width, inside the widest domain a variable may be declared over
+            // (Integer::max_bounded_value(), about 1.15 * 10^18), and times the
+            // base's 2 * 10^9 that is still far past 2^63.
             auto x = p.create_integer_variable(0_i, probe_width * 2_i);
-            p.post(Power{x, 3_c, p.create_integer_variable(0_i, probe_width * probe_width * 2_i)});
+            p.post(Power{x, 3_c, p.create_integer_variable(0_i, probe_width * probe_width)});
         });
         add("Power", Expect::KnownTrip, [](Problem & p) { // H2: reaches PowerTable's product enumeration
             auto v = wide(p, 3);
