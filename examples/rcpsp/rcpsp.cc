@@ -475,9 +475,9 @@ auto main(int argc, char * argv[]) -> int
                 "tasks that can fire it rather than only the sweep's windows (#1247, #1249). "     //
                 "Implies --disjunctive-not-first-not-last. Certified over that derived window, "   //
                 "by the same mechanism --disjunctive-detectable-precedences-set uses. Off by "     //
-                "default only because --disjunctive-not-first-not-last is: on generated unary "    //
-                "RCPSP it closes 64 of 69 instances in 60 s, against 27 for the window-energy "    //
-                "detection (#1289)")                                                               //
+                "default only because --disjunctive-not-first-not-last is. On generated unary "    //
+                "RCPSP the two detections close the same 64 of 69 instances in 60 s, the "         //
+                "published one in 0.98x the summed recursions")                                    //
             ("disjunctive-detectable-precedences-set",
                 "Push a detectable precedence to the set's earliest completion time rather than " //
                 "to the latest single predecessor's earliest end, and the mirror --- Vilim's "    //
