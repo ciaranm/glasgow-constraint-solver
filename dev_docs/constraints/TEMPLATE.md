@@ -961,7 +961,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | Document | Covers | Notes |
 |---|---|---|
 | `all_different.md` | `all_different/` | **written**. GAC, BC and VC arms, `AllDifferentExcept`, `ExceptZero`, and `SymmetricAllDifferent`, which lives here and shares the encoding and the GAC propagator |
-| `all_equal.md` | `all_equal/` | |
+| `all_equal.md` | `all_equal/` | **written**. One class, `AllEqual`; not merged with `equals`, which is the binary case and shares only the range-removal helper |
 | `arithmetic.md` | `multiply/`, `divide_modulus/`, `plus_minus/`, `power/`, and the `plus.hh` / `minus.hh` / `divide.hh` / `modulus.hh` headers | **written**. One family over several directories; `arithmetic-proofs.md` stays, as its design note |
 | `abs.md` | `abs/` | **written**. The candidate merge into `arithmetic`, settled: separate. The view-proof gap that first kept it apart has closed; it shares no code or encoding with the product family |
 | `at_most_one.md` | `at_most_one/` | |
