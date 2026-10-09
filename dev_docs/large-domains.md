@@ -1175,7 +1175,7 @@ every value named. That rested on a successor's definition range being the node
 set, which is true only when the model declares it so. A successor may be declared
 wide (see the index-valued rows in the audit lane), and `prepare()` then
 `define_bound()`s it, but the at-least-one still spans the declared range: one term
-per declared value. This is a **known open problem**. With `SubCircuit` over five
+per declared value. This is a **known open problem** (#1326). With `SubCircuit` over five
 nodes, under SCC with a required node and two nodes unreachable, enumerating with
 proofs (four solutions) writes 5,257, 50,257 and 500,257 proof lines at declared
 widths of 100, 1,000 and 10,000. The audit lane cannot see this, because it is
