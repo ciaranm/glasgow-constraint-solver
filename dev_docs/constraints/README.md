@@ -506,6 +506,51 @@ constraints and do not restate it.
       aborts.
     - Its answer depends on presolver order: `DifferenceLogic`'s initialiser
       can tighten a start before it reads the windows.
+- [`inferred_cumulative.md`](../presolvers/inferred_cumulative.md) — the
+  `InferredCumulative` presolver. It is Sidorov's (CP 2026) cover-and-lift
+  procedure over every posted `Cumulative` and every `Disjunctive2D`
+  projection at once. Each lifted cut is posted as a derived `Cumulative`,
+  and each per-time row is certified by replaying the knapsack dynamic
+  programme that validates the whole cut, built by the same code that answers
+  the lifting subproblems. That way no validated cut ever fails to
+  certify: zero uncertifiable over 710 MiniZinc RCPSP and 1,999 PSPLib
+  instances. Findings:
+  - **No front end can run it** (#983). The audit answers what it would detect by
+    building the MiniZinc and XCSP3 shapes by hand. A capacity-one resource
+    posted as `Disjunctive` is invisible. Per-resource length variables
+    break cross-resource lifting (`L` lower on 87 of 710 instances).
+    Three spellings zero the certified bound on every instance:
+    per-resource length variables, single-value length variables, and
+    end-variable makespan rows. At the audit none of them said so; since
+    #1282 (#1257) each gets a `General` note. Adding `InferredDisjunctive`
+    first can zero it too, where that presolver's bound already reaches this
+    one's, and the summary now says so.
+  - **#943's single start-checkpoint encoding cost it heavily, and #1290 won
+    most of it back** (#1254). One donor row's recovery was about 7,200
+    lines, and the reference certificate 6.8 times the lines and 93 times
+    the checking time of the time-indexed arm. Recovering each row from the
+    one before it takes that certificate from 35.5 s of checking to 0.64 s,
+    and the Pack_d certificates check again.
+  - **With a makespan named, the root proof is linear in the makespan
+    bound,** so in the task lengths, and its checking time worse than linear.
+  - **The lifting programme's frontier sweep** cost up to minutes per PSPLib
+    J90 or J120 instance with proofs off. #1277 and #1291 (#1255) took
+    `J120_59_6` from 57 s to 12 s serially. `J120_19_1`, the slowest
+    measured, now takes 33 s serially (3 to 4 minutes at the audit, partly
+    beside other jobs). Its state budget still binds on at
+    least 102 of them, changing cuts or dropping ones it could not afford to
+    validate, and still counts states rather than comparisons (#1255,
+    open).
+  - **An `Important` note fired on 556 of the 710 instances** for the
+    published procedure's own output budget. Since #1274 (#1256) a drop at
+    the default budget is a `General` note.
+  - **Assertion levels.** Above `Off`, under the default start-checkpoint
+    encoding, a cut over posted donors gets the proof rejected
+    (#1234). Over a `Disjunctive2D` projection donor every cut
+    is declined instead, and the proof verifies at `Definitions`,
+    `Inferences` and `Backtracking`. At `Links` every proof of a satisfiable
+    model is rejected (#1210). The installed constraint's hints
+    say `constraint_id unnamed`.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
