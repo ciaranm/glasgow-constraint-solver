@@ -409,6 +409,33 @@ constraints and do not restate it.
   the same decomposition (312,333 nodes each) ours was 3.6× slower per node.
   Proofs run to 1.03M lines and 221 s of VeriPB at 8,917 nodes (1.19M and 390
   to 510 s at the audit), about 96% of them this family's own.
+- [`disjunctive.md`](disjunctive.md) — `Disjunctive`, the unary resource:
+  tasks with variable starts, constant or variable durations and optional
+  presences, strict or non-strict. The OPB encoding is purely pairwise, and
+  sixteen rules are certified against those rows alone: time-tabling,
+  detectable precedences in pairwise and set form, overload checking,
+  edge-finding, and not-first / not-last in two detections. The energetic
+  rules re-encode time inside the proof, and one overload certificate is a
+  proof-only sorting network, `ComparatorNetwork`, which this document
+  describes for `disjunctive_2d.md` too. Two energetic proofs (edge-finding
+  alone, and the time-indexed overload, edge-finding, sweep not-first /
+  not-last and set rule together) pass `cake_pb_cp`'s full verified chain.
+  The audit's findings, all closed on 2026-10-08 (re-audited at `0a5b4ec6`):
+  - time-tabling's pushes are subsumed by detectable precedences at the
+    fixpoint; they stay by decision, and since #1279 their start scan jumps
+    past blocked times rather than being quadratic in the duration. Turning
+    them off now saves 4.7% of the instructions on `ft06`, not 10.7%;
+  - the set rule skipped fixed tasks and edge-finding skipped overloaded
+    windows while the overload check was off, so both depended on rule
+    order. #1275 fixed both;
+  - not-first / not-last never pushed a task its window contains, and only
+    ever took Θ as a whole window's contents. #1288 and #1289 lifted both
+    for the published detection only: with it and every rule on, the root
+    is weaker than Gecode's `unary` on none of 20,000 random machines (452
+    with the sweep detection), and `la01` at its optimum finds a schedule
+    in 240 recursions;
+  - the per-time folds are now kept (#1287), and a reason names only the
+    tasks its certificate cites, except in the window rules (#1283).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
