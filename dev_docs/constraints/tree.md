@@ -44,8 +44,10 @@ What to know before touching it:
   instance with a fixed triangle in it leaves the root with three candidates and
   two undecided nodes, and has no solution. Search still finds that out, since
   every full assignment is checked exactly.
-- **Its cost is the reachability child's.** The OPB is `Θ(nodes × arcs)` rows,
-  and on an 8 × 8 grid `Tree` contributes 2 of its 37,208 rows (`DTree`, with
+- **Its cost is the reachability child's.** The OPB is `Θ(nodes × (nodes +
+  arcs))` rows, because the unfolding carries every node at every level,
+  isolated or not (80,404 rows under its ID for 200 nodes and no edges), and on
+  an 8 × 8 grid `Tree` contributes 2 of its 37,208 rows (`DTree`, with
   its in-degree rows, 66 of 37,608). On the directed Steiner benchmarks below
   the in-degree rule makes 41–45% of the assertions carrying this constraint's
   ID (about a tenth of all `a` lines), and the count almost none.
@@ -284,10 +286,38 @@ The reachability child's rows are `2E` subgraph rows (`2A` for `DTree`), `3n + 2
 for the root, `2·A·levels` for the arc flags, `2·n·levels` for the reach flags and
 `n` `reached` rows: at 8 × 8, 28,224 rows of arc flags alone. This family's own
 rows are 2 (with `2(n + E)` terms) plus, for `DTree`, at most `n` (with `E` terms
-in all). The remainder is the variables' literal layer. **Independent of domain
-width** apart from the root's bit-sum encoding: a root declared over
-`±(2⁶⁰ − 1)` takes a three-node `Tree`'s OPB from 5.6 KB to 22 KB, and the clamp
-adds two rows.
+in all). The remainder is the variables' literal layer.
+
+In all the reachability child writes `2E + 4n + 2 + 2(n − 1)(A + n)` rows
+(`reachable.cc:131–198`), so the encoding is `Θ(n(n + A))`, not `Θ(n · A)`: the
+reach flags exist for every node at every level whether or not any arc enters
+it, so a graph with no edges still costs `2n² + 2n + 2`. The two agree only when
+`A = Ω(n)`, as on the grids above. With this family's own rows, `Tree` labels
+`2(n − 1)(n + 2E) + 2E + 4n + 4` rows with its ID and `DTree`
+`2(n − 1)(n + E) + 2E + 4n + 4 + d`, where `d ≤ min(n, E)` is the number of
+nodes with an entering arc. Measured with
+`tmp/fd-graph/codex/tree/size/probe.cc` at `86caad24` (2026-10-09, fataepyc-10;
+the root over `0 .. n − 1`, distinct free node and edge variables, stopped after
+root propagation; `DTree` with both arcs of every edge), the rows labelled with
+this constraint's ID are exactly these totals at every point tried:
+
+| n | edges (Tree) | labelled rows, `Tree` | labelled rows, `DTree` | bytes, `Tree` |
+|---|---|---|---|---|
+| 10 | none | 224 | 224 | 19 KB |
+| 50 | none | 5,104 | 5,104 | 396 KB |
+| 100 | none | 20,204 | 20,204 | 1.5 MB |
+| 200 | none | 80,404 | 80,404 | 6.3 MB |
+| 100 | a path through 10 nodes, 90 isolated | 23,786 | 23,814 | 1.9 MB |
+| 100 | a path through all 100 | 59,606 | 59,904 | 5.8 MB |
+| 20 | complete, 190 | 15,664 | 16,064 | 1.7 MB |
+
+All seventeen proofs (these fourteen, a one-node `Tree` and a three-node path
+under each spelling) verified with VeriPB 3.0.2 under
+`--force-checked-deletion`.
+
+**Independent of domain width** apart from the root's bit-sum encoding: a root
+declared over `±(2⁶⁰ − 1)` takes a three-node `Tree`'s OPB from 5.6 KB to 22 KB,
+and the clamp adds two rows.
 
 ### Labels
 
@@ -369,7 +399,7 @@ triggers (the reachability child `n + E + 1`, `DTree`'s in-degree propagator
 `E`), so with proofs off the root is quadratic in the graph. Not measured for
 this family; `dag.md` measures about 11 s at the root of a 100,000-node path.
 With proofs on, the reachability child's `define_proof_model` adds its
-`Θ(n · A)` rows.
+`Θ(n(n + A))` rows.
 
 ### Propagator inventory
 
@@ -861,7 +891,7 @@ search nodes, so the search differs too; `proof/treefree_k4.mzn`,
 **Own against shared**, in the OPB: see the size table under [OPB
 encoding](#opb-encoding). This family's own rows are 2 for `Tree` and `2 +
 (nodes with an entering arc)` for `DTree`, against the reachability child's
-`Θ(n · A)`: 0.005% and 0.18% of an 8 × 8 grid's OPB.
+`Θ(n(n + A))`: 0.005% and 0.18% of an 8 × 8 grid's OPB.
 
 ## Status, gaps, and next steps
 
@@ -891,8 +921,9 @@ solution, and every one carries its reason.
   candidate that a selected arc enters (#1314). The class comment names the
   first and not the second.
 - **The proof is as large as the reachability child makes it**: `Θ(nodes ×
-  arcs)` rows before search, and, with the root existential (every `steiner`),
-  a line per candidate root for every forcing made while the root is open. See
+  (nodes + arcs))` rows before search, and, with the root existential (every
+  `steiner`), a line per candidate root for every forcing made while the root is
+  open. See
   [`reachable.md`](reachable.md) and
   [`connectivity-proofs.md`](../connectivity-proofs.md).
 - **`DTree`'s forcing costs a search per candidate root per node and arc** on
@@ -940,15 +971,19 @@ solution, and every one carries its reason.
    UNSAT, and whose fix is an mznlib guard returning `true`. Copying that
    `then true` guard into this family's rooted `_enum` overrides would turn
    their accidental but right UNSAT into a wrong SAT.
-4. **Correct three passages outside this document** (trivial, comment and
+4. **Correct passages outside this document** (trivial, comment and
    design-note text only). `minizinc/mznlib/fzn_tree_enum.mzn:8–12` and
    `connectivity-proofs.md:376–380` ("One reachability encoding, not two") both
    say doubling the edges would double the `O(nodes × edges)` encoding; it would
    not (see the footnote under [Concrete
    constraints](#concrete-constraints-and-frontend-coverage)); only a second
-   spanning tree would. `connectivity-proofs.md:402–412` ("These are not GAC")
-   and `tree.hh:91` name cycle closure as the gap, and leave out `DTree`'s
-   larger one, nothing entering the root (#1314).
+   spanning tree would. The bound itself also drops the `n²` term (it is
+   `Θ(n(n + A))`, see [OPB encoding](#opb-encoding)), there, in
+   `connectivity-proofs.md`'s other statements of it (lines 14, 234, 315 and
+   625) and in the comment at `reachable.cc:154–155`.
+   `connectivity-proofs.md:402–412` ("These are not GAC") and `tree.hh:91` name
+   cycle closure as the gap, and leave out `DTree`'s larger one, nothing
+   entering the root (#1314).
 5. **Land PR #1302** (open), which re-pins the `Tree` and `DTree` audit-lane
    rows `Clean` with a wide-declared root, the safer choice Ciaran picked; see
    [Interval efficiency](#interval-efficiency), item 4.
@@ -964,8 +999,10 @@ solution, and every one carries its reason.
 ## Prior art
 
 The propagation here is a decomposition and claims no algorithm of its own;
-connectivity is `Reachable`'s, whose encoding is ours
-([`connectivity-proofs.md`](../connectivity-proofs.md)). The tree constraints in
+connectivity is `Reachable`'s, logged against this solver's adaptation of a
+published layered SAT reachability encoding
+([`connectivity-proofs.md`](../connectivity-proofs.md); the lineage is under
+[`reachable.md`'s Prior art](reachable.md#prior-art)). The tree constraints in
 the literature are a different shape. Beldiceanu, Flener and Lorca's `tree`
 (CPAIOR 2005), revisited by Fages and Lorca (CP 2011), partitions a whole
 digraph given by successor variables into a bounded number of
@@ -973,10 +1010,16 @@ anti-arborescences, with filtering through dominators and strongly connected
 components; Dooms and Katriel's minimum spanning tree constraint (CP 2006) is the
 weighted spanning-tree relative. MiniZinc's `tree` and `dtree` are subgraph
 selections over a fixed graph with a single root, and the standard library
-decomposes them into a parent-and-distance labelling. We know of no earlier
-certified propagation of either: what is new here is the reachability unfolding
-that makes connectivity a plain RUP, which this family inherits, with the
-count and the in-degree rows on top of it.
+decomposes them into a parent-and-distance labelling. As far as this audit
+knows, there is no earlier certified propagation of either. What is new here is
+that certification, and most of it is inherited. The layered recurrence itself is a
+published SAT encoding of distance to a fixed goal set (Chatterjee, Chmelík and
+Davies, AAAI 2016; Pandey and Rintanen, ICAPS 2018, who use it as the baseline
+their linear encodings replace). `Reachable` adapts it to a variable root and to
+a subgraph picked by the constraint's own variables, and logs connectivity
+against it, every inference a RUP (with a split over candidate roots while the
+root is open). This family inherits that and adds the count and the in-degree
+rows on top of it.
 
 ## Further reading
 
