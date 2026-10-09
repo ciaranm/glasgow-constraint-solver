@@ -1192,7 +1192,9 @@ here, which is a tree plus degree bounds. MiniZinc's `globals.graph`
 decomposition, the one this class replaces, builds `dpath` as two `dtree`s and
 `path` as a `dpath` over doubled edges. As far as this audit knows, no path
 constraint has been certified before in any proof system. What is new here is
-on the proof side: one breadth-first unfolding serves the whole family
+on the proof side: one breadth-first unfolding, `Reachable`'s adaptation of a
+published layered SAT reachability encoding (see
+[`reachable.md`](reachable.md#prior-art)), serves the whole family
 ([`connectivity-proofs.md`](../connectivity-proofs.md)), and every counting
 rule is a single RUP against a row the constraint writes itself. The
 propagation rules are the straightforward ones, and the class documentation
