@@ -206,6 +206,23 @@ constraints and do not restate it.
   `Lex` and `AtMostOne`, about half of it in allocation, hash lookups and map
   helpers. Not merged with
   `table`: no shared code, and different entries.
+- [`increasing.md`](increasing.md) — `Increasing`, `StrictlyIncreasing`,
+  `Decreasing` and `StrictlyDecreasing`: four classes over one chain of
+  comparisons and one two-sweep propagator, generalised arc consistent on
+  distinct variables, holes included, and bounds-only, so holes affect nothing
+  here. Each inference is one RUP by JP 3.2, and the family is 2 to 6% of its
+  own enumeration proofs. Enumerating the same solutions under a different
+  branching scheme, it takes 2.5 to 2.7 times Gecode's chain propagator's
+  time, and about 10% less than the `n − 1`
+  `LessThan`s it replaces. Findings: a chain that repeats a variable in an
+  impossible order, such as `StrictlyIncreasing{x, x}`, is noticed only after
+  up to W/2 calls on a domain of width W, where `LessThan(x, x)` has
+  contradicted at once since #1088; and a repeat through an opposite-sign view
+  is not even `bounds(Z)`. MiniZinc's int `decreasing` and
+  `strictly_decreasing` never reached it, and all three `fzn_*decreasing*`
+  files were dead, until #1178 routed them through `increasing` over the
+  reversed array. Not merged with `comparison`: the same row and theorem, but
+  no shared code.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
