@@ -346,6 +346,23 @@ constraints and do not restate it.
   entry through a view (only the C++ API and `gcspy` can post a harmful one)
   made it throw "missing support" instead of failing, and occasionally write
   a proof VeriPB rejected; it now fails in place and verifies.
+- [`min_distance.md`](min_distance.md) — `MinDistance`, the smallest distance
+  between any two of `p` selected sites, from Lagerkvist's p-dispersion
+  propagators: one definitional encoding with a min-attained ladder, and five
+  propagation modes from a checker to the conflict-matching bound, every
+  inference certified; [`min-distance-proofs.md`](../min-distance-proofs.md)
+  stays as the long note. Library and `.scp` only, and `cake_pb_cp` has no rule
+  for it. Partial by design: forward checking or pairwise arc consistency on
+  the sites, upper bounds only on `z`, whose lower bound nothing raises before
+  every position is fixed. Findings: with proofs, building the ladder scans
+  every site pair once per distinct distance, 26 s at 600 sites against 9 ms
+  without; the matching bound concludes `z ≤ t − 1` where its own certificate,
+  guarded one distance lower, proves `z ≤ t*`, which cuts the tree by 26 to
+  52% on 20-site random instances with six positions and by up to 58% with
+  eight; and its assertions carry no hint. Distances near `2⁶³` crashed the
+  proof model when `z` could be negative, and through an offset view on `z`
+  the propagators too; since #1215 and #1214 such distances and offsets are
+  refused at construction.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
