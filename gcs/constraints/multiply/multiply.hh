@@ -47,8 +47,10 @@ namespace gcs
      * bounds that does not fit in an Integer saturates rather than
      * overflowing. Proof logging has a narrower limit. The encoding's
      * bit-product grid must fit in an Integer, which allows the operands'
-     * magnitudes 62 bits between them (31 + 31 or 32 + 30, but not
-     * 32 + 31); past that, posting with proofs enabled throws a ProofError.
+     * magnitudes 62 bits between them (31 + 31 or 32 + 30), and 63
+     * (32 + 31) only when the result's own range is small beside their
+     * product; past that, posting with proofs enabled throws an
+     * IntegerOverflow.
      *
      * \ingroup Constraints
      * \sa LinearEquality
