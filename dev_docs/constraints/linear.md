@@ -8,7 +8,9 @@
 > state is a heap allocation per slot per node), #1042 (the reified equality
 > ignores its bounds), #1043 (tidying, items 4 and 5 left). Filed from review:
 > #1091 (an equality's fixpoint can take a number of sweeps linear in the
-> domain width). Already open and touching this family: #868 (cross-solver),
+> domain width). Filed from the 2026-10-08 re-audit: #1298 (every reified
+> inequality throws on a partial sum or a maximum that only its undecided
+> check computes). Already open and touching this family: #868 (cross-solver),
 > #310 (a range-literal reification condition cannot be written into the
 > model), and #1225, filed since by the integer-range audit (the same condition
 > throws with proofs on). **Fixed since the audit**: #1032, #1033, #1035,
@@ -605,8 +607,8 @@ undecided reified equality or a `Tabulated` equality does not.
   4611686018427387904 += 4611686018427387904` (`:313`). All measured at
   `0a5b4ec6`. Under `integer-ranges.md` that is a bug: a throw on a value
   nothing needs. With proofs on, these reified forms throw the model writer's
-  "cannot size the reification constant" first, which is allowed. Unfiled.
-  Solving `c·x = r` uses
+  "cannot size the reification constant" first, which is allowed. Filed as
+  #1298. Solving `c·x = r` uses
   `WideSum::divided_exactly_by`. The per-term remainder arithmetic is
   unchanged: saturating it would be unsound.
 - **Overflow**: coefficient × bound products are checked `Integer` arithmetic
@@ -1174,7 +1176,7 @@ slack-watched wake were not counted; the slack lanes force that path on.
 - **Partial sums in the reified forms.** #1220's partial-sum case covers
   `eq`, `ne`, `le` and `ge`, but no `If`, `NotIf` or `Iff` form, which is why nothing
   caught the reified inequality's undecided check still summing in `Integer`
-  ([Robustness and limits](#robustness-and-limits)).
+  (#1298; [Robustness and limits](#robustness-and-limits)).
 - **Long sums.** Every random `linear_test` instance has three terms; the
   partial-sum case has nineteen, all but one fixed from the start. So the
   incremental propagator's folding is exercised on three terms at threshold 0,
@@ -1388,7 +1390,7 @@ reification condition cannot be written at all (#310).
   with proofs off, on a partial sum that leaves the range though the total
   fits, where the unreified forms solve since #1220, and on a maximum past
   `2⁶³` that only a comparison needs (see [Robustness and
-  limits](#robustness-and-limits)). Unfiled.
+  limits](#robustness-and-limits)). Filed as #1298.
 - **A reified equality waits for its last unfixed term** before deciding its
   condition, even when its bounds already exclude the value. This costs nothing
   measurable on the corpus (#1042).
