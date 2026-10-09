@@ -147,11 +147,12 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         auto capacity = view->capacity;
         auto unentitled_raise = std::holds_alternative<cumulative_strengthening_mutation::RaiseUnentitled>(_mutation);
 
-        // The assessment below subset-sums the heights at every time point, and
-        // that is a bitset of `capacity` bits built from scratch each time, so
-        // a donor posted in scaled units, with a capacity in the billions,
-        // spends hundreds of megabytes and a sweep of the whole horizon before
-        // anything has decided whether there was a strengthening to be had.
+        // The assessment below subset-sums the heights once per stretch
+        // between two task-window edges (#1240), and that is a bitset of
+        // `capacity` bits built from scratch each time, so a donor posted in
+        // scaled units, with a capacity in the billions, spends hundreds of
+        // megabytes, allocated and swept once per stretch, before anything has
+        // decided whether there was a strengthening to be had.
         // Magnitude is the wrong thing to find that out with, so decline on it
         // first. It is also what keeps the raise arithmetic below inside a
         // `long long`.
@@ -629,12 +630,13 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                         // The rest overshoots the capacity, so the at-most-ones
                         // alone do not add up to the row, and cutting planes
                         // alone raise the coefficient a step at a time --- a
-                        // `pol` per unit of kappa, once the rest overshoots by
-                        // half. By contradiction instead, in one step whatever
-                        // kappa is (#1242): the negated goal plus the row so far
-                        // saturates to `a_task >= 1`, every at-most-one then
-                        // sets its other task to zero, and what is left of the
-                        // negation reads `kappa >= kappa + 1`.
+                        // `pol` per unit of kappa, once the rest sums to at
+                        // least twice kappa. By contradiction instead, in one
+                        // step whatever kappa is (#1242): the negated goal plus
+                        // the row so far saturates to `a_task >= 1`, every
+                        // at-most-one then sets its other task to zero, and
+                        // what is left of the negation reads
+                        // `kappa >= kappa + 1`.
                         //
                         // The at-most-ones are derived first, since the closing
                         // RUP propagates through them. Under the RaiseTooFast

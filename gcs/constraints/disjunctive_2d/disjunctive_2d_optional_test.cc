@@ -452,9 +452,11 @@ auto main(int argc, char * argv[]) -> int
             // and this file's `mixed_consts` lane fails to verify, as does
             // `disjunctive_2d_test`'s `d1`. So the honest statement is that
             // the falsification differs from the contradiction only in which
-            // literal the six-way clause is left with, and it inherits a
-            // derivation that is shape-independent rather than one that holds
-            // on the shapes tested.
+            // literal the pair's separation clause is left with --- 5-way
+            // here, where the blocker is constantly present, and 6-way when
+            // both rectangles are optional --- and it inherits a derivation
+            // that is shape-independent rather than one that holds on the
+            // shapes tested.
             ok &= run_falsification_test("sharp_ranged", {{{2, 3}, {2, 3}, {4, 4}, {4, 4}, {0, 1}}, {{2, 3}, {2, 3}, {4, 4}, {4, 4}, {1, 1}}},
                 FalsificationExpectation{.markers = MarkerCount::AtLeastOne, .present_ones = 0, .falsified_rect = 0});
 
